@@ -1,15 +1,11 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, eq, getTableColumns, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, getTableColumns, gte, isNull, lte, or, sql } from "drizzle-orm";
 import { journalEntries, journalLines, finRecurringJournalTemplates, accNumberSequences } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
-import {
-  resolveWindowedTotal,
-  totalOverWindow,
-  withoutTotal,
-} from "../../../common/pagination/window-count";
+import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { keysetAfterValue } from "../../../common/pagination/keyset";
 import {
   type CreateRecurringJournalInput,
   type UpdateRecurringJournalInput,
@@ -48,26 +44,17 @@ export class RecurringJournalsService {
     private readonly audit: AuditService,
   ) {}
 
-  async listTemplates(orgId: string, page = 1, pageSize = 50) {
-    const { offset, limit } = paginateOffset({ page, pageSize });
-    const where = eq(finRecurringJournalTemplates.orgId, orgId);
+  async listTemplates(orgId: string, cursor?: string, limit = 50): Promise<CursorPage<typeof finRecurringJournalTemplates.$inferSelect>> {
+    const pos = decodeCursor(cursor);
+    const conds = [eq(finRecurringJournalTemplates.orgId, orgId)];
+    if (pos) conds.push(keysetAfterValue(finRecurringJournalTemplates.name, finRecurringJournalTemplates.id, pos));
     const rows = await this.db
-      .select({ ...getTableColumns(finRecurringJournalTemplates), total: totalOverWindow })
+      .select(getTableColumns(finRecurringJournalTemplates))
       .from(finRecurringJournalTemplates)
-      .where(where)
-      .orderBy(finRecurringJournalTemplates.name)
-      .offset(offset)
-      .limit(limit);
-
-    const total = await resolveWindowedTotal(rows, offset, async () => {
-      const fallback = await this.db
-        .select({ c: sql<number>`count(*)` })
-        .from(finRecurringJournalTemplates)
-        .where(where);
-      return Number(fallback[0]?.c ?? 0);
-    });
-
-    return buildListResponse(withoutTotal(rows), total, { page, pageSize });
+      .where(and(...conds))
+      .orderBy(asc(finRecurringJournalTemplates.name), asc(finRecurringJournalTemplates.id))
+      .limit(limit + 1);
+    return buildCursorPage(rows, limit, (r) => ({ sortValue: r.name, id: String(r.id) }));
   }
 
   async createTemplate(orgId: string, userId: string, input: CreateRecurringJournalInput) {

@@ -25,14 +25,14 @@ import {
   type UpdateApprovalPolicyInput,
 } from "./dto/finance-controls.schemas";
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import { Validate } from "../../../common/validation/validate.decorator";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
 const listPoliciesSchema = z.object({
-  page: pageNumberField,
-  pageSize: pageSizeField(20, 100),
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
 });
 
 @RequireModule("accounting")
@@ -45,10 +45,10 @@ export class ApprovalPoliciesController {
   @RequirePermission("accounting:approvals:read")
   @Validate({ query: listPoliciesSchema })
   list(
-    @Query() query: { page: number; pageSize: number },
+    @Query() query: { cursor?: string; limit: number },
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.list(u.orgId, query.page, query.pageSize);
+    return this.svc.list(u.orgId, query.cursor, query.limit);
   }
 
   @Post()

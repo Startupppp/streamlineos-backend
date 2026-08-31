@@ -2,13 +2,14 @@ import {
   BadRequestException, Inject, Injectable,
   InternalServerErrorException, NotFoundException, UnprocessableEntityException,
 } from "@nestjs/common";
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBefore } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { paginateOffset, buildListResponse } from "../../../common/pagination/pagination";
 import {
   accFixedAssets, accAssetCategories, accDepreciationSchedules,
 } from "../../../db/schema/accounting/finance-assets";
@@ -32,28 +33,32 @@ export class AssetsService {
   ) {}
 
   async list(orgId: string, query: ListAssetsQuery) {
-    const cacheKey = `${query.page}:${query.pageSize}:${query.status ?? ""}:${query.categoryId ?? ""}`;
+    const { cursor, limit } = query;
+    const pos = decodeCursor(cursor);
+    const pageLimit = Math.min(limit, 100);
+    const cacheKey = `${cursor ?? ""}:${limit}:${query.status ?? ""}:${query.categoryId ?? ""}`;
+
     return this.cache.cachedVersioned(CACHE_KEYS.finAssetsListNamespace(orgId), cacheKey, async () => {
-      const { limit, offset } = paginateOffset(query);
       const conditions = [eq(accFixedAssets.orgId, orgId)];
       if (query.status) conditions.push(eq(accFixedAssets.status, query.status));
       if (query.categoryId) conditions.push(eq(accFixedAssets.categoryId, query.categoryId));
-      const where = and(...conditions);
-      const [items, totals] = await Promise.all([
-        this.db
-          .select({
-            asset: accFixedAssets,
-            categoryName: accAssetCategories.name,
-          })
-          .from(accFixedAssets)
-          .leftJoin(accAssetCategories, eq(accFixedAssets.categoryId, accAssetCategories.id))
-          .where(where)
-          .orderBy(desc(accFixedAssets.createdAt))
-          .limit(limit)
-          .offset(offset),
-        this.db.select({ c: count() }).from(accFixedAssets).where(where),
-      ]);
-      return buildListResponse(items, Number(totals[0]?.c ?? 0), query);
+      if (pos) conditions.push(keysetBefore(accFixedAssets.createdAt, accFixedAssets.id, pos));
+
+      const rows = await this.db
+        .select({
+          asset: accFixedAssets,
+          categoryName: accAssetCategories.name,
+        })
+        .from(accFixedAssets)
+        .leftJoin(accAssetCategories, eq(accFixedAssets.categoryId, accAssetCategories.id))
+        .where(and(...conditions))
+        .orderBy(desc(accFixedAssets.createdAt), desc(accFixedAssets.id))
+        .limit(pageLimit + 1);
+
+      return buildCursorPage(rows, pageLimit, (row) => ({
+        sortValue: (row.asset.createdAt ?? new Date(0)).toISOString(),
+        id: String(row.asset.id),
+      }));
     }, 60);
   }
 

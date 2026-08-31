@@ -253,7 +253,7 @@ describe("EntriesReadService — cross-tenant isolation", () => {
     const svc = new EntriesReadService(db, mockAccess as never);
     const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: false, permissions: [] } as never;
     const result = await svc.listEntries(u, { page: 1, limit: 25 } as never);
-    expect(result).toHaveLength(0);
+    expect(result.data).toHaveLength(0);
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
     expect(allVals).toContain(ATTACKER_ORG);
   });
@@ -263,7 +263,7 @@ describe("EntriesReadService — cross-tenant isolation", () => {
     const svc = new EntriesReadService(db, mockAccess as never);
     const u = { orgId: OWNER_ORG, userId: "u", isOrgOwner: false, permissions: [] } as never;
     const result = await svc.listEntries(u, { page: 1, limit: 25 } as never);
-    expect(result).toHaveLength(0);
+    expect(result.data).toHaveLength(0);
   });
 });
 
@@ -309,7 +309,7 @@ describe("ExceptionsService — cross-tenant isolation", () => {
     const svc = new ExceptionsService(db, mockAccess as never, mockAudit as never);
     const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: false, permissions: [] } as never;
     const result = await svc.listExceptions(u, {} as never);
-    expect(result).toHaveLength(0);
+    expect(result.data).toHaveLength(0);
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
     expect(allVals).toContain(ATTACKER_ORG);
   });
@@ -319,7 +319,7 @@ describe("ExceptionsService — cross-tenant isolation", () => {
     const svc = new ExceptionsService(db, mockAccess as never, mockAudit as never);
     const u = { orgId: OWNER_ORG, userId: "u", isOrgOwner: false, permissions: [] } as never;
     const result = await svc.listExceptions(u, {} as never);
-    expect(result).toHaveLength(0);
+    expect(result.data).toHaveLength(0);
   });
 });
 

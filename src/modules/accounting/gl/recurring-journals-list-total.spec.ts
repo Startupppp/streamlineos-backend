@@ -23,10 +23,8 @@ function makeTemplate(id: number) {
 }
 
 function buildService(rows: ReturnType<typeof makeTemplate>[]): RecurringJournalsService {
-  const rowsWithTotal = rows.map((r) => ({ ...r, total: String(rows.length) }));
-  const limit = jest.fn().mockImplementation((n: number) => Promise.resolve(rowsWithTotal.slice(0, n)));
-  const offset = jest.fn().mockReturnValue({ limit });
-  const orderBy = jest.fn().mockReturnValue({ offset });
+  const limit = jest.fn().mockImplementation((n: number) => Promise.resolve(rows.slice(0, n)));
+  const orderBy = jest.fn().mockReturnValue({ limit });
   const where = jest.fn().mockReturnValue({ orderBy });
   const db = {
     select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
@@ -40,9 +38,9 @@ describe("recurring journal templates — cursor pagination", () => {
 
     const result = await svc.listTemplates(ORG_ID, undefined, 50);
 
-    expect(result.items).toHaveLength(2);
-    expect(result.page >= result.totalPages).toBe(true);
-    expect(result.totalPages).toBe(1);
+    expect(result.data).toHaveLength(2);
+    expect(result.pagination.hasMore).toBe(false);
+    expect(result.pagination.nextCursor).toBeNull();
   });
 
   it("reports more pages when total exceeds page size", async () => {
@@ -51,9 +49,9 @@ describe("recurring journal templates — cursor pagination", () => {
 
     const result = await svc.listTemplates(ORG_ID, undefined, 10);
 
-    expect(result.items).toHaveLength(10);
-    expect(result.page < result.totalPages).toBe(true);
-    expect(result.totalPages).toBe(2);
+    expect(result.data).toHaveLength(10);
+    expect(result.pagination.hasMore).toBe(true);
+    expect(result.pagination.nextCursor).not.toBeNull();
   });
 
   it("returns empty items on no rows", async () => {
@@ -61,7 +59,7 @@ describe("recurring journal templates — cursor pagination", () => {
 
     const result = await svc.listTemplates(ORG_ID, undefined, 50);
 
-    expect(result.items).toHaveLength(0);
-    expect(result.totalPages).toBe(0);
+    expect(result.data).toHaveLength(0);
+    expect(result.pagination.hasMore).toBe(false);
   });
 });

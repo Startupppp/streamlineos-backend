@@ -30,15 +30,15 @@ import {
   type CreateReconciliationRuleInput,
 } from "./dto/reconciliation.schemas";
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import { Validate } from "../../../common/validation/validate.decorator";
 
 const bankAccountIdParams = z.object({ bankAccountId: z.coerce.number().int().positive() }).strict();
 const bankAccountAndRuleIdParams = z.object({ bankAccountId: z.coerce.number().int().positive(), ruleId: z.coerce.number().int().positive() }).strict();
 
 const rulesQuerySchema = z.object({
-  page: pageNumberField,
-  pageSize: pageSizeField(20, 100),
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
 });
 
 @RequireModule("accounting")
@@ -102,7 +102,7 @@ export class ReconciliationController {
   @Validate({ params: bankAccountIdParams, query: rulesQuerySchema })
   listRules(
     @Param("bankAccountId", ParseIntPipe) bankAccountId: number,
-    @Query() query: { page: number; pageSize: number },
+    @Query() query: { cursor?: string; limit: number },
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rules.listRules(u, { ...query, bankAccountId });

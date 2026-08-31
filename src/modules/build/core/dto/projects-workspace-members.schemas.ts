@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listWorkspaceMembersSchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20),
   search: z.string().optional(),
   status: z.enum(["active", "suspended", "archived"]).optional(),

@@ -13,35 +13,16 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
-function makeItemsBuilder(rows: unknown[]): { builder: Record<string, jest.Mock>; where: jest.Mock } {
+function makeDb(rows: unknown[]): { db: Db; where: jest.Mock } {
   const where = jest.fn().mockReturnValue({
     orderBy: jest.fn().mockReturnValue({
-      offset: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) }),
+      limit: jest.fn().mockResolvedValue(rows),
     }),
   });
   const leftJoin2 = jest.fn().mockReturnValue({ where });
   const leftJoin1 = jest.fn().mockReturnValue({ leftJoin: leftJoin2 });
   const from = jest.fn().mockReturnValue({ leftJoin: leftJoin1 });
-  const builder = { from };
-  return { builder: builder as Record<string, jest.Mock>, where };
-}
-
-function makeCountBuilder(count: number): Record<string, jest.Mock> {
-  const where = jest.fn().mockResolvedValue([{ c: count }]);
-  const leftJoin = jest.fn().mockReturnValue({ where });
-  const from = jest.fn().mockReturnValue({ leftJoin });
-  return { from } as Record<string, jest.Mock>;
-}
-
-function makeDb(rows: unknown[]): { db: Db; where: jest.Mock } {
-  const { builder: itemsBuilder, where } = makeItemsBuilder(rows);
-  const countBuilder = makeCountBuilder(rows.length);
-  let call = 0;
-  const select = jest.fn().mockImplementation(() => {
-    call++;
-    return call % 2 === 1 ? itemsBuilder : countBuilder;
-  });
-  const db = { select } as unknown as Db;
+  const db = { select: jest.fn().mockReturnValue({ from }) } as unknown as Db;
   return { db, where };
 }
 
@@ -55,7 +36,7 @@ describe("VendorPaymentsListService — cross-tenant isolation", () => {
 
     const result = await svc.list(ATTACKER_ORG, { page: 1, pageSize: 20 });
 
-    expect(result.items).toHaveLength(0);
+    expect(result.data).toHaveLength(0);
     expect(where).toHaveBeenCalledTimes(1);
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
   });
@@ -67,6 +48,6 @@ describe("VendorPaymentsListService — cross-tenant isolation", () => {
 
     const result = await svc.list(OWNER_ORG, { page: 1, pageSize: 20 });
 
-    expect(result.items).toHaveLength(1);
+    expect(result.data).toHaveLength(1);
   });
 });

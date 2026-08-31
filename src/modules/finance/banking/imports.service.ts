@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { createHash } from "crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -16,7 +16,8 @@ import {
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import { paginateOffset, buildListResponse } from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { MatchingService } from "./matching.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { CreateBankImportInput, BankImportsQuery } from "./dto/imports.schemas";
@@ -232,28 +233,27 @@ export class ImportsService {
     return { id: importRecord.id, importedCount, duplicateCount, totalRows: parsed.length };
   }
 
-  async listImports(u: CurrentUserContext, query: BankImportsQuery) {
+  async listImports(u: CurrentUserContext, query: BankImportsQuery): Promise<CursorPage<typeof finBankImports.$inferSelect>> {
     const { orgId } = u;
-    const { limit, offset } = paginateOffset(query);
+    const pos = decodeCursor(query.cursor);
 
     const conditions = [eq(finBankImports.orgId, orgId)];
     if (query.bankAccountId !== undefined) {
       conditions.push(eq(finBankImports.bankAccountId, query.bankAccountId));
     }
+    if (pos) conditions.push(keysetBeforeId(finBankImports.createdAt, finBankImports.id, pos));
 
-    const where = and(...conditions);
-    const [rows, [totals]] = await Promise.all([
-      this.db
-        .select()
-        .from(finBankImports)
-        .where(where)
-        .orderBy(desc(finBankImports.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(finBankImports).where(where),
-    ]);
+    const rows = await this.db
+      .select()
+      .from(finBankImports)
+      .where(and(...conditions))
+      .orderBy(desc(finBankImports.createdAt), desc(finBankImports.id))
+      .limit(query.limit + 1);
 
-    return buildListResponse(rows, totals?.total ?? 0, query);
+    return buildCursorPage(rows, query.limit, (r) => ({
+      sortValue: (r.createdAt ?? new Date(0)).toISOString(),
+      id: String(r.id),
+    }));
   }
 
   private parseRows(

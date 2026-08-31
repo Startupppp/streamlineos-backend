@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
   projectTeamMembers,
   projectWorkspaceMembers,
@@ -15,6 +15,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { TeamsService } from "./teams.service";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetAfterId } from "../../../common/pagination/keyset";
 import type {
   AddTeamMemberInput,
   ListTeamMembersQuery,
@@ -37,45 +39,35 @@ export class TeamMembersService {
     query: ListTeamMembersQuery,
   ) {
     await this.teams.loadTeam(orgId, teamId);
-    const offset = (query.page - 1) * query.pageSize;
-    const [rows, [countRow]] = await Promise.all([
-      this.db
-        .select({
-          id: projectTeamMembers.id,
-          userId: projectTeamMembers.userId,
-          role: projectTeamMembers.role,
-          joinedAt: projectTeamMembers.joinedAt,
-          firstName: users.firstName,
-          lastName: users.lastName,
-          email: users.email,
-          image: users.image,
-        })
-        .from(projectTeamMembers)
-        .innerJoin(users, eq(users.id, projectTeamMembers.userId))
-        .where(
-          and(
-            eq(projectTeamMembers.teamId, teamId),
-            eq(projectTeamMembers.orgId, orgId),
-          ),
-        )
-        .limit(query.pageSize)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(projectTeamMembers)
-        .where(
-          and(
-            eq(projectTeamMembers.teamId, teamId),
-            eq(projectTeamMembers.orgId, orgId),
-          ),
-        ),
-    ]);
-    return {
-      data: rows,
-      total: Number(countRow?.total ?? 0),
-      page: query.page,
-      pageSize: query.pageSize,
-    };
+    const { cursor, pageSize } = query;
+    const pos = decodeCursor(cursor);
+    const conds = [
+      eq(projectTeamMembers.teamId, teamId),
+      eq(projectTeamMembers.orgId, orgId),
+    ];
+    if (pos) conds.push(keysetAfterId(projectTeamMembers.joinedAt, projectTeamMembers.id, pos));
+
+    const rows = await this.db
+      .select({
+        id: projectTeamMembers.id,
+        userId: projectTeamMembers.userId,
+        role: projectTeamMembers.role,
+        joinedAt: projectTeamMembers.joinedAt,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+        image: users.image,
+      })
+      .from(projectTeamMembers)
+      .innerJoin(users, eq(users.id, projectTeamMembers.userId))
+      .where(and(...conds))
+      .orderBy(asc(projectTeamMembers.joinedAt), asc(projectTeamMembers.id))
+      .limit(pageSize + 1);
+
+    return buildCursorPage(rows, pageSize, (r) => ({
+      sortValue: (r.joinedAt ?? new Date(0)).toISOString(),
+      id: String(r.id),
+    }));
   }
 
   async addMember(

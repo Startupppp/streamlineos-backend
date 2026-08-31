@@ -1,5 +1,7 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBefore } from "../../../common/pagination/keyset";
 import {
   creditNotes,
   creditNoteItems,
@@ -13,7 +15,6 @@ import { type Db } from "../../../db/drizzle.module";
 import { JournalPostingService, type DraftLine } from "../../accounting/posting/journal-posting.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import type { CreateCreditNoteInput, ListCreditNotesQuery, ApplyCreditNoteInput } from "./dto/finance-ar.schemas";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
@@ -29,36 +30,45 @@ export class CreditNotesService {
   ) {}
 
   async list(orgId: string, query: ListCreditNotesQuery) {
-    const { limit, offset } = paginateOffset(query);
+    const { cursor, limit } = query;
+    const pos = decodeCursor(cursor);
+    const pageLimit = Math.min(limit, 100);
+
     const conditions = [eq(creditNotes.orgId, orgId)];
     if (query.status) conditions.push(eq(creditNotes.status, query.status));
     if (query.clientId) conditions.push(eq(creditNotes.clientId, query.clientId));
     if (query.invoiceId) conditions.push(eq(creditNotes.invoiceId, query.invoiceId));
+    if (pos) conditions.push(keysetBefore(creditNotes.createdAt, creditNotes.id, pos));
 
-    const projection = {
-      id: creditNotes.id,
-      creditNoteNumber: creditNotes.creditNoteNumber,
-      clientId: creditNotes.clientId,
-      invoiceId: creditNotes.invoiceId,
-      status: creditNotes.status,
-      reason: creditNotes.reason,
-      subtotal: creditNotes.subtotal,
-      taxAmount: creditNotes.taxAmount,
-      total: creditNotes.total,
-      appliedAmount: creditNotes.appliedAmount,
-      currency: creditNotes.currency,
-      placeOfSupply: creditNotes.placeOfSupply,
-      customerGstin: creditNotes.customerGstin,
-      supplierGstin: creditNotes.supplierGstin,
-      createdBy: creditNotes.createdBy,
-      createdAt: creditNotes.createdAt,
-      updatedAt: creditNotes.updatedAt,
-    };
-    const [rows, [{ count }]] = await Promise.all([
-      this.db.select(projection).from(creditNotes).where(and(...conditions)).orderBy(desc(creditNotes.createdAt)).limit(limit).offset(offset),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(creditNotes).where(and(...conditions)),
-    ]);
-    return buildListResponse(rows, count, query);
+    const rows = await this.db
+      .select({
+        id: creditNotes.id,
+        creditNoteNumber: creditNotes.creditNoteNumber,
+        clientId: creditNotes.clientId,
+        invoiceId: creditNotes.invoiceId,
+        status: creditNotes.status,
+        reason: creditNotes.reason,
+        subtotal: creditNotes.subtotal,
+        taxAmount: creditNotes.taxAmount,
+        total: creditNotes.total,
+        appliedAmount: creditNotes.appliedAmount,
+        currency: creditNotes.currency,
+        placeOfSupply: creditNotes.placeOfSupply,
+        customerGstin: creditNotes.customerGstin,
+        supplierGstin: creditNotes.supplierGstin,
+        createdBy: creditNotes.createdBy,
+        createdAt: creditNotes.createdAt,
+        updatedAt: creditNotes.updatedAt,
+      })
+      .from(creditNotes)
+      .where(and(...conditions))
+      .orderBy(desc(creditNotes.createdAt), desc(creditNotes.id))
+      .limit(pageLimit + 1);
+
+    return buildCursorPage(rows, pageLimit, (row) => ({
+      sortValue: (row.createdAt ?? new Date(0)).toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async get(orgId: string, id: number) {

@@ -8,6 +8,8 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheetExceptions, users, organizationMembers } from "../../../db/schema";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { AccessService } from "../../access/access.service";
 import { applyScope } from "../../access/apply-scope";
 import { resolveEntriesScope } from "./timesheets-core-scope";
@@ -30,21 +32,22 @@ export class ExceptionsService {
   async listExceptions(u: CurrentUserContext, query: ExceptionsQuery) {
     const scope = await resolveEntriesScope(this.access, u);
     const limit = Math.min(query.limit, 100);
-    const offset = (query.page - 1) * limit;
+    const pos = decodeCursor(query.cursor);
 
     const conditions = [
       eq(timesheetExceptions.orgId, u.orgId),
       applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheetExceptions.userId }),
     ];
 
-    if (query.userId && scope === "all") {
+    if (query.userId && scope === "all")
       conditions.push(eq(timesheetExceptions.userId, query.userId));
-    }
     if (query.status) conditions.push(eq(timesheetExceptions.status, query.status));
     if (query.severity) conditions.push(eq(timesheetExceptions.severity, query.severity));
     if (query.rule) conditions.push(eq(timesheetExceptions.rule, query.rule));
+    if (pos)
+      conditions.push(keysetBeforeId(timesheetExceptions.createdAt, timesheetExceptions.id, pos));
 
-    const rows = await this.db
+    const rawRows = await this.db
       .select({
         e: timesheetExceptions,
         userName: users.name,
@@ -54,13 +57,20 @@ export class ExceptionsService {
       .leftJoin(users, eq(timesheetExceptions.userId, users.id))
       .where(and(...conditions))
       .orderBy(desc(timesheetExceptions.createdAt), desc(timesheetExceptions.id))
-      .limit(limit)
-      .offset(offset);
+      .limit(limit + 1);
 
-    return rows.map((r) => ({
-      ...r.e,
-      user: { id: r.e.userId, name: r.userName, email: r.userEmail },
+    const page = buildCursorPage(rawRows, limit, (r) => ({
+      sortValue: r.e.createdAt.toISOString(),
+      id: String(r.e.id),
     }));
+
+    return {
+      data: page.data.map((r) => ({
+        ...r.e,
+        user: { id: r.e.userId, name: r.userName, email: r.userEmail },
+      })),
+      pagination: page.pagination,
+    };
   }
 
   private async transition(

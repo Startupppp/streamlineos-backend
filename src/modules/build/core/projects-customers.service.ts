@@ -1,9 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, ilike, isNull } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull } from "drizzle-orm";
 import { businessParties, crmOrgPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_CRM_ORG } from "../../crm/crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type { ListProjectCustomersInput } from "./dto/projects-customers.schemas";
 
 /**
@@ -24,47 +26,38 @@ export class ProjectsCustomersService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(orgId: string, params: ListProjectCustomersInput) {
-    const { page, limit, search } = params;
-    const offset = (page - 1) * limit;
-
-    const where = and(
+    const { cursor, limit, search } = params;
+    const pos = decodeCursor(cursor);
+    const conds = [
       eq(crmOrgPartyMap.organizationId, orgId),
       eq(businessParties.organizationId, orgId),
       eq(businessParties.partyKind, "ORGANISATION"),
       isNull(businessParties.deletedAt),
       search ? ilike(businessParties.name, `%${search}%`) : undefined,
-    );
+    ];
+    if (pos) conds.push(keysetBeforeId(businessParties.createdAt, crmOrgPartyMap.crmOrganizationId, pos));
 
-    const [organizations, countRow] = await Promise.all([
-      this.db
-        .select({
-          id: crmOrgPartyMap.crmOrganizationId,
-          name: businessParties.name,
-          domain: businessParties.domain,
-          industry: businessParties.industry,
-          size: businessParties.companySize,
-          website: businessParties.website,
-          linkedinUrl: businessParties.linkedinUrl,
-          description: businessParties.description,
-          createdAt: businessParties.createdAt,
-        })
-        .from(crmOrgPartyMap)
-        .innerJoin(businessParties, PARTY_OF_CRM_ORG)
-        .where(where)
-        .orderBy(desc(businessParties.createdAt), desc(crmOrgPartyMap.crmOrganizationId))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ count: count() })
-        .from(crmOrgPartyMap)
-        .innerJoin(businessParties, PARTY_OF_CRM_ORG)
-        .where(where)
-        .then((rows) => rows[0]),
-    ]);
+    const rows = await this.db
+      .select({
+        id: crmOrgPartyMap.crmOrganizationId,
+        name: businessParties.name,
+        domain: businessParties.domain,
+        industry: businessParties.industry,
+        size: businessParties.companySize,
+        website: businessParties.website,
+        linkedinUrl: businessParties.linkedinUrl,
+        description: businessParties.description,
+        createdAt: businessParties.createdAt,
+      })
+      .from(crmOrgPartyMap)
+      .innerJoin(businessParties, PARTY_OF_CRM_ORG)
+      .where(and(...conds))
+      .orderBy(desc(businessParties.createdAt), desc(crmOrgPartyMap.crmOrganizationId))
+      .limit(limit + 1);
 
-    const totalCount = Number(countRow?.count ?? 0);
-    const totalPages = totalCount === 0 ? 0 : Math.ceil(totalCount / limit);
-
-    return { organizations, totalCount, page, totalPages };
+    return buildCursorPage(rows, limit, (r) => ({
+      sortValue: (r.createdAt ?? new Date(0)).toISOString(),
+      id: String(r.id),
+    }));
   }
 }

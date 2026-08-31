@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, count, eq, isNull } from "drizzle-orm";
+import { formatInTimeZone } from "date-fns-tz";
 import {
   attendance,
   organizationMembers,
@@ -12,7 +13,6 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
-import { getTodayString } from "../../common/date";
 import { resolveDashboardStatsFlags } from "./dashboard-scope";
 import { buildOrgDashboardCacheKey } from "./dashboard-cache-key";
 
@@ -28,7 +28,6 @@ export class DashboardStatsService {
 
   async getDashboardStats(orgId: string, u: CurrentUserContext) {
     const flags = await resolveDashboardStatsFlags(this.access, u);
-    const today = getTodayString();
 
     const settle = async <T>(name: string, run: () => Promise<T>, fallback: T): Promise<T> => {
       try {
@@ -42,34 +41,39 @@ export class DashboardStatsService {
       }
     };
 
-    const [orgKey, employeesKey, projectsKey, attendanceKey] = await Promise.all([
-      buildOrgDashboardCacheKey(this.access, orgId, "stats-org"),
+    const orgKey = await buildOrgDashboardCacheKey(this.access, orgId, "stats-org");
+    const orgData = await settle(
+      "org",
+      () =>
+        this.cache.cachedForOrg(
+          orgId,
+          orgKey,
+          async () => {
+            const org = await this.db.query.organizations.findFirst({
+              where: eq(organizations.id, orgId),
+              columns: { name: true, slug: true, timezone: true },
+            });
+            return {
+              orgName: org?.name ?? "Organization",
+              orgSlug: org?.slug ?? orgId.slice(0, 8),
+              orgTz: org?.timezone ?? "UTC",
+            };
+          },
+          CACHE_TTL.SHORT,
+        ),
+      { orgName: "Organization", orgSlug: orgId.slice(0, 8), orgTz: "UTC" },
+    );
+
+    const orgTz = orgData?.orgTz ?? "UTC";
+    const localDate = formatInTimeZone(new Date(), orgTz, "yyyy-MM-dd");
+
+    const [employeesKey, projectsKey, attendanceKey] = await Promise.all([
       buildOrgDashboardCacheKey(this.access, orgId, "stats-employees"),
       buildOrgDashboardCacheKey(this.access, orgId, "stats-projects"),
-      buildOrgDashboardCacheKey(this.access, orgId, "stats-attendance", today),
+      buildOrgDashboardCacheKey(this.access, orgId, "stats-attendance", `${orgTz}:${localDate}`),
     ]);
 
-    const [orgData, totalEmployees, activeProjects, presentToday] = await Promise.all([
-      settle(
-        "org",
-        () =>
-          this.cache.cachedForOrg(
-            orgId,
-            orgKey,
-            async () => {
-              const org = await this.db.query.organizations.findFirst({
-                where: eq(organizations.id, orgId),
-                columns: { name: true, slug: true },
-              });
-              return {
-                orgName: org?.name ?? "Organization",
-                orgSlug: org?.slug ?? orgId.slice(0, 8),
-              };
-            },
-            CACHE_TTL.SHORT,
-          ),
-        { orgName: "Organization", orgSlug: orgId.slice(0, 8) },
-      ),
+    const [totalEmployees, activeProjects, presentToday] = await Promise.all([
       flags.employees
         ? settle(
             "employees",
@@ -124,7 +128,7 @@ export class DashboardStatsService {
                   const [r] = await this.db
                     .select({ cnt: count() })
                     .from(attendance)
-                    .where(and(eq(attendance.orgId, orgId), eq(attendance.date, today)));
+                    .where(and(eq(attendance.orgId, orgId), eq(attendance.date, localDate)));
                   return Number(r?.cnt ?? 0);
                 },
                 CACHE_TTL.SHORT,

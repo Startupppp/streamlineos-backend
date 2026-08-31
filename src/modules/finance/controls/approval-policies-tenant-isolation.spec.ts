@@ -18,17 +18,12 @@ describe("ApprovalPoliciesService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
 
   function makeService(rows: unknown[]): { svc: ApprovalPoliciesService; where: jest.Mock } {
-    const where = jest.fn();
-    const dataChain = { limit: jest.fn().mockReturnValue({ offset: jest.fn().mockResolvedValue(rows) }) };
-    const countChain = Promise.resolve([{ count: rows.length }]);
-    let callCount = 0;
-    where.mockImplementation(() => {
-      callCount++;
-      return callCount === 1 ? dataChain : countChain;
+    const where = jest.fn().mockReturnValue({
+      orderBy: jest.fn().mockReturnValue({
+        limit: jest.fn().mockResolvedValue(rows),
+      }),
     });
-    const from = jest.fn().mockReturnValue({ where });
-    const select = jest.fn().mockReturnValue({ from });
-    const db = { select } as unknown as Db;
+    const db = { select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }) } as unknown as Db;
     const svc = new ApprovalPoliciesService(db, {} as never);
     return { svc, where };
   }
@@ -48,6 +43,6 @@ describe("ApprovalPoliciesService — cross-tenant isolation", () => {
 
     const result = await svc.list(OWNER_ORG, undefined, 20);
 
-    expect(result.items).toHaveLength(1);
+    expect(result.data).toHaveLength(1);
   });
 });

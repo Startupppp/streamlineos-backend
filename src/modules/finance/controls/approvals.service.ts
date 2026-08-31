@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -19,7 +19,8 @@ import {
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import type { ListApprovalsQuery, ApprovalDecisionInput } from "./dto/finance-controls.schemas";
 
@@ -46,24 +47,25 @@ export class ApprovalsService {
   ) {}
 
   async list(orgId: string, query: ListApprovalsQuery) {
-    const { limit, offset } = paginateOffset(query);
+    const pos = decodeCursor(query.cursor);
     const conditions = [eq(finApprovalRequests.orgId, orgId)];
     if (query.status) conditions.push(eq(finApprovalRequests.status, query.status));
     if (query.recordType) conditions.push(eq(finApprovalRequests.recordType, query.recordType));
+    if (pos) conditions.push(keysetBeforeId(finApprovalRequests.createdAt, finApprovalRequests.id, pos));
 
-    const [rows, [{ count }]] = await Promise.all([
-      this.db
-        .select()
-        .from(finApprovalRequests)
-        .where(and(...conditions))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(finApprovalRequests)
-        .where(and(...conditions)),
-    ]);
+    const rawRows = await this.db
+      .select()
+      .from(finApprovalRequests)
+      .where(and(...conditions))
+      .orderBy(desc(finApprovalRequests.createdAt), desc(finApprovalRequests.id))
+      .limit(query.limit + 1);
 
+    const page = buildCursorPage(rawRows, query.limit, (r) => ({
+      sortValue: (r.createdAt ?? new Date(0)).toISOString(),
+      id: String(r.id),
+    }));
+
+    const rows = page.data;
     const requesterIds = [...new Set(rows.map((r) => r.requestedBy))];
     const requesterRows =
       requesterIds.length > 0
@@ -96,7 +98,7 @@ export class ApprovalsService {
       };
     });
 
-    return buildListResponse(enriched, count, query);
+    return { ...page, data: enriched };
   }
 
   async counts(orgId: string) {

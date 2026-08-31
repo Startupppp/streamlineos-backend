@@ -5,7 +5,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { z } from "zod";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -29,6 +29,11 @@ import {
   resolveMapping,
   round2,
 } from "./lib/payroll-calc";
+import {
+  buildCursorPage,
+  decodeCursor,
+} from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { payrollSnapshotSchema } from "./dto/payroll.schemas";
 import type {
   AckExportInput,
@@ -38,7 +43,9 @@ import type {
   TimesheetExportDto,
 } from "./dto/payroll.schemas";
 
-const exportFiltersSchema = z.object({ mapping: z.unknown().optional() }).passthrough();
+const exportFiltersSchema = z
+  .object({ mapping: z.unknown().optional() })
+  .passthrough();
 
 function toExportDto(
   row: typeof timesheetExports.$inferSelect,
@@ -93,9 +100,12 @@ export class PayrollExportService {
         gte(timesheets.date, input.start),
         lte(timesheets.date, input.end),
       ];
-      if (!input.includeExported) conditions.push(eq(timesheets.payrollStatus, "UNPROCESSED"));
-      if (settings?.includeNonBillable === false) conditions.push(eq(timesheets.isBillable, true));
-      if (input.userIds && input.userIds.length > 0) conditions.push(inArray(timesheets.userId, input.userIds));
+      if (!input.includeExported)
+        conditions.push(eq(timesheets.payrollStatus, "UNPROCESSED"));
+      if (settings?.includeNonBillable === false)
+        conditions.push(eq(timesheets.isBillable, true));
+      if (input.userIds && input.userIds.length > 0)
+        conditions.push(inArray(timesheets.userId, input.userIds));
 
       const eligible = await tx
         .select()
@@ -104,7 +114,9 @@ export class PayrollExportService {
         .for("update");
 
       if (eligible.length === 0) {
-        throw new ConflictException("No eligible approved hours to export for this period");
+        throw new ConflictException(
+          "No eligible approved hours to export for this period",
+        );
       }
 
       const userIdSet = new Set(eligible.map((e) => e.userId));
@@ -117,16 +129,35 @@ export class PayrollExportService {
       const holidayRows = await tx
         .select({ date: holidays.date })
         .from(holidays)
-        .where(and(eq(holidays.orgId, orgId), gte(holidays.date, input.start), lte(holidays.date, input.end)));
+        .where(
+          and(
+            eq(holidays.orgId, orgId),
+            gte(holidays.date, input.start),
+            lte(holidays.date, input.end),
+          ),
+        );
       const holidayDates = new Set(holidayRows.map((h) => h.date));
 
       const leaveRows = await tx
-        .select({ userId: leaveRequests.userId, startDate: leaveRequests.startDate, endDate: leaveRequests.endDate, isHalfDay: leaveRequests.isHalfDay })
+        .select({
+          userId: leaveRequests.userId,
+          startDate: leaveRequests.startDate,
+          endDate: leaveRequests.endDate,
+          isHalfDay: leaveRequests.isHalfDay,
+        })
         .from(leaveRequests)
-        .where(and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.status, "APPROVED"), lte(leaveRequests.startDate, input.end), gte(leaveRequests.endDate, input.start), inArray(leaveRequests.userId, [...userIdSet])));
+        .where(
+          and(
+            eq(leaveRequests.orgId, orgId),
+            eq(leaveRequests.status, "APPROVED"),
+            lte(leaveRequests.startDate, input.end),
+            gte(leaveRequests.endDate, input.start),
+            inArray(leaveRequests.userId, [...userIdSet]),
+          ),
+        );
 
       const leavesByUser = computeLeaveDays(leaveRows, input.start, input.end);
-      const byUser = new Map<string, typeof eligible[number][]>();
+      const byUser = new Map<string, (typeof eligible)[number][]>();
       for (const e of eligible) {
         const arr = byUser.get(e.userId) ?? [];
         arr.push(e);
@@ -136,14 +167,25 @@ export class PayrollExportService {
       const rows: PayrollExportRow[] = [];
       for (const [uid, userEntries] of byUser) {
         const user = userMap.get(uid);
-        const otEntries = userEntries.map((e) => ({ date: e.date, hours: parseFloat(e.hours) }));
-        const overtimeHours = computeOvertime(otEntries, dailyThreshold, weeklyThreshold);
-        let totalPayableHours = 0, billableHours = 0, nonBillableHours = 0;
-        let holidayHours = 0, weekendHours = 0;
+        const otEntries = userEntries.map((e) => ({
+          date: e.date,
+          hours: parseFloat(e.hours),
+        }));
+        const overtimeHours = computeOvertime(
+          otEntries,
+          dailyThreshold,
+          weeklyThreshold,
+        );
+        let totalPayableHours = 0,
+          billableHours = 0,
+          nonBillableHours = 0;
+        let holidayHours = 0,
+          weekendHours = 0;
         for (const e of userEntries) {
           const h = parseFloat(e.hours);
           totalPayableHours += h;
-          if (e.isBillable) billableHours += h; else nonBillableHours += h;
+          if (e.isBillable) billableHours += h;
+          else nonBillableHours += h;
           if (holidayDates.has(e.date)) holidayHours += h;
           if (isWeekend(e.date)) weekendHours += h;
         }
@@ -167,12 +209,19 @@ export class PayrollExportService {
       }
 
       rows.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
-      const totalHours = round2(rows.reduce((s, r) => s + r.totalPayableHours, 0));
+      const totalHours = round2(
+        rows.reduce((s, r) => s + r.totalPayableHours, 0),
+      );
 
       const [actorMember] = await tx
         .select({ id: organizationMembers.id })
         .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.userId, userId),
+          ),
+        )
         .limit(1);
 
       const [exportRow] = await tx
@@ -184,7 +233,13 @@ export class PayrollExportService {
           dateRangeStart: input.start,
           dateRangeEnd: input.end,
           format: input.format,
-          filters: { userIds: input.userIds, includeExported: input.includeExported, format: input.format, note: input.note, mapping: payrollMapping },
+          filters: {
+            userIds: input.userIds,
+            includeExported: input.includeExported,
+            format: input.format,
+            note: input.note,
+            mapping: payrollMapping,
+          },
           snapshot: rows,
           entryCount: eligible.length,
           totalHours: totalHours.toString(),
@@ -194,13 +249,24 @@ export class PayrollExportService {
         .returning();
 
       if (!exportRow) {
-        throw new InternalServerErrorException("Failed to create the payroll export record");
+        throw new InternalServerErrorException(
+          "Failed to create the payroll export record",
+        );
       }
 
       await tx
         .update(timesheets)
-        .set({ payrollStatus: "EXPORTED", payrollExportId: exportRow.id, updatedAt: new Date() })
-        .where(inArray(timesheets.id, eligible.map((e) => e.id)));
+        .set({
+          payrollStatus: "EXPORTED",
+          payrollExportId: exportRow.id,
+          updatedAt: new Date(),
+        })
+        .where(
+          inArray(
+            timesheets.id,
+            eligible.map((e) => e.id),
+          ),
+        );
 
       return { exportRow, rows };
     });
@@ -234,41 +300,48 @@ export class PayrollExportService {
   async listExports(orgId: string, query: ExportsListQuery) {
     return this.cache.cachedVersioned(
       CACHE_KEYS.payrollExportsNamespace(orgId),
-      `${query.page}:${query.pageSize}`,
+      `${query.cursor ?? ""}:${query.limit}`,
       async () => {
-        const offset = (query.page - 1) * query.pageSize;
-        const [rows, [countRow]] = await Promise.all([
-          this.db
-            .select({
-              export: timesheetExports,
-              creatorName: organizationPeople.displayName,
-            })
-            .from(timesheetExports)
-            .leftJoin(
-              organizationPeople,
-              and(
-                eq(organizationPeople.organizationId, timesheetExports.orgId),
-                eq(organizationPeople.organizationMembershipId, timesheetExports.createdByMembershipId),
-              ),
-            )
-            .where(eq(timesheetExports.orgId, orgId))
-            .orderBy(desc(timesheetExports.createdAt))
-            .limit(query.pageSize)
-            .offset(offset),
-          this.db
-            .select({ n: sql<string>`count(*)` })
-            .from(timesheetExports)
-            .where(eq(timesheetExports.orgId, orgId)),
-        ]);
+        const limit = Math.min(query.limit, 100);
+        const pos = decodeCursor(query.cursor);
+        const conditions = [eq(timesheetExports.orgId, orgId)];
+        if (pos)
+          conditions.push(
+            keysetBeforeId(
+              timesheetExports.createdAt,
+              timesheetExports.id,
+              pos,
+            ),
+          );
 
-        return {
-          items: rows.map(({ export: exp, creatorName }) =>
-            toExportDto(exp, creatorName ?? null),
-          ),
-          total: Number(countRow?.n ?? 0),
-          page: query.page,
-          pageSize: query.pageSize,
-        };
+        const rawRows = await this.db
+          .select({
+            export: timesheetExports,
+            creatorName: organizationPeople.displayName,
+          })
+          .from(timesheetExports)
+          .leftJoin(
+            organizationPeople,
+            and(
+              eq(organizationPeople.organizationId, timesheetExports.orgId),
+              eq(
+                organizationPeople.organizationMembershipId,
+                timesheetExports.createdByMembershipId,
+              ),
+            ),
+          )
+          .where(and(...conditions))
+          .orderBy(desc(timesheetExports.createdAt), desc(timesheetExports.id))
+          .limit(limit + 1);
+
+        const dtos = rawRows.map(({ export: exp, creatorName }) =>
+          toExportDto(exp, creatorName ?? null),
+        );
+
+        return buildCursorPage(dtos, limit, (dto) => ({
+          sortValue: dto.createdAt,
+          id: String(dto.id),
+        }));
       },
       CACHE_TTL.MEDIUM,
     );
@@ -276,26 +349,48 @@ export class PayrollExportService {
 
   async getExportRows(orgId: string, exportId: number) {
     const [result] = await this.db
-      .select({ export: timesheetExports, creatorName: organizationPeople.displayName })
+      .select({
+        export: timesheetExports,
+        creatorName: organizationPeople.displayName,
+      })
       .from(timesheetExports)
       .leftJoin(
         organizationPeople,
         and(
           eq(organizationPeople.organizationId, timesheetExports.orgId),
-          eq(organizationPeople.organizationMembershipId, timesheetExports.createdByMembershipId),
+          eq(
+            organizationPeople.organizationMembershipId,
+            timesheetExports.createdByMembershipId,
+          ),
         ),
       )
-      .where(and(eq(timesheetExports.id, exportId), eq(timesheetExports.orgId, orgId)))
+      .where(
+        and(
+          eq(timesheetExports.id, exportId),
+          eq(timesheetExports.orgId, orgId),
+        ),
+      )
       .limit(1);
 
     if (!result) throw new NotFoundException("Export not found");
 
-    const parsedSnapshot = payrollSnapshotSchema.safeParse(result.export.snapshot);
-    const rows: PayrollExportRow[] = parsedSnapshot.success ? parsedSnapshot.data : [];
+    const parsedSnapshot = payrollSnapshotSchema.safeParse(
+      result.export.snapshot,
+    );
+    const rows: PayrollExportRow[] = parsedSnapshot.success
+      ? parsedSnapshot.data
+      : [];
 
-    const parsedFilters = exportFiltersSchema.safeParse(result.export.filters ?? {});
-    const mappingRaw = parsedFilters.success ? parsedFilters.data.mapping : undefined;
-    const mapping = mappingRaw === undefined || mappingRaw === null ? null : resolveMapping(mappingRaw);
+    const parsedFilters = exportFiltersSchema.safeParse(
+      result.export.filters ?? {},
+    );
+    const mappingRaw = parsedFilters.success
+      ? parsedFilters.data.mapping
+      : undefined;
+    const mapping =
+      mappingRaw === undefined || mappingRaw === null
+        ? null
+        : resolveMapping(mappingRaw);
 
     return {
       export: toExportDto(result.export, result.creatorName ?? null),
@@ -304,18 +399,34 @@ export class PayrollExportService {
     };
   }
 
-  async ackExport(orgId: string, userId: string, exportId: number, input: AckExportInput) {
+  async ackExport(
+    orgId: string,
+    userId: string,
+    exportId: number,
+    input: AckExportInput,
+  ) {
     const [existing] = await this.db
-      .select({ id: timesheetExports.id, creatorName: organizationPeople.displayName })
+      .select({
+        id: timesheetExports.id,
+        creatorName: organizationPeople.displayName,
+      })
       .from(timesheetExports)
       .leftJoin(
         organizationPeople,
         and(
           eq(organizationPeople.organizationId, timesheetExports.orgId),
-          eq(organizationPeople.organizationMembershipId, timesheetExports.createdByMembershipId),
+          eq(
+            organizationPeople.organizationMembershipId,
+            timesheetExports.createdByMembershipId,
+          ),
         ),
       )
-      .where(and(eq(timesheetExports.id, exportId), eq(timesheetExports.orgId, orgId)))
+      .where(
+        and(
+          eq(timesheetExports.id, exportId),
+          eq(timesheetExports.orgId, orgId),
+        ),
+      )
       .limit(1);
 
     if (!existing) throw new NotFoundException("Export not found");
@@ -323,7 +434,12 @@ export class PayrollExportService {
     const [ackActorMember] = await this.db
       .select({ id: organizationMembers.id })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+        ),
+      )
       .limit(1);
 
     const [updated] = await this.db
@@ -334,11 +450,18 @@ export class PayrollExportService {
         ackAt: new Date(),
         ackByMembershipId: ackActorMember?.id ?? null,
       })
-      .where(and(eq(timesheetExports.id, exportId), eq(timesheetExports.orgId, orgId)))
+      .where(
+        and(
+          eq(timesheetExports.id, exportId),
+          eq(timesheetExports.orgId, orgId),
+        ),
+      )
       .returning();
 
     if (!updated) {
-      throw new InternalServerErrorException("Failed to acknowledge the export");
+      throw new InternalServerErrorException(
+        "Failed to acknowledge the export",
+      );
     }
 
     this.audit.log({
@@ -352,7 +475,9 @@ export class PayrollExportService {
       },
     });
 
-    await this.cache.invalidateNamespace(CACHE_KEYS.payrollExportsNamespace(orgId));
+    await this.cache.invalidateNamespace(
+      CACHE_KEYS.payrollExportsNamespace(orgId),
+    );
 
     return { export: toExportDto(updated, existing.creatorName ?? null) };
   }

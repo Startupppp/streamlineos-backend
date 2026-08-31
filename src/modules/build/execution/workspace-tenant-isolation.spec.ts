@@ -67,30 +67,30 @@ describe("MilestonesService — cross-tenant isolation", () => {
 
 describe("IntakeService — cross-tenant isolation", () => {
   it("listIntake scopes WHERE to requesting org and returns empty for attacker (cross-tenant isolation)", async () => {
-    const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue({ offset: jest.fn().mockResolvedValue([]) }) }) });
+    const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) });
     const db = {
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
     } as unknown as Db;
     const svc = new IntakeService(db);
 
-    const result = await svc.listIntake(ATTACKER_ORG, 1, { limit: 10, offset: 0 });
+    const result = await svc.listIntake(ATTACKER_ORG, 1, { limit: 10 } as never);
 
     expect(where).toHaveBeenCalled();
     const predicate = where.mock.calls[0]?.[0];
     expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
     expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
     expect(result.items).toHaveLength(0);
-    expect(result.total).toBe(0);
+    expect(result.pagination.hasMore).toBe(false);
   });
 
   it("listIntake returns items for the owning org (control — same-tenant access works)", async () => {
-    const fakeItem = { total: "1", id: 1, orgId: OWNER_ORG, projectId: 1, title: "req", description: null, source: "manual", status: "pending", submitterEmail: null, submitterName: null, priority: null, requestType: null, linkedWorkItemId: null, declineReason: null, createdAt: new Date(), updatedAt: new Date() };
+    const fakeItem = { id: 1, orgId: OWNER_ORG, projectId: 1, title: "req", description: null, source: "manual", status: "pending", submitterEmail: null, submitterName: null, priority: null, requestType: null, linkedWorkItemId: null, declineReason: null, createdAt: new Date(), updatedAt: new Date() };
     const db = {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             orderBy: jest.fn().mockReturnValue({
-              limit: jest.fn().mockReturnValue({ offset: jest.fn().mockResolvedValue([fakeItem]) }),
+              limit: jest.fn().mockResolvedValue([fakeItem]),
             }),
           }),
         }),
@@ -98,9 +98,9 @@ describe("IntakeService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new IntakeService(db);
 
-    const result = await svc.listIntake(OWNER_ORG, 1, { limit: 10, offset: 0 });
+    const result = await svc.listIntake(OWNER_ORG, 1, { limit: 10 } as never);
     expect(result.items).toHaveLength(1);
-    expect(result.total).toBe(1);
+    expect(result.pagination.hasMore).toBe(false);
   });
 });
 

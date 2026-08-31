@@ -1,19 +1,17 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { finBankAccounts, finReconciliationRules } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
-import {
-  paginateOffset,
-  buildListResponse,
-} from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeValue } from "../../../common/pagination/keyset";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { CreateReconciliationRuleInput } from "./dto/reconciliation.schemas";
 
 interface RulesQuery {
-  page: number;
-  pageSize: number;
+  cursor?: string;
+  limit: number;
   bankAccountId?: number;
 }
 
@@ -24,26 +22,24 @@ export class ReconciliationRulesService {
     private readonly audit: AuditService,
   ) {}
 
-  async listRules(u: CurrentUserContext, query: RulesQuery) {
+  async listRules(u: CurrentUserContext, query: RulesQuery): Promise<CursorPage<typeof finReconciliationRules.$inferSelect>> {
     const { orgId } = u;
-    const { limit, offset } = paginateOffset(query);
+    const pos = decodeCursor(query.cursor);
 
-    const where = eq(finReconciliationRules.orgId, orgId);
-    const [rows, [totals]] = await Promise.all([
-      this.db
-        .select()
-        .from(finReconciliationRules)
-        .where(where)
-        .orderBy(sql`${finReconciliationRules.priority} DESC`)
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(finReconciliationRules)
-        .where(where),
-    ]);
+    const conditions = [eq(finReconciliationRules.orgId, orgId)];
+    if (pos) conditions.push(keysetBeforeValue(finReconciliationRules.priority, finReconciliationRules.id, pos));
 
-    return buildListResponse(rows, totals?.total ?? 0, query);
+    const rows = await this.db
+      .select()
+      .from(finReconciliationRules)
+      .where(and(...conditions))
+      .orderBy(desc(finReconciliationRules.priority), desc(finReconciliationRules.id))
+      .limit(query.limit + 1);
+
+    return buildCursorPage(rows, query.limit, (r) => ({
+      sortValue: String(r.priority),
+      id: String(r.id),
+    }));
   }
 
   async createRule(

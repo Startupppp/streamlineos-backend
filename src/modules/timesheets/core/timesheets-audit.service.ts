@@ -1,9 +1,14 @@
 import { createHash } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheetAuditEvents, users, organizationMembers } from "../../../db/schema";
+import { timesheetAuditEvents, users } from "../../../db/schema";
+import {
+  buildCursorPage,
+  decodeCursor,
+} from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type { AuditQuery } from "./dto/audit.schemas";
 
 export interface AuditEventParams {
@@ -94,7 +99,7 @@ export class TimesheetsAuditService {
 
   async listAuditEvents(orgId: string, query: AuditQuery) {
     const limit = Math.min(query.limit, 100);
-    const offset = (query.page - 1) * limit;
+    const pos = decodeCursor(query.cursor);
 
     const conditions = [eq(timesheetAuditEvents.orgId, orgId)];
     if (query.entityType)
@@ -103,37 +108,41 @@ export class TimesheetsAuditService {
       conditions.push(eq(timesheetAuditEvents.entityId, query.entityId));
     if (query.action)
       conditions.push(eq(timesheetAuditEvents.action, query.action));
+    if (pos)
+      conditions.push(
+        keysetBeforeId(
+          timesheetAuditEvents.createdAt,
+          timesheetAuditEvents.id,
+          pos,
+        ),
+      );
 
-    const [rows, [countRow]] = await Promise.all([
-      this.db
-        .select({
-          id: timesheetAuditEvents.id,
-          actorUserId: timesheetAuditEvents.actorUserId,
-          actorName: users.name,
-          entityType: timesheetAuditEvents.entityType,
-          entityId: timesheetAuditEvents.entityId,
-          action: timesheetAuditEvents.action,
-          before: timesheetAuditEvents.before,
-          after: timesheetAuditEvents.after,
-          reason: timesheetAuditEvents.reason,
-          createdAt: timesheetAuditEvents.createdAt,
-        })
-        .from(timesheetAuditEvents)
-        .leftJoin(users, eq(timesheetAuditEvents.actorUserId, users.id))
-        .where(and(...conditions))
-        .orderBy(desc(timesheetAuditEvents.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ n: sql<string>`count(*)` })
-        .from(timesheetAuditEvents)
-        .where(and(...conditions)),
-    ]);
+    const rows = await this.db
+      .select({
+        id: timesheetAuditEvents.id,
+        actorUserId: timesheetAuditEvents.actorUserId,
+        actorName: users.name,
+        entityType: timesheetAuditEvents.entityType,
+        entityId: timesheetAuditEvents.entityId,
+        action: timesheetAuditEvents.action,
+        before: timesheetAuditEvents.before,
+        after: timesheetAuditEvents.after,
+        reason: timesheetAuditEvents.reason,
+        createdAt: timesheetAuditEvents.createdAt,
+      })
+      .from(timesheetAuditEvents)
+      .leftJoin(users, eq(timesheetAuditEvents.actorUserId, users.id))
+      .where(and(...conditions))
+      .orderBy(
+        desc(timesheetAuditEvents.createdAt),
+        desc(timesheetAuditEvents.id),
+      )
+      .limit(limit + 1);
 
-    return {
-      data: rows,
-      total: Number(countRow?.n ?? 0),
-    };
+    return buildCursorPage(rows, limit, (r) => ({
+      sortValue: r.createdAt.toISOString(),
+      id: String(r.id),
+    }));
   }
 
   async verifyChain(orgId: string, limit = 10_000) {
@@ -175,6 +184,11 @@ export class TimesheetsAuditService {
       verified++;
     }
 
-    return { valid: true, checked: verified + legacyRows, verified, legacyRows };
+    return {
+      valid: true,
+      checked: verified + legacyRows,
+      verified,
+      legacyRows,
+    };
   }
 }

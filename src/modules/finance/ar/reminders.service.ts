@@ -111,16 +111,32 @@ export class RemindersService {
   }
 
   async processDueReminders(orgId?: string): Promise<{ sent: number }> {
-    if (orgId !== undefined) return this.sweepOrg(orgId);
+    if (orgId !== undefined) {
+      let sent = 0;
+      let cursor: number | undefined;
+      for (;;) {
+        const result = await this.sweepOrg(orgId, cursor);
+        sent += result.sent;
+        if (result.nextCursor === null) break;
+        cursor = result.nextCursor;
+      }
+      return { sent };
+    }
     let sent = 0;
     await forEachOrg(this.db, "finance:invoice-reminders", async (_tx, oid) => {
-      const result = await this.sweepOrg(oid);
-      sent += result.sent;
+      let cursor: number | undefined;
+      for (;;) {
+        const result = await this.sweepOrg(oid, cursor);
+        sent += result.sent;
+        if (result.nextCursor === null) break;
+        cursor = result.nextCursor;
+      }
     });
     return { sent };
   }
 
-  private async sweepOrg(orgId: string): Promise<{ sent: number }> {
+  private async sweepOrg(orgId: string, afterInvoiceId?: number): Promise<{ sent: number; nextCursor: number | null }> {
+    const cursorClause = afterInvoiceId !== undefined ? sql` AND i.id > ${afterInvoiceId}` : sql``;
     const rawCandidates = await this.db.execute(sql`
       SELECT
         i.id                  AS invoice_id,
@@ -138,11 +154,16 @@ export class RemindersService {
       WHERE p.org_id     = ${orgId}
         AND p.is_active  = true
         AND p.archived_at IS NULL
+        ${cursorClause}
       ORDER BY i.id, p.id, t.offset_day
       LIMIT ${CANDIDATE_CAP}
     `);
 
-    if (rawCandidates.length === 0) return { sent: 0 };
+    const nextCursor = rawCandidates.length === CANDIDATE_CAP
+      ? Number(rawCandidates[rawCandidates.length - 1]!["invoice_id"])
+      : null;
+
+    if (rawCandidates.length === 0) return { sent: 0, nextCursor: null };
 
     const ownerIds = [
       ...new Set(
@@ -224,6 +245,6 @@ export class RemindersService {
       }
     });
 
-    return { sent };
+    return { sent, nextCursor };
   }
 }

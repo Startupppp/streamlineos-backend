@@ -1,10 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { finExchangeRates } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeValue } from "../../../common/pagination/keyset";
 import type { UpsertExchangeRateInput, ListExchangeRatesQuery } from "./dto/finance-controls.schemas";
 
 @Injectable()
@@ -14,24 +15,22 @@ export class ExchangeRatesService {
     private readonly audit: AuditService,
   ) {}
 
-  async list(orgId: string, query: ListExchangeRatesQuery) {
-    const { limit, offset } = paginateOffset(query);
-    const condition = eq(finExchangeRates.orgId, orgId);
+  async list(orgId: string, query: ListExchangeRatesQuery): Promise<CursorPage<typeof finExchangeRates.$inferSelect>> {
+    const pos = decodeCursor(query.cursor);
+    const conditions = [eq(finExchangeRates.orgId, orgId)];
+    if (pos) conditions.push(keysetBeforeValue(finExchangeRates.asOfDate, finExchangeRates.id, pos));
 
-    const [rows, [{ count }]] = await Promise.all([
-      this.db
-        .select()
-        .from(finExchangeRates)
-        .where(condition)
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(finExchangeRates)
-        .where(condition),
-    ]);
+    const rows = await this.db
+      .select()
+      .from(finExchangeRates)
+      .where(and(...conditions))
+      .orderBy(desc(finExchangeRates.asOfDate), desc(finExchangeRates.id))
+      .limit(query.limit + 1);
 
-    return buildListResponse(rows, count, query);
+    return buildCursorPage(rows, query.limit, (r) => ({
+      sortValue: String(r.asOfDate),
+      id: String(r.id),
+    }));
   }
 
   async upsert(orgId: string, userId: string, input: UpsertExchangeRateInput) {

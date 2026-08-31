@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listCategoriesQuerySchema = z.object({
-  page: pageNumberField,
-  pageSize: pageSizeField(20, 100),
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
 });
 
 export const createCategorySchema = z.object({
@@ -18,8 +18,8 @@ export const createCategorySchema = z.object({
 export const updateCategorySchema = createCategorySchema.partial();
 
 export const listAssetsQuerySchema = z.object({
-  page: pageNumberField,
-  pageSize: pageSizeField(20, 100),
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   status: z.enum(["DRAFT", "ACTIVE", "FULLY_DEPRECIATED", "DISPOSED"]).optional(),
   categoryId: z.coerce.number().int().positive().optional(),
 });
@@ -49,8 +49,8 @@ export const disposeAssetSchema = z.object({
 });
 
 export const listRunsQuerySchema = z.object({
-  page: pageNumberField,
-  pageSize: pageSizeField(20, 100),
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
 });
 
 export const createRunSchema = z.object({

@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   portfolioProjects,
   projectDailySnapshots,
@@ -12,6 +12,8 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type {
   CreatePortfolioInput,
   LinkProjectInput,
@@ -123,43 +125,42 @@ export class PortfoliosService {
   }
 
   async listPortfolios(orgId: string, query: ListPortfoliosQuery) {
-    const { page, limit, status } = query;
-    const offset = (page - 1) * limit;
-    const conditions = and(
+    const { cursor, limit, status } = query;
+    const pos = decodeCursor(cursor);
+    const conds = [
       eq(projectPortfolios.orgId, orgId),
       isNull(projectPortfolios.deletedAt),
       status ? eq(projectPortfolios.status, status) : undefined,
-    );
-    const [rows, [totalRow]] = await Promise.all([
-      this.db
-        .select({
-          id: projectPortfolios.id,
-          orgId: projectPortfolios.orgId,
-          name: projectPortfolios.name,
-          description: projectPortfolios.description,
-          ownerId: projectPortfolios.ownerId,
-          status: projectPortfolios.status,
-          health: projectPortfolios.health,
-          strategicGoal: projectPortfolios.strategicGoal,
-          createdBy: projectPortfolios.createdBy,
-          createdAt: projectPortfolios.createdAt,
-          updatedAt: projectPortfolios.updatedAt,
-          projectCount: sql<number>`(
-            SELECT CAST(COUNT(*) AS INT) FROM ${portfolioProjects}
-            WHERE ${portfolioProjects.portfolioId} = ${projectPortfolios.id}
-          )`,
-        })
-        .from(projectPortfolios)
-        .where(conditions)
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(projectPortfolios).where(conditions),
-    ]);
-    const total = Number(totalRow?.total ?? 0);
-    return {
-      data: rows,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+    ];
+    if (pos) conds.push(keysetBeforeId(projectPortfolios.createdAt, projectPortfolios.id, pos));
+
+    const rows = await this.db
+      .select({
+        id: projectPortfolios.id,
+        orgId: projectPortfolios.orgId,
+        name: projectPortfolios.name,
+        description: projectPortfolios.description,
+        ownerId: projectPortfolios.ownerId,
+        status: projectPortfolios.status,
+        health: projectPortfolios.health,
+        strategicGoal: projectPortfolios.strategicGoal,
+        createdBy: projectPortfolios.createdBy,
+        createdAt: projectPortfolios.createdAt,
+        updatedAt: projectPortfolios.updatedAt,
+        projectCount: sql<number>`(
+          SELECT CAST(COUNT(*) AS INT) FROM ${portfolioProjects}
+          WHERE ${portfolioProjects.portfolioId} = ${projectPortfolios.id}
+        )`,
+      })
+      .from(projectPortfolios)
+      .where(and(...conds))
+      .orderBy(desc(projectPortfolios.createdAt), desc(projectPortfolios.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (r) => ({
+      sortValue: (r.createdAt ?? new Date(0)).toISOString(),
+      id: String(r.id),
+    }));
   }
 
   async getPortfolio(orgId: string, portfolioId: number) {

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const columnMappingSchema = z.object({
   date: z.number().int().min(0),
@@ -25,8 +25,8 @@ export const createBankImportSchema = z.object({
 
 export const bankImportsQuerySchema = z.object({
   bankAccountId: z.coerce.number().int().positive().optional(),
-  page: pageNumberField,
-  pageSize: pageSizeField(20, 100),
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
 });
 
 export type CreateBankImportInput = z.infer<typeof createBankImportSchema>;

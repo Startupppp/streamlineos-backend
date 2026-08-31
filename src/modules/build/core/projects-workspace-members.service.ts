@@ -4,7 +4,7 @@ import {
   Inject,
   Injectable,
 } from "@nestjs/common";
-import { and, asc, count, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import {
   organizationMembers,
   projectTeamMembers,
@@ -16,6 +16,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
+import { decodeCursor, encodeCursor } from "../../../common/pagination/cursor";
+import { keysetAfter } from "../../../common/pagination/keyset";
 import type {
   AddWorkspaceMemberInput,
   ListWorkspaceMembersInput,
@@ -32,7 +34,8 @@ export class ProjectsWorkspaceMembersService {
   ) {}
 
   async list(orgId: string, query: ListWorkspaceMembersInput) {
-    const offset = (query.page - 1) * query.limit;
+    const { cursor, limit } = query;
+    const pos = decodeCursor(cursor);
     const search = query.search?.trim();
     const searchCond = search
       ? or(
@@ -42,34 +45,30 @@ export class ProjectsWorkspaceMembersService {
           ilike(users.lastName, `%${search}%`),
         )
       : undefined;
-    const where = and(eq(projectWorkspaceMembers.orgId, orgId), searchCond);
+    const conds = [eq(projectWorkspaceMembers.orgId, orgId), searchCond];
+    if (pos) conds.push(keysetAfter(projectWorkspaceMembers.addedAt, projectWorkspaceMembers.userId, pos));
 
-    const [rows, [countRow]] = await Promise.all([
-      this.db
-        .select({
-          id: projectWorkspaceMembers.userId,
-          role: projectWorkspaceMembers.role,
-          addedAt: projectWorkspaceMembers.addedAt,
-          name: users.name,
-          firstName: users.firstName,
-          lastName: users.lastName,
-          email: users.email,
-          image: users.image,
-        })
-        .from(projectWorkspaceMembers)
-        .innerJoin(users, eq(users.id, projectWorkspaceMembers.userId))
-        .where(where)
-        .orderBy(asc(projectWorkspaceMembers.addedAt))
-        .limit(query.limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(projectWorkspaceMembers)
-        .innerJoin(users, eq(users.id, projectWorkspaceMembers.userId))
-        .where(where),
-    ]);
+    const rows = await this.db
+      .select({
+        id: projectWorkspaceMembers.userId,
+        role: projectWorkspaceMembers.role,
+        addedAt: projectWorkspaceMembers.addedAt,
+        name: users.name,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+        image: users.image,
+      })
+      .from(projectWorkspaceMembers)
+      .innerJoin(users, eq(users.id, projectWorkspaceMembers.userId))
+      .where(and(...conds))
+      .orderBy(asc(projectWorkspaceMembers.addedAt), asc(projectWorkspaceMembers.userId))
+      .limit(limit + 1);
 
-    const userIds = rows.map((r) => r.id);
+    const hasMore = rows.length > limit;
+    const pageRows = hasMore ? rows.slice(0, limit) : rows;
+
+    const userIds = pageRows.map((r) => r.id);
     const teamRows = userIds.length
       ? await this.db
           .select({
@@ -99,11 +98,15 @@ export class ProjectsWorkspaceMembersService {
       teamsByUser.set(t.userId, arr);
     }
 
+    const data = pageRows.map((r) => ({ ...r, teams: teamsByUser.get(r.id) ?? [] }));
+    const last = data[data.length - 1];
+    const nextCursor = hasMore && last
+      ? encodeCursor({ sortValue: (last.addedAt ?? new Date(0)).toISOString(), id: last.id })
+      : null;
+
     return {
-      data: rows.map((r) => ({ ...r, teams: teamsByUser.get(r.id) ?? [] })),
-      total: Number(countRow?.total ?? 0),
-      page: query.page,
-      limit: query.limit,
+      data,
+      pagination: { limit, hasMore, nextCursor },
     };
   }
 

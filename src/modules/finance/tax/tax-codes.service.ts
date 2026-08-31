@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { accTaxCodes } from "../../../db/schema/accounting/finance-tax";
@@ -7,7 +7,8 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { keysetAfterValue } from "../../../common/pagination/keyset";
 import type { CreateTaxCodeInput, ListTaxCodesQuery, UpdateTaxCodeInput } from "./dto/tax-codes.schemas";
 
 const DEFAULT_CODES = [
@@ -35,14 +36,19 @@ export class TaxCodesService {
     private readonly posting: FinancePostingService,
   ) {}
 
-  async list(orgId: string, query: ListTaxCodesQuery) {
-    const cacheKey = `${query.page}:${query.pageSize}:${query.taxType ?? ""}:${query.isActive ?? ""}`;
+  async list(orgId: string, query: ListTaxCodesQuery): Promise<CursorPage<{
+    id: number; name: string; code: string; rate: string; taxType: string;
+    isReverseCharge: boolean; collectedAccountId: number | null;
+    paidAccountId: number | null; isActive: boolean;
+    createdAt: Date | null; updatedAt: Date | null;
+  }>> {
+    const cacheKey = `${query.cursor ?? ""}:${query.limit}:${query.taxType ?? ""}:${query.isActive ?? ""}`;
     return this.cache.cachedVersioned(CACHE_KEYS.finTaxCodesNamespace(orgId), cacheKey, async () => {
-      const { limit, offset } = paginateOffset(query);
+      const pos = decodeCursor(query.cursor);
       const conditions = [eq(accTaxCodes.orgId, orgId)];
       if (query.taxType) conditions.push(eq(accTaxCodes.taxType, query.taxType));
       if (query.isActive !== undefined) conditions.push(eq(accTaxCodes.isActive, query.isActive));
-      const where = and(...conditions);
+      if (pos) conditions.push(keysetAfterValue(accTaxCodes.code, accTaxCodes.id, pos));
       const projection = {
         id: accTaxCodes.id,
         name: accTaxCodes.name,
@@ -56,11 +62,13 @@ export class TaxCodesService {
         createdAt: accTaxCodes.createdAt,
         updatedAt: accTaxCodes.updatedAt,
       };
-      const [items, totals] = await Promise.all([
-        this.db.select(projection).from(accTaxCodes).where(where).limit(limit).offset(offset),
-        this.db.select({ c: count() }).from(accTaxCodes).where(where),
-      ]);
-      return buildListResponse(items, Number(totals[0]?.c ?? 0), query);
+      const items = await this.db
+        .select(projection)
+        .from(accTaxCodes)
+        .where(and(...conditions))
+        .orderBy(asc(accTaxCodes.code), asc(accTaxCodes.id))
+        .limit(query.limit + 1);
+      return buildCursorPage(items, query.limit, (r) => ({ sortValue: r.code, id: String(r.id) }));
     }, 300);
   }
 

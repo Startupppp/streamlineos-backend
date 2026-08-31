@@ -4,6 +4,8 @@ import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheets, projects, tickets } from "../../../db/schema";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { AccessService } from "../../access/access.service";
 import { applyScope } from "../../access/apply-scope";
 import { resolveEntriesScope } from "./timesheets-core-scope";
@@ -21,7 +23,7 @@ export class EntriesReadService {
   async listEntries(u: CurrentUserContext, query: EntriesQuery) {
     const scope = await resolveEntriesScope(this.access, u);
     const limit = Math.min(query.limit, 100);
-    const offset = (query.page - 1) * limit;
+    const pos = decodeCursor(query.cursor);
 
     const conditions = [
       eq(timesheets.orgId, u.orgId),
@@ -43,11 +45,13 @@ export class EntriesReadService {
       conditions.push(eq(timesheets.isBillable, true));
     if (query.billable === "false")
       conditions.push(eq(timesheets.isBillable, false));
+    if (pos)
+      conditions.push(keysetBeforeId(timesheets.date, timesheets.id, pos));
 
     const dp = alias(projects, "dp");
     const tp = alias(projects, "tp");
 
-    const rows = await this.db
+    const rawRows = await this.db
       .select({
         id: timesheets.id,
         orgId: timesheets.orgId,
@@ -88,11 +92,15 @@ export class EntriesReadService {
       .leftJoin(tickets, and(eq(timesheets.ticketId, tickets.id), isNull(tickets.deletedAt)))
       .leftJoin(tp, eq(tickets.projectId, tp.id))
       .where(and(...conditions))
-      .orderBy(desc(timesheets.date))
-      .limit(limit)
-      .offset(offset);
+      .orderBy(desc(timesheets.date), desc(timesheets.id))
+      .limit(limit + 1);
 
-    return rows.map(buildEntryShape);
+    const page = buildCursorPage(rawRows, limit, (r) => ({
+      sortValue: r.date,
+      id: String(r.id),
+    }));
+
+    return { data: page.data.map(buildEntryShape), pagination: page.pagination };
   }
 
   async getEntryById(orgId: string, entryId: number) {

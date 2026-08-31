@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import {
   pmWorkspaceMemberships,
   pmWorkspaces,
@@ -13,6 +13,8 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetAfterId } from "../../../common/pagination/keyset";
 import type {
   AddWorkspaceMemberInput,
   ListMembersQuery,
@@ -60,41 +62,37 @@ export class PmWorkspaceMembershipsService {
     query: ListMembersQuery,
   ) {
     await this.assertWorkspaceExists(orgId, pmWorkspaceId);
-    const { page, limit } = query;
-    const offset = (page - 1) * limit;
-    const conditions = and(
+    const { cursor, limit } = query;
+    const pos = decodeCursor(cursor);
+    const conds = [
       eq(pmWorkspaceMemberships.orgId, orgId),
       eq(pmWorkspaceMemberships.pmWorkspaceId, pmWorkspaceId),
-    );
-    const [rows, [totalRow]] = await Promise.all([
-      this.db
-        .select({
-          pmWorkspaceMembershipId: pmWorkspaceMemberships.pmWorkspaceMembershipId,
-          orgId: pmWorkspaceMemberships.orgId,
-          pmWorkspaceId: pmWorkspaceMemberships.pmWorkspaceId,
-          organizationMembershipId: pmWorkspaceMemberships.organizationMembershipId,
-          userId: organizationMembers.userId,
-          role: pmWorkspaceMemberships.role,
-          addedAt: pmWorkspaceMemberships.addedAt,
-        })
-        .from(pmWorkspaceMemberships)
-        .innerJoin(
-          organizationMembers,
-          eq(pmWorkspaceMemberships.organizationMembershipId, organizationMembers.id),
-        )
-        .where(conditions)
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(pmWorkspaceMemberships)
-        .where(conditions),
-    ]);
-    const total = Number(totalRow?.total ?? 0);
-    return {
-      data: rows,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+    ];
+    if (pos) conds.push(keysetAfterId(pmWorkspaceMemberships.addedAt, pmWorkspaceMemberships.organizationMembershipId, pos));
+
+    const rows = await this.db
+      .select({
+        pmWorkspaceMembershipId: pmWorkspaceMemberships.pmWorkspaceMembershipId,
+        orgId: pmWorkspaceMemberships.orgId,
+        pmWorkspaceId: pmWorkspaceMemberships.pmWorkspaceId,
+        organizationMembershipId: pmWorkspaceMemberships.organizationMembershipId,
+        userId: organizationMembers.userId,
+        role: pmWorkspaceMemberships.role,
+        addedAt: pmWorkspaceMemberships.addedAt,
+      })
+      .from(pmWorkspaceMemberships)
+      .innerJoin(
+        organizationMembers,
+        eq(pmWorkspaceMemberships.organizationMembershipId, organizationMembers.id),
+      )
+      .where(and(...conds))
+      .orderBy(asc(pmWorkspaceMemberships.addedAt), asc(pmWorkspaceMemberships.organizationMembershipId))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (r) => ({
+      sortValue: (r.addedAt ?? new Date(0)).toISOString(),
+      id: String(r.organizationMembershipId),
+    }));
   }
 
   async addMember(

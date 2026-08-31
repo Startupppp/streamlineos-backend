@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, gt, ilike, inArray, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import type { DataScope } from "../../access/access.types";
 import { applyScope } from "../../access/apply-scope";
 import {
@@ -13,12 +13,12 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetAfterValue } from "../../../common/pagination/keyset";
 import type { AgedPayablesRow, VendorLedgerLine } from "./accounting.types";
 import type {
   AgedReceivablesQuery,
-  ListCustomersOutstandingQuery,
+  ListVendorsQuery,
   ListPurchaseBillsQuery,
 } from "./dto/accounting.schemas";
 
@@ -167,18 +167,17 @@ export class AccountingPayablesQueryService {
       .limit(100);
   }
 
-  async listVendors(orgId: string, query: ListCustomersOutstandingQuery) {
-    const { page, pageSize, q, onlyOutstanding } = query;
+  async listVendors(orgId: string, query: ListVendorsQuery) {
+    const { cursor, limit, q, onlyOutstanding } = query;
+    const pos = decodeCursor(cursor);
     const conds = [eq(clients.orgId, orgId), eq(clients.isVendor, true)];
     if (q) conds.push(ilike(clients.name, `%${escapeLike(q)}%`));
+    if (pos) conds.push(keysetAfterValue(clients.name, clients.id, pos));
 
-    const where = and(...conds);
     const billStatusIn = sql`${purchaseBills.status} IN ('POSTED','PARTIALLY_PAID','PAID')`;
     const totalBilledExpr = sql<string>`COALESCE(SUM(${purchaseBills.total}::numeric) FILTER (WHERE ${billStatusIn}), 0)::text`;
     const totalPaidExpr = sql<string>`COALESCE(SUM(${purchaseBills.amountPaid}::numeric) FILTER (WHERE ${billStatusIn}), 0)::text`;
     const outstandingExpr = sql<string>`(COALESCE(SUM(${purchaseBills.total}::numeric) FILTER (WHERE ${billStatusIn}), 0) - COALESCE(SUM(${purchaseBills.amountPaid}::numeric) FILTER (WHERE ${billStatusIn}), 0))::text`;
-
-    const { offset, limit } = paginateOffset({ page, pageSize });
 
     let listQuery = this.db
       .select({
@@ -192,28 +191,12 @@ export class AccountingPayablesQueryService {
       })
       .from(clients)
       .leftJoin(purchaseBills, and(eq(purchaseBills.vendorId, clients.id), eq(purchaseBills.orgId, orgId)))
-      .where(where)
+      .where(and(...conds))
       .groupBy(clients.id, clients.name, clients.state, clients.gstin)
       .$dynamic();
     if (onlyOutstanding) listQuery = listQuery.having(gt(outstandingExpr, "0"));
 
-    const countQuery = onlyOutstanding
-      ? this.db.select({ c: count() }).from(
-          this.db
-            .select({ id: clients.id })
-            .from(clients)
-            .leftJoin(purchaseBills, and(eq(purchaseBills.vendorId, clients.id), eq(purchaseBills.orgId, orgId)))
-            .where(where)
-            .groupBy(clients.id)
-            .having(gt(outstandingExpr, "0"))
-            .as("g"),
-        )
-      : this.db.select({ c: count() }).from(clients).where(where);
-
-    const [rows, [countRow]] = await Promise.all([
-      listQuery.offset(offset).limit(limit),
-      countQuery,
-    ]);
+    const rows = await listQuery.orderBy(asc(clients.name), asc(clients.id)).limit(limit + 1);
 
     const items = rows.map((r) => ({
       vendorId: r.vendorId,
@@ -224,7 +207,7 @@ export class AccountingPayablesQueryService {
       outstanding: (Number(r.totalBilled ?? 0) - Number(r.totalPaid ?? 0)).toFixed(2),
     }));
 
-    return buildListResponse(items, Number(countRow?.c ?? 0), { page, pageSize });
+    return buildCursorPage(items, limit, (r) => ({ sortValue: r.vendorName ?? "", id: String(r.vendorId) }));
   }
 
   async vendorLedger(orgId: string, vendorId: number) {
