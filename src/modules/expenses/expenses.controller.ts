@@ -30,7 +30,6 @@ import { ExpensesWriteService } from "./expenses-write.service";
 import { ExpenseLifecycleService } from "./expense-lifecycle.service";
 import {
   createExpenseSchema,
-  emailReportSchema,
   exportSchema,
   listSchema,
   pageDataSchema,
@@ -38,7 +37,6 @@ import {
   reportSchema,
   updateExpensePatchSchema,
   type CreateExpenseInput,
-  type EmailReportInput,
   type ExportInput,
   type ListInput,
   type PageDataInput,
@@ -108,14 +106,18 @@ export class ExpensesController {
   }
 
   @Post("email-report")
-  @HttpCode(200)
+  @HttpCode(202)
+  @Idempotent("expenses.email-report.create")
   @RequirePermission("hr:expenses:approve")
-  @Validate({ body: emailReportSchema })
+  @Validate({ body: exportSchema })
   async emailReport(
-    @Body() body: EmailReportInput,
+    @Body() filters: ExportInput,
+    @Headers("idempotency-key") idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request & { rbacScope?: DataScope },
   ) {
-    return this.expensesWrite.emailReport(u.orgId, u.userId, true, body);
+    const scope: DataScope = req.rbacScope ?? "none";
+    return this.exportJobs.create(u, filters, idempotencyKey, scope);
   }
 
   @Get("page-data")
