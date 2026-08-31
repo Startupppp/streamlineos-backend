@@ -25,6 +25,7 @@ import { join, extname } from "node:path";
 const MIN_FILES = 500;
 const MIN_MODULES = 40;
 const ORDER_BY_LOOKBACK = 25;
+const STATEMENT_MAX_LINES = 40;
 
 const ROOT = new URL("../modules", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
 const BASELINE_FILE = new URL("./baselines/unbounded-reads-baseline.json", import.meta.url).pathname.replace(
@@ -73,6 +74,15 @@ function collectServiceFiles(dir) {
   return files;
 }
 
+export function statementFrom(lines, start) {
+  const collected = [];
+  for (let i = start; i < lines.length && i < start + STATEMENT_MAX_LINES; i++) {
+    collected.push(lines[i]);
+    if (/;\s*$/.test(lines[i])) break;
+  }
+  return collected.join("\n");
+}
+
 export function projectsOnlyAggregates(chain) {
   const start = chain.indexOf(".select(");
   if (start === -1) return false;
@@ -88,7 +98,7 @@ function isUnboundedSelect(src) {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (/\.select\(/.test(line) && !/.limit\(/.test(line)) {
-      const lookahead = lines.slice(i, i + 12).join("\n");
+      const lookahead = statementFrom(lines, i);
       if (
         !/.limit\(/.test(lookahead) &&
         !/\.findMany\(/.test(lookahead) &&
@@ -181,6 +191,28 @@ function runSelfTests() {
   }
   if (hasOffsetUsage(knownGoodOffset).length > 0) {
     console.error("SELF-TEST FAIL: known-good keyset was incorrectly flagged as offset");
+    process.exit(1);
+  }
+
+  const longChain = `
+    async page() {
+      return this.db
+        .select({ a: t.a, b: t.b })
+        .from(t)
+        .leftJoin(u, and(eq(u.orgId, t.orgId), eq(u.membershipId, t.membershipId), isNull(u.deletedAt)))
+        .leftJoin(v, and(eq(v.orgId, t.orgId), eq(v.id, t.vId)))
+        .where(and(eq(t.orgId, orgId), gt(t.id, cursor)))
+        .orderBy(desc(t.createdAt), desc(t.id))
+        .limit(pageLimit + 1);
+    }
+  `;
+  if (isUnboundedSelect(longChain).length > 0) {
+    console.error("SELF-TEST FAIL: a bounded chain whose .limit() sits past a 12-line window was flagged");
+    process.exit(1);
+  }
+  const longChainNoLimit = longChain.replace(".limit(pageLimit + 1)", "");
+  if (isUnboundedSelect(longChainNoLimit).length === 0) {
+    console.error("SELF-TEST FAIL: the same long chain WITHOUT a .limit() was not flagged");
     process.exit(1);
   }
 
