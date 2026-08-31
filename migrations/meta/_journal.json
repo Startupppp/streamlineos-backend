@@ -3186,6 +3186,20 @@
       "when": 1798000079000,
       "tag": "0767_ticket_comment_mentions_fk_set_null",
       "breakpoints": true
+    },
+    {
+      "idx": 580,
+      "version": "7",
+      "when": 1798000080000,
+      "tag": "0768_rls_uncovered_tenant_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 581,
+      "version": "7",
+      "when": 1798000081000,
+      "tag": "0769_org_led_indexes_sprints_kb_pages",
+      "breakpoints": true
     }
   ]
 }

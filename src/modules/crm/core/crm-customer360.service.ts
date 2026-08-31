@@ -9,7 +9,7 @@ import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { CrmCustomer360SectionsService } from "./crm-customer360-sections.service";
-import type { Customer360Response, Customer360Section } from "./crm-customer360-sections.service";
+import type { Customer360Response, Customer360Section } from "./crm-customer360.types";
 
 @Injectable()
 export class CrmCustomer360Service {

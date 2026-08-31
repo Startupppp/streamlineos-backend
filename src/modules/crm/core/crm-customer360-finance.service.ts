@@ -3,7 +3,7 @@ import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { deals, invoices, payments, quotes } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { SECTION_LIMIT, type Customer360Section } from "./crm-customer360-sections.service";
+import { SECTION_LIMIT, type Customer360Section } from "./crm-customer360.types";
 
 @Injectable()
 export class CrmCustomer360FinanceService {
