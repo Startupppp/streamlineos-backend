@@ -217,6 +217,19 @@ export class StockEngineBatchService {
               ? addDec(state.qualityHoldQty, delta)
               : state.qualityHoldQty;
 
+          const bucketBefore =
+            bucket === "ON_HAND"
+              ? state.onHand
+              : bucket === "BLOCKED"
+                ? state.blockedQty
+                : state.qualityHoldQty;
+          const bucketAfter =
+            bucket === "ON_HAND"
+              ? newOnHand
+              : bucket === "BLOCKED"
+                ? newBlocked
+                : newQualityHold;
+
           if (!settings.allowNegativeStock && isNegative(newOnHand)) {
             throw new BadRequestException({
               code: INV_ERRORS.INSUFFICIENT_STOCK,
@@ -237,9 +250,18 @@ export class StockEngineBatchService {
               serialId: movement.serialId ?? null,
               transactionType:
                 movement.transactionType as (typeof invStockTransactions.$inferInsert)["transactionType"],
+              // The ledger row belongs to the bucket the movement touched, and
+              // `chk_inv_stock_transactions_arithmetic` requires
+              // after = before + change. Recording on-hand's before and after
+              // against a QUALITY_HOLD or BLOCKED delta satisfied neither: a
+              // recall's QUARANTINE_IN wrote 25 -> 25 with a change of 25, and
+              // the row also claimed to be an ON_HAND movement. Matches
+              // `movement-apply.service.ts`, which is the shape the rest of the
+              // engine reads back.
+              quantityBucket: bucket,
               quantityChange: delta,
-              quantityBefore: state.onHand,
-              quantityAfter: newOnHand,
+              quantityBefore: bucketBefore,
+              quantityAfter: bucketAfter,
               unitCost,
               totalCost,
               idempotencyKey: cmd.idempotencyKey,
