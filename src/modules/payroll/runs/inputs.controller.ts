@@ -29,6 +29,7 @@ import {
   type InputsQuery,
 } from "./dto/runs.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
@@ -76,6 +77,7 @@ export class InputsController {
   }
 
   @Post("reimport")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("payroll:runs:update")
   @Validate({ params: runIdParams })

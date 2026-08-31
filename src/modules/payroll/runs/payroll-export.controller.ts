@@ -23,6 +23,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { PayrollRunExportService } from "./payroll-export.service";
 import { PayrollRunExportWorkerService } from "./payroll-export-worker.service";
 import { exportRunsQuerySchema, type ExportRunsQuery } from "./dto/runs.schemas";
@@ -39,6 +40,7 @@ export class PayrollExportController {
   ) {}
 
   @Post("jobs")
+  @BodylessAction()
   @HttpCode(202)
   @Idempotent("payroll.runs.export.create")
   @RequirePermission("payroll:reports:export")

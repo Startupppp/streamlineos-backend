@@ -17,6 +17,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 import { LockingService } from "./locking.service";
 import { reopenRunSchema, type ReopenRunInput } from "./dto/payout.schemas";
@@ -34,6 +35,7 @@ export class LockingController {
   ) {}
 
   @Post("lock")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   @Validate({ params: runIdParams })
@@ -68,6 +70,7 @@ export class LockingController {
   }
 
   @Post("close")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   @Validate({ params: runIdParams })

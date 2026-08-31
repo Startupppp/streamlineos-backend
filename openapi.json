@@ -194400,7 +194400,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:bank:manage",
-        "description": "Exposure: permission — payroll:bank:manage"
+        "description": "Exposure: permission — payroll:bank:manage",
+        "x-bodyless": true
       }
     },
     "/payroll/payslip-templates": {
@@ -194869,7 +194870,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:payslips:manage",
-        "description": "Exposure: permission — payroll:payslips:manage"
+        "description": "Exposure: permission — payroll:payslips:manage",
+        "x-bodyless": true
       }
     },
     "/payroll/people/{organizationPersonId}/eligibility": {
@@ -197234,7 +197236,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:runs:manage",
-        "description": "Exposure: permission — payroll:runs:manage"
+        "description": "Exposure: permission — payroll:runs:manage",
+        "x-bodyless": true
       }
     },
     "/payroll/runs/{runId}/employees": {
@@ -197878,7 +197881,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:runs:manage",
-        "description": "Exposure: permission — payroll:runs:manage"
+        "description": "Exposure: permission — payroll:runs:manage",
+        "x-bodyless": true
       }
     },
     "/payroll/runs/{runId}/inputs": {
@@ -198103,7 +198107,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:runs:update",
-        "description": "Exposure: permission — payroll:runs:update"
+        "description": "Exposure: permission — payroll:runs:update",
+        "x-bodyless": true
       }
     },
     "/payroll/runs/{runId}/loan-adjustments": {
@@ -198255,7 +198260,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:runs:manage",
-        "description": "Exposure: permission — payroll:runs:manage"
+        "description": "Exposure: permission — payroll:runs:manage",
+        "x-bodyless": true
       }
     },
     "/payroll/runs/{runId}/payout/batches": {
@@ -198556,7 +198562,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:payslips:manage",
-        "description": "Exposure: permission — payroll:payslips:manage"
+        "description": "Exposure: permission — payroll:payslips:manage",
+        "x-bodyless": true
       }
     },
     "/payroll/runs/{runId}/recalculate": {
@@ -198616,7 +198623,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:runs:manage",
-        "description": "Exposure: permission — payroll:runs:manage"
+        "description": "Exposure: permission — payroll:runs:manage",
+        "x-bodyless": true
       }
     },
     "/payroll/runs/{runId}/reopen": {
@@ -198756,7 +198764,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:runs:update",
-        "description": "Exposure: permission — payroll:runs:update"
+        "description": "Exposure: permission — payroll:runs:update",
+        "x-bodyless": true
       }
     },
     "/payroll/runs/{runId}/variance": {
@@ -198897,7 +198906,8 @@
         "x-permission": "payroll:reports:export",
         "description": "Exposure: permission — payroll:reports:export",
         "x-idempotency-command": "payroll.runs.export.create",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/payroll/runs/export/jobs/{jobId}": {

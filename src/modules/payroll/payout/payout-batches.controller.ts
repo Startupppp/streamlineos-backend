@@ -39,6 +39,7 @@ import {
   type BankReturnImportInput,
 } from "./dto/payout.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
@@ -120,6 +121,7 @@ export class PayoutBatchesController {
   }
 
   @Post("batches/:batchId/mark-sent")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("payroll:bank:manage")
   @Validate({ params: batchIdParams })

@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger } from "@nestjs/common";
+import { Injectable, Inject } from "@nestjs/common";
 import { FinancePostingService } from "../accounting/posting/finance-posting.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -8,8 +8,6 @@ import { toPaise } from "./runs/lib/money";
 
 @Injectable()
 export class PayrollPostingService {
-  private readonly logger = new Logger(PayrollPostingService.name);
-
   constructor(
     private readonly posting: FinancePostingService,
     @Inject(DRIZZLE) private readonly db: Db,

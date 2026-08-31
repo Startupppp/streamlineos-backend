@@ -19,6 +19,7 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PublishingService } from "./publishing.service";
 import { publishSchema, type PublishInput } from "./dto/payout.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
@@ -44,6 +45,7 @@ export class PublishingController {
   }
 
   @Post("runs/:runId/payslips/retry-failed")
+  @BodylessAction()
   @HttpCode(200)
   @RequireModule("payroll")
   @RequirePermission("payroll:payslips:manage")
@@ -56,6 +58,7 @@ export class PublishingController {
   }
 
   @Post("payslips/:publicationId/retry")
+  @BodylessAction()
   @HttpCode(200)
   @RequireModule("payroll")
   @RequirePermission("payroll:payslips:manage")
