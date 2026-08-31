@@ -44,6 +44,7 @@ export const PARTY_FIELDS = [
   "notes",
   "partyType",
   "status",
+  "acquisitionSource",
 ] as const;
 
 /**

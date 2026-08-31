@@ -53,6 +53,7 @@ export const PARTY_WRITER: EntityWriter = {
          */
         partyType: isPartyType(values.partyType) ? values.partyType : undefined,
         status: values.status || undefined,
+        acquisitionSource: values.acquisitionSource ?? null,
         customFields: row.customFields ?? null,
       })
       .returning({
@@ -153,6 +154,7 @@ export const PARTY_WRITER: EntityWriter = {
         taxNumber: (before.taxNumber as string | null) ?? null,
         notes: (before.notes as string | null) ?? null,
         customFields: (before.customFields as Record<string, unknown> | null) ?? null,
+        acquisitionSource: typeof before.acquisitionSource === "string" ? before.acquisitionSource : null,
         ...(isPartyType(before.partyType) ? { partyType: before.partyType } : {}),
         ...(typeof before.status === "string" ? { status: before.status } : {}),
       });

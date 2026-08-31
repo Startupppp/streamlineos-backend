@@ -1,4 +1,4 @@
-import { activities, deals, subjects } from "../../../../db/schema";
+import { activities, businessParties, deals, subjects } from "../../../../db/schema";
 import type { TenantTx } from "../../../../db/drizzle.types";
 import { ANCHOR_PARTY_ID } from "../import-entities";
 import { canUpdate, writerFor, type WriteContext } from ".";
@@ -195,6 +195,32 @@ describe("the pipeline writer", () => {
     expect(canUpdate("activity")).toBe(false);
     expect(canUpdate("party")).toBe(true);
     expect(canUpdate("subject")).toBe(true);
+  });
+});
+
+describe("the party writer", () => {
+  it("persists acquisitionSource when the mapped column supplies one", async () => {
+    const fake = new FakeTx({ partyId: "party-1" });
+
+    await writerFor("party").create(fake.tx, context(), {
+      values: { name: "Acme Ltd", acquisitionSource: "referral" },
+      customFields: null,
+    });
+
+    expect(fake.inserted(businessParties)).toMatchObject({
+      acquisitionSource: "referral",
+    });
+  });
+
+  it("writes null for acquisitionSource when the column is absent", async () => {
+    const fake = new FakeTx({ partyId: "party-1" });
+
+    await writerFor("party").create(fake.tx, context(), {
+      values: { name: "Acme Ltd" },
+      customFields: null,
+    });
+
+    expect(fake.inserted(businessParties)?.acquisitionSource).toBeNull();
   });
 });
 

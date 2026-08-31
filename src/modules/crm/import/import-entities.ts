@@ -73,6 +73,10 @@ const VOCABULARY: Readonly<Record<ImportEntity, EntityVocabulary>> = {
       notes: ["notes", "note", "description", "comments", "remarks", "background", "about"],
       partyType: ["type", "party type", "account type", "record type", "relationship", "category"],
       status: ["status", "state", "account status", "lifecycle stage", "stage"],
+      acquisitionSource: [
+        "source", "lead source", "acquisition source", "channel", "origin",
+        "referral source", "how did you hear", "lead channel",
+      ],
     },
     coerce(field, cell) {
       if (field === "partyType") {
