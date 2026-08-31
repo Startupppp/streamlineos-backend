@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, gt, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { organizationPeople } from "../../../db/schema/directory/organization-people";
 import {
   hrEmployments,
@@ -9,87 +9,12 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { HrAuditService } from "./hr-audit.service";
-
-const BACKFILL_FETCH_SIZE = 100;
-const BACKFILL_CONCURRENCY = 4;
-const BACKFILL_ERROR_MESSAGE = "Member synchronization failed";
-
-export type EnsurePersonEmploymentInput = {
-  userId: string;
-  firstName: string;
-  lastName: string;
-  workEmail: string;
-  employeeNumber: string;
-  joiningDate?: string | null;
-  designation?: string | null;
-  phone?: string | null;
-  lifecycleStatus?:
-    | "PRE_JOINING"
-    | "ONBOARDING"
-    | "ACTIVE"
-    | "PROBATION"
-    | "CONFIRMED";
-  workerType?:
-    | "FULL_TIME"
-    | "PART_TIME"
-    | "CONTRACTOR"
-    | "CONSULTANT"
-    | "INTERN"
-    | "TEMPORARY"
-    | "AGENCY"
-    | "FREELANCER";
-};
-
-export type EnsurePersonEmploymentResult = {
-  personId: number;
-  employmentId: number;
-  createdPerson: boolean;
-  createdEmployment: boolean;
-};
-
-type PrefetchedActiveMember = {
-  membershipId: number;
-  userId: string;
-  firstName: string | null;
-  lastName: string | null;
-  name: string | null;
-  email: string;
-  phone: string | null;
-};
-
-type BackfillResult = {
-  scanned: number;
-  createdPeople: number;
-  createdEmployments: number;
-  skipped: number;
-  errors: Array<{ userId: string; message: string }>;
-};
-
-function toEnsureInput(
-  user: Omit<PrefetchedActiveMember, "membershipId">,
-  lifecycleStatus: EnsurePersonEmploymentInput["lifecycleStatus"],
-): EnsurePersonEmploymentInput {
-  const firstName = user.firstName?.trim() || user.name?.split(" ")[0] || "Employee";
-  const lastName =
-    user.lastName?.trim() ||
-    user.name?.split(" ").slice(1).join(" ") ||
-    "User";
-  const employeeNumber = `EMP-${user.userId.slice(0, 8).toUpperCase()}`;
-
-  return {
-    userId: user.userId,
-    firstName,
-    lastName,
-    workEmail: user.email,
-    employeeNumber,
-    joiningDate: null,
-    designation: null,
-    phone: user.phone ?? null,
-    lifecycleStatus,
-  };
-}
+import {
+  toEnsureInput,
+  type EnsurePersonEmploymentInput,
+  type EnsurePersonEmploymentResult,
+} from "./person-employment-sync.types";
 
 @Injectable()
 export class PersonEmploymentSyncService {
@@ -369,141 +294,5 @@ export class PersonEmploymentSyncService {
       ),
       tx,
     );
-  }
-
-  async backfillOrg(
-    orgId: string,
-    actorId: string | null,
-  ): Promise<BackfillResult> {
-    const result: BackfillResult = {
-      scanned: 0,
-      createdPeople: 0,
-      createdEmployments: 0,
-      skipped: 0,
-      errors: [],
-    };
-    const highWatermark = await this.getBackfillHighWatermark(orgId);
-
-    if (highWatermark !== null) {
-      let afterMembershipId = 0;
-      while (afterMembershipId < highWatermark) {
-        const members = await this.loadActiveMemberBatch(
-          orgId,
-          afterMembershipId,
-          highWatermark,
-        );
-        if (members.length === 0) break;
-
-        result.scanned += members.length;
-        await this.processMemberBatch(orgId, actorId, members, result);
-
-        const lastMember = members.at(-1);
-        if (!lastMember) break;
-        afterMembershipId = lastMember.membershipId;
-        if (members.length < BACKFILL_FETCH_SIZE) break;
-      }
-    }
-
-    await runInNewTenantTransaction(this.db, orgId, () =>
-      this.audit.log({
-        orgId,
-        actorId,
-        entityType: "hr_people",
-        entityId: orgId,
-        action: "backfill_from_members",
-        after: {
-          scanned: result.scanned,
-          createdPeople: result.createdPeople,
-          createdEmployments: result.createdEmployments,
-          skipped: result.skipped,
-          errorCount: result.errors.length,
-        },
-      }),
-    );
-
-    return result;
-  }
-
-  private async getBackfillHighWatermark(orgId: string): Promise<number | null> {
-    return runInNewTenantTransaction(this.db, orgId, async (tx) => {
-      const [row] = await tx
-        .select({ membershipId: organizationMembers.id })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.status, "ACTIVE"),
-          ),
-        )
-        .orderBy(desc(organizationMembers.id))
-        .limit(1);
-      return row?.membershipId ?? null;
-    });
-  }
-
-  private loadActiveMemberBatch(
-    orgId: string,
-    afterMembershipId: number,
-    highWatermark: number,
-  ): Promise<PrefetchedActiveMember[]> {
-    return runInNewTenantTransaction(this.db, orgId, (tx) =>
-      tx
-        .select({
-          membershipId: organizationMembers.id,
-          userId: users.id,
-          firstName: users.firstName,
-          lastName: users.lastName,
-          name: users.name,
-          email: users.email,
-          phone: users.phone,
-        })
-        .from(organizationMembers)
-        .innerJoin(users, eq(users.id, organizationMembers.userId))
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.status, "ACTIVE"),
-            gt(organizationMembers.id, afterMembershipId),
-            lte(organizationMembers.id, highWatermark),
-          ),
-        )
-        .orderBy(asc(organizationMembers.id))
-        .limit(BACKFILL_FETCH_SIZE),
-    );
-  }
-
-  private async processMemberBatch(
-    orgId: string,
-    actorId: string | null,
-    members: PrefetchedActiveMember[],
-    result: BackfillResult,
-  ): Promise<void> {
-    for (let start = 0; start < members.length; start += BACKFILL_CONCURRENCY) {
-      const window = members.slice(start, start + BACKFILL_CONCURRENCY);
-      const settled = await Promise.allSettled(
-        window.map((member) =>
-          runInNewTenantTransaction(this.db, orgId, () =>
-            this.ensureFromUser(orgId, actorId, toEnsureInput(member, "ACTIVE")),
-          ),
-        ),
-      );
-
-      for (let index = 0; index < settled.length; index += 1) {
-        const outcome = settled[index];
-        const member = window[index];
-        if (!outcome || !member) continue;
-        if (outcome.status === "rejected") {
-          result.errors.push({
-            userId: member.userId,
-            message: BACKFILL_ERROR_MESSAGE,
-          });
-          continue;
-        }
-        if (outcome.value.createdPerson) result.createdPeople += 1;
-        if (outcome.value.createdEmployment) result.createdEmployments += 1;
-        if (!outcome.value.createdPerson && !outcome.value.createdEmployment)
-          result.skipped += 1;
-      }
-    }
   }
 }

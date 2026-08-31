@@ -20,6 +20,7 @@ import type { SnapshotWithDiff } from "./ai-summaries.types";
 import type { AiSummarySnapshot } from "../../../db/schema/ai/ai-summaries";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const entityTypeentityIdParams = z.object({ entityType: z.string().min(1), entityId: z.string().min(1) }).strict();
 
@@ -47,6 +48,7 @@ export class AiSummariesController {
   @HttpCode(201)
   @RequirePermission("ai:summaries:create")
   @Validate({ params: entityTypeentityIdParams })
+  @BodylessAction()
   async saveSnapshot(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,

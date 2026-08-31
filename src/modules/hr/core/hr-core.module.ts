@@ -21,6 +21,7 @@ import { HrAuditService } from "./hr-audit.service";
 import { HrOrgCatalogService } from "./hr-org-catalog.service";
 import { HrCustomFieldsService } from "./hr-custom-fields.service";
 import { PersonEmploymentSyncService } from "./person-employment-sync.service";
+import { PersonEmploymentBackfillService } from "./person-employment-backfill.service";
 import { EmploymentFactsModule } from "../../directory/employment-facts.module";
 
 @Module({
@@ -48,6 +49,7 @@ import { EmploymentFactsModule } from "../../directory/employment-facts.module";
     HrOrgCatalogService,
     HrCustomFieldsService,
     PersonEmploymentSyncService,
+    PersonEmploymentBackfillService,
   ],
   exports: [
     HrAuditService,

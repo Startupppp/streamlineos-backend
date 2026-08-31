@@ -1,5 +1,6 @@
 import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { PersonEmploymentSyncService } from "../person-employment-sync.service";
+import { PersonEmploymentBackfillService } from "../person-employment-backfill.service";
 
 jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: jest.fn((
@@ -90,7 +91,7 @@ describe("PersonEmploymentSyncService.ensureFromUserId", () => {
   });
 });
 
-describe("PersonEmploymentSyncService.backfillOrg", () => {
+describe("PersonEmploymentBackfillService.backfillOrg", () => {
   beforeEach(() => {
     mockedRunInNewTenantTransaction.mockClear();
   });
@@ -102,10 +103,11 @@ describe("PersonEmploymentSyncService.backfillOrg", () => {
       .mockReturnValueOnce(highWatermarkQuery(3))
       .mockReturnValueOnce(memberBatchQuery(rows));
     const audit = { log: jest.fn().mockResolvedValue(undefined) };
-    const service = new PersonEmploymentSyncService({ select } as never, audit as never);
-    const ensureFromUserId = jest.spyOn(service, "ensureFromUserId");
+    const syncService = new PersonEmploymentSyncService({ select } as never, audit as never);
+    const service = new PersonEmploymentBackfillService({ select } as never, audit as never, syncService);
+    const ensureFromUserId = jest.spyOn(syncService, "ensureFromUserId");
     const ensureFromUser = jest
-      .spyOn(service, "ensureFromUser")
+      .spyOn(syncService, "ensureFromUser")
       .mockResolvedValueOnce({
         personId: 1,
         employmentId: 1,
@@ -165,11 +167,12 @@ describe("PersonEmploymentSyncService.backfillOrg", () => {
       .mockReturnValueOnce(highWatermarkQuery(6))
       .mockReturnValueOnce(memberBatchQuery(rows));
     const audit = { log: jest.fn().mockResolvedValue(undefined) };
-    const service = new PersonEmploymentSyncService({ select } as never, audit as never);
+    const syncService = new PersonEmploymentSyncService({ select } as never, audit as never);
+    const service = new PersonEmploymentBackfillService({ select } as never, audit as never, syncService);
     let active = 0;
     let maxActive = 0;
 
-    jest.spyOn(service, "ensureFromUser").mockImplementation(async (_orgId, _actorId, input) => {
+    jest.spyOn(syncService, "ensureFromUser").mockImplementation(async (_orgId, _actorId, input) => {
       active += 1;
       maxActive = Math.max(maxActive, active);
       await new Promise<void>((resolve) => setImmediate(resolve));
@@ -211,8 +214,9 @@ describe("PersonEmploymentSyncService.backfillOrg", () => {
       .mockReturnValueOnce(memberBatchQuery(firstPage))
       .mockReturnValueOnce(memberBatchQuery(secondPage));
     const audit = { log: jest.fn().mockResolvedValue(undefined) };
-    const service = new PersonEmploymentSyncService({ select } as never, audit as never);
-    jest.spyOn(service, "ensureFromUser").mockResolvedValue({
+    const syncService = new PersonEmploymentSyncService({ select } as never, audit as never);
+    const service = new PersonEmploymentBackfillService({ select } as never, audit as never, syncService);
+    jest.spyOn(syncService, "ensureFromUser").mockResolvedValue({
       personId: 1,
       employmentId: 1,
       createdPerson: false,

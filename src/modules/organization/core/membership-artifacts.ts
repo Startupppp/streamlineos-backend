@@ -466,6 +466,26 @@ export const MEMBERSHIP_ARTIFACTS = [
     reason:
       "The author_membership_id column is an attribution field with no FK enforcement. On removal it must be explicitly set to NULL so the version record is preserved but the membership reference is cleared.",
   },
+  {
+    id: "org_units",
+    mechanism: "database-cascade",
+    table: "org_units",
+    keyedBy: "head_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_org_units_head_membership is ON DELETE SET NULL, so removing the head member clears the slot automatically. A suspension is reversible and the org-membership gate already denies access, so the head pointer is retained.",
+  },
+  {
+    id: "org_unit_members",
+    mechanism: "database-cascade",
+    table: "org_unit_members",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_org_unit_members_membership is ON DELETE SET NULL, so removing the membership clears the membership_id slot while keeping the org-unit membership row. A suspension is reversible so the link is retained.",
+  },
 ] as const satisfies readonly MembershipArtifact[];
 
 export const MEMBERSHIP_ARTIFACT_IDS = MEMBERSHIP_ARTIFACTS.map(

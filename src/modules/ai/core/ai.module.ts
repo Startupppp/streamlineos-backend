@@ -10,8 +10,11 @@ import { EmbeddingsService } from "./providers/embeddings.service";
 import { CrmScoringService } from "./services/crm-scoring.service";
 import { CrmContentService } from "./services/crm-content.service";
 import { CrmBriefService } from "./services/crm-brief.service";
+import { CrmMeetingBriefService } from "./services/crm-meeting-brief.service";
+import { CrmNlSearchService } from "./services/crm-nl-search.service";
 import { CrmTasksService } from "./services/crm-tasks.service";
 import { CrmCopilotService } from "./services/crm-copilot.service";
+import { CrmCopilotLeadService } from "./services/crm-copilot-lead.service";
 import { CrmPipelineService } from "./services/crm-pipeline.service";
 import { HrPerformanceAiService } from "./services/hr-performance-ai.service";
 import { HrRecruitmentAiService } from "./services/hr-recruitment-ai.service";
@@ -60,8 +63,11 @@ import { SurveyAiService } from "./services/survey-ai.service";
     CrmScoringService,
     CrmContentService,
     CrmBriefService,
+    CrmMeetingBriefService,
+    CrmNlSearchService,
     CrmTasksService,
     CrmCopilotService,
+    CrmCopilotLeadService,
     CrmPipelineService,
     HrPerformanceAiService,
     HrRecruitmentAiService,

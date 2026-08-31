@@ -12,6 +12,8 @@ import { OrgLifecycleService } from "./org-lifecycle.service";
 import { OrgPurgeService } from "./org-purge.service";
 import { OrganizationSettingsService } from "./organization-settings.service";
 import { InvitationsService } from "./invitations.service";
+import { InvitationCreateService } from "./invitation-create.service";
+import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import { InvitationsReadService } from "./invitations-read.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
 import { AccountOrganizationIndexService } from "./account-organization-index.service";
@@ -37,6 +39,8 @@ import { IntegrationConnectionDisconnectedConsumer } from "./integration-connect
     OrgPurgeService,
     OrganizationService,
     OrganizationSettingsService,
+    InvitationCreateService,
+    InvitationLifecycleService,
     InvitationsService,
     InvitationsReadService,
     InvitationAcceptanceService,
@@ -47,6 +51,8 @@ import { IntegrationConnectionDisconnectedConsumer } from "./integration-connect
     IntegrationConnectionDisconnectedConsumer,
   ],
   exports: [
+    InvitationCreateService,
+    InvitationLifecycleService,
     InvitationsService,
     InvitationsReadService,
     InvitationAcceptanceService,

@@ -1,3 +1,8 @@
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
+  runInNewTenantTransaction: (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
+}));
+
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { HrCustomFieldsService } from "./hr-custom-fields.service";
@@ -7,7 +12,7 @@ import { HrEmploymentsService } from "./hr-employments.service";
 import { HrOrgCatalogService } from "./hr-org-catalog.service";
 import { HrPeopleService } from "./hr-people.service";
 import { HrTimelineService } from "./hr-timeline.service";
-import { PersonEmploymentSyncService } from "./person-employment-sync.service";
+import { PersonEmploymentBackfillService } from "./person-employment-backfill.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -207,14 +212,15 @@ describe("HrTimelineService — cross-tenant isolation", () => {
   });
 });
 
-describe("PersonEmploymentSyncService — cross-tenant isolation", () => {
+describe("PersonEmploymentBackfillService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
+  const mockSync = { ensureFromUser: jest.fn() };
 
   it("scopes membership watermark query to attacker org (cross-tenant isolation)", async () => {
     const { db, where } = makeDb([]);
     const mockAudit = { log: jest.fn() };
-    const svc = new PersonEmploymentSyncService(db, mockAudit as never);
+    const svc = new PersonEmploymentBackfillService(db, mockAudit as never, mockSync as never);
     await svc.backfillOrg(ATTACKER, null);
     const allVals = where.mock.calls.flatMap((call: unknown[]) => sqlValues(call[0]));
     expect(allVals).toContain(ATTACKER);
@@ -224,7 +230,7 @@ describe("PersonEmploymentSyncService — cross-tenant isolation", () => {
   it("membership watermark query uses owning org (control)", async () => {
     const { db, where } = makeDb([]);
     const mockAudit = { log: jest.fn() };
-    const svc = new PersonEmploymentSyncService(db, mockAudit as never);
+    const svc = new PersonEmploymentBackfillService(db, mockAudit as never, mockSync as never);
     await svc.backfillOrg(OWNER, null);
     const allVals = where.mock.calls.flatMap((call: unknown[]) => sqlValues(call[0]));
     expect(allVals).toContain(OWNER);

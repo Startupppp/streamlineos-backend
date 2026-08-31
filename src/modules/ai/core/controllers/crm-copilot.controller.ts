@@ -23,6 +23,7 @@ import { LlmService } from "../providers/llm.service";
 import { CrmCopilotService } from "../services/crm-copilot.service";
 import { CrmBriefService } from "../services/crm-brief.service";
 import { Validate } from "../../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
 
 const leadIdParams = z.object({ leadId: z.coerce.number().int().positive() }).strict();
 const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
@@ -89,6 +90,7 @@ export class CrmCopilotController {
 
   @Post("leads/:leadId/summary")
   @Validate({ params: leadIdParams })
+  @BodylessAction()
   async leadSummary(
     @Param("leadId", ParseIntPipe) leadId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -101,6 +103,7 @@ export class CrmCopilotController {
 
   @Post("deals/:dealId/summary")
   @Validate({ params: dealIdParams })
+  @BodylessAction()
   async dealSummary(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -151,6 +154,7 @@ export class CrmCopilotController {
 
   @Post("duplicate-suggestions/:leadId")
   @Validate({ params: leadIdParams })
+  @BodylessAction()
   duplicateSuggestions(
     @Param("leadId", ParseIntPipe) leadId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -187,6 +191,7 @@ export class CrmCopilotController {
 
   @Post("leads/:leadId/summary-with-citations")
   @Validate({ params: leadIdParams })
+  @BodylessAction()
   async leadSummaryWithCitations(
     @Param("leadId", ParseIntPipe) leadId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -199,6 +204,7 @@ export class CrmCopilotController {
 
   @Post("deals/:dealId/summary-with-citations")
   @Validate({ params: dealIdParams })
+  @BodylessAction()
   async dealSummaryWithCitations(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,

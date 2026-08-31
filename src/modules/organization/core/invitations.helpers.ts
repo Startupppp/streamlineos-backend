@@ -1,8 +1,14 @@
-import { BadRequestException, ConflictException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Logger } from "@nestjs/common";
 import { and, eq, gt, isNull, lt } from "drizzle-orm";
-import { invitations, organizationMembers, organizations } from "../../../db/schema";
+import { invitationEvents, invitations, organizationMembers, organizations } from "../../../db/schema";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import type { Db } from "../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+
+export interface InviteActor {
+  userId: string;
+  isOrgOwner: boolean;
+}
 
 export function openAdminInvitationFilter(invitationId: string, orgId: string) {
   return and(
@@ -51,11 +57,35 @@ export async function requireActiveOrg(
   return { name: org.name };
 }
 
-/**
- * Row-locks a still-pending invitation. Every terminal transition must go
- * through this or a status-predicated conditional update — an id-only update
- * would revive an accepted or revoked invitation.
- */
+export async function recordDeliveryFailure(
+  db: Db,
+  logger: Logger,
+  orgId: string,
+  invitationId: string,
+  err: unknown,
+): Promise<void> {
+  logger.error(
+    `Invitation email delivery failed: ${err instanceof Error ? err.message : String(err)}`,
+  );
+  try {
+    await runInTenantTransaction(
+      db,
+      (tx) =>
+        tx.insert(invitationEvents).values({
+          orgId,
+          invitationId,
+          event: "DELIVERY_FAILED",
+          actorMembershipId: null,
+        }),
+      { orgId },
+    );
+  } catch (recordErr: unknown) {
+    logger.error(
+      `Failed to record invitation delivery failure: ${recordErr instanceof Error ? recordErr.message : String(recordErr)}`,
+    );
+  }
+}
+
 export async function lockPendingInvitation(
   tx: DbOrTx,
   invitationId: string,

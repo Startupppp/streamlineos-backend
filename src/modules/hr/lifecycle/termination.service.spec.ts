@@ -4,6 +4,7 @@ import { BadRequestException } from "@nestjs/common";
 import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 import { users } from "../../../db/schema";
 import { TerminationService } from "./termination.service";
+import { TerminationReadService } from "./termination-read.service";
 
 describe("TerminationService.create - structural owner block", () => {
   function buildSelectChain(): Record<string, jest.Mock> {
@@ -52,12 +53,10 @@ describe("TerminationService.create - structural owner block", () => {
     return new TerminationService(
       db as never,
       { logCritical: jest.fn() } as never,
-      { invalidate: jest.fn() } as never,
       undefined as never,
       undefined as never,
-      undefined as never,
-      undefined as never,
-      { getFacts: jest.fn().mockResolvedValue({ userId: "u", employmentId: null, employeeNumber: null, designation: null, joiningDate: null, departmentId: null, locationId: null, managerUserId: null }), getFactsBatch: jest.fn().mockResolvedValue(new Map()) } as never,
+      {} as never,
+      {} as never,
     );
   }
 
@@ -110,15 +109,14 @@ describe("TerminationService.list - paginated envelope and status counts", () =>
       select: jest.fn(() => (call++ === 0 ? rowsChain : statusChain)),
       execute: jest.fn().mockResolvedValue([{ relationAvailable: false }]),
     };
+    const reader = new TerminationReadService(db as never, {} as never);
     return new TerminationService(
       db as never,
       undefined as never,
       undefined as never,
       undefined as never,
-      undefined as never,
-      undefined as never,
-      undefined as never,
-      { getFacts: jest.fn().mockResolvedValue({ userId: "u", employmentId: null, employeeNumber: null, designation: null, joiningDate: null, departmentId: null, locationId: null, managerUserId: null }), getFactsBatch: jest.fn().mockResolvedValue(new Map()) } as never,
+      reader,
+      {} as never,
     );
   }
 
@@ -204,16 +202,17 @@ describe("TerminationService.complete - tenant-scoped account access", () => {
     const memberships = {
       setMemberLifecycleStatus: jest.fn().mockResolvedValue({ success: true }),
     };
-    const cache = { invalidate: jest.fn().mockResolvedValue(undefined) };
+    const lifecycle = {
+      invalidateHrDashboardCache: jest.fn().mockResolvedValue(undefined),
+      dispatchEmployeeTerminated: jest.fn(),
+    };
     const service = new TerminationService(
       db as never,
       { logCritical: jest.fn() } as never,
-      cache as never,
       undefined as never,
-      { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as never,
-      { emit: jest.fn().mockResolvedValue(undefined) } as never,
       memberships as never,
-      { getFacts: jest.fn().mockResolvedValue({ userId: "u", employmentId: null, employeeNumber: null, designation: null, joiningDate: null, departmentId: null, locationId: null, managerUserId: null }), getFactsBatch: jest.fn().mockResolvedValue(new Map()) } as never,
+      {} as never,
+      lifecycle as never,
     );
 
     const result = await runWithTenantContext(
@@ -238,6 +237,7 @@ describe("TerminationService.complete - tenant-scoped account access", () => {
       },
     );
     expect(update.mock.calls.some(([table]) => table === users)).toBe(false);
-    expect(cache.invalidate).toHaveBeenCalledTimes(4);
+    expect(lifecycle.invalidateHrDashboardCache).toHaveBeenCalledWith("org-1");
+    expect(lifecycle.dispatchEmployeeTerminated).toHaveBeenCalled();
   });
 });

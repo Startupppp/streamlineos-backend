@@ -265,9 +265,7 @@ describe("PartyService — party CRUD", () => {
             from: jest.fn().mockReturnValue({
               where: jest.fn().mockReturnValue({
                 orderBy: jest.fn().mockReturnValue({
-                  limit: jest.fn().mockReturnValue({
-                    offset: jest.fn().mockResolvedValue(rows),
-                  }),
+                  limit: jest.fn().mockResolvedValue(rows),
                 }),
               }),
             }),
@@ -305,9 +303,7 @@ describe("PartyService — party CRUD", () => {
             from: jest.fn().mockReturnValue({
               where: jest.fn().mockReturnValue({
                 orderBy: jest.fn().mockReturnValue({
-                  limit: jest.fn().mockReturnValue({
-                    offset: jest.fn().mockResolvedValue([]),
-                  }),
+                  limit: jest.fn().mockResolvedValue([]),
                 }),
               }),
             }),

@@ -12,6 +12,8 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { EmailService } from "../../email/email.service";
 import { InvitationsService } from "./invitations.service";
+import { InvitationCreateService } from "./invitation-create.service";
+import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 
 describe("InvitationsService state transitions", () => {
@@ -59,6 +61,8 @@ describe("InvitationsService state transitions", () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
+        InvitationCreateService,
+        InvitationLifecycleService,
         InvitationsService,
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },

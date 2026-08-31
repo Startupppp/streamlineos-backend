@@ -5,11 +5,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, lte, notInArray, sql } from "drizzle-orm";
-import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
+import { and, eq, lte, notInArray } from "drizzle-orm";
 import {
-  hrEmployments,
-  hrPeople,
   terminations,
   users,
   organizationMembers,
@@ -24,9 +21,6 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { ROLE_RANK } from "../../../common/rbac/grantability";
 import { AuditService } from "../../../common/audit/audit.service";
-import { CacheService } from "../../../common/cache/cache.service";
-import { AutomationService } from "../../automation/automation.service";
-import { HrAutomationEngineService } from "../automations/hr-automation-engine.service";
 import { OrgMembershipService } from "../../organization/core/org-membership.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type {
@@ -41,94 +35,22 @@ import {
   syncTerminationReasons,
 } from "./termination-relational-compat";
 import { transitionTermination } from "./lifecycle-transition";
-import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { TerminationReadService } from "./termination-read.service";
+import { TerminationLifecycleService } from "./termination-lifecycle.service";
 
 @Injectable()
 export class TerminationService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
-    private readonly cache: CacheService,
     private readonly communications: TerminationCommunicationsService,
-    private readonly automation: AutomationService,
-    private readonly hrAutomation: HrAutomationEngineService,
     private readonly memberships: OrgMembershipService,
-    private readonly employmentFacts: EmploymentFactsService,
+    private readonly reader: TerminationReadService,
+    private readonly lifecycle: TerminationLifecycleService,
   ) {}
+
   async list(orgId: string, params: ListTerminationsQueryInput) {
-    const limit = Math.min(params.limit, 100);
-    const offset = (params.page - 1) * limit;
-    const conditions = [eq(terminations.orgId, orgId)];
-    if (params.status) conditions.push(eq(terminations.status, params.status));
-    const where = and(...conditions);
-    const [data, statusRows] = await Promise.all([
-      this.db
-        .select({
-          id: terminations.id,
-          orgId: terminations.orgId,
-          userId: terminations.userId,
-          status: terminations.status,
-          reasons: terminations.reasons,
-          detailedExplanation: terminations.detailedExplanation,
-          effectiveDate: terminations.effectiveDate,
-          severanceAmount: terminations.severanceAmount,
-          noticePeriodWaived: terminations.noticePeriodWaived,
-          internalNotes: terminations.internalNotes,
-          createdAt: terminations.createdAt,
-          updatedAt: terminations.updatedAt,
-          finalRemarks: terminations.finalRemarks,
-          finalReviewedBy: terminations.finalReviewedBy,
-          finalReviewedAt: terminations.finalReviewedAt,
-          emailSentAt: terminations.emailSentAt,
-          emailStatus: terminations.emailStatus,
-          initiatedBy: terminations.initiatedBy,
-          employee: {
-            id: users.id,
-            name: users.name,
-            email: users.email,
-            designation: hrEmployments.designation,
-            employeeId: hrEmployments.employeeNumber,
-          },
-        })
-        .from(terminations)
-        .leftJoin(users, eq(terminations.userId, users.id))
-        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
-        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-        .where(where)
-        .orderBy(desc(terminations.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ status: terminations.status, count: sql<number>`count(*)` })
-        .from(terminations)
-        .where(eq(terminations.orgId, orgId))
-      .groupBy(terminations.status),
-    ]);
-    const statusCounts: Record<string, number> = {};
-    let orgTotal = 0;
-    for (const row of statusRows) {
-      const rowCount = Number(row.count ?? 0);
-      if (row.status) statusCounts[row.status] = rowCount;
-      orgTotal += rowCount;
-    }
-    const total = params.status ? (statusCounts[params.status] ?? 0) : orgTotal;
-    const relationalCollections = await loadTerminationRelationalCollections(
-      this.db,
-      orgId,
-      data.map((termination) => termination.id),
-    );
-    const compatibleData = data.map((termination) => ({
-      ...termination,
-      reasons: resolveCompatibleList(
-        termination.reasons,
-        relationalCollections.reasonsByTerminationId.get(termination.id),
-      ),
-    }));
-    return {
-      data: compatibleData,
-      pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
-      statusCounts: { ...statusCounts, ALL: orgTotal },
-    };
+    return this.reader.list(orgId, params);
   }
 
   async create(orgId: string, actorUserId: string, isOrgAdmin: boolean, input: TerminationCreateInput) {
@@ -261,118 +183,15 @@ export class TerminationService {
   }
 
   async getOne(orgId: string, terminationId: number) {
-    const data = await this.db.query.terminations.findFirst({
-      where: and(eq(terminations.id, terminationId), eq(terminations.orgId, orgId)),
-      with: {
-        user: { columns: { id: true, name: true, email: true, image: true } },
-        initiator: { columns: { id: true, name: true } },
-        finalReviewer: { columns: { id: true, name: true } },
-      },
-    });
-    if (!data) throw new NotFoundException("Termination not found.");
-    const relationalCollections = await loadTerminationRelationalCollections(
-      this.db,
-      orgId,
-      [data.id],
-    );
-    const facts = data.user
-      ? await this.employmentFacts.getFacts(orgId, data.user.id)
-      : null;
-    return {
-      ...data,
-      user: data.user
-        ? {
-            ...data.user,
-            designation: facts?.designation ?? null,
-            joiningDate: facts?.joiningDate ?? null,
-          }
-        : data.user,
-      reasons: resolveCompatibleList(
-        data.reasons,
-        relationalCollections.reasonsByTerminationId.get(data.id),
-      ),
-      supportingDocUrls:
-        data.supportingDocUrls === null
-          ? null
-          : resolveCompatibleList(
-              data.supportingDocUrls,
-              relationalCollections.supportingDocumentsByTerminationId.get(data.id),
-            ),
-    };
+    return this.reader.getOne(orgId, terminationId);
   }
 
   async submit(orgId: string, actorUserId: string, terminationId: number) {
-    const existing = await this.db.query.terminations.findFirst({
-      where: and(eq(terminations.id, terminationId), eq(terminations.orgId, orgId)),
-    });
-    if (!existing) throw new NotFoundException("Termination not found.");
-    if (existing.status !== "DRAFT" && existing.status !== "REJECTED") {
-      throw new BadRequestException("Only draft or rejected terminations can be submitted.");
-    }
-
-    const previousStatus = existing.status;
-
-    await transitionTermination(this.db, {
-      organizationId: orgId,
-      terminationId,
-      currentStatus: existing.status,
-      currentVersion: existing.rowVersion,
-      changes: {
-        status: "PENDING_FINAL",
-        finalRemarks: null,
-        finalReviewedBy: null,
-        finalReviewedAt: null,
-      },
-    });
-
-    await this.audit.logCritical({
-      action: "TERMINATION_SUBMITTED",
-      userId: actorUserId,
-      orgId,
-      targetId: String(terminationId),
-      targetType: "termination",
-      metadata: { from: previousStatus, to: "PENDING_FINAL", employeeId: existing.userId },
-    });
-
-    return { success: true };
+    return this.lifecycle.submit(orgId, actorUserId, terminationId);
   }
 
   async finalReview(orgId: string, actorUserId: string, terminationId: number, input: TerminationReviewInput) {
-    const existing = await this.db.query.terminations.findFirst({
-      where: and(eq(terminations.id, terminationId), eq(terminations.orgId, orgId)),
-    });
-    if (!existing) throw new NotFoundException("Termination not found.");
-    if (existing.status !== "PENDING_FINAL") throw new BadRequestException("Termination is not pending FINAL review.");
-
-    if (input.decision === "reject" && !input.remarks) {
-      throw new BadRequestException("Remarks are required when rejecting.");
-    }
-
-    const newStatus = input.decision === "approve" ? "APPROVED" : "REJECTED";
-
-    await transitionTermination(this.db, {
-      organizationId: orgId,
-      terminationId,
-      currentStatus: existing.status,
-      currentVersion: existing.rowVersion,
-      changes: {
-        status: newStatus,
-        finalReviewedBy: actorUserId,
-        finalReviewedAt: new Date(),
-        finalRemarks: input.remarks || null,
-      },
-    });
-
-    await this.audit.logCritical({
-      action: newStatus === "APPROVED" ? "TERMINATION_APPROVED" : "TERMINATION_REJECTED",
-      userId: actorUserId,
-      orgId,
-      targetId: String(terminationId),
-      targetType: "termination",
-      metadata: { employeeId: existing.userId, remarks: input.remarks },
-    });
-
-    return { success: true };
+    return this.lifecycle.finalReview(orgId, actorUserId, terminationId, input);
   }
 
   async getLetter(orgId: string, terminationId: number) {
@@ -420,9 +239,6 @@ export class TerminationService {
         );
       }
 
-      // Employment termination is tenant-scoped. Archive only this
-      // organization membership so active memberships in other organizations
-      // and the person's global sign-in remain usable.
       await this.memberships.setMemberLifecycleStatus(
         orgId,
         actorUserId,
@@ -437,7 +253,7 @@ export class TerminationService {
       return found;
     }, { orgId });
 
-    await this.invalidateHrDashboardCache(orgId);
+    await this.lifecycle.invalidateHrDashboardCache(orgId);
 
     const relationalCollections = await loadTerminationRelationalCollections(
       this.db,
@@ -449,7 +265,7 @@ export class TerminationService {
       relationalCollections.reasonsByTerminationId.get(terminationId),
     );
 
-    this.dispatchEmployeeTerminated(
+    this.lifecycle.dispatchEmployeeTerminated(
       orgId,
       terminationId,
       existing.userId,
@@ -473,43 +289,5 @@ export class TerminationService {
     });
 
     return { success: true };
-  }
-
-  private async invalidateHrDashboardCache(orgId: string): Promise<void> {
-    await Promise.all([
-      this.cache.invalidate(`hr:analytics:${orgId}`),
-      this.cache.invalidate(`hr:dashboard:metrics:${orgId}`),
-      this.cache.invalidate(`hr:dashboard:headcount-trends:${orgId}`),
-      this.cache.invalidate(`hr:celebrations:${orgId}`),
-    ]);
-  }
-
-  private dispatchEmployeeTerminated(
-    orgId: string,
-    terminationId: number,
-    employeeId: string,
-    reasons: string[],
-    noticePeriodWaived: boolean,
-  ): void {
-    void (async () => {
-      const employee = await this.db.query.users.findFirst({
-        where: eq(users.id, employeeId),
-        columns: { name: true },
-      });
-      const payload = {
-        terminationId,
-        userId: employeeId,
-        employeeName: employee?.name ?? "Employee",
-        effectiveDate: new Date().toISOString(),
-        reasons,
-        noticePeriodWaived,
-        exitType: "termination",
-      };
-      await this.hrAutomation.emit(orgId, "exit.completed", {
-        ...payload,
-        exitType: "termination",
-      });
-      await this.automation.runAutomationsForEvent(orgId, "employee.terminated", payload);
-    })().catch(() => undefined);
   }
 }
