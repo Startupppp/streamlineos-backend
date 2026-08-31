@@ -57,6 +57,7 @@ import {
   type UpdateMemberGroupsInput,
 } from "./dto/module-access.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const moduleKeyParams = z.object({ moduleKey: z.string().min(1) }).strict();
@@ -112,6 +113,7 @@ export class ModuleAccessController {
   }
 
   @Post(":moduleKey/standing/:membershipId")
+  @BodylessAction()
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")

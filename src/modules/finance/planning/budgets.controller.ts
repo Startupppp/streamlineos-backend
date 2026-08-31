@@ -27,7 +27,7 @@ const budgetIdParams = z.object({ budgetId: z.coerce.number().int().positive() }
 @RequireModule("accounting")
 @Controller("accounting")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-export class BudgetsController {
+export class FinanceBudgetsController {
   constructor(
     private readonly budgets: BudgetsService,
     private readonly bva: BvaService,

@@ -17,10 +17,11 @@ function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   if (Array.isArray(v)) return v.flatMap((i) => sqlValues(i, seen));
   if (typeof v !== "object" || seen.has(v)) return [];
   seen.add(v);
-  const r = v as { queryChunks?: unknown[]; value?: unknown };
+  const r = v as { queryChunks?: unknown[]; value?: unknown; name?: unknown };
   return [
     ...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []),
     ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : []),
+    ...(typeof r.name === "string" ? [r.name] : []),
   ];
 }
 

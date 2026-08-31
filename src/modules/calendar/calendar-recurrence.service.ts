@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, like } from "drizzle-orm";
 import { calendarEvents, calendarEventExceptions, notificationOutbox, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -69,7 +69,7 @@ export class CalendarRecurrenceService {
             and(
               eq(notificationOutbox.orgId, orgId),
               eq(notificationOutbox.state, "PENDING"),
-              eq(notificationOutbox.dedupeKey, `calendar:reminder:${eventId}:${occurrenceStart.toISOString()}`),
+              like(notificationOutbox.dedupeKey, `calendar:reminder:${eventId}:${occurrenceStart.toISOString()}%`),
             ),
           );
       return rows;
@@ -96,7 +96,7 @@ export class CalendarRecurrenceService {
           and(
             eq(notificationOutbox.orgId, orgId),
             eq(notificationOutbox.state, "PENDING"),
-            eq(notificationOutbox.dedupeKey, `calendar:reminder:${eventId}:${occurrenceStart.toISOString()}`),
+            like(notificationOutbox.dedupeKey, `calendar:reminder:${eventId}:${occurrenceStart.toISOString()}%`),
           ),
         );
       return rows;

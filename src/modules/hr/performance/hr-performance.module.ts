@@ -16,7 +16,6 @@ import { ReviewCyclesService } from "./review-cycles.service";
 import { OneOnOneMeetingsService } from "./one-on-one-meetings.service";
 import { PerformancePipsService } from "./performance-pips.service";
 import { EngagementService } from "./engagement.service";
-import { EngagementExtrasService } from "./engagement-extras.service";
 import { EngagementMoodPollsService } from "./engagement-mood-polls.service";
 import { EngagementBadgesService } from "./engagement-badges.service";
 import { EngagementCommunitiesCampaignsService } from "./engagement-communities-campaigns.service";
@@ -48,7 +47,6 @@ import { SuccessionService } from "./succession.service";
     OneOnOneMeetingsService,
     PerformancePipsService,
     EngagementService,
-    EngagementExtrasService,
     EngagementMoodPollsService,
     EngagementBadgesService,
     EngagementCommunitiesCampaignsService,

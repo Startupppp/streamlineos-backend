@@ -222,6 +222,62 @@ describe("Financial record retention — legal hold beats mutation", () => {
     });
   });
 
+  describe("migration 0793 — journal_entries and journal_lines have DB-level immutability triggers", () => {
+    const fs = require("fs");
+    const path = require("path");
+    const migrationSql = fs.readFileSync(
+      path.join(__dirname, "../../../../migrations/0793_journal_entries_immutability_trigger.sql"),
+      "utf8",
+    );
+
+    it("puts a BEFORE UPDATE trigger on journal_entries", () => {
+      expect(migrationSql).toContain("CREATE TRIGGER trg_journal_entry_immutability");
+      expect(migrationSql).toContain("BEFORE UPDATE ON journal_entries");
+    });
+
+    it("puts a BEFORE UPDATE trigger on journal_lines", () => {
+      expect(migrationSql).toContain("CREATE TRIGGER trg_journal_line_immutability");
+      expect(migrationSql).toContain("BEFORE UPDATE ON journal_lines");
+    });
+
+    it("the journal_entries trigger fires the enforce_journal_entry_immutability function", () => {
+      expect(migrationSql).toContain("EXECUTE FUNCTION enforce_journal_entry_immutability()");
+    });
+
+    it("the journal_lines trigger fires the enforce_journal_line_immutability function", () => {
+      expect(migrationSql).toContain("EXECUTE FUNCTION enforce_journal_line_immutability()");
+    });
+
+    it("the trigger function guards entry_number, currency and source fields", () => {
+      expect(migrationSql).toContain("OLD.entry_number");
+      expect(migrationSql).toContain("OLD.currency");
+      expect(migrationSql).toContain("OLD.source_type");
+    });
+
+    it("the trigger function prevents status transitions from POSTED other than to VOID", () => {
+      expect(migrationSql).toContain("VOID");
+      expect(migrationSql).toContain("OLD.status = 'POSTED'");
+    });
+
+    it("the journal_lines trigger guards debit, credit and account_id", () => {
+      expect(migrationSql).toContain("OLD.debit");
+      expect(migrationSql).toContain("OLD.credit");
+      expect(migrationSql).toContain("OLD.account_id");
+    });
+
+    it("sets lock_timeout before any DDL to prevent blocking the table", () => {
+      const lockIdx = migrationSql.indexOf("SET lock_timeout");
+      const triggerIdx = migrationSql.indexOf("CREATE OR REPLACE FUNCTION");
+      expect(lockIdx).toBeGreaterThan(-1);
+      expect(triggerIdx).toBeGreaterThan(-1);
+      expect(lockIdx).toBeLessThan(triggerIdx);
+    });
+
+    it("uses check_violation ERRCODE — distinguishable from generic errors at the application layer", () => {
+      expect(migrationSql).toContain("ERRCODE = 'check_violation'");
+    });
+  });
+
   describe("retention window — records outside purge window are swept; inside window survive", () => {
     it("an org with ACTIVE status is not in purge scope (purge worker skips it)", () => {
       const fs = require("fs");

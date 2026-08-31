@@ -79,11 +79,6 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
       "signature workflow mail targets external signers",
     ),
     EXEMPT(
-      "modules/expenses/expenses-write.service.ts",
-      DeliveryClass.USER_AUTHORED,
-      "remaining direct call is an aggregated monthly report with arbitrary report recipients",
-    ),
-    EXEMPT(
       "modules/hr/automations/hr-automation-actions.service.ts",
       DeliveryClass.WORKFLOW_EXTERNAL,
       "uses the automation email adapter for workflow-supplied recipients",

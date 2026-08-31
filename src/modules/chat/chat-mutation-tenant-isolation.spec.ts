@@ -233,6 +233,9 @@ describe("ChatHuddlesService — cross-tenant isolation on huddle operations", (
 
   it("DENY: heartbeat binds update to actor orgId — cross-org participant cannot be kept alive", async () => {
     const db = {
+      query: {
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 7 }) },
+      },
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
       }),
@@ -262,6 +265,9 @@ describe("ChatHuddlesService — cross-tenant isolation on huddle operations", (
   it("CONTROL: heartbeat with matching orgId updates the participant row", async () => {
     const whereMock = jest.fn().mockResolvedValue(undefined);
     const db = {
+      query: {
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 5 }) },
+      },
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({ where: whereMock }),
       }),

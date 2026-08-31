@@ -82,6 +82,18 @@ describe("applyOperationContract", () => {
     expect(operation["x-bodyless"]).toBe(true);
     expect(operation["requestBody"]).toBeUndefined();
   });
+
+  it("stamps deprecated:true on operations with the deprecated flag", () => {
+    const operation: Record<string, unknown> = { operationId: "FooController_legacyList" };
+    applyOperationContract("get", operation, { deprecated: true });
+    expect(operation["deprecated"]).toBe(true);
+  });
+
+  it("does not stamp deprecated when the flag is absent", () => {
+    const operation: Record<string, unknown> = { operationId: "FooController_list" };
+    applyOperationContract("get", operation, {});
+    expect(operation["deprecated"]).toBeUndefined();
+  });
 });
 
 describe("applyErrorResponses", () => {

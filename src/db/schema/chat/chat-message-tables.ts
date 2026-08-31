@@ -144,18 +144,14 @@ export const chatSavedMessages = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     messageId: bigint("message_id", { mode: "number" })
       .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
     savedAt: timestamp("saved_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uniq_saved_message").on(table.userId, table.messageId),
-    index("idx_saved_messages_user").on(table.userId),
+    uniqueIndex("uniq_chat_saved_msg_membership").on(table.orgId, table.membershipId, table.messageId),
     index("idx_chat_saved_messages_org").on(table.orgId),
     unique("uniq_chat_saved_messages_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.messageId], foreignColumns: [chatMessages.orgId, chatMessages.id], name: "fk_chat_saved_messages_org_message" }),

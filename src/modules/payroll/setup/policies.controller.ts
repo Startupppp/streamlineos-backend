@@ -17,7 +17,8 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { PayrollPoliciesService } from "./policies.service";
+import { PolicyQueryService } from "./policy-query.service";
+import { PolicyMutationService } from "./policy-mutation.service";
 import {
   createPolicySchema,
   updatePolicySchema,
@@ -41,12 +42,15 @@ const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }
 @Controller("payroll/policies")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PayrollPoliciesController {
-  constructor(private readonly service: PayrollPoliciesService) {}
+  constructor(
+    private readonly query: PolicyQueryService,
+    private readonly mutation: PolicyMutationService,
+  ) {}
 
   @Get("current")
   @RequirePermission("payroll:policies:view")
   async getCurrent(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    return this.service.getCurrent(u.orgId);
+    return this.query.getCurrent(u.orgId);
   }
 
   @Get("toggle-impact")
@@ -56,7 +60,7 @@ export class PayrollPoliciesController {
     @Query() query: ToggleImpactInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.service.toggleImpact(u.orgId, query);
+    return this.query.toggleImpact(u.orgId, query);
   }
 
   @Post()
@@ -67,7 +71,7 @@ export class PayrollPoliciesController {
     @Body() body: CreatePolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.service.create(u, body);
+    return this.mutation.create(u, body);
   }
 
   @Post("preview")
@@ -77,7 +81,7 @@ export class PayrollPoliciesController {
     @Body() body: PolicyPreviewInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.service.preview(u.orgId, body);
+    return this.query.preview(u.orgId, body);
   }
 
   @Patch(":policyId")
@@ -88,7 +92,7 @@ export class PayrollPoliciesController {
     @Body() body: UpdatePolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.service.update(u, policyId, body);
+    return this.mutation.update(u, policyId, body);
   }
 
   @Post(":policyId/activate")
@@ -100,7 +104,7 @@ export class PayrollPoliciesController {
     @Body() body: ActivatePolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.service.activate(u, policyId, body);
+    return this.mutation.activate(u, policyId, body);
   }
 
   @Get(":policyId/versions")
@@ -110,7 +114,7 @@ export class PayrollPoliciesController {
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.service.listVersions(u.orgId, policyId);
+    return this.query.listVersions(u.orgId, policyId);
   }
 
   @Post(":policyId/versions")
@@ -122,6 +126,6 @@ export class PayrollPoliciesController {
     @Body() body: CreatePolicyVersionInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.service.createVersion(u, policyId, body);
+    return this.mutation.createVersion(u, policyId, body);
   }
 }

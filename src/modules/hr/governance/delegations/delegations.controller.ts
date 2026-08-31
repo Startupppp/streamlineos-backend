@@ -36,7 +36,7 @@ const proxyIdParams = z.object({ proxyId: z.coerce.number().int().positive() }).
 @RequireModule("hr")
 @Controller("hr/governance/delegations")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-export class DelegationsController {
+export class HrGovernanceDelegationsController {
   constructor(private readonly service: DelegationsService) {}
 
   @Get("my")

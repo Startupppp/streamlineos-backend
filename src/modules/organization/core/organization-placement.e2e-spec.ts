@@ -18,7 +18,7 @@ import {
 import type { RegionDefinition } from "src/common/region/region.config";
 import type { Db } from "src/db/drizzle.types";
 import { DRIZZLE } from "src/db/drizzle.constants";
-import { OrganizationService } from "./organization.service";
+import { OrgProfileService } from "./org-profile.service";
 import { OrganizationLegalHoldService } from "./lifecycle/organization-legal-hold.service";
 
 const SWITCH_TARGET = "placement-spec-org-1";
@@ -137,7 +137,7 @@ describe("Organization controller — auth and isolation (e2e)", () => {
       overrides: [
         { provide: OrganizationLegalHoldService, useValue: legalHoldStub },
         {
-          provide: OrganizationService,
+          provide: OrgProfileService,
           useValue: {
             switchOrg: switchOrgFn,
             listUserOrganizations: listUserOrganizationsFn,

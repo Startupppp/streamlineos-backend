@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import type { OrgUnitKind } from "../../db/schema/common/organization";
-import type { InviteActor } from "../organization/core/invitations.service";
+import type { InviteActor } from "../organization/core/invitations.helpers";
 import { EmailService } from "../email/email.service";
 import { AccessService } from "../access/access.service";
 import {
@@ -23,7 +23,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { InvitationsService } from "../organization/core/invitations.service";
+import { InvitationCreateService } from "../organization/core/invitation-create.service";
 import {
   magicLinkTokens,
   organizationMembers,
@@ -54,7 +54,7 @@ export class UserOpsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly cache: CacheService,
-    private readonly invitationsSvc: InvitationsService,
+    private readonly invitationsSvc: InvitationCreateService,
     private readonly usersSvc: UsersService,
     private readonly access: AccessService,
     private readonly email: EmailService,

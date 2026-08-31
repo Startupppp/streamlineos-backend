@@ -2,7 +2,7 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { INestApplication, CanActivate, ExecutionContext, UnauthorizedException } from "@nestjs/common";
 import type { CallHandler, NestInterceptor } from "@nestjs/common";
 import request from "supertest";
-import { PeriodsController } from "./periods.controller";
+import { AccountingGlPeriodsController } from "./periods.controller";
 import { PeriodsService } from "./periods.service";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -61,7 +61,7 @@ const mockPeriodsService = {
 
 async function buildApp(options: { allowPermission: boolean }): Promise<INestApplication> {
   const moduleRef: TestingModule = await Test.createTestingModule({
-    controllers: [PeriodsController],
+    controllers: [AccountingGlPeriodsController],
     providers: [{ provide: PeriodsService, useValue: mockPeriodsService }],
   })
     .overrideGuard(JwtAuthGuard)
@@ -77,7 +77,7 @@ async function buildApp(options: { allowPermission: boolean }): Promise<INestApp
   return app;
 }
 
-describe("PeriodsController — auth guard", () => {
+describe("AccountingGlPeriodsController — auth guard", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
@@ -102,7 +102,7 @@ describe("PeriodsController — auth guard", () => {
   });
 });
 
-describe("PeriodsController — permission guard deny", () => {
+describe("AccountingGlPeriodsController — permission guard deny", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
@@ -127,7 +127,7 @@ describe("PeriodsController — permission guard deny", () => {
   });
 });
 
-describe("PeriodsController — permission grant + org isolation", () => {
+describe("AccountingGlPeriodsController — permission grant + org isolation", () => {
   let app: INestApplication;
 
   beforeEach(() => {

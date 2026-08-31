@@ -22,7 +22,7 @@ const assetIdParams = z.object({ assetId: z.coerce.number().int().positive() }).
 @RequireModule("accounting")
 @Controller("accounting/assets")
 @UseGuards(JwtAuthGuard)
-export class AssetsController {
+export class FinanceAssetsController {
   constructor(private readonly assets: AssetsService) {}
 
   @Get()

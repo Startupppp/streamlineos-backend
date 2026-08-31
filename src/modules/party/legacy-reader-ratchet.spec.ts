@@ -46,6 +46,7 @@ describe("the legacy identity tables gain no new readers", () => {
   "src/modules/finance/ar/ar-payments.service.ts",
   "src/modules/finance/ar/statements.service.ts",
   "src/modules/finance/banking/matching.service.ts",
+  "src/modules/finance/reports/finance-report-export-worker.service.ts",
   "src/modules/finance/reports/insights-finders.service.ts",
   "src/modules/finance/reports/statement-reports.service.ts",
   "src/modules/finance/tax/tax-reports.service.ts",

@@ -9,22 +9,22 @@ import { EntriesController } from "./entries.controller";
 import { TimerService } from "./timer.service";
 import { TimerController } from "./timer.controller";
 import { PeriodsService } from "./periods.service";
-import { PeriodsController } from "./periods.controller";
+import { TimesheetPeriodsController } from "./periods.controller";
 import { ApprovalsService } from "./approvals.service";
 import { ApprovalsBulkService } from "./approvals-bulk.service";
-import { ApprovalsController } from "./approvals.controller";
+import { TimesheetApprovalsController } from "./approvals.controller";
 import { BillingService } from "./billing.service";
-import { BillingController } from "./billing.controller";
+import { TimesheetBillingController } from "./billing.controller";
 import { ReportsService } from "./reports.service";
 import { TimesheetAnalyticsService } from "./timesheet-analytics.service";
-import { ReportsController } from "./reports.controller";
+import { TimesheetReportsController } from "./reports.controller";
 import { SettingsService } from "./settings.service";
-import { SettingsController } from "./settings.controller";
+import { TimesheetSettingsController } from "./settings.controller";
 import { RatesService } from "./rates.service";
 import { RatesController } from "./rates.controller";
 import { BudgetsService } from "./budgets.service";
-import { BudgetsController } from "./budgets.controller";
-import { AuditController } from "./audit.controller";
+import { TimesheetBudgetsController } from "./budgets.controller";
+import { TimesheetAuditController } from "./audit.controller";
 import { TeamController } from "./team.controller";
 import { TeamService } from "./team.service";
 import { ExceptionsService } from "./exceptions.service";
@@ -39,14 +39,14 @@ import { AiModule } from "../../ai/core/ai.module";
   controllers: [
     EntriesController,
     TimerController,
-    PeriodsController,
-    ApprovalsController,
-    BillingController,
-    ReportsController,
-    SettingsController,
+    TimesheetPeriodsController,
+    TimesheetApprovalsController,
+    TimesheetBillingController,
+    TimesheetReportsController,
+    TimesheetSettingsController,
     RatesController,
-    BudgetsController,
-    AuditController,
+    TimesheetBudgetsController,
+    TimesheetAuditController,
     TeamController,
     TimesheetExceptionsController,
     TimesheetsAiController,

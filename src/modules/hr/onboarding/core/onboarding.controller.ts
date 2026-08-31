@@ -22,11 +22,12 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { AccessService } from "../../../access/access.service";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import {
-  OnboardingService,
-  isInitiateAlreadyDone,
-  isInitiateUserNotFound,
-} from "./onboarding.service";
+import { OnboardingInitiationService, isInitiateAlreadyDone, isInitiateUserNotFound } from "./onboarding-initiation.service";
+import { OnboardingSubmissionService } from "./onboarding-submission.service";
+import { OnboardingAdminService } from "./onboarding-admin.service";
+import { OnboardingDetailsService } from "./onboarding-details.service";
+import { OnboardingTaskService } from "./onboarding-task.service";
+import { OnboardingTemplateService } from "./onboarding-template.service";
 import { OnboardingRequirementsService } from "./onboarding-requirements.service";
 import {
   bankDetailsSchema,
@@ -79,7 +80,12 @@ const HR_MODULE_KEY: ModuleKey = "hr";
 @UseGuards(JwtAuthGuard)
 export class OnboardingController {
   constructor(
-    private readonly onboarding: OnboardingService,
+    private readonly initiation: OnboardingInitiationService,
+    private readonly submission: OnboardingSubmissionService,
+    private readonly admin: OnboardingAdminService,
+    private readonly details: OnboardingDetailsService,
+    private readonly tasks: OnboardingTaskService,
+    private readonly templates: OnboardingTemplateService,
     private readonly requirements: OnboardingRequirementsService,
     private readonly checklists: ModuleChecklistService,
     private readonly tours: GuidedTourService,
@@ -294,7 +300,7 @@ export class OnboardingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:manage")
   getProgress(@CurrentUser() u: CurrentUserContext) {
-    return this.onboarding.getProgressSummary(u.orgId);
+    return this.admin.getProgressSummary(u.orgId);
   }
 
   @Post()
@@ -306,7 +312,7 @@ export class OnboardingController {
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.onboarding.initiate(u.orgId, u.userId, body);
+    const result = await this.initiation.initiate(u.orgId, u.userId, body);
     if (isInitiateUserNotFound(result)) {
       throw new NotFoundException("User not found in this organization");
     }
@@ -321,14 +327,14 @@ export class OnboardingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:manage")
   listTemplates(@CurrentUser() u: CurrentUserContext) {
-    return this.onboarding.listTemplates(u.orgId);
+    return this.templates.listTemplates(u.orgId);
   }
 
   @Get("templates/departments")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:manage")
   listTemplateDepartments(@CurrentUser() u: CurrentUserContext) {
-    return this.onboarding.listTemplateDepartments(u.orgId);
+    return this.templates.listTemplateDepartments(u.orgId);
   }
 
   @Post("templates")
@@ -340,7 +346,7 @@ export class OnboardingController {
     @Body() body: CreateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.onboarding.createTemplate(u.orgId, u.userId, body);
+    return this.templates.createTemplate(u.orgId, u.userId, body);
   }
 
   @Post("reminders")
@@ -352,7 +358,7 @@ export class OnboardingController {
   @UseRateLimit("hr:onboarding-reminders")
   @HttpCode(201)
   sendReminders(@CurrentUser() currentUser: CurrentUserContext) {
-    return this.onboarding.sendReminders(currentUser.orgId);
+    return this.admin.sendReminders(currentUser.orgId);
   }
 
   @Patch("personal-details")
@@ -362,13 +368,13 @@ export class OnboardingController {
     @Body() body: PersonalDetailsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.onboarding.savePersonalDetails(u.orgId, u.userId, body);
+    return this.details.savePersonalDetails(u.orgId, u.userId, body);
   }
 
   @Get("personal-details")
   @Universal()
   getPersonalDetails(@CurrentUser() u: CurrentUserContext) {
-    return this.onboarding.getPersonalDetails(u.orgId, u.userId);
+    return this.details.getPersonalDetails(u.orgId, u.userId);
   }
 
   @Patch("bank-details")
@@ -378,13 +384,13 @@ export class OnboardingController {
     @Body() body: BankDetailsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.onboarding.saveBankDetails(u.orgId, u.userId, body);
+    return this.details.saveBankDetails(u.orgId, u.userId, body);
   }
 
   @Get("bank-details")
   @Universal()
   getBankDetails(@CurrentUser() u: CurrentUserContext) {
-    return this.onboarding.getBankDetails(u.orgId, u.userId);
+    return this.details.getBankDetails(u.orgId, u.userId);
   }
 
   @Post("submit")
@@ -392,7 +398,7 @@ export class OnboardingController {
   @Idempotent("hr.onboarding.submit")
   @Universal()
   submit(@CurrentUser() u: CurrentUserContext) {
-    return this.onboarding.submit(u.orgId, u.userId);
+    return this.submission.submit(u.orgId, u.userId);
   }
 
   @Patch("tasks/:taskId")
@@ -405,13 +411,13 @@ export class OnboardingController {
     @Body() body: UpdateTaskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.onboarding.updateTask(u, taskId, body);
+    return this.tasks.updateTask(u, taskId, body);
   }
 
   @Get("status")
   @Universal()
   getStatus(@CurrentUser() u: CurrentUserContext) {
-    return this.onboarding.getStatus(u.userId, u.orgId);
+    return this.details.getStatus(u.userId, u.orgId);
   }
 
   @Get("requirements")
@@ -442,7 +448,7 @@ export class OnboardingController {
   @RequireModule("hr")
   @RequirePermission("self:onboarding-tasks")
   getMyTasks(@CurrentUser() u: CurrentUserContext) {
-    return this.onboarding.getUserTasks(u, u.userId);
+    return this.tasks.getUserTasks(u,u.userId);
   }
 
   @Get(":userId")
@@ -453,6 +459,6 @@ export class OnboardingController {
     @Param("userId") userId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.onboarding.getUserTasks(u, userId);
+    return this.tasks.getUserTasks(u,userId);
   }
 }

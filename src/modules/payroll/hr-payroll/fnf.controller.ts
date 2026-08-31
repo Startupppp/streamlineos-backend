@@ -36,7 +36,7 @@ const fnfIdParams = z.object({ fnfId: z.coerce.number().int().positive() }).stri
 @RequireModule("payroll")
 @Controller("hr/fnf")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
-export class FnfController {
+export class HrPayrollFnfController {
   constructor(
     private readonly fnf: FnfService,
     private readonly access: AccessService,

@@ -14,7 +14,8 @@ import { UsersService } from "./users.service";
 import { UserProfileService } from "./user-profile.service";
 import { UserActivityService } from "./user-activity.service";
 import { UserOpsService } from "./user-ops.service";
-import { InvitationsService } from "../organization/core/invitations.service";
+import { InvitationCreateService } from "../organization/core/invitation-create.service";
+import { InvitationLifecycleService } from "../organization/core/invitation-lifecycle.service";
 import { InvitationsReadService } from "../organization/core/invitations-read.service";
 import {
   listUsersSchema, updateUserSchema, updateUserStatusSchema,
@@ -46,7 +47,8 @@ export class UsersController {
     private readonly userProfile: UserProfileService,
     private readonly userActivity: UserActivityService,
     private readonly userOps: UserOpsService,
-    private readonly invitations: InvitationsService,
+    private readonly invitationsCreate: InvitationCreateService,
+    private readonly invitationsLifecycle: InvitationLifecycleService,
     private readonly invitationsRead: InvitationsReadService,
   ) {}
 
@@ -136,9 +138,9 @@ export class UsersController {
     @Body() body: InviteUserInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.invitations.invite(
+    return this.invitationsCreate.invite(
       u.orgId,
-      { userId: u.userId, isOrgOwner: u.isOrgOwner, },
+      { userId: u.userId, isOrgOwner: u.isOrgOwner },
       body.email,
       body.role,
     );
@@ -152,7 +154,7 @@ export class UsersController {
     @Body() body: BulkInviteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.invitations.bulkInvite(u.orgId, { userId: u.userId, isOrgOwner: u.isOrgOwner }, body.emails, body.role);
+    return this.invitationsCreate.bulkInvite(u.orgId, { userId: u.userId, isOrgOwner: u.isOrgOwner }, body.emails, body.role);
   }
 
   @RequirePermission("settings:organization:manage")
@@ -218,7 +220,7 @@ export class UsersController {
   @Validate({ params: invitationIdParams })
   @BodylessAction()
   resendInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.invitations.resend(u.orgId, invitationId, {
+    return this.invitationsLifecycle.resend(u.orgId, invitationId, {
       userId: u.userId,
       isOrgOwner: u.isOrgOwner,
     });
@@ -233,7 +235,7 @@ export class UsersController {
     @Body() body: ChangeInviteRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.invitations.changeRole(
+    return this.invitationsLifecycle.changeRole(
       u.orgId,
       invitationId,
       { userId: u.userId, isOrgOwner: u.isOrgOwner },
@@ -245,7 +247,7 @@ export class UsersController {
   @Delete("invitations/:invitationId")
   @Validate({ params: invitationIdParams })
   cancelInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.invitations.cancel(u.orgId, invitationId, {
+    return this.invitationsLifecycle.cancel(u.orgId, invitationId, {
       userId: u.userId,
       isOrgOwner: u.isOrgOwner,
     });

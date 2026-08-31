@@ -23,7 +23,7 @@ const resourceTyperesourceIdParams = z.object({ resourceType: z.string().min(1),
 @RequireModule("accounting")
 @Controller("accounting/audit")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-export class AuditController {
+export class FinanceAuditController {
   constructor(private readonly svc: AuditSurfaceService) {}
 
   @Get()

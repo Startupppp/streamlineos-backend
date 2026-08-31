@@ -28,7 +28,7 @@ const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).
 @RequireModule("inventory")
 @Controller("inventory/webhooks")
 @UseGuards(JwtAuthGuard, ModuleGuard)
-export class WebhooksController {
+export class InvWebhooksController {
   constructor(private readonly svc: WebhooksService) {}
 
   @Get()

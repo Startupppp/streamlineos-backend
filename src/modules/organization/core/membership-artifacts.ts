@@ -137,6 +137,26 @@ export const MEMBERSHIP_ARTIFACTS = [
       "Space grants are polymorphic like resource grants and survive for the same reason.",
   },
   {
+    id: "kb_space_members",
+    mechanism: "database-cascade",
+    table: "kb_space_members",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Space membership is an authority read: it decides which spaces the person can open. The composite foreign key clears membership_id on removal, at which point the row can no longer match a live member. It is retained on suspension because the row still names a legitimate grant to restore.",
+  },
+  {
+    id: "kb_article_restrictions",
+    mechanism: "database-cascade",
+    table: "kb_article_restrictions",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "An article restriction is the per-article half of the same ACL and clears the same way. Both still carry a user_id arm during the actor transition, so a restriction whose membership is gone falls back to matching nobody rather than matching everybody.",
+  },
+  {
     id: "managed_products",
     mechanism: "database-cascade",
     table: "managed_products",

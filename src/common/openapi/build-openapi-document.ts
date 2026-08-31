@@ -230,6 +230,7 @@ export function applyOperationContract(
     applyIdempotency(operation, contract.idempotencyCommand);
   if (contract.response) applyResponseSchema(method, operation, contract.response);
   if (contract.bodyless) operation["x-bodyless"] = true;
+  if (contract.deprecated) operation["deprecated"] = true;
 }
 
 function sortRecord<T>(value: Record<string, T>): Record<string, T> {

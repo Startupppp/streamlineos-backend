@@ -7,7 +7,8 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
-import { InvProductsService } from "./inv-products.service";
+import { InvProductCrudService } from "./inv-product-crud.service";
+import { InvProductCatalogService } from "./inv-product-catalog.service";
 import { resolveInvProductsScope } from "../stock-engine/inventory-scope";
 import {
   listProductsSchema, createProductSchema, updateProductSchema,
@@ -31,7 +32,8 @@ const productIdvariantIdParams = z.object({ productId: z.coerce.number().int().p
 @UseGuards(JwtAuthGuard, ModuleGuard)
 export class InvProductsController {
   constructor(
-    private readonly products: InvProductsService,
+    private readonly crud: InvProductCrudService,
+    private readonly catalog: InvProductCatalogService,
     private readonly access: AccessService,
   ) {}
 
@@ -44,14 +46,14 @@ export class InvProductsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveInvProductsScope(this.access, u);
-    return this.products.listProducts(u.orgId, filters, scope, u.userId);
+    return this.crud.listProducts(u.orgId, filters, scope, u.userId);
   }
 
   @Get("categories")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   listCategories(@CurrentUser() u: CurrentUserContext) {
-    return this.products.listCategories(u.orgId);
+    return this.catalog.listCategories(u.orgId);
   }
 
   @Post("categories")
@@ -62,14 +64,14 @@ export class InvProductsController {
     @Body() body: CreateCategoryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.createCategory(u.orgId, body);
+    return this.catalog.createCategory(u.orgId, body);
   }
 
   @Get("uom")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   listUom(@CurrentUser() u: CurrentUserContext) {
-    return this.products.listUom(u.orgId);
+    return this.catalog.listUom(u.orgId);
   }
 
   @Post("uom")
@@ -80,7 +82,7 @@ export class InvProductsController {
     @Body() body: CreateUomInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.createUom(u.orgId, body);
+    return this.catalog.createUom(u.orgId, body);
   }
 
   @Patch("categories/:categoryId")
@@ -92,7 +94,7 @@ export class InvProductsController {
     @Body() body: UpdateCategoryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.updateCategory(u.orgId, categoryId, body);
+    return this.catalog.updateCategory(u.orgId, categoryId, body);
   }
 
   @Patch("uom/:uomId")
@@ -104,7 +106,7 @@ export class InvProductsController {
     @Body() body: UpdateUomInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.updateUom(u.orgId, uomId, body);
+    return this.catalog.updateUom(u.orgId, uomId, body);
   }
 
   @Get("variants")
@@ -115,7 +117,7 @@ export class InvProductsController {
     @Query() filters: ListVariantsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.listVariants(u.orgId, filters);
+    return this.catalog.listVariants(u.orgId, filters);
   }
 
   @Post(":productId/archive")
@@ -128,7 +130,7 @@ export class InvProductsController {
     @Param("productId", ParseIntPipe) productId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.archiveProduct(u.orgId, productId, u.userId);
+    return this.crud.archiveProduct(u.orgId, productId, u.userId);
   }
 
   @Post(":productId/restore")
@@ -141,7 +143,7 @@ export class InvProductsController {
     @Param("productId", ParseIntPipe) productId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.restoreProduct(u.orgId, productId, u.userId);
+    return this.crud.restoreProduct(u.orgId, productId, u.userId);
   }
 
   @Get(":productId")
@@ -149,7 +151,7 @@ export class InvProductsController {
   @RequirePermission("inventory:products:read")
   @Validate({ params: productIdParams })
   get(@Param("productId", ParseIntPipe) productId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.products.getProduct(u.orgId, productId, u.userId);
+    return this.crud.getProduct(u.orgId, productId, u.userId);
   }
 
   @Post()
@@ -160,7 +162,7 @@ export class InvProductsController {
     @Body() body: CreateProductInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.createProduct(u.orgId, u.userId, body);
+    return this.crud.createProduct(u.orgId, u.userId, body);
   }
 
   @Patch(":productId")
@@ -172,7 +174,7 @@ export class InvProductsController {
     @Body() body: UpdateProductInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.updateProduct(u.orgId, productId, body);
+    return this.crud.updateProduct(u.orgId, productId, body);
   }
 
   @Delete(":productId")
@@ -181,7 +183,7 @@ export class InvProductsController {
   @RequirePermission("inventory:products:delete")
   @Validate({ params: productIdParams })
   async delete(@Param("productId", ParseIntPipe) productId: number, @CurrentUser() u: CurrentUserContext) {
-    await this.products.deleteProduct(u.orgId, productId);
+    await this.crud.deleteProduct(u.orgId, productId);
   }
 
   @Post(":productId/variants")
@@ -193,7 +195,7 @@ export class InvProductsController {
     @Body() body: CreateVariantInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.createVariant(u.orgId, productId, body);
+    return this.catalog.createVariant(u.orgId, productId, body);
   }
 
   @Patch(":productId/variants/:variantId")
@@ -206,6 +208,6 @@ export class InvProductsController {
     @Body() body: UpdateVariantInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.updateVariant(u.orgId, variantId, body);
+    return this.catalog.updateVariant(u.orgId, variantId, body);
   }
 }

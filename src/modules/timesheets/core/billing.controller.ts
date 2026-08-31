@@ -30,7 +30,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 @RequireModule("build")
 @Controller("timesheets/billing")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
-export class BillingController {
+export class TimesheetBillingController {
   constructor(private readonly billing: BillingService) {}
 
   @Get("uninvoiced")

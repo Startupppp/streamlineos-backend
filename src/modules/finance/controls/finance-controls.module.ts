@@ -2,8 +2,8 @@ import { Module } from "@nestjs/common";
 import { AccountingPostingModule } from "../../accounting/posting/accounting-posting.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { ApprovalPoliciesController } from "./approval-policies.controller";
-import { ApprovalsController } from "./approvals.controller";
-import { AuditController } from "./audit.controller";
+import { FinanceApprovalsController } from "./approvals.controller";
+import { FinanceAuditController } from "./audit.controller";
 import { ExchangeRatesController } from "./exchange-rates.controller";
 import { ApprovalPoliciesService } from "./approval-policies.service";
 import { ApprovalsService } from "./approvals.service";
@@ -17,8 +17,8 @@ import { ProviderBridgeService } from "./provider-bridge.service";
   imports: [AccountingPostingModule, NotificationsModule],
   controllers: [
     ApprovalPoliciesController,
-    ApprovalsController,
-    AuditController,
+    FinanceApprovalsController,
+    FinanceAuditController,
     ExchangeRatesController,
   ],
   providers: [

@@ -31,10 +31,14 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
-import { OrganizationService } from "./organization.service";
+import { OrgProfileService } from "./org-profile.service";
+import { OrgMembershipService } from "./org-membership.service";
+import { OrgMembershipStatusService } from "./org-membership-status.service";
+import { OrgMemberDepartureService } from "./org-member-departure.service";
+import { OrgLifecycleService } from "./org-lifecycle.service";
+import { OrgPurgeService } from "./org-purge.service";
 import { OrganizationSettingsService } from "./organization-settings.service";
 import { OrganizationLegalHoldService } from "./lifecycle/organization-legal-hold.service";
-import { InvitationsService } from "./invitations.service";
 import { InvitationsReadService } from "./invitations-read.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
 import {
@@ -82,9 +86,13 @@ const holdIdParams = z.object({ holdId: z.string().min(1) }).strict();
 @UseGuards(JwtAuthGuard)
 export class OrganizationController {
   constructor(
-    private readonly organization: OrganizationService,
+    private readonly orgProfile: OrgProfileService,
+    private readonly orgMembership: OrgMembershipService,
+    private readonly orgMembershipStatus: OrgMembershipStatusService,
+    private readonly orgMemberDeparture: OrgMemberDepartureService,
+    private readonly orgLifecycle: OrgLifecycleService,
+    private readonly orgPurge: OrgPurgeService,
     private readonly settings: OrganizationSettingsService,
-    private readonly invitations: InvitationsService,
     private readonly invitationsRead: InvitationsReadService,
     private readonly invitationAcceptance: InvitationAcceptanceService,
     private readonly rateLimit: RateLimitService,
@@ -125,7 +133,7 @@ export class OrganizationController {
   @AllowNoOrg()
   @NoTenantTransaction()
   listOrganizations(@CurrentUser() u: CurrentUserContext) {
-    return this.organization.listUserOrganizations(u.userId);
+    return this.orgProfile.listUserOrganizations(u.userId);
   }
 
   @Get("archived")
@@ -133,7 +141,7 @@ export class OrganizationController {
   @AllowNoOrg()
   @NoTenantTransaction()
   listArchivedOrganizations(@CurrentUser() u: CurrentUserContext) {
-    return this.organization.listArchivedOwnedOrganizations(u.userId);
+    return this.orgLifecycle.listArchivedOwnedOrganizations(u.userId);
   }
 
   @Post()
@@ -147,7 +155,7 @@ export class OrganizationController {
     @Body() body: CreateOrganizationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.organization.createOrganization(u.userId, body);
+    return this.orgProfile.createOrganization(u.userId, body);
   }
 
   @Post("switch")
@@ -160,7 +168,7 @@ export class OrganizationController {
     @Body() body: SwitchOrgInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.organization.switchOrg(u.userId, body.orgId);
+    return this.orgProfile.switchOrg(u.userId, body.orgId);
   }
 
   @UseGuards(PermissionGuard)
@@ -171,7 +179,7 @@ export class OrganizationController {
     @Query() query: ListMembersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.organization.listMembers(u.orgId, query);
+    return this.orgMembership.listMembers(u.orgId, query);
   }
 
   @UseGuards(PermissionGuard)
@@ -183,7 +191,7 @@ export class OrganizationController {
     @Body() body: UpdateMemberRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.organization.updateMemberRole(
+    return this.orgMembership.updateMemberRole(
       u.orgId,
       { userId: u.userId, isOrgOwner: u.isOrgOwner },
       memberId,
@@ -200,7 +208,7 @@ export class OrganizationController {
     if (memberId === u.userId) {
       throw new BadRequestException("You cannot remove yourself from the organization");
     }
-    await this.organization.removeMember(u.orgId, u.userId, memberId);
+    await this.orgMemberDeparture.removeMember(u.orgId, u.userId, memberId);
   }
 
   @Patch("members/:memberId/suspend")
@@ -213,7 +221,7 @@ export class OrganizationController {
     if (memberId === u.userId) {
       throw new BadRequestException("You cannot suspend yourself");
     }
-    return this.organization.suspendMember(u.orgId, u.userId, memberId);
+    return this.orgMembershipStatus.suspendMember(u.orgId, u.userId, memberId);
   }
 
   @Patch("members/:memberId/reactivate")
@@ -223,7 +231,7 @@ export class OrganizationController {
   @RequirePermission("settings:organization:manage")
   @Validate({ params: memberIdParams })
   reactivateMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.organization.reactivateMember(u.orgId, u.userId, memberId);
+    return this.orgMembershipStatus.reactivateMember(u.orgId, u.userId, memberId);
   }
 
   @UseGuards(PermissionGuard)
@@ -356,7 +364,7 @@ export class OrganizationController {
   @RequirePermission("settings:manage")
   archiveOrg(@CurrentUser() u: CurrentUserContext) {
     assertOwnerOnly(u, "organization.archive");
-    return this.organization.archiveOrg(u.orgId, u.userId);
+    return this.orgLifecycle.archiveOrg(u.orgId, u.userId);
   }
 
   @Post("restore")
@@ -369,7 +377,7 @@ export class OrganizationController {
     @Body() body: RestoreOrgInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.organization.restoreOrg(body.orgId, u.userId);
+    return this.orgLifecycle.restoreOrg(body.orgId, u.userId);
   }
 
   @Post("leave")
@@ -377,7 +385,7 @@ export class OrganizationController {
   @Universal()
   @HttpCode(200)
   leaveOrg(@CurrentUser() u: CurrentUserContext) {
-    return this.organization.leaveOrg(u.orgId, u.userId);
+    return this.orgMemberDeparture.leaveOrg(u.orgId, u.userId);
   }
 
   @Delete()
@@ -390,7 +398,7 @@ export class OrganizationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     assertOwnerOnly(u, "organization.delete");
-    return this.organization.deleteOrg(u.orgId, u.userId, body.confirmation);
+    return this.orgPurge.deleteOrg(u.orgId, u.userId, body.confirmation);
   }
 
   @Post(":orgId/purge/schedule")
@@ -405,7 +413,7 @@ export class OrganizationController {
   ) {
     assertOwnerOnly(u, "organization.purge.schedule");
     const targetOrgId = u.orgId;
-    return this.organization.schedulePurge(
+    return this.orgPurge.schedulePurge(
       targetOrgId,
       u.userId,
       body.scheduledForDays,
@@ -424,7 +432,7 @@ export class OrganizationController {
   ) {
     assertOwnerOnly(u, "organization.purge.cancel");
     const targetOrgId = u.orgId;
-    return this.organization.cancelPurge(targetOrgId, u.userId);
+    return this.orgPurge.cancelPurge(targetOrgId, u.userId);
   }
 
   @Post("legal-holds")

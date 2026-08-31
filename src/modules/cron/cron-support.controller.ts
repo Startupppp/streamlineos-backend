@@ -11,6 +11,7 @@ import { logger } from "../../common/logger/logger.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronKbService } from "./cron-kb.service";
 import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
+import { CronKbChatRetentionService } from "./cron-kb-chat-retention.service";
 import { CronSupportService } from "./cron-support.service";
 import { SupportKbGapService } from "../support/kb-gap/support-kb-gap.service";
 import { CronLeaseService } from "./cron-lease.service";
@@ -23,6 +24,7 @@ export class CronSupportController {
   constructor(
     private readonly kb: CronKbService,
     private readonly kbChunkRetention: CronKbChunkRetentionService,
+    private readonly kbChatRetention: CronKbChatRetentionService,
     private readonly support: CronSupportService,
     private readonly supportKbGap: SupportKbGapService,
     private readonly cronLease: CronLeaseService,
@@ -87,6 +89,18 @@ export class CronSupportController {
   @HttpCode(200)
   postSupportKbGapDetect(@Headers("authorization") authorization?: string) {
     return this.runSupportKbGapDetect(authorization);
+  }
+
+  @Get("kb-chat-history-purge")
+  getKbChatHistoryPurge(@Headers("authorization") authorization?: string) {
+    return this.runKbChatHistoryPurge(authorization);
+  }
+
+  @Post("kb-chat-history-purge")
+  @BodylessAction()
+  @HttpCode(200)
+  postKbChatHistoryPurge(@Headers("authorization") authorization?: string) {
+    return this.runKbChatHistoryPurge(authorization);
   }
 
   @Get("session-revocation-prune")
@@ -195,6 +209,27 @@ export class CronSupportController {
       throw new InternalServerErrorException("Internal server error");
     }
   }
+  private async runKbChatHistoryPurge(authorization?: string) {
+    assertCronSecret(authorization);
+    if (process.env.KB_CHAT_PURGE_WORKER_ENABLED === "false")
+      return { success: true, skipped: true, message: "KB chat history purge disabled" };
+    try {
+      const outcome = await this.cronLease.withLease("kb-chat-history-purge", 600, () =>
+        this.kbChatRetention.purgeExpiredConversations(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "kb-chat-history-purge already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `KB chat history purge: deleted ${result.conversationsDeleted} conversations across ${result.orgsProcessed} orgs`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("KB chat history purge cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
   private async runSessionRevocationPrune(authorization?: string) {
     assertCronSecret(authorization);
     try {

@@ -60,6 +60,7 @@ import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronHrRetentionService } from "./cron-hr-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
+import { CronKbChatRetentionService } from "./cron-kb-chat-retention.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
 import { CronLeaseService } from "./cron-lease.service";
@@ -143,6 +144,7 @@ import { CalendarModule } from "../calendar/calendar.module";
     CronHrRetentionService,
     CronBuildSnapshotsService,
     CronKbChunkRetentionService,
+    CronKbChatRetentionService,
     CronOrganizationService,
     CronOrgPurgeWorkerService,
     CronLeaseService,

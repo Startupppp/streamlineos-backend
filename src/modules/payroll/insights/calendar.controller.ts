@@ -33,7 +33,7 @@ const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).
 @RequireModule("payroll")
 @Controller("payroll/calendar")
 @UseGuards(JwtAuthGuard, ModuleGuard)
-export class CalendarController {
+export class PayrollInsightsCalendarController {
   constructor(private readonly calendarService: CalendarService) {}
 
   @Get()

@@ -13,6 +13,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { CacheService } from "../../../common/cache/cache.service";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { AccessService } from "../../access/access.service";
@@ -76,7 +77,12 @@ export class KbAccessService {
 
     if (await this.isAdmin(user)) return spaces.map((s) => s.id);
 
+    const membershipId = user.principal !== undefined ? actingMembershipId(user.principal) : null;
     const roleSlugs = await this.resolveRoleSlugs(user.orgId, user.userId);
+    const directMatch =
+      membershipId !== null
+        ? or(eq(kbSpaceMembers.membershipId, membershipId), eq(kbSpaceMembers.userId, user.userId))
+        : eq(kbSpaceMembers.userId, user.userId);
     const grantedRows = await this.db
       .selectDistinct({ spaceId: kbSpaceMembers.spaceId })
       .from(kbSpaceMembers)
@@ -84,11 +90,8 @@ export class KbAccessService {
         and(
           eq(kbSpaceMembers.orgId, user.orgId),
           roleSlugs.length > 0
-            ? or(
-                eq(kbSpaceMembers.userId, user.userId),
-                inArray(kbSpaceMembers.role, roleSlugs),
-              )
-            : eq(kbSpaceMembers.userId, user.userId),
+            ? or(directMatch, inArray(kbSpaceMembers.role, roleSlugs))
+            : directMatch,
         ),
       );
 
@@ -133,9 +136,10 @@ export class KbAccessService {
 
   async getPrincipalIds(
     user: CurrentUserContext,
-  ): Promise<{ userId: string; roleSlugs: string[] }> {
+  ): Promise<{ userId: string; membershipId: number | null; roleSlugs: string[] }> {
     return {
       userId: user.userId,
+      membershipId: user.principal !== undefined ? actingMembershipId(user.principal) : null,
       roleSlugs: await this.resolveRoleSlugs(user.orgId, user.userId),
     };
   }
@@ -154,7 +158,7 @@ export class KbAccessService {
     }
 
     const restrictions = await this.db
-      .select({ userId: kbArticleRestrictions.userId, role: kbArticleRestrictions.role })
+      .select({ userId: kbArticleRestrictions.userId, membershipId: kbArticleRestrictions.membershipId, role: kbArticleRestrictions.role })
       .from(kbArticleRestrictions)
       .where(
         and(
@@ -164,9 +168,13 @@ export class KbAccessService {
         ),
       );
     if (restrictions.length > 0) {
+      const membershipId = user.principal !== undefined ? actingMembershipId(user.principal) : null;
       const roleSlugs = await this.resolveRoleSlugs(user.orgId, user.userId);
       const allowed = restrictions.some(
-        (r) => r.userId === user.userId || (r.role !== null && roleSlugs.includes(r.role)),
+        (r) =>
+          (membershipId !== null && r.membershipId === membershipId) ||
+          r.userId === user.userId ||
+          (r.role !== null && roleSlugs.includes(r.role)),
       );
       if (!allowed) throw new NotFoundException("Article not found");
     }
@@ -200,7 +208,7 @@ export class KbAccessService {
     }
 
     const restrictions = await this.db
-      .select({ userId: kbArticleRestrictions.userId, role: kbArticleRestrictions.role })
+      .select({ userId: kbArticleRestrictions.userId, membershipId: kbArticleRestrictions.membershipId, role: kbArticleRestrictions.role })
       .from(kbArticleRestrictions)
       .where(
         and(
@@ -210,9 +218,13 @@ export class KbAccessService {
         ),
       );
     if (restrictions.length > 0) {
+      const membershipId = user.principal !== undefined ? actingMembershipId(user.principal) : null;
       const roleSlugs = await this.resolveRoleSlugs(user.orgId, user.userId);
       const allowed = restrictions.some(
-        (r) => r.userId === user.userId || (r.role !== null && roleSlugs.includes(r.role)),
+        (r) =>
+          (membershipId !== null && r.membershipId === membershipId) ||
+          r.userId === user.userId ||
+          (r.role !== null && roleSlugs.includes(r.role)),
       );
       if (!allowed) throw new NotFoundException("Article not found");
     }

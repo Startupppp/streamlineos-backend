@@ -332,9 +332,9 @@ describe("CalendarRecurrenceService — getRecurringEventForOwner blocks non-rec
 describe("CalendarRecurrenceService.cancelOccurrence — reminder kill targets the exact occurrence dedupeKey", () => {
   beforeEach(() => jest.resetAllMocks());
 
-  it("the WHERE condition for the outbox update contains the exact occurrence ISO dedupeKey", async () => {
+  it("the WHERE condition for the outbox update contains the occurrence ISO LIKE prefix covering per-attendee keys", async () => {
     const occurrenceStart = new Date(OCCURRENCE_ISO);
-    const expectedKey = `calendar:reminder:${EVENT_ID}:${occurrenceStart.toISOString()}`;
+    const expectedLikePrefix = `calendar:reminder:${EVENT_ID}:${occurrenceStart.toISOString()}%`;
 
     const returning = jest.fn().mockResolvedValue([{ id: 40, isCancelled: true }]);
     const onConflictDoUpdate = jest.fn().mockReturnValue({ returning });
@@ -360,13 +360,13 @@ describe("CalendarRecurrenceService.cancelOccurrence — reminder kill targets t
 
     const whereCond = updateWhere.mock.calls[0]?.[0];
     const { params } = renderCond(whereCond);
-    expect(params).toContain(expectedKey);
+    expect(params).toContain(expectedLikePrefix);
     expect(params).toContain("PENDING");
     expect(params).toContain(ORG);
   });
 
-  it("BITE PROOF: a different occurrence ISO is NOT in the WHERE params — the kill is occurrence-specific", async () => {
-    const differentKey = `calendar:reminder:${EVENT_ID}:2024-06-10T10:00:00.000Z`;
+  it("BITE PROOF: a different occurrence ISO LIKE prefix is NOT in the WHERE params — the kill is occurrence-specific", async () => {
+    const differentKey = `calendar:reminder:${EVENT_ID}:2024-06-10T10:00:00.000Z%`;
 
     const returning = jest.fn().mockResolvedValue([{ id: 41, isCancelled: true }]);
     const onConflictDoUpdate = jest.fn().mockReturnValue({ returning });
@@ -404,5 +404,32 @@ describe("CalendarRecurrenceService.cancelOccurrence — reminder kill targets t
     await expect(svc.cancelOccurrence(ORG, USER, EVENT_ID, OCCURRENCE_ISO)).rejects.toThrow();
 
     expect(updateFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("CalendarRecurrenceService — per-attendee reminder key coverage", () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it("cancelOccurrence LIKE prefix matches the per-attendee key format (eventId:occurrenceIso:membershipId)", () => {
+    const occurrenceIso = new Date(OCCURRENCE_ISO).toISOString();
+    const perAttendeeKey = `calendar:reminder:${EVENT_ID}:${occurrenceIso}:${MEMBER_ID}`;
+    const likePrefix = `calendar:reminder:${EVENT_ID}:${occurrenceIso}%`;
+    expect(perAttendeeKey.startsWith(likePrefix.slice(0, -1))).toBe(true);
+  });
+
+  it("cancelOccurrence LIKE prefix does NOT match a different event's per-attendee key", () => {
+    const DIFFERENT_EVENT = 999;
+    const occurrenceIso = new Date(OCCURRENCE_ISO).toISOString();
+    const perAttendeeKey = `calendar:reminder:${DIFFERENT_EVENT}:${occurrenceIso}:${MEMBER_ID}`;
+    const likePrefix = `calendar:reminder:${EVENT_ID}:${occurrenceIso}%`;
+    expect(perAttendeeKey.startsWith(likePrefix.slice(0, -1))).toBe(false);
+  });
+
+  it("cancelOccurrence LIKE prefix does NOT match a different occurrence's per-attendee key", () => {
+    const occurrenceIso = new Date(OCCURRENCE_ISO).toISOString();
+    const differentOccurrenceIso = "2024-06-10T10:00:00.000Z";
+    const perAttendeeKey = `calendar:reminder:${EVENT_ID}:${differentOccurrenceIso}:${MEMBER_ID}`;
+    const likePrefix = `calendar:reminder:${EVENT_ID}:${occurrenceIso}%`;
+    expect(perAttendeeKey.startsWith(likePrefix.slice(0, -1))).toBe(false);
   });
 });

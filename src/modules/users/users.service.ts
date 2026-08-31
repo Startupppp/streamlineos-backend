@@ -4,7 +4,7 @@ import {
   Inject,
   Injectable,
 } from "@nestjs/common";
-import type { InviteActor } from "../organization/core/invitations.service";
+import type { InviteActor } from "../organization/core/invitations.helpers";
 import { AccessService } from "../access/access.service";
 import { and, count, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -17,7 +17,7 @@ import {
 } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { InvitationsService } from "../organization/core/invitations.service";
+import { InvitationCreateService } from "../organization/core/invitation-create.service";
 import {
   OrgMembershipService,
   type MemberLifecycleStatus,
@@ -65,7 +65,7 @@ export class UsersService {
     private readonly access: AccessService,
     private readonly planLimits: PlanLimitsService,
     private readonly seatLedger: SeatLedgerService,
-    private readonly invitationsSvc: InvitationsService,
+    private readonly invitationsSvc: InvitationCreateService,
     private readonly orgMembership: OrgMembershipService,
     private readonly employment: EmploymentFactsService,
   ) {

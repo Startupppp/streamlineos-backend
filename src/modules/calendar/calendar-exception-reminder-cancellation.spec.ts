@@ -54,9 +54,9 @@ function makeService(db: unknown): CalendarService {
 describe("cancelOccurrence — kills PENDING outbox reminder for the specific occurrence", () => {
   beforeEach(() => jest.resetAllMocks());
 
-  it("marks the matching occurrence dedupeKey DEAD in the same transaction", async () => {
+  it("marks the matching occurrence dedupeKey DEAD in the same transaction (LIKE prefix covers per-attendee keys)", async () => {
     const occurrenceStart = new Date("2024-06-03T10:00:00Z");
-    const expectedDedupeKey = `calendar:reminder:${EVENT_ID}:${occurrenceStart.toISOString()}`;
+    const expectedDedupeKey = `calendar:reminder:${EVENT_ID}:${occurrenceStart.toISOString()}%`;
 
     const insertChain = makeInsertChain([{ id: 1, eventId: EVENT_ID }]);
     const updateChain = makeUpdateChain();
@@ -91,9 +91,9 @@ describe("cancelOccurrence — kills PENDING outbox reminder for the specific oc
     expect(params).toContain(expectedDedupeKey);
   });
 
-  it("does NOT kill reminders for a different occurrence (dedupeKey is occurrence-specific)", async () => {
+  it("does NOT kill reminders for a different occurrence (LIKE prefix is occurrence-specific)", async () => {
     const occurrenceStart = new Date("2024-06-03T10:00:00Z");
-    const differentOccurrenceKey = `calendar:reminder:${EVENT_ID}:2024-06-10T10:00:00.000Z`;
+    const differentOccurrenceKey = `calendar:reminder:${EVENT_ID}:2024-06-10T10:00:00.000Z%`;
 
     const insertChain = makeInsertChain([{ id: 1 }]);
     const updateChain = makeUpdateChain();
@@ -143,10 +143,10 @@ describe("cancelOccurrence — kills PENDING outbox reminder for the specific oc
 describe("upsertOccurrenceException — kills old PENDING reminder when modifiedStart changes", () => {
   beforeEach(() => jest.resetAllMocks());
 
-  it("marks the original occurrence dedupeKey DEAD when modifiedStart is provided", async () => {
+  it("marks the original occurrence dedupeKey DEAD when modifiedStart is provided (LIKE prefix covers per-attendee keys)", async () => {
     const occurrenceStart = new Date("2024-06-03T10:00:00Z");
     const modifiedStart = "2024-06-03T14:00:00.000Z";
-    const expectedKilledKey = `calendar:reminder:${EVENT_ID}:${occurrenceStart.toISOString()}`;
+    const expectedKilledKey = `calendar:reminder:${EVENT_ID}:${occurrenceStart.toISOString()}%`;
 
     const insertChain = makeInsertChain([{ id: 2, eventId: EVENT_ID }]);
     const updateChain = makeUpdateChain();
@@ -308,6 +308,109 @@ describe("updateAttendeesInTx — deletes PENDING reminders when attendees are r
       .updateAttendeesInTx(tx, ORG, EVENT_ID, [ALICE, BOB], "actor-user-id");
 
     expect(tx.delete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("CalendarService.updateEvent — series update does NOT delete calendarEventExceptions", () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it("updating a recurring event's rrule never calls delete on calendarEventExceptions", async () => {
+    const deletedTables: unknown[] = [];
+    const updateWhere = jest.fn().mockResolvedValue([]);
+    const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
+
+    const tx = {
+      query: {
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ id: MEMBER_ID }),
+        },
+      },
+      update: jest.fn().mockReturnValue({ set: updateSet }),
+      delete: jest.fn().mockImplementation((table: unknown) => {
+        deletedTables.push(table);
+        return { where: jest.fn().mockResolvedValue([]) };
+      }),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          onConflictDoNothing: jest.fn().mockResolvedValue([]),
+          onConflictDoUpdate: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
+        }),
+      }),
+    };
+
+    const updatedRow = { id: EVENT_ID, orgId: ORG, title: "Updated", integrationConnectionId: null, externalEventId: null };
+
+    const db = {
+      transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb({
+        update: jest.fn().mockImplementation(() => {
+          const returning = jest.fn().mockResolvedValue([updatedRow]);
+          const where = jest.fn().mockReturnValue({ returning });
+          const set = jest.fn().mockReturnValue({ where });
+          return { set };
+        }),
+        delete: jest.fn().mockImplementation((table: unknown) => {
+          deletedTables.push(table);
+          return { where: jest.fn().mockResolvedValue([]) };
+        }),
+        query: {
+          organizationMembers: {
+            findFirst: jest.fn().mockResolvedValue({ id: MEMBER_ID }),
+          },
+        },
+        insert: jest.fn().mockReturnValue({
+          values: jest.fn().mockReturnValue({
+            onConflictDoNothing: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      })),
+    } as unknown as typeof db;
+
+    const svc = makeService(db);
+    await svc.updateEvent(ORG, USER, EVENT_ID, { rrule: "FREQ=WEEKLY;BYDAY=TU" });
+
+    const { calendarEventExceptions } = await import("../../db/schema");
+    const deletedCalExceptions = deletedTables.some((t) => t === calendarEventExceptions);
+    expect(deletedCalExceptions).toBe(false);
+  });
+
+  it("BITE PROOF: the delete spy IS invoked when attendees are removed (confirming the spy works)", async () => {
+    const deletedTables: unknown[] = [];
+
+    const db = {
+      transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb({
+        query: {
+          organizationMembers: {
+            findFirst: jest.fn().mockResolvedValue({ id: MEMBER_ID }),
+          },
+        },
+        select: jest.fn().mockImplementation(() => {
+          const where = jest.fn().mockResolvedValue([{ userId: "user-removed" }]);
+          const innerJoin = jest.fn().mockReturnValue({ where });
+          const from = jest.fn().mockReturnValue({ where, innerJoin });
+          return { from };
+        }),
+        update: jest.fn().mockImplementation(() => {
+          const returning = jest.fn().mockResolvedValue([{ id: EVENT_ID, orgId: ORG, title: "T", integrationConnectionId: null, externalEventId: null }]);
+          const where = jest.fn().mockReturnValue({ returning });
+          const set = jest.fn().mockReturnValue({ where });
+          return { set };
+        }),
+        delete: jest.fn().mockImplementation((table: unknown) => {
+          deletedTables.push(table);
+          return { where: jest.fn().mockResolvedValue([]) };
+        }),
+        insert: jest.fn().mockReturnValue({
+          values: jest.fn().mockReturnValue({
+            onConflictDoNothing: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      })),
+    } as unknown as typeof db;
+
+    const svc = makeService(db);
+    await svc.updateEvent(ORG, USER, EVENT_ID, { attendeeIds: [] });
+
+    expect(deletedTables.length).toBeGreaterThan(0);
   });
 });
 

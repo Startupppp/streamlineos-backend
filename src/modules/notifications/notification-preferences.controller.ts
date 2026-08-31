@@ -15,6 +15,7 @@ import {
   type CreateSuppressionInput,
 } from "./dto/preference.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const eventKeyParams = z.object({ eventKey: z.string().min(1) }).strict();
@@ -80,6 +81,7 @@ export class NotificationPreferencesController {
   }
 
   @Post("reset")
+  @BodylessAction()
   @Universal()
   @HttpCode(200)
   reset(@CurrentUser() u: CurrentUserContext) {

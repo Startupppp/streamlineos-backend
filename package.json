@@ -207,7 +207,9 @@
     "drill:erasure:self-test": "node src/scripts/drill-erasure.mjs --self-test",
     "drill:legal-hold": "node --env-file-if-exists=.env src/scripts/drill-legal-hold.mjs",
     "check:migration-ledger": "node src/scripts/check-migration-ledger.mjs",
-    "check:migration-ledger:self-test": "node src/scripts/check-migration-ledger.mjs --self-test"
+    "check:migration-ledger:self-test": "node src/scripts/check-migration-ledger.mjs --self-test",
+    "check:operation-ids": "node src/scripts/check-operation-ids.mjs",
+    "check:operation-ids:self-test": "node src/scripts/check-operation-ids.mjs --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

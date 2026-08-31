@@ -10,7 +10,7 @@ import type { SQL } from "drizzle-orm";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { InvitationsService } from "./invitations.service";
+import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import { OrgLifecycleService } from "./org-lifecycle.service";
 import { OrgMembershipService } from "./org-membership.service";
 import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
@@ -75,7 +75,7 @@ describe("OrgLifecycleService — cross-tenant and cross-user isolation", () => 
           },
         },
         { provide: OrgMembershipService, useValue: { revokeOrgScopedAccess: jest.fn() } },
-        { provide: InvitationsService, useValue: { revokeAllPending: jest.fn() } },
+        { provide: InvitationLifecycleService, useValue: { revokeAllPending: jest.fn() } },
         {
           provide: OrganizationSagaService,
           useValue: {

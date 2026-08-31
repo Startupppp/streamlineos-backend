@@ -11,12 +11,11 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { EmailService } from "../../email/email.service";
-import { InvitationsService } from "./invitations.service";
 import { InvitationCreateService } from "./invitation-create.service";
 import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 
-describe("InvitationsService state transitions", () => {
+describe("Invitation sub-services state transitions", () => {
   const invitationFindFirst = jest.fn();
   const organizationFindFirst = jest.fn();
   const membershipFindFirst = jest.fn();
@@ -45,7 +44,7 @@ describe("InvitationsService state transitions", () => {
       (fn: (transaction: typeof tx) => Promise<unknown>) => fn(tx),
     ),
   };
-  let service: InvitationsService;
+  let service: Pick<InvitationLifecycleService, "resend" | "cancel" | "changeRole"> & Pick<InvitationCreateService, "invite" | "bulkInvite">;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -63,7 +62,6 @@ describe("InvitationsService state transitions", () => {
       providers: [
         InvitationCreateService,
         InvitationLifecycleService,
-        InvitationsService,
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
         {
@@ -91,7 +89,15 @@ describe("InvitationsService state transitions", () => {
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
-    service = moduleRef.get(InvitationsService);
+    const lifecycle = moduleRef.get(InvitationLifecycleService);
+    const create = moduleRef.get(InvitationCreateService);
+    service = {
+      resend: lifecycle.resend.bind(lifecycle),
+      cancel: lifecycle.cancel.bind(lifecycle),
+      changeRole: lifecycle.changeRole.bind(lifecycle),
+      invite: create.invite.bind(create),
+      bulkInvite: create.bulkInvite.bind(create),
+    };
   });
 
   it.each(["resend", "cancel"] as const)(

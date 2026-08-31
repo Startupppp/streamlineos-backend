@@ -122,10 +122,6 @@ export const chatPinnedMessagesRelations = relations(
 export const chatSavedMessagesRelations = relations(
   chatSavedMessages,
   ({ one }) => ({
-    user: one(users, {
-      fields: [chatSavedMessages.userId],
-      references: [users.id],
-    }),
     message: one(chatMessages, {
       fields: [chatSavedMessages.messageId],
       references: [chatMessages.id],
@@ -152,9 +148,9 @@ export const chatHuddlesRelations = relations(chatHuddles, ({ one, many }) => ({
     fields: [chatHuddles.channelId],
     references: [chatChannels.id],
   }),
-  startedByUser: one(users, {
-    fields: [chatHuddles.startedBy],
-    references: [users.id],
+  startedByMembership: one(organizationMembers, {
+    fields: [chatHuddles.startedByMembershipId],
+    references: [organizationMembers.id],
   }),
   participants: many(chatHuddleParticipants),
 }));
@@ -166,9 +162,9 @@ export const chatHuddleParticipantsRelations = relations(
       fields: [chatHuddleParticipants.huddleId],
       references: [chatHuddles.id],
     }),
-    user: one(users, {
-      fields: [chatHuddleParticipants.userId],
-      references: [users.id],
+    membership: one(organizationMembers, {
+      fields: [chatHuddleParticipants.membershipId],
+      references: [organizationMembers.id],
     }),
   }),
 );

@@ -10,7 +10,7 @@ import { OneOnOneMeetingsService } from "./one-on-one-meetings.service";
 import { PerformanceGoalsService } from "./performance-goals.service";
 import { PerformancePipsService } from "./performance-pips.service";
 import { RichDocumentsService } from "./rich-documents.service";
-import { EngagementExtrasService } from "./engagement-extras.service";
+import { EngagementBadgesService } from "./engagement-badges.service";
 import { EngagementCommunitiesCampaignsService } from "./engagement-communities-campaigns.service";
 import { ComplianceService } from "./compliance.service";
 import { DocumentsService } from "./documents.service";
@@ -221,7 +221,7 @@ describe("HR Performance services — cross-tenant isolation", () => {
   describe("EngagementService", () => {
     it("hides recognitions for a different org (DENY — cross-tenant isolation)", async () => {
       const { db, findMany } = makeDb([]);
-      const mockExtras = {} as unknown as EngagementExtrasService;
+      const mockExtras = {} as unknown as EngagementBadgesService;
       const svc = new EngagementService(db, mockExtras);
       const result = await svc.listRecognitions(ATTACKER);
       expect(result).toHaveLength(0);
@@ -232,7 +232,7 @@ describe("HR Performance services — cross-tenant isolation", () => {
 
     it("returns recognitions for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
-      const mockExtras = {} as unknown as EngagementExtrasService;
+      const mockExtras = {} as unknown as EngagementBadgesService;
       const svc = new EngagementService(db, mockExtras);
       const result = await svc.listRecognitions(OWNER);
       expect(result).toHaveLength(1);

@@ -17,6 +17,7 @@ import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { getTodayString } from "../../common/date";
 import { type DashboardForbidden } from "./dashboard.errors";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { AccessService } from "../access/access.service";
 import { resolveLeavesDashboardScope } from "./dashboard-scope";
 import { resignationApprovalScope } from "./resignation-approval-scope";
@@ -107,7 +108,7 @@ export class DashboardLeaveService {
     const isApprover = await this.access.holds(u, "hr:leaves:approve");
     const audience = scope === "all" ? "org" : u.userId;
     const key = `dashboard:pending-approvals:${orgId}:${scope}:${audience}:${isApprover ? "approver" : "self"}`;
-    const visible = leaveApprovalScope(scope, orgId, u.userId);
+    const visible = leaveApprovalScope(scope, orgId, u.userId, u.principal != null ? actingMembershipId(u.principal) : null);
 
     return this.cache.cached(
       key,

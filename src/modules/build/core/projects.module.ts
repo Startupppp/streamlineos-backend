@@ -19,7 +19,6 @@ import { ProjectsWorkspaceMembersController } from "./projects-workspace-members
 import { ProjectsWorkspaceMembersService } from "./projects-workspace-members.service";
 import { ProjectsCustomersController } from "./projects-customers.controller";
 import { ProjectsCustomersService } from "./projects-customers.service";
-import { ProjectsService } from "./projects.service";
 import { ProjectsQueryService } from "./projects-query.service";
 import { ProjectsWriteService } from "./projects-write.service";
 import { ProjectsProvisionService } from "./projects-provision.service";
@@ -80,7 +79,6 @@ import { BuildReleasePublishedConsumerService } from "./build-release-published-
     BuildReleasePublishedConsumerService,
     BuildDueSweepService,
     BuildNotificationVisibility,
-    ProjectsService,
     ProjectsQueryService,
     ProjectsWriteService,
     ProjectsProvisionService,
@@ -119,7 +117,9 @@ import { BuildReleasePublishedConsumerService } from "./build-release-published-
     BuildDueSweepService,
     ProjectsTicketsService,
     ProjectsWebhooksDispatchService,
-    ProjectsService,
+    ProjectsQueryService,
+    ProjectsProvisionService,
+    ProjectsWriteService,
     ProjectsWorkQueryService,
     ProjectsTicketSubresourcesService,
     ProjectsReportsService,

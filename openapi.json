@@ -1048,46 +1048,36 @@
     },
     "/accounting/approvals": {
       "get": {
-        "operationId": "ApprovalsController_list",
+        "operationId": "FinanceApprovalsController_list",
         "parameters": [
           {
             "name": "status",
             "in": "query",
             "required": false,
             "schema": {
-              "default": "SUBMITTED",
               "type": "string",
               "enum": [
-                "SUBMITTED",
+                "PENDING",
                 "APPROVED",
                 "REJECTED"
               ]
             }
           },
           {
-            "name": "userId",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "startDate",
+            "name": "recordType",
             "in": "query",
             "required": false,
             "schema": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
-            }
-          },
-          {
-            "name": "endDate",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              "enum": [
+                "MANUAL_JOURNAL",
+                "PURCHASE_BILL",
+                "VENDOR_PAYMENT",
+                "EXPENSE",
+                "CREDIT_NOTE",
+                "PERIOD_REOPEN",
+                "BANK_ADJUSTMENT"
+              ]
             }
           },
           {
@@ -1102,11 +1092,11 @@
             }
           },
           {
-            "name": "limit",
+            "name": "pageSize",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 50,
+              "default": 20,
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
@@ -1134,37 +1124,26 @@
           }
         },
         "tags": [
-          "Approvals"
+          "FinanceApprovals"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "timesheets:approvals:view",
-        "description": "Exposure: permission — timesheets:approvals:view"
+        "x-permission": "accounting:approvals:read",
+        "description": "Exposure: permission — accounting:approvals:read"
       }
     },
     "/accounting/approvals/{requestId}/approve": {
       "post": {
-        "operationId": "ApprovalsController_approve",
+        "operationId": "FinanceApprovalsController_approve",
         "parameters": [
           {
             "name": "requestId",
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
-            }
-          },
-          {
-            "name": "periodId",
-            "in": "path",
-            "required": true,
-            "schema": {
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
-          },
-          {
-            "$ref": "#/components/parameters/IdempotencyKeyHeader"
           }
         ],
         "responses": {
@@ -1197,77 +1176,11 @@
           }
         },
         "tags": [
-          "Approvals"
+          "FinanceApprovals"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "timesheets:approvals:manage",
-        "description": "Exposure: permission — timesheets:approvals:manage",
-        "x-idempotency-command": "timesheets.approval.approve",
-        "x-idempotent": true,
-        "x-bodyless": true
-      }
-    },
-    "/accounting/approvals/{requestId}/reject": {
-      "post": {
-        "operationId": "ApprovalsController_reject",
-        "parameters": [
-          {
-            "name": "requestId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "number"
-            }
-          },
-          {
-            "name": "periodId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "exclusiveMinimum": 0,
-              "maximum": 9007199254740991
-            }
-          },
-          {
-            "$ref": "#/components/parameters/IdempotencyKeyHeader"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "Approvals"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "timesheets:approvals:manage",
-        "description": "Exposure: permission — timesheets:approvals:manage",
+        "x-permission": "accounting:approvals:decide",
+        "description": "Exposure: permission — accounting:approvals:decide",
         "requestBody": {
           "required": true,
           "content": {
@@ -1275,26 +1188,88 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "reason": {
+                  "comment": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 500
+                    "maxLength": 1000
                   }
-                },
-                "required": [
-                  "reason"
-                ]
+                }
               }
             }
           }
+        }
+      }
+    },
+    "/accounting/approvals/{requestId}/reject": {
+      "post": {
+        "operationId": "FinanceApprovalsController_reject",
+        "parameters": [
+          {
+            "name": "requestId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
         },
-        "x-idempotency-command": "timesheets.approval.reject",
-        "x-idempotent": true
+        "tags": [
+          "FinanceApprovals"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "accounting:approvals:decide",
+        "description": "Exposure: permission — accounting:approvals:decide",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "comment": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/accounting/approvals/counts": {
       "get": {
-        "operationId": "ApprovalsController_counts",
+        "operationId": "FinanceApprovalsController_counts",
         "parameters": [],
         "responses": {
           "200": {
@@ -1317,7 +1292,7 @@
           }
         },
         "tags": [
-          "Approvals"
+          "FinanceApprovals"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:approvals:read",
@@ -1423,7 +1398,7 @@
     },
     "/accounting/assets": {
       "get": {
-        "operationId": "AssetsController_list",
+        "operationId": "FinanceAssetsController_list",
         "parameters": [
           {
             "name": "page",
@@ -1493,14 +1468,14 @@
           }
         },
         "tags": [
-          "Assets"
+          "FinanceAssets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:assets:read",
         "description": "Exposure: permission — accounting:assets:read"
       },
       "post": {
-        "operationId": "AssetsController_create",
+        "operationId": "FinanceAssetsController_create",
         "parameters": [],
         "responses": {
           "201": {
@@ -1529,7 +1504,7 @@
           }
         },
         "tags": [
-          "Assets"
+          "FinanceAssets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:assets:create",
@@ -1604,7 +1579,7 @@
     },
     "/accounting/assets/{assetId}": {
       "get": {
-        "operationId": "AssetsController_getOne",
+        "operationId": "FinanceAssetsController_getOne",
         "parameters": [
           {
             "name": "assetId",
@@ -1641,14 +1616,14 @@
           }
         },
         "tags": [
-          "Assets"
+          "FinanceAssets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:assets:read",
         "description": "Exposure: permission — accounting:assets:read"
       },
       "patch": {
-        "operationId": "AssetsController_update",
+        "operationId": "FinanceAssetsController_update",
         "parameters": [
           {
             "name": "assetId",
@@ -1691,7 +1666,7 @@
           }
         },
         "tags": [
-          "Assets"
+          "FinanceAssets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:assets:update",
@@ -1731,7 +1706,7 @@
     },
     "/accounting/assets/{assetId}/activate": {
       "post": {
-        "operationId": "AssetsController_activate",
+        "operationId": "FinanceAssetsController_activate",
         "parameters": [
           {
             "name": "assetId",
@@ -1774,7 +1749,7 @@
           }
         },
         "tags": [
-          "Assets"
+          "FinanceAssets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:assets:update",
@@ -1784,7 +1759,7 @@
     },
     "/accounting/assets/{assetId}/dispose": {
       "post": {
-        "operationId": "AssetsController_dispose",
+        "operationId": "FinanceAssetsController_dispose",
         "parameters": [
           {
             "name": "assetId",
@@ -1827,7 +1802,7 @@
           }
         },
         "tags": [
-          "Assets"
+          "FinanceAssets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:assets:manage",
@@ -2275,86 +2250,7 @@
     },
     "/accounting/audit": {
       "get": {
-        "operationId": "AuditController_list",
-        "parameters": [
-          {
-            "name": "entityType",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "entityId",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "action",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "Audit"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "timesheets:audit:view",
-        "description": "Exposure: permission — timesheets:audit:view"
-      }
-    },
-    "/accounting/audit/export": {
-      "get": {
-        "operationId": "AuditController_export",
+        "operationId": "FinanceAuditController_list",
         "parameters": [
           {
             "name": "resourceType",
@@ -2444,7 +2340,106 @@
           }
         },
         "tags": [
-          "Audit"
+          "FinanceAudit"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "accounting:audit:read",
+        "description": "Exposure: permission — accounting:audit:read"
+      }
+    },
+    "/accounting/audit/export": {
+      "get": {
+        "operationId": "FinanceAuditController_export",
+        "parameters": [
+          {
+            "name": "resourceType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "resourceId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "FinanceAudit"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:audit:export",
@@ -2453,7 +2448,7 @@
     },
     "/accounting/audit/record/{resourceType}/{resourceId}": {
       "get": {
-        "operationId": "AuditController_timeline",
+        "operationId": "FinanceAuditController_timeline",
         "parameters": [
           {
             "name": "resourceType",
@@ -2498,7 +2493,7 @@
           }
         },
         "tags": [
-          "Audit"
+          "FinanceAudit"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:audit:read",
@@ -2507,7 +2502,7 @@
     },
     "/accounting/budgets": {
       "get": {
-        "operationId": "BudgetsController_listBudgets",
+        "operationId": "FinanceBudgetsController_listBudgets",
         "parameters": [
           {
             "name": "page",
@@ -2576,14 +2571,14 @@
           }
         },
         "tags": [
-          "Budgets"
+          "FinanceBudgets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:budgets:read",
         "description": "Exposure: permission — accounting:budgets:read"
       },
       "post": {
-        "operationId": "BudgetsController_createBudget",
+        "operationId": "FinanceBudgetsController_createBudget",
         "parameters": [],
         "responses": {
           "201": {
@@ -2612,7 +2607,7 @@
           }
         },
         "tags": [
-          "Budgets"
+          "FinanceBudgets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:budgets:create",
@@ -2665,7 +2660,7 @@
     },
     "/accounting/budgets/{budgetId}": {
       "get": {
-        "operationId": "BudgetsController_getBudget",
+        "operationId": "FinanceBudgetsController_getBudget",
         "parameters": [
           {
             "name": "budgetId",
@@ -2702,14 +2697,14 @@
           }
         },
         "tags": [
-          "Budgets"
+          "FinanceBudgets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:budgets:read",
         "description": "Exposure: permission — accounting:budgets:read"
       },
       "patch": {
-        "operationId": "BudgetsController_updateBudget",
+        "operationId": "FinanceBudgetsController_updateBudget",
         "parameters": [
           {
             "name": "budgetId",
@@ -2752,7 +2747,7 @@
           }
         },
         "tags": [
-          "Budgets"
+          "FinanceBudgets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:budgets:update",
@@ -2786,7 +2781,7 @@
     },
     "/accounting/budgets/{budgetId}/approve": {
       "post": {
-        "operationId": "BudgetsController_approveBudget",
+        "operationId": "FinanceBudgetsController_approveBudget",
         "parameters": [
           {
             "name": "budgetId",
@@ -2832,7 +2827,7 @@
           }
         },
         "tags": [
-          "Budgets"
+          "FinanceBudgets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:budgets:approve",
@@ -2859,7 +2854,7 @@
     },
     "/accounting/budgets/{budgetId}/duplicate": {
       "post": {
-        "operationId": "BudgetsController_duplicateBudget",
+        "operationId": "FinanceBudgetsController_duplicateBudget",
         "parameters": [
           {
             "name": "budgetId",
@@ -2902,7 +2897,7 @@
           }
         },
         "tags": [
-          "Budgets"
+          "FinanceBudgets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:budgets:create",
@@ -2943,7 +2938,7 @@
     },
     "/accounting/budgets/{budgetId}/lines": {
       "put": {
-        "operationId": "BudgetsController_replaceBudgetLines",
+        "operationId": "FinanceBudgetsController_replaceBudgetLines",
         "parameters": [
           {
             "name": "budgetId",
@@ -2986,7 +2981,7 @@
           }
         },
         "tags": [
-          "Budgets"
+          "FinanceBudgets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:budgets:update",
@@ -3052,7 +3047,7 @@
     },
     "/accounting/budgets/{budgetId}/revisions": {
       "get": {
-        "operationId": "BudgetsController_listRevisions",
+        "operationId": "FinanceBudgetsController_listRevisions",
         "parameters": [
           {
             "name": "budgetId",
@@ -3089,7 +3084,7 @@
           }
         },
         "tags": [
-          "Budgets"
+          "FinanceBudgets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:budgets:read",
@@ -3098,7 +3093,7 @@
     },
     "/accounting/budgets/{budgetId}/submit": {
       "post": {
-        "operationId": "BudgetsController_submitBudget",
+        "operationId": "FinanceBudgetsController_submitBudget",
         "parameters": [
           {
             "name": "budgetId",
@@ -3144,7 +3139,7 @@
           }
         },
         "tags": [
-          "Budgets"
+          "FinanceBudgets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:budgets:update",
@@ -3171,7 +3166,7 @@
     },
     "/accounting/budgets/{budgetId}/vs-actual": {
       "get": {
-        "operationId": "BudgetsController_getBva",
+        "operationId": "FinanceBudgetsController_getBva",
         "parameters": [
           {
             "name": "budgetId",
@@ -3226,7 +3221,7 @@
           }
         },
         "tags": [
-          "Budgets"
+          "FinanceBudgets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:budgets:read",
@@ -6868,7 +6863,7 @@
     },
     "/accounting/periods": {
       "get": {
-        "operationId": "PeriodsController_listPeriods",
+        "operationId": "AccountingGlPeriodsController_listPeriods",
         "parameters": [],
         "responses": {
           "200": {
@@ -6891,14 +6886,14 @@
           }
         },
         "tags": [
-          "Periods"
+          "AccountingGlPeriods"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:periods:read",
         "description": "Exposure: permission — accounting:periods:read"
       },
       "post": {
-        "operationId": "PeriodsController_generatePeriods",
+        "operationId": "AccountingGlPeriodsController_generatePeriods",
         "parameters": [],
         "responses": {
           "201": {
@@ -6927,7 +6922,7 @@
           }
         },
         "tags": [
-          "Periods"
+          "AccountingGlPeriods"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:periods:manage",
@@ -6956,7 +6951,7 @@
     },
     "/accounting/periods/{periodId}/close": {
       "post": {
-        "operationId": "PeriodsController_closePeriod",
+        "operationId": "AccountingGlPeriodsController_closePeriod",
         "parameters": [
           {
             "name": "periodId",
@@ -7002,7 +6997,7 @@
           }
         },
         "tags": [
-          "Periods"
+          "AccountingGlPeriods"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:periods:manage",
@@ -7014,7 +7009,7 @@
     },
     "/accounting/periods/{periodId}/close-checklist": {
       "get": {
-        "operationId": "PeriodsController_getCloseChecklist",
+        "operationId": "AccountingGlPeriodsController_getCloseChecklist",
         "parameters": [
           {
             "name": "periodId",
@@ -7051,7 +7046,7 @@
           }
         },
         "tags": [
-          "Periods"
+          "AccountingGlPeriods"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:periods:read",
@@ -7060,7 +7055,7 @@
     },
     "/accounting/periods/{periodId}/lock": {
       "post": {
-        "operationId": "PeriodsController_lockPeriod",
+        "operationId": "AccountingGlPeriodsController_lockPeriod",
         "parameters": [
           {
             "name": "periodId",
@@ -7106,7 +7101,7 @@
           }
         },
         "tags": [
-          "Periods"
+          "AccountingGlPeriods"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:periods:manage",
@@ -7118,7 +7113,7 @@
     },
     "/accounting/periods/{periodId}/reopen": {
       "post": {
-        "operationId": "PeriodsController_reopenPeriod",
+        "operationId": "AccountingGlPeriodsController_reopenPeriod",
         "parameters": [
           {
             "name": "periodId",
@@ -7164,7 +7159,7 @@
           }
         },
         "tags": [
-          "Periods"
+          "AccountingGlPeriods"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:periods:reopen",
@@ -9282,26 +9277,41 @@
     },
     "/accounting/reimbursements": {
       "get": {
-        "operationId": "ReimbursementsController_list",
+        "operationId": "FinanceReimbursementsController_list",
         "parameters": [
           {
             "name": "page",
             "in": "query",
             "required": false,
             "schema": {
+              "default": 1,
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
             }
           },
           {
-            "name": "limit",
+            "name": "pageSize",
             "in": "query",
             "required": false,
             "schema": {
+              "default": 20,
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "APPROVED",
+                "PAID"
+              ]
             }
           }
         ],
@@ -9326,15 +9336,19 @@
           }
         },
         "tags": [
-          "Reimbursements"
+          "FinanceReimbursements"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "hr:payroll:view",
-        "description": "Exposure: permission — hr:payroll:view"
+        "x-permission": "accounting:reimbursements:read",
+        "description": "Exposure: permission — accounting:reimbursements:read"
       },
       "post": {
-        "operationId": "ReimbursementsController_create",
-        "parameters": [],
+        "operationId": "FinanceReimbursementsController_create",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "201": {
             "description": ""
@@ -9362,11 +9376,11 @@
           }
         },
         "tags": [
-          "Reimbursements"
+          "FinanceReimbursements"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "hr:payroll:view",
-        "description": "Exposure: permission — hr:payroll:view",
+        "x-permission": "accounting:reimbursements:manage",
+        "description": "Exposure: permission — accounting:reimbursements:manage",
         "requestBody": {
           "required": true,
           "content": {
@@ -9374,51 +9388,37 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "category": {
+                  "name": {
                     "type": "string",
                     "minLength": 1,
-                    "maxLength": 100
+                    "maxLength": 200
                   },
-                  "amount": {
-                    "type": "number",
-                    "minimum": 1,
-                    "maximum": 999999,
-                    "multipleOf": 0.01
-                  },
-                  "description": {
-                    "type": "string",
-                    "maxLength": 1000
-                  },
-                  "receiptUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "format": "uri"
-                      },
-                      {
-                        "type": "string",
-                        "const": ""
-                      }
-                    ]
-                  },
-                  "payrollMonth": {
-                    "type": "string",
-                    "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+                  "expenseIds": {
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
                   }
                 },
                 "required": [
-                  "category",
-                  "amount"
+                  "name",
+                  "expenseIds"
                 ]
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "accounting.reimbursement-batch.create",
+        "x-idempotent": true
       }
     },
     "/accounting/reimbursements/{batchId}": {
       "get": {
-        "operationId": "ReimbursementsController_getOne",
+        "operationId": "FinanceReimbursementsController_getOne",
         "parameters": [
           {
             "name": "batchId",
@@ -9455,7 +9455,7 @@
           }
         },
         "tags": [
-          "Reimbursements"
+          "FinanceReimbursements"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:reimbursements:read",
@@ -9464,7 +9464,7 @@
     },
     "/accounting/reimbursements/{batchId}/approve": {
       "post": {
-        "operationId": "ReimbursementsController_approve",
+        "operationId": "FinanceReimbursementsController_approve",
         "parameters": [
           {
             "name": "batchId",
@@ -9510,7 +9510,7 @@
           }
         },
         "tags": [
-          "Reimbursements"
+          "FinanceReimbursements"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:reimbursements:approve",
@@ -9522,7 +9522,7 @@
     },
     "/accounting/reimbursements/{batchId}/pay": {
       "post": {
-        "operationId": "ReimbursementsController_pay",
+        "operationId": "FinanceReimbursementsController_pay",
         "parameters": [
           {
             "name": "batchId",
@@ -9568,7 +9568,7 @@
           }
         },
         "tags": [
-          "Reimbursements"
+          "FinanceReimbursements"
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:reimbursements:manage",
@@ -24045,7 +24045,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "notifications:broadcasts:manage",
-        "description": "Exposure: permission — notifications:broadcasts:manage"
+        "description": "Exposure: permission — notifications:broadcasts:manage",
+        "x-bodyless": true
       }
     },
     "/broadcasts/{broadcastId}/dismiss": {
@@ -24093,7 +24094,8 @@
           "Broadcasts"
         ],
         "x-exposure": "universal",
-        "description": "Exposure: universal — any authenticated member, subject from the token"
+        "description": "Exposure: universal — any authenticated member, subject from the token",
+        "x-bodyless": true
       }
     },
     "/broadcasts/{broadcastId}/publish": {
@@ -24150,7 +24152,8 @@
         "x-permission": "notifications:broadcasts:manage",
         "description": "Exposure: permission — notifications:broadcasts:manage",
         "x-idempotency-command": "notifications.broadcast.publish",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/broadcasts/{broadcastId}/receipts/count": {
@@ -24755,24 +24758,51 @@
     },
     "/build/{projectId}/approvals": {
       "get": {
-        "operationId": "ApprovalsController_listApprovals",
+        "operationId": "BuildApprovalsController_listApprovals",
         "parameters": [
           {
             "name": "projectId",
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
-            }
-          },
-          {
-            "name": "runId",
-            "in": "path",
-            "required": true,
-            "schema": {
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "requested",
+                "pending",
+                "approved",
+                "rejected",
+                "changes_requested",
+                "escalated",
+                "cancelled"
+              ]
+            }
+          },
+          {
+            "name": "entityType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "task",
+                "milestone",
+                "budget",
+                "release",
+                "change_request",
+                "document",
+                "timesheet",
+                "client_approval"
+              ]
             }
           }
         ],
@@ -24800,14 +24830,14 @@
           }
         },
         "tags": [
-          "Approvals"
+          "BuildApprovals"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "payroll:runs:view",
-        "description": "Exposure: permission — payroll:runs:view"
+        "x-permission": "build:approvals:view",
+        "description": "Exposure: permission — build:approvals:view"
       },
       "post": {
-        "operationId": "ApprovalsController_createApproval",
+        "operationId": "BuildApprovalsController_createApproval",
         "parameters": [
           {
             "name": "projectId",
@@ -24853,7 +24883,7 @@
           }
         },
         "tags": [
-          "Approvals"
+          "BuildApprovals"
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:approvals:request",
@@ -24919,7 +24949,7 @@
     },
     "/build/{projectId}/approvals/{approvalId}": {
       "get": {
-        "operationId": "ApprovalsController_getApproval",
+        "operationId": "BuildApprovalsController_getApproval",
         "parameters": [
           {
             "name": "projectId",
@@ -24966,14 +24996,14 @@
           }
         },
         "tags": [
-          "Approvals"
+          "BuildApprovals"
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:approvals:view",
         "description": "Exposure: permission — build:approvals:view"
       },
       "patch": {
-        "operationId": "ApprovalsController_updateApproval",
+        "operationId": "BuildApprovalsController_updateApproval",
         "parameters": [
           {
             "name": "projectId",
@@ -25026,7 +25056,7 @@
           }
         },
         "tags": [
-          "Approvals"
+          "BuildApprovals"
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:approvals:manage",
@@ -25069,7 +25099,7 @@
         }
       },
       "delete": {
-        "operationId": "ApprovalsController_softDeleteApproval",
+        "operationId": "BuildApprovalsController_softDeleteApproval",
         "parameters": [
           {
             "name": "projectId",
@@ -25122,7 +25152,7 @@
           }
         },
         "tags": [
-          "Approvals"
+          "BuildApprovals"
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:approvals:manage",
@@ -25131,7 +25161,7 @@
     },
     "/build/{projectId}/approvals/{approvalId}/decide": {
       "patch": {
-        "operationId": "ApprovalsController_decideApproval",
+        "operationId": "BuildApprovalsController_decideApproval",
         "parameters": [
           {
             "name": "projectId",
@@ -25187,7 +25217,7 @@
           }
         },
         "tags": [
-          "Approvals"
+          "BuildApprovals"
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:approvals:decide",
@@ -70861,6 +70891,79 @@
         "x-bodyless": true
       }
     },
+    "/cron/kb-chat-history-purge": {
+      "get": {
+        "operationId": "CronSupportController_getKbChatHistoryPurge",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronSupport"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated"
+      },
+      "post": {
+        "operationId": "CronSupportController_postKbChatHistoryPurge",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronSupport"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
+      }
+    },
     "/cron/kb-chunk-retention-sweep": {
       "get": {
         "operationId": "CronSupportController_getKbChunkRetentionSweep",
@@ -72709,7 +72812,8 @@
           "WorkflowsCron"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/workflow-schedules-tick": {
@@ -72740,7 +72844,8 @@
           "WorkflowsCron"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/workflow-tick": {
@@ -80733,6 +80838,225 @@
         "x-idempotent": true
       }
     },
+    "/gdpr/export-async/{jobId}/download": {
+      "get": {
+        "operationId": "GdprController_downloadExportJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "Gdpr"
+        ],
+        "x-exposure": "in-service",
+        "x-authorized-in-service": "caller must own the job or hold hr:retention:manage; cross-org jobId returns 404 to avoid confirming existence",
+        "description": "Exposure: authorized in service — caller must own the job or hold hr:retention:manage; cross-org jobId returns 404 to avoid confirming existence"
+      }
+    },
+    "/gdpr/export-async/{jobId}/status": {
+      "get": {
+        "operationId": "GdprController_getExportJobStatus",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "Gdpr"
+        ],
+        "x-exposure": "in-service",
+        "x-authorized-in-service": "caller must own the job (requestedBy = JWT sub) or hold hr:retention:manage; cross-org jobId returns 404",
+        "description": "Exposure: authorized in service — caller must own the job (requestedBy = JWT sub) or hold hr:retention:manage; cross-org jobId returns 404"
+      }
+    },
+    "/gdpr/export-async/{personId}": {
+      "post": {
+        "operationId": "GdprController_createPersonExportJob",
+        "parameters": [
+          {
+            "name": "personId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "Gdpr"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "hr:retention:manage",
+        "description": "Exposure: permission — hr:retention:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "idempotencyKey"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/gdpr/export-async/me": {
+      "post": {
+        "operationId": "GdprController_createOwnExportJob",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "Gdpr"
+        ],
+        "x-exposure": "in-service",
+        "x-authorized-in-service": "JWT sub is the subject — async export for caller's own data; idempotency-key required",
+        "description": "Exposure: authorized in service — JWT sub is the subject — async export for caller's own data; idempotency-key required",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "idempotencyKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "idempotencyKey"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
     "/gdpr/export/{personId}": {
       "post": {
         "operationId": "GdprController_exportPersonData",
@@ -83073,7 +83397,7 @@
     },
     "/hr/asset-returns": {
       "get": {
-        "operationId": "AssetsController_listAssetReturns",
+        "operationId": "HrAssetsController_listAssetReturns",
         "parameters": [],
         "responses": {
           "200": {
@@ -83096,14 +83420,14 @@
           }
         },
         "tags": [
-          "Assets"
+          "HrAssets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:assets:view",
         "description": "Exposure: permission — hr:assets:view"
       },
       "post": {
-        "operationId": "AssetsController_createAssetReturn",
+        "operationId": "HrAssetsController_createAssetReturn",
         "parameters": [],
         "responses": {
           "201": {
@@ -83132,7 +83456,7 @@
           }
         },
         "tags": [
-          "Assets"
+          "HrAssets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:assets:manage",
@@ -83182,7 +83506,7 @@
     },
     "/hr/asset-returns/{returnId}": {
       "patch": {
-        "operationId": "AssetsController_updateAssetReturn",
+        "operationId": "HrAssetsController_updateAssetReturn",
         "parameters": [
           {
             "name": "returnId",
@@ -83225,7 +83549,7 @@
           }
         },
         "tags": [
-          "Assets"
+          "HrAssets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:assets:manage",
@@ -91012,7 +91336,7 @@
     },
     "/hr/devices": {
       "get": {
-        "operationId": "AssetsController_listDevices",
+        "operationId": "HrAssetsController_listDevices",
         "parameters": [],
         "responses": {
           "200": {
@@ -91035,14 +91359,14 @@
           }
         },
         "tags": [
-          "Assets"
+          "HrAssets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:assets:view",
         "description": "Exposure: permission — hr:assets:view"
       },
       "post": {
-        "operationId": "AssetsController_createDevice",
+        "operationId": "HrAssetsController_createDevice",
         "parameters": [],
         "responses": {
           "201": {
@@ -91071,7 +91395,7 @@
           }
         },
         "tags": [
-          "Assets"
+          "HrAssets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:assets:manage",
@@ -91135,7 +91459,7 @@
     },
     "/hr/devices/{deviceId}": {
       "patch": {
-        "operationId": "AssetsController_updateDevice",
+        "operationId": "HrAssetsController_updateDevice",
         "parameters": [
           {
             "name": "deviceId",
@@ -91178,7 +91502,7 @@
           }
         },
         "tags": [
-          "Assets"
+          "HrAssets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:assets:manage",
@@ -91230,7 +91554,7 @@
         }
       },
       "delete": {
-        "operationId": "AssetsController_deleteDevice",
+        "operationId": "HrAssetsController_deleteDevice",
         "parameters": [
           {
             "name": "deviceId",
@@ -91273,7 +91597,7 @@
           }
         },
         "tags": [
-          "Assets"
+          "HrAssets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:assets:manage",
@@ -105563,7 +105887,7 @@
     },
     "/hr/fnf": {
       "get": {
-        "operationId": "FnfController_list",
+        "operationId": "HrPayrollFnfController_list",
         "parameters": [
           {
             "name": "page",
@@ -105607,14 +105931,14 @@
           }
         },
         "tags": [
-          "Fnf"
+          "HrPayrollFnf"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "payroll:fnf:view",
-        "description": "Exposure: permission — payroll:fnf:view"
+        "x-permission": "hr:payroll:view",
+        "description": "Exposure: permission — hr:payroll:view"
       },
       "post": {
-        "operationId": "FnfController_create",
+        "operationId": "HrPayrollFnfController_create",
         "parameters": [],
         "responses": {
           "201": {
@@ -105643,7 +105967,7 @@
           }
         },
         "tags": [
-          "Fnf"
+          "HrPayrollFnf"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:exit:manage",
@@ -105716,7 +106040,7 @@
     },
     "/hr/fnf/{fnfId}": {
       "patch": {
-        "operationId": "FnfController_update",
+        "operationId": "HrPayrollFnfController_update",
         "parameters": [
           {
             "name": "fnfId",
@@ -105759,7 +106083,7 @@
           }
         },
         "tags": [
-          "Fnf"
+          "HrPayrollFnf"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:exit:manage",
@@ -108853,7 +109177,7 @@
     },
     "/hr/governance/delegations": {
       "get": {
-        "operationId": "DelegationsController_listOrg",
+        "operationId": "HrGovernanceDelegationsController_listOrg",
         "parameters": [
           {
             "name": "page",
@@ -108927,14 +109251,14 @@
           }
         },
         "tags": [
-          "Delegations"
+          "HrGovernanceDelegations"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:workflows:manage",
         "description": "Exposure: permission — hr:workflows:manage"
       },
       "post": {
-        "operationId": "DelegationsController_create",
+        "operationId": "HrGovernanceDelegationsController_create",
         "parameters": [],
         "responses": {
           "201": {
@@ -108963,11 +109287,11 @@
           }
         },
         "tags": [
-          "Delegations"
+          "HrGovernanceDelegations"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "settings:rbac:manage",
-        "description": "Exposure: permission — settings:rbac:manage",
+        "x-permission": "hr:workflows:view",
+        "description": "Exposure: permission — hr:workflows:view",
         "requestBody": {
           "required": true,
           "content": {
@@ -108975,41 +109299,40 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "delegateeId": {
+                  "proxyUserId": {
                     "type": "string",
                     "minLength": 1
                   },
-                  "permissions": {
-                    "minItems": 1,
-                    "maxItems": 200,
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    }
+                  "scope": {
+                    "type": "string",
+                    "enum": [
+                      "approvals",
+                      "hr_admin",
+                      "manager_tasks"
+                    ]
                   },
                   "startsAt": {
                     "type": "string",
-                    "format": "date-time",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    "minLength": 1
                   },
                   "endsAt": {
                     "type": "string",
-                    "format": "date-time",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                    "minLength": 1
                   },
                   "reason": {
                     "type": "string",
-                    "minLength": 1,
-                    "maxLength": 500
+                    "maxLength": 1000
+                  },
+                  "disallowSensitive": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
-                  "delegateeId",
-                  "permissions",
+                  "proxyUserId",
+                  "scope",
+                  "startsAt",
                   "endsAt"
-                ],
-                "additionalProperties": false
+                ]
               }
             }
           }
@@ -109018,7 +109341,7 @@
     },
     "/hr/governance/delegations/{proxyId}": {
       "patch": {
-        "operationId": "DelegationsController_update",
+        "operationId": "HrGovernanceDelegationsController_update",
         "parameters": [
           {
             "name": "proxyId",
@@ -109061,7 +109384,7 @@
           }
         },
         "tags": [
-          "Delegations"
+          "HrGovernanceDelegations"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:workflows:view",
@@ -109107,23 +109430,16 @@
         }
       },
       "delete": {
-        "operationId": "DelegationsController_revoke",
+        "operationId": "HrGovernanceDelegationsController_revoke",
         "parameters": [
           {
             "name": "proxyId",
             "required": true,
             "in": "path",
             "schema": {
-              "type": "number"
-            }
-          },
-          {
-            "name": "delegationId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -109157,16 +109473,16 @@
           }
         },
         "tags": [
-          "Delegations"
+          "HrGovernanceDelegations"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "settings:rbac:manage",
-        "description": "Exposure: permission — settings:rbac:manage"
+        "x-permission": "hr:workflows:view",
+        "description": "Exposure: permission — hr:workflows:view"
       }
     },
     "/hr/governance/delegations/my": {
       "get": {
-        "operationId": "DelegationsController_listMy",
+        "operationId": "HrGovernanceDelegationsController_listMy",
         "parameters": [
           {
             "name": "page",
@@ -109240,7 +109556,7 @@
           }
         },
         "tags": [
-          "Delegations"
+          "HrGovernanceDelegations"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:workflows:view",
@@ -136687,7 +137003,7 @@
     },
     "/hr/reimbursements": {
       "get": {
-        "operationId": "ReimbursementsController_list",
+        "operationId": "HrPayrollReimbursementsController_list",
         "parameters": [
           {
             "name": "page",
@@ -136731,14 +137047,14 @@
           }
         },
         "tags": [
-          "Reimbursements"
+          "HrPayrollReimbursements"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:payroll:view",
         "description": "Exposure: permission — hr:payroll:view"
       },
       "post": {
-        "operationId": "ReimbursementsController_create",
+        "operationId": "HrPayrollReimbursementsController_create",
         "parameters": [],
         "responses": {
           "201": {
@@ -136767,7 +137083,7 @@
           }
         },
         "tags": [
-          "Reimbursements"
+          "HrPayrollReimbursements"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:payroll:view",
@@ -136823,7 +137139,7 @@
     },
     "/hr/reimbursements/{reimbursementId}": {
       "patch": {
-        "operationId": "ReimbursementsController_update",
+        "operationId": "HrPayrollReimbursementsController_update",
         "parameters": [
           {
             "name": "reimbursementId",
@@ -136866,7 +137182,7 @@
           }
         },
         "tags": [
-          "Reimbursements"
+          "HrPayrollReimbursements"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:payroll:view",
@@ -154734,7 +155050,7 @@
     },
     "/inventory/settings": {
       "get": {
-        "operationId": "SettingsController_getSettings",
+        "operationId": "InvSettingsController_getSettings",
         "parameters": [],
         "responses": {
           "200": {
@@ -154757,14 +155073,14 @@
           }
         },
         "tags": [
-          "Settings"
+          "InvSettings"
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:settings:manage",
         "description": "Exposure: permission — inventory:settings:manage"
       },
       "patch": {
-        "operationId": "SettingsController_updateSettings",
+        "operationId": "InvSettingsController_updateSettings",
         "parameters": [],
         "responses": {
           "200": {
@@ -154793,7 +155109,7 @@
           }
         },
         "tags": [
-          "Settings"
+          "InvSettings"
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:settings:manage",
@@ -154886,7 +155202,7 @@
     },
     "/inventory/settings/health": {
       "get": {
-        "operationId": "SettingsController_getHealth",
+        "operationId": "InvSettingsController_getHealth",
         "parameters": [],
         "responses": {
           "200": {
@@ -154909,7 +155225,7 @@
           }
         },
         "tags": [
-          "Settings"
+          "InvSettings"
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:settings:manage",
@@ -154918,7 +155234,7 @@
     },
     "/inventory/settings/maintenance/expire-reservations": {
       "post": {
-        "operationId": "SettingsController_expireReservations",
+        "operationId": "InvSettingsController_expireReservations",
         "parameters": [],
         "responses": {
           "201": {
@@ -154947,7 +155263,7 @@
           }
         },
         "tags": [
-          "Settings"
+          "InvSettings"
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:settings:manage",
@@ -154957,7 +155273,7 @@
     },
     "/inventory/settings/number-sequences": {
       "get": {
-        "operationId": "SettingsController_listNumberSequences",
+        "operationId": "InvSettingsController_listNumberSequences",
         "parameters": [],
         "responses": {
           "200": {
@@ -154980,7 +155296,7 @@
           }
         },
         "tags": [
-          "Settings"
+          "InvSettings"
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:settings:manage",
@@ -154989,7 +155305,7 @@
     },
     "/inventory/settings/number-sequences/{sequenceId}": {
       "patch": {
-        "operationId": "SettingsController_updateNumberSequence",
+        "operationId": "InvSettingsController_updateNumberSequence",
         "parameters": [
           {
             "name": "sequenceId",
@@ -155032,7 +155348,7 @@
           }
         },
         "tags": [
-          "Settings"
+          "InvSettings"
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:settings:manage",
@@ -158917,31 +159233,8 @@
     },
     "/inventory/webhooks": {
       "get": {
-        "operationId": "WebhooksController_list",
-        "parameters": [
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 20,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          }
-        ],
+        "operationId": "InvWebhooksController_list",
+        "parameters": [],
         "responses": {
           "200": {
             "description": ""
@@ -158963,14 +159256,14 @@
           }
         },
         "tags": [
-          "Webhooks"
+          "InvWebhooks"
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:webhooks:manage",
         "description": "Exposure: permission — inventory:webhooks:manage"
       },
       "post": {
-        "operationId": "WebhooksController_create",
+        "operationId": "InvWebhooksController_create",
         "parameters": [],
         "responses": {
           "201": {
@@ -158999,7 +159292,7 @@
           }
         },
         "tags": [
-          "Webhooks"
+          "InvWebhooks"
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:webhooks:manage",
@@ -159050,7 +159343,7 @@
     },
     "/inventory/webhooks/{webhookId}": {
       "patch": {
-        "operationId": "WebhooksController_update",
+        "operationId": "InvWebhooksController_update",
         "parameters": [
           {
             "name": "webhookId",
@@ -159093,7 +159386,7 @@
           }
         },
         "tags": [
-          "Webhooks"
+          "InvWebhooks"
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:webhooks:manage",
@@ -159137,7 +159430,7 @@
         }
       },
       "delete": {
-        "operationId": "WebhooksController_remove",
+        "operationId": "InvWebhooksController_remove",
         "parameters": [
           {
             "name": "webhookId",
@@ -159180,7 +159473,7 @@
           }
         },
         "tags": [
-          "Webhooks"
+          "InvWebhooks"
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:webhooks:manage",
@@ -159189,7 +159482,7 @@
     },
     "/inventory/webhooks/{webhookId}/events": {
       "get": {
-        "operationId": "WebhooksController_listEvents",
+        "operationId": "InvWebhooksController_listEvents",
         "parameters": [
           {
             "name": "webhookId",
@@ -159261,7 +159554,7 @@
           }
         },
         "tags": [
-          "Webhooks"
+          "InvWebhooks"
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:webhooks:manage",
@@ -159270,7 +159563,7 @@
     },
     "/inventory/webhooks/events/{eventId}/retry": {
       "post": {
-        "operationId": "WebhooksController_retryEvent",
+        "operationId": "InvWebhooksController_retryEvent",
         "parameters": [
           {
             "name": "eventId",
@@ -159313,7 +159606,7 @@
           }
         },
         "tags": [
-          "Webhooks"
+          "InvWebhooks"
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:webhooks:manage",
@@ -174567,7 +174860,8 @@
         ],
         "x-exposure": "in-service",
         "x-authorized-in-service": "assertModuleAccessPolicy",
-        "description": "Exposure: authorized in service — assertModuleAccessPolicy"
+        "description": "Exposure: authorized in service — assertModuleAccessPolicy",
+        "x-bodyless": true
       },
       "delete": {
         "operationId": "ModuleAccessController_revokeStanding",
@@ -175060,7 +175354,8 @@
           "NotificationPreferences"
         ],
         "x-exposure": "universal",
-        "description": "Exposure: universal — any authenticated member, subject from the token"
+        "description": "Exposure: universal — any authenticated member, subject from the token",
+        "x-bodyless": true
       }
     },
     "/notification-preferences/rules": {
@@ -176208,7 +176503,8 @@
         "x-exposure": "universal",
         "description": "Exposure: universal — any authenticated member, subject from the token",
         "x-idempotency-command": "notifications.action.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/notifications/{notificationId}/archive": {
@@ -176256,7 +176552,8 @@
           "Notifications"
         ],
         "x-exposure": "universal",
-        "description": "Exposure: universal — any authenticated member, subject from the token"
+        "description": "Exposure: universal — any authenticated member, subject from the token",
+        "x-bodyless": true
       }
     },
     "/notifications/{notificationId}/pin": {
@@ -176304,7 +176601,8 @@
           "Notifications"
         ],
         "x-exposure": "universal",
-        "description": "Exposure: universal — any authenticated member, subject from the token"
+        "description": "Exposure: universal — any authenticated member, subject from the token",
+        "x-bodyless": true
       }
     },
     "/notifications/{notificationId}/read": {
@@ -176352,7 +176650,8 @@
           "Notifications"
         ],
         "x-exposure": "universal",
-        "description": "Exposure: universal — any authenticated member, subject from the token"
+        "description": "Exposure: universal — any authenticated member, subject from the token",
+        "x-bodyless": true
       }
     },
     "/notifications/{notificationId}/reject": {
@@ -176405,7 +176704,8 @@
         "x-exposure": "universal",
         "description": "Exposure: universal — any authenticated member, subject from the token",
         "x-idempotency-command": "notifications.action.reject",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/notifications/{notificationId}/snooze": {
@@ -176521,7 +176821,8 @@
           "Notifications"
         ],
         "x-exposure": "universal",
-        "description": "Exposure: universal — any authenticated member, subject from the token"
+        "description": "Exposure: universal — any authenticated member, subject from the token",
+        "x-bodyless": true
       }
     },
     "/notifications/{notificationId}/unpin": {
@@ -176569,7 +176870,8 @@
           "Notifications"
         ],
         "x-exposure": "universal",
-        "description": "Exposure: universal — any authenticated member, subject from the token"
+        "description": "Exposure: universal — any authenticated member, subject from the token",
+        "x-bodyless": true
       }
     },
     "/notifications/admin/events": {
@@ -177806,7 +178108,8 @@
           "Notifications"
         ],
         "x-exposure": "universal",
-        "description": "Exposure: universal — any authenticated member, subject from the token"
+        "description": "Exposure: universal — any authenticated member, subject from the token",
+        "x-bodyless": true
       }
     },
     "/notifications/read-all": {
@@ -177840,7 +178143,8 @@
           "Notifications"
         ],
         "x-exposure": "universal",
-        "description": "Exposure: universal — any authenticated member, subject from the token"
+        "description": "Exposure: universal — any authenticated member, subject from the token",
+        "x-bodyless": true
       }
     },
     "/notifications/unread-count": {
@@ -189903,7 +190207,7 @@
     },
     "/payroll/calendar": {
       "get": {
-        "operationId": "CalendarController_list",
+        "operationId": "PayrollInsightsCalendarController_list",
         "parameters": [
           {
             "name": "from",
@@ -189943,14 +190247,14 @@
           }
         },
         "tags": [
-          "Calendar"
+          "PayrollInsightsCalendar"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:runs:view",
         "description": "Exposure: permission — payroll:runs:view"
       },
       "post": {
-        "operationId": "CalendarController_create",
+        "operationId": "PayrollInsightsCalendarController_create",
         "parameters": [],
         "responses": {
           "201": {
@@ -189979,7 +190283,7 @@
           }
         },
         "tags": [
-          "Calendar"
+          "PayrollInsightsCalendar"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:settings:manage",
@@ -190020,7 +190324,7 @@
     },
     "/payroll/calendar/{eventId}": {
       "patch": {
-        "operationId": "CalendarController_update",
+        "operationId": "PayrollInsightsCalendarController_update",
         "parameters": [
           {
             "name": "eventId",
@@ -190063,7 +190367,7 @@
           }
         },
         "tags": [
-          "Calendar"
+          "PayrollInsightsCalendar"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:settings:manage",
@@ -190097,7 +190401,7 @@
         }
       },
       "delete": {
-        "operationId": "CalendarController_remove",
+        "operationId": "PayrollInsightsCalendarController_remove",
         "parameters": [
           {
             "name": "eventId",
@@ -190140,7 +190444,7 @@
           }
         },
         "tags": [
-          "Calendar"
+          "PayrollInsightsCalendar"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:settings:manage",
@@ -190149,7 +190453,7 @@
     },
     "/payroll/calendar/generate": {
       "post": {
-        "operationId": "CalendarController_generate",
+        "operationId": "PayrollInsightsCalendarController_generate",
         "parameters": [
           {
             "name": "month",
@@ -190187,7 +190491,7 @@
           }
         },
         "tags": [
-          "Calendar"
+          "PayrollInsightsCalendar"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:settings:manage",
@@ -191855,7 +192159,7 @@
     },
     "/payroll/fnf": {
       "get": {
-        "operationId": "FnfController_list",
+        "operationId": "PayrollInsightsFnfController_list",
         "parameters": [
           {
             "name": "page",
@@ -191899,7 +192203,7 @@
           }
         },
         "tags": [
-          "Fnf"
+          "PayrollInsightsFnf"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:fnf:view",
@@ -191908,7 +192212,7 @@
     },
     "/payroll/fnf/{settlementId}": {
       "get": {
-        "operationId": "FnfController_getOne",
+        "operationId": "PayrollInsightsFnfController_getOne",
         "parameters": [
           {
             "name": "settlementId",
@@ -191945,7 +192249,7 @@
           }
         },
         "tags": [
-          "Fnf"
+          "PayrollInsightsFnf"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:fnf:view",
@@ -191954,7 +192258,7 @@
     },
     "/payroll/fnf/{settlementId}/approve": {
       "post": {
-        "operationId": "FnfController_approve",
+        "operationId": "PayrollInsightsFnfController_approve",
         "parameters": [
           {
             "name": "settlementId",
@@ -192000,7 +192304,7 @@
           }
         },
         "tags": [
-          "Fnf"
+          "PayrollInsightsFnf"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:fnf:manage",
@@ -192039,7 +192343,7 @@
     },
     "/payroll/fnf/{settlementId}/statement": {
       "get": {
-        "operationId": "FnfController_getStatement",
+        "operationId": "PayrollInsightsFnfController_getStatement",
         "parameters": [
           {
             "name": "settlementId",
@@ -192076,7 +192380,7 @@
           }
         },
         "tags": [
-          "Fnf"
+          "PayrollInsightsFnf"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:fnf:view",
@@ -192085,7 +192389,7 @@
     },
     "/payroll/fnf/{settlementId}/statement/download": {
       "get": {
-        "operationId": "FnfController_downloadStatement",
+        "operationId": "PayrollInsightsFnfController_downloadStatement",
         "parameters": [
           {
             "name": "settlementId",
@@ -192122,7 +192426,7 @@
           }
         },
         "tags": [
-          "Fnf"
+          "PayrollInsightsFnf"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:fnf:view",
@@ -195349,7 +195653,7 @@
     },
     "/payroll/reports/bank-payout": {
       "get": {
-        "operationId": "ReportsController_getBankPayout",
+        "operationId": "PayrollInsightsReportsController_getBankPayout",
         "parameters": [
           {
             "name": "month",
@@ -195441,7 +195745,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "PayrollInsightsReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:reports:view",
@@ -195450,7 +195754,7 @@
     },
     "/payroll/reports/cost-center": {
       "get": {
-        "operationId": "ReportsController_getCostCenter",
+        "operationId": "PayrollInsightsReportsController_getCostCenter",
         "parameters": [
           {
             "name": "month",
@@ -195542,7 +195846,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "PayrollInsightsReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:reports:view",
@@ -195551,7 +195855,7 @@
     },
     "/payroll/reports/deductions": {
       "get": {
-        "operationId": "ReportsController_getDeductions",
+        "operationId": "PayrollInsightsReportsController_getDeductions",
         "parameters": [
           {
             "name": "month",
@@ -195643,7 +195947,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "PayrollInsightsReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:reports:view",
@@ -195652,7 +195956,7 @@
     },
     "/payroll/reports/department-cost": {
       "get": {
-        "operationId": "ReportsController_getDepartmentCost",
+        "operationId": "PayrollInsightsReportsController_getDepartmentCost",
         "parameters": [
           {
             "name": "month",
@@ -195744,7 +196048,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "PayrollInsightsReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:reports:view",
@@ -195753,7 +196057,7 @@
     },
     "/payroll/reports/earnings": {
       "get": {
-        "operationId": "ReportsController_getEarnings",
+        "operationId": "PayrollInsightsReportsController_getEarnings",
         "parameters": [
           {
             "name": "month",
@@ -195845,7 +196149,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "PayrollInsightsReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:reports:view",
@@ -195908,7 +196212,7 @@
     },
     "/payroll/reports/register": {
       "get": {
-        "operationId": "ReportsController_getRegister",
+        "operationId": "PayrollInsightsReportsController_getRegister",
         "parameters": [
           {
             "name": "month",
@@ -196000,7 +196304,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "PayrollInsightsReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:reports:view",
@@ -196009,7 +196313,7 @@
     },
     "/payroll/reports/reimbursements": {
       "get": {
-        "operationId": "ReportsController_getReimbursements",
+        "operationId": "PayrollInsightsReportsController_getReimbursements",
         "parameters": [
           {
             "name": "month",
@@ -196101,7 +196405,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "PayrollInsightsReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:reports:view",
@@ -196110,7 +196414,7 @@
     },
     "/payroll/reports/summary": {
       "get": {
-        "operationId": "ReportsController_getSummary",
+        "operationId": "PayrollInsightsReportsController_getSummary",
         "parameters": [
           {
             "name": "month",
@@ -196202,7 +196506,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "PayrollInsightsReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:reports:view",
@@ -196211,7 +196515,7 @@
     },
     "/payroll/reports/tax": {
       "get": {
-        "operationId": "ReportsController_getTax",
+        "operationId": "PayrollInsightsReportsController_getTax",
         "parameters": [
           {
             "name": "month",
@@ -196303,7 +196607,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "PayrollInsightsReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:reports:view",
@@ -196312,7 +196616,7 @@
     },
     "/payroll/reports/variance": {
       "get": {
-        "operationId": "ReportsController_getVariance",
+        "operationId": "PayrollInsightsReportsController_getVariance",
         "parameters": [
           {
             "name": "month",
@@ -196404,7 +196708,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "PayrollInsightsReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:reports:view",
@@ -196610,7 +196914,7 @@
     },
     "/payroll/runs/{runId}/approvals": {
       "get": {
-        "operationId": "ApprovalsController_listApprovals",
+        "operationId": "PayrollPayoutApprovalsController_listApprovals",
         "parameters": [
           {
             "name": "runId",
@@ -196647,7 +196951,7 @@
           }
         },
         "tags": [
-          "Approvals"
+          "PayrollPayoutApprovals"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:runs:view",
@@ -196656,7 +196960,7 @@
     },
     "/payroll/runs/{runId}/approvals/{approvalId}/approve": {
       "post": {
-        "operationId": "ApprovalsController_approveStage",
+        "operationId": "PayrollPayoutApprovalsController_approveStage",
         "parameters": [
           {
             "name": "runId",
@@ -196717,7 +197021,7 @@
           }
         },
         "tags": [
-          "Approvals"
+          "PayrollPayoutApprovals"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:runs:approve",
@@ -196742,7 +197046,7 @@
     },
     "/payroll/runs/{runId}/approvals/{approvalId}/reject": {
       "post": {
-        "operationId": "ApprovalsController_rejectStage",
+        "operationId": "PayrollPayoutApprovalsController_rejectStage",
         "parameters": [
           {
             "name": "runId",
@@ -196803,7 +197107,7 @@
           }
         },
         "tags": [
-          "Approvals"
+          "PayrollPayoutApprovals"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:runs:approve",
@@ -198354,7 +198658,7 @@
     },
     "/payroll/runs/{runId}/submit-approval": {
       "post": {
-        "operationId": "ApprovalsController_submitApproval",
+        "operationId": "PayrollPayoutApprovalsController_submitApproval",
         "parameters": [
           {
             "name": "runId",
@@ -198405,7 +198709,7 @@
           }
         },
         "tags": [
-          "Approvals"
+          "PayrollPayoutApprovals"
         ],
         "x-exposure": "permissioned",
         "x-permission": "payroll:runs:update",
@@ -229789,7 +230093,7 @@
     },
     "/timesheets/approvals": {
       "get": {
-        "operationId": "ApprovalsController_list",
+        "operationId": "TimesheetApprovalsController_list",
         "parameters": [
           {
             "name": "status",
@@ -229875,7 +230179,7 @@
           }
         },
         "tags": [
-          "Approvals"
+          "TimesheetApprovals"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:approvals:view",
@@ -229884,7 +230188,7 @@
     },
     "/timesheets/approvals/{periodId}/approve": {
       "post": {
-        "operationId": "ApprovalsController_approve",
+        "operationId": "TimesheetApprovalsController_approve",
         "parameters": [
           {
             "name": "periodId",
@@ -229930,7 +230234,7 @@
           }
         },
         "tags": [
-          "Approvals"
+          "TimesheetApprovals"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:approvals:manage",
@@ -229942,7 +230246,7 @@
     },
     "/timesheets/approvals/{periodId}/reject": {
       "post": {
-        "operationId": "ApprovalsController_reject",
+        "operationId": "TimesheetApprovalsController_reject",
         "parameters": [
           {
             "name": "periodId",
@@ -229988,7 +230292,7 @@
           }
         },
         "tags": [
-          "Approvals"
+          "TimesheetApprovals"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:approvals:manage",
@@ -230019,7 +230323,7 @@
     },
     "/timesheets/approvals/bulk-approve": {
       "post": {
-        "operationId": "ApprovalsController_bulkApprove",
+        "operationId": "TimesheetApprovalsController_bulkApprove",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKeyHeader"
@@ -230052,7 +230356,7 @@
           }
         },
         "tags": [
-          "Approvals"
+          "TimesheetApprovals"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:approvals:manage",
@@ -230088,7 +230392,7 @@
     },
     "/timesheets/approvals/bulk-reject": {
       "post": {
-        "operationId": "ApprovalsController_bulkReject",
+        "operationId": "TimesheetApprovalsController_bulkReject",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKeyHeader"
@@ -230121,7 +230425,7 @@
           }
         },
         "tags": [
-          "Approvals"
+          "TimesheetApprovals"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:approvals:manage",
@@ -230163,7 +230467,7 @@
     },
     "/timesheets/audit": {
       "get": {
-        "operationId": "AuditController_list",
+        "operationId": "TimesheetAuditController_list",
         "parameters": [
           {
             "name": "entityType",
@@ -230233,7 +230537,7 @@
           }
         },
         "tags": [
-          "Audit"
+          "TimesheetAudit"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:audit:view",
@@ -230242,7 +230546,7 @@
     },
     "/timesheets/audit/verify": {
       "get": {
-        "operationId": "AuditController_verify",
+        "operationId": "TimesheetAuditController_verify",
         "parameters": [],
         "responses": {
           "200": {
@@ -230265,7 +230569,7 @@
           }
         },
         "tags": [
-          "Audit"
+          "TimesheetAudit"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:audit:view",
@@ -230274,7 +230578,7 @@
     },
     "/timesheets/billing/create-invoice-draft": {
       "post": {
-        "operationId": "BillingController_createInvoiceDraft",
+        "operationId": "TimesheetBillingController_createInvoiceDraft",
         "parameters": [],
         "responses": {
           "201": {
@@ -230303,7 +230607,7 @@
           }
         },
         "tags": [
-          "Billing"
+          "TimesheetBilling"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:billing:invoice",
@@ -230341,7 +230645,7 @@
     },
     "/timesheets/billing/export": {
       "post": {
-        "operationId": "BillingController_export",
+        "operationId": "TimesheetBillingController_export",
         "parameters": [],
         "responses": {
           "201": {
@@ -230370,7 +230674,7 @@
           }
         },
         "tags": [
-          "Billing"
+          "TimesheetBilling"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:billing:export",
@@ -230421,7 +230725,7 @@
     },
     "/timesheets/billing/rate-preview": {
       "get": {
-        "operationId": "BillingController_ratePreview",
+        "operationId": "TimesheetBillingController_ratePreview",
         "parameters": [
           {
             "name": "projectId",
@@ -230473,7 +230777,7 @@
           }
         },
         "tags": [
-          "Billing"
+          "TimesheetBilling"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:billing:view",
@@ -230482,7 +230786,7 @@
     },
     "/timesheets/billing/uninvoiced": {
       "get": {
-        "operationId": "BillingController_getUninvoiced",
+        "operationId": "TimesheetBillingController_getUninvoiced",
         "parameters": [
           {
             "name": "startDate",
@@ -230534,7 +230838,7 @@
           }
         },
         "tags": [
-          "Billing"
+          "TimesheetBilling"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:billing:view",
@@ -230543,7 +230847,7 @@
     },
     "/timesheets/budgets": {
       "get": {
-        "operationId": "BudgetsController_list",
+        "operationId": "TimesheetBudgetsController_list",
         "parameters": [],
         "responses": {
           "200": {
@@ -230566,14 +230870,14 @@
           }
         },
         "tags": [
-          "Budgets"
+          "TimesheetBudgets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:budgets:view",
         "description": "Exposure: permission — timesheets:budgets:view"
       },
       "post": {
-        "operationId": "BudgetsController_create",
+        "operationId": "TimesheetBudgetsController_create",
         "parameters": [],
         "responses": {
           "201": {
@@ -230602,7 +230906,7 @@
           }
         },
         "tags": [
-          "Budgets"
+          "TimesheetBudgets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:budgets:manage",
@@ -230672,7 +230976,7 @@
     },
     "/timesheets/budgets/{budgetId}": {
       "patch": {
-        "operationId": "BudgetsController_update",
+        "operationId": "TimesheetBudgetsController_update",
         "parameters": [
           {
             "name": "budgetId",
@@ -230715,7 +231019,7 @@
           }
         },
         "tags": [
-          "Budgets"
+          "TimesheetBudgets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:budgets:manage",
@@ -230783,7 +231087,7 @@
         }
       },
       "delete": {
-        "operationId": "BudgetsController_remove",
+        "operationId": "TimesheetBudgetsController_remove",
         "parameters": [
           {
             "name": "budgetId",
@@ -230826,7 +231130,7 @@
           }
         },
         "tags": [
-          "Budgets"
+          "TimesheetBudgets"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:budgets:manage",
@@ -232047,7 +232351,7 @@
     },
     "/timesheets/periods": {
       "get": {
-        "operationId": "PeriodsController_list",
+        "operationId": "TimesheetPeriodsController_list",
         "parameters": [
           {
             "name": "userId",
@@ -232106,7 +232410,7 @@
           }
         },
         "tags": [
-          "Periods"
+          "TimesheetPeriods"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:entries:view",
@@ -232115,7 +232419,7 @@
     },
     "/timesheets/periods/{periodId}": {
       "get": {
-        "operationId": "PeriodsController_getPeriod",
+        "operationId": "TimesheetPeriodsController_getPeriod",
         "parameters": [
           {
             "name": "periodId",
@@ -232152,7 +232456,7 @@
           }
         },
         "tags": [
-          "Periods"
+          "TimesheetPeriods"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:entries:view",
@@ -232282,7 +232586,7 @@
     },
     "/timesheets/periods/{periodId}/lock": {
       "post": {
-        "operationId": "PeriodsController_lock",
+        "operationId": "TimesheetPeriodsController_lock",
         "parameters": [
           {
             "name": "periodId",
@@ -232325,7 +232629,7 @@
           }
         },
         "tags": [
-          "Periods"
+          "TimesheetPeriods"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:approvals:manage",
@@ -232335,7 +232639,7 @@
     },
     "/timesheets/periods/{periodId}/recall": {
       "post": {
-        "operationId": "PeriodsController_recall",
+        "operationId": "TimesheetPeriodsController_recall",
         "parameters": [
           {
             "name": "periodId",
@@ -232378,7 +232682,7 @@
           }
         },
         "tags": [
-          "Periods"
+          "TimesheetPeriods"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:entries:create",
@@ -232388,7 +232692,7 @@
     },
     "/timesheets/periods/{periodId}/reopen": {
       "post": {
-        "operationId": "PeriodsController_reopen",
+        "operationId": "TimesheetPeriodsController_reopen",
         "parameters": [
           {
             "name": "periodId",
@@ -232431,7 +232735,7 @@
           }
         },
         "tags": [
-          "Periods"
+          "TimesheetPeriods"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:approvals:manage",
@@ -232441,7 +232745,7 @@
     },
     "/timesheets/periods/{periodId}/submit": {
       "post": {
-        "operationId": "PeriodsController_submit",
+        "operationId": "TimesheetPeriodsController_submit",
         "parameters": [
           {
             "name": "periodId",
@@ -232487,7 +232791,7 @@
           }
         },
         "tags": [
-          "Periods"
+          "TimesheetPeriods"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:entries:create",
@@ -232499,7 +232803,7 @@
     },
     "/timesheets/periods/{periodId}/unlock": {
       "post": {
-        "operationId": "PeriodsController_unlock",
+        "operationId": "TimesheetPeriodsController_unlock",
         "parameters": [
           {
             "name": "periodId",
@@ -232542,7 +232846,7 @@
           }
         },
         "tags": [
-          "Periods"
+          "TimesheetPeriods"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:approvals:manage",
@@ -232552,7 +232856,7 @@
     },
     "/timesheets/periods/current": {
       "get": {
-        "operationId": "PeriodsController_getCurrent",
+        "operationId": "TimesheetPeriodsController_getCurrent",
         "parameters": [],
         "responses": {
           "200": {
@@ -232575,7 +232879,7 @@
           }
         },
         "tags": [
-          "Periods"
+          "TimesheetPeriods"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:entries:view",
@@ -232921,7 +233225,7 @@
     },
     "/timesheets/reports/approval-sla": {
       "get": {
-        "operationId": "ReportsController_approvalSla",
+        "operationId": "TimesheetReportsController_approvalSla",
         "parameters": [
           {
             "name": "startDate",
@@ -232963,7 +233267,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "TimesheetReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:reports:view",
@@ -232972,7 +233276,7 @@
     },
     "/timesheets/reports/billing-leakage": {
       "get": {
-        "operationId": "ReportsController_billingLeakage",
+        "operationId": "TimesheetReportsController_billingLeakage",
         "parameters": [
           {
             "name": "startDate",
@@ -233014,7 +233318,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "TimesheetReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:reports:view",
@@ -233023,7 +233327,7 @@
     },
     "/timesheets/reports/client-profitability": {
       "get": {
-        "operationId": "ReportsController_clientProfitability",
+        "operationId": "TimesheetReportsController_clientProfitability",
         "parameters": [
           {
             "name": "startDate",
@@ -233065,7 +233369,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "TimesheetReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:reports:view",
@@ -233074,7 +233378,7 @@
     },
     "/timesheets/reports/compliance": {
       "get": {
-        "operationId": "ReportsController_compliance",
+        "operationId": "TimesheetReportsController_compliance",
         "parameters": [
           {
             "name": "startDate",
@@ -233116,7 +233420,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "TimesheetReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:reports:view",
@@ -233125,7 +233429,7 @@
     },
     "/timesheets/reports/overview": {
       "get": {
-        "operationId": "ReportsController_overview",
+        "operationId": "TimesheetReportsController_overview",
         "parameters": [
           {
             "name": "startDate",
@@ -233175,7 +233479,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "TimesheetReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:reports:view",
@@ -233184,7 +233488,7 @@
     },
     "/timesheets/reports/utilization": {
       "get": {
-        "operationId": "ReportsController_utilization",
+        "operationId": "TimesheetReportsController_utilization",
         "parameters": [
           {
             "name": "startDate",
@@ -233226,7 +233530,7 @@
           }
         },
         "tags": [
-          "Reports"
+          "TimesheetReports"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:reports:view",
@@ -233235,7 +233539,7 @@
     },
     "/timesheets/settings": {
       "get": {
-        "operationId": "SettingsController_get",
+        "operationId": "TimesheetSettingsController_get",
         "parameters": [],
         "responses": {
           "200": {
@@ -233258,14 +233562,14 @@
           }
         },
         "tags": [
-          "Settings"
+          "TimesheetSettings"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:settings:view",
         "description": "Exposure: permission — timesheets:settings:view"
       },
       "patch": {
-        "operationId": "SettingsController_update",
+        "operationId": "TimesheetSettingsController_update",
         "parameters": [],
         "responses": {
           "200": {
@@ -233294,7 +233598,7 @@
           }
         },
         "tags": [
-          "Settings"
+          "TimesheetSettings"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:settings:manage",
@@ -233422,7 +233726,7 @@
     },
     "/timesheets/settings/history": {
       "get": {
-        "operationId": "SettingsController_history",
+        "operationId": "TimesheetSettingsController_history",
         "parameters": [],
         "responses": {
           "200": {
@@ -233445,7 +233749,7 @@
           }
         },
         "tags": [
-          "Settings"
+          "TimesheetSettings"
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:settings:view",
@@ -236296,8 +236600,8 @@
           "Webhooks"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "inventory:webhooks:manage",
-        "description": "Exposure: permission — inventory:webhooks:manage"
+        "x-permission": "settings:webhooks:manage",
+        "description": "Exposure: permission — settings:webhooks:manage"
       },
       "post": {
         "operationId": "WebhooksController_create",
@@ -236332,8 +236636,8 @@
           "Webhooks"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "inventory:webhooks:manage",
-        "description": "Exposure: permission — inventory:webhooks:manage",
+        "x-permission": "settings:webhooks:manage",
+        "description": "Exposure: permission — settings:webhooks:manage",
         "requestBody": {
           "required": true,
           "content": {
@@ -236345,33 +236649,21 @@
                     "type": "string",
                     "format": "uri"
                   },
+                  "description": {
+                    "type": "string"
+                  },
                   "events": {
-                    "minItems": 1,
+                    "default": [],
                     "type": "array",
                     "items": {
-                      "type": "string",
-                      "enum": [
-                        "inventory.product.created",
-                        "inventory.stock.changed",
-                        "inventory.stock.low",
-                        "inventory.po.created",
-                        "inventory.po.received",
-                        "inventory.so.reserved",
-                        "inventory.so.shipped",
-                        "inventory.transfer.completed",
-                        "inventory.adjustment.posted"
-                      ]
+                      "type": "string"
                     }
-                  },
-                  "isActive": {
-                    "default": true,
-                    "type": "boolean"
                   }
                 },
                 "required": [
-                  "url",
-                  "events"
-                ]
+                  "url"
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -236470,8 +236762,8 @@
           "Webhooks"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "inventory:webhooks:manage",
-        "description": "Exposure: permission — inventory:webhooks:manage",
+        "x-permission": "settings:webhooks:manage",
+        "description": "Exposure: permission — settings:webhooks:manage",
         "requestBody": {
           "required": true,
           "content": {
@@ -236483,28 +236775,20 @@
                     "type": "string",
                     "format": "uri"
                   },
+                  "description": {
+                    "type": "string"
+                  },
                   "events": {
-                    "minItems": 1,
                     "type": "array",
                     "items": {
-                      "type": "string",
-                      "enum": [
-                        "inventory.product.created",
-                        "inventory.stock.changed",
-                        "inventory.stock.low",
-                        "inventory.po.created",
-                        "inventory.po.received",
-                        "inventory.so.reserved",
-                        "inventory.so.shipped",
-                        "inventory.transfer.completed",
-                        "inventory.adjustment.posted"
-                      ]
+                      "type": "string"
                     }
                   },
                   "isActive": {
                     "type": "boolean"
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -236557,8 +236841,8 @@
           "Webhooks"
         ],
         "x-exposure": "permissioned",
-        "x-permission": "inventory:webhooks:manage",
-        "description": "Exposure: permission — inventory:webhooks:manage"
+        "x-permission": "settings:webhooks:manage",
+        "description": "Exposure: permission — settings:webhooks:manage"
       }
     },
     "/webhooks/{webhookId}/logs": {
@@ -237314,7 +237598,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "workflows:workflows:update",
-        "description": "Exposure: permission — workflows:workflows:update"
+        "description": "Exposure: permission — workflows:workflows:update",
+        "x-bodyless": true
       }
     },
     "/workflows/{workflowId}/disable": {
@@ -237365,7 +237650,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "workflows:workflows:update",
-        "description": "Exposure: permission — workflows:workflows:update"
+        "description": "Exposure: permission — workflows:workflows:update",
+        "x-bodyless": true
       }
     },
     "/workflows/{workflowId}/duplicate": {
@@ -237416,7 +237702,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "workflows:workflows:create",
-        "description": "Exposure: permission — workflows:workflows:create"
+        "description": "Exposure: permission — workflows:workflows:create",
+        "x-bodyless": true
       }
     },
     "/workflows/{workflowId}/executions": {
@@ -237624,7 +237911,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "workflows:executions:manage",
-        "description": "Exposure: permission — workflows:executions:manage"
+        "description": "Exposure: permission — workflows:executions:manage",
+        "x-bodyless": true
       }
     },
     "/workflows/{workflowId}/publish": {

@@ -9,6 +9,7 @@ import {
 } from "../validation/validate.decorator";
 import { ZodValidationPipe } from "../pipes/zod-validation.pipe";
 import { IDEMPOTENCY_COMMAND } from "../idempotency/idempotency.constants";
+import { DEPRECATION_KEY } from "../deprecation/deprecated.decorator";
 
 export const RESPONSE_SCHEMA = "openapi:response-schema";
 export const BODYLESS_ACTION = "openapi:bodyless";
@@ -26,6 +27,7 @@ export interface OperationContract {
   idempotencyCommand?: string;
   response?: JsonSchema;
   bodyless?: true;
+  deprecated?: true;
 }
 
 export type JsonSchema = Record<string, unknown>;
@@ -168,6 +170,9 @@ export function scanOperationContracts(
 
       const isBodyless: unknown = Reflect.getMetadata(BODYLESS_ACTION, handler);
       if (isBodyless === true) contract.bodyless = true;
+
+      const isDeprecated: unknown = Reflect.getMetadata(DEPRECATION_KEY, handler);
+      if (isDeprecated !== undefined && isDeprecated !== null) contract.deprecated = true;
 
       if (Object.keys(contract).length > 0)
         contracts.set(operationId, contract);

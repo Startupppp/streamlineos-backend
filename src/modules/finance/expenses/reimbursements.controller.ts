@@ -34,7 +34,7 @@ const batchIdParams = z.object({ batchId: z.coerce.number().int().positive() }).
 @RequireModule("accounting")
 @Controller("accounting/reimbursements")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-export class ReimbursementsController {
+export class FinanceReimbursementsController {
   constructor(private readonly reimbursements: ReimbursementsService) {}
 
   @Get()

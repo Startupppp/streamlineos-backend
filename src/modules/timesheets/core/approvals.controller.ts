@@ -38,7 +38,7 @@ const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }
 @RequireModule("build")
 @Controller("timesheets/approvals")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
-export class ApprovalsController {
+export class TimesheetApprovalsController {
   constructor(
     private readonly approvals: ApprovalsService,
     private readonly approvalsBulk: ApprovalsBulkService,

@@ -24,6 +24,7 @@ import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { NotificationsService } from "./notifications.service";
 import { NotificationEventService } from "./notification-event.service";
 import { NoTenantTransaction } from "../../common/tenant";
@@ -65,6 +66,7 @@ export class NotificationsController {
   }
 
   @Post("events/token")
+  @BodylessAction()
   @Universal()
   @UseGuards(RateLimitGuard)
   @UseRateLimit("notifications:stream-token")
@@ -89,6 +91,7 @@ export class NotificationsController {
   }
 
   @Patch("read-all")
+  @BodylessAction()
   @Universal()
   markAllRead(@CurrentUser() u: CurrentUserContext) {
     return this.notifications.markAllRead(u.orgId, u.userId);
@@ -134,6 +137,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/read")
+  @BodylessAction()
   @Universal()
   @Validate({ params: notificationIdParams })
   markRead(
@@ -144,6 +148,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/archive")
+  @BodylessAction()
   @Universal()
   @Validate({ params: notificationIdParams })
   archive(
@@ -154,6 +159,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/unarchive")
+  @BodylessAction()
   @Universal()
   @Validate({ params: notificationIdParams })
   unarchive(
@@ -174,6 +180,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/pin")
+  @BodylessAction()
   @Universal()
   @Validate({ params: notificationIdParams })
   pin(
@@ -184,6 +191,7 @@ export class NotificationsController {
   }
 
   @Patch(":notificationId/unpin")
+  @BodylessAction()
   @Universal()
   @Validate({ params: notificationIdParams })
   unpin(
@@ -205,6 +213,7 @@ export class NotificationsController {
   }
 
   @Post(":notificationId/approve")
+  @BodylessAction()
   @Idempotent("notifications.action.approve")
   @Universal()
   @HttpCode(200)
@@ -217,6 +226,7 @@ export class NotificationsController {
   }
 
   @Post(":notificationId/reject")
+  @BodylessAction()
   @Idempotent("notifications.action.reject")
   @Universal()
   @HttpCode(200)

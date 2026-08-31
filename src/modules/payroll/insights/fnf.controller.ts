@@ -28,7 +28,7 @@ const settlementIdParams = z.object({ settlementId: z.coerce.number().int().posi
 @RequireModule("payroll")
 @Controller("payroll/fnf")
 @UseGuards(JwtAuthGuard, ModuleGuard)
-export class FnfController {
+export class PayrollInsightsFnfController {
   constructor(private readonly fnfService: FnfInsightsService) {}
 
   @Get()

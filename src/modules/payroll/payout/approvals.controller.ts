@@ -34,7 +34,7 @@ const runAndApprovalIdParams = z.object({ runId: z.coerce.number().int().positiv
 @RequireModule("payroll")
 @Controller("payroll/runs/:runId")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
-export class ApprovalsController {
+export class PayrollPayoutApprovalsController {
   constructor(
     private readonly approvals: ApprovalsService,
     private readonly receipts: PayrollCommandReceiptsService,

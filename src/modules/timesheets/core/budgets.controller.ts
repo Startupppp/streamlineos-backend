@@ -32,7 +32,7 @@ const budgetIdParams = z.object({ budgetId: z.coerce.number().int().positive() }
 @RequireModule("build")
 @Controller("timesheets/budgets")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
-export class BudgetsController {
+export class TimesheetBudgetsController {
   constructor(private readonly budgets: BudgetsService) {}
 
   @Get()

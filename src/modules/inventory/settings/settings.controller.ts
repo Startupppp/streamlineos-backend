@@ -22,7 +22,7 @@ const sequenceIdParams = z.object({ sequenceId: z.coerce.number().int().positive
 @RequireModule("inventory")
 @Controller("inventory/settings")
 @UseGuards(JwtAuthGuard, ModuleGuard)
-export class SettingsController {
+export class InvSettingsController {
   constructor(private readonly svc: SettingsService) {}
 
   @Get()

@@ -22,7 +22,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { OrgMembershipService } from "./org-membership.service";
-import { InvitationsService } from "./invitations.service";
+import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withIdentity } from "../../../common/tenant/with-identity";
@@ -35,7 +35,7 @@ export class OrgLifecycleService {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly orgMembership: OrgMembershipService,
-    private readonly invitations: InvitationsService,
+    private readonly invitations: InvitationLifecycleService,
     private readonly saga: OrganizationSagaService,
   ) {}
 

@@ -5,13 +5,11 @@ import { NotificationsModule } from "../../notifications/notifications.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { IntegrationsModule } from "../../integrations/core/integrations.module";
 import { OrganizationController } from "./organization.controller";
-import { OrganizationService } from "./organization.service";
 import { OrgProfileService } from "./org-profile.service";
 import { OrgMembershipService } from "./org-membership.service";
 import { OrgLifecycleService } from "./org-lifecycle.service";
 import { OrgPurgeService } from "./org-purge.service";
 import { OrganizationSettingsService } from "./organization-settings.service";
-import { InvitationsService } from "./invitations.service";
 import { InvitationCreateService } from "./invitation-create.service";
 import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import { InvitationsReadService } from "./invitations-read.service";
@@ -37,11 +35,9 @@ import { IntegrationConnectionDisconnectedConsumer } from "./integration-connect
     OrgMemberDepartureService,
     OrgLifecycleService,
     OrgPurgeService,
-    OrganizationService,
     OrganizationSettingsService,
     InvitationCreateService,
     InvitationLifecycleService,
-    InvitationsService,
     InvitationsReadService,
     InvitationAcceptanceService,
     AccountOrganizationIndexService,
@@ -53,7 +49,6 @@ import { IntegrationConnectionDisconnectedConsumer } from "./integration-connect
   exports: [
     InvitationCreateService,
     InvitationLifecycleService,
-    InvitationsService,
     InvitationsReadService,
     InvitationAcceptanceService,
     OrgMembershipService,

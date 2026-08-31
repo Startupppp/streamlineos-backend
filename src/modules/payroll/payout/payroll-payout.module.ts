@@ -3,7 +3,7 @@ import { PayrollInsightsModule } from "../insights/payroll-insights.module";
 import { PayrollRunsModule } from "../runs/payroll-runs.module";
 import { AccountingModule } from "../../accounting/core/accounting.module";
 import { DirectoryModule } from "../../directory/directory.module";
-import { ApprovalsController } from "./approvals.controller";
+import { PayrollPayoutApprovalsController } from "./approvals.controller";
 import { ApprovalsService } from "./approvals.service";
 import { ApprovalActionsService } from "./approval-actions.service";
 import { PayrollApproverResolverService } from "./payroll-approver-resolver.service";
@@ -30,7 +30,7 @@ import { NotificationsModule } from "../../notifications/notifications.module";
 @Module({
   imports: [NotificationsModule, PayrollInsightsModule, PayrollRunsModule, AccountingModule, DirectoryModule],
   controllers: [
-    ApprovalsController,
+    PayrollPayoutApprovalsController,
     LockingController,
     PayoutRunController,
     PayoutBatchesController,

@@ -39,7 +39,7 @@ const deviceIdParams = z.object({ deviceId: z.coerce.number().int().positive() }
 @RequireModule("hr")
 @Controller("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-export class AssetsController {
+export class HrAssetsController {
   constructor(
     private readonly assets: AssetsService,
     private readonly access: AccessService,

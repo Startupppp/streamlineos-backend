@@ -196,6 +196,18 @@ const baseSchema = z
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
     ),
+    FINANCE_REPORT_EXPORT_WORKER_ENABLED: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
+    GDPR_EXPORT_WORKER_ENABLED: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
+    KB_CHAT_PURGE_WORKER_ENABLED: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
     AV_SCANNER: z.preprocess(
       emptyToUndefined,
       z.enum(["clamav", "virustotal"]).optional(),

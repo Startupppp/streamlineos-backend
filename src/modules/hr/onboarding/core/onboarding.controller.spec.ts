@@ -72,7 +72,12 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
     // @UseGuards(JwtAuthGuard) pulls in DRIZZLE/Redis-dependent guards that Nest's testing
     // module eagerly tries to resolve on .compile() even when unused by the methods under test.
     controller = new OnboardingController(
+      undefined as never,
+      undefined as never,
+      undefined as never,
       onboarding as never,
+      undefined as never,
+      undefined as never,
       undefined as never,
       checklists as unknown as ModuleChecklistService,
       tours as unknown as GuidedTourService,

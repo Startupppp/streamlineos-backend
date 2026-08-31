@@ -2,7 +2,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { DataScope } from "../../access/access.types";
 import { AccessService } from "../../access/access.service";
 import { isScopable } from "../../rbac/permissions";
-import { and, eq, sql, type SQL } from "drizzle-orm";
+import { and, eq, or, sql, type SQL } from "drizzle-orm";
 import { leaveRequests } from "../../../db/schema";
 import { applyScope } from "../../access/apply-scope";
 
@@ -22,19 +22,24 @@ export function leaveApprovalScope(
   scope: DataScope,
   orgId: string,
   actorUserId: string,
+  actorMembershipId?: number | null,
 ): SQL {
+  const approverMatch =
+    actorMembershipId != null
+      ? or(eq(leaveRequests.approverMembershipId, actorMembershipId), eq(leaveRequests.approverId, actorUserId))!
+      : eq(leaveRequests.approverId, actorUserId);
   switch (scope) {
     case "all":
       return sql`true`;
     case "team":
       return and(
-        eq(leaveRequests.approverId, actorUserId),
+        approverMatch,
         applyScope(scope, orgId, actorUserId, {
           ownerColumn: leaveRequests.userId,
         }),
       )!;
     case "own":
-      return eq(leaveRequests.approverId, actorUserId);
+      return approverMatch;
     case "none":
       return sql`false`;
     default: {
