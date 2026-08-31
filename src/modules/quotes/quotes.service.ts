@@ -1,5 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, ilike, isNull, sql } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetBefore } from "../../common/pagination/keyset";
 import { clientAccounts, crmQuoteSettings, deals, quoteLineItems, quotes, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -28,11 +30,10 @@ export class QuotesService {
   ) {}
 
   async list(orgId: string, filters: ListInput) {
-    const { status, dealId, search, page, pageSize } = filters;
+    const { status, dealId, search, cursor, pageSize } = filters;
     const limit = pageSize;
-    const offset = (page - 1) * pageSize;
 
-    const key = `${status ?? ""}:${dealId ?? ""}:${search ?? ""}:${limit}:${offset}`;
+    const key = `${status ?? ""}:${dealId ?? ""}:${search ?? ""}:${limit}:${cursor ?? ""}`;
     return this.cache.cachedVersioned(
       `quotes:list:${orgId}`,
       key,
@@ -42,9 +43,12 @@ export class QuotesService {
         if (dealId) conditions.push(eq(quotes.dealId, dealId));
         if (search) conditions.push(ilike(quotes.subject, `%${search}%`));
 
-        const where = and(...conditions);
+        const position = decodeCursor(cursor);
+        const where = position
+          ? and(...conditions, keysetBefore(quotes.createdAt, quotes.id, position))
+          : and(...conditions);
 
-        const [data, totalResult] = await Promise.all([
+        const [rows, totalResult] = await Promise.all([
           this.db
             .select({
               id: quotes.id,
@@ -73,14 +77,16 @@ export class QuotesService {
             .leftJoin(deals, eq(quotes.dealId, deals.id))
             .leftJoin(clientAccounts, eq(quotes.clientId, clientAccounts.id))
             .where(where)
-            .orderBy(desc(quotes.createdAt))
-            .limit(limit)
-            .offset(offset),
-          this.db.select({ count: count() }).from(quotes).where(where),
+            .orderBy(desc(quotes.createdAt), desc(quotes.id))
+            .limit(limit + 1),
+          cursor === undefined
+            ? this.db.select({ count: count() }).from(quotes).where(and(...conditions))
+            : Promise.resolve(null),
         ]);
 
+        const page = buildCursorPage(rows, limit, (q) => ({ sortValue: q.createdAt.toISOString(), id: String(q.id) }));
         return {
-          quotes: data.map((q) => ({
+          quotes: page.data.map((q) => ({
             ...q,
             createdBy: q.createdByName
               ? { id: q.createdById, name: q.createdByName, image: q.createdByImage }
@@ -88,7 +94,9 @@ export class QuotesService {
             deal: q.dealId ? { id: q.dealId, name: q.dealName } : null,
             client: q.clientId ? { id: q.clientId, clientName: q.clientName } : null,
           })),
-          total: totalResult[0]?.count ?? 0,
+          hasMore: page.pagination.hasMore,
+          nextCursor: page.pagination.nextCursor,
+          total: totalResult ? (totalResult[0]?.count ?? 0) : undefined,
         };
       },
       LIST_TTL,

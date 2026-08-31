@@ -104,44 +104,35 @@ export class TimesheetsAuditService {
     if (query.action)
       conditions.push(eq(timesheetAuditEvents.action, query.action));
 
-    const rows = await this.db
-      .select({
-        id: timesheetAuditEvents.id,
-        actorUserId: timesheetAuditEvents.actorUserId,
-        actorName: users.name,
-        entityType: timesheetAuditEvents.entityType,
-        entityId: timesheetAuditEvents.entityId,
-        action: timesheetAuditEvents.action,
-        before: timesheetAuditEvents.before,
-        after: timesheetAuditEvents.after,
-        reason: timesheetAuditEvents.reason,
-        createdAt: timesheetAuditEvents.createdAt,
-        windowTotal: sql<string>`count(*) OVER ()`,
-      })
-      .from(timesheetAuditEvents)
-      .leftJoin(users, eq(timesheetAuditEvents.actorUserId, users.id))
-      .where(and(...conditions))
-      .orderBy(desc(timesheetAuditEvents.createdAt))
-      .limit(limit)
-      .offset(offset);
-
-    const first = rows[0];
-    let total: number;
-    if (first) {
-      total = Number(first.windowTotal);
-    } else if (offset === 0) {
-      total = 0;
-    } else {
-      const fallback = await this.db
+    const [rows, [countRow]] = await Promise.all([
+      this.db
+        .select({
+          id: timesheetAuditEvents.id,
+          actorUserId: timesheetAuditEvents.actorUserId,
+          actorName: users.name,
+          entityType: timesheetAuditEvents.entityType,
+          entityId: timesheetAuditEvents.entityId,
+          action: timesheetAuditEvents.action,
+          before: timesheetAuditEvents.before,
+          after: timesheetAuditEvents.after,
+          reason: timesheetAuditEvents.reason,
+          createdAt: timesheetAuditEvents.createdAt,
+        })
+        .from(timesheetAuditEvents)
+        .leftJoin(users, eq(timesheetAuditEvents.actorUserId, users.id))
+        .where(and(...conditions))
+        .orderBy(desc(timesheetAuditEvents.createdAt))
+        .limit(limit)
+        .offset(offset),
+      this.db
         .select({ n: sql<string>`count(*)` })
         .from(timesheetAuditEvents)
-        .where(and(...conditions));
-      total = Number(fallback[0]?.n ?? 0);
-    }
+        .where(and(...conditions)),
+    ]);
 
     return {
-      data: rows.map(({ windowTotal: _, ...r }) => r),
-      total,
+      data: rows,
+      total: Number(countRow?.n ?? 0),
     };
   }
 

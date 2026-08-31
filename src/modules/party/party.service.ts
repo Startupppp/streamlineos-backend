@@ -110,7 +110,6 @@ export class PartyService {
 
   async listParties(organizationId: string, query: ListPartiesQuery): Promise<PartyListPage> {
     const { page, limit, partyType, partyKind, search, cursor, role } = query;
-    const offset = (page - 1) * limit;
     const position = decodeCursor(cursor);
 
     const searchCondition = search
@@ -178,8 +177,7 @@ export class PartyService {
         .from(businessParties)
         .where(conditions)
         .orderBy(desc(businessParties.createdAt), desc(businessParties.partyId))
-        .limit(limit + 1)
-        .offset(offset),
+        .limit(limit + 1),
       this.db.select({ total: count() }).from(businessParties).where(conditions),
     ]);
 

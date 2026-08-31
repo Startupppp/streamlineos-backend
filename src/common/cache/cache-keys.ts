@@ -103,7 +103,6 @@ export const CACHE_KEYS = {
     `inv:products:detail:${orgId}:${id}`,
   invStockSummary: (orgId: string) => `inv:stock:summary:${orgId}`,
   invLowStock: (orgId: string) => `inv:low-stock:${orgId}`,
-  invWarehousesList: (orgId: string) => `inv:warehouses:${orgId}`,
   invWarehouseDetail: (orgId: string, id: number) =>
     `inv:warehouses:detail:${orgId}:${id}`,
   invVendorsNamespace: (orgId: string) => `inv:vendors:list:${orgId}`,

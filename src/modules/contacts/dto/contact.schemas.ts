@@ -6,7 +6,7 @@ export const listSchema = z.object({
   search: z.string().optional(),
   organizationId: z.coerce.number().optional(),
   limit: optionalPageSizeField(),
-  offset: z.coerce.number().min(0).optional(),
+  cursor: z.string().optional(),
 });
 
 export const searchSchema = z.object({

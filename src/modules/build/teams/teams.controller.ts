@@ -18,6 +18,8 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { TeamsService } from "./teams.service";
+import { TeamMembersService } from "./team-members.service";
+import { TeamProjectsService } from "./team-projects.service";
 import {
   addTeamMemberSchema,
   createTeamSchema,
@@ -46,7 +48,11 @@ const teamIdprojectIdParams = z.object({ teamId: z.coerce.number().int().positiv
 @Controller("build/teams")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class TeamsController {
-  constructor(private readonly svc: TeamsService) {}
+  constructor(
+    private readonly svc: TeamsService,
+    private readonly members: TeamMembersService,
+    private readonly teamProjects: TeamProjectsService,
+  ) {}
 
   @Get()
   @RequirePermission("build:teams:view")
@@ -109,7 +115,7 @@ export class TeamsController {
     @Query() query: ListTeamMembersQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listTeamMembers(u.orgId, teamId, query);
+    return this.members.listTeamMembers(u.orgId, teamId, query);
   }
 
   @Post(":teamId/members")
@@ -121,7 +127,7 @@ export class TeamsController {
     @Body() body: AddTeamMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.addMember(u.orgId, u.userId, teamId, body);
+    return this.members.addMember(u.orgId, u.userId, teamId, body);
   }
 
   @Patch(":teamId/members/:memberUserId")
@@ -133,7 +139,7 @@ export class TeamsController {
     @Body() body: UpdateTeamMemberRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateMemberRole(
+    return this.members.updateMemberRole(
       u.orgId,
       u.userId,
       teamId,
@@ -151,7 +157,7 @@ export class TeamsController {
     @Param("memberId") memberId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.removeMember(u.orgId, u.userId, teamId, memberId);
+    return this.members.removeMember(u.orgId, u.userId, teamId, memberId);
   }
 
   @Get(":teamId/projects")
@@ -161,7 +167,7 @@ export class TeamsController {
     @Param("teamId", ParseIntPipe) teamId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listTeamProjects(u.orgId, teamId);
+    return this.teamProjects.listTeamProjects(u.orgId, teamId);
   }
 
   @Post(":teamId/projects")
@@ -173,7 +179,7 @@ export class TeamsController {
     @Body() body: AddTeamProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.addProject(u.orgId, u.userId, teamId, body.projectId);
+    return this.teamProjects.addProject(u.orgId, u.userId, teamId, body.projectId);
   }
 
   @Delete(":teamId/projects/:projectId")
@@ -185,6 +191,6 @@ export class TeamsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.removeProject(u.orgId, u.userId, teamId, projectId);
+    return this.teamProjects.removeProject(u.orgId, u.userId, teamId, projectId);
   }
 }

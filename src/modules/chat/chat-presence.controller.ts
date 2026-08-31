@@ -67,7 +67,7 @@ export class ChatPresenceController {
   @Get("unread")
   @RequirePermission("chat:messages:read")
   async unread(@CurrentUser() u: CurrentUserContext) {
-    const total = await this.presence.getUnreadTotal(u.userId);
+    const total = await this.presence.getUnreadTotal(u.userId, u.orgId);
     return { total };
   }
 

@@ -6,6 +6,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { decodeOrgChartCursor } from "./org-chart-cursor";
 import { OrgStructureService } from "./org-structure.service";
+import { OrgChartService } from "./org-chart.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 function selectPage(rows: unknown[]) {
@@ -31,6 +32,7 @@ describe("OrgStructureService organization chart", () => {
   async function createService(db: object): Promise<OrgStructureService> {
     const module = await Test.createTestingModule({
       providers: [
+        OrgChartService,
         OrgStructureService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: {} },

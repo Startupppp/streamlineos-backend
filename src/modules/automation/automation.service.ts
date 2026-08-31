@@ -15,6 +15,7 @@ import {
   supportTickets,
   supportTicketMessages,
   supportTicketTags,
+  supportTags,
   type AutomationAction,
   type AutomationCondition,
 } from "../../db/schema";
@@ -221,6 +222,24 @@ export class AutomationService {
           return { type: action.type, ok: true };
         }
         case "create_task": {
+          if (action.config.assigneeId) {
+            const [assignee] = await this.db
+              .select({ status: organizationMembers.status })
+              .from(organizationMembers)
+              .where(
+                and(
+                  eq(organizationMembers.userId, action.config.assigneeId),
+                  eq(organizationMembers.orgId, orgId),
+                ),
+              )
+              .limit(1);
+            if (!assignee || assignee.status !== "ACTIVE")
+              return {
+                type: action.type,
+                ok: false,
+                error: `Assignee is not an active member of this organisation`,
+              };
+          }
           const dueDate =
             typeof action.config.dueInDays === "number"
               ? new Date(Date.now() + action.config.dueInDays * 24 * 60 * 60 * 1000)
@@ -239,6 +258,22 @@ export class AutomationService {
         }
         case "support_assign_ticket": {
           const ticketId = this.requireTicketId(payload);
+          const [assignee] = await this.db
+            .select({ status: organizationMembers.status })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.userId, action.config.assigneeId),
+                eq(organizationMembers.orgId, orgId),
+              ),
+            )
+            .limit(1);
+          if (!assignee || assignee.status !== "ACTIVE")
+            return {
+              type: action.type,
+              ok: false,
+              error: `Assignee is not an active member of this organisation`,
+            };
           await this.db
             .update(supportTickets)
             .set({ assigneeId: action.config.assigneeId, updatedAt: new Date() })
@@ -255,6 +290,12 @@ export class AutomationService {
         }
         case "support_add_tag": {
           const ticketId = this.requireTicketId(payload);
+          const [tag] = await this.db
+            .select({ id: supportTags.id })
+            .from(supportTags)
+            .where(and(eq(supportTags.id, action.config.tagId), eq(supportTags.orgId, orgId)))
+            .limit(1);
+          if (!tag) throw new Error(`Tag ${String(action.config.tagId)} not found in this organisation`);
           await this.db
             .insert(supportTicketTags)
             .values({ ticketId, tagId: action.config.tagId })

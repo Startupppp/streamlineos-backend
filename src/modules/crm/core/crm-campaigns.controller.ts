@@ -91,16 +91,10 @@ export class CrmCampaignsController {
   @Validate({ params: campaignIdParams })
   campaignLeads(
     @Param("campaignId", ParseIntPipe) campaignId: number,
-    @Query("page") page: string | undefined,
-    @Query("limit") limit: string | undefined,
+    @Query("cursor") cursor: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.campaigns.getCampaignLeads(
-      u.orgId,
-      campaignId,
-      Math.max(1, parseInt(page ?? "1", 10) || 1),
-      Math.min(50, parseInt(limit ?? "20", 10) || 20),
-    );
+    return this.campaigns.getCampaignLeads(u.orgId, campaignId, cursor);
   }
 
   @Patch(":campaignId")

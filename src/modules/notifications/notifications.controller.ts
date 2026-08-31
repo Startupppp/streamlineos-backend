@@ -17,6 +17,8 @@ import {
 import type { MessageEvent } from "@nestjs/common";
 import type { Observable } from "rxjs";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { Universal } from "../../common/auth/universal.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -64,6 +66,8 @@ export class NotificationsController {
 
   @Post("events/token")
   @Universal()
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("notifications:stream-token")
   @HttpCode(200)
   generateStreamToken(@CurrentUser() u: CurrentUserContext) {
     const token = this.notifEvents.generateToken(u.userId, u.orgId);

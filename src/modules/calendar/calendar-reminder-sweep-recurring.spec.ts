@@ -225,6 +225,267 @@ describe("CalendarReminderSweepService — recurring event reminder dedupeKey", 
   });
 });
 
+describe("CalendarReminderSweepService — rescheduled recurring occurrences (modifiedStart)", () => {
+  beforeEach(() => {
+    jest.resetAllMocks();
+  });
+
+  it("queues a reminder at modifiedStart when an occurrence is moved into the sweep window (nominal outside window)", async () => {
+    const now = new Date("2024-03-11T09:45:00Z");
+    const nominalStart = new Date("2024-03-11T15:00:00Z");
+    const modifiedStart = new Date("2024-03-11T10:00:00Z");
+    const eventId = 70;
+
+    const insertCap = makeInsertCapture();
+    const updateCap = makeUpdateCapture();
+
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+      let selectCallCount = 0;
+      const tx = {
+        select: jest.fn().mockImplementation(() => {
+          const callIdx = selectCallCount++;
+          if (callIdx === 0) return { from: makeChain([]).from };
+          if (callIdx === 1)
+            return {
+              from: makeChain([
+                {
+                  id: eventId,
+                  title: "Weekly standup",
+                  startDate: new Date("2024-03-04T15:00:00Z"),
+                  endDate: new Date("2024-03-04T15:30:00Z"),
+                  allDay: false,
+                  timezone: "UTC",
+                  orgId: ORG,
+                  rrule: "FREQ=WEEKLY;BYDAY=MO",
+                  recurrenceEnd: null,
+                },
+              ]).from,
+            };
+          if (callIdx === 2)
+            return {
+              from: makeChain([
+                {
+                  eventId,
+                  occurrenceStart: nominalStart,
+                  isCancelled: false,
+                  modifiedStart,
+                  modifiedTitle: null,
+                },
+              ]).from,
+            };
+          return { from: makeChain([]).from };
+        }),
+        ...insertCap,
+        ...updateCap,
+      } as unknown as Db;
+
+      await cb(tx, ORG);
+      return { processed: 1, failed: 0 };
+    });
+
+    const db = {} as unknown as Db;
+    const svc = new CalendarReminderSweepService(db);
+    const result = await svc.run(now);
+
+    expect(result.candidates).toBe(1);
+    expect(insertCap.capturedValues).toHaveBeenCalledTimes(1);
+
+    const row = insertCap.capturedValues.mock.calls[0]?.[0] as { dedupeKey: string; message: string };
+    expect(row.dedupeKey).toBe(`calendar:reminder:${eventId}:${nominalStart.toISOString()}`);
+    expect(row.message).toContain(modifiedStart.toISOString());
+  });
+
+  it("does not queue a reminder when an occurrence is moved out of the sweep window (nominal inside, modifiedStart outside)", async () => {
+    const now = new Date("2024-03-11T09:45:00Z");
+    const nominalStart = new Date("2024-03-11T10:00:00Z");
+    const modifiedStart = new Date("2024-03-11T15:00:00Z");
+    const eventId = 71;
+
+    const insertCap = makeInsertCapture();
+    const updateCap = makeUpdateCapture();
+
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+      let selectCallCount = 0;
+      const tx = {
+        select: jest.fn().mockImplementation(() => {
+          const callIdx = selectCallCount++;
+          if (callIdx === 0) return { from: makeChain([]).from };
+          if (callIdx === 1)
+            return {
+              from: makeChain([
+                {
+                  id: eventId,
+                  title: "Team sync",
+                  startDate: new Date("2024-03-04T10:00:00Z"),
+                  endDate: new Date("2024-03-04T10:30:00Z"),
+                  allDay: false,
+                  timezone: "UTC",
+                  orgId: ORG,
+                  rrule: "FREQ=WEEKLY;BYDAY=MO",
+                  recurrenceEnd: null,
+                },
+              ]).from,
+            };
+          if (callIdx === 2)
+            return {
+              from: makeChain([
+                {
+                  eventId,
+                  occurrenceStart: nominalStart,
+                  isCancelled: false,
+                  modifiedStart,
+                  modifiedTitle: null,
+                },
+              ]).from,
+            };
+          return { from: makeChain([]).from };
+        }),
+        ...insertCap,
+        ...updateCap,
+      } as unknown as Db;
+
+      await cb(tx, ORG);
+      return { processed: 1, failed: 0 };
+    });
+
+    const db = {} as unknown as Db;
+    const svc = new CalendarReminderSweepService(db);
+    const result = await svc.run(now);
+
+    expect(result.candidates).toBe(0);
+    expect(insertCap.capturedValues).not.toHaveBeenCalled();
+  });
+
+  it("applies modifiedTitle and uses modifiedStart in message while nominal start anchors the dedupeKey", async () => {
+    const now = new Date("2024-03-11T09:45:00Z");
+    const nominalStart = new Date("2024-03-11T10:00:00Z");
+    const modifiedStart = new Date("2024-03-11T09:55:00Z");
+    const eventId = 72;
+
+    const insertCap = makeInsertCapture();
+    const updateCap = makeUpdateCapture();
+
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+      let selectCallCount = 0;
+      const tx = {
+        select: jest.fn().mockImplementation(() => {
+          const callIdx = selectCallCount++;
+          if (callIdx === 0) return { from: makeChain([]).from };
+          if (callIdx === 1)
+            return {
+              from: makeChain([
+                {
+                  id: eventId,
+                  title: "Sprint planning",
+                  startDate: new Date("2024-03-04T10:00:00Z"),
+                  endDate: new Date("2024-03-04T11:00:00Z"),
+                  allDay: false,
+                  timezone: "UTC",
+                  orgId: ORG,
+                  rrule: "FREQ=WEEKLY;BYDAY=MO",
+                  recurrenceEnd: null,
+                },
+              ]).from,
+            };
+          if (callIdx === 2)
+            return {
+              from: makeChain([
+                {
+                  eventId,
+                  occurrenceStart: nominalStart,
+                  isCancelled: false,
+                  modifiedStart,
+                  modifiedTitle: "Sprint planning (rescheduled)",
+                },
+              ]).from,
+            };
+          return { from: makeChain([]).from };
+        }),
+        ...insertCap,
+        ...updateCap,
+      } as unknown as Db;
+
+      await cb(tx, ORG);
+      return { processed: 1, failed: 0 };
+    });
+
+    const db = {} as unknown as Db;
+    const svc = new CalendarReminderSweepService(db);
+    const result = await svc.run(now);
+
+    expect(result.candidates).toBe(1);
+    const row = insertCap.capturedValues.mock.calls[0]?.[0] as {
+      dedupeKey: string;
+      message: string;
+      title: string;
+    };
+    expect(row.dedupeKey).toBe(`calendar:reminder:${eventId}:${nominalStart.toISOString()}`);
+    expect(row.message).toContain(modifiedStart.toISOString());
+    expect(row.title).toContain("Sprint planning (rescheduled)");
+  });
+
+  it("does not queue a reminder when an occurrence is moved into the window but subsequently cancelled", async () => {
+    const now = new Date("2024-03-11T09:45:00Z");
+    const nominalStart = new Date("2024-03-11T15:00:00Z");
+    const modifiedStart = new Date("2024-03-11T10:00:00Z");
+    const eventId = 73;
+
+    const insertCap = makeInsertCapture();
+    const updateCap = makeUpdateCapture();
+
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+      let selectCallCount = 0;
+      const tx = {
+        select: jest.fn().mockImplementation(() => {
+          const callIdx = selectCallCount++;
+          if (callIdx === 0) return { from: makeChain([]).from };
+          if (callIdx === 1)
+            return {
+              from: makeChain([
+                {
+                  id: eventId,
+                  title: "Weekly standup",
+                  startDate: new Date("2024-03-04T15:00:00Z"),
+                  endDate: new Date("2024-03-04T15:30:00Z"),
+                  allDay: false,
+                  timezone: "UTC",
+                  orgId: ORG,
+                  rrule: "FREQ=WEEKLY;BYDAY=MO",
+                  recurrenceEnd: null,
+                },
+              ]).from,
+            };
+          if (callIdx === 2)
+            return {
+              from: makeChain([
+                {
+                  eventId,
+                  occurrenceStart: nominalStart,
+                  isCancelled: true,
+                  modifiedStart,
+                  modifiedTitle: null,
+                },
+              ]).from,
+            };
+          return { from: makeChain([]).from };
+        }),
+        ...insertCap,
+        ...updateCap,
+      } as unknown as Db;
+
+      await cb(tx, ORG);
+      return { processed: 1, failed: 0 };
+    });
+
+    const db = {} as unknown as Db;
+    const svc = new CalendarReminderSweepService(db);
+    const result = await svc.run(now);
+
+    expect(result.candidates).toBe(0);
+    expect(insertCap.capturedValues).not.toHaveBeenCalled();
+  });
+});
+
 describe("CalendarReminderSweepService — DST correctness for reminder window", () => {
   it("spring-forward (UTC 07:00 = 03:00 EDT): event at that instant is within a 20-min pre-reminder window starting UTC 06:45", () => {
     const eventUtcStart = new Date("2024-03-10T07:00:00Z");

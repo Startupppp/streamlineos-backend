@@ -25,6 +25,7 @@ import { AiJobsModule } from "../ai/jobs/ai-jobs.module";
 import { SupportKbGapModule } from "../support/kb-gap";
 import { TimesheetsCoreModule } from "../timesheets/core/timesheets-core.module";
 import { OrganizationModule } from "../organization/core/organization.module";
+import { HrGovernanceModule } from "../hr/governance/hr-governance.module";
 import { CronBillingController } from "./cron-billing.controller";
 import { CronInvitationExpiryController } from "./cron-invitation-expiry.controller";
 import { CronHrController } from "./cron-hr.controller";
@@ -98,6 +99,7 @@ import { CalendarModule } from "../calendar/calendar.module";
     BillingModule,
     TimesheetsCoreModule,
     OrganizationModule,
+    HrGovernanceModule,
     ProjectsModule,
     CrmModule,
     OutboxModule,

@@ -89,52 +89,46 @@ export class GeneralLedgerService {
         Number(prRow?.total_credit ?? 0);
     }
 
-    const rows = await this.db
-      .select({
-        lineId: journalLines.id,
-        entryId: journalEntries.id,
-        entryNumber: journalEntries.entryNumber,
-        entryDate: journalEntries.entryDate,
-        description: journalLines.description,
-        entryDescription: journalEntries.description,
-        accountId: journalLines.accountId,
-        accountCode: ledgerAccounts.code,
-        accountName: ledgerAccounts.name,
-        debit: journalLines.debit,
-        credit: journalLines.credit,
-        sourceType: journalEntries.sourceType,
-        sourceId: journalEntries.sourceId,
-        clientId: journalLines.clientId,
-        vendorId: journalLines.vendorId,
-        projectId: journalLines.projectId,
-        departmentId: journalLines.departmentId,
-        total: sql<string>`count(*) OVER ()`,
-      })
-      .from(journalLines)
-      .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
-      .innerJoin(ledgerAccounts, eq(journalLines.accountId, ledgerAccounts.id))
-      .where(and(...rangeConds))
-      .orderBy(journalEntries.entryDate, journalEntries.id, journalLines.lineOrder)
-      .offset(offset)
-      .limit(limit);
-
-    let total: number;
-    if (rows[0]) {
-      total = Number(rows[0].total);
-    } else if (offset === 0) {
-      total = 0;
-    } else {
-      const fallback = await this.db
+    const [rows, [countRow]] = await Promise.all([
+      this.db
+        .select({
+          lineId: journalLines.id,
+          entryId: journalEntries.id,
+          entryNumber: journalEntries.entryNumber,
+          entryDate: journalEntries.entryDate,
+          description: journalLines.description,
+          entryDescription: journalEntries.description,
+          accountId: journalLines.accountId,
+          accountCode: ledgerAccounts.code,
+          accountName: ledgerAccounts.name,
+          debit: journalLines.debit,
+          credit: journalLines.credit,
+          sourceType: journalEntries.sourceType,
+          sourceId: journalEntries.sourceId,
+          clientId: journalLines.clientId,
+          vendorId: journalLines.vendorId,
+          projectId: journalLines.projectId,
+          departmentId: journalLines.departmentId,
+        })
+        .from(journalLines)
+        .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
+        .innerJoin(ledgerAccounts, eq(journalLines.accountId, ledgerAccounts.id))
+        .where(and(...rangeConds))
+        .orderBy(journalEntries.entryDate, journalEntries.id, journalLines.lineOrder)
+        .offset(offset)
+        .limit(limit),
+      this.db
         .select({ c: count() })
         .from(journalLines)
         .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
-        .where(and(...rangeConds));
-      total = Number(fallback[0]?.c ?? 0);
-    }
+        .where(and(...rangeConds)),
+    ]);
+
+    const total = Number(countRow?.c ?? 0);
 
     let runningBalance = priorPageBalance;
     const items = rows.map((row) => {
-      const { total: _total, ...rest } = row;
+      const rest = row;
       const debit = parseDecimal(rest.debit);
       const credit = parseDecimal(rest.credit);
       runningBalance = runningBalance + debit - credit;

@@ -198,7 +198,7 @@ export const invitations = pgTable("invitations", {
   index("idx_invitations_org_email").on(table.orgId, table.email),
   index("idx_invitations_expires").on(table.expiresAt),
   index("idx_invitations_status").on(table.orgId, table.status),
-  uniqueIndex("uniq_invitations_org_email_pending").on(table.orgId, table.email).where(sql`accepted_at IS NULL`),
+  uniqueIndex("uniq_invitations_org_email_pending").on(table.orgId, table.email).where(sql`status = 'PENDING'`),
 ]);
 
 export const userSessions = pgTable("user_sessions", {

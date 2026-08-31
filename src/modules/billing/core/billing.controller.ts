@@ -5,6 +5,8 @@ import { Universal } from "../../../common/auth/universal.decorator";
 import { AllowNoOrg } from "../../../common/auth/allow-no-org.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
+import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { BillingService } from "./billing.service";
@@ -59,9 +61,10 @@ export class BillingController {
   }
 
   @Post("checkout")
+  @UseGuards(RateLimitGuard, PermissionGuard)
+  @UseRateLimit("billing:checkout")
   @Idempotent("billing.checkout")
   @HttpCode(200)
-  @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
   @Validate({ body: createOrderSchema })
   checkout(

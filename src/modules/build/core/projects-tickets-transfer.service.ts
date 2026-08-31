@@ -1,9 +1,10 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import {
   projectMembers,
   projects,
   projectStatuses,
+  ticketAssignees,
   tickets,
   users,
 } from "../../../db/schema";
@@ -13,26 +14,44 @@ import { logger } from "../../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { AccessService } from "../../access/access.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
+import { resolveTicketsScope } from "./tickets-scope";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ImportTicketsInput, UpdateTicketInput } from "./dto/projects.schemas";
 import { resolveAssigneeId } from "./tickets-helpers";
 import { allocateTicketNumbers } from "./lib/allocate-ticket-number";
+
+const EXPORT_ROW_CAP = 5_000;
 
 @Injectable()
 export class ProjectsTicketsTransferService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly read: ProjectsTicketsReadService,
+    private readonly access: AccessService,
     private readonly notifications: NotificationsService,
     private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async exportTickets(u: CurrentUserContext, projectId: number) {
-    const { hasAccess } = await this.read.checkProjectAccess(u.orgId, u.userId, projectId);
+    const [{ hasAccess }, scope] = await Promise.all([
+      this.read.checkProjectAccess(u.orgId, u.userId, projectId),
+      resolveTicketsScope(this.access, u),
+    ]);
     if (!hasAccess) throw new NotFoundException("Not found");
+    if (scope === "none") return { rows: [], truncated: false };
 
-    const rows = await this.db
+    const scopeClause =
+      scope !== "all"
+        ? or(
+            eq(tickets.assigneeId, u.userId),
+            eq(tickets.reporterId, u.userId),
+            sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta WHERE ta.org_id = ${u.orgId} AND ta.user_id = ${u.userId} AND ta.ticket_id = ${tickets.id})`,
+          )
+        : undefined;
+
+    const fetched = await this.db
       .select({
         number: tickets.ticketNumber,
         title: tickets.title,
@@ -48,21 +67,37 @@ export class ProjectsTicketsTransferService {
       })
       .from(tickets)
       .leftJoin(users, eq(tickets.assigneeId, users.id))
-      .where(and(eq(tickets.orgId, u.orgId), eq(tickets.projectId, projectId), isNull(tickets.deletedAt)))
-      .orderBy(tickets.ticketNumber);
+      .where(
+        and(
+          eq(tickets.orgId, u.orgId),
+          eq(tickets.projectId, projectId),
+          isNull(tickets.deletedAt),
+          ...(scopeClause ? [scopeClause] : []),
+        ),
+      )
+      .orderBy(tickets.ticketNumber)
+      .limit(EXPORT_ROW_CAP + 1);
 
-    return rows.map((r) => ({
-      number: r.number,
-      title: r.title,
-      type: r.type,
-      status: r.status,
-      priority: r.priority,
-      points: r.points ?? null,
-      dueDate: r.dueDate ?? null,
-      assignee: r.assigneeName ?? (r.assigneeFirstName && r.assigneeLastName
-        ? `${r.assigneeFirstName} ${r.assigneeLastName}`.trim()
-        : r.assigneeEmail ?? null),
-    }));
+    const truncated = fetched.length > EXPORT_ROW_CAP;
+    const slice = truncated ? fetched.slice(0, EXPORT_ROW_CAP) : fetched;
+
+    return {
+      rows: slice.map((r) => ({
+        number: r.number,
+        title: r.title,
+        type: r.type,
+        status: r.status,
+        priority: r.priority,
+        points: r.points ?? null,
+        dueDate: r.dueDate ?? null,
+        assignee:
+          r.assigneeName ??
+          (r.assigneeFirstName && r.assigneeLastName
+            ? `${r.assigneeFirstName} ${r.assigneeLastName}`.trim()
+            : (r.assigneeEmail ?? null)),
+      })),
+      truncated,
+    };
   }
 
   async importTickets(u: CurrentUserContext, projectId: number, body: ImportTicketsInput) {

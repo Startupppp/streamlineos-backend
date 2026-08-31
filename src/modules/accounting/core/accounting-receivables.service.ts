@@ -82,7 +82,6 @@ export class AccountingReceivablesService {
         gstin: clients.gstin,
         invoiceCount: invoiceCountExpr,
         outstanding: outstandingExpr,
-        total: sql<string>`count(*) OVER ()`,
       })
       .from(clients)
       .leftJoin(invoices, and(eq(invoices.clientId, clients.id), eq(invoices.orgId, orgId)))
@@ -92,10 +91,24 @@ export class AccountingReceivablesService {
       .$dynamic();
     if (onlyOutstanding) listQuery = listQuery.having(gt(outstandingExpr, "0"));
 
-    const rows = await listQuery
-      .orderBy(desc(outstandingExpr), asc(clients.name))
-      .offset(offset)
-      .limit(limit);
+    const countQuery = onlyOutstanding
+      ? this.db.select({ c: count() }).from(
+          this.db
+            .select({ id: clients.id })
+            .from(clients)
+            .leftJoin(invoices, and(eq(invoices.clientId, clients.id), eq(invoices.orgId, orgId)))
+            .leftJoin(paidSq, eq(paidSq.clientId, clients.id))
+            .where(and(...conds))
+            .groupBy(clients.id, paidSq.paid)
+            .having(gt(outstandingExpr, "0"))
+            .as("g"),
+        )
+      : this.db.select({ c: count() }).from(clients).where(and(...conds));
+
+    const [rows, [countRow]] = await Promise.all([
+      listQuery.orderBy(desc(outstandingExpr), asc(clients.name)).offset(offset).limit(limit),
+      countQuery,
+    ]);
 
     const items: CustomerOutstanding[] = rows.map((r) => ({
       clientId: r.clientId,
@@ -106,30 +119,7 @@ export class AccountingReceivablesService {
       outstanding: Number(r.outstanding ?? 0).toFixed(2),
     }));
 
-    let totalCount: number;
-    if (rows[0]) {
-      totalCount = Number(rows[0].total);
-    } else if (offset === 0) {
-      totalCount = 0;
-    } else if (!onlyOutstanding) {
-      const fallback = await this.db.select({ c: count() }).from(clients).where(and(...conds));
-      totalCount = Number(fallback[0]?.c ?? 0);
-    } else {
-      const fallback = await this.db.select({ c: count() }).from(
-        this.db
-          .select({ id: clients.id })
-          .from(clients)
-          .leftJoin(invoices, and(eq(invoices.clientId, clients.id), eq(invoices.orgId, orgId)))
-          .leftJoin(paidSq, eq(paidSq.clientId, clients.id))
-          .where(and(...conds))
-          .groupBy(clients.id, paidSq.paid)
-          .having(gt(outstandingExpr, "0"))
-          .as("g"),
-      );
-      totalCount = Number(fallback[0]?.c ?? 0);
-    }
-
-    return buildListResponse(items, totalCount, { page, pageSize });
+    return buildListResponse(items, Number(countRow?.c ?? 0), { page, pageSize });
   }
 
   async customerLedger(orgId: string, clientId: number, query: ListCustomerLedgerQuery): Promise<CustomerLedger> {

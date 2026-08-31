@@ -15,6 +15,7 @@ import { EmployeeMutationsService } from "./employee-mutations.service";
 import { EmployeeOnboardingService } from "./employee-onboarding.service";
 import { EmployeeBulkOnboardingService } from "./employee-bulk-onboarding.service";
 import { OrgStructureService } from "./org-structure.service";
+import { OrgChartService } from "./org-chart.service";
 import { CelebrationsService } from "./celebrations.service";
 import { EmployeeSkillsService } from "./employee-skills.service";
 import { TeamEventsService } from "./team-events.service";
@@ -51,6 +52,7 @@ import { NotificationsModule } from "../../notifications/notifications.module";
     EmployeeMutationsService,
     EmployeeOnboardingService,
     EmployeeBulkOnboardingService,
+    OrgChartService,
     OrgStructureService,
     CelebrationsService,
     EmployeeSkillsService,

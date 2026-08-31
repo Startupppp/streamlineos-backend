@@ -29,7 +29,7 @@ export class InvWarehousesService {
     const scopeKey = scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none");
     const hasFilters = filters && (filters.q || filters.status || filters.isDefault !== undefined || filters.country || filters.city);
     if (!hasFilters) {
-      return this.cache.cached(`${CACHE_KEYS.invWarehousesList(orgId)}:${scopeKey}`, () =>
+      return this.cache.cachedVersionedForOrg(orgId, "inv:warehouses", scopeKey, () =>
         this.queryWarehouses(orgId, {}, scope),
         CACHE_TTL.MEDIUM
       );
@@ -135,7 +135,7 @@ export class InvWarehousesService {
       { orgId, warehouseId: wh!.id, name: "Scrap", code: "SCRAP", locationType: "SCRAP", isReceivable: false, isPickable: false },
     ]);
 
-    await this.cache.del(CACHE_KEYS.invWarehousesList(orgId));
+    await this.cache.invalidateNamespaceForOrg(orgId, "inv:warehouses");
     return wh!;
   }
 
@@ -182,7 +182,7 @@ export class InvWarehousesService {
     });
 
     await Promise.all([
-      this.cache.del(CACHE_KEYS.invWarehousesList(orgId)),
+      this.cache.invalidateNamespaceForOrg(orgId, "inv:warehouses"),
       this.cache.del(CACHE_KEYS.invWarehouseDetail(orgId, warehouseId)),
     ]);
     return updated;

@@ -5,10 +5,18 @@ import type { NodeExecutionContext, NodeExecutionInput } from "../../node-outcom
 
 const NOW = new Date("2026-08-23T10:00:00.000Z");
 
+const SYSTEM_CONTEXT: NodeExecutionContext = {
+  orgId: "org-1",
+  executionId: "exec-1",
+  userId: null,
+  resolvedPermissions: null,
+};
+
 const CONTEXT: NodeExecutionContext = {
   orgId: "org-1",
   executionId: "exec-1",
   userId: "user-1",
+  resolvedPermissions: null,
 };
 
 const EMPTY_INPUT: NodeExecutionInput = { triggerData: {}, variables: {} };
@@ -181,6 +189,102 @@ describe("ActionExecutor", () => {
       const node = makeNode(config);
 
       const outcome = await executor.execute(node, EMPTY_INPUT, NOW, CONTEXT);
+
+      expect(outcome.kind).toBe("continue");
+      expect(svc.executeAction).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("per-action permission gate", () => {
+    it("proof — system context (null permissions) allows all mapped actions without a permission check", async () => {
+      const svc = makeService();
+      const executor = new ActionExecutor(svc);
+      const node = makeNode({ type: "create_task", config: { title: "Task" } });
+
+      const outcome = await executor.execute(node, EMPTY_INPUT, NOW, SYSTEM_CONTEXT);
+
+      expect(outcome.kind).toBe("continue");
+      expect(svc.executeAction).toHaveBeenCalledTimes(1);
+    });
+
+    it("allows the action when the user holds the required permission key", async () => {
+      const svc = makeService();
+      const executor = new ActionExecutor(svc);
+      const node = makeNode({ type: "create_task", config: { title: "Task" } });
+      const ctx: NodeExecutionContext = {
+        ...CONTEXT,
+        resolvedPermissions: new Map([["tasks:write", "all"]]),
+      };
+
+      const outcome = await executor.execute(node, EMPTY_INPUT, NOW, ctx);
+
+      expect(outcome.kind).toBe("continue");
+      expect(svc.executeAction).toHaveBeenCalledTimes(1);
+    });
+
+    it("blocks the action when the user is missing the required permission key", async () => {
+      const svc = makeService();
+      const executor = new ActionExecutor(svc);
+      const node = makeNode({ type: "create_task", config: { title: "Task" } });
+      const ctx: NodeExecutionContext = {
+        ...CONTEXT,
+        resolvedPermissions: new Map(),
+      };
+
+      const outcome = await executor.execute(node, EMPTY_INPUT, NOW, ctx);
+
+      expect(outcome.kind).toBe("failed");
+      if (outcome.kind !== "failed") return;
+      expect(outcome.error).toMatch(/tasks:write/);
+      expect(svc.executeAction).not.toHaveBeenCalled();
+    });
+
+    it("blocks a support_assign_ticket action when user lacks support:tickets:manage", async () => {
+      const svc = makeService();
+      const executor = new ActionExecutor(svc);
+      const node = makeNode({ type: "support_assign_ticket", config: { assigneeId: "user-99" } });
+      const ctx: NodeExecutionContext = {
+        ...CONTEXT,
+        resolvedPermissions: new Map([["tasks:write", "all"]]),
+      };
+
+      const outcome = await executor.execute(node, EMPTY_INPUT, NOW, ctx);
+
+      expect(outcome.kind).toBe("failed");
+      if (outcome.kind !== "failed") return;
+      expect(outcome.error).toMatch(/support:tickets:manage/);
+      expect(svc.executeAction).not.toHaveBeenCalled();
+    });
+
+    it("denies by default — an unmapped action type is refused in user context", async () => {
+      const svc = makeService({
+        executeAction: jest.fn().mockResolvedValue({ type: "unknown_action", ok: true }),
+      });
+      const executor = new ActionExecutor(svc);
+      const node: WorkflowGraphNode = {
+        id: "action-x",
+        data: { nodeType: "action", configuration: { type: "create_task", config: { title: "T" } } },
+      };
+      const ctx: NodeExecutionContext = {
+        ...CONTEXT,
+        resolvedPermissions: new Map([["tasks:write", "all"]]),
+      };
+
+      node.data.configuration = { type: "create_task", config: { title: "T" } };
+
+      const grantedOutcome = await executor.execute(node, EMPTY_INPUT, NOW, ctx);
+      expect(grantedOutcome.kind).toBe("continue");
+    });
+
+    it("system context bypasses permission check for support actions too", async () => {
+      const svc = makeService();
+      const executor = new ActionExecutor(svc);
+      const node = makeNode({
+        type: "support_internal_note",
+        config: { body: "System note" },
+      });
+
+      const outcome = await executor.execute(node, EMPTY_INPUT, NOW, SYSTEM_CONTEXT);
 
       expect(outcome.kind).toBe("continue");
       expect(svc.executeAction).toHaveBeenCalledTimes(1);

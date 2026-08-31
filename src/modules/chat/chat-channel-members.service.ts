@@ -20,6 +20,7 @@ import type { UpdateChannelInput } from "./dto/chat.schemas";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
+import { AblyService } from "../realtime/ably.service";
 
 @Injectable()
 export class ChatChannelMembersService {
@@ -27,6 +28,7 @@ export class ChatChannelMembersService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly entities: EntityReferenceService,
+    private readonly ably: AblyService,
   ) {}
 
   private async resolveMembership(orgId: string, userId: string): Promise<number> {
@@ -42,32 +44,37 @@ export class ChatChannelMembersService {
     return membership.id;
   }
 
-  private async assertMember(channelId: number, userId: string, orgId: string) {
+  private async assertMember(
+    channelId: number,
+    userId: string,
+    orgId: string,
+  ): Promise<{ membershipId: number; role: string }> {
     const channel = await this.db.query.chatChannels.findFirst({
       where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
       columns: { id: true },
     });
     if (!channel) throw new NotFoundException("Channel not found");
+    const membershipId = await this.resolveMembership(orgId, userId);
     const member = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.orgId, orgId),
         eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.userId, userId),
+        eq(chatChannelMembers.membershipId, membershipId),
       ),
+      columns: { role: true },
     });
     if (!member) throw new ForbiddenException("You are not a member of this channel");
-    return member;
+    return { membershipId, role: member.role };
   }
 
-  /** The only right a generic entity-action route needs: being in the room. */
   async assertChannelMembership(channelId: number, userId: string, orgId: string): Promise<void> {
     await this.assertMember(channelId, userId, orgId);
   }
 
-  private async assertAdmin(channelId: number, userId: string, orgId: string) {
-    const member = await this.assertMember(channelId, userId, orgId);
-    if (member.role !== "ADMIN") throw new ForbiddenException("Only channel admins can perform this action");
-    return member;
+  private async assertAdmin(channelId: number, userId: string, orgId: string): Promise<number> {
+    const { membershipId, role } = await this.assertMember(channelId, userId, orgId);
+    if (role !== "ADMIN") throw new ForbiddenException("Only channel admins can perform this action");
+    return membershipId;
   }
 
   async getChannel(channelId: number, userId: string, orgId: string) {
@@ -111,7 +118,7 @@ export class ChatChannelMembersService {
       where: and(
         eq(chatChannelMembers.orgId, orgId),
         eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.userId, targetUserId),
+        eq(chatChannelMembers.membershipId, targetMembershipId),
       ),
     });
 
@@ -129,38 +136,56 @@ export class ChatChannelMembersService {
   }
 
   async removeMember(channelId: number, targetUserId: string, requesterId: string, orgId: string) {
-    const requester = await this.assertMember(channelId, requesterId, orgId);
+    const { role } = await this.assertMember(channelId, requesterId, orgId);
 
-    if (requesterId !== targetUserId && requester.role !== "ADMIN") {
+    if (requesterId !== targetUserId && role !== "ADMIN")
       throw new ForbiddenException("Only channel admins can remove other members");
+
+    const targetRow = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
+        eq(chatChannelMembers.orgId, orgId),
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.userId, targetUserId),
+      ),
+      columns: { id: true, membershipId: true },
+    });
+
+    if (targetRow) {
+      const deleteWhere = targetRow.membershipId
+        ? and(
+            eq(chatChannelMembers.orgId, orgId),
+            eq(chatChannelMembers.channelId, channelId),
+            eq(chatChannelMembers.membershipId, targetRow.membershipId),
+          )
+        : and(
+            eq(chatChannelMembers.orgId, orgId),
+            eq(chatChannelMembers.channelId, channelId),
+            eq(chatChannelMembers.userId, targetUserId),
+          );
+      await this.db.delete(chatChannelMembers).where(deleteWhere);
     }
 
-    await this.db
-      .delete(chatChannelMembers)
-      .where(
-        and(
-          eq(chatChannelMembers.orgId, orgId),
-          eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, targetUserId),
-        ),
-      );
+    void this.ably
+      .publishToUser(orgId, targetUserId, "realtime:capability:refresh", {})
+      .catch(() => undefined);
 
     return { ok: true };
   }
 
   async updateChannel(channelId: number, userId: string, body: UpdateChannelInput, orgId: string) {
+    const membershipId = await this.resolveMembership(orgId, userId);
     const membership = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.orgId, orgId),
         eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.userId, userId),
+        eq(chatChannelMembers.membershipId, membershipId),
       ),
+      columns: { role: true },
     });
 
     if (!membership) throw new ForbiddenException("You are not a member of this channel");
-    if (membership.role !== "ADMIN") {
+    if (membership.role !== "ADMIN")
       throw new ForbiddenException("Only channel admins can update channel details");
-    }
 
     const updateData: Partial<typeof chatChannels.$inferInsert> = { updatedAt: new Date() };
     if (body.name !== undefined) updateData.name = body.name;
@@ -202,7 +227,7 @@ export class ChatChannelMembersService {
       where: and(
         eq(chatChannelMembers.orgId, actor.orgId),
         eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.userId, actor.userId),
+        eq(chatChannelMembers.membershipId, actorMembershipId),
       ),
     });
 
@@ -220,7 +245,7 @@ export class ChatChannelMembersService {
   }
 
   async leaveChannel(channelId: number, userId: string, orgId: string) {
-    await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await this.assertMember(channelId, userId, orgId);
 
     await this.db
       .delete(chatChannelMembers)
@@ -228,15 +253,19 @@ export class ChatChannelMembersService {
         and(
           eq(chatChannelMembers.orgId, orgId),
           eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, userId),
+          eq(chatChannelMembers.membershipId, membershipId),
         ),
       );
+
+    void this.ably
+      .publishToUser(orgId, userId, "realtime:capability:refresh", {})
+      .catch(() => undefined);
 
     return { ok: true };
   }
 
   async archiveChannel(channelId: number, userId: string, orgId: string) {
-    await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await this.assertMember(channelId, userId, orgId);
     await this.db
       .update(chatChannelMembers)
       .set({ archivedAt: new Date() })
@@ -244,14 +273,14 @@ export class ChatChannelMembersService {
         and(
           eq(chatChannelMembers.orgId, orgId),
           eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, userId),
+          eq(chatChannelMembers.membershipId, membershipId),
         ),
       );
     return { ok: true };
   }
 
   async unarchiveChannel(channelId: number, userId: string, orgId: string) {
-    await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await this.assertMember(channelId, userId, orgId);
     await this.db
       .update(chatChannelMembers)
       .set({ archivedAt: null })
@@ -259,13 +288,14 @@ export class ChatChannelMembersService {
         and(
           eq(chatChannelMembers.orgId, orgId),
           eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, userId),
+          eq(chatChannelMembers.membershipId, membershipId),
         ),
       );
     return { ok: true };
   }
 
   async markRead(channelId: number, userId: string, orgId: string) {
+    const membershipId = await this.resolveMembership(orgId, userId);
     await this.db
       .update(chatChannelMembers)
       .set({ lastReadAt: new Date() })
@@ -273,7 +303,7 @@ export class ChatChannelMembersService {
         and(
           eq(chatChannelMembers.orgId, orgId),
           eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, userId),
+          eq(chatChannelMembers.membershipId, membershipId),
         ),
       );
 
@@ -283,6 +313,7 @@ export class ChatChannelMembersService {
   }
 
   async markChannelUnread(channelId: number, userId: string, orgId: string) {
+    const membershipId = await this.resolveMembership(orgId, userId);
     const latestMessage = await this.db
       .select({ createdAt: chatMessages.createdAt })
       .from(chatMessages)
@@ -302,7 +333,7 @@ export class ChatChannelMembersService {
         and(
           eq(chatChannelMembers.orgId, orgId),
           eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, userId),
+          eq(chatChannelMembers.membershipId, membershipId),
         ),
       );
 
@@ -310,6 +341,7 @@ export class ChatChannelMembersService {
   }
 
   async muteChannel(channelId: number, userId: string, duration: string, orgId: string) {
+    const membershipId = await this.resolveMembership(orgId, userId);
     const until =
       duration === "forever"
         ? new Date("2099-12-31")
@@ -327,13 +359,14 @@ export class ChatChannelMembersService {
         and(
           eq(chatChannelMembers.orgId, orgId),
           eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, userId),
+          eq(chatChannelMembers.membershipId, membershipId),
         ),
       );
     return { ok: true, mutedUntil: until };
   }
 
   async unmuteChannel(channelId: number, userId: string, orgId: string) {
+    const membershipId = await this.resolveMembership(orgId, userId);
     await this.db
       .update(chatChannelMembers)
       .set({ mutedUntil: null })
@@ -341,14 +374,14 @@ export class ChatChannelMembersService {
         and(
           eq(chatChannelMembers.orgId, orgId),
           eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, userId),
+          eq(chatChannelMembers.membershipId, membershipId),
         ),
       );
     return { ok: true };
   }
 
   async favoriteChannel(channelId: number, userId: string, orgId: string) {
-    await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await this.assertMember(channelId, userId, orgId);
     await this.db
       .update(chatChannelMembers)
       .set({ isFavorite: true })
@@ -356,14 +389,14 @@ export class ChatChannelMembersService {
         and(
           eq(chatChannelMembers.orgId, orgId),
           eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, userId),
+          eq(chatChannelMembers.membershipId, membershipId),
         ),
       );
     return { ok: true };
   }
 
   async unfavoriteChannel(channelId: number, userId: string, orgId: string) {
-    await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await this.assertMember(channelId, userId, orgId);
     await this.db
       .update(chatChannelMembers)
       .set({ isFavorite: false })
@@ -371,14 +404,14 @@ export class ChatChannelMembersService {
         and(
           eq(chatChannelMembers.orgId, orgId),
           eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, userId),
+          eq(chatChannelMembers.membershipId, membershipId),
         ),
       );
     return { ok: true };
   }
 
   async setNotificationPreference(channelId: number, userId: string, preference: string, orgId: string) {
-    await this.assertMember(channelId, userId, orgId);
+    const { membershipId } = await this.assertMember(channelId, userId, orgId);
     await this.db
       .update(chatChannelMembers)
       .set({ notificationPreference: preference })
@@ -386,7 +419,7 @@ export class ChatChannelMembersService {
         and(
           eq(chatChannelMembers.orgId, orgId),
           eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, userId),
+          eq(chatChannelMembers.membershipId, membershipId),
         ),
       );
     return { ok: true, notificationPreference: preference };
@@ -431,21 +464,41 @@ export class ChatChannelMembersService {
   }
 
   async updateMemberRole(channelId: number, targetUserId: string, requesterId: string, orgId: string, role: string) {
+    const requesterMembershipId = await this.resolveMembership(orgId, requesterId);
     const requester = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.orgId, orgId),
         eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.userId, requesterId),
+        eq(chatChannelMembers.membershipId, requesterMembershipId),
       ),
+      columns: { role: true },
     });
     if (!requester || requester.role !== "ADMIN") throw new ForbiddenException("Only admins can change roles");
-    await this.db.update(chatChannelMembers)
-      .set({ role })
-      .where(and(
+
+    const targetRow = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
         eq(chatChannelMembers.orgId, orgId),
         eq(chatChannelMembers.channelId, channelId),
         eq(chatChannelMembers.userId, targetUserId),
-      ));
+      ),
+      columns: { id: true, membershipId: true },
+    });
+
+    if (!targetRow) return { ok: true };
+
+    const updateWhere = targetRow.membershipId
+      ? and(
+          eq(chatChannelMembers.orgId, orgId),
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.membershipId, targetRow.membershipId),
+        )
+      : and(
+          eq(chatChannelMembers.orgId, orgId),
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, targetUserId),
+        );
+
+    await this.db.update(chatChannelMembers).set({ role }).where(updateWhere);
     return { ok: true };
   }
 }

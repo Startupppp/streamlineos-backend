@@ -131,10 +131,9 @@ export class CrmAutomationsController {
   @Validate({ params: ruleIdParams })
   getRuns(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Query("page") page = "1",
+    @Query("cursor") cursor: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const pageNum = Math.max(1, Math.min(100, parseInt(page, 10) || 1));
-    return this.automations.getRuns(u.orgId, ruleId, pageNum);
+    return this.automations.getRuns(u.orgId, ruleId, cursor);
   }
 }

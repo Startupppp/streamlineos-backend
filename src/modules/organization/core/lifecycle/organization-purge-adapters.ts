@@ -1,4 +1,4 @@
-import { count, eq } from "drizzle-orm";
+import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import type { Db } from "../../../../db/drizzle.types";
 import { organizations } from "../../../../db/schema/common/auth";
@@ -7,6 +7,12 @@ import {
   type PurgeAdapter,
 } from "../../../../db/schema/common/organization-purge";
 import { kbArticleChunks } from "../../../../db/schema/support/kb-chunks";
+import { storagePendingPurge } from "../../../../db/schema/common/storage-pending-purge";
+import {
+  enumerateFileKeyColumns,
+  collectOrgFileKeys,
+} from "../../../storage/storage-key-catalog";
+import type { StorageService } from "../../../storage/storage.service";
 
 export type PurgeAdapterResult = {
   state: "CONFIRMED" | "FAILED" | "NOT_APPLICABLE";
@@ -14,7 +20,12 @@ export type PurgeAdapterResult = {
 };
 
 export type PurgeAdapterDef = {
-  confirm: (orgId: string, purgeJobId: string, db: Db) => Promise<PurgeAdapterResult>;
+  confirm: (
+    orgId: string,
+    purgeJobId: string,
+    db: Db,
+    storage?: StorageService,
+  ) => Promise<PurgeAdapterResult>;
 };
 
 function failedAdapter(detail: string): PurgeAdapterDef {
@@ -49,9 +60,130 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
     },
   },
 
-  object_storage: failedAdapter(
-    "Object-storage keys carry no org-scoped prefix (format: folder/uuid-filename with no org segment); files from multiple tenants share the same bucket. Enumerating and deleting an org's files requires a per-table audit of every file_key column across the schema — not yet implemented. Manual cleanup required.",
-  ),
+  object_storage: {
+    confirm: async (orgId, _purgeJobId, db, storage) => {
+      if (!storage) {
+        return {
+          state: "FAILED",
+          detail:
+            "Storage service not available for automated purge; cannot enumerate or delete object-storage blobs without it",
+        };
+      }
+
+      let columns: Awaited<ReturnType<typeof enumerateFileKeyColumns>>;
+      try {
+        columns = await enumerateFileKeyColumns(db);
+      } catch (err) {
+        return {
+          state: "FAILED",
+          detail: `Failed to enumerate file-key columns from pg_catalog: ${String(err)}`,
+        };
+      }
+
+      let keys: string[];
+      try {
+        keys = await collectOrgFileKeys(db, orgId, columns);
+      } catch (err) {
+        return {
+          state: "FAILED",
+          detail: `Failed to collect org file keys: ${String(err)}`,
+        };
+      }
+
+      if (keys.length === 0) {
+        return {
+          state: "CONFIRMED",
+          detail: "No object-storage keys found for this org; nothing to delete",
+        };
+      }
+
+      const failedKeys: string[] = [];
+
+      for (const key of keys) {
+        try {
+          await runInNewTenantTransaction(db, orgId, async (tx) => {
+            await tx
+              .insert(storagePendingPurge)
+              .values({
+                orgId,
+                storageKey: key,
+                purpose: "org-purge",
+                status: "pending",
+              })
+              .onConflictDoUpdate({
+                target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
+                set: { status: "pending", lastAttemptedAt: null, failedReason: null },
+              });
+          });
+        } catch (err) {
+          failedKeys.push(key);
+          continue;
+        }
+
+        try {
+          await storage.deleteFile(orgId, key);
+          await runInNewTenantTransaction(db, orgId, async (tx) => {
+            await tx
+              .update(storagePendingPurge)
+              .set({
+                status: "confirmed",
+                confirmedAt: new Date(),
+                lastAttemptedAt: new Date(),
+                attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
+              })
+              .where(
+                and(
+                  eq(storagePendingPurge.orgId, orgId),
+                  eq(storagePendingPurge.storageKey, key),
+                ),
+              );
+          });
+        } catch (err) {
+          failedKeys.push(key);
+          try {
+            await runInNewTenantTransaction(db, orgId, async (tx) => {
+              await tx
+                .update(storagePendingPurge)
+                .set({
+                  status: "failed",
+                  failedReason: String(err),
+                  lastAttemptedAt: new Date(),
+                  attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
+                })
+                .where(
+                  and(
+                    eq(storagePendingPurge.orgId, orgId),
+                    eq(storagePendingPurge.storageKey, key),
+                  ),
+                );
+            });
+          } catch {
+          }
+        }
+      }
+
+      let remaining: string[];
+      try {
+        remaining = await collectOrgFileKeys(db, orgId, columns);
+      } catch (err) {
+        return {
+          state: "FAILED",
+          detail: `Could not verify post-delete state: ${String(err)}`,
+        };
+      }
+
+      if (remaining.length === 0)
+        return {
+          state: "CONFIRMED",
+          detail: `All ${keys.length} object-storage key(s) deleted and verified absent`,
+        };
+
+      return {
+        state: "FAILED",
+        detail: `${remaining.length} of ${keys.length} key(s) still present after delete; failed keys: ${failedKeys.slice(0, 5).join(", ")}${failedKeys.length > 5 ? ` … and ${failedKeys.length - 5} more` : ""}`,
+      };
+    },
+  },
 
   cache: {
     confirm: async () => ({

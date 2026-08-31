@@ -6,7 +6,7 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
-import { moduleOwnerships, modulesCatalog, orgModules, organizations, pmWorkspaces } from "../../db/schema";
+import { moduleOwnerships, modulesCatalog, orgModules, organizationMembers, organizations, pmWorkspaces } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -225,7 +225,7 @@ export class EntitlementsService implements OnModuleInit {
         );
       }
     }
-    await runInTenantTransaction(this.db, async (tx) => {
+    const affectedMembers = await runInTenantTransaction(this.db, async (tx) => {
       await tx
         .insert(orgModules)
         .values({ orgId, moduleKey, enabled, enabledBy })
@@ -279,12 +279,19 @@ export class EntitlementsService implements OnModuleInit {
       }
 
       await bumpPermissionsVersion(tx, orgId);
+
+      return tx
+        .select({ userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")));
     }, { orgId });
 
     this.moduleMapCache.delete(orgId);
     await this.cache.invalidateForOrg(orgId, `entitlements:module:${moduleKey}`);
     await this.cache.invalidateForOrg(orgId, "entitlements:modules");
-    await this.cache.invalidate(CACHE_KEYS.userSession(enabledBy));
+    await Promise.all(
+      affectedMembers.map((m) => this.cache.invalidate(CACHE_KEYS.userSession(m.userId))),
+    );
   }
 
   /**

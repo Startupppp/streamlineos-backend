@@ -3018,6 +3018,41 @@
       "when": 1798000046000,
       "tag": "0724_rls_mail_checkpoints_payroll_export",
       "breakpoints": true
+    },
+    {
+      "idx": 547,
+      "version": "7",
+      "when": 1798000047000,
+      "tag": "0725_chat_actor_contraction_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 550,
+      "version": "7",
+      "when": 1798000050000,
+      "tag": "0728_perf_count_split_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 558,
+      "version": "7",
+      "when": 1798000058000,
+      "tag": "0734_operator_access_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 559,
+      "version": "7",
+      "when": 1798000059000,
+      "tag": "0736_chat_membership_id_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 560,
+      "version": "7",
+      "when": 1798000060000,
+      "tag": "0741_storage_pending_purge",
+      "breakpoints": true
     }
   ]
 }

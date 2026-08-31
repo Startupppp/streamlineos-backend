@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import {
   getTenantContext,
@@ -50,5 +51,26 @@ export async function runInNewTenantTransaction<T>(
         runWithTenantContext({ orgId, audience: "INTERNAL", tx }, () => fn(tx)),
       ),
     ),
+  );
+}
+
+export async function runInReplicaTenantRead<T>(
+  replicaDb: Db,
+  fn: (tx: TenantTx) => Promise<T>,
+): Promise<T> {
+  const ctx = getTenantContext();
+  if (!ctx)
+    throw new Error(
+      "runInReplicaTenantRead: no ambient tenant context. A replica read without a GUC would fail 42501.",
+    );
+
+  return replicaDb.transaction(
+    async (tx) => {
+      await tx.execute(
+        sql`SELECT set_config('app.organization_id', ${ctx.orgId}, true), set_config('app.audience', ${ctx.audience}, true)`,
+      );
+      return fn(tx);
+    },
+    { accessMode: "read only" },
   );
 }

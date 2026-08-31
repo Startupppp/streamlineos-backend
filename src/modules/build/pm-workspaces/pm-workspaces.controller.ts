@@ -17,6 +17,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PmWorkspacesService } from "./pm-workspaces.service";
+import { PmWorkspaceMembershipsService } from "./pm-workspace-memberships.service";
 import {
   addWorkspaceMemberSchema,
   createWorkspaceSchema,
@@ -39,7 +40,10 @@ const pmWorkspaceIdpmWorkspaceMembershipIdParams = z.object({ pmWorkspaceId: z.s
 @Controller("product-management/workspaces")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class PmWorkspacesController {
-  constructor(private readonly svc: PmWorkspacesService) {}
+  constructor(
+    private readonly svc: PmWorkspacesService,
+    private readonly memberships: PmWorkspaceMembershipsService,
+  ) {}
 
   @Get()
   @RequirePermission("build:workspaces:view")
@@ -102,7 +106,7 @@ export class PmWorkspacesController {
     @Query() query: ListMembersQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listMembers(u.orgId, pmWorkspaceId, query);
+    return this.memberships.listMembers(u.orgId, pmWorkspaceId, query);
   }
 
   @Post(":pmWorkspaceId/members")
@@ -114,7 +118,7 @@ export class PmWorkspacesController {
     @Body() body: AddWorkspaceMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.addMember(u.orgId, u.userId, pmWorkspaceId, body);
+    return this.memberships.addMember(u.orgId, u.userId, pmWorkspaceId, body);
   }
 
   @Delete(":pmWorkspaceId/members/:pmWorkspaceMembershipId")
@@ -126,6 +130,6 @@ export class PmWorkspacesController {
     @Param("pmWorkspaceMembershipId") pmWorkspaceMembershipId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.removeMember(u.orgId, u.userId, pmWorkspaceId, pmWorkspaceMembershipId);
+    return this.memberships.removeMember(u.orgId, u.userId, pmWorkspaceId, pmWorkspaceMembershipId);
   }
 }

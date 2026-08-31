@@ -1,6 +1,8 @@
-import { Controller, Headers, Param, Post, RawBodyRequest, Req, Res } from "@nestjs/common";
+import { Controller, Headers, Param, Post, RawBodyRequest, Req, Res, UseGuards } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { Public } from "../../../common/auth/public.decorator";
+import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { PaymentWebhookReceiverService } from "./payment-webhook-receiver.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -13,6 +15,8 @@ export class PaymentWebhooksPublicController {
   constructor(private readonly webhooks: PaymentWebhookReceiverService) {}
 
   @Post(":providerKey/:environment/:orgId")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("billing:webhook")
   @Validate({ params: providerKeyenvironmentorgIdParams })
   async handle(
     @Param("providerKey") providerKey: string,

@@ -233,7 +233,7 @@ export class CalendarController {
     const fromDate = new Date(query.from);
     const toDate = new Date(query.to);
 
-    const events = await this.calendar.exportEvents(u.orgId, fromDate, toDate);
+    const events = await this.calendar.exportEvents(u.orgId, u.userId, fromDate, toDate);
 
     const headers = [
       "Title",

@@ -151,6 +151,7 @@ export class InvitationsService {
     }
 
     const now = new Date();
+    const actorMembership = await findActorMembershipId(this.db, orgId, actorUserId);
 
     const pendingResult = await runInTenantTransaction(
       this.db,
@@ -182,6 +183,7 @@ export class InvitationsService {
             expiresAt: newExpiresAt,
             role,
             invitedBy: actorUserId,
+            inviterMembershipId: actorMembership?.id ?? null,
             status: "PENDING",
             revokedAt: null,
             revokedByMembershipId: null,
@@ -259,6 +261,7 @@ export class InvitationsService {
             orgId,
             role,
             invitedBy: actorUserId,
+            inviterMembershipId: actorMembership?.id ?? null,
             expiresAt,
           });
 
@@ -266,7 +269,7 @@ export class InvitationsService {
             orgId,
             invitationId,
             event: "CREATED",
-            actorMembershipId: null,
+            actorMembershipId: actorMembership?.id ?? null,
           });
 
           await this.seatLedger.recordSeatEvent(

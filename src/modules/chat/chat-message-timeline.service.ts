@@ -116,14 +116,14 @@ export class ChatMessageTimelineService {
   ) {
     const channel = await this.db.query.chatChannels.findFirst({
       where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, actor.orgId)),
-      columns: { id: true },
+      columns: { id: true, type: true },
     });
     if (!channel) throw new NotFoundException("Channel not found");
 
-    if (
-      !(await this.isMember(channelId, actor.orgId, actor.membershipId, actor.userId))
-    )
+    if (!(await this.isMember(channelId, actor.orgId, actor.membershipId, actor.userId))) {
+      if (channel.type !== "PUBLIC") throw new NotFoundException("Channel not found");
       throw new ForbiddenException("You are not a member of this channel");
+    }
 
     const safeLimit = Math.min(Math.max(1, limit), 100);
     const conditions = [eq(chatMessages.orgId, actor.orgId), eq(chatMessages.channelId, channelId)];
@@ -157,14 +157,14 @@ export class ChatMessageTimelineService {
   async poll(channelId: number, actor: EntityActor, since: Date) {
     const channel = await this.db.query.chatChannels.findFirst({
       where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, actor.orgId)),
-      columns: { id: true },
+      columns: { id: true, type: true },
     });
     if (!channel) throw new NotFoundException("Channel not found");
 
-    if (
-      !(await this.isMember(channelId, actor.orgId, actor.membershipId, actor.userId))
-    )
+    if (!(await this.isMember(channelId, actor.orgId, actor.membershipId, actor.userId))) {
+      if (channel.type !== "PUBLIC") throw new NotFoundException("Channel not found");
       throw new ForbiddenException("You are not a member of this channel");
+    }
 
     const rawMessages = await this.db.query.chatMessages.findMany({
       where: and(
@@ -207,15 +207,14 @@ export class ChatMessageTimelineService {
 
     if (!rawParent) throw new NotFoundException("Message not found");
 
-    if (
-      !(await this.isMember(
-        rawParent.channelId,
-        actor.orgId,
-        actor.membershipId,
-        actor.userId,
-      ))
-    )
+    if (!(await this.isMember(rawParent.channelId, actor.orgId, actor.membershipId, actor.userId))) {
+      const parentChannel = await this.db.query.chatChannels.findFirst({
+        where: and(eq(chatChannels.id, rawParent.channelId), eq(chatChannels.orgId, actor.orgId)),
+        columns: { type: true },
+      });
+      if (parentChannel?.type !== "PUBLIC") throw new NotFoundException("Message not found");
       throw new ForbiddenException("You are not a member of this channel");
+    }
 
     const safeLimit = Math.min(Math.max(1, limit), 100);
     const conditions = [eq(chatMessages.orgId, actor.orgId), eq(chatMessages.replyToId, parentMessageId)];

@@ -155,7 +155,7 @@ describe("employee directory scope", () => {
     };
     const scopeSpy = jest.spyOn(applyScopeModule, "applyScope");
     const employment = { getFactsBatch: jest.fn().mockResolvedValue(new Map()) };
-    const service = new OrgStructureService(db as never, cache as never, employment as never);
+    const service = new OrgStructureService(db as never, cache as never, employment as never, undefined as never);
 
     await service.getDirectory("org-1", "actor-1", "none");
 

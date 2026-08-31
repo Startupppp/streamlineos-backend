@@ -1,7 +1,9 @@
-import { Controller, Headers, Param, Post, RawBodyRequest, Req, Res } from "@nestjs/common";
+import { Controller, Headers, Param, Post, RawBodyRequest, Req, Res, UseGuards } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { z } from "zod";
 import { Public } from "../../../common/auth/public.decorator";
+import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BillingService } from "./billing.service";
 
@@ -13,6 +15,8 @@ export class RazorpayWebhookController {
   constructor(private readonly billing: BillingService) {}
 
   @Post()
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("billing:webhook")
   @Validate({ params: orgIdParams })
   async handle(
     @Param("orgId") orgId: string,

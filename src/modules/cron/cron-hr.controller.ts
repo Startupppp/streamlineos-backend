@@ -382,6 +382,31 @@ export class CronHrController {
     }
   }
 
+  @Post("retention-delete-sweep")
+  @HttpCode(200)
+  postRetentionDeleteSweep(@Headers("authorization") authorization?: string) {
+    return this.runRetentionDeleteSweep(authorization);
+  }
+
+  @Get("retention-delete-sweep")
+  getRetentionDeleteSweep(@Headers("authorization") authorization?: string) {
+    return this.runRetentionDeleteSweep(authorization);
+  }
+
+  private async runRetentionDeleteSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("retention-delete-sweep", 600, () =>
+        this.hr.sweepRetentionDeleteRequests(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "retention-delete-sweep already running" };
+      return { success: true, ...outcome.result };
+    } catch (error) {
+      logger.error("Retention delete sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
   private async runHrEnginesSweepByName(
     authorization?: string,
     sweepName?: string,

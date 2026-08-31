@@ -1,5 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
+
+const EXPORT_ROW_CAP = 10_000;
 import { deals, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -86,7 +88,7 @@ export class DealsImportExportService {
     return { created, failed };
   }
 
-  async exportCsv(orgId: string): Promise<string> {
+  async exportCsv(orgId: string): Promise<{ csv: string; truncated: boolean; rowCount: number }> {
     const rows = await this.db
       .select({
         id: deals.id,
@@ -104,8 +106,10 @@ export class DealsImportExportService {
       .from(deals)
       .leftJoin(users, eq(deals.assignedToId, users.id))
       .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt)))
-      .orderBy(desc(deals.updatedAt));
+      .orderBy(desc(deals.updatedAt))
+      .limit(EXPORT_ROW_CAP);
 
+    const truncated = rows.length === EXPORT_ROW_CAP;
     const headers = [
       "id",
       "name",
@@ -119,21 +123,25 @@ export class DealsImportExportService {
       "notes",
       "createdAt",
     ];
-    return toCsv(
-      headers,
-      rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        value: r.value ?? "0",
-        stage: r.stage,
-        probability: r.probability ?? 0,
-        contactEmail: r.contactEmail ?? "",
-        contactPerson: r.contactPerson ?? "",
-        expectedCloseDate: r.expectedCloseDate ?? "",
-        assignee: r.assigneeName ?? "",
-        notes: r.notes ?? "",
-        createdAt: r.createdAt?.toISOString() ?? "",
-      })),
-    );
+    return {
+      csv: toCsv(
+        headers,
+        rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          value: r.value ?? "0",
+          stage: r.stage,
+          probability: r.probability ?? 0,
+          contactEmail: r.contactEmail ?? "",
+          contactPerson: r.contactPerson ?? "",
+          expectedCloseDate: r.expectedCloseDate ?? "",
+          assignee: r.assigneeName ?? "",
+          notes: r.notes ?? "",
+          createdAt: r.createdAt?.toISOString() ?? "",
+        })),
+      ),
+      truncated,
+      rowCount: rows.length,
+    };
   }
 }

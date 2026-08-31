@@ -21,6 +21,7 @@ import {
   finishExecution,
   MAX_STEPS_PER_EXECUTION,
 } from "./execution-advance";
+import { AccessService } from "../../access/access.service";
 
 export { MAX_STEPS_PER_EXECUTION };
 
@@ -41,6 +42,7 @@ export class WorkflowRunnerService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(NODE_DISPATCH_PORT) private readonly dispatcher: NodeDispatchPort,
+    private readonly access: AccessService,
   ) {}
 
   async sweep(): Promise<WorkflowSweepResult> {
@@ -113,9 +115,13 @@ export class WorkflowRunnerService {
     const execution = await claimExecution(this.db, orgId, executionId);
     if (!execution) return null;
 
+    const resolvedPermissions = execution.triggeredBy
+      ? await this.access.resolveUserPermissions(orgId, execution.triggeredBy)
+      : null;
+
     try {
       return await runInNewTenantTransaction(this.db, orgId, (tx) =>
-        advanceExecution(tx, execution, this.dispatcher),
+        advanceExecution(tx, execution, this.dispatcher, resolvedPermissions),
       );
     } catch (error) {
       this.logger.error(

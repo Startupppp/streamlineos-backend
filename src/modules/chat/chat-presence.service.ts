@@ -72,8 +72,12 @@ export class ChatPresenceService {
     return { ok: true };
   }
 
-  async getUnreadTotal(userId: string): Promise<number> {
+  async getUnreadTotal(userId: string, orgId: string): Promise<number> {
     try {
+      const membershipId = await this.resolveMembershipId(orgId, userId);
+      const memberWhere = membershipId
+        ? eq(chatChannelMembers.membershipId, membershipId)
+        : eq(chatChannelMembers.userId, userId);
       const [row] = await this.db
         .select({ total: count() })
         .from(chatChannelMembers)
@@ -85,7 +89,7 @@ export class ChatPresenceService {
             eq(chatMessages.isDeleted, false),
           ),
         )
-        .where(eq(chatChannelMembers.userId, userId));
+        .where(memberWhere);
 
       return row?.total ?? 0;
     } catch (error) {
@@ -97,15 +101,22 @@ export class ChatPresenceService {
   }
 
   async searchMessages(userId: string, orgId: string, query: string, channelId: number | undefined, limit: number) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
+    const memberExistsCondition = membershipId
+      ? sql`EXISTS (SELECT 1 FROM ${chatChannelMembers} m
+                    WHERE m.channel_id = ${chatMessages.channelId}
+                      AND m.org_id = ${orgId}
+                      AND m.membership_id = ${membershipId})`
+      : sql`EXISTS (SELECT 1 FROM ${chatChannelMembers} m
+                    WHERE m.channel_id = ${chatMessages.channelId}
+                      AND m.org_id = ${orgId}
+                      AND m.user_id = ${userId})`;
     const safeQuery = query.replace(/[%_\\]/g, "\\$&");
     const conditions = [
       eq(chatMessages.orgId, orgId),
       ilike(chatMessages.content, `%${safeQuery}%`),
       eq(chatMessages.isDeleted, false),
-      sql`EXISTS (SELECT 1 FROM ${chatChannelMembers} m
-                  WHERE m.channel_id = ${chatMessages.channelId}
-                    AND m.org_id = ${orgId}
-                    AND m.user_id = ${userId})`,
+      memberExistsCondition,
     ];
 
     if (channelId) conditions.push(eq(chatMessages.channelId, channelId));

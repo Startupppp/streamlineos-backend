@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { optionalPageNumberField, optionalPageSizeField } from "../../../common/pagination/list-query.schema";
+import { optionalPageSizeField } from "../../../common/pagination/list-query.schema";
 
 const LEAD_SORTABLE = ["name", "email", "company", "status", "priority", "source", "score", "potentialValue", "createdAt"] as const;
 
@@ -11,7 +11,7 @@ export const listSchema = z.object({
   search: z.string().optional(),
   sortBy: z.enum(LEAD_SORTABLE).optional(),
   sortOrder: z.enum(["asc", "desc"]).optional(),
-  page: optionalPageNumberField(),
+  cursor: z.string().optional(),
   limit: optionalPageSizeField(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),

@@ -12,8 +12,10 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -119,10 +121,13 @@ export class DealsController {
   @Get("export")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
-  @Header("Content-Type", "text/csv; charset=utf-8")
-  @Header("Content-Disposition", 'attachment; filename="deals-export.csv"')
-  exportCsv(@CurrentUser() u: CurrentUserContext) {
-    return this.deals.exportCsv(u.orgId);
+  async exportCsv(@CurrentUser() u: CurrentUserContext, @Res() res: Response) {
+    const result = await this.deals.exportCsv(u.orgId);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="deals-export.csv"');
+    if (result.truncated) res.setHeader("X-Truncated", "true");
+    res.setHeader("X-Row-Count", String(result.rowCount));
+    res.send(result.csv);
   }
 
   @Post(":dealId/clone")

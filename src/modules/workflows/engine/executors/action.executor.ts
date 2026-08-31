@@ -10,6 +10,29 @@ import type {
 import { mergedPayload } from "../node-outcome";
 import type { AutomationAction } from "../../../../db/schema";
 
+/**
+ * Maps each action type to the exact backend permission key the triggering user must hold.
+ * Keys are verified against `backend/src/modules/rbac/permissions/` — no invented keys.
+ *
+ * System context (triggeredBy: null → resolvedPermissions: null) bypasses this map entirely.
+ * An action type absent from this map is DENIED by default in user-triggered executions.
+ */
+const WORKFLOW_ACTION_PERMISSION_REQUIREMENTS: ReadonlyMap<string, string> = new Map([
+  ["notify_roles", "notifications:broadcasts:manage"],
+  ["notify_all", "notifications:broadcasts:manage"],
+  ["email", "settings:automations:manage"],
+  ["create_task", "tasks:write"],
+  ["webhook", "settings:webhooks:manage"],
+  ["support_assign_ticket", "support:tickets:manage"],
+  ["support_set_priority", "support:tickets:manage"],
+  ["support_add_tag", "support:tags:manage"],
+  ["support_internal_note", "support:tickets:internal_note"],
+  ["ai_classify", "support:ai:invoke"],
+  ["ai_summarize", "support:ai:invoke"],
+  ["ai_extract", "support:ai:invoke"],
+  ["ai_routing_suggestion", "support:ai:invoke"],
+]);
+
 export interface ActionResultLike {
   ok: boolean;
   type: string;
@@ -120,6 +143,20 @@ export class ActionExecutor implements WorkflowNodeExecutor {
           : issue.message
         : "invalid configuration";
       return { kind: "failed", error: `Action node is misconfigured (${detail})` };
+    }
+
+    if (context.resolvedPermissions !== null) {
+      const requiredKey = WORKFLOW_ACTION_PERMISSION_REQUIREMENTS.get(parsed.data.type);
+      if (requiredKey === undefined)
+        return {
+          kind: "failed",
+          error: `Action type "${parsed.data.type}" is not permitted in user-triggered workflows`,
+        };
+      if (!context.resolvedPermissions.has(requiredKey))
+        return {
+          kind: "failed",
+          error: `Action "${parsed.data.type}" requires permission "${requiredKey}" which the triggering user does not hold`,
+        };
     }
 
     const result = await this.automation.executeAction(

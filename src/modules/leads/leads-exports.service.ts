@@ -1,5 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq, and, or, ilike, sql, type SQL } from "drizzle-orm";
+
+const EXPORT_ROW_CAP = 10_000;
 import { users } from "../../db/schema";
 import { businessParties, leadPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -88,10 +90,10 @@ export class LeadsExportsService {
       .innerJoin(businessParties, LEAD_PARTY_JOIN)
       .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
       .where(and(...conditions))
-      // The lead id breaks ties: two leads created in the same transaction share
-      // a timestamp, and an export that returns them in an arbitrary order
-      // returns a different file each time it is run.
-      .orderBy(LEAD_PARTY_COLUMNS.createdAt, LEAD_PARTY_COLUMNS.id);
+      .orderBy(LEAD_PARTY_COLUMNS.createdAt, LEAD_PARTY_COLUMNS.id)
+      .limit(EXPORT_ROW_CAP);
+
+    const truncated = rows.length === EXPORT_ROW_CAP;
 
     const header = toRow([
       "ID",
@@ -127,7 +129,7 @@ export class LeadsExportsService {
       ]),
     );
 
-    return [header, ...dataRows].join("\r\n");
+    return { csv: [header, ...dataRows].join("\r\n"), truncated, rowCount: rows.length };
   }
 }
 

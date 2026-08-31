@@ -201,3 +201,77 @@ describe("DashboardPersonalService — P0-A: upcoming-events visibility gate", (
     });
   });
 });
+
+/**
+ * BITING TESTS — use a serializable mock so the full outer AND condition can be
+ * passed to dialect.sqlToQuery() without errors.
+ *
+ * makeSerializableDb has inner EXISTS select chains return the WHERE condition
+ * directly (not a mock object), so exists(realCondition) makes the outer OR and
+ * therefore the outer AND serializable.  Call order with all modules disabled:
+ *   select call 1 → creator EXISTS inner chain
+ *   select call 2 → attendee EXISTS inner chain
+ *   select call 3 → outer upcomingEvents query
+ *   select call 4 → notifications count query
+ *
+ * Removal proofs actually executed (neuter → run spec → failure confirmed → restore):
+ *   - eq(calendarEvents.visibility, "org") stripped → "BITING: visibility arm" fails
+ *     (params no longer contain "org" as a standalone value)
+ *   - ne(eventAttendees.status, "declined") stripped → "BITING: declined-attendee" fails
+ *     (params no longer contain "declined")
+ *   Note: the active-membership (ACTIVE) guard for the attendee EXISTS arm is proven by
+ *   the existing SCENARIO 3 inner-EXISTS test which targets captured[1] directly.
+ */
+describe("DashboardPersonalService — P0-A: BITING outer-condition serializable tests", () => {
+  function makeSerializableDb(capturedOuter: { cond?: SQL }) {
+    let callCount = 0;
+    const innerChain = {
+      from: () => innerChain,
+      innerJoin: () => innerChain,
+      where: (cond: SQL) => cond,
+    };
+    const outerChain = {
+      from: () => outerChain,
+      where: (cond: SQL) => {
+        capturedOuter.cond = cond;
+        return { orderBy: () => ({ limit: () => Promise.resolve([]) }) };
+      },
+    };
+    return {
+      query: { tickets: { findMany: jest.fn().mockResolvedValue([]) } },
+      select: jest.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) return outerChain;
+        if (callCount <= 3) return innerChain;
+        return { from: () => ({ where: () => Promise.resolve([]) }) };
+      }),
+    } as unknown as Db;
+  }
+
+  let capturedOuter: { cond?: SQL };
+  beforeEach(async () => {
+    capturedOuter = {};
+    const svc = new DashboardPersonalService(makeSerializableDb(capturedOuter), makeAccess());
+    await svc.getPersonalDashboard(makeUser(ORG));
+  });
+
+  it("BITING: outer WHERE is captured and serializable via dialect.sqlToQuery", () => {
+    expect(capturedOuter.cond).toBeDefined();
+    expect(() => dialect.sqlToQuery(capturedOuter.cond as SQL)).not.toThrow();
+  });
+
+  it("BITING: visibility arm — 'org' appears as a standalone param (fails when eq(visibility,'org') is stripped)", () => {
+    const { params } = dialect.sqlToQuery(capturedOuter.cond as SQL);
+    expect(params).toContain("org");
+  });
+
+  it("BITING: declined-attendee — 'declined' in the serialized params (fails when ne(status,'declined') is stripped)", () => {
+    const { params } = dialect.sqlToQuery(capturedOuter.cond as SQL);
+    expect(params).toContain("declined");
+  });
+
+  it("BITING: caller binding — caller userId appears in the serialized params", () => {
+    const { params } = dialect.sqlToQuery(capturedOuter.cond as SQL);
+    expect(params).toContain(USER);
+  });
+});
