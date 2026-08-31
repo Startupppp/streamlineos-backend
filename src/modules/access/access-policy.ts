@@ -3,6 +3,7 @@ import {
   ALL_PERMISSION_NAMES,
   PERMISSIONS,
   ROLE_DEFAULT_PERMISSIONS,
+  UNIVERSAL_MEMBER_PERMISSION_GRANTS,
 } from "../rbac/permissions";
 import { isPlanGatedModule } from "../../common/rbac/module-vocabulary";
 import type { DataScope } from "./access.types";
@@ -134,3 +135,24 @@ export function deriveAccessViewImplication(
 }
 
 export { isPlanGatedModule };
+
+export function applyUniversalGrants(map: Map<string, DataScope>): Map<string, DataScope> {
+  for (const grant of [...UNIVERSAL_MEMBER_PERMISSION_GRANTS, ...EMPLOYEE_SELF_SERVICE_GRANTS]) {
+    const existing = map.get(grant.permissionKey);
+    map.set(
+      grant.permissionKey,
+      existing ? broadest(existing, grant.scope) : grant.scope,
+    );
+  }
+  return map;
+}
+
+export function stripDeniedModules(
+  map: Map<string, DataScope>,
+  denied: ReadonlySet<string>,
+): void {
+  if (denied.size === 0) return;
+  for (const key of Array.from(map.keys())) {
+    if (denied.has(moduleOf(key))) map.delete(key);
+  }
+}

@@ -380,4 +380,33 @@ export class AccessPermissionResolver {
       },
     };
   }
+
+  async getMembershipAccessState(
+    orgId: string,
+    userId: string,
+    version: number,
+  ): Promise<{ exists: boolean; active: boolean; isOwnerOrAdmin: boolean }> {
+    const cacheKey = membershipCacheKey(orgId, userId, version);
+    const cached = this.membershipAccessCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached;
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.orgId, orgId),
+      ),
+      columns: { isOwner: true, role: true, status: true },
+    });
+    const exists = Boolean(member);
+    const active = member?.status === "ACTIVE";
+    const isOwnerOrAdmin =
+      active &&
+      (member?.isOwner === true || member?.role === ORG_MEMBER_ROLES.ORG_ADMIN);
+    this.membershipAccessCache.set(cacheKey, {
+      exists,
+      active,
+      isOwnerOrAdmin,
+      expiresAt: Date.now() + this.deniedModulesTtlMs,
+    });
+    return { exists, active, isOwnerOrAdmin };
+  }
 }
