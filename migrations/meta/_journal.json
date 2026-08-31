@@ -3188,6 +3188,13 @@
       "breakpoints": true
     },
     {
+      "idx": 639,
+      "version": "7",
+      "when": 1798000079500,
+      "tag": "0767b_inv_table_chain_repair",
+      "breakpoints": true
+    },
+    {
       "idx": 580,
       "version": "7",
       "when": 1798000080000,
@@ -3528,6 +3535,139 @@
       "version": "7",
       "when": 1798000130000,
       "tag": "0818_inv_actor_membership_companion",
+      "breakpoints": true
+    },
+    {
+      "idx": 631,
+      "version": "7",
+      "when": 1798000131000,
+      "tag": "0819_gdpr_export_jobs_tenant_isolation",
+      "breakpoints": true
+    },
+    {
+      "idx": 632,
+      "version": "7",
+      "when": 1798000132000,
+      "tag": "0820_timesheets_portal_actor_companion",
+      "breakpoints": true
+    },
+    {
+      "idx": 633,
+      "version": "7",
+      "when": 1798000133000,
+      "tag": "0821_esign_actor_legacy_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 634,
+      "version": "7",
+      "when": 1798000134000,
+      "tag": "0822_mail_directory_actor_legacy_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 635,
+      "version": "7",
+      "when": 1798000135000,
+      "tag": "0823_timesheets_attr_actor_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 636,
+      "version": "7",
+      "when": 1798000136000,
+      "tag": "0824_timesheets_auth_owner_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 637,
+      "version": "7",
+      "when": 1798000137000,
+      "tag": "0825_portal_auth_owner_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 638,
+      "version": "7",
+      "when": 1798000138000,
+      "tag": "0826_export_jobs_cancelled_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 640,
+      "version": "7",
+      "when": 1798000139000,
+      "tag": "0828_tickets_org_created_live_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 641,
+      "version": "7",
+      "when": 1798000140000,
+      "tag": "0829_drop_calendar_actor_migration_report",
+      "breakpoints": true
+    },
+    {
+      "idx": 642,
+      "version": "7",
+      "when": 1798000141000,
+      "tag": "0830_timesheet_approved_actor_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 643,
+      "version": "7",
+      "when": 1798000142000,
+      "tag": "0831_calendar_chat_channel_creator_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 644,
+      "version": "7",
+      "when": 1798000143000,
+      "tag": "0832_build_attribution_actor_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 645,
+      "version": "7",
+      "when": 1798000144000,
+      "tag": "0833_claims_export_attribution_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 646,
+      "version": "7",
+      "when": 1798000145000,
+      "tag": "0834_payroll_approvals_journal_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 647,
+      "version": "7",
+      "when": 1798000146000,
+      "tag": "0835_payroll_runs_actor_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 648,
+      "version": "7",
+      "when": 1798000147000,
+      "tag": "0836_worker_engagements_created_actor_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 649,
+      "version": "7",
+      "when": 1798000148000,
+      "tag": "0837_expense_export_jobs_requester_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 650,
+      "version": "7",
+      "when": 1798000149000,
+      "tag": "0838_chat_channels_creator_set_null",
       "breakpoints": true
     }
   ]
