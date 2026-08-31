@@ -152,6 +152,8 @@
     "check:openapi-path-params:self-test": "node src/scripts/check-openapi-path-params.mjs --self-test",
     "check:openapi-coverage": "node src/scripts/check-openapi-coverage.mjs",
     "check:openapi-coverage:self-test": "node src/scripts/check-openapi-coverage.mjs --self-test",
+    "check:bodyless-conflicts": "node src/scripts/check-bodyless-conflicts.mjs",
+    "check:bodyless-conflicts:self-test": "node src/scripts/check-bodyless-conflicts.mjs --self-test",
     "compliance:drill": "node --env-file-if-exists=.env src/scripts/compliance-drill.mjs",
     "scan:legacy-actors": "node src/scripts/scan-legacy-org-actors.mjs",
     "scan:legacy-actors:check": "node src/scripts/scan-legacy-org-actors.mjs --check",
@@ -278,6 +280,7 @@
   "jest": {
     "moduleFileExtensions": [
       "js",
+      "mjs",
       "json",
       "ts"
     ],
@@ -301,6 +304,16 @@
         }
       ],
       "^.+\\.js$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "allowJs": true
+          },
+          "diagnostics": false,
+          "isolatedModules": true
+        }
+      ],
+      "^.+\\.mjs$": [
         "ts-jest",
         {
           "tsconfig": {
