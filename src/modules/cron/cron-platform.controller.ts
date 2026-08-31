@@ -20,6 +20,7 @@ import { ExceptionsDetectorService } from "../timesheets/core/exceptions-detecto
 import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
 import { CronLeaseService } from "./cron-lease.service";
 import { CalendarReminderSweepService } from "../calendar/calendar-reminder-sweep.service";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 @Public()
 @Controller("cron")
@@ -44,6 +45,7 @@ export class CronPlatformController {
   }
 
   @Post("workflow-tick")
+  @BodylessAction()
   @HttpCode(200)
   async workflowTickPost(@Headers("authorization") authorization?: string) {
     return this.runWorkflowTick(authorization);
@@ -55,6 +57,7 @@ export class CronPlatformController {
   }
 
   @Post("build-due-sweep")
+  @BodylessAction()
   @HttpCode(200)
   postBuildDueSweep(@Headers("authorization") authorization?: string) {
     return this.runBuildDueSweep(authorization);
@@ -66,6 +69,7 @@ export class CronPlatformController {
   }
 
   @Post("calendar-reminder-sweep")
+  @BodylessAction()
   @HttpCode(200)
   postCalendarReminderSweep(@Headers("authorization") authorization?: string) {
     return this.runCalendarReminderSweep(authorization);
@@ -77,6 +81,7 @@ export class CronPlatformController {
   }
 
   @Post("email-outbox-flush")
+  @BodylessAction()
   @HttpCode(200)
   postEmailOutboxFlush(@Headers("authorization") authorization?: string) {
     return this.runEmailOutboxFlush(authorization);
@@ -88,6 +93,7 @@ export class CronPlatformController {
   }
 
   @Post("invitation-expiry")
+  @BodylessAction()
   @HttpCode(200)
   postInvitationExpiry(@Headers("authorization") authorization?: string) {
     return this.runInvitationExpiry(authorization);
@@ -99,6 +105,7 @@ export class CronPlatformController {
   }
 
   @Post("ownership-transfer-expiry")
+  @BodylessAction()
   @HttpCode(200)
   postOwnershipTransferExpiry(@Headers("authorization") authorization?: string) {
     return this.runOwnershipTransferExpiry(authorization);
@@ -110,6 +117,7 @@ export class CronPlatformController {
   }
 
   @Post("account-org-index-rebuild")
+  @BodylessAction()
   @HttpCode(200)
   postAccountOrgIndexRebuild(@Headers("authorization") authorization?: string) {
     return this.runAccountOrgIndexRebuild(authorization);
@@ -121,6 +129,7 @@ export class CronPlatformController {
   }
 
   @Post("org-purge-worker")
+  @BodylessAction()
   @HttpCode(200)
   postOrgPurgeWorker(@Headers("authorization") authorization?: string) {
     return this.runOrgPurgeWorker(authorization);
@@ -132,6 +141,7 @@ export class CronPlatformController {
   }
 
   @Post("idempotency-fence-sweep")
+  @BodylessAction()
   @HttpCode(200)
   postIdempotencyFenceSweep(@Headers("authorization") authorization?: string) {
     return this.runIdempotencyFenceSweep(authorization);
@@ -143,6 +153,7 @@ export class CronPlatformController {
   }
 
   @Post("timesheets-exception-detection")
+  @BodylessAction()
   @HttpCode(200)
   postTimesheetsExceptionDetection(@Headers("authorization") authorization?: string) {
     return this.runTimesheetsExceptionDetection(authorization);

@@ -43,6 +43,7 @@ import {
 } from "./dto/engagement-extras.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const badgeIdParams = z.object({ badgeId: z.coerce.number().int().positive() }).strict();
 const pollIdParams = z.object({ pollId: z.coerce.number().int().positive() }).strict();
@@ -222,6 +223,7 @@ export class EngagementExtrasController {
   }
 
   @Post("communities/:communityId/join")
+  @BodylessAction()
   @RequirePermission("hr:engagement:view")
   @HttpCode(200)
   @Validate({ params: communityIdParams })
@@ -233,6 +235,7 @@ export class EngagementExtrasController {
   }
 
   @Post("communities/:communityId/leave")
+  @BodylessAction()
   @RequirePermission("hr:engagement:view")
   @HttpCode(200)
   @Validate({ params: communityIdParams })

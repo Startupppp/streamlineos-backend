@@ -115,6 +115,7 @@ export class ContactsService {
         twitterUrl: CONTACT_PARTY_COLUMNS.twitterUrl,
         websiteUrl: CONTACT_PARTY_COLUMNS.websiteUrl,
         avatarUrl: CONTACT_PARTY_COLUMNS.avatarUrl,
+        notes: CONTACT_PARTY_COLUMNS.notes,
         tags: CONTACT_PARTY_COLUMNS.tags,
         deletedAt: CONTACT_PARTY_COLUMNS.deletedAt,
         createdAt: CONTACT_PARTY_COLUMNS.createdAt,
@@ -324,6 +325,7 @@ export class ContactsService {
       linkedinUrl: input.linkedinUrl,
       twitterUrl: input.twitterUrl,
       websiteUrl: input.websiteUrl,
+      notes: input.notes,
       leadId: input.leadId,
       dealId: input.dealId,
       tags: input.tags,
@@ -360,6 +362,7 @@ export class ContactsService {
       phone: row.phone?.trim() || null,
       company: row.company?.trim() || null,
       title: row.title?.trim() || null,
+      notes: row.notes?.trim() || null,
       tags: [],
     }));
 

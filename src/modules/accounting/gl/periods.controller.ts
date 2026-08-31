@@ -10,6 +10,7 @@ import { PeriodsService } from "./periods.service";
 import { generatePeriodsSchema, type GeneratePeriodsInput } from "./dto/periods.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
@@ -50,6 +51,7 @@ export class PeriodsController {
   }
 
   @Post(":periodId/close")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:manage")
   @HttpCode(200)
@@ -63,6 +65,7 @@ export class PeriodsController {
   }
 
   @Post(":periodId/lock")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:manage")
   @HttpCode(200)
@@ -76,6 +79,7 @@ export class PeriodsController {
   }
 
   @Post(":periodId/reopen")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:reopen")
   @HttpCode(200)

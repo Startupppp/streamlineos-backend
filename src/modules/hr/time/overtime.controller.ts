@@ -12,6 +12,7 @@ import { OvertimeService } from "./overtime.service";
 import { createOvertimeSchema, type CreateOvertimeInput } from "./dto/overtime.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const overtimeRequestIdParams = z.object({ overtimeRequestId: z.coerce.number().int().positive() }).strict();
 
@@ -59,6 +60,7 @@ export class OvertimeController {
   }
 
   @Patch(":overtimeRequestId/reject")
+  @BodylessAction()
   @Idempotent("hr.overtime.reject")
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: overtimeRequestIdParams })

@@ -55,6 +55,7 @@ import { StorageService } from "../../storage/storage.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const documentIdParams = z.object({ documentId: z.coerce.number().int().positive() }).strict();
 
@@ -241,6 +242,7 @@ export class DocumentsController {
   }
 
   @Patch("rich-documents/:documentId/publish")
+  @BodylessAction()
   @Idempotent("hr.performance-document.publish")
   @RequirePermission("hr:documents:manage")
   @Validate({ params: documentIdParams })

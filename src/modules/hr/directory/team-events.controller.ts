@@ -19,6 +19,7 @@ import { createTeamEventSchema, type CreateTeamEventInput } from "./dto/hr-direc
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
 
@@ -46,6 +47,7 @@ export class TeamEventsController {
   }
 
   @Post(":eventId")
+  @BodylessAction()
   @HttpCode(201)
   @RequirePermission("hr:employees:view")
   @Validate({ params: eventIdParams })

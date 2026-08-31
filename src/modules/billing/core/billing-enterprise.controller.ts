@@ -24,6 +24,7 @@ import { createReferralSchema } from "./dto/affiliate.schemas";
 import { analyticsQuerySchema } from "./dto/analytics.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const quoteIdParams = z.object({ quoteId: z.coerce.number().int().positive() }).strict();
 
@@ -39,6 +40,7 @@ export class BillingEnterpriseController {
   ) {}
 
   @Post("affiliate/register")
+  @BodylessAction()
   @Idempotent("billing.affiliate.register")
   @HttpCode(201)
   @UseGuards(PermissionGuard)
@@ -55,6 +57,7 @@ export class BillingEnterpriseController {
   }
 
   @Post("affiliate/payout-request")
+  @BodylessAction()
   @Idempotent("billing.affiliate.payout-request")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
@@ -129,6 +132,7 @@ export class BillingEnterpriseController {
   }
 
   @Post("enterprise-quotes/:quoteId/submit")
+  @BodylessAction()
   @Idempotent("billing.enterprise-quote.submit")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
@@ -170,6 +174,7 @@ export class BillingEnterpriseController {
   }
 
   @Post("enterprise-quotes/:quoteId/send")
+  @BodylessAction()
   @Idempotent("billing.enterprise-quote.send")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
@@ -183,6 +188,7 @@ export class BillingEnterpriseController {
   }
 
   @Post("enterprise-quotes/:quoteId/accept")
+  @BodylessAction()
   @Idempotent("billing.enterprise-quote.accept")
   @HttpCode(200)
   @UseGuards(PermissionGuard)

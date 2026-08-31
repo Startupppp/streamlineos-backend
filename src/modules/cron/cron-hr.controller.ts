@@ -22,6 +22,7 @@ import { CronLeaseService } from "./cron-lease.service";
 import { CronHrRetentionService } from "./cron-hr-retention.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const sweepNameParams = z.object({ sweepName: z.string().min(1) }).strict();
 
@@ -47,6 +48,7 @@ export class CronHrController {
   }
 
   @Post("auto-checkout")
+  @BodylessAction()
   @HttpCode(200)
   postAutoCheckout(@Headers("authorization") authorization?: string) {
     return this.runAutoCheckout(authorization);
@@ -58,6 +60,7 @@ export class CronHrController {
   }
 
   @Post("monthly-leave-reset")
+  @BodylessAction()
   @HttpCode(200)
   postMonthlyLeaveReset(@Headers("authorization") authorization?: string) {
     return this.runMonthlyLeaveReset(authorization);
@@ -69,6 +72,7 @@ export class CronHrController {
   }
 
   @Post("daily-notifications")
+  @BodylessAction()
   @HttpCode(200)
   postDailyNotifications(@Headers("authorization") authorization?: string) {
     return this.runDailyNotifications(authorization);
@@ -80,6 +84,7 @@ export class CronHrController {
   }
 
   @Post("holiday-notifications")
+  @BodylessAction()
   @HttpCode(200)
   postHolidayNotifications(@Headers("authorization") authorization?: string) {
     return this.runHolidayNotifications(authorization);
@@ -91,6 +96,7 @@ export class CronHrController {
   }
 
   @Post("offer-deadline-reminders")
+  @BodylessAction()
   @HttpCode(200)
   postOfferDeadlineReminders(@Headers("authorization") authorization?: string) {
     return this.runOfferDeadlineReminders(authorization);
@@ -102,6 +108,7 @@ export class CronHrController {
   }
 
   @Post("interview-no-shows")
+  @BodylessAction()
   @HttpCode(200)
   postInterviewNoShows(@Headers("authorization") authorization?: string) {
     return this.runInterviewNoShows(authorization);
@@ -113,6 +120,7 @@ export class CronHrController {
   }
 
   @Post("certification-expiry")
+  @BodylessAction()
   @HttpCode(200)
   postCertificationExpiry(@Headers("authorization") authorization?: string) {
     return this.runCertificationExpiry(authorization);
@@ -124,6 +132,7 @@ export class CronHrController {
   }
 
   @Post("onboarding-sweep")
+  @BodylessAction()
   @HttpCode(200)
   postOnboardingSweep(@Headers("authorization") authorization?: string) {
     return this.runOnboardingSweep(authorization);
@@ -135,6 +144,7 @@ export class CronHrController {
   }
 
   @Post("weekly-exec-recap")
+  @BodylessAction()
   @HttpCode(200)
   postWeeklyExecRecap(@Headers("authorization") authorization?: string) {
     return this.runWeeklyExecRecap(authorization);
@@ -146,12 +156,14 @@ export class CronHrController {
   }
 
   @Post("document-expiry")
+  @BodylessAction()
   @HttpCode(200)
   postDocumentExpiry(@Headers("authorization") authorization?: string) {
     return this.runDocumentExpiry(authorization);
   }
 
   @Post("hr-engines-sweep")
+  @BodylessAction()
   @HttpCode(200)
   postHrEnginesSweep(@Headers("authorization") authorization?: string) {
     return this.runHrEnginesSweep(authorization);
@@ -163,6 +175,7 @@ export class CronHrController {
   }
 
   @Post("hr-engines-sweep/:sweepName")
+  @BodylessAction()
   @HttpCode(200)
   @Validate({ params: sweepNameParams })
   postHrEnginesSweepByName(
@@ -385,6 +398,7 @@ export class CronHrController {
   }
 
   @Post("retention-delete-sweep")
+  @BodylessAction()
   @HttpCode(200)
   postRetentionDeleteSweep(@Headers("authorization") authorization?: string) {
     return this.runRetentionDeleteSweep(authorization);
@@ -415,6 +429,7 @@ export class CronHrController {
   }
 
   @Post("hr-policy-retention-sweep")
+  @BodylessAction()
   @HttpCode(200)
   postHrPolicyRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runHrPolicyRetentionSweep(authorization);

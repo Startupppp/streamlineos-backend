@@ -30,6 +30,7 @@ import {
 } from "./dto/payroll-inputs.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 const adjustmentIdParams = z.object({ adjustmentId: z.coerce.number().int().positive() }).strict();
@@ -65,6 +66,7 @@ export class PayrollInputsController {
   }
 
   @Post("periods/:periodId/build")
+  @BodylessAction()
   @RequirePermission("hr:payroll:generate")
   @Validate({ params: periodIdParams })
   buildPeriod(
@@ -75,6 +77,7 @@ export class PayrollInputsController {
   }
 
   @Post("periods/:periodId/lock")
+  @BodylessAction()
   @RequirePermission("hr:payroll:lock")
   @Validate({ params: periodIdParams })
   lockPeriod(
@@ -85,6 +88,7 @@ export class PayrollInputsController {
   }
 
   @Post("periods/:periodId/unlock")
+  @BodylessAction()
   @RequirePermission("hr:payroll:reopen")
   @Validate({ params: periodIdParams })
   unlockPeriod(

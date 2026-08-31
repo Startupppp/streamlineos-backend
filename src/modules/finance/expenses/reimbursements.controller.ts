@@ -27,6 +27,7 @@ import {
 } from "./dto/finance-expenses.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const batchIdParams = z.object({ batchId: z.coerce.number().int().positive() }).strict();
 
@@ -69,6 +70,7 @@ export class ReimbursementsController {
   }
 
   @Post(":batchId/approve")
+  @BodylessAction()
   @Idempotent("finance.reimbursement.approve")
   @HttpCode(200)
   @RequirePermission("accounting:reimbursements:approve")

@@ -24,6 +24,7 @@ import {
 } from "./dto/chat.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 @ApiTags("Chat Presence")
 @ApiBearerAuth()
@@ -36,6 +37,7 @@ export class ChatPresenceController {
   @ApiOperation({ summary: "Update presence heartbeat to mark user as online" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("presence/heartbeat")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:messages:read")
   heartbeat(@CurrentUser() u: CurrentUserContext) {

@@ -33,6 +33,7 @@ import { AttendanceService } from "./attendance.service";
 import { AttendanceRegularizationService } from "./attendance-regularization.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 @Controller("me/attendance")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -82,6 +83,7 @@ export class EmployeeAttendanceController {
   }
 
   @Post("break")
+  @BodylessAction()
   @HttpCode(200)
   @Idempotent("hr.attendance.toggle-break")
   toggleBreak(

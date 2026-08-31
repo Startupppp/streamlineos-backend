@@ -36,6 +36,7 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const personIdParams = z.object({ personId: z.coerce.number().int().positive() }).strict();
 
@@ -76,6 +77,7 @@ export class HrPeopleController {
   }
 
   @Post("backfill-from-members")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @Idempotent("hr.people.backfill-from-members")

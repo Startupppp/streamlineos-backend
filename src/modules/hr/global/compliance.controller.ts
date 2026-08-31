@@ -34,6 +34,7 @@ import {
 } from "./dto/hr-global.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const requirementIdParams = z.object({ requirementId: z.coerce.number().int().positive() }).strict();
 const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
@@ -126,6 +127,7 @@ export class ComplianceController {
   }
 
   @Post("generate-events")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
   @HttpCode(200)

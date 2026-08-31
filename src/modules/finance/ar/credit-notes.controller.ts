@@ -17,6 +17,7 @@ import {
 } from "./dto/finance-ar.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const creditNoteIdParams = z.object({ creditNoteId: z.coerce.number().int().positive() }).strict();
 
@@ -59,6 +60,7 @@ export class CreditNotesController {
   }
 
   @Post(":creditNoteId/post")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("accounting:credit-notes:manage")
   @Idempotent("accounting.credit-note.post")

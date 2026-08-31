@@ -29,6 +29,7 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 
@@ -64,6 +65,7 @@ export class CustomerExecutiveController {
   }
 
   @Post("health/recompute")
+  @BodylessAction()
   @RequirePermission("crm:clients:update")
   async recomputeHealth(@CurrentUser() u: CurrentUserContext) {
     const results = await this.health.computeHealthForOrg(u.orgId);

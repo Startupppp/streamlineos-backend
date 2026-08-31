@@ -6,6 +6,7 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BillingService } from "./billing.service";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const orgIdParams = z.object({ orgId: z.string().min(1) }).strict();
 
@@ -15,6 +16,7 @@ export class RazorpayWebhookController {
   constructor(private readonly billing: BillingService) {}
 
   @Post()
+  @BodylessAction()
   @UseGuards(RateLimitGuard)
   @UseRateLimit("billing:webhook")
   @Validate({ params: orgIdParams })

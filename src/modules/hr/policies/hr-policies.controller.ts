@@ -31,6 +31,7 @@ import {
 } from "./dto/hr-policy.schemas";
 import type { PolicyType } from "./hr-policy-types";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
@@ -83,6 +84,7 @@ export class HrPoliciesController {
   }
 
   @Post("seed-defaults")
+  @BodylessAction()
   @HttpCode(201)
   @RequirePermission("hr:policies:manage")
   seedDefaults(@CurrentUser() u: CurrentUserContext) {
@@ -137,6 +139,7 @@ export class HrPoliciesController {
   }
 
   @Post(":policyId/versions")
+  @BodylessAction()
   @HttpCode(201)
   @RequirePermission("hr:policies:manage")
   @Validate({ params: policyIdParams })
@@ -170,6 +173,7 @@ export class HrPoliciesController {
   }
 
   @Post(":policyId/archive")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("hr:policies:manage")
   @Validate({ params: policyIdParams })

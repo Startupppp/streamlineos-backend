@@ -37,6 +37,7 @@ import {
 import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 const requestIdParams = z.object({ requestId: z.coerce.number().int().positive() }).strict();
@@ -126,6 +127,7 @@ export class RetentionController {
   }
 
   @Post("requests/:requestId/approve")
+  @BodylessAction()
   @Idempotent("hr.retention.approve")
   @RequirePermission("hr:retention:manage")
   @Validate({ params: requestIdParams })
@@ -138,6 +140,7 @@ export class RetentionController {
   }
 
   @Post("requests/:requestId/process")
+  @BodylessAction()
   @RequirePermission("hr:retention:manage")
   @Validate({ params: requestIdParams })
   async processRequest(

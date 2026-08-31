@@ -26,6 +26,7 @@ import type {
 } from "./dto/channels.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const connectionIdParams = z.object({ connectionId: z.coerce.number().int().positive() }).strict();
 
@@ -66,6 +67,7 @@ export class TplController {
   }
 
   @Post("connections/:connectionId/sync")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:3pl:manage")
   @Validate({ params: connectionIdParams })

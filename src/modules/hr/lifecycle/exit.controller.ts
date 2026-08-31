@@ -42,6 +42,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { resolveExitAdmin } from "./exit-scope";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const resignationIdParams = z.object({ resignationId: z.coerce.number().int().positive() }).strict();
 
@@ -194,6 +195,7 @@ export class ExitController {
   }
 
   @Patch(":resignationId/withdraw")
+  @BodylessAction()
   @RequirePermission("hr:exit:view")
   @Validate({ params: resignationIdParams })
   async withdraw(

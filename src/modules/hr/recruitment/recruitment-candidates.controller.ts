@@ -48,6 +48,7 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const candidateIdParams = z.object({ candidateId: z.coerce.number().int().positive() }).strict();
 
@@ -217,6 +218,7 @@ export class RecruitmentCandidatesController {
   }
 
   @Post(":candidateId/unlink-duplicate")
+  @BodylessAction()
   @RequirePermission("hr:employees:manage")
   @Validate({ params: candidateIdParams })
   unlinkDuplicate(

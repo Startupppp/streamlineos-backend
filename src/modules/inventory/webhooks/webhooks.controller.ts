@@ -20,6 +20,7 @@ import {
 } from "./dto/webhooks.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const webhookIdParams = z.object({ webhookId: z.coerce.number().int().positive() }).strict();
 const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
@@ -84,6 +85,7 @@ export class WebhooksController {
   }
 
   @Post("events/:eventId/retry")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
   @Validate({ params: eventIdParams })

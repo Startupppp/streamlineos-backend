@@ -12,6 +12,7 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { readRequestScope } from "../organization/core/read-request-scope";
 import { SignEnvelopesService } from "./sign-envelopes.service";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import {
   createEnvelopeSchema,
   updateEnvelopeSchema,
@@ -92,6 +93,7 @@ export class SignEnvelopesController {
   }
 
   @Post(":envelopeId/validate")
+  @BodylessAction()
   @RequirePermission("sign:envelope:create")
   @Validate({ params: envelopeIdParams })
   validate(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
@@ -99,6 +101,7 @@ export class SignEnvelopesController {
   }
 
   @Post(":envelopeId/send")
+  @BodylessAction()
   @Idempotent("sign:envelope.send")
   @RequirePermission("sign:envelope:send")
   @Validate({ params: envelopeIdParams })
@@ -133,6 +136,7 @@ export class SignEnvelopesController {
   }
 
   @Post(":envelopeId/resend")
+  @BodylessAction()
   @Idempotent("sign:envelope.resend")
   @RequirePermission("sign:envelope:send")
   @Validate({ params: envelopeIdParams })
@@ -141,6 +145,7 @@ export class SignEnvelopesController {
   }
 
   @Post(":envelopeId/send-reminder")
+  @BodylessAction()
   @Idempotent("sign:envelope.send_reminder")
   @RequirePermission("sign:envelope:send")
   @Validate({ params: envelopeIdParams })

@@ -29,6 +29,7 @@ import {
 } from "./dto/finance-ap.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
@@ -97,6 +98,7 @@ export class RecurringBillsController {
   }
 
   @Post(":templateId/run-now")
+  @BodylessAction()
   @Idempotent("finance.recurring-bill.run-now")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")

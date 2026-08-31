@@ -28,6 +28,7 @@ import {
 } from "./dto/hr-webhook.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const subscriptionIdParams = z.object({ subscriptionId: z.coerce.number().int().positive() }).strict();
 const subscriptionIddeliveryIdParams = z.object({ subscriptionId: z.coerce.number().int().positive(), deliveryId: z.coerce.number().int().positive() }).strict();
@@ -100,6 +101,7 @@ export class HrWebhooksController {
   }
 
   @Post(":subscriptionId/test")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("hr:integrations:manage")
   @Validate({ params: subscriptionIdParams })
@@ -122,6 +124,7 @@ export class HrWebhooksController {
   }
 
   @Post(":subscriptionId/deliveries/:deliveryId/redeliver")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("hr:integrations:manage")
   @Validate({ params: subscriptionIddeliveryIdParams })

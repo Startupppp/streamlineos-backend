@@ -39,6 +39,7 @@ import { z } from "zod";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { actorOf } from "../entity-reference/entity-actor";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const entityTypeentityIdParams = z.object({ entityType: z.string().min(1), entityId: z.string().min(1) }).strict();
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
@@ -167,6 +168,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Recompute an entity channel's display name" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/refresh-name")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams })
@@ -197,6 +199,7 @@ export class ChatChannelsController {
   })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/join")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams })
@@ -210,6 +213,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Leave a channel" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/leave")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams })
@@ -223,6 +227,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Archive a channel for the current user" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/archive")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams })
@@ -233,6 +238,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Unarchive a channel for the current user" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/unarchive")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams })
@@ -243,6 +249,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Mark a channel as read up to now" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/read")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:messages:read")
   @Validate({ params: channelIdParams })
@@ -256,6 +263,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Mark a channel as unread" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/mark-unread")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
   @Validate({ params: channelIdParams })
@@ -280,6 +288,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Unmute a channel for the current user" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/unmute")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams })
@@ -293,6 +302,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Add a channel to the current user's favorites" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/favorite")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams })
@@ -303,6 +313,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Remove a channel from the current user's favorites" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/unfavorite")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams })
@@ -345,6 +356,7 @@ export class ChatChannelsController {
   @ApiOperation({ summary: "Set current user as typing in a channel" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":channelId/typing")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
   @Validate({ params: channelIdParams })

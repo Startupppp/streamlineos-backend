@@ -35,6 +35,7 @@ import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 const huddleIdParams = z.object({ huddleId: z.coerce.number().int().positive() }).strict();
@@ -54,6 +55,7 @@ export class ChatHuddlesController {
   @ApiResponse({ status: 201, description: "Huddle started" })
   @ApiResponse({ status: 429, description: "Rate limited" })
   @Post("channels/:channelId/huddle/start")
+  @BodylessAction()
   @HttpCode(201)
   @RequirePermission("chat:huddles:start")
   @Validate({ params: channelIdParams })
@@ -81,6 +83,7 @@ export class ChatHuddlesController {
   @ApiOperation({ summary: "Join an active huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/join")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: huddleIdParams })
@@ -94,6 +97,7 @@ export class ChatHuddlesController {
   @ApiOperation({ summary: "Leave a huddle" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("huddles/:huddleId/leave")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: huddleIdParams })
@@ -167,6 +171,7 @@ export class ChatHuddlesController {
   @ApiResponse({ status: 200, description: "OK" })
   @ApiResponse({ status: 429, description: "Rate limited" })
   @Patch("huddles/:huddleId/heartbeat")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:read")
   @Validate({ params: huddleIdParams })

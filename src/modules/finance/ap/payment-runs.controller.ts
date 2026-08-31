@@ -29,6 +29,7 @@ import {
 } from "./dto/finance-ap.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
 const runIditemIdParams = z.object({ runId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
@@ -78,6 +79,7 @@ export class PaymentRunsController {
   }
 
   @Post(":runId/approve")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:approve")
   @HttpCode(200)
@@ -91,6 +93,7 @@ export class PaymentRunsController {
   }
 
   @Post(":runId/execute")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:manage")
   @HttpCode(200)
@@ -104,6 +107,7 @@ export class PaymentRunsController {
   }
 
   @Post(":runId/cancel")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payment-runs:manage")
   @HttpCode(200)

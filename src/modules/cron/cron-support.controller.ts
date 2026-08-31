@@ -15,6 +15,7 @@ import { CronSupportService } from "./cron-support.service";
 import { SupportKbGapService } from "../support/kb-gap/support-kb-gap.service";
 import { CronLeaseService } from "./cron-lease.service";
 import { SessionsService } from "../sessions/sessions.service";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 @Public()
 @Controller("cron")
@@ -34,6 +35,7 @@ export class CronSupportController {
   }
 
   @Post("support-sla-escalations")
+  @BodylessAction()
   @HttpCode(200)
   postSupportSlaEscalations(@Headers("authorization") authorization?: string) {
     return this.runSupportSlaEscalations(authorization);
@@ -45,6 +47,7 @@ export class CronSupportController {
   }
 
   @Post("support-unsnooze")
+  @BodylessAction()
   @HttpCode(200)
   postSupportUnsnooze(@Headers("authorization") authorization?: string) {
     return this.runSupportUnsnooze(authorization);
@@ -56,6 +59,7 @@ export class CronSupportController {
   }
 
   @Post("kb-trash-purge")
+  @BodylessAction()
   @HttpCode(200)
   postKbTrashPurge(@Headers("authorization") authorization?: string) {
     return this.runKbTrashPurge(authorization);
@@ -67,6 +71,7 @@ export class CronSupportController {
   }
 
   @Post("kb-chunk-retention-sweep")
+  @BodylessAction()
   @HttpCode(200)
   postKbChunkRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runKbChunkRetentionSweep(authorization);
@@ -78,6 +83,7 @@ export class CronSupportController {
   }
 
   @Post("support-kb-gap-detect")
+  @BodylessAction()
   @HttpCode(200)
   postSupportKbGapDetect(@Headers("authorization") authorization?: string) {
     return this.runSupportKbGapDetect(authorization);
@@ -89,6 +95,7 @@ export class CronSupportController {
   }
 
   @Post("session-revocation-prune")
+  @BodylessAction()
   @HttpCode(200)
   postSessionRevocationPrune(@Headers("authorization") authorization?: string) {
     return this.runSessionRevocationPrune(authorization);

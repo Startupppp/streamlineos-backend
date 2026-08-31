@@ -65,6 +65,7 @@ import {
 } from "../flow/dto/onboarding-flow.schemas";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
 
 const moduleKeyParams = z.object({ moduleKey: z.string().min(1) }).strict();
 const moduleKeyitemKeyParams = z.object({ moduleKey: z.string().min(1), itemKey: z.string().min(1) }).strict();
@@ -153,6 +154,7 @@ export class OnboardingController {
   }
 
   @Post("module-checklists/:moduleKey/items/:itemKey/complete")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
   @Validate({ params: moduleKeyitemKeyParams })
@@ -191,6 +193,7 @@ export class OnboardingController {
   }
 
   @Post("module-checklists/:moduleKey/dismiss")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
   @Validate({ params: moduleKeyParams })
@@ -207,6 +210,7 @@ export class OnboardingController {
   }
 
   @Post("module-checklists/:moduleKey/restart")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
   @Validate({ params: moduleKeyParams })
@@ -261,6 +265,7 @@ export class OnboardingController {
   }
 
   @Post("tours/:tourKey/complete")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
   @Validate({ params: tourKeyParams })
@@ -273,6 +278,7 @@ export class OnboardingController {
   }
 
   @Post("tours/:tourKey/dismiss")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
   @Validate({ params: tourKeyParams })
@@ -338,6 +344,7 @@ export class OnboardingController {
   }
 
   @Post("reminders")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:manage")
   @Idempotent("hr.onboarding.send-reminders")
@@ -381,6 +388,7 @@ export class OnboardingController {
   }
 
   @Post("submit")
+  @BodylessAction()
   @Idempotent("hr.onboarding.submit")
   @Universal()
   submit(@CurrentUser() u: CurrentUserContext) {

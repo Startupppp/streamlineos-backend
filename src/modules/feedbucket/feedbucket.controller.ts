@@ -37,6 +37,7 @@ import {
 import { analyzeBodySchema, type AnalyzeBodyInput } from "./feedbucket-ai.schemas";
 import { z } from "zod";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const widgetIdParams = z.object({ widgetId: z.coerce.number().int().positive() }).strict();
 const submissionIdParams = z.object({ submissionId: z.coerce.number().int().positive() }).strict();
@@ -101,6 +102,7 @@ export class FeedbucketController {
   }
 
   @Post("widgets/:widgetId/rotate-key")
+  @BodylessAction()
   @RequirePermission("feedbucket:widgets:manage")
   @HttpCode(200)
   @Validate({ params: widgetIdParams })
@@ -155,6 +157,7 @@ export class FeedbucketController {
   }
 
   @Post("submissions/:submissionId/convert-to-ticket")
+  @BodylessAction()
   @RequirePermission("feedbucket:submissions:manage")
   @HttpCode(201)
   @Validate({ params: submissionIdParams })

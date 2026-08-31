@@ -6,6 +6,7 @@ import { EmailSuppressionService } from "./email-suppression.service";
 import { verifyUnsubscribeToken } from "./unsubscribe-token";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
@@ -34,6 +35,7 @@ export class UnsubscribeController {
   }
 
   @Post(":token")
+  @BodylessAction()
   @Validate({ params: tokenParams })
   post(@Param("token") token: string, @Req() req: Request) {
     return this.handle(token, req);

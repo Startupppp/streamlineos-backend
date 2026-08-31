@@ -29,6 +29,9 @@ import {
   createOrgTeamSchema,
   updateOrgTeamSchema,
   moveOrgTeamSchema,
+  moveBusinessUnitSchema,
+  moveOrgBranchSchema,
+  moveOrgDepartmentSchema,
   createOrgLocationSchema,
   updateOrgLocationSchema,
   createCostCenterSchema,
@@ -45,6 +48,9 @@ import {
   type CreateOrgTeamInput,
   type UpdateOrgTeamInput,
   type MoveOrgTeamInput,
+  type MoveBusinessUnitInput,
+  type MoveOrgBranchInput,
+  type MoveOrgDepartmentInput,
   type CreateOrgLocationInput,
   type UpdateOrgLocationInput,
   type CreateCostCenterInput,
@@ -385,10 +391,10 @@ export class OrgHierarchyController {
 
   @Patch("business-units/:businessUnitId/move")
   @RequirePermission("settings:organization:manage")
-  @Validate({ params: businessUnitIdParams })
+  @Validate({ params: businessUnitIdParams, body: moveBusinessUnitSchema })
   moveBusinessUnit(
     @Param("businessUnitId") businessUnitId: string,
-    @Body() body: { parentId: string | null },
+    @Body() body: MoveBusinessUnitInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.moveBusinessUnit(
@@ -400,10 +406,10 @@ export class OrgHierarchyController {
 
   @Patch("branches/:branchId/move")
   @RequirePermission("settings:organization:manage")
-  @Validate({ params: branchIdParams })
+  @Validate({ params: branchIdParams, body: moveOrgBranchSchema })
   moveBranch(
     @Param("branchId") branchId: string,
-    @Body() body: { businessUnitId: string | null },
+    @Body() body: MoveOrgBranchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.moveBranch(
@@ -415,10 +421,10 @@ export class OrgHierarchyController {
 
   @Patch("departments/:departmentId/move")
   @RequirePermission("settings:organization:manage")
-  @Validate({ params: departmentIdParams })
+  @Validate({ params: departmentIdParams, body: moveOrgDepartmentSchema })
   moveDepartment(
     @Param("departmentId") departmentId: string,
-    @Body() body: { branchId: string | null },
+    @Body() body: MoveOrgDepartmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.moveDepartment(

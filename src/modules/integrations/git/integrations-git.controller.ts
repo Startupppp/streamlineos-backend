@@ -13,6 +13,7 @@ import { Public } from "../../../common/auth/public.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { logger } from "../../../common/logger/logger.service";
 import { IntegrationsGitService } from "./integrations-git.service";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const gitWebhookQuerySchema = z.object({
   connectionId: z.string().min(1).optional(),
@@ -24,6 +25,7 @@ export class IntegrationsGitController {
   constructor(private readonly integrationsGit: IntegrationsGitService) {}
 
   @Post("webhook")
+  @BodylessAction()
   @HttpCode(200)
   @Validate({ query: gitWebhookQuerySchema })
   async webhook(

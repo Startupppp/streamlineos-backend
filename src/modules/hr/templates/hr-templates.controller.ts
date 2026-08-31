@@ -33,6 +33,7 @@ import {
 } from "./dto/hr-templates.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
@@ -73,6 +74,7 @@ export class HrTemplatesController {
   }
 
   @Post("seed-defaults")
+  @BodylessAction()
   @RequirePermission("hr:templates:manage")
   @HttpCode(200)
   seedDefaults(@CurrentUser() u: CurrentUserContext) {
@@ -113,6 +115,7 @@ export class HrTemplatesController {
   }
 
   @Post(":templateId/versions")
+  @BodylessAction()
   @RequirePermission("hr:templates:manage")
   @HttpCode(201)
   @Validate({ params: templateIdParams })

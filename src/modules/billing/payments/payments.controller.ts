@@ -53,6 +53,7 @@ import {
 import type { RequestActorContext } from "../../../common/audit/actor-context";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const providerKeyParams = z.object({ providerKey: z.string().min(1) }).strict();
 const providerKeytransactionIdParams = z.object({ providerKey: z.string().min(1), transactionId: z.coerce.number().int().positive() }).strict();
@@ -135,6 +136,7 @@ export class PaymentsController {
   }
 
   @Post("providers/:providerKey/disable")
+  @BodylessAction()
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:providers:manage")
@@ -263,6 +265,7 @@ export class PaymentsController {
   }
 
   @Post("providers/:providerKey/webhooks/events/:eventId/retry")
+  @BodylessAction()
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:webhooks:manage")
@@ -285,6 +288,7 @@ export class PaymentsController {
   }
 
   @Post("providers/:providerKey/activate-live")
+  @BodylessAction()
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:live:activate")
@@ -347,6 +351,7 @@ export class PaymentsController {
   }
 
   @Post("manual-methods/:methodId/disable")
+  @BodylessAction()
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:manual-methods:manage")

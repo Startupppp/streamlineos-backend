@@ -52,6 +52,7 @@ import { LeaveTypesService } from "./leave-types.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const leaveTypeIdParams = z.object({ leaveTypeId: z.coerce.number().int().positive() }).strict();
 const leaveIdParams = z.object({ leaveId: z.coerce.number().int().positive() }).strict();
@@ -131,6 +132,7 @@ export class LeavesController {
   }
 
   @Post("types/seed-defaults")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("hr:leaves:manage")
   seedDefaultLeaveTypes(@CurrentUser() currentUser: CurrentUserContext) {
@@ -181,6 +183,7 @@ export class LeavesController {
   }
 
   @Patch(":leaveId/cancel")
+  @BodylessAction()
   @RequirePermission("hr:leaves:create")
   @Validate({ params: leaveIdParams })
   async cancel(

@@ -17,6 +17,7 @@ import {
 } from "./dto/shipments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const packageIdParams = z.object({ packageId: z.coerce.number().int().positive() }).strict();
 
@@ -72,6 +73,7 @@ export class PackagesController {
   }
 
   @Post(":packageId/close")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   @HttpCode(HttpStatus.OK)
@@ -84,6 +86,7 @@ export class PackagesController {
   }
 
   @Post(":packageId/reopen")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   @HttpCode(HttpStatus.OK)

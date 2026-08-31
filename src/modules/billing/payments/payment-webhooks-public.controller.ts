@@ -6,6 +6,7 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { PaymentWebhookReceiverService } from "./payment-webhook-receiver.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const providerKeyenvironmentorgIdParams = z.object({ providerKey: z.string().min(1), environment: z.string().min(1), orgId: z.string().min(1) }).strict();
 
@@ -15,6 +16,7 @@ export class PaymentWebhooksPublicController {
   constructor(private readonly webhooks: PaymentWebhookReceiverService) {}
 
   @Post(":providerKey/:environment/:orgId")
+  @BodylessAction()
   @UseGuards(RateLimitGuard)
   @UseRateLimit("billing:webhook")
   @Validate({ params: providerKeyenvironmentorgIdParams })

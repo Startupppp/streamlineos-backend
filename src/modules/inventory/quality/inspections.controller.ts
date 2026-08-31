@@ -21,6 +21,7 @@ import type {
 } from "./dto/quality.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const inspectionIdParams = z.object({ inspectionId: z.coerce.number().int().positive() }).strict();
 
@@ -64,6 +65,7 @@ export class InspectionsController {
   }
 
   @Post(":inspectionId/start")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
   @Validate({ params: inspectionIdParams })
@@ -75,6 +77,7 @@ export class InspectionsController {
   }
 
   @Post(":inspectionId/pass")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:release")
   @Validate({ params: inspectionIdParams })
@@ -114,6 +117,7 @@ export class InspectionsController {
   }
 
   @Post(":inspectionId/cancel")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
   @Validate({ params: inspectionIdParams })

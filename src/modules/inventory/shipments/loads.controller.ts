@@ -19,6 +19,7 @@ import {
 } from "./dto/shipments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const loadIdParams = z.object({ loadId: z.coerce.number().int().positive() }).strict();
 
@@ -88,6 +89,7 @@ export class LoadsController {
   }
 
   @Post(":loadId/cancel")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @HttpCode(HttpStatus.OK)

@@ -3207,6 +3207,13 @@
       "when": 1798000082000,
       "tag": "0770_set_null_fk_column_lists",
       "breakpoints": true
+    },
+    {
+      "idx": 583,
+      "version": "7",
+      "when": 1798000083000,
+      "tag": "0771_contacts_notes",
+      "breakpoints": true
     }
   ]
 }

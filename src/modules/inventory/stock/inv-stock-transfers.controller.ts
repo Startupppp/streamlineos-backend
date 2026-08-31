@@ -16,6 +16,7 @@ import {
 } from "./dto/inv-stock.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const transferIdParams = z.object({ transferId: z.coerce.number().int().positive() }).strict();
 
@@ -64,6 +65,7 @@ export class InvStockTransfersController {
   }
 
   @Post(":transferId/reserve")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams })
@@ -77,6 +79,7 @@ export class InvStockTransfersController {
   }
 
   @Post(":transferId/dispatch")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams })
@@ -104,6 +107,7 @@ export class InvStockTransfersController {
   }
 
   @Post(":transferId/cancel")
+  @BodylessAction()
   @Idempotent("inventory.stock-transfer.cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")

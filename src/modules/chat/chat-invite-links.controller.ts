@@ -9,6 +9,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ChatInviteLinksService } from "./chat-invite-links.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
@@ -24,6 +25,7 @@ export class ChatInviteLinksController {
   @ApiOperation({ summary: "Get (or create) the active invite link token for a channel" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("channels/:channelId/invite-link")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:invite-links:manage")
   @Validate({ params: channelIdParams })
@@ -37,6 +39,7 @@ export class ChatInviteLinksController {
   @ApiOperation({ summary: "Revoke the current invite link and issue a new one" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("channels/:channelId/invite-link/regenerate")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:invite-links:manage")
   @Validate({ params: channelIdParams })
@@ -50,6 +53,7 @@ export class ChatInviteLinksController {
   @ApiOperation({ summary: "Join a channel using an invite link token" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post("invite-links/:token/join")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:channels:write")
   @Validate({ params: tokenParams })

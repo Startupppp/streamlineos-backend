@@ -31,6 +31,7 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const changeIdParams = z.object({ changeId: z.coerce.number().int().positive() }).strict();
 
@@ -64,6 +65,7 @@ export class HrEffectiveChangesController {
   }
 
   @Patch(":changeId/approve")
+  @BodylessAction()
   @Idempotent("hr.effective-change.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
