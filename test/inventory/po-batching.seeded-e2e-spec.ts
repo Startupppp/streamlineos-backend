@@ -36,6 +36,8 @@ interface Scene {
   acmeProposalA: number;
   acmeProposalB: number;
   globexProposal: number;
+  /** Reserved for the approval test, which must not race the ones that batch. */
+  approvalProposal: number;
 }
 
 describe(`${SEEDED_HARNESS} purchase-order batching`, () => {
@@ -127,6 +129,7 @@ describe(`${SEEDED_HARNESS} purchase-order batching`, () => {
       const acmeA = await sku("A", acme.id, 20);
       const acmeB = await sku("B", acme.id, 15);
       const globexC = await sku("C", globex.id, 25);
+      const globexD = await sku("D", globex.id, 30);
 
       const persistence = app.app.get(ForecastPersistenceService);
       const persist = async (variantId: number) => {
@@ -146,6 +149,7 @@ describe(`${SEEDED_HARNESS} purchase-order batching`, () => {
         acmeProposalA: await persist(acmeA),
         acmeProposalB: await persist(acmeB),
         globexProposal: await persist(globexC),
+        approvalProposal: await persist(globexD),
       };
     });
 
@@ -320,7 +324,11 @@ describe(`${SEEDED_HARNESS} purchase-order batching`, () => {
     const response = await request(server())
       .post("/inventory/replenishment/po-batches/preview")
       .set("Authorization", buyerToken)
-      .send({ proposalIds: [scene.globexProposal] });
+      // Its own proposal. `globexProposal` is batched into a draft by the
+      // idempotency test above, so previewing it here returned `skipped` and an
+      // empty `batches` — and `requiresApproval` on the envelope is the org
+      // setting, which is true either way, so only the per-batch assertion saw it.
+      .send({ proposalIds: [scene.approvalProposal] });
     expect(response.status).toBe(201);
     const body = response.body as {
       requiresApproval: boolean;

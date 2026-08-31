@@ -54,7 +54,10 @@ export interface StrandedTransitRow extends Record<string, unknown> {
  * Two views. `ANY` is everything currently in transit, including a van that left
  * an hour ago and is perfectly fine. `STRANDED` is the subset whose journey is
  * over — the transfer reached COMPLETED and units are still standing at the
- * waypoint — which is the short-receipt case this unit exists for.
+ * waypoint — which is the short-receipt case this unit exists for. "Still
+ * standing" is read from `inv_stock_levels` at the transit bin, not inferred
+ * from the unreceived remainder: an exit moves the goods without changing what
+ * the line was owed.
  */
 export async function queryStrandedTransit(
   db: Db,
@@ -73,8 +76,25 @@ export async function queryStrandedTransit(
     filters.warehouseId === undefined
       ? sql`TRUE`
       : sql`transit.warehouse_id = ${filters.warehouseId}`;
+  // STRANDED asks the stock levels whether units are still standing at the
+  // waypoint, rather than inferring it from the line's unreceived remainder.
+  // Those two stop agreeing the moment somebody acts on the queue:
+  // RETURN_TO_SOURCE moves the units back and never touches `quantity_received`
+  // — the line still owes what it always owed — so a returned transfer stayed on
+  // the queue for good, and the operator's next act was to return it again.
   const viewFilter =
-    filters.view === "STRANDED" ? sql`t.status = 'COMPLETED'` : sql`TRUE`;
+    filters.view === "STRANDED"
+      ? sql`t.status = 'COMPLETED' AND EXISTS (
+          SELECT 1
+            FROM inv_stock_levels sl
+           WHERE sl.org_id = t.org_id
+             AND sl.location_id = transit.id
+             AND sl.product_variant_id = tl.product_variant_id
+             AND sl.lot_id IS NOT DISTINCT FROM tl.lot_id
+             AND sl.serial_id IS NOT DISTINCT FROM tl.serial_id
+             AND sl.on_hand::numeric > 0
+        )`
+      : sql`TRUE`;
 
   const where = sql`
     t.org_id = ${orgId}
