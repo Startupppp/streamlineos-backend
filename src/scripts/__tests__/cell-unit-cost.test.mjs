@@ -4,6 +4,7 @@ import { writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { UNIT_COSTS, canContributeQuantity, detectAnomalousTenants } from "../cell-unit-costs.mjs";
 import { readLoadDriverResults, EXPECTED_FIELDS } from "../cell-cost/load-driver-reader.mjs";
+import { readSpanLog, topOrgsByDbTime, ATTRIBUTION_NOTES } from "../cell-cost/span-log-reader.mjs";
 
 function test(name, fn) {
   try {
@@ -177,6 +178,128 @@ test("readLoadDriverResults returns parse-error for malformed JSON", () => {
   } finally {
     rmSync(path, { force: true });
   }
+});
+
+test("readSpanLog returns skipped when logFilePath is null", () => {
+  const result = readSpanLog(null);
+  assert.equal(result.status, "skipped");
+  assert.ok(result.reason.includes("APP_LOG_FILE"), `Expected reason to mention APP_LOG_FILE: "${result.reason}"`);
+});
+
+test("readSpanLog returns absent when file does not exist", () => {
+  const result = readSpanLog("/tmp/does-not-exist-xyzzy-span.log");
+  assert.equal(result.status, "absent");
+});
+
+test("readSpanLog returns ok and aggregates db.query.execute spans by org.id", () => {
+  const path = join(tmpdir(), `test-span-log-${Date.now()}.log`);
+  try {
+    const lines = [
+      JSON.stringify({ message: "SPAN", name: "db.query.execute", latencyMs: 12, "org.id": "org-a" }),
+      JSON.stringify({ message: "SPAN", name: "db.query.execute", latencyMs: 8, "org.id": "org-a" }),
+      JSON.stringify({ message: "SPAN", name: "db.query.execute", latencyMs: 5, "org.id": "org-b" }),
+    ].join("\n");
+    writeFileSync(path, lines);
+    const result = readSpanLog(path);
+    assert.equal(result.status, "ok");
+    assert.equal(result.totalSpans, 3);
+    assert.equal(result.orgDbTimeMs.get("org-a"), 20);
+    assert.equal(result.orgDbTimeMs.get("org-b"), 5);
+  } finally {
+    rmSync(path, { force: true });
+  }
+});
+
+test("readSpanLog aggregates cache.roundtrip spans by org.id", () => {
+  const path = join(tmpdir(), `test-span-cache-${Date.now()}.log`);
+  try {
+    const lines = [
+      JSON.stringify({ message: "SPAN", name: "cache.roundtrip", latencyMs: 2, "org.id": "org-a" }),
+      JSON.stringify({ message: "SPAN", name: "cache.roundtrip", latencyMs: 3, "org.id": "org-b" }),
+    ].join("\n");
+    writeFileSync(path, lines);
+    const result = readSpanLog(path);
+    assert.equal(result.status, "ok");
+    assert.equal(result.orgCacheTimeMs.get("org-a"), 2);
+    assert.equal(result.orgCacheTimeMs.get("org-b"), 3);
+  } finally {
+    rmSync(path, { force: true });
+  }
+});
+
+test("readSpanLog puts spans without org.id into the null bucket", () => {
+  const path = join(tmpdir(), `test-span-noorg-${Date.now()}.log`);
+  try {
+    const lines = [
+      JSON.stringify({ message: "SPAN", name: "db.query.execute", latencyMs: 7 }),
+    ].join("\n");
+    writeFileSync(path, lines);
+    const result = readSpanLog(path);
+    assert.equal(result.status, "ok");
+    assert.equal(result.orgDbTimeMs.get(null), 7);
+  } finally {
+    rmSync(path, { force: true });
+  }
+});
+
+test("readSpanLog ignores non-SPAN lines and non-relevant seams", () => {
+  const path = join(tmpdir(), `test-span-ignore-${Date.now()}.log`);
+  try {
+    const lines = [
+      JSON.stringify({ message: "LOG", name: "db.query.execute", latencyMs: 99, "org.id": "org-a" }),
+      JSON.stringify({ message: "SPAN", name: "db.pool.wait", latencyMs: 1, "org.id": "org-a" }),
+      JSON.stringify({ message: "SPAN", name: "db.query.execute", latencyMs: 3, "org.id": "org-a" }),
+    ].join("\n");
+    writeFileSync(path, lines);
+    const result = readSpanLog(path);
+    assert.equal(result.status, "ok");
+    assert.equal(result.totalSpans, 1);
+    assert.equal(result.orgDbTimeMs.get("org-a"), 3);
+  } finally {
+    rmSync(path, { force: true });
+  }
+});
+
+test("topOrgsByDbTime returns orgs sorted descending by db time, excluding null bucket", () => {
+  const path = join(tmpdir(), `test-span-top-${Date.now()}.log`);
+  try {
+    const lines = [
+      JSON.stringify({ message: "SPAN", name: "db.query.execute", latencyMs: 5, "org.id": "org-a" }),
+      JSON.stringify({ message: "SPAN", name: "db.query.execute", latencyMs: 50, "org.id": "org-b" }),
+      JSON.stringify({ message: "SPAN", name: "db.query.execute", latencyMs: 20 }),
+    ].join("\n");
+    writeFileSync(path, lines);
+    const result = readSpanLog(path);
+    const top = topOrgsByDbTime(result, 10);
+    assert.equal(top.length, 2);
+    assert.equal(top[0].orgId, "org-b");
+    assert.equal(top[1].orgId, "org-a");
+  } finally {
+    rmSync(path, { force: true });
+  }
+});
+
+test("ATTRIBUTION_NOTES names egress, dbTime, cacheTime, pgStatStatements, pgStatDatabase, redisMemory", () => {
+  assert.ok("egress" in ATTRIBUTION_NOTES, "egress must be in ATTRIBUTION_NOTES");
+  assert.ok("dbTime" in ATTRIBUTION_NOTES, "dbTime must be in ATTRIBUTION_NOTES");
+  assert.ok("cacheTime" in ATTRIBUTION_NOTES, "cacheTime must be in ATTRIBUTION_NOTES");
+  assert.ok("pgStatStatements" in ATTRIBUTION_NOTES, "pgStatStatements must be in ATTRIBUTION_NOTES");
+  assert.ok("pgStatDatabase" in ATTRIBUTION_NOTES, "pgStatDatabase must be in ATTRIBUTION_NOTES");
+  assert.ok("redisMemory" in ATTRIBUTION_NOTES, "redisMemory must be in ATTRIBUTION_NOTES");
+});
+
+test("ATTRIBUTION_NOTES.egress mentions CDN or load balancer", () => {
+  assert.ok(
+    ATTRIBUTION_NOTES.egress.toLowerCase().includes("cdn") || ATTRIBUTION_NOTES.egress.toLowerCase().includes("load balancer"),
+    `egress note must name the external measurement source: "${ATTRIBUTION_NOTES.egress}"`,
+  );
+});
+
+test("ATTRIBUTION_NOTES.pgStatStatements explains why it cannot attribute per org", () => {
+  assert.ok(
+    ATTRIBUTION_NOTES.pgStatStatements.toLowerCase().includes("org"),
+    `pgStatStatements note must explain the org-attribution limitation: "${ATTRIBUTION_NOTES.pgStatStatements}"`,
+  );
 });
 
 if (process.exitCode !== 1)

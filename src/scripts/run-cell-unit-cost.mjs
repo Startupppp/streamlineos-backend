@@ -7,6 +7,7 @@ import { UNIT_COSTS, canContributeQuantity, detectAnomalousTenants } from "./cel
 import { forecastSaturation, filterWellSpacedSamples, MIN_SAMPLE_SPACING_MS } from "./cell-capacity-budgets.mjs";
 import { fetchNeonConsumption, fetchAblyStats, fetchResendStats, fetchCloudflareR2Stats } from "./cell-cost/vendor-costs.mjs";
 import { readLoadDriverResults, isDuringBulkLoad, EXPECTED_FIELDS } from "./cell-cost/load-driver-reader.mjs";
+import { readSpanLog, topOrgsByDbTime, ATTRIBUTION_NOTES } from "./cell-cost/span-log-reader.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const HISTORY_PATH = resolve(__dirname, "../../.cell-cost-history.json");
@@ -243,6 +244,8 @@ async function main() {
       }
     }
 
+    reportPerOrgDbCache(process.env.APP_LOG_FILE);
+
     if (loadDriver === null) {
       process.stdout.write(`\nLoad driver: .load-driver-results.json not found at ${LOAD_DRIVER_PATH}\n`);
       process.stdout.write(`  Expected fields: ${Object.keys(EXPECTED_FIELDS).join(", ")}\n`);
@@ -255,6 +258,60 @@ async function main() {
     await appDb.end();
     if (ownerDb) await ownerDb.end();
   }
+}
+
+function reportPerOrgDbCache(logFilePath) {
+  const result = readSpanLog(logFilePath);
+  process.stdout.write("\nPer-org DB and cache attribution (from span log):\n");
+  if (result.status === "skipped") {
+    process.stdout.write(`  SKIPPED — ${result.reason}\n`);
+    process.stdout.write(`  How: set APP_LOG_FILE=<path-to-app-stdout-log> and re-run.\n`);
+    process.stdout.write(`  Why available: every db.query.execute and cache.roundtrip span carries org.id from ObservabilityContext.\n`);
+    process.stdout.write(`  Note: pg_stat_statements and pg_stat_database are per-database, not per-org — span log is the correct source.\n`);
+    process.stdout.write(`  Egress: ${ATTRIBUTION_NOTES.egress}\n`);
+    return;
+  }
+  if (result.status === "absent") {
+    process.stdout.write(`  SKIPPED — log file not found at ${result.path}\n`);
+    return;
+  }
+  if (result.status === "read-error") {
+    process.stdout.write(`  ERROR reading log file: ${result.reason}\n`);
+    return;
+  }
+
+  process.stdout.write(`  Span log: ${result.totalSpans.toLocaleString()} db+cache spans across ${result.orgCount} org(s)`);
+  if (result.parseErrors > 0) process.stdout.write(` (${result.parseErrors} parse errors skipped)`);
+  process.stdout.write("\n");
+
+  const top = topOrgsByDbTime(result, 50);
+  if (top.length === 0) {
+    process.stdout.write("  No org-attributed spans found (spans without org context are from auth/background flows).\n");
+  } else {
+    const fmt = (label, val) => `  ${label.padEnd(40)} ${val}\n`;
+    process.stdout.write(fmt("org_id", "db_time_ms  cache_time_ms"));
+    for (const { orgId, dbTimeMs, cacheTimeMs } of top)
+      process.stdout.write(fmt(orgId, `${dbTimeMs.toFixed(1).padStart(10)}  ${cacheTimeMs.toFixed(1).padStart(13)}`));
+
+    const unknownDb = result.orgDbTimeMs.get(null) ?? 0;
+    const unknownCache = result.orgCacheTimeMs.get(null) ?? 0;
+    if (unknownDb > 0 || unknownCache > 0)
+      process.stdout.write(`  (no-org context: ${unknownDb.toFixed(1)} ms DB, ${unknownCache.toFixed(1)} ms cache — auth/background flows)\n`);
+  }
+
+  const anomaly = detectAnomalousTenants(top.map((e) => ({ orgId: e.orgId, cost: e.dbTimeMs })), 2.5);
+  process.stdout.write("\n  DB-time anomaly check:\n");
+  if (anomaly.status === "refused") {
+    process.stdout.write(`    REFUSED — ${anomaly.reason}\n`);
+  } else if (anomaly.anomalous.length === 0) {
+    process.stdout.write(`    No anomalous orgs (mean=${anomaly.mean?.toFixed(0)} ms, σ=${anomaly.stdDev?.toFixed(0)} ms)\n`);
+  } else {
+    process.stdout.write(`    ${anomaly.anomalous.length} org(s) exceed 2.5σ in DB time — review for throttling or relocation:\n`);
+    for (const a of anomaly.anomalous) process.stdout.write(`      org ${a.orgId} — ${a.cost.toFixed(1)} ms\n`);
+  }
+
+  process.stdout.write(`\n  Egress: ${ATTRIBUTION_NOTES.egress}\n`);
+  process.stdout.write(`  Redis memory per org: ${ATTRIBUTION_NOTES.redisMemory}\n`);
 }
 
 async function reportVendorCosts() {

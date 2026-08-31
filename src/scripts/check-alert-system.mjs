@@ -17,6 +17,7 @@ const ALERT_SCRIPTS = [
   "alert-queue-age.mjs",
   "alert-dispatch.mjs",
   "alert-cell-recovery.mjs",
+  "check-alert-ack.mjs",
 ];
 
 function runSelfTest(script) {

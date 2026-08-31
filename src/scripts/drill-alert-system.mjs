@@ -1,10 +1,27 @@
 import { randomBytes } from "node:crypto";
 import http from "node:http";
 import https from "node:https";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { Buffer } from "node:buffer";
 import { URL } from "node:url";
+import { tmpdir } from "node:os";
+import { dirname } from "node:path";
 import process from "node:process";
+
+const drillArgs = process.argv.slice(2);
+const stateFilePath =
+  drillArgs.find((a) => a.startsWith("--state-file="))?.slice(13) ??
+  `${tmpdir()}/alert-drill-ack.json`;
+
+function persistState(state) {
+  try {
+    mkdirSync(dirname(stateFilePath), { recursive: true });
+    writeFileSync(stateFilePath, JSON.stringify(state));
+  } catch {
+    void 0;
+  }
+}
 
 const webhookUrl = process.env.ALERT_WEBHOOK_URL ?? null;
 
@@ -83,6 +100,8 @@ process.stderr.write(
 );
 
 if (!process.stdin.isTTY) {
+  const nonInteractiveState = { delivered: true, acked: null, nonce, sentAt };
+  persistState(nonInteractiveState);
   process.stdout.write(
     JSON.stringify({
       delivered: true,
@@ -113,12 +132,15 @@ const answer = await new Promise((resolve) => {
 rl.close();
 
 if (answer.trim() === nonce) {
+  const ackedAt = new Date().toISOString();
+  persistState({ delivered: true, acked: true, nonce, sentAt, ackedAt });
   process.stdout.write(
-    JSON.stringify({ delivered: true, acked: true, nonce, sentAt }) + "\n",
+    JSON.stringify({ delivered: true, acked: true, nonce, sentAt, ackedAt }) + "\n",
   );
   process.stderr.write("ACK confirmed. End-to-end alert delivery is working.\n");
   process.exit(0);
 } else if (answer.trim() === "skip") {
+  persistState({ delivered: true, acked: false, nonce, sentAt, reason: "operator skipped ACK" });
   process.stdout.write(
     JSON.stringify({ delivered: true, acked: false, nonce, sentAt, reason: "operator skipped ACK" }) +
       "\n",
@@ -128,6 +150,7 @@ if (answer.trim() === nonce) {
   );
   process.exit(3);
 } else {
+  persistState({ delivered: true, acked: false, nonce, enteredNonce: answer.trim(), sentAt, reason: "nonce mismatch" });
   process.stderr.write(
     `Nonce mismatch. Expected "${nonce}", got "${answer.trim()}".\n` +
       "Either the alert reached a different channel or the nonce was mistyped.\n",
