@@ -43,6 +43,7 @@ import {
 import { placeOrganization } from "../../common/region/placement-lookup";
 import { LEGACY_CELL_ID } from "../../common/region/placement";
 import { chooseRegionForNewOrg } from "../../common/region/cell-admission";
+import { regionForNewOrg } from "../../common/region/region-registry";
 
 function slugify(name: string): string {
   return (
@@ -84,7 +85,10 @@ export class AuthService {
     const userId = randomUUID();
     const orgId = randomUUID();
 
-    const region = (await chooseRegionForNewOrg(this.db, { organizationId: orgId })).region;
+    const region = (await chooseRegionForNewOrg(this.db, {
+      organizationId: orgId,
+      region: regionForNewOrg(input.country),
+    })).region;
     await placeOrganization(this.db, { orgId, region });
 
     await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {

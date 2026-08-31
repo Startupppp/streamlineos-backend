@@ -70,9 +70,9 @@ describe("CrmMcpService", () => {
     });
 
     it("filters available tools based on the caller's actual permissions", async () => {
-      // User only has deals view permission
+      // User only has deals read permission
       accessService.resolveUserPermissions.mockResolvedValue({
-        permissions: ["crm:deals:view"],
+        permissions: ["crm:deals:read"],
       });
 
       const available = await service.getAvailableTools(context);
@@ -85,9 +85,9 @@ describe("CrmMcpService", () => {
   });
 
   describe("tool execution and authorization", () => {
-    it("allows deal listing when caller has crm:deals:view", async () => {
+    it("allows deal listing when caller has crm:deals:read", async () => {
       accessService.resolveUserPermissions.mockResolvedValue({
-        permissions: ["crm:deals:view"],
+        permissions: ["crm:deals:read"],
       });
       dealsService.list.mockResolvedValue({
         items: [{ id: 1, name: "Big Enterprise Deal" }],
@@ -108,7 +108,7 @@ describe("CrmMcpService", () => {
       expect(result.content[0].text).toContain("Big Enterprise Deal");
     });
 
-    it("refuses deal listing with 403 Forbidden when caller lacks crm:deals:view", async () => {
+    it("refuses deal listing with 403 Forbidden when caller lacks crm:deals:read", async () => {
       accessService.resolveUserPermissions.mockResolvedValue({
         permissions: ["party:parties:view"], // lacks crm:deals:view
       });
@@ -125,7 +125,7 @@ describe("CrmMcpService", () => {
 
     it("refuses party listing with 403 Forbidden when caller lacks party:parties:view", async () => {
       accessService.resolveUserPermissions.mockResolvedValue({
-        permissions: ["crm:deals:view"], // lacks party:parties:view
+        permissions: ["crm:deals:read"], // lacks party:parties:view
       });
 
       await expect(

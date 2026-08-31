@@ -48,6 +48,10 @@ jest.mock("../../common/region/region-registry", () => ({
   DEFAULT_REGION: "primary",
 }));
 
+jest.mock("../../common/region/cell-admission", () => ({
+  chooseRegionForNewOrg: jest.fn().mockResolvedValue({ region: "eu" }),
+}));
+
 jest.mock("../rbac/seed-system-roles", () => ({
   seedSystemRolesForOrg: jest.fn(async () => {
     events.push("roles");
@@ -72,6 +76,8 @@ jest.mock("../onboarding-activation/seed-demo-dataset", () => ({
 import { AuthService } from "./auth.service";
 import { seedSystemRolesForOrg } from "../rbac/seed-system-roles";
 import { seedDemoDataset } from "../onboarding-activation/seed-demo-dataset";
+import { regionForNewOrg } from "../../common/region/region-registry";
+import { chooseRegionForNewOrg } from "../../common/region/cell-admission";
 
 /**
  * What `.values()` returns has to be both awaitable and chainable.
@@ -170,6 +176,7 @@ const SIGNUP = {
   firstName: "Ada",
   lastName: "Byron",
   companyName: "Analytical Engines",
+  country: "DE",
 };
 
 beforeEach(() => {
@@ -215,6 +222,18 @@ describe("a stranger signing up", () => {
     await service.register(SIGNUP);
 
     expect(seedDemoDataset).toHaveBeenCalledTimes(1);
+  });
+
+  it("places the workspace from the signup country", async () => {
+    const { service } = buildService();
+
+    await service.register(SIGNUP);
+
+    expect(regionForNewOrg).toHaveBeenCalledWith("DE");
+    expect(chooseRegionForNewOrg).toHaveBeenCalledWith(
+      expect.anything(),
+      { organizationId: expect.any(String), region: "eu" },
+    );
   });
 });
 

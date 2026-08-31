@@ -109,7 +109,7 @@ export class CrmMcpService {
           limit: { type: "number", description: "Items per page (max 100)" },
         },
       },
-      requiredPermission: "crm:deals:view",
+      requiredPermission: "crm:deals:read",
     },
     {
       name: "crm_get_deal",
@@ -121,7 +121,7 @@ export class CrmMcpService {
         },
         required: ["dealId"],
       },
-      requiredPermission: "crm:deals:view",
+      requiredPermission: "crm:deals:read",
     },
     {
       name: "crm_list_activities",
