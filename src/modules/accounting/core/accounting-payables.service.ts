@@ -26,8 +26,8 @@ import type { DataScope } from "../../access/access.types";
 import type {
   AgedReceivablesQuery,
   CreatePurchaseBillInput,
-  ListCustomersOutstandingQuery,
   ListPurchaseBillsQuery,
+  ListVendorsQuery,
   RecordVendorPaymentInput,
   UpdatePurchaseBillStatusInput,
 } from "./dto/accounting.schemas";
@@ -61,7 +61,7 @@ export class AccountingPayablesService {
     return this.query.listBillPayments(orgId, billId);
   }
 
-  listVendors(orgId: string, q: ListCustomersOutstandingQuery) {
+  listVendors(orgId: string, q: ListVendorsQuery) {
     return this.query.listVendors(orgId, q);
   }
 

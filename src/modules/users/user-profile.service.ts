@@ -365,7 +365,7 @@ export class UserProfileService {
       this.getPreferences(orgId, userId),
       this.getUserSessions(orgId, userId),
       this.getLoginHistory(orgId, userId, { page: 1, limit: EXPORT_HISTORY_LIMIT, success: undefined }),
-      this.activity.getUserAuditLog(orgId, userId, { page: 1, limit: EXPORT_HISTORY_LIMIT }),
+      this.activity.getUserAuditLog(orgId, userId, { limit: EXPORT_HISTORY_LIMIT }),
     ]);
 
     return {

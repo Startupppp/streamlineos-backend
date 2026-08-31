@@ -28,6 +28,7 @@ export class InboxController {
       section: query.section,
       limit: query.limit,
       cursor: query.cursor,
+      unreadOnly: false,
     });
   }
 

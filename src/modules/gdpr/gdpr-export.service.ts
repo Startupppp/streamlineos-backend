@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, gt, lte } from "drizzle-orm";
+import { and, asc, eq, lt, lte } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import { gdprExportJobs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -232,7 +232,7 @@ export class GdprExportService {
         and(
           eq(gdprExportJobs.orgId, orgId),
           eq(gdprExportJobs.status, "completed"),
-          gt(now, gdprExportJobs.expiresAt),
+          lt(gdprExportJobs.expiresAt, now),
         ),
       );
   }

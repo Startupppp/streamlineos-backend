@@ -50,6 +50,7 @@ export class KbMembersService {
         orgId: kbSpaceMembers.orgId,
         spaceId: kbSpaceMembers.spaceId,
         userId: kbSpaceMembers.userId,
+        membershipId: kbSpaceMembers.membershipId,
         role: kbSpaceMembers.role,
         team: kbSpaceMembers.team,
         spaceRole: kbSpaceMembers.spaceRole,

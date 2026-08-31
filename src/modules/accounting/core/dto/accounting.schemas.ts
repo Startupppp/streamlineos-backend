@@ -29,6 +29,13 @@ export const updateAccountSchema = z.object({
   description: z.string().max(500).optional(),
 });
 
+export const journalEntryStatusSchema = z.enum([
+  "DRAFT",
+  "PENDING_APPROVAL",
+  "POSTED",
+  "VOID",
+]);
+
 export const listJournalQuerySchema = z
   .object({
     cursor: z.string().optional(),
@@ -36,6 +43,7 @@ export const listJournalQuerySchema = z
     from: z.coerce.date().optional(),
     to: z.coerce.date().optional(),
     sourceType: z.string().max(40).optional(),
+    status: journalEntryStatusSchema.optional(),
   })
   .refine((r) => !r.from || !r.to || r.from <= r.to, { message: "`from` must be <= `to`", path: ["from"] });
 

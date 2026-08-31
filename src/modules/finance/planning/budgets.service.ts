@@ -9,7 +9,7 @@ import { and, desc, eq, inArray, max } from "drizzle-orm";
 import { finBudgets, finBudgetLines, finBudgetRevisions, ledgerAccounts, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -32,12 +32,7 @@ export class BudgetsService {
     private readonly cache: CacheService,
   ) {}
 
-  async listBudgets(orgId: string, query: ListBudgetsQuery): Promise<CursorPage<{
-    id: number; name: string; fiscalYear: string; periodType: string;
-    dimensionType: string; status: string; totalAmount: string | null;
-    createdByMembershipId: string | null; approvedByMembershipId: string | null;
-    approvedAt: Date | null; createdAt: Date | null; updatedAt: Date | null;
-  }>> {
+  async listBudgets(orgId: string, query: ListBudgetsQuery) {
     const { cursor, limit, status, fiscalYear } = query;
     const pos = decodeCursor(cursor);
     const conds = [eq(finBudgets.orgId, orgId)];

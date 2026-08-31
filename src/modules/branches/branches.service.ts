@@ -51,7 +51,9 @@ export class BranchesService {
             isNull(orgUnits.deletedAt),
           ),
           with: {
-            head: { columns: { id: true, name: true, image: true } },
+            headMember: {
+              with: { user: { columns: { id: true, name: true, image: true } } },
+            },
           },
         });
 
@@ -90,7 +92,7 @@ export class BranchesService {
               branchRow.status === "ACTIVE" ? "ACTIVE" : "INACTIVE",
             createdAt: branchRow.createdAt,
             updatedAt: branchRow.updatedAt,
-            branchManager: branchRow.head ?? null,
+            branchManager: branchRow.headMember?.user ?? null,
             branchHr: meta.hrContactUserId
               ? (hrMap.get(meta.hrContactUserId) ?? null)
               : null,
@@ -110,7 +112,9 @@ export class BranchesService {
         isNull(orgUnits.deletedAt),
       ),
       with: {
-        head: { columns: { id: true, name: true, image: true, email: true } },
+        headMember: {
+          with: { user: { columns: { id: true, name: true, image: true, email: true } } },
+        },
       },
     });
     if (!branch) return null;
@@ -166,7 +170,7 @@ export class BranchesService {
       status: branch.status === "ACTIVE" ? "ACTIVE" : "INACTIVE",
       createdAt: branch.createdAt,
       updatedAt: branch.updatedAt,
-      branchManager: branch.head ?? null,
+      branchManager: branch.headMember?.user ?? null,
       branchHr: hrUser,
       employees,
     };

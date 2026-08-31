@@ -3,6 +3,7 @@ import { NestFactory } from "@nestjs/core";
 import { VERSION_NEUTRAL, VersioningType, type LogLevel } from "@nestjs/common";
 import { setDefaultResultOrder } from "node:dns";
 import type { NestExpressApplication } from "@nestjs/platform-express";
+import type { Request, Response, NextFunction } from "express";
 
 import helmet from "helmet";
 import compression from "compression";
@@ -85,7 +86,7 @@ async function bootstrap(): Promise<void> {
   });
 
   app.use(helmet());
-  app.use((_req, res, next) => {
+  app.use((_req: Request, res: Response, next: NextFunction) => {
     res.setHeader(
       "Permissions-Policy",
       "geolocation=(), microphone=(), camera=(), payment=(), usb=(), fullscreen=(self)",

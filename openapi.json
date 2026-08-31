@@ -5717,6 +5717,20 @@
               "type": "string",
               "maxLength": 40
             }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "PENDING_APPROVAL",
+                "POSTED",
+                "VOID"
+              ]
+            }
           }
         ],
         "responses": {

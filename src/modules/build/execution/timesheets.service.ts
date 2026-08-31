@@ -18,6 +18,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { applyScope } from "../../access/apply-scope";
 import { resolveTimesheetsScope } from "./timesheets-scope";
 import { formatDateOnly } from "../../../common/date";
@@ -214,7 +215,7 @@ export class TimesheetsService {
       .update(timesheets)
       .set({
         status: "APPROVED",
-        approvedBy: user.userId,
+        approvedByMembershipId: actingMembershipId(user.principal),
         approvedAt: new Date(),
         updatedAt: new Date(),
       })

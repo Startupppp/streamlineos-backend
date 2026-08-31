@@ -101,6 +101,13 @@ export class SupportKbGapService {
       throw new BadRequestException(`Gap is already ${gap.status.toLowerCase()}`);
     }
 
+    const [actorMember] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, actorUserId)))
+      .limit(1);
+    const actorMembershipId = actorMember?.id ?? null;
+
     const space = await this.db.query.kbSpaces.findFirst({
       where: and(eq(kbSpaces.orgId, orgId), isNull(kbSpaces.deletedAt)),
       columns: { id: true },
@@ -154,7 +161,7 @@ export class SupportKbGapService {
     });
 
     await this.kbEvents.record(orgId, "ticket_deflected", {
-      actorId: actorUserId,
+      actorMembershipId,
       articleId: article.id,
       metadata: { feature: "kb_gap_draft", gapId },
     });

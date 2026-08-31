@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq, and, asc, sql, count, or, ilike, gt, type SQL } from "drizzle-orm";
-import { buildIdCursorPage } from "../../common/pagination/cursor";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { alias } from "drizzle-orm/pg-core";
 import { deals } from "../../db/schema";
 import { businessParties, contactPartyMap } from "../../db/schema/party";
@@ -218,15 +218,24 @@ export class ContactsService {
       : null;
     if (filters.organizationId && !employerPartyId) return { items: [], total: 0, hasMore: false, nextCursor: null };
 
-    const afterId = filters.cursor !== undefined ? Number(filters.cursor) : undefined;
+    const after = decodeCursor(filters.cursor);
     const conditions = this.listConditions(orgId, filters, employerPartyId);
-    if (afterId !== undefined && !Number.isNaN(afterId))
-      conditions.push(gt(CONTACT_PARTY_COLUMNS.id, afterId));
+    const afterId = after ? Number(after.id) : Number.NaN;
+    if (after && !Number.isNaN(afterId)) {
+      const keyset = or(
+        gt(CONTACT_PARTY_COLUMNS.name, after.sortValue),
+        and(
+          eq(CONTACT_PARTY_COLUMNS.name, after.sortValue),
+          gt(CONTACT_PARTY_COLUMNS.id, afterId),
+        ),
+      );
+      if (keyset) conditions.push(keyset);
+    }
     const whereClause = and(...conditions);
     const limit = filters.limit ?? 50;
 
     const [countResult, rows] = await Promise.all([
-      afterId === undefined
+      after === null
         ? this.db
             .select({ count: count() })
             .from(contactPartyMap)
@@ -239,7 +248,10 @@ export class ContactsService {
         .limit(limit + 1),
     ]);
 
-    const cursorPage = buildIdCursorPage(rows, limit, (r) => r.id);
+    const cursorPage = buildCursorPage(rows, limit, (r) => ({
+      sortValue: r.name,
+      id: String(r.id),
+    }));
     const items = (await this.withAssociationIds(orgId, cursorPage.data)).map(
       ({ leadName, dealName, crmOrganizationName, ...contact }) => ({
         ...contact,
@@ -250,8 +262,8 @@ export class ContactsService {
     return {
       items,
       total: countResult ? Number(countResult[0]?.count ?? 0) : undefined,
-      hasMore: cursorPage.hasMore,
-      nextCursor: cursorPage.nextCursor !== null ? String(cursorPage.nextCursor) : null,
+      hasMore: cursorPage.pagination.hasMore,
+      nextCursor: cursorPage.pagination.nextCursor,
     };
   }
 

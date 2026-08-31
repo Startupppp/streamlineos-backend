@@ -193,7 +193,7 @@ export class CronHrRetentionService {
   ): Promise<void> {
     await tx.insert(hrAuditLogs).values({
       orgId,
-      actorId: null,
+      actorMembershipId: null,
       entityType,
       entityId: `policy:${policyId}`,
       action,

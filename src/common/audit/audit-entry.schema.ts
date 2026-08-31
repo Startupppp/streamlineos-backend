@@ -11,12 +11,12 @@ export const auditEntrySchema = z
     actorMembershipId: z.number().int().nullable().optional(),
     resourceType: z.string().nullable().optional(),
     resourceId: z.string().nullable().optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
     ipAddress: z.string().nullable().optional(),
     result: z.enum(["SUCCESS", "FAILURE"]).optional(),
     requestId: z.string().nullable().optional(),
     userAgent: z.string().nullable().optional(),
-    before: z.record(z.unknown()).nullable().optional(),
-    after: z.record(z.unknown()).nullable().optional(),
+    before: z.record(z.string(), z.unknown()).nullable().optional(),
+    after: z.record(z.string(), z.unknown()).nullable().optional(),
   })
   .strict();

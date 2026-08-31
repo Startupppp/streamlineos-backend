@@ -5,6 +5,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { hrWorkflowDefinitions, hrWorkflowSteps } from "../../../db/schema/hr/workflow-engine";
 import type { CreateWorkflowDefinitionDto, UpdateWorkflowDefinitionDto, WorkflowDefinitionQueryDto } from "./dto/workflow.schemas";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
+import { HrWorkflowApproverService } from "./hr-workflow-approver.service";
 
 interface StepInput {
   stepOrder: number;
@@ -23,6 +24,7 @@ export class HrWorkflowDefinitionsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly engine: HrWorkflowEngineService,
+    private readonly approver: HrWorkflowApproverService,
   ) {}
 
   async list(orgId: string, query: WorkflowDefinitionQueryDto) {
@@ -226,7 +228,7 @@ export class HrWorkflowDefinitionsService {
     for (const step of steps) {
       const conditionPasses = this.evaluateStepCondition(step.condition, input.context ?? {});
       const approvers = conditionPasses
-        ? await this.engine.resolveApprovers(step, input.subjectEmployeeId, orgId)
+        ? await this.approver.resolveApprovers(step, input.subjectEmployeeId, orgId)
         : [];
       resolvedSteps.push({
         stepOrder: step.stepOrder,

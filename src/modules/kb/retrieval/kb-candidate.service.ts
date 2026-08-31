@@ -32,7 +32,7 @@ export class KbCandidateService {
     spaceIds: number[],
     query: string,
     pool: number,
-    principal: { userId: string; roleSlugs: string[] },
+    principal: { userId: string; membershipId: number | null; roleSlugs: string[] },
     spaceId?: number,
   ): Promise<number[]> {
     const tsquery = sql`websearch_to_tsquery('english', ${query})`;
@@ -60,7 +60,7 @@ export class KbCandidateService {
     spaceIds: number[],
     vector: string,
     pool: number,
-    principal: { userId: string; roleSlugs: string[] },
+    principal: { userId: string; membershipId: number | null; roleSlugs: string[] },
     spaceId?: number,
   ): Promise<number[]> {
     try {
