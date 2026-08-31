@@ -205,7 +205,9 @@
     "drill:export": "node --env-file-if-exists=.env src/scripts/drill-export.mjs",
     "drill:erasure": "node --env-file-if-exists=.env src/scripts/drill-erasure.mjs",
     "drill:erasure:self-test": "node src/scripts/drill-erasure.mjs --self-test",
-    "drill:legal-hold": "node --env-file-if-exists=.env src/scripts/drill-legal-hold.mjs"
+    "drill:legal-hold": "node --env-file-if-exists=.env src/scripts/drill-legal-hold.mjs",
+    "check:migration-ledger": "node src/scripts/check-migration-ledger.mjs",
+    "check:migration-ledger:self-test": "node src/scripts/check-migration-ledger.mjs --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",
