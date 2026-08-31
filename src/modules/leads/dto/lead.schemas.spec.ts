@@ -1,8 +1,8 @@
 import { listSchema, createSchema, updateSchema, ingestSchema } from "./lead.schemas";
 
 describe("lead schemas", () => {
-  it("listSchema coerces page/limit and enforces limit<=100", () => {
-    expect(listSchema.parse({ page: "2", limit: "50" })).toMatchObject({ page: 2, limit: 50 });
+  it("listSchema coerces limit and enforces limit<=100", () => {
+    expect(listSchema.parse({ cursor: "tok", limit: "50" })).toMatchObject({ cursor: "tok", limit: 50 });
     expect(listSchema.parse({ limit: "500" }).limit).toBe(100);
   });
   it("createSchema requires name and defaults source/priority", () => {
