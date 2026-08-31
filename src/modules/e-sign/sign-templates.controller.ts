@@ -9,6 +9,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
 import { SignTemplatesService } from "./sign-templates.service";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import {
   createTemplateSchema,
   updateTemplateSchema,
@@ -76,6 +77,7 @@ export class SignTemplatesController {
   }
 
   @Post("templates/:templateId/duplicate")
+  @BodylessAction()
   @RequirePermission("sign:template:manage")
   @Validate({ params: templateIdParams })
   duplicate(@Param("templateId", ParseIntPipe) templateId: number, @CurrentUser() u: CurrentUserContext) {

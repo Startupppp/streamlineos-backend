@@ -11,6 +11,7 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignWatermarkService } from "./sign-watermark.service";
 import { SignEnvelopesService } from "./sign-envelopes.service";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import {
   updateSignSettingsSchema,
   watermarkPolicyInputSchema,
@@ -85,6 +86,7 @@ export class SignAdminController {
   }
 
   @Post("run-reminder-sweep")
+  @BodylessAction()
   @RequirePermission("sign:admin:manage")
   async runReminderSweep() {
     const remindedCount = await this.envelopes.runReminderSweep();
@@ -92,6 +94,7 @@ export class SignAdminController {
   }
 
   @Post("run-expiration-sweep")
+  @BodylessAction()
   @RequirePermission("sign:admin:manage")
   async runExpirationSweep() {
     const expiredCount = await this.envelopes.runExpirationSweep();
