@@ -3067,6 +3067,34 @@
       "when": 1798000062000,
       "tag": "0745_org_unit_actor_expand",
       "breakpoints": true
+    },
+    {
+      "idx": 563,
+      "version": "7",
+      "when": 1798000063000,
+      "tag": "0747_operator_access_two_person_approval",
+      "breakpoints": true
+    },
+    {
+      "idx": 564,
+      "version": "7",
+      "when": 1798000064000,
+      "tag": "0752_cal_src_pref_membership_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 565,
+      "version": "7",
+      "when": 1798000065000,
+      "tag": "0753_cal_src_pref_membership_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 566,
+      "version": "7",
+      "when": 1798000066000,
+      "tag": "0754_cal_src_pref_user_id_drop",
+      "breakpoints": true
     }
   ]
 }

@@ -224,6 +224,10 @@ describe("updateAttendeesInTx — deletes PENDING reminders when attendees are r
     const deleteWhere = jest.fn().mockResolvedValue([]);
     const deletedTables: unknown[] = [];
 
+    const updateSet = jest.fn().mockReturnValue({
+      where: jest.fn().mockResolvedValue([]),
+    });
+
     const tx = {
       select: jest.fn().mockImplementation(() => {
         const idx = selectCallIdx++;
@@ -241,6 +245,7 @@ describe("updateAttendeesInTx — deletes PENDING reminders when attendees are r
         deletedTables.push(table);
         return { where: deleteWhere };
       }),
+      update: jest.fn().mockReturnValue({ set: updateSet }),
       insert: jest.fn().mockReturnValue({
         values: jest.fn().mockReturnValue({
           onConflictDoNothing: jest.fn().mockResolvedValue([]),
@@ -254,6 +259,8 @@ describe("updateAttendeesInTx — deletes PENDING reminders when attendees are r
       .updateAttendeesInTx(tx, ORG, EVENT_ID, [ALICE], "actor-user-id");
 
     expect(tx.delete).toHaveBeenCalledTimes(2);
+    expect(tx.update).toHaveBeenCalledTimes(1);
+    expect(updateSet).toHaveBeenCalledWith({ reminder15MinSent: false });
 
     const lastDeleteWhereCond = deleteWhere.mock.calls[1]?.[0];
     const { params, sql: sqlStr } = renderCond(lastDeleteWhereCond);

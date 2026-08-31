@@ -11,10 +11,12 @@ import {
   Post,
   Put,
   Query,
+  Req,
   Res,
   UseGuards,
 } from "@nestjs/common";
-import type { Response } from "express";
+import type { Request, Response } from "express";
+import type { DataScope } from "../access/access.types";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
@@ -216,7 +218,7 @@ export class CalendarController {
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const attendees = await this.calendar.listAttendees(u.orgId, eventId);
+    const attendees = await this.calendar.listAttendees(u.orgId, u.userId, eventId);
     if (!attendees) throw new NotFoundException("Event not found");
     return attendees;
   }
@@ -228,12 +230,14 @@ export class CalendarController {
   async exportEvents(
     @Query() query: ExportInput,
     @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request & { rbacScope?: DataScope },
     @Res() res: Response,
   ) {
     const fromDate = new Date(query.from);
     const toDate = new Date(query.to);
+    const scope: DataScope = req.rbacScope ?? "none";
 
-    const events = await this.calendar.exportEvents(u.orgId, u.userId, fromDate, toDate);
+    const events = await this.calendar.exportEvents(u.orgId, u.userId, fromDate, toDate, scope);
 
     const headers = [
       "Title",

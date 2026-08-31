@@ -1,14 +1,19 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { aliasedTable, and, asc, eq, gte, isNotNull, lte, or } from "drizzle-orm";
+import { aliasedTable, and, asc, eq, gte, isNotNull, lte, or, sql } from "drizzle-orm";
 import { calendarEvents, eventAttendees, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import type { DataScope } from "../access/access.types";
+
+const EXPORT_ROW_CAP = 500;
 
 @Injectable()
 export class CalendarExportService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async exportEvents(orgId: string, userId: string, from: Date, to: Date) {
+  async exportEvents(orgId: string, userId: string, from: Date, to: Date, scope: DataScope = "all") {
+    if (scope === "none") return [];
+
     const membership = await this.db.query.organizationMembers.findFirst({
       columns: { id: true },
       where: and(
@@ -18,7 +23,20 @@ export class CalendarExportService {
       ),
     });
     const callerMembershipId = membership?.id ?? 0;
+
     const callerAtt = aliasedTable(eventAttendees, "exp_caller_att");
+
+    const visibilityClause = or(
+      eq(calendarEvents.visibility, "org"),
+      eq(calendarEvents.createdByMembershipId, callerMembershipId),
+      isNotNull(callerAtt.id),
+    );
+
+    const scopeClause =
+      scope === "own"
+        ? eq(calendarEvents.createdByMembershipId, callerMembershipId)
+        : sql`true`;
+
     return this.db
       .select({
         id: calendarEvents.id,
@@ -45,14 +63,11 @@ export class CalendarExportService {
           eq(calendarEvents.orgId, orgId),
           gte(calendarEvents.startDate, from),
           lte(calendarEvents.startDate, to),
-          or(
-            eq(calendarEvents.visibility, "org"),
-            eq(calendarEvents.createdByMembershipId, callerMembershipId),
-            isNotNull(callerAtt.id),
-          ),
+          visibilityClause,
+          scopeClause,
         ),
       )
       .orderBy(asc(calendarEvents.startDate))
-      .limit(500);
+      .limit(EXPORT_ROW_CAP);
   }
 }

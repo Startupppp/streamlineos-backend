@@ -1,24 +1,60 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { aliasedTable, and, eq, isNotNull, or } from "drizzle-orm";
 import { calendarEvents, eventAttendees, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { RsvpInput } from "./dto/calendar.schemas";
 
+const callerAttendeeLookup = aliasedTable(eventAttendees, "att_visibility_check");
+
 @Injectable()
 export class CalendarAttendeesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  private getEventForOrg(orgId: string, id: number) {
-    return this.db.query.calendarEvents.findFirst({
-      where: and(eq(calendarEvents.id, id), eq(calendarEvents.orgId, orgId)),
+  private async resolveCallerMembershipId(orgId: string, userId: string): Promise<number> {
+    const row = await this.db.query.organizationMembers.findFirst({
+      columns: { id: true },
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
     });
+    return row?.id ?? 0;
+  }
+
+  private async getVisibleEventForOrg(
+    orgId: string,
+    id: number,
+    callerMembershipId: number,
+  ) {
+    const rows = await this.db
+      .select({ id: calendarEvents.id })
+      .from(calendarEvents)
+      .leftJoin(
+        callerAttendeeLookup,
+        and(
+          eq(callerAttendeeLookup.orgId, calendarEvents.orgId),
+          eq(callerAttendeeLookup.eventId, calendarEvents.id),
+          eq(callerAttendeeLookup.membershipId, callerMembershipId),
+        ),
+      )
+      .where(
+        and(
+          eq(calendarEvents.id, id),
+          eq(calendarEvents.orgId, orgId),
+          or(
+            eq(calendarEvents.visibility, "org"),
+            eq(calendarEvents.createdByMembershipId, callerMembershipId),
+            isNotNull(callerAttendeeLookup.id),
+          ),
+        ),
+      )
+      .limit(1);
+    return rows[0] ?? null;
   }
 
   async rsvp(orgId: string, userId: string, id: number, input: RsvpInput) {
-    const event = await this.getEventForOrg(orgId, id);
-    if (!event) return null;
-
     const membership = await this.db.query.organizationMembers.findFirst({
       where: and(
         eq(organizationMembers.orgId, orgId),
@@ -28,6 +64,9 @@ export class CalendarAttendeesService {
       columns: { id: true },
     });
     if (!membership) return null;
+
+    const event = await this.getVisibleEventForOrg(orgId, id, membership.id);
+    if (!event) return null;
 
     const [attendee] = await this.db
       .insert(eventAttendees)
@@ -47,8 +86,9 @@ export class CalendarAttendeesService {
     return attendee;
   }
 
-  async listAttendees(orgId: string, id: number) {
-    const event = await this.getEventForOrg(orgId, id);
+  async listAttendees(orgId: string, userId: string, id: number) {
+    const callerMembershipId = await this.resolveCallerMembershipId(orgId, userId);
+    const event = await this.getVisibleEventForOrg(orgId, id, callerMembershipId);
     if (!event) return null;
 
     const rows = await this.db

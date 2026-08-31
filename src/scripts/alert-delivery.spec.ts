@@ -181,7 +181,7 @@ describe("alert delivery", () => {
     expect(p.alertId).toBe("heartbeat");
   });
 
-  it("(c) all six registry alert IDs dispatch with correct owner/severity/runbook", async () => {
+  it("(c) all ten registry alert IDs dispatch with correct owner/severity/runbook", async () => {
     const cases = [
       {
         alertId: "dead-outbox",
@@ -235,6 +235,50 @@ describe("alert delivery", () => {
           fired: true,
           breached: [{ seam: "db.query.execute", p95Ms: 15, thresholdMs: 9 }],
           seams: [],
+        }),
+      },
+      {
+        alertId: "queue-age",
+        owner: "platform-reliability",
+        severity: "high",
+        anchor: "#queue-backlog",
+        stdin: JSON.stringify({
+          fired: true,
+          ageBreached: true,
+          retryBreached: false,
+          worstOrgs: [{ org_id: "org1", oldest_queued_at: new Date().toISOString() }],
+        }),
+      },
+      {
+        alertId: "pool-saturation",
+        owner: "platform-reliability",
+        severity: "high",
+        anchor: "#database-cell-failure",
+        stdin: JSON.stringify({
+          fired: true,
+          logSignal: { p95WaitMs: 12, p95Breached: true, signalLines: 10 },
+        }),
+      },
+      {
+        alertId: "tenant-cost",
+        owner: "platform-reliability",
+        severity: "high",
+        anchor: "#tenant-cost",
+        stdin: JSON.stringify({
+          fired: true,
+          noisy: [{ org_id: "org_noisy", multiplier: 8.2 }],
+          medianCredits: 100,
+        }),
+      },
+      {
+        alertId: "cell-recovery",
+        owner: "platform-reliability",
+        severity: "critical",
+        anchor: "#cell-recovery",
+        stdin: JSON.stringify({
+          fired: true,
+          cellId: "cell-us-east-1a",
+          restoredAt: new Date().toISOString(),
         }),
       },
     ];

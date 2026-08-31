@@ -1,5 +1,52 @@
 ﻿import { z } from "zod";
 
+export const operatorScopeSchema = z.enum([
+  "read_customer_data",
+  "read_messages",
+  "read_payments",
+  "read_leads",
+  "manage_subscription",
+]);
+
+export const createGrantSchema = z.object({
+  operatorUserId: z.string().min(1).max(256),
+  orgId: z.string().min(1).max(256),
+  incidentRef: z.string().min(1).max(500),
+  grantedBy: z.string().min(1).max(256),
+  scope: operatorScopeSchema,
+  expiresAt: z.string().datetime(),
+}).strict();
+
+export type CreateGrantInput = z.infer<typeof createGrantSchema>;
+
+export const revokeGrantSchema = z.object({
+  reason: z.string().min(1).max(1000),
+}).strict();
+
+export type RevokeGrantInput = z.infer<typeof revokeGrantSchema>;
+
+export const approveGrantSchema = z.object({
+  approverId: z.string().min(1).max(256),
+}).strict();
+
+export type ApproveGrantInput = z.infer<typeof approveGrantSchema>;
+
+export const grantStatusSchema = z.enum(["pending", "active", "rejected"]);
+
+export const listGrantsQuerySchema = z.object({
+  orgId: z.string().min(1).max(256),
+  status: grantStatusSchema.optional(),
+}).strict();
+
+export type ListGrantsQuery = z.infer<typeof listGrantsQuerySchema>;
+
+export const listLogsQuerySchema = z.object({
+  orgId: z.string().min(1).max(256),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+}).strict();
+
+export type ListLogsQuery = z.infer<typeof listLogsQuerySchema>;
+
 export const visitSchema = z.object({
   sessionToken: z.string().min(1).max(64),
   path: z.string().min(1).max(500),

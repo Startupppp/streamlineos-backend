@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -39,9 +40,50 @@ export class PlatformOperatorAccessService {
         grantedBy: params.grantedBy,
         scope: params.scope,
         expiresAt: params.expiresAt,
+        status: "pending",
       })
       .returning({ grantId: operatorAccessGrants.grantId });
     return row!.grantId;
+  }
+
+  async approveGrant(
+    grantId: string,
+    approverId: string,
+  ): Promise<{ orgId: string; operatorUserId: string }> {
+    const [grant] = await this.db
+      .select({
+        grantId: operatorAccessGrants.grantId,
+        grantedBy: operatorAccessGrants.grantedBy,
+        status: operatorAccessGrants.status,
+        orgId: operatorAccessGrants.orgId,
+        operatorUserId: operatorAccessGrants.operatorUserId,
+      })
+      .from(operatorAccessGrants)
+      .where(eq(operatorAccessGrants.grantId, grantId))
+      .limit(1);
+    if (!grant) throw new NotFoundException("Grant not found");
+    if (grant.status !== "pending") throw new ConflictException("Grant is not in pending status");
+    if (grant.grantedBy === approverId)
+      throw new ForbiddenException("Self-approval not permitted: approverId must differ from the requester");
+    await this.db
+      .update(operatorAccessGrants)
+      .set({ status: "active", approverId })
+      .where(eq(operatorAccessGrants.grantId, grantId));
+    return { orgId: grant.orgId, operatorUserId: grant.operatorUserId };
+  }
+
+  async rejectGrant(grantId: string, reason: string): Promise<void> {
+    const [grant] = await this.db
+      .select({ grantId: operatorAccessGrants.grantId, status: operatorAccessGrants.status })
+      .from(operatorAccessGrants)
+      .where(eq(operatorAccessGrants.grantId, grantId))
+      .limit(1);
+    if (!grant) throw new NotFoundException("Grant not found");
+    if (grant.status !== "pending") throw new ConflictException("Grant is not in pending status");
+    await this.db
+      .update(operatorAccessGrants)
+      .set({ status: "rejected", revokedAt: new Date(), revocationReason: reason })
+      .where(eq(operatorAccessGrants.grantId, grantId));
   }
 
   async assertGrant(
@@ -58,6 +100,7 @@ export class PlatformOperatorAccessService {
           eq(operatorAccessGrants.operatorUserId, operatorUserId),
           eq(operatorAccessGrants.orgId, orgId),
           eq(operatorAccessGrants.scope, scope),
+          eq(operatorAccessGrants.status, "active"),
           gt(operatorAccessGrants.expiresAt, now),
           isNull(operatorAccessGrants.revokedAt),
         ),
@@ -113,26 +156,35 @@ export class PlatformOperatorAccessService {
       .where(eq(operatorAccessGrants.grantId, grantId));
   }
 
-  async listActiveGrants(orgId: string) {
+  async listGrants(orgId: string, status?: string) {
     const now = new Date();
+    const conditions = status
+      ? and(
+          eq(operatorAccessGrants.orgId, orgId),
+          eq(operatorAccessGrants.status, status),
+          isNull(operatorAccessGrants.revokedAt),
+        )
+      : and(
+          eq(operatorAccessGrants.orgId, orgId),
+          eq(operatorAccessGrants.status, "active"),
+          gt(operatorAccessGrants.expiresAt, now),
+          isNull(operatorAccessGrants.revokedAt),
+        );
+
     return this.db
       .select({
         grantId: operatorAccessGrants.grantId,
         operatorUserId: operatorAccessGrants.operatorUserId,
         incidentRef: operatorAccessGrants.incidentRef,
         grantedBy: operatorAccessGrants.grantedBy,
+        approverId: operatorAccessGrants.approverId,
         scope: operatorAccessGrants.scope,
+        status: operatorAccessGrants.status,
         expiresAt: operatorAccessGrants.expiresAt,
         createdAt: operatorAccessGrants.createdAt,
       })
       .from(operatorAccessGrants)
-      .where(
-        and(
-          eq(operatorAccessGrants.orgId, orgId),
-          gt(operatorAccessGrants.expiresAt, now),
-          isNull(operatorAccessGrants.revokedAt),
-        ),
-      );
+      .where(conditions);
   }
 
   async listLogs(orgId: string, limit = 100) {

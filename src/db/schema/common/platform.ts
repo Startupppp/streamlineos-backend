@@ -150,6 +150,8 @@ export const operatorAccessGrants = pgTable(
     incidentRef: text("incident_ref").notNull(),
     grantedBy: text("granted_by").notNull(),
     scope: text("scope").notNull(),
+    status: text("status").notNull().default("active"),
+    approverId: text("approver_id"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revocationReason: text("revocation_reason"),

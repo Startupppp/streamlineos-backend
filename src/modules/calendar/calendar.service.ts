@@ -24,6 +24,7 @@ import { CalendarAttendeesService } from "./calendar-attendees.service";
 import { CalendarRecurrenceService } from "./calendar-recurrence.service";
 import { CalendarExportService } from "./calendar-export.service";
 import type { RsvpInput } from "./dto/calendar.schemas";
+import type { DataScope } from "../access/access.types";
 
 @Injectable()
 export class CalendarService {
@@ -352,7 +353,7 @@ export class CalendarService {
         .values(memberships.map((m) => ({ orgId, eventId, membershipId: m.id })))
         .onConflictDoNothing();
 
-    if (anyRemoved)
+    if (anyRemoved) {
       await tx
         .delete(notificationOutbox)
         .where(
@@ -362,6 +363,17 @@ export class CalendarService {
             like(notificationOutbox.dedupeKey, `calendar:reminder:${eventId}:%`),
           ),
         );
+      await tx
+        .update(calendarEvents)
+        .set({ reminder15MinSent: false })
+        .where(
+          and(
+            eq(calendarEvents.orgId, orgId),
+            eq(calendarEvents.id, eventId),
+            eq(calendarEvents.reminder15MinSent, true),
+          ),
+        );
+    }
 
     return memberships
       .filter((m) => !currentUserIds.has(m.userId) && m.userId !== actorUserId)
@@ -467,8 +479,8 @@ export class CalendarService {
     return this.attendees.rsvp(orgId, userId, id, input);
   }
 
-  listAttendees(orgId: string, id: number) {
-    return this.attendees.listAttendees(orgId, id);
+  listAttendees(orgId: string, userId: string, id: number) {
+    return this.attendees.listAttendees(orgId, userId, id);
   }
 
   upsertOccurrenceException(
@@ -485,7 +497,7 @@ export class CalendarService {
     return this.recurrence.cancelOccurrence(orgId, userId, eventId, occurrenceStartIso);
   }
 
-  exportEvents(orgId: string, userId: string, from: Date, to: Date) {
-    return this.calendarExport.exportEvents(orgId, userId, from, to);
+  exportEvents(orgId: string, userId: string, from: Date, to: Date, scope: DataScope = "all") {
+    return this.calendarExport.exportEvents(orgId, userId, from, to, scope);
   }
 }

@@ -4,9 +4,10 @@ import { PlatformService } from "./platform.service";
 import { PlatformAnalyticsService } from "./platform-analytics.service";
 import { PlatformAdminService } from "./platform-admin.service";
 import { PlatformOperatorAccessService } from "./platform-operator-access.service";
+import { PlatformOperatorAccessController } from "./platform-operator-access.controller";
 
 @Module({
-  controllers: [PlatformController],
+  controllers: [PlatformController, PlatformOperatorAccessController],
   providers: [PlatformService, PlatformAnalyticsService, PlatformAdminService, PlatformOperatorAccessService],
   exports: [PlatformService, PlatformAnalyticsService, PlatformAdminService, PlatformOperatorAccessService],
 })
