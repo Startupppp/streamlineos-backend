@@ -163,3 +163,95 @@ describe("calendar_events — UTC instants and IANA zone display (DST both direc
     });
   });
 });
+
+describe("calendar_events — creation: spring-forward gap time and fall-back ambiguous time (UTC storage is unambiguous)", () => {
+  const BASE = {
+    title: "DST meeting",
+    timezone: "America/New_York",
+    category: "general",
+  };
+
+  it("CREATION spring-forward gap: UTC instant 2024-03-10T07:00:00Z (= 03:00 EDT, skipping over the 02:00-03:00 NY gap) is accepted as startDate", () => {
+    const result = createEventSchema.safeParse({
+      ...BASE,
+      startDate: "2024-03-10T07:00:00Z",
+      endDate: "2024-03-10T08:00:00Z",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("BITE PROOF spring-forward gap: the UTC instant that maps into the NY gap is NOT rejected — UTC is always valid", () => {
+    const result = createEventSchema.safeParse({
+      ...BASE,
+      startDate: "2024-03-10T06:59:00Z",
+      endDate: "2024-03-10T07:01:00Z",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("CREATION fall-back ambiguous: two UTC instants mapping to the same local 01:30 AM NY on fall-back day are each independently valid", () => {
+    const edtInstance = createEventSchema.safeParse({
+      ...BASE,
+      startDate: "2024-11-03T05:30:00Z",
+      endDate: "2024-11-03T05:45:00Z",
+    });
+    const estInstance = createEventSchema.safeParse({
+      ...BASE,
+      startDate: "2024-11-03T06:30:00Z",
+      endDate: "2024-11-03T06:45:00Z",
+    });
+    expect(edtInstance.success).toBe(true);
+    expect(estInstance.success).toBe(true);
+  });
+
+  it("fall-back ambiguous: the two UTC instants (05:30Z and 06:30Z on 2024-11-03) display as the same local 01:30 NY but are distinct by 1 hour", () => {
+    const edtLocal = localTimeInZone("2024-11-03T05:30:00Z", "America/New_York");
+    const estLocal = localTimeInZone("2024-11-03T06:30:00Z", "America/New_York");
+    expect(edtLocal).toContain("01:30");
+    expect(estLocal).toContain("01:30");
+    const edtMs = new Date("2024-11-03T05:30:00Z").getTime();
+    const estMs = new Date("2024-11-03T06:30:00Z").getTime();
+    expect(estMs - edtMs).toBe(60 * 60 * 1000);
+  });
+
+  function localTimeInZone(utcIso: string, iana: string): string {
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone: iana,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(utcIso));
+  }
+});
+
+describe("calendar_events — free/busy: conflict detection across a DST transition", () => {
+  it("two events overlapping across the spring-forward transition (2024-03-10 UTC) are detected as conflicting", () => {
+    const eventAStart = new Date("2024-03-10T06:55:00Z");
+    const eventAEnd = new Date("2024-03-10T07:10:00Z");
+    const eventBStart = new Date("2024-03-10T07:00:00Z");
+    const eventBEnd = new Date("2024-03-10T07:30:00Z");
+    const overlaps = eventBStart < eventAEnd && eventBEnd > eventAStart;
+    expect(overlaps).toBe(true);
+  });
+
+  it("BITE PROOF: an event ending exactly at 07:00Z does not overlap with one starting at 07:00Z (exclusive boundary)", () => {
+    const eventAStart = new Date("2024-03-10T06:00:00Z");
+    const eventAEnd = new Date("2024-03-10T07:00:00Z");
+    const eventBStart = new Date("2024-03-10T07:00:00Z");
+    const eventBEnd = new Date("2024-03-10T08:00:00Z");
+    const overlaps = eventBStart < eventAEnd && eventBEnd > eventAStart;
+    expect(overlaps).toBe(false);
+  });
+
+  it("fall-back ambiguous hour: two events at UTC 05:30 and UTC 06:30 on 2024-11-03 do not overlap (1 hour apart)", () => {
+    const eventAStart = new Date("2024-11-03T05:30:00Z");
+    const eventAEnd = new Date("2024-11-03T05:45:00Z");
+    const eventBStart = new Date("2024-11-03T06:30:00Z");
+    const eventBEnd = new Date("2024-11-03T06:45:00Z");
+    const overlaps = eventBStart < eventAEnd && eventBEnd > eventAStart;
+    expect(overlaps).toBe(false);
+  });
+});

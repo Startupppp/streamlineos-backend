@@ -175,7 +175,11 @@ export class CalendarReminderSweepService {
 
       const eventIds = [...new Set(allCandidates.map((e) => e.id))];
       const attendees = await tx
-        .select({ eventId: eventAttendees.eventId, userId: organizationMembers.userId })
+        .select({
+          eventId: eventAttendees.eventId,
+          userId: organizationMembers.userId,
+          membershipId: eventAttendees.membershipId,
+        })
         .from(eventAttendees)
         .innerJoin(
           organizationMembers,
@@ -193,35 +197,37 @@ export class CalendarReminderSweepService {
         )
         .limit(EVENT_BATCH_LIMIT * 50);
 
-      const recipientsByEvent = new Map<number, string[]>();
+      const recipientsByEvent = new Map<number, { userId: string; membershipId: number }[]>();
       for (const attendee of attendees) {
         const recipients = recipientsByEvent.get(attendee.eventId) ?? [];
-        recipients.push(attendee.userId);
+        recipients.push({ userId: attendee.userId, membershipId: attendee.membershipId });
         recipientsByEvent.set(attendee.eventId, recipients);
       }
 
       for (const candidate of allCandidates) {
-        const targetUserIds = [...new Set(recipientsByEvent.get(candidate.id) ?? [])];
+        const recipients = recipientsByEvent.get(candidate.id) ?? [];
         const nominalIso = candidate.nominalStart.toISOString();
         const effectiveIso = candidate.startDate.toISOString();
-        const inserted = await tx
-          .insert(notificationOutbox)
-          .values({
-            orgId,
-            eventKey: "calendar.reminder",
-            dedupeKey: `calendar:reminder:${candidate.id}:${nominalIso}`,
-            actorUserId: null,
-            targetUserIds,
-            entityType: "calendar_event",
-            entityId: String(candidate.id),
-            title: `Upcoming event: ${candidate.title}`,
-            message: `"${candidate.title}" starts at ${effectiveIso}`,
-            link: "/calendar",
-            variables: { eventTitle: candidate.title, startIso: effectiveIso },
-          })
-          .onConflictDoNothing({ target: [notificationOutbox.orgId, notificationOutbox.dedupeKey] })
-          .returning({ id: notificationOutbox.id });
-        if (inserted.length > 0) intentsWritten += 1;
+        for (const { userId, membershipId } of recipients) {
+          const inserted = await tx
+            .insert(notificationOutbox)
+            .values({
+              orgId,
+              eventKey: "calendar.reminder",
+              dedupeKey: `calendar:reminder:${candidate.id}:${nominalIso}:${membershipId}`,
+              actorUserId: null,
+              targetUserIds: [userId],
+              entityType: "calendar_event",
+              entityId: String(candidate.id),
+              title: `Upcoming event: ${candidate.title}`,
+              message: `"${candidate.title}" starts at ${effectiveIso}`,
+              link: "/calendar",
+              variables: { eventTitle: candidate.title, startIso: effectiveIso },
+            })
+            .onConflictDoNothing({ target: [notificationOutbox.orgId, notificationOutbox.dedupeKey] })
+            .returning({ id: notificationOutbox.id });
+          if (inserted.length > 0) intentsWritten += 1;
+        }
 
         if (!candidate.isRecurring)
           await tx
