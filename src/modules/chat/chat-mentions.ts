@@ -32,12 +32,13 @@ export async function resolveMentionedUserIds(
       eq(chatChannelMembers.orgId, input.orgId),
       eq(chatChannelMembers.channelId, input.channelId),
     ),
-    columns: { userId: true },
+    columns: { membershipId: true },
+    with: { membership: { columns: { userId: true } } },
   });
 
   const recipients = members
-    .map((member) => member.userId)
-    .filter((userId) => userId !== input.senderId);
+    .map((member) => member.membership?.userId)
+    .filter((userId): userId is string => userId !== undefined && userId !== input.senderId);
 
   if (everyone) return recipients;
   return recipients.filter((userId) => claimed.has(userId));

@@ -6,6 +6,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ChatSearchService } from "./chat-search.service";
+import { actorOf } from "../entity-reference/entity-actor";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import {
@@ -33,7 +34,7 @@ export class ChatSearchController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.search.searchMessages(
-      { orgId: u.orgId, userId: u.userId, isOrgOwner: u.isOrgOwner },
+      actorOf(u),
       query.q,
       20,
       query.cursor,

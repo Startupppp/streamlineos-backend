@@ -8,7 +8,9 @@ function makeDb(members: { userId: string; name: string }[]) {
   return {
     query: {
       chatChannelMembers: {
-        findMany: jest.fn().mockResolvedValue(members.map((m) => ({ userId: m.userId }))),
+        findMany: jest.fn().mockResolvedValue(
+          members.map((m, i) => ({ membershipId: i + 1, membership: { userId: m.userId } })),
+        ),
       },
     },
   };

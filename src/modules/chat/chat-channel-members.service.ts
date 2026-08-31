@@ -51,7 +51,7 @@ export class ChatChannelMembersService {
   ): Promise<{ membershipId: number; role: string }> {
     const channel = await this.db.query.chatChannels.findFirst({
       where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
-      columns: { id: true },
+      columns: { id: true, isPrivate: true },
     });
     if (!channel) throw new NotFoundException("Channel not found");
     const membershipId = await this.resolveMembership(orgId, userId);
@@ -63,7 +63,10 @@ export class ChatChannelMembersService {
       ),
       columns: { role: true },
     });
-    if (!member) throw new ForbiddenException("You are not a member of this channel");
+    if (!member) {
+      if (channel.isPrivate) throw new NotFoundException("Channel not found");
+      throw new ForbiddenException("You are not a member of this channel");
+    }
     return { membershipId, role: member.role };
   }
 

@@ -28,9 +28,9 @@ function makeDb() {
     chatChannelMembers: {
       findFirst: jest.fn().mockResolvedValue({ userId: "sender" }),
       findMany: jest.fn().mockResolvedValue([
-        { userId: "sender" },
-        { userId: "user-alex" },
-        { userId: "user-alexander" },
+        { membershipId: 1, membership: { userId: "sender" } },
+        { membershipId: 2, membership: { userId: "user-alex" } },
+        { membershipId: 3, membership: { userId: "user-alexander" } },
       ]),
     },
     chatChannels: { findFirst: jest.fn().mockResolvedValue({ type: "PUBLIC" }) },

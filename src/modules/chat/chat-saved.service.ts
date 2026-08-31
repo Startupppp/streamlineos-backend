@@ -16,10 +16,12 @@ export class ChatSavedService {
 
   async list(actor: EntityActor, cursor?: number, limit = 30) {
     const safeLimit = Math.min(Math.max(1, limit), 100);
-    const actorFilter = actor.membershipId
-      ? eq(chatSavedMessages.membershipId, actor.membershipId)
-      : eq(chatSavedMessages.userId, actor.userId);
-    const conditions = [eq(chatSavedMessages.orgId, actor.orgId), actorFilter];
+    const membershipId = actor.membershipId;
+    if (!membershipId) return { items: [], nextCursor: undefined };
+    const conditions = [
+      eq(chatSavedMessages.orgId, actor.orgId),
+      eq(chatSavedMessages.membershipId, membershipId),
+    ];
     if (cursor) {
       conditions.push(lt(chatSavedMessages.id, cursor));
     }
@@ -61,12 +63,14 @@ export class ChatSavedService {
     });
     if (!message) throw new NotFoundException("Message not found");
 
-    if (!actor.membershipId) throw new ForbiddenException("Access denied");
+    const membershipId = actor.membershipId;
+    if (!membershipId) throw new ForbiddenException("Access denied");
+
     const membership = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.orgId, actor.orgId),
         eq(chatChannelMembers.channelId, message.channelId),
-        eq(chatChannelMembers.membershipId, actor.membershipId),
+        eq(chatChannelMembers.membershipId, membershipId),
       ),
     });
     if (!membership) throw new ForbiddenException("Access denied");
@@ -74,28 +78,34 @@ export class ChatSavedService {
     await this.db.insert(chatSavedMessages).values({
       orgId: actor.orgId,
       userId: actor.userId,
-      membershipId: actor.membershipId ?? null,
+      membershipId,
       messageId,
     }).onConflictDoNothing();
     return { ok: true };
   }
 
   async unsave(actor: EntityActor, messageId: number) {
-    const actorFilter = actor.membershipId
-      ? eq(chatSavedMessages.membershipId, actor.membershipId)
-      : eq(chatSavedMessages.userId, actor.userId);
+    const membershipId = actor.membershipId;
+    if (!membershipId) return { ok: true };
     await this.db
       .delete(chatSavedMessages)
-      .where(and(eq(chatSavedMessages.orgId, actor.orgId), actorFilter, eq(chatSavedMessages.messageId, messageId)));
+      .where(and(
+        eq(chatSavedMessages.orgId, actor.orgId),
+        eq(chatSavedMessages.membershipId, membershipId),
+        eq(chatSavedMessages.messageId, messageId),
+      ));
     return { ok: true };
   }
 
   async isSaved(actor: EntityActor, messageId: number) {
-    const actorFilter = actor.membershipId
-      ? eq(chatSavedMessages.membershipId, actor.membershipId)
-      : eq(chatSavedMessages.userId, actor.userId);
+    const membershipId = actor.membershipId;
+    if (!membershipId) return { saved: false };
     const row = await this.db.query.chatSavedMessages.findFirst({
-      where: and(eq(chatSavedMessages.orgId, actor.orgId), actorFilter, eq(chatSavedMessages.messageId, messageId)),
+      where: and(
+        eq(chatSavedMessages.orgId, actor.orgId),
+        eq(chatSavedMessages.membershipId, membershipId),
+        eq(chatSavedMessages.messageId, messageId),
+      ),
       columns: { id: true },
     });
     return { saved: Boolean(row) };
