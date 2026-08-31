@@ -73,6 +73,14 @@ function collectServiceFiles(dir) {
   return files;
 }
 
+export function projectsOnlyAggregates(chain) {
+  const start = chain.indexOf(".select(");
+  if (start === -1) return false;
+  const fromAt = chain.indexOf(".from(", start);
+  const projection = chain.slice(start, fromAt === -1 ? chain.length : fromAt);
+  return /\b(count|sum|avg|min|max)\s*\(/i.test(projection);
+}
+
 function isUnboundedSelect(src) {
   const lines = src.split("\n");
   const violations = [];
@@ -81,7 +89,11 @@ function isUnboundedSelect(src) {
     const line = lines[i];
     if (/\.select\(/.test(line) && !/.limit\(/.test(line)) {
       const lookahead = lines.slice(i, i + 12).join("\n");
-      if (!/.limit\(/.test(lookahead) && !/\.findMany\(/.test(lookahead)) {
+      if (
+        !/.limit\(/.test(lookahead) &&
+        !/\.findMany\(/.test(lookahead) &&
+        !projectsOnlyAggregates(lookahead)
+      ) {
         violations.push({ lineNo: i + 1, text: line.trim() });
       }
     }
@@ -169,6 +181,38 @@ function runSelfTests() {
   }
   if (hasOffsetUsage(knownGoodOffset).length > 0) {
     console.error("SELF-TEST FAIL: known-good keyset was incorrectly flagged as offset");
+    process.exit(1);
+  }
+
+  const aggregateOnly = `
+    async total() {
+      return this.db.select({ count: count() }).from(t).where(eq(t.orgId, orgId));
+    }
+  `;
+  if (isUnboundedSelect(aggregateOnly).length > 0) {
+    console.error("SELF-TEST FAIL: an aggregate-only projection was flagged as an unbounded read");
+    process.exit(1);
+  }
+  const rawSqlAggregate = `
+    async totals() {
+      return this.db
+        .select({ total: sql\`COUNT(*)::int\` })
+        .from(t)
+        .where(and(...f));
+    }
+  `;
+  if (isUnboundedSelect(rawSqlAggregate).length > 0) {
+    console.error("SELF-TEST FAIL: an uppercase raw-SQL COUNT(*) projection was flagged as unbounded");
+    process.exit(1);
+  }
+
+  const rowsNotAggregates = `
+    async everyRow() {
+      return this.db.select({ id: t.id, name: t.name }).from(t).where(eq(t.orgId, orgId));
+    }
+  `;
+  if (isUnboundedSelect(rowsNotAggregates).length === 0) {
+    console.error("SELF-TEST FAIL: a row-returning select with no .limit() was not flagged");
     process.exit(1);
   }
 
