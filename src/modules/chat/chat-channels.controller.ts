@@ -352,7 +352,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.typing.setTyping(channelId, u.userId);
+    await this.typing.setTyping(channelId, u.orgId, u.userId);
     return { ok: true };
   }
 
@@ -365,7 +365,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.typing.getTyping(channelId, u.userId);
+    return this.typing.getTyping(channelId, u.orgId, u.userId);
   }
 
   @ApiOperation({ summary: "Update a channel member's role (ADMIN/MEMBER)" })

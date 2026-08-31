@@ -36,31 +36,17 @@ export class ChatMessageTimelineService {
     channelId: number,
     orgId: string,
     membershipId?: number | null,
-    userId?: string,
   ): Promise<boolean> {
-    if (membershipId) {
-      const m = await this.db.query.chatChannelMembers.findFirst({
-        where: and(
-          eq(chatChannelMembers.orgId, orgId),
-          eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.membershipId, membershipId),
-        ),
-        columns: { id: true },
-      });
-      if (m) return true;
-    }
-    if (userId) {
-      const m = await this.db.query.chatChannelMembers.findFirst({
-        where: and(
-          eq(chatChannelMembers.orgId, orgId),
-          eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, userId),
-        ),
-        columns: { id: true },
-      });
-      return Boolean(m);
-    }
-    return false;
+    if (!membershipId) return false;
+    const m = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
+        eq(chatChannelMembers.orgId, orgId),
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.membershipId, membershipId),
+      ),
+      columns: { id: true },
+    });
+    return Boolean(m);
   }
 
   private withResolvedReferences<
@@ -120,7 +106,7 @@ export class ChatMessageTimelineService {
     });
     if (!channel) throw new NotFoundException("Channel not found");
 
-    if (!(await this.isMember(channelId, actor.orgId, actor.membershipId, actor.userId))) {
+    if (!(await this.isMember(channelId, actor.orgId, actor.membershipId))) {
       if (channel.type !== "PUBLIC") throw new NotFoundException("Channel not found");
       throw new ForbiddenException("You are not a member of this channel");
     }
@@ -161,7 +147,7 @@ export class ChatMessageTimelineService {
     });
     if (!channel) throw new NotFoundException("Channel not found");
 
-    if (!(await this.isMember(channelId, actor.orgId, actor.membershipId, actor.userId))) {
+    if (!(await this.isMember(channelId, actor.orgId, actor.membershipId))) {
       if (channel.type !== "PUBLIC") throw new NotFoundException("Channel not found");
       throw new ForbiddenException("You are not a member of this channel");
     }
@@ -207,7 +193,7 @@ export class ChatMessageTimelineService {
 
     if (!rawParent) throw new NotFoundException("Message not found");
 
-    if (!(await this.isMember(rawParent.channelId, actor.orgId, actor.membershipId, actor.userId))) {
+    if (!(await this.isMember(rawParent.channelId, actor.orgId, actor.membershipId))) {
       const parentChannel = await this.db.query.chatChannels.findFirst({
         where: and(eq(chatChannels.id, rawParent.channelId), eq(chatChannels.orgId, actor.orgId)),
         columns: { type: true },

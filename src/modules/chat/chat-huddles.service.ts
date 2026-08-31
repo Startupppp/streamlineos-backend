@@ -138,12 +138,9 @@ export class ChatHuddlesService {
     });
 
     const channelMembers = await this.db
-      .select({ userId: chatChannelMembers.userId, membershipId: organizationMembers.id })
+      .select({ userId: organizationMembers.userId, membershipId: chatChannelMembers.membershipId })
       .from(chatChannelMembers)
-      .innerJoin(organizationMembers, and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, chatChannelMembers.userId),
-      ))
+      .innerJoin(organizationMembers, eq(organizationMembers.id, chatChannelMembers.membershipId))
       .where(and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)));
 
     const starterMembershipId = channelMembers.find((m) => m.userId === userId)?.membershipId ?? null;

@@ -7,6 +7,7 @@ import { ChatTypingService } from "./chat-typing.service";
 const db = {
   query: {
     chatChannelMembers: { findFirst: jest.fn() },
+    organizationMembers: { findFirst: jest.fn() },
     users: { findFirst: jest.fn() },
   },
 };
@@ -36,16 +37,18 @@ describe("ChatTypingService", () => {
   });
 
   it("rejects a typing mutation when the actor is not in the channel", async () => {
+    db.query.organizationMembers.findFirst.mockResolvedValue(null);
     db.query.chatChannelMembers.findFirst.mockResolvedValue(undefined);
 
-    await expect(service.setTyping(12, "user-2")).rejects.toThrow(ForbiddenException);
+    await expect(service.setTyping(12, "org-1", "user-2")).rejects.toThrow(ForbiddenException);
     expect(redis.hset).not.toHaveBeenCalled();
   });
 
   it("rejects typing reads when the actor is not in the channel", async () => {
+    db.query.organizationMembers.findFirst.mockResolvedValue(null);
     db.query.chatChannelMembers.findFirst.mockResolvedValue(undefined);
 
-    await expect(service.getTyping(12, "user-2")).rejects.toThrow(ForbiddenException);
+    await expect(service.getTyping(12, "org-1", "user-2")).rejects.toThrow(ForbiddenException);
     expect(redis.hgetall).not.toHaveBeenCalled();
   });
 });

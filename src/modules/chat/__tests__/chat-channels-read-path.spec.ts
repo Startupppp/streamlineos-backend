@@ -6,6 +6,7 @@ import type { EntityActor } from "../../entity-reference/entity-reference.types"
 const actor: EntityActor = {
   userId: "user-1",
   orgId: "org-1",
+  membershipId: 10,
   isOrgOwner: false,
   permissions: [],
 } as unknown as EntityActor;

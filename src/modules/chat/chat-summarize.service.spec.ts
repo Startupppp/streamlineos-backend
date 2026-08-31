@@ -22,6 +22,9 @@ const makeMessages = (count: number) =>
 function buildDb(memberResult: unknown, messagesResult: unknown[]) {
   return {
     query: {
+      organizationMembers: {
+        findFirst: jest.fn().mockResolvedValue({ id: 1 }),
+      },
       chatChannelMembers: {
         findFirst: jest.fn().mockResolvedValue(memberResult),
       },

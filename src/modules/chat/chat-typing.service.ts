@@ -1,7 +1,7 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { Redis } from "@upstash/redis";
 import { and, eq } from "drizzle-orm";
-import { chatChannelMembers, users } from "../../db/schema";
+import { chatChannelMembers, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { REDIS } from "../../common/cache/cache.service";
@@ -25,19 +25,30 @@ export class ChatTypingService {
     return `chat:typing:${channelId}`;
   }
 
-  private async assertChannelMember(channelId: number, userId: string): Promise<void> {
-    const membership = await this.db.query.chatChannelMembers.findFirst({
+  private async assertChannelMember(channelId: number, orgId: string, userId: string): Promise<void> {
+    const orgMember = await this.db.query.organizationMembers.findFirst({
       where: and(
-        eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.userId, userId),
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
       ),
       columns: { id: true },
     });
+    const membership = orgMember
+      ? await this.db.query.chatChannelMembers.findFirst({
+          where: and(
+            eq(chatChannelMembers.orgId, orgId),
+            eq(chatChannelMembers.channelId, channelId),
+            eq(chatChannelMembers.membershipId, orgMember.id),
+          ),
+          columns: { id: true },
+        })
+      : null;
     if (!membership) throw new ForbiddenException("You are not a member of this channel");
   }
 
-  async setTyping(channelId: number, userId: string): Promise<void> {
-    await this.assertChannelMember(channelId, userId);
+  async setTyping(channelId: number, orgId: string, userId: string): Promise<void> {
+    await this.assertChannelMember(channelId, orgId, userId);
     if (!this.redis) return;
 
     const me = await this.db.query.users.findFirst({
@@ -59,8 +70,8 @@ export class ChatTypingService {
     }
   }
 
-  async getTyping(channelId: number, currentUserId: string) {
-    await this.assertChannelMember(channelId, currentUserId);
+  async getTyping(channelId: number, orgId: string, currentUserId: string) {
+    await this.assertChannelMember(channelId, orgId, currentUserId);
     if (!this.redis) return [];
 
     let state: Record<string, TypingEntry> | null;

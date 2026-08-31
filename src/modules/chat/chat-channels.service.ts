@@ -1,4 +1,4 @@
-import { Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, gt, inArray, isNotNull, isNull } from "drizzle-orm";
 import {
   chatChannelMembers,
@@ -127,7 +127,8 @@ export class ChatChannelsService {
   }
 
   private async listMemberChannels(actor: EntityActor, archived: boolean) {
-    const { userId, orgId } = actor;
+    const { orgId } = actor;
+    if (!actor.membershipId) return [];
     try {
       const memberships = await this.db
         .select({ channelId: chatChannelMembers.channelId })
@@ -135,9 +136,7 @@ export class ChatChannelsService {
         .where(
           and(
             eq(chatChannelMembers.orgId, orgId),
-            actor.membershipId !== undefined
-              ? eq(chatChannelMembers.membershipId, actor.membershipId)
-              : eq(chatChannelMembers.userId, userId),
+            eq(chatChannelMembers.membershipId, actor.membershipId),
             archived ? isNotNull(chatChannelMembers.archivedAt) : isNull(chatChannelMembers.archivedAt),
           ),
         );
@@ -156,14 +155,14 @@ export class ChatChannelsService {
         limit: 100,
         with: {
           members: {
-            with: { user: { columns: { id: true, name: true, image: true } } },
+            with: { membership: { columns: { id: true, userId: true }, with: { user: { columns: { id: true, name: true, image: true } } } } },
           },
         },
       });
 
       const unreadRows = await this.cache.cachedVersioned(
         `chat:unread:${orgId}`,
-        userId,
+        actor.userId,
         () =>
           this.db
             .select({ channelId: chatMessages.channelId, count: count() })
@@ -172,9 +171,7 @@ export class ChatChannelsService {
               chatChannelMembers,
               and(
                 eq(chatChannelMembers.channelId, chatMessages.channelId),
-                actor.membershipId !== undefined
-                  ? eq(chatChannelMembers.membershipId, actor.membershipId)
-                  : eq(chatChannelMembers.userId, userId),
+                eq(chatChannelMembers.membershipId, actor.membershipId!),
               ),
             )
             .where(
@@ -253,7 +250,7 @@ export class ChatChannelsService {
       limit: 100,
       with: {
         members: {
-          columns: { userId: true, membershipId: true },
+          columns: { membershipId: true },
         },
       },
     });
@@ -265,10 +262,7 @@ export class ChatChannelsService {
       avatarUrl: ch.avatarUrl,
       type: ch.type,
       memberCount: ch.members.length,
-      isMember: ch.members.some((m) =>
-        m.membershipId === currentMembershipId ||
-        (m.membershipId === null && m.userId === userId),
-      ),
+      isMember: ch.members.some((m) => m.membershipId === currentMembershipId),
       createdAt: ch.createdAt,
       lastMessageAt: ch.lastMessageAt,
     }));
@@ -282,10 +276,15 @@ export class ChatChannelsService {
       const isSelfDm = targetUserId === userId;
       await assertUsersInOrg(this.db, orgId, [targetUserId]);
 
+      const targetMembershipId = isSelfDm
+        ? creatorMembershipId
+        : (await this.membershipId(orgId, targetUserId));
+      if (targetMembershipId === null) throw new NotFoundException("User not found in this organization");
+
       const myMemberships = await this.db
         .select({ channelId: chatChannelMembers.channelId })
         .from(chatChannelMembers)
-        .where(eq(chatChannelMembers.userId, userId));
+        .where(and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.membershipId, creatorMembershipId)));
 
       if (myMemberships.length > 0) {
         const channelIds = myMemberships.map((c) => c.channelId);
@@ -295,14 +294,14 @@ export class ChatChannelsService {
             eq(chatChannels.type, "DIRECT"),
             eq(chatChannels.orgId, orgId),
           ),
-          with: { members: true },
+          with: { members: { columns: { membershipId: true } } },
         });
 
         const dmChannel = existingDMs.find((ch) =>
           isSelfDm
-            ? ch.members.length === 1 && ch.members[0]?.userId === userId
+            ? ch.members.length === 1 && ch.members[0]?.membershipId === creatorMembershipId
             : ch.members.length === 2 &&
-              ch.members.some((m) => m.userId === targetUserId),
+              ch.members.some((m) => m.membershipId === targetMembershipId),
         );
 
         if (dmChannel) return { channel: dmChannel, created: false };
@@ -318,11 +317,6 @@ export class ChatChannelsService {
           columns: { name: true },
         }),
       ]);
-      const targetMembershipId = isSelfDm
-        ? creatorMembershipId
-        : (await this.membershipId(orgId, targetUserId));
-      if (targetMembershipId === null) throw new NotFoundException("User not found in this organization");
-
       const channel = await this.db.transaction(async (tx) => {
         const [created] = await tx
           .insert(chatChannels)
@@ -337,18 +331,12 @@ export class ChatChannelsService {
           })
           .returning();
 
-      await tx.insert(chatChannelMembers).values(
+        await tx.insert(chatChannelMembers).values(
           isSelfDm
-            ? [{ orgId, channelId: created.id, userId, membershipId: creatorMembershipId, role: "MEMBER" }]
+            ? [{ orgId, channelId: created.id, membershipId: creatorMembershipId, role: "MEMBER" }]
             : [
-                { orgId, channelId: created.id, userId, membershipId: creatorMembershipId, role: "MEMBER" },
-                {
-                  orgId,
-                  channelId: created.id,
-                  userId: targetUserId,
-                  membershipId: targetMembershipId,
-                  role: "MEMBER",
-                },
+                { orgId, channelId: created.id, membershipId: creatorMembershipId, role: "MEMBER" },
+                { orgId, channelId: created.id, membershipId: targetMembershipId, role: "MEMBER" },
               ],
         );
 
@@ -394,8 +382,7 @@ export class ChatChannelsService {
         allMembers.map((uid) => ({
           orgId,
           channelId: created.id,
-          userId: uid,
-          membershipId: membershipByUser.get(uid),
+          membershipId: membershipByUser.get(uid)!,
           role: uid === userId ? "ADMIN" : "MEMBER",
         })),
       );
@@ -430,12 +417,14 @@ export class ChatChannelsService {
       ),
       with: {
         members: {
-          with: { user: { columns: { id: true, name: true, image: true } } },
+          with: { membership: { columns: { id: true, userId: true }, with: { user: { columns: { id: true, name: true, image: true } } } } },
         },
       },
     });
 
     if (existing) return this.resolveEntityChannelDisplayName(existing, actor);
+
+    if (!actor.membershipId) throw new ForbiddenException("Membership required to create a channel");
 
     return this.db.transaction(async (tx) => {
       const [created] = await tx
@@ -445,7 +434,7 @@ export class ChatChannelsService {
           name: resolution.card.title,
           type: "GROUP",
           createdBy: actor.userId,
-          ...(actor.membershipId === undefined ? {} : { createdByMembershipId: actor.membershipId }),
+          createdByMembershipId: actor.membershipId,
           entityType,
           entityId,
         })
@@ -454,8 +443,7 @@ export class ChatChannelsService {
       await tx.insert(chatChannelMembers).values({
         orgId: actor.orgId,
         channelId: created.id,
-        userId: actor.userId,
-        ...(actor.membershipId === undefined ? {} : { membershipId: actor.membershipId }),
+        membershipId: actor.membershipId,
         role: "ADMIN",
       });
 

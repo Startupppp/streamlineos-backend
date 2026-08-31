@@ -9581,6 +9581,38 @@
         "x-idempotent": true
       }
     },
+    "/accounting/reminders/effectiveness": {
+      "get": {
+        "operationId": "RemindersController_effectiveness",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "Reminders"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "accounting:reminders:read",
+        "description": "Exposure: permission — accounting:reminders:read"
+      }
+    },
     "/accounting/reminders/log": {
       "get": {
         "operationId": "RemindersController_listLog",
@@ -15604,7 +15636,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:ai:use",
-        "description": "Exposure: permission — crm:ai:use"
+        "description": "Exposure: permission — crm:ai:use",
+        "x-bodyless": true
       }
     },
     "/ai/crm/deals/{dealId}/summary-with-citations": {
@@ -15656,7 +15689,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:ai:use",
-        "description": "Exposure: permission — crm:ai:use"
+        "description": "Exposure: permission — crm:ai:use",
+        "x-bodyless": true
       }
     },
     "/ai/crm/duplicate-suggestions/{leadId}": {
@@ -15708,7 +15742,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:ai:use",
-        "description": "Exposure: permission — crm:ai:use"
+        "description": "Exposure: permission — crm:ai:use",
+        "x-bodyless": true
       }
     },
     "/ai/crm/email-draft": {
@@ -15841,7 +15876,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:ai:use",
-        "description": "Exposure: permission — crm:ai:use"
+        "description": "Exposure: permission — crm:ai:use",
+        "x-bodyless": true
       }
     },
     "/ai/crm/leads/{leadId}/summary-with-citations": {
@@ -15893,7 +15929,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:ai:use",
-        "description": "Exposure: permission — crm:ai:use"
+        "description": "Exposure: permission — crm:ai:use",
+        "x-bodyless": true
       }
     },
     "/ai/crm/meeting-follow-up": {
@@ -16350,7 +16387,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "ai:executive-brief:generate",
-        "description": "Exposure: permission — ai:executive-brief:generate"
+        "description": "Exposure: permission — ai:executive-brief:generate",
+        "x-bodyless": true
       }
     },
     "/ai/feedback": {
@@ -17907,7 +17945,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:ai:use",
-        "description": "Exposure: permission — build:ai:use"
+        "description": "Exposure: permission — build:ai:use",
+        "x-bodyless": true
       }
     },
     "/ai/projects/{projectId}/client-update": {
@@ -17958,7 +17997,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:ai:use",
-        "description": "Exposure: permission — build:ai:use"
+        "description": "Exposure: permission — build:ai:use",
+        "x-bodyless": true
       }
     },
     "/ai/projects/{projectId}/extract-tasks": {
@@ -18089,7 +18129,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:ai:use",
-        "description": "Exposure: permission — build:ai:use"
+        "description": "Exposure: permission — build:ai:use",
+        "x-bodyless": true
       }
     },
     "/ai/projects/{projectId}/plan": {
@@ -18211,7 +18252,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:ai:use",
-        "description": "Exposure: permission — build:ai:use"
+        "description": "Exposure: permission — build:ai:use",
+        "x-bodyless": true
       }
     },
     "/ai/projects/{projectId}/summary": {
@@ -18262,7 +18304,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:ai:use",
-        "description": "Exposure: permission — build:ai:use"
+        "description": "Exposure: permission — build:ai:use",
+        "x-bodyless": true
       }
     },
     "/ai/projects/{projectId}/tickets/draft/improve-description": {
@@ -18976,7 +19019,96 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "ai:summaries:create",
-        "description": "Exposure: permission — ai:summaries:create"
+        "description": "Exposure: permission — ai:summaries:create",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "summary": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "structured": {
+                    "type": "object",
+                    "properties": {
+                      "highlights": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "blockers": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "nextActions": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "highlights",
+                      "blockers",
+                      "nextActions"
+                    ]
+                  },
+                  "citations": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "number"
+                            }
+                          ]
+                        },
+                        "title": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "href": {
+                          "type": "string"
+                        },
+                        "snippet": {
+                          "type": "string"
+                        },
+                        "freshness": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "title"
+                      ]
+                    }
+                  },
+                  "correlationId": {
+                    "type": "string"
+                  },
+                  "confidence": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "summary",
+                  "structured"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/ai/summarize": {
@@ -19099,7 +19231,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "surveys:ai:use",
-        "description": "Exposure: permission — surveys:ai:use"
+        "description": "Exposure: permission — surveys:ai:use",
+        "x-bodyless": true
       }
     },
     "/ai/tickets/{projectId}/{ticketId}/generate-checklist": {
@@ -19159,7 +19292,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:ai:use",
-        "description": "Exposure: permission — build:ai:use"
+        "description": "Exposure: permission — build:ai:use",
+        "x-bodyless": true
       }
     },
     "/ai/tickets/{projectId}/{ticketId}/handoff": {
@@ -19219,7 +19353,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:ai:use",
-        "description": "Exposure: permission — build:ai:use"
+        "description": "Exposure: permission — build:ai:use",
+        "x-bodyless": true
       }
     },
     "/ai/tickets/{projectId}/{ticketId}/improve-description": {
@@ -19355,7 +19490,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:ai:use",
-        "description": "Exposure: permission — build:ai:use"
+        "description": "Exposure: permission — build:ai:use",
+        "x-bodyless": true
       }
     },
     "/ai/tickets/{projectId}/{ticketId}/summarize": {
@@ -19415,7 +19551,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:ai:use",
-        "description": "Exposure: permission — build:ai:use"
+        "description": "Exposure: permission — build:ai:use",
+        "x-bodyless": true
       }
     },
     "/ai/tickets/{projectId}/{ticketId}/summarize-comments": {
@@ -19475,7 +19612,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:ai:use",
-        "description": "Exposure: permission — build:ai:use"
+        "description": "Exposure: permission — build:ai:use",
+        "x-bodyless": true
       }
     },
     "/api-tokens": {
@@ -47860,7 +47998,55 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "ai:chat:use",
-        "description": "Exposure: permission — ai:chat:use"
+        "description": "Exposure: permission — ai:chat:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "messages": {
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "user",
+                            "assistant"
+                          ]
+                        },
+                        "content": {
+                          "type": "string",
+                          "maxLength": 10000
+                        }
+                      },
+                      "required": [
+                        "role",
+                        "content"
+                      ]
+                    }
+                  },
+                  "conversationId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "persona": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "messages"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/chat/ably-token": {
@@ -51131,7 +51317,26 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "ai:chat:use",
-        "description": "Exposure: permission — ai:chat:use"
+        "description": "Exposure: permission — ai:chat:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "token"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/chat/conversations": {
@@ -51199,7 +51404,24 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "ai:chat:use",
-        "description": "Exposure: permission — ai:chat:use"
+        "description": "Exposure: permission — ai:chat:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/chat/conversations/{conversationId}": {
@@ -51250,7 +51472,27 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "ai:chat:use",
-        "description": "Exposure: permission — ai:chat:use"
+        "description": "Exposure: permission — ai:chat:use",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "title"
+                ]
+              }
+            }
+          }
+        }
       },
       "delete": {
         "operationId": "ChatAssistantController_deleteConversation",
@@ -80552,127 +80794,6 @@
         "x-idempotent": true
       }
     },
-    "/gdpr/export/{personId}": {
-      "post": {
-        "operationId": "GdprController_exportPersonData",
-        "parameters": [
-          {
-            "name": "personId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "Gdpr"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "hr:retention:manage",
-        "description": "Exposure: permission — hr:retention:manage",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "reason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 500
-                  }
-                },
-                "additionalProperties": false
-              }
-            }
-          }
-        }
-      }
-    },
-    "/gdpr/export/me": {
-      "post": {
-        "operationId": "GdprController_exportOwnData",
-        "parameters": [],
-        "responses": {
-          "201": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "Gdpr"
-        ],
-        "x-exposure": "in-service",
-        "x-authorized-in-service": "JWT sub is the subject — caller exports only their own data; identity derived from the token, never accepted from the client",
-        "description": "Exposure: authorized in service — JWT sub is the subject — caller exports only their own data; identity derived from the token, never accepted from the client",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "reason": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 500
-                  }
-                },
-                "additionalProperties": false
-              }
-            }
-          }
-        }
-      }
-    },
     "/goals": {
       "get": {
         "operationId": "GoalsController_list",
@@ -103541,7 +103662,8 @@
         "x-permission": "hr:expenses:approve",
         "description": "Exposure: permission — hr:expenses:approve",
         "x-idempotency-command": "expenses.expense.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/expenses/{expenseId}/reject": {
@@ -103671,7 +103793,8 @@
         "x-permission": "hr:expenses:create",
         "description": "Exposure: permission — hr:expenses:create",
         "x-idempotency-command": "expenses.expense.submit",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/expenses/categories": {
@@ -103897,73 +104020,6 @@
             }
           }
         }
-      }
-    },
-    "/hr/expenses/export-data": {
-      "get": {
-        "operationId": "ExpensesController_exportData",
-        "parameters": [
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "DRAFT",
-                "SUBMITTED",
-                "PENDING",
-                "APPROVED",
-                "REJECTED",
-                "REIMBURSEMENT_PENDING",
-                "REIMBURSED",
-                "PAID"
-              ]
-            }
-          },
-          {
-            "name": "startDate",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "endDate",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "Expenses"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "hr:expenses:read",
-        "description": "Exposure: permission — hr:expenses:read"
       }
     },
     "/hr/expenses/export/jobs": {
@@ -120209,7 +120265,28 @@
     "/hr/payroll/salary-structures": {
       "get": {
         "operationId": "SalaryStructureTemplatesController_list",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -140923,7 +141000,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:travel:manage",
-        "description": "Exposure: permission — hr:travel:manage"
+        "description": "Exposure: permission — hr:travel:manage",
+        "x-bodyless": true
       }
     },
     "/hr/travel/{travelRequestId}/manager-approve": {
@@ -140975,7 +141053,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:travel:manage",
-        "description": "Exposure: permission — hr:travel:manage"
+        "description": "Exposure: permission — hr:travel:manage",
+        "x-bodyless": true
       }
     },
     "/hr/travel/{travelRequestId}/reject": {
@@ -144377,7 +144456,176 @@
           "InternalAudit"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "userId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "orgId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "targetId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "targetType": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "actorUserId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "actorMembershipId": {
+                    "anyOf": [
+                      {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resourceType": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "resourceId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "metadata": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "ipAddress": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "result": {
+                    "type": "string",
+                    "enum": [
+                      "SUCCESS",
+                      "FAILURE"
+                    ]
+                  },
+                  "requestId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "userAgent": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "before": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "after": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "action",
+                  "userId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/inventory/3pl/connections": {
@@ -171321,6 +171569,77 @@
         "description": "Exposure: universal — any authenticated member, subject from the token"
       }
     },
+    "/me/inbox/unified": {
+      "get": {
+        "operationId": "InboxController_unified",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 25,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "kinds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "unreadOnly",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "0",
+                "1",
+                "true",
+                "false"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "Inbox"
+        ],
+        "x-exposure": "universal",
+        "description": "Exposure: universal — any authenticated member, subject from the token"
+      }
+    },
     "/me/login-history": {
       "get": {
         "operationId": "MeController_getLoginHistory",
@@ -184808,6 +185127,31 @@
         "x-exposure": "permissioned",
         "x-permission": "party:merges:manage",
         "description": "Exposure: permission — party:merges:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "leftPartyId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "rightPartyId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "leftPartyId",
+                  "rightPartyId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "x-idempotency-command": "party.merge",
         "x-idempotent": true
       }
@@ -185736,6 +186080,26 @@
         "x-exposure": "permissioned",
         "x-permission": "party:roles:manage",
         "description": "Exposure: permission — party:roles:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "role"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "x-idempotency-command": "party.role.add",
         "x-idempotent": true
       }
@@ -190449,7 +190813,30 @@
     "/payroll/filings": {
       "get": {
         "operationId": "PayrollFilingsController_list",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -191170,6 +191557,28 @@
             "schema": {
               "type": "integer",
               "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
               "maximum": 9007199254740991
             }
           }
@@ -192140,7 +192549,28 @@
     "/payroll/me/reimbursements": {
       "get": {
         "operationId": "EssController_listReimbursements",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -193034,7 +193464,30 @@
     "/payroll/payslip-templates": {
       "get": {
         "operationId": "PayslipTemplatesController_list",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -196211,6 +196664,28 @@
                 "OVERRIDDEN"
               ]
             }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
           }
         ],
         "responses": {
@@ -196484,6 +196959,28 @@
             "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -197774,6 +198271,26 @@
               "type": "string",
               "maxLength": 30
             }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
           }
         ],
         "responses": {
@@ -197954,6 +198471,26 @@
             "schema": {
               "type": "string",
               "maxLength": 30
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
             }
           }
         ],
@@ -198830,8 +199367,8 @@
           "PlatformOperatorAccess"
         ],
         "x-exposure": "in-service",
-        "x-authorized-in-service": "INTERNAL_API_SECRET header — StreamlineOS platform admin only; grants are time-bounded and audit-logged",
-        "description": "Exposure: authorized in service — INTERNAL_API_SECRET header — StreamlineOS platform admin only; grants are time-bounded and audit-logged",
+        "x-authorized-in-service": "INTERNAL_API_SECRET header — StreamlineOS platform admin only; creates a pending grant requiring a second approver",
+        "description": "Exposure: authorized in service — INTERNAL_API_SECRET header — StreamlineOS platform admin only; creates a pending grant requiring a second approver",
         "requestBody": {
           "required": true,
           "content": {
@@ -198901,6 +199438,19 @@
               "minLength": 1,
               "maxLength": 256
             }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending",
+                "active",
+                "rejected"
+              ]
+            }
           }
         ],
         "responses": {
@@ -198924,8 +199474,8 @@
           "PlatformOperatorAccess"
         ],
         "x-exposure": "in-service",
-        "x-authorized-in-service": "INTERNAL_API_SECRET header — StreamlineOS platform admin only; lists active grants for an org",
-        "description": "Exposure: authorized in service — INTERNAL_API_SECRET header — StreamlineOS platform admin only; lists active grants for an org"
+        "x-authorized-in-service": "INTERNAL_API_SECRET header — StreamlineOS platform admin only; lists grants for an org (default: active only)",
+        "description": "Exposure: authorized in service — INTERNAL_API_SECRET header — StreamlineOS platform admin only; lists grants for an org (default: active only)"
       }
     },
     "/platform/operator-access/grants/{grantId}": {
@@ -198971,8 +199521,144 @@
           "PlatformOperatorAccess"
         ],
         "x-exposure": "in-service",
-        "x-authorized-in-service": "INTERNAL_API_SECRET header — StreamlineOS platform admin only; revokes an active grant; revokedAt + reason stored on the grant row serve as the audit record",
-        "description": "Exposure: authorized in service — INTERNAL_API_SECRET header — StreamlineOS platform admin only; revokes an active grant; revokedAt + reason stored on the grant row serve as the audit record",
+        "x-authorized-in-service": "INTERNAL_API_SECRET header — StreamlineOS platform admin only; revokes an active grant immediately",
+        "description": "Exposure: authorized in service — INTERNAL_API_SECRET header — StreamlineOS platform admin only; revokes an active grant immediately",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "reason"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform/operator-access/grants/{grantId}/approve": {
+      "post": {
+        "operationId": "PlatformOperatorAccessController_approveGrant",
+        "parameters": [
+          {
+            "name": "grantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "PlatformOperatorAccess"
+        ],
+        "x-exposure": "in-service",
+        "x-authorized-in-service": "INTERNAL_API_SECRET header — approves a pending grant; approverId must differ from the original requester (grantedBy)",
+        "description": "Exposure: authorized in service — INTERNAL_API_SECRET header — approves a pending grant; approverId must differ from the original requester (grantedBy)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "approverId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "approverId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/platform/operator-access/grants/{grantId}/reject": {
+      "post": {
+        "operationId": "PlatformOperatorAccessController_rejectGrant",
+        "parameters": [
+          {
+            "name": "grantId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "PlatformOperatorAccess"
+        ],
+        "x-exposure": "in-service",
+        "x-authorized-in-service": "INTERNAL_API_SECRET header — rejects a pending grant; reason stored in revocation_reason",
+        "description": "Exposure: authorized in service — INTERNAL_API_SECRET header — rejects a pending grant; reason stored in revocation_reason",
         "requestBody": {
           "required": true,
           "content": {
@@ -233679,7 +234365,8 @@
         "x-permission": "settings:organization:manage",
         "description": "Exposure: permission — settings:organization:manage",
         "x-idempotency-command": "users.signin-link.send",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/users/{userId}/sessions": {
@@ -234704,7 +235391,8 @@
         "x-permission": "settings:organization:manage",
         "description": "Exposure: permission — settings:organization:manage",
         "x-idempotency-command": "users.invitation.resend",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/users/invitations/{invitationId}/role": {

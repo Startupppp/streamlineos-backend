@@ -45,6 +45,7 @@ describe("Chat mutation services — cross-tenant isolation", () => {
   const actor = { orgId: "org-attacker", userId: "user-attacker", isOrgOwner: false };
 
   it("ChatPinsService binds membership to the actor organization and denies before pin mutation", async () => {
+    const actorWithMembership = { ...actor, membershipId: 99 };
     const db = {
       query: {
         chatChannelMembers: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -61,10 +62,11 @@ describe("Chat mutation services — cross-tenant isolation", () => {
     }).compile();
     const service = module.get(ChatPinsService);
 
-    await expect(service.pin(27, 91, actor)).rejects.toThrow(ForbiddenException);
+    await expect(service.pin(27, 91, actorWithMembership)).rejects.toThrow(ForbiddenException);
 
     const membershipQuery = db.query.chatChannelMembers.findFirst.mock.calls[0]?.[0];
     expect(sqlValues(membershipQuery?.where)).toContain(actor.orgId);
+    expect(sqlValues(membershipQuery?.where)).toContain(actorWithMembership.membershipId);
     expect(db.query.chatMessages.findFirst).not.toHaveBeenCalled();
     expect(db.insert).not.toHaveBeenCalled();
   });

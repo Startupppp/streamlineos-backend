@@ -19,7 +19,7 @@ import { ChatMessageTimelineService } from "./chat-message-timeline.service";
 
 const dialect = new PgDialect();
 const CHANNEL_ID = 7;
-const ACTOR: EntityActor = { userId: "user-1", orgId: "org-1", isOrgOwner: false };
+const ACTOR: EntityActor = { userId: "user-1", orgId: "org-1", membershipId: 1, isOrgOwner: false };
 
 interface StoredMessage {
   id: number;

@@ -74,38 +74,24 @@ export class ChatMessagesService {
     channelId: number,
     orgId: string,
     membershipId?: number | null,
-    userId?: string,
   ): Promise<boolean> {
-    if (membershipId) {
-      const m = await this.db.query.chatChannelMembers.findFirst({
-        where: and(
-          eq(chatChannelMembers.orgId, orgId),
-          eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.membershipId, membershipId),
-        ),
-        columns: { id: true },
-      });
-      if (m) return true;
-    }
-    if (userId) {
-      const m = await this.db.query.chatChannelMembers.findFirst({
-        where: and(
-          eq(chatChannelMembers.orgId, orgId),
-          eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, userId),
-        ),
-        columns: { id: true },
-      });
-      return Boolean(m);
-    }
-    return false;
+    if (!membershipId) return false;
+    const m = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
+        eq(chatChannelMembers.orgId, orgId),
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.membershipId, membershipId),
+      ),
+      columns: { id: true },
+    });
+    return Boolean(m);
   }
 
   async send(channelId: number, userId: string, orgId: string, body: SendMessageInput) {
     const senderMembershipId = await this.resolveMembershipId(orgId, userId);
     if (
       senderMembershipId === null ||
-      !(await this.isMember(channelId, orgId, senderMembershipId, userId))
+      !(await this.isMember(channelId, orgId, senderMembershipId))
     )
       throw new ForbiddenException("You are not a member of this channel");
 
@@ -148,7 +134,7 @@ export class ChatMessagesService {
         const [senderRow] = await tx
           .select({ name: users.name, image: users.image })
           .from(users)
-          .where(eq(users.id, userId))
+          .where(eq(users.id))
           .limit(1);
 
         const [created] = await tx
@@ -280,7 +266,7 @@ export class ChatMessagesService {
     const membershipId = await this.resolveMembershipId(orgId, userId);
     if (
       membershipId === null ||
-      !(await this.isMember(message.channelId, orgId, membershipId, userId))
+      !(await this.isMember(message.channelId, orgId, membershipId))
     )
       throw new ForbiddenException("You are not a member of this channel");
 
@@ -324,7 +310,7 @@ export class ChatMessagesService {
     const membershipId = await this.resolveMembershipId(orgId, userId);
     if (
       membershipId === null ||
-      !(await this.isMember(message.channelId, orgId, membershipId, userId))
+      !(await this.isMember(message.channelId, orgId, membershipId))
     )
       throw new ForbiddenException("You are not a member of this channel");
 

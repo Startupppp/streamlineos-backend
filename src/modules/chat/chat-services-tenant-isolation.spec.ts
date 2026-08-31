@@ -44,10 +44,12 @@ beforeEach(() => jest.resetAllMocks());
 describe("ChatPresenceService — tenant isolation", () => {
   function makeDb(rows: unknown[]) {
     const where = jest.fn().mockResolvedValue(rows);
+    const chain2 = { where };
+    const chain1 = { innerJoin: jest.fn().mockReturnValue(chain2), where };
     const db = {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
-          innerJoin: jest.fn().mockReturnValue({ where }),
+          innerJoin: jest.fn().mockReturnValue(chain1),
         }),
       }),
     };
@@ -109,7 +111,7 @@ describe("ChatSearchService — tenant isolation", () => {
   it("DENY: searchMessages binds conditions to ATTACKER_ORG and returns empty results", async () => {
     const { db, getCaptured } = makeDb();
     const service = new ChatSearchService(db, makeEntities());
-    const actor = { orgId: ATTACKER_ORG, userId: "user-x", isOrgOwner: false };
+    const actor = { orgId: ATTACKER_ORG, userId: "user-x", membershipId: 99, isOrgOwner: false };
 
     // term length < 3 → skips db.execute, goes straight to findMany
     const result = await service.searchMessages(actor, "hi", 20);
@@ -145,7 +147,7 @@ describe("ChatSearchService — tenant isolation", () => {
       withResolvedReferences: jest.fn().mockImplementation((_actor: unknown, rows: unknown[]) => Promise.resolve(rows)),
     } as unknown as EntityReferenceService;
     const service = new ChatSearchService(db, entities);
-    const actor = { orgId: OWNER_ORG, userId: "user-owner", isOrgOwner: false };
+    const actor = { orgId: OWNER_ORG, userId: "user-owner", membershipId: 10, isOrgOwner: false };
 
     const result = await service.searchMessages(actor, "hi", 20);
 
@@ -162,6 +164,9 @@ describe("ChatSummarizeService — tenant isolation", () => {
   it("DENY: summarize throws ForbiddenException when caller is not a channel member", async () => {
     const db = {
       query: {
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ id: 1 }),
+        },
         chatChannelMembers: {
           findFirst: jest.fn().mockResolvedValue(null),
         },
@@ -185,6 +190,9 @@ describe("ChatSummarizeService — tenant isolation", () => {
 
     const db = {
       query: {
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ id: 1 }),
+        },
         chatChannelMembers: {
           findFirst: jest.fn().mockResolvedValue({ id: 1, channelId: 5, userId: "u1" }),
         },
@@ -258,7 +266,9 @@ describe("ChatNotificationsService — orgId threading", () => {
     const where = jest.fn().mockResolvedValue([]);
     const db = {
       select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({ where }),
+        from: jest.fn().mockReturnValue({
+          innerJoin: jest.fn().mockReturnValue({ where }),
+        }),
       }),
     } as unknown as Db;
     const ably = { publishToUser: jest.fn().mockResolvedValue(undefined) } as unknown as AblyService;
@@ -308,7 +318,7 @@ describe("ChatNotificationsService — orgId threading", () => {
 // ---------------------------------------------------------------------------
 
 describe("ChatReplyRemindersService — tenant isolation", () => {
-  function makeDb(memberRows: { userId: string }[]) {
+  function makeDb(memberRows: { membershipId: number; membership: { userId: string } }[]) {
     const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
     const values = jest.fn().mockReturnValue({ onConflictDoNothing });
     const insert = jest.fn().mockReturnValue({ values });
@@ -337,7 +347,7 @@ describe("ChatReplyRemindersService — tenant isolation", () => {
   });
 
   it("CONTROL: scheduleForMessage inserts reminders with the caller's orgId for each non-sender member", async () => {
-    const { db, insert, values } = makeDb([{ userId: "u2" }]);
+    const { db, insert, values } = makeDb([{ membershipId: 2, membership: { userId: "u2" } }]);
     const dispatch = {} as unknown as NotificationDispatchService;
     const service = new ChatReplyRemindersService(db, dispatch, { CHAT_REPLY_REMINDER_MINUTES: 15 } as never);
 

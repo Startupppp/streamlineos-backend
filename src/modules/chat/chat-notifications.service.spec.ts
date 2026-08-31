@@ -8,6 +8,7 @@ import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger
 const mockDb = {
   select: jest.fn().mockReturnThis(),
   from: jest.fn().mockReturnThis(),
+  innerJoin: jest.fn().mockReturnThis(),
   where: jest.fn(),
 };
 

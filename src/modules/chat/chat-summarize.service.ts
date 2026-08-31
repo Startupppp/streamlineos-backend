@@ -9,7 +9,7 @@ import { ModuleRef } from "@nestjs/core";
 import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { chatChannelMembers, chatMessages, users } from "../../db/schema";
+import { chatChannelMembers, chatMessages, organizationMembers, users } from "../../db/schema";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 
 const SUMMARIZE_LIMIT = 50;
@@ -25,13 +25,20 @@ export class ChatSummarizeService {
     channelId: number,
     actor: { orgId: string; userId: string },
   ): Promise<{ summary: string }> {
-    const member = await this.db.query.chatChannelMembers.findFirst({
-      where: and(
-        eq(chatChannelMembers.orgId, actor.orgId),
-        eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.userId, actor.userId),
-      ),
+    const orgMember = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, actor.orgId), eq(organizationMembers.userId, actor.userId)),
+      columns: { id: true },
     });
+    const member = orgMember
+      ? await this.db.query.chatChannelMembers.findFirst({
+          where: and(
+            eq(chatChannelMembers.orgId, actor.orgId),
+            eq(chatChannelMembers.channelId, channelId),
+            eq(chatChannelMembers.membershipId, orgMember.id),
+          ),
+          columns: { id: true },
+        })
+      : null;
 
     if (!member) throw new ForbiddenException("Not a member of this channel");
 

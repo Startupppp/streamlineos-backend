@@ -24,6 +24,7 @@ import { KbPageStatusService } from "./kb-page-status.service";
 import { KbPageVersionsService } from "./kb-page-versions.service";
 import { KbPageVisitsService } from "./kb-page-visits.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageDuplicateService } from "./kb-page-duplicate.service";
 import {
   createPageSchema,
   updatePageSchema,
@@ -58,6 +59,7 @@ export class KbPagesController {
     private readonly versions: KbPageVersionsService,
     private readonly visits: KbPageVisitsService,
     private readonly tree: KbPageTreeService,
+    private readonly pageDuplicate: KbPageDuplicateService,
     private readonly access: AccessService,
   ) {}
 
@@ -153,7 +155,7 @@ export class KbPagesController {
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.tree.duplicate(u, pageId);
+    return this.pageDuplicate.duplicate(u, pageId);
   }
 
   @Delete("pages/:pageId")

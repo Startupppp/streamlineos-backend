@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
-import { chatChannelInviteLinks, chatChannelMembers, chatChannels } from "../../db/schema";
+import { chatChannelInviteLinks, chatChannelMembers, chatChannels, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
@@ -28,8 +28,13 @@ export class ChatInviteLinksService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   private async assertAdmin(channelId: number, userId: string, orgId: string) {
+    const orgMember = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId), eq(organizationMembers.status, "ACTIVE")),
+      columns: { id: true },
+    });
+    if (!orgMember) throw new NotFoundException("Channel not found");
     const member = await this.db.query.chatChannelMembers.findFirst({
-      where: and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.userId, userId)),
+      where: and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.membershipId, orgMember.id)),
     });
     if (!member) throw new NotFoundException("Channel not found");
     if (member.role !== "ADMIN") throw new ForbiddenException("Only channel admins can manage the invite link");
@@ -114,17 +119,23 @@ export class ChatInviteLinksService {
       throw new NotFoundException("Invite link is invalid or has been revoked");
     }
 
+    const joinerOrgMember = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId), eq(organizationMembers.status, "ACTIVE")),
+      columns: { id: true },
+    });
+    if (!joinerOrgMember) throw new ForbiddenException("You are not a member of this organization");
+
     const existingMember = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.channelId, channel.id),
-        eq(chatChannelMembers.userId, userId),
+        eq(chatChannelMembers.membershipId, joinerOrgMember.id),
       ),
     });
     if (!existingMember) {
       await this.db.insert(chatChannelMembers).values({
         orgId: channel.orgId,
         channelId: channel.id,
-        userId,
+        membershipId: joinerOrgMember.id,
         role: "MEMBER",
       });
     }
