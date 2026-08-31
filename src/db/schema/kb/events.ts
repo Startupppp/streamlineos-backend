@@ -10,7 +10,7 @@ import {
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { kbArticles } from "../support/kb";
 
 export const KB_EVENT_TYPES = [
@@ -32,7 +32,7 @@ export const kbEvents = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     eventType: text("event_type").notNull(),
-    actorId: text("actor_id").references(() => users.id, { onDelete: "set null" }),
+    actorMembershipId: integer("actor_membership_id"),
     articleId: integer("article_id").references(() => kbArticles.id, { onDelete: "set null" }),
     query: text("query"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
@@ -42,12 +42,15 @@ export const kbEvents = pgTable(
     index("idx_kb_events_org_time").on(table.orgId, table.occurredAt),
     index("idx_kb_events_org_type").on(table.orgId, table.eventType),
     index("idx_kb_events_org_type_time").on(table.orgId, table.eventType, table.occurredAt),
+    index("idx_kb_events_org_actor_membership").on(table.orgId, table.actorMembershipId),
     unique("uniq_kb_events_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.articleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_kb_events_org_article" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.actorMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_events_org_actor_membership" }).onDelete("set null"),
   ],
 );
 
 export const kbEventsRelations = relations(kbEvents, ({ one }) => ({
   organization: one(organizations, { fields: [kbEvents.orgId], references: [organizations.id] }),
   article: one(kbArticles, { fields: [kbEvents.articleId], references: [kbArticles.id] }),
+  actorMembership: one(organizationMembers, { fields: [kbEvents.actorMembershipId], references: [organizationMembers.id] }),
 }));

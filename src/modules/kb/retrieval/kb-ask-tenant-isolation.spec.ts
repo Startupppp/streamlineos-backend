@@ -1,5 +1,6 @@
 import type { Db } from "../../../db/drizzle.module";
 import { KbAskService } from "./kb-ask.service";
+import { ACCOUNT_ONLY_PRINCIPAL } from "../../../common/auth/principal";
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
@@ -15,7 +16,7 @@ describe("KbAskService — cross-tenant isolation", () => {
   const OWNER = "org-owner";
 
   function makeUser(orgId: string) {
-    return { orgId, userId: "user-1", isOrgOwner: false } as never;
+    return { orgId, userId: "user-1", isOrgOwner: false, principal: ACCOUNT_ONLY_PRINCIPAL } as never;
   }
 
   const aiGateway = {} as never;

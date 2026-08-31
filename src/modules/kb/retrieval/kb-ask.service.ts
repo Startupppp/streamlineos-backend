@@ -11,6 +11,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { pageVisibleTo } from "./kb-page-visibility";
 import { getAccessibleProjectIds } from "./kb-project-access.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import type { AskInput } from "./dto/kb-ai.schemas";
 import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
 
@@ -56,7 +57,7 @@ export class KbAskService {
     const hasContent = await this.orgHasIndexedContent(user.orgId);
     if (!hasContent) {
       this.events.record(user.orgId, "ai_answer_no_context", {
-        actorId: user.userId,
+        actorMembershipId: actingMembershipId(user.principal) ?? null,
         query: input.question,
       }).catch((err: unknown) => {
         this.logger.warn(`Failed to record ai_answer_no_context event: ${err}`);
@@ -78,7 +79,7 @@ export class KbAskService {
     const sources = await this.search.retrieveTopSources(user, input.question, 4);
     if (top.length === 0 && sources.length === 0) {
       this.events.record(user.orgId, "ai_answer_no_context", {
-        actorId: user.userId,
+        actorMembershipId: actingMembershipId(user.principal) ?? null,
         query: input.question,
       }).catch((err: unknown) => {
         this.logger.warn(`Failed to record ai_answer_no_context event: ${err}`);
@@ -157,7 +158,7 @@ export class KbAskService {
     const aiUsage = gatewayResult.aiUsage;
 
     await this.events.record(user.orgId, "ai_answer", {
-      actorId: user.userId,
+      actorMembershipId: actingMembershipId(user.principal) ?? null,
       query: input.question,
       metadata: { sourceIds: top.map((s) => `${s.kind}:${s.id}`) },
     });

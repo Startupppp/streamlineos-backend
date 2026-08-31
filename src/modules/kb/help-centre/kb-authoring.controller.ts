@@ -30,7 +30,7 @@ export class KbAuthoringController {
     @Body() body: DraftInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.authoring.draft(u.orgId, u.userId, body);
+    return await this.authoring.draft(u, body);
   }
 
   @Post("improve")
@@ -41,7 +41,7 @@ export class KbAuthoringController {
     @Body() body: ImproveInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.authoring.improve(u.orgId, u.userId, body);
+    return await this.authoring.improve(u, body);
   }
 
   @Post("summarize")
@@ -52,7 +52,7 @@ export class KbAuthoringController {
     @Body() body: SummarizeInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.authoring.summarize(u.orgId, u.userId, body);
+    return await this.authoring.summarize(u, body);
   }
 
 }

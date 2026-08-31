@@ -11,6 +11,7 @@ import { EmbeddingsService } from "../../ai/core/providers/embeddings.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { SearchInput } from "./dto/kb-ai.schemas";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { KbCandidateService } from "./kb-candidate.service";
 
 export type RetrievedSource =
@@ -106,7 +107,7 @@ export class KbSearchService {
     }));
 
     await this.events.record(user.orgId, total > 0 ? "search" : "search_no_results", {
-      actorId: user.userId,
+      actorMembershipId: actingMembershipId(user.principal) ?? null,
       query: input.q,
       metadata: { resultsCount: total },
     });
