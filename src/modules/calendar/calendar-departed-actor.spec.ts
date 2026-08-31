@@ -269,10 +269,10 @@ describe("CalendarService — createEvent throws when caller has no ACTIVE membe
   });
 });
 
-describe("CalendarService — deleteEvent does not throw but is a no-op for departed creator", () => {
+describe("CalendarService — deleteEvent reports a miss rather than a false success for a departed creator", () => {
   beforeEach(() => jest.resetAllMocks());
 
-  it("returns {deleted: true} even when the creator has no ACTIVE membership (no-op, no error)", async () => {
+  it("returns null when the creator has no ACTIVE membership, so the caller can surface a 404", async () => {
     const db = {
       transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
         const tx = {
@@ -290,7 +290,7 @@ describe("CalendarService — deleteEvent does not throw but is a no-op for depa
     const svc = makeService(db);
     const result = await svc.deleteEvent(ORG, USER, EVENT_ID);
 
-    expect(result).toEqual({ deleted: true });
+    expect(result).toBeNull();
     expect(db.transaction).toHaveBeenCalledTimes(1);
   });
 
