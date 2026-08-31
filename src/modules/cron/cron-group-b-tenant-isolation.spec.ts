@@ -24,6 +24,7 @@ import { AccessService } from "../access/access.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { OrgMembershipService } from "../organization/core/org-membership.service";
+import { StorageService } from "../storage/storage.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -214,6 +215,7 @@ describe("CronOrgPurgeWorkerService — cross-tenant isolation", () => {
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: cache },
         { provide: OrgMembershipService, useValue: { revokeOrgScopedAccess: jest.fn() } },
+        { provide: StorageService, useValue: { deleteFile: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronOrgPurgeWorkerService));
 
@@ -231,6 +233,7 @@ describe("CronOrgPurgeWorkerService — cross-tenant isolation", () => {
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: cache },
         { provide: OrgMembershipService, useValue: { revokeOrgScopedAccess: jest.fn() } },
+        { provide: StorageService, useValue: { deleteFile: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronOrgPurgeWorkerService));
 
