@@ -63,7 +63,7 @@ The three grades from the previous handoff, used the same way.
 | NEO-0 branch and truth | Proven | `inventory-reachability.spec.ts` and `inventory-route-states.test.ts` both green before any change. 86 `inv_*` tables at the start, 100 at the end. |
 | NEO-1 channel pools | **Proven** | Golden path: 100 on hand, 60 claimed by the channel, direct ATP 40, the channel's own view 100, the claim drawn to zero on ship. |
 | NEO-2 platform PO + ASN | **Proven** | Golden path ingests a Blinkit fixture, matches on EAN, is idempotent on the platform's PO number, accepts into a Streamline PO, and receives against the ASN. |
-| NEO-3 fill rate + payout | Reachable, arithmetic proven | Golden path asserts 100 ordered / 60 accepted / 60%. The payout matcher has unit coverage; no payout file has been walked end to end. |
+| NEO-3 fill rate + payout | **Proven** | Golden path asserts 100 ordered / 60 accepted / 60%, then walks a payout file: a line that agrees with the 60 shipped (variance null), one naming an item the PO does not carry, one naming no PO at all — both listed rather than dropped — and a re-upload of the same `payoutRef` settling nothing twice. |
 | NEO-4 handling units | **Proven** | Golden path receives 100 onto a pallet, moves the pallet, and asserts on-hand at the unit, at the old bin and at the new one, with reconciliation clean after each. |
 | NEO-5 RF task shell | Reachable, ratchet hardened | PEND-5 added `rf-surface-render.test.tsx`, which mounts the three screens and forbids table semantics in the rendered DOM — the text ratchet passed a `role="grid"` rewrite of the queue. Still not walked by a human on a 375px device. |
 | NEO-6 slotting | **Proven** | Golden path: no rule ⇒ the pre-NEO order; a rule ⇒ the gold-zone bin first. |

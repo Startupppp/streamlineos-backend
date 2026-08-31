@@ -676,6 +676,84 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
     expect(Number(fillRate.orderedQty)).toBe(100);
     expect(Number(fillRate.acceptedQty)).toBe(60);
     expect(Number(fillRate.fillRatePct)).toBeCloseTo(60, 2);
+
+    // NEO-3, the other half. The arithmetic above had unit coverage and the
+    // payout matcher did not: no payout file had ever been walked, so nothing
+    // proved that what a platform says it settled can be placed against what we
+    // shipped. Three lines, because the three outcomes are what matters — one
+    // that agrees, one that does not, and one that belongs to nothing.
+    const payout = await asTenant(() =>
+      app.app.get(FillRateService).uploadPayout(scene.orgId, scene.userId, {
+        provider: "BLINKIT",
+        payoutRef: `SETTLE-${scene.tag}`,
+        settledOn: "2026-09-15",
+        lines: [
+          // Agrees with the 60 that shipped, at the landing rate, in paise.
+          {
+            providerPoNumber: `BLK-${scene.tag}`,
+            ean: scene.ean,
+            quantity: "60.0000",
+            amountPaise: 24000,
+          },
+          // Names a PO we know and an item on it that we do not.
+          {
+            providerPoNumber: `BLK-${scene.tag}`,
+            providerSku: "BLK-NOT-ORDERED",
+            quantity: "5.0000",
+            amountPaise: 2000,
+          },
+          // Names no purchase order at all.
+          { ean: scene.ean, quantity: "1.0000", amountPaise: 400 },
+        ],
+      }),
+    );
+    expect(payout.submitted).toBe(3);
+    expect(payout.stored).toBe(3);
+    expect(payout.unmatched).toBe(2);
+
+    const settled = await asTenant(() =>
+      app.app.get(FillRateService).report(scene.orgId, scene.userId, { platformPoId }),
+    );
+    const paidLine = settled.lines[0]!;
+    expect(Number(paidLine.payoutQty)).toBe(60);
+    expect(paidLine.payoutAmountPaise).toBe(24000);
+    // Null is the assertion: paid quantity and accepted quantity agree, so the
+    // eye goes to the lines where they do not.
+    expect(paidLine.payoutVariance).toBeNull();
+
+    // Listed, never dropped — a payout line we cannot place is the platform
+    // paying for something we have no record of owing.
+    expect(settled.unmatchedPayoutLines).toHaveLength(2);
+    const reasons = settled.unmatchedPayoutLines.map((l) => l.unmatchedReason);
+    expect(reasons).toContain("The payout line names no purchase order");
+    expect(
+      reasons.some((r) => r?.includes("BLK-NOT-ORDERED")),
+    ).toBe(true);
+
+    // The fence is (provider, payoutRef, line): re-uploading the same file
+    // settles nothing twice.
+    const replay = await asTenant(() =>
+      app.app.get(FillRateService).uploadPayout(scene.orgId, scene.userId, {
+        provider: "BLINKIT",
+        payoutRef: `SETTLE-${scene.tag}`,
+        settledOn: "2026-09-15",
+        lines: [
+          {
+            providerPoNumber: `BLK-${scene.tag}`,
+            ean: scene.ean,
+            quantity: "60.0000",
+            amountPaise: 24000,
+          },
+        ],
+      }),
+    );
+    expect(replay.stored).toBe(0);
+    expect(replay.duplicatesIgnored).toBe(1);
+    const afterReplay = await asTenant(() =>
+      app.app.get(FillRateService).report(scene.orgId, scene.userId, { platformPoId }),
+    );
+    expect(Number(afterReplay.lines[0]!.payoutQty)).toBe(60);
+    expect(afterReplay.unmatchedPayoutLines).toHaveLength(2);
   }, SLICE_TIMEOUT_MS);
 
   it("NEO-9: assembles a kit, consuming its components and costing it from them", async () => {
