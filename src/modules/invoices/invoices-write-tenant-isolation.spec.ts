@@ -34,7 +34,7 @@ describe("InvoicesWriteService — cross-tenant isolation", () => {
     const mockPlanLimits = { assertWithinLimit: jest.fn() } as any;
     const mockPaymentService = {} as any;
     const mockUpdateService = { updateInvoice: jest.fn().mockRejectedValue(new NotFoundException("Invoice not found")) } as any;
-    const mockCache = { invalidateNamespace: jest.fn() } as any;
+    const mockCache = { invalidateNamespace: jest.fn(), invalidateNamespaceForOrg: jest.fn() } as any;
     const svc = new InvoicesWriteService(db, mockPosting, mockLifecycle, mockAudit, mockPlanLimits, mockPaymentService, mockUpdateService, mockCache);
     await expect(svc.voidInvoice(ATTACKER, USER_ID, INVOICE_ID)).rejects.toThrow(NotFoundException);
   });
@@ -47,7 +47,7 @@ describe("InvoicesWriteService — cross-tenant isolation", () => {
     const mockPlanLimits = { assertWithinLimit: jest.fn() } as any;
     const mockPaymentService = {} as any;
     const mockUpdateService = {} as any;
-    const mockCache = { invalidateNamespace: jest.fn() } as any;
+    const mockCache = { invalidateNamespace: jest.fn(), invalidateNamespaceForOrg: jest.fn() } as any;
     const svc = new InvoicesWriteService(db, mockPosting, mockLifecycle, mockAudit, mockPlanLimits, mockPaymentService, mockUpdateService, mockCache);
     const result = await svc.voidInvoice(OWNER, USER_ID, INVOICE_ID);
     expect(result).toEqual({ success: true });
