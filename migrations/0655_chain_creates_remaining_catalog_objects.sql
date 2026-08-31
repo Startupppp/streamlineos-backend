@@ -421,13 +421,13 @@ ALTER TABLE "public"."inv_shipment_status_events" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'inv_carton_types' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."inv_carton_types" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."inv_carton_types" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'inv_shipment_status_events' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."inv_shipment_status_events" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."inv_shipment_status_events" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint

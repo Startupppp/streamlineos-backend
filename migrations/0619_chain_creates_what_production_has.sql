@@ -9398,373 +9398,373 @@ ALTER TABLE "public"."gl_book_currencies" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'relationship_states' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."relationship_states" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."relationship_states" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'gl_books' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."gl_books" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."gl_books" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'gl_fx_rates' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."gl_fx_rates" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."gl_fx_rates" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'gl_periods' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."gl_periods" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."gl_periods" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ap_withholding' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."ap_withholding" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."ap_withholding" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'relationship_threads' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."relationship_threads" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."relationship_threads" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'relationship_participants' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."relationship_participants" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."relationship_participants" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'gl_journals' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."gl_journals" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."gl_journals" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ar_document_lines' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."ar_document_lines" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."ar_document_lines" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ar_receipts' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."ar_receipts" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."ar_receipts" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ap_payments' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."ap_payments" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."ap_payments" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'bank_matches' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."bank_matches" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."bank_matches" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'gl_document_attachments' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."gl_document_attachments" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."gl_document_attachments" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'gl_document_compliance' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."gl_document_compliance" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."gl_document_compliance" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tax_codes' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."tax_codes" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."tax_codes" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ap_document_lines' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."ap_document_lines" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."ap_document_lines" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_deal_forecast_scores' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_deal_forecast_scores" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_deal_forecast_scores" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_deal_forecast_models' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_deal_forecast_models" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_deal_forecast_models" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'inv_webhook_event_subscriptions' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."inv_webhook_event_subscriptions" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."inv_webhook_event_subscriptions" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'autonomy_repair_policies' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."autonomy_repair_policies" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."autonomy_repair_policies" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'gl_fiscal_years' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."gl_fiscal_years" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."gl_fiscal_years" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'autonomy_repairs' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."autonomy_repairs" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."autonomy_repairs" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tax_document_lines' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."tax_document_lines" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."tax_document_lines" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ap_documents' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."ap_documents" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."ap_documents" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_outbound_messages' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_outbound_messages" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_outbound_messages" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_outbound_class_stops' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_outbound_class_stops" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_outbound_class_stops" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_cold_outbound_settings' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_cold_outbound_settings" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_cold_outbound_settings" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_sending_domains' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_sending_domains" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_sending_domains" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'inv_import_rows' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."inv_import_rows" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."inv_import_rows" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ap_allocations' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."ap_allocations" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."ap_allocations" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'bank_profiles' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."bank_profiles" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."bank_profiles" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ar_documents' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."ar_documents" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."ar_documents" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'gl_parties' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."gl_parties" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."gl_parties" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'gl_accounts' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."gl_accounts" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."gl_accounts" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ar_allocations' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."ar_allocations" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."ar_allocations" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'gl_journal_lines' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."gl_journal_lines" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."gl_journal_lines" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tax_registrations' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."tax_registrations" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."tax_registrations" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'gl_document_sequences' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."gl_document_sequences" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."gl_document_sequences" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_org_party_map' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_org_party_map" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_org_party_map" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'subprocessor_subscribers' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."subprocessor_subscribers" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."subprocessor_subscribers" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tax_gl_map' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."tax_gl_map" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."tax_gl_map" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'tax_rates' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."tax_rates" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."tax_rates" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_call_recording_consent' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_call_recording_consent" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_call_recording_consent" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_call_analysis_releases' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_call_analysis_releases" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_call_analysis_releases" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_call_analyses' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_call_analyses" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_call_analyses" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'bank_statement_lines' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."bank_statement_lines" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."bank_statement_lines" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'bank_statements' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."bank_statements" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."bank_statements" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_call_analysis_refusals' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_call_analysis_refusals" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_call_analysis_refusals" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_commission_plans' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_commission_plans" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_commission_plans" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_commission_plan_versions' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_commission_plan_versions" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_commission_plan_versions" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_commission_assignments' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_commission_assignments" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_commission_assignments" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_commission_earnings' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_commission_earnings" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_commission_earnings" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_commission_accrual_parts' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_commission_accrual_parts" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_commission_accrual_parts" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_commission_accrual_snapshots' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_commission_accrual_snapshots" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_commission_accrual_snapshots" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'customer_lifecycles' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."customer_lifecycles" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."customer_lifecycles" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'customer_lifecycle_signals' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."customer_lifecycle_signals" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."customer_lifecycle_signals" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'customer_health_assessments' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."customer_health_assessments" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."customer_health_assessments" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'customer_health_factors' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."customer_health_factors" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."customer_health_factors" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'customer_lifecycle_triggers' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."customer_lifecycle_triggers" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."customer_lifecycle_triggers" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_report_definitions' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_report_definitions" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_report_definitions" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'crm_report_runs' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."crm_report_runs" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = current_org_id())) WITH CHECK ((organization_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."crm_report_runs" AS PERMISSIVE FOR ALL TO "public" USING ((organization_id = app.current_org_id())) WITH CHECK ((organization_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'gl_book_currencies' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."gl_book_currencies" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."gl_book_currencies" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint

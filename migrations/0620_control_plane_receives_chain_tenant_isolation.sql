@@ -1071,18 +1071,18 @@ ALTER TABLE "public"."credit_note_items" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'fin_payment_run_items' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."fin_payment_run_items" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."fin_payment_run_items" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'vendor_credit_items' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."vendor_credit_items" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."vendor_credit_items" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;
 --> statement-breakpoint
 DO $repair$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'credit_note_items' AND policyname = 'tenant_isolation') THEN
-    CREATE POLICY "tenant_isolation" ON "public"."credit_note_items" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = current_org_id())) WITH CHECK ((org_id = current_org_id()));
+    CREATE POLICY "tenant_isolation" ON "public"."credit_note_items" AS PERMISSIVE FOR ALL TO "public" USING ((org_id = app.current_org_id())) WITH CHECK ((org_id = app.current_org_id()));
   END IF;
 END $repair$;

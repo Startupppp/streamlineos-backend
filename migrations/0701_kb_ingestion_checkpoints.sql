@@ -19,8 +19,15 @@ CREATE INDEX "idx_kb_ingestion_checkpoint_lookup" ON "kb_ingestion_checkpoints" 
 --> statement-breakpoint
 ALTER TABLE "kb_ingestion_checkpoints" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
-CREATE POLICY "tenant_isolation" ON "kb_ingestion_checkpoints"
-  AS PERMISSIVE FOR ALL
-  TO public
-  USING (org_id = current_org_id())
-  WITH CHECK (org_id = current_org_id());
+DO $policy$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'kb_ingestion_checkpoints' AND policyname = 'tenant_isolation'
+  ) THEN
+    CREATE POLICY "tenant_isolation" ON "kb_ingestion_checkpoints"
+      AS PERMISSIVE FOR ALL
+      TO public
+      USING (org_id = app.current_org_id())
+      WITH CHECK (org_id = app.current_org_id());
+  END IF;
+END $policy$;

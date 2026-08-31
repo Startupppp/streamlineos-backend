@@ -33,6 +33,13 @@ CREATE INDEX IF NOT EXISTS idx_feedback_cycle_responses_org_request
 --> statement-breakpoint
 ALTER TABLE feedback_cycle_responses ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
-CREATE POLICY tenant_isolation ON feedback_cycle_responses
-  USING (org_id = current_org_id())
-  WITH CHECK (org_id = current_org_id());
+DO $policy$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'feedback_cycle_responses' AND policyname = 'tenant_isolation'
+  ) THEN
+    CREATE POLICY tenant_isolation ON feedback_cycle_responses
+  USING (org_id = app.current_org_id())
+  WITH CHECK (org_id = app.current_org_id());
+  END IF;
+END $policy$;
