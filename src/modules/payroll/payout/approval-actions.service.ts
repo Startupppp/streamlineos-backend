@@ -60,7 +60,7 @@ export class ApprovalActionsService {
       }),
       this.db.query.payrollRuns.findFirst({
         where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
-        with: { policyVersion: true },
+        with: { policyVersion: { columns: { toggles: true } } },
       }),
     ]);
 

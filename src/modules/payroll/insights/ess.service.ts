@@ -35,6 +35,7 @@ export class EssService {
   async getActiveToggles(orgId: string): Promise<PayrollToggles> {
     const policy = await this.db.query.payrollPolicies.findFirst({
       where: eq(payrollPolicies.orgId, orgId),
+      columns: { activeVersionId: true },
     });
     if (!policy?.activeVersionId) {
       return {
@@ -48,6 +49,7 @@ export class EssService {
     }
     const version = await this.db.query.payrollPolicyVersions.findFirst({
       where: eq(payrollPolicyVersions.id, policy.activeVersionId),
+      columns: { toggles: true },
     });
     const stored = version?.toggles;
     if (!stored || typeof stored !== "object") return { ...DEFAULT_PAYROLL_TOGGLES };

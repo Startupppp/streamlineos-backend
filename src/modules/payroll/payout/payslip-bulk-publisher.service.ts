@@ -70,7 +70,7 @@ export class PayslipBulkPublisherService {
   ) {
     const run = await this.db.query.payrollRuns.findFirst({
       where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
-      with: { policyVersion: true },
+      with: { policyVersion: { columns: { toggles: true } } },
     });
     if (!run) throw new NotFoundException("Payroll run not found");
     if (run.status !== "PAID") {
