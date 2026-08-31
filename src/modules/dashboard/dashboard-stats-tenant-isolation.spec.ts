@@ -45,10 +45,13 @@ describe("DashboardStatsService — cross-tenant isolation", () => {
   }
 
   function makeAccess() {
+    const permMap = new Map([["hr:attendance:manage", "none"]]);
     return {
       getPermissionsVersion: jest.fn().mockResolvedValue(1),
-      scopeFor: jest.fn().mockResolvedValue("none"),
-      resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
+      scopeFor: jest.fn().mockImplementation((_u: unknown, key: string) =>
+        Promise.resolve(key === "hr:employees:view" ? "all" : "none"),
+      ),
+      resolveUserPermissions: jest.fn().mockResolvedValue(permMap),
     } as never;
   }
 
