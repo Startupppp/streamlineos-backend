@@ -85,6 +85,7 @@ export class IntegrationConnectionDisconnectedConsumer
         `integration.connection.disconnected ${event.eventId}: failed to delete Composio account ${composioConnectedAccountId}: ${message}`,
       );
       await inbox.markProcessed(CONSUMER_NAME, event.eventId, "FAILED", message);
+      throw error instanceof Error ? error : new Error(message);
     }
   }
 }

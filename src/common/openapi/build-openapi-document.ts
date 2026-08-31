@@ -224,6 +224,12 @@ export function applyOperationContract(
       content: { "application/json": { schema: contract.body } },
     };
   }
+  if (contract.multipart && BODY_METHODS.has(method)) {
+    operation.requestBody = {
+      required: true,
+      content: { "multipart/form-data": { schema: contract.multipart } },
+    };
+  }
   if (contract.query) applyQuery(operation, contract.query);
   if (contract.params) applyPathParams(operation, contract.params);
   if (contract.idempotencyCommand)

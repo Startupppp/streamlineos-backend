@@ -24,6 +24,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AuditService } from "../../common/audit/audit.service";
+import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
@@ -127,6 +128,7 @@ export class StorageController {
   ) {}
 
   @Post("upload")
+  @MultipartAction({ file: "file", fields: { folder: "string" } })
   @AuthorizedInService("assertUploadAllowed")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_UPLOAD_SIZE } }))
   async upload(

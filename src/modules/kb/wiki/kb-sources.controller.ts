@@ -24,6 +24,7 @@ import {
   type CreateKbSourceNoteInput,
 } from "./dto/kb-sources.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { MultipartAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const sourceIdParams = z.object({ sourceId: z.coerce.number().int().positive() }).strict();
@@ -40,6 +41,7 @@ export class KbSourcesController {
   }
 
   @Post("sources")
+  @MultipartAction({ file: "file", fields: { spaceId: "string" } })
   @RequirePermission("kb:pages:create")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 25 * 1024 * 1024 } }))
   @HttpCode(201)

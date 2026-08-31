@@ -76,7 +76,7 @@ export class SupportTicketResolvedConsumer implements OutboxEventConsumer, OnMod
         `support.ticket.resolved ${event.eventId}: CSAT request failed for ticket ${ticketId}: ${msg}`,
       );
       await inbox.markProcessed(CONSUMER_NAME, event.eventId, "FAILED", msg);
-      return;
+      throw err instanceof Error ? err : new Error(msg);
     }
 
     await inbox.markProcessed(CONSUMER_NAME, event.eventId, "COMPLETED", null);
