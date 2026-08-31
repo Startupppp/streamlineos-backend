@@ -28,6 +28,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const terminationIdParams = z.object({ terminationId: z.coerce.number().int().positive() }).strict();
 
@@ -64,6 +65,7 @@ export class TerminationController {
   }
 
   @Post(":terminationId/send-email")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("hr:exit:manage")
   @Validate({ params: terminationIdParams })
@@ -75,6 +77,7 @@ export class TerminationController {
   }
 
   @Patch(":terminationId/complete")
+  @BodylessAction()
   @RequirePermission("hr:exit:manage")
   @Validate({ params: terminationIdParams })
   complete(
@@ -95,6 +98,7 @@ export class TerminationController {
   }
 
   @Patch(":terminationId/submit")
+  @BodylessAction()
   @Idempotent("hr.termination.submit")
   @RequirePermission("hr:exit:manage")
   @Validate({ params: terminationIdParams })

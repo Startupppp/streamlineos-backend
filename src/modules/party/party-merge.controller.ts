@@ -9,6 +9,7 @@ import { PartyMergeService } from "./party-merge.service";
 import { PartyRevertService } from "./party-revert.service";
 import { PartyRolesService } from "./party-roles.service";
 import { Validate } from "../../common/validation/validate.decorator";
+import { partyMergeBodySchema, partyRoleBodySchema } from "./dto/party-merge.schemas";
 import { z } from "zod";
 
 const partyIdParams = z.object({ partyId: z.string().min(1) }).strict();
@@ -44,7 +45,7 @@ export class PartyMergeController {
   @UseGuards(PermissionGuard)
   @RequirePermission("party:roles:manage")
   @Idempotent("party.role.add")
-  @Validate({ params: partyIdParams })
+  @Validate({ params: partyIdParams, body: partyRoleBodySchema })
   async addRole(
     @CurrentUser() user: CurrentUserContext,
     @Param("partyId") partyId: string,
@@ -100,6 +101,7 @@ export class PartyMergeController {
   @UseGuards(PermissionGuard)
   @RequirePermission("party:merges:manage")
   @Idempotent("party.merge")
+  @Validate({ body: partyMergeBodySchema })
   async merge(
     @CurrentUser() user: CurrentUserContext,
     @Body() body: { leftPartyId: string; rightPartyId: string },

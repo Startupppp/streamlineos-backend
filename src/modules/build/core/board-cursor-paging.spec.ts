@@ -114,7 +114,7 @@ function buildHarness(board: Board) {
     holds: jest.fn(() => Promise.resolve(true)),
   } as unknown as AccessService;
 
-  const service = new ProjectsTicketsReadService(db, access, { log: jest.fn() } as unknown as AuditService);
+  const service = new ProjectsTicketsReadService(db, access);
   return { service, onRead: (fn: () => void) => { afterRead = fn; } };
 }
 

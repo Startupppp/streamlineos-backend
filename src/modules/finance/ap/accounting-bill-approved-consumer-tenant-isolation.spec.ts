@@ -1,6 +1,6 @@
 import type { Db } from "../../../db/drizzle.module";
 import { AccountingBillApprovedConsumerService } from "./accounting-bill-approved-consumer.service";
-import { OutboxConsumerRegistry } from "../../../common/outbox/outbox-consumer.registry";
+import { OutboxConsumerRegistry, OutboxEventRow } from "../../../common/outbox/outbox-consumer.registry";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -14,7 +14,7 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
-function makeEvent(orgId: string) {
+function makeEvent(orgId: string): OutboxEventRow {
   return {
     eventId: "evt-1",
     organizationId: orgId,
@@ -29,7 +29,16 @@ function makeEvent(orgId: string) {
     aggregateType: "purchase_bill",
     aggregateId: "1",
     aggregateVersion: 1,
-  };
+    createdAt: new Date(),
+    occurredAt: new Date(),
+    audience: "internal",
+    actorMembershipId: null,
+    correlationId: null,
+    deadLetteredAt: null,
+    processingAttemptCount: 0,
+    processingLastError: null,
+    nextProcessingAt: new Date(),
+  } as unknown as OutboxEventRow;
 }
 
 describe("AccountingBillApprovedConsumerService — cross-tenant isolation (background)", () => {

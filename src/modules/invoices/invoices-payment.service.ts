@@ -1,11 +1,12 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import {
   invoices,
   payments,
   organizationMembers,
   accountingSettings,
   finPaymentAllocations,
+  finReminderLog,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -18,6 +19,8 @@ import { FxService } from "../finance/controls/fx.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { systemActor } from "../../common/auth/system-actor";
 import type { RecordPaymentInput } from "./dto/invoice-write.schemas";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 
 @Injectable()
 export class InvoicesPaymentService {
@@ -118,6 +121,7 @@ export class InvoicesPaymentService {
         tx,
       );
 
+      const touchedIds = new Set([invoiceId]);
       if (allocations.length > 0) {
         await tx.insert(finPaymentAllocations).values(
           allocations.map((a) => ({
@@ -127,12 +131,24 @@ export class InvoicesPaymentService {
             amount: a.amount.toFixed(4),
           })),
         );
-        const touchedIds = new Set([
-          invoiceId,
-          ...allocations.map((a) => a.invoiceId),
-        ]);
+        for (const id of allocations.map((a) => a.invoiceId)) touchedIds.add(id);
         for (const id of touchedIds) {
           await this.lifecycle.recomputeInvoiceBalance(id, tx);
+        }
+      }
+
+      const paidNow = new Date();
+      for (const id of touchedIds) {
+        const [inv] = await tx.select({ status: invoices.status }).from(invoices)
+          .where(and(eq(invoices.id, id), eq(invoices.orgId, orgId))).limit(1);
+        if (inv?.status === "PAID") {
+          await tx.update(finReminderLog).set({ paidAt: paidNow })
+            .where(and(
+              eq(finReminderLog.orgId, orgId),
+              eq(finReminderLog.invoiceId, id),
+              eq(finReminderLog.status, "SENT"),
+              isNull(finReminderLog.paidAt),
+            ));
         }
       }
 
@@ -160,18 +176,21 @@ export class InvoicesPaymentService {
       .where(eq(organizationMembers.orgId, orgId))
       .limit(5);
 
-    void this.dispatch
-      .emit({
-        eventKey: "accounting.invoice.payment_received",
-        orgId,
-        actorUserId: userId,
-        targetUserIds: members.map((m) => m.userId),
-        entityType: "invoice",
-        entityId: String(invoiceId),
-        title: "Payment received",
-        message: `Payment of ${input.amount.toFixed(2)} received for invoice ${invoice.invoiceNumber}`,
-      })
-      .catch(() => undefined);
+    const targetUserIds = members.map((m) => m.userId);
+    const emit = () =>
+      this.dispatch
+        .emit({
+          eventKey: "accounting.invoice.payment_received",
+          orgId,
+          actorUserId: userId,
+          targetUserIds,
+          entityType: "invoice",
+          entityId: String(invoiceId),
+          title: "Payment received",
+          message: `Payment of ${input.amount.toFixed(2)} received for invoice ${invoice.invoiceNumber}`,
+        })
+        .catch(logSideEffectFailure("invoice.payment_received notification", { invoiceId, orgId }));
+    if (!registerAfterCommit(emit)) void emit();
 
     this.audit.log({
       action: "accounting.invoice.payment_recorded",

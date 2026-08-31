@@ -8,7 +8,9 @@ import {
 } from "../observability/error-reporter";
 import { runWithObservabilityContext } from "../observability/observability-context";
 
-function hostWith(): { host: ArgumentsHost; json: jest.Mock; status: jest.Mock } {
+function hostWith(
+  options: { correlationId?: string } = {},
+): { host: ArgumentsHost; json: jest.Mock; status: jest.Mock } {
   const json = jest.fn();
   const status = jest.fn((): { json: jest.Mock } => ({ json }));
   const host: ArgumentsHost = {
@@ -16,7 +18,7 @@ function hostWith(): { host: ArgumentsHost; json: jest.Mock; status: jest.Mock }
     getArgByIndex: () => undefined,
     switchToHttp: () => ({
       getResponse: () => ({ status }),
-      getRequest: () => ({ method: "GET", url: "/x" }),
+      getRequest: () => ({ method: "GET", url: "/x", correlationId: options.correlationId }),
       getNext: () => undefined,
     }),
     switchToRpc: () => ({} as ReturnType<ArgumentsHost["switchToRpc"]>),
@@ -145,6 +147,46 @@ describe("AllExceptionsFilter", () => {
     expect(json).toHaveBeenCalledWith({
       code: "HTTP_502",
       message: "Delivery failed.",
+    });
+  });
+
+  describe("correlation id in error envelope", () => {
+    it("includes correlationId in the body when the middleware set it on the request", () => {
+      const { host, json } = hostWith({ correlationId: "req-abc-123" });
+      filter.catch(new NotFoundException("Not found"), host);
+      expect(json.mock.calls[0]?.[0]).toMatchObject({ correlationId: "req-abc-123" });
+    });
+
+    it("omits correlationId entirely when absent from the request", () => {
+      const { host, json } = hostWith();
+      filter.catch(new NotFoundException("Not found"), host);
+      expect(json.mock.calls[0]?.[0]).not.toHaveProperty("correlationId");
+    });
+
+    it("includes correlationId on a ZodError 400 so the caller can quote the body", () => {
+      const { host, json } = hostWith({ correlationId: "zod-cid-456" });
+      const zerr = (() => {
+        try {
+          z.object({ a: z.string() }).parse({});
+          return new ZodError([]);
+        } catch (e) {
+          return e as ZodError;
+        }
+      })();
+      filter.catch(zerr, host);
+      expect(json.mock.calls[0]?.[0]).toMatchObject({
+        code: "VALIDATION_FAILED",
+        correlationId: "zod-cid-456",
+      });
+    });
+
+    it("includes correlationId on an unhandled 500", () => {
+      const { host, json } = hostWith({ correlationId: "500-cid-789" });
+      filter.catch(new Error("boom"), host);
+      expect(json.mock.calls[0]?.[0]).toMatchObject({
+        code: "INTERNAL_ERROR",
+        correlationId: "500-cid-789",
+      });
     });
   });
 

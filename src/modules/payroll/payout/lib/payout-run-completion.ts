@@ -201,18 +201,17 @@ export async function checkRunCompletion(
       .limit(1);
 
     if (paidRun[0]) {
-      deps.payrollPosting
-        .postPaid(
+      const { month, netTotal } = paidRun[0];
+      const postTask = () =>
+        deps.payrollPosting.postPaid(
           systemActor("payroll.run.payout-posting", orgId, actorId),
           runId,
-          paidRun[0].month,
-          paidRun[0].netTotal ?? "0",
-        )
-        .catch((e: unknown) =>
-          deps.logger.warn("postPaid accounting integration failed", { error: String(e), runId, orgId }),
+          month,
+          netTotal ?? "0",
         );
+      if (!registerAfterCommit(postTask)) void postTask();
       const snapshotTask = () =>
-        autoSnapshotJournal(deps, orgId, actorId, paidRun[0].month, runId).catch(
+        autoSnapshotJournal(deps, orgId, actorId, month, runId).catch(
           logSideEffectFailure("payroll auto-snapshot journal", { orgId, runId }),
         );
       if (!registerAfterCommit(snapshotTask)) void snapshotTask();

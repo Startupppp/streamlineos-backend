@@ -40,14 +40,6 @@ export class ChatHuddlesService {
   ) {}
 
   private async assertMember(channelId: number, userId: string, orgId: string) {
-    const member = await this.db.query.chatChannelMembers.findFirst({
-      where: and(
-        eq(chatChannelMembers.orgId, orgId),
-        eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.userId, userId),
-      ),
-    });
-    if (!member) throw new ForbiddenException("You are not a member of this channel");
     const activeMembership = await this.db.query.organizationMembers.findFirst({
       where: and(
         eq(organizationMembers.orgId, orgId),
@@ -57,6 +49,14 @@ export class ChatHuddlesService {
       columns: { id: true },
     });
     if (!activeMembership) throw new ForbiddenException("Your membership is no longer active");
+    const member = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
+        eq(chatChannelMembers.orgId, orgId),
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.membershipId, activeMembership.id),
+      ),
+    });
+    if (!member) throw new ForbiddenException("You are not a member of this channel");
     const channel = await this.db.query.chatChannels.findFirst({
       where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
       columns: { isArchived: true },
@@ -138,12 +138,9 @@ export class ChatHuddlesService {
     });
 
     const channelMembers = await this.db
-      .select({ userId: chatChannelMembers.userId, membershipId: organizationMembers.id })
+      .select({ userId: organizationMembers.userId, membershipId: chatChannelMembers.membershipId })
       .from(chatChannelMembers)
-      .innerJoin(organizationMembers, and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, chatChannelMembers.userId),
-      ))
+      .innerJoin(organizationMembers, eq(organizationMembers.id, chatChannelMembers.membershipId))
       .where(and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)));
 
     const starterMembershipId = channelMembers.find((m) => m.userId === userId)?.membershipId ?? null;

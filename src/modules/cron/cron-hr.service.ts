@@ -9,6 +9,7 @@ import { HrAutomationEngineService } from "../hr/automations/hr-automation-engin
 import { getDocumentExpiryReminderEmailTemplate } from "../email/templates/hr";
 import { appUrl } from "../email/app-url";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
+import { RetentionService } from "../hr/governance/retention/retention.service";
 import { logger } from "../../common/logger/logger.service";
 import { forEachOrg } from "../../common/tenant";
 
@@ -21,6 +22,7 @@ export class CronHrService {
     private readonly automation: AutomationService,
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly retention: RetentionService,
   ) {}
 
   async processCertificationExpiry(): Promise<{ fired: number }> {
@@ -241,5 +243,19 @@ export class CronHrService {
 
     logger.info("Document expiry check complete", { fired });
     return { fired };
+  }
+
+  async sweepRetentionDeleteRequests(): Promise<{ processed: number; skipped: number }> {
+    let processed = 0;
+    let skipped = 0;
+
+    await forEachOrg(this.db, "retention-delete-sweep", async (_tx, orgId) => {
+      const result = await this.retention.sweepStrandedDeleteRequests(orgId);
+      processed += result.processed;
+      skipped += result.skipped;
+    });
+
+    logger.info("[retention-delete-sweep] sweep complete", { processed, skipped });
+    return { processed, skipped };
   }
 }

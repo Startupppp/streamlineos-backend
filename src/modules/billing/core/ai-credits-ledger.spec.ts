@@ -1,5 +1,14 @@
+jest.mock("../../../common/tenant", () => ({ forEachOrg: jest.fn() }));
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  ...jest.requireActual("../../../common/tenant/run-in-tenant-transaction"),
+  runInNewTenantTransaction: (_db: unknown, _orgId: string, fn: () => Promise<unknown>) => fn(),
+}));
+
+import { forEachOrg } from "../../../common/tenant";
 import { ConflictException } from "@nestjs/common";
 import { AiCreditsReservationService } from "./ai-credits-reservation.service";
+
+const mockForEachOrg = forEachOrg as jest.Mock;
 
 type SelectChain = {
   from: jest.Mock;
@@ -311,17 +320,11 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
   });
 
   describe("sweepExpiredReservations", () => {
+    beforeEach(() => {
+      mockForEachOrg.mockReset();
+    });
+
     it("releases only expired RESERVED rows and returns the count", async () => {
-      const expired = [{ id: 10, orgId: "org1" }, { id: 11, orgId: "org2" }];
-
-      db.select = jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue(expired),
-          }),
-        }),
-      });
-
       const reservation10 = { id: 10, orgId: "org1", userId: null, feature: "chat.message", credits: 1000, status: "RESERVED" };
       const reservation11 = { id: 11, orgId: "org2", userId: null, feature: "chat.message", credits: 1000, status: "RESERVED" };
       const wallet = { orgId: "org1", balance: 0 };
@@ -343,6 +346,31 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
         });
         return fn(tenantTx({ select: txSelect, update: txUpdate }));
       });
+
+      mockForEachOrg.mockImplementation(
+        async (
+          _db: unknown,
+          _name: string,
+          fn: (tx: unknown, orgId: string) => Promise<void>,
+        ) => {
+          const makeOrgTx = (orgId: string) => {
+            const row = orgId === "org1" ? { id: 10 } : { id: 11 };
+            return tenantTx({
+              select: jest.fn().mockReturnValue({
+                from: jest.fn().mockReturnValue({
+                  where: jest.fn().mockReturnValue({
+                    limit: jest.fn().mockResolvedValue([row]),
+                  }),
+                }),
+              }),
+              update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+            });
+          };
+          await fn(makeOrgTx("org1"), "org1");
+          await fn(makeOrgTx("org2"), "org2");
+          return { organizations: 2, succeeded: 2, failed: 0 };
+        },
+      );
 
       const count = await svc.sweepExpiredReservations();
       expect(count).toBe(2);

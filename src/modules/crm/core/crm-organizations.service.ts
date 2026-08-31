@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { aliasedTable, and, asc, count, desc, eq, ilike, isNull, lt, or, sql } from "drizzle-orm";
+import { aliasedTable, and, asc, count, desc, eq, gt, ilike, isNull, lt, or, sql } from "drizzle-orm";
 import { tickets } from "../../../db/schema";
 import { businessParties, contactPartyMap, crmOrgPartyMap } from "../../../db/schema/party";
 import { CONTACT_MIRROR, ORGANISATION_MIRROR } from "../../party/party-legacy-mirror";
@@ -16,6 +16,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBefore } from "../../../common/pagination/keyset";
 import type {
   OrgDuplicatesQueryInput,
   OrganizationCreateInput,
@@ -127,7 +129,7 @@ export class CrmOrganizationsService {
 
   list(orgId: string, filters: OrganizationListInput) {
     const searchTerm = (filters.search ?? filters.q ?? "").trim();
-    const key = `${filters.page}:${filters.pageSize}:${searchTerm}`;
+    const key = `${filters.cursor ?? ""}:${filters.pageSize}:${searchTerm}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.crmOrganizationsListNamespace(orgId),
       key,
@@ -138,11 +140,15 @@ export class CrmOrganizationsService {
 
   private async queryList(orgId: string, filters: OrganizationListInput, searchTerm: string) {
     const limit = filters.pageSize;
-    const offset = (filters.page - 1) * filters.pageSize;
-    const where = and(
+    const position = decodeCursor(filters.cursor);
+    const baseConditions = [
       CrmOrganizationsService.isCompany(orgId),
       searchTerm ? ilike(businessParties.name, `%${escapeLike(searchTerm)}%`) : undefined,
-    );
+    ].filter(Boolean) as ReturnType<typeof and>[];
+    const where = position
+      ? and(...baseConditions, keysetBefore(businessParties.createdAt, crmOrgPartyMap.crmOrganizationId, position))
+      : and(...baseConditions);
+    const countWhere = and(...baseConditions);
 
     const openRequestsSq = this.db
       .select({
@@ -160,7 +166,7 @@ export class CrmOrganizationsService {
       .groupBy(tickets.customerId)
       .as("open_requests_sq");
 
-    const [organizations, countRow] = await Promise.all([
+    const [rows, countRow] = await Promise.all([
       this.db
         .select({
           ...COMPANY_COLUMNS,
@@ -169,19 +175,23 @@ export class CrmOrganizationsService {
         .from(crmOrgPartyMap)
         .innerJoin(businessParties, PARTY_OF_CRM_ORG)
         .leftJoin(openRequestsSq, eq(openRequestsSq.customerId, crmOrgPartyMap.crmOrganizationId))
-        // `created_at` alone is not a total order -- a backfill stamped whole
-        // batches with the same second -- so page two could repeat or skip a
-        // company. The id breaks the tie.
         .orderBy(desc(businessParties.createdAt), desc(crmOrgPartyMap.crmOrganizationId))
         .where(where)
-        .limit(limit)
-        .offset(offset),
-      this.countCompanies(where),
+        .limit(limit + 1),
+      filters.cursor === undefined ? this.countCompanies(countWhere) : Promise.resolve(null),
     ]);
 
-    const totalCount = Number(countRow?.count ?? 0);
-    const totalPages = totalCount === 0 ? 0 : Math.ceil(totalCount / filters.pageSize);
-    return { organizations, totalCount, page: filters.page, totalPages };
+    const page = buildCursorPage(rows, limit, (r) => ({
+      sortValue: r.createdAt.toISOString(),
+      id: String(r.id),
+    }));
+    const totalCount = countRow ? Number(countRow.count ?? 0) : undefined;
+    return {
+      organizations: page.data,
+      hasMore: page.pagination.hasMore,
+      nextCursor: page.pagination.nextCursor,
+      totalCount,
+    };
   }
 
   /**
@@ -228,6 +238,10 @@ export class CrmOrganizationsService {
     const other = aliasedTable(businessParties, "other_party");
     const otherMap = aliasedTable(crmOrgPartyMap, "other_map");
 
+    const limit = query.limit;
+    const [cursorId1, cursorId2] = query.cursor ? query.cursor.split("_").map(Number) : [undefined, undefined];
+    const hasCursor = cursorId1 !== undefined && cursorId2 !== undefined && !Number.isNaN(cursorId1) && !Number.isNaN(cursorId2);
+
     const rows = await this.db
       .select({
         id1: crmOrgPartyMap.crmOrganizationId,
@@ -250,23 +264,39 @@ export class CrmOrganizationsService {
           CrmOrganizationsService.isCompany(orgId),
           eq(other.partyKind, "ORGANISATION"),
           isNull(other.deletedAt),
-          // Each pair once, in one arrangement.
           lt(crmOrgPartyMap.crmOrganizationId, otherMap.crmOrganizationId),
           or(
             and(sql`${businessParties.domain} IS NOT NULL`, eq(businessParties.domain, other.domain)),
             sql`lower(${businessParties.name}) = lower(${other.name})`,
           ),
+          hasCursor
+            ? or(
+                gt(crmOrgPartyMap.crmOrganizationId, cursorId1),
+                and(
+                  eq(crmOrgPartyMap.crmOrganizationId, cursorId1),
+                  gt(otherMap.crmOrganizationId, cursorId2),
+                ),
+              )
+            : undefined,
         ),
       )
       .orderBy(asc(crmOrgPartyMap.crmOrganizationId), asc(otherMap.crmOrganizationId))
-      .limit(query.limit)
-      .offset((query.page - 1) * query.limit);
+      .limit(limit + 1);
 
-    return rows.map((row) => ({
-      org1: { id: row.id1, name: row.name1, domain: row.domain1 },
-      org2: { id: row.id2, name: row.name2, domain: row.domain2 },
-      matchReason: row.matchesDomain ? "domain" : "name",
-    }));
+    const hasMore = rows.length > limit;
+    const data = hasMore ? rows.slice(0, limit) : rows;
+    const last = data[data.length - 1];
+    const nextCursor = hasMore && last ? `${last.id1}_${last.id2}` : null;
+
+    return {
+      items: data.map((row) => ({
+        org1: { id: row.id1, name: row.name1, domain: row.domain1 },
+        org2: { id: row.id2, name: row.name2, domain: row.domain2 },
+        matchReason: row.matchesDomain ? "domain" : "name",
+      })),
+      hasMore,
+      nextCursor,
+    };
   }
 
   async create(orgId: string, input: OrganizationCreateInput) {

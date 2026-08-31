@@ -19,6 +19,7 @@ import {
 } from "./dto/requisitions.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const requisitionIdParams = z.object({ requisitionId: z.coerce.number().int().positive() }).strict();
 
@@ -58,6 +59,7 @@ export class RecruitmentRequisitionsController {
   }
 
   @Patch(":requisitionId/approve")
+  @BodylessAction()
   @Idempotent("hr.requisition.approve")
   @RequirePermission("hr:requisitions:manage")
   @Validate({ params: requisitionIdParams })

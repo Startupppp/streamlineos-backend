@@ -63,7 +63,7 @@ describe("TasksService — cross-tenant isolation", () => {
       ],
     }).compile();
     const svc = mod.get(TasksService);
-    const result = await svc.list(ownerCtx(ATTACKER_ORG), { page: 1, limit: 20 });
+    const result = await svc.list(ownerCtx(ATTACKER_ORG), { limit: 20 });
     expect(result.tasks).toHaveLength(0);
   });
 
@@ -81,7 +81,7 @@ describe("TasksService — cross-tenant isolation", () => {
       ],
     }).compile();
     const svc = mod.get(TasksService);
-    const result = await svc.list(ownerCtx(OWNER_ORG), { page: 1, limit: 20 });
+    const result = await svc.list(ownerCtx(OWNER_ORG), { limit: 20 });
     expect(result.tasks).toHaveLength(1);
   });
 });

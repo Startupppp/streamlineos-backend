@@ -6,7 +6,7 @@ export const listSchema = z.object({
   search: z.string().optional(),
   organizationId: z.coerce.number().optional(),
   limit: optionalPageSizeField(),
-  offset: z.coerce.number().min(0).optional(),
+  cursor: z.string().optional(),
 });
 
 export const searchSchema = z.object({
@@ -24,6 +24,7 @@ export const createSchema = z.object({
   linkedinUrl: z.string().optional(),
   twitterUrl: z.string().optional(),
   websiteUrl: z.string().optional(),
+  notes: z.string().nullable().optional(),
   leadId: z.number().optional(),
   dealId: z.number().optional(),
   tags: z.array(z.string()).default([]),
@@ -41,6 +42,7 @@ export const updateSchema = z.object({
   twitterUrl: z.string().nullable().optional(),
   websiteUrl: z.string().nullable().optional(),
   avatarUrl: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
   tags: z.array(z.string()).optional(),
   leadId: z.number().nullable().optional(),
   dealId: z.number().nullable().optional(),

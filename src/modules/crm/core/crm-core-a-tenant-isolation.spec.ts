@@ -4,7 +4,7 @@ import { CrmProductsService } from "./crm-products.service";
 import { CrmCampaignsService } from "./crm-campaigns.service";
 import { CrmWebFormsService } from "./crm-web-forms.service";
 import { CrmAttributionReportService } from "./crm-attribution-report.service";
-import { CrmCustomer360SectionsService } from "./crm-customer360-sections.service";
+import { CrmCustomer360EngagementService } from "./crm-customer360-engagement.service";
 import { SlaResolverService } from "./sla-resolver.service";
 import { TerritoryMatchService } from "./territory-match.service";
 import { CrmPeopleService } from "./crm-people.service";
@@ -134,10 +134,10 @@ describe("CrmAttributionReportService — cross-tenant isolation", () => {
   });
 });
 
-describe("CrmCustomer360SectionsService — cross-tenant isolation", () => {
+describe("CrmCustomer360EngagementService — cross-tenant isolation", () => {
   it("fetchSupportTicketsForOrg: returns nothing for a different org (deny)", async () => {
     const { db, where } = makeDb([]);
-    const svc = new CrmCustomer360SectionsService(db);
+    const svc = new CrmCustomer360EngagementService(db);
     const result = await svc.fetchSupportTicketsForOrg(ATTACKER);
     expect(result.items).toHaveLength(0);
     expect(result.total).toBe(0);
@@ -148,7 +148,7 @@ describe("CrmCustomer360SectionsService — cross-tenant isolation", () => {
   it("fetchSupportTicketsForOrg: returns rows for the owning org (control)", async () => {
     const row = { id: 1, title: "T1", status: "open", priority: "high", createdAt: new Date() };
     const { db } = makeDb([row]);
-    const svc = new CrmCustomer360SectionsService(db);
+    const svc = new CrmCustomer360EngagementService(db);
     const result = await svc.fetchSupportTicketsForOrg(OWNER);
     expect(result.items).toHaveLength(1);
   });

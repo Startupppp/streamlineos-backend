@@ -22,12 +22,15 @@ function makeClaimDb(options: {
   inserted: Array<{ id: number }>;
   existing?: Array<{ status: string; aggregateVersion: number }>;
   latestCompleted?: Array<{ aggregateVersion: number }>;
+  reclaimRows?: Array<{ id: number }>;
 }) {
-  const execute = jest.fn().mockResolvedValue(
-    options.inserted.length > 0 ? options.latestCompleted ?? [] : options.existing ?? [],
-  );
+  const freshInsert = options.inserted.length > 0;
+  const execute = jest.fn()
+    .mockResolvedValueOnce(freshInsert ? (options.latestCompleted ?? []) : (options.existing ?? []))
+    .mockResolvedValue(options.latestCompleted ?? []);
 
-  const updateWhere = jest.fn().mockResolvedValue([]);
+  const updateReturning = jest.fn().mockResolvedValue(options.reclaimRows ?? []);
+  const updateWhere = jest.fn().mockReturnValue({ returning: updateReturning });
   const set = jest.fn().mockReturnValue({ where: updateWhere });
   const update = jest.fn().mockReturnValue({ set });
 
@@ -83,5 +86,37 @@ describe("InboxConsumer.claim", () => {
 
     await expect(new InboxConsumer(db).claim("consumer", event)).resolves.toBe(false);
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-claims an IN_FLIGHT row on redelivery (crash recovery)", async () => {
+    const { db } = makeClaimDb({
+      inserted: [],
+      existing: [{ status: "IN_FLIGHT", aggregateVersion: 1 }],
+      reclaimRows: [{ id: 1 }],
+    });
+
+    await expect(new InboxConsumer(db).claim("consumer", event)).resolves.toBe(true);
+  });
+
+  it("does not re-claim a SKIPPED row on redelivery", async () => {
+    const { db } = makeClaimDb({
+      inserted: [],
+      existing: [{ status: "SKIPPED", aggregateVersion: 1 }],
+    });
+
+    await expect(new InboxConsumer(db).claim("consumer", event)).resolves.toBe(false);
+  });
+
+  it("inserts with IN_FLIGHT status on first claim", async () => {
+    const { db, insert } = makeClaimDb({
+      inserted: [{ id: 1 }],
+      latestCompleted: [],
+    });
+
+    await new InboxConsumer(db).claim("consumer", event);
+    const valuesArg = (insert as jest.Mock).mock.results[0]?.value as { values: jest.Mock } | undefined;
+    expect(valuesArg?.values).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "IN_FLIGHT" }),
+    );
   });
 });

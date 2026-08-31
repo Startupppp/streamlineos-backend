@@ -30,7 +30,7 @@ describe("GrnReceiveService — cross-tenant isolation", () => {
     const poService = {} as never;
     const svc = new GrnReceiveService(db, cache, engine, settingsService, numSeq, journalPosting, poService);
     await expect(
-      svc.receiveGoods(ATTACKER, 1, "user-1", "idem-key", { lines: [], notes: null, receivedDate: "2025-01-01", locationId: null }),
+      svc.receiveGoods(ATTACKER, 1, "user-1", "idem-key", { lines: [], notes: undefined, receivedDate: "2025-01-01", locationId: undefined }),
     ).rejects.toThrow(NotFoundException);
     expect(findFirst).toHaveBeenCalled();
     const whereArg = findFirst.mock.calls[0]?.[0]?.where;
@@ -81,7 +81,7 @@ describe("GrnReceiveService — cross-tenant isolation", () => {
     } as unknown as Db;
 
     const svc = new GrnReceiveService(dbWithTx, cache, engine, settingsService, numSeq, journalPosting, poService);
-    const result = await svc.receiveGoods(OWNER, 1, "user-1", "idem-key", { lines: [], notes: null, receivedDate: "2025-01-01", locationId: null });
+    const result = await svc.receiveGoods(OWNER, 1, "user-1", "idem-key", { lines: [], notes: undefined, receivedDate: "2025-01-01", locationId: undefined });
     const whereArg = findFirst.mock.calls[0]?.[0]?.where;
     const vals = sqlValues(whereArg);
     expect(vals).toContain(OWNER);

@@ -1,4 +1,13 @@
-import { Controller, Get, Param, ParseIntPipe, Post, Body, Query, UseGuards, Headers } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Body,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -15,6 +24,9 @@ import {
 } from "./dto/inv-stock.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 
 const transferIdParams = z.object({ transferId: z.coerce.number().int().positive() }).strict();
 
@@ -55,7 +67,7 @@ export class InvStockTransfersController {
   @RequirePermission("inventory:stock:transfer")
   @Validate({ body: createTransferSchema })
   createTransfer(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Body() body: CreateTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -63,11 +75,12 @@ export class InvStockTransfersController {
   }
 
   @Post(":transferId/reserve")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams })
   reserveTransfer(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -75,11 +88,12 @@ export class InvStockTransfersController {
   }
 
   @Post(":transferId/dispatch")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams })
   dispatchTransfer(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -91,7 +105,7 @@ export class InvStockTransfersController {
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams, body: completeTransferSchema })
   completeTransfer(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @Body() body: CompleteTransferInput,
     @CurrentUser() u: CurrentUserContext,
@@ -100,11 +114,13 @@ export class InvStockTransfersController {
   }
 
   @Post(":transferId/cancel")
+  @BodylessAction()
+  @Idempotent("inventory.stock-transfer.cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams })
   cancelTransfer(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {

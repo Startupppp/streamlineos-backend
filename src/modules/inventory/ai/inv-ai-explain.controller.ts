@@ -25,6 +25,7 @@ import {
   invAiReorderProposalSchema as reorderProposalBodySchema,
 } from "./proposals/dto/inv-ai-proposal.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const insightIdParams = z.object({ insightId: z.coerce.number().int().positive() }).strict();
 
@@ -43,6 +44,7 @@ export class InvAiExplainController {
   ) {}
 
   @Post("insights/:insightId/explain")
+  @BodylessAction()
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:reports:read")
@@ -103,8 +105,7 @@ export class InvAiExplainController {
     @Body() body: z.infer<typeof reorderProposalBodySchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.explainService.getReorderProposal(u.orgId, u.userId, body.variantId, body.warehouseId);
-  }
+    return this.proposals.propose(u, { variantId: body.variantId, warehouseId: body.warehouseId });
   }
 
   /**
@@ -125,8 +126,7 @@ export class InvAiExplainController {
     @Body() body: z.infer<typeof confirmProposalBodySchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.explainService.confirmReorderProposal(u.orgId, u.userId, body.proposalId, body.token);
-  }
+    return this.proposals.confirm(u, { proposalId: body.proposalId, token: body.token });
   }
 
   @Get("supplier-delay")

@@ -139,9 +139,14 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
       "attendance report supports arbitrary recipients and attachments",
     ),
     EXEMPT(
-      "modules/organization/core/invitations.service.ts",
+      "modules/organization/core/invitation-create.service.ts",
       DeliveryClass.WORKFLOW_EXTERNAL,
       "invitation goes to a non-member external recipient",
+    ),
+    EXEMPT(
+      "modules/organization/core/invitation-lifecycle.service.ts",
+      DeliveryClass.WORKFLOW_EXTERNAL,
+      "resend and cancel notices go to a non-member external recipient",
     ),
     EXEMPT(
       "modules/organization/core/org-membership.service.ts",

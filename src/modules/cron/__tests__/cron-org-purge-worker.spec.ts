@@ -3,6 +3,7 @@ import { CronOrgPurgeWorkerService } from "../cron-org-purge-worker.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { OrgMembershipService } from "../../organization/core/org-membership.service";
+import { StorageService } from "../../storage/storage.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { logger } from "../../../common/logger/logger.service";
 import { PURGE_ADAPTERS } from "../../../db/schema/common/organization-purge";
@@ -25,6 +26,10 @@ const mockCache = {
 };
 const mockOrgMembership = {
   revokeOrgScopedAccess: jest.fn().mockResolvedValue(undefined),
+};
+const mockStorage = {
+  deleteFile: jest.fn().mockResolvedValue(undefined),
+  isConfigured: jest.fn().mockReturnValue(true),
 };
 
 /**
@@ -83,6 +88,7 @@ describe("CronOrgPurgeWorkerService", () => {
         { provide: AuditService, useValue: mockAudit },
         { provide: CacheService, useValue: mockCache },
         { provide: OrgMembershipService, useValue: mockOrgMembership },
+        { provide: StorageService, useValue: mockStorage },
       ],
     }).compile();
 

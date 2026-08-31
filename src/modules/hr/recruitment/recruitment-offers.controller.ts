@@ -30,6 +30,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const candidateIdParams = z.object({ candidateId: z.coerce.number().int().positive() }).strict();
 const candidateAndOfferIdParams = z.object({ candidateId: z.coerce.number().int().positive(), offerId: z.coerce.number().int().positive() }).strict();
@@ -60,6 +61,7 @@ export class RecruitmentOffersController {
   }
 
   @Post(":offerId/submit-for-approval")
+  @BodylessAction()
   @Idempotent("hr.offer.submit-approval")
   @RequirePermission("hr:offers:manage")
   @Validate({ params: candidateAndOfferIdParams })

@@ -80,11 +80,11 @@ async function main(): Promise<void> {
         )
         SELECT
           count(*) AS preference_rows,
-          count(DISTINCT (org_id, user_id)) AS preference_scopes,
+          count(DISTINCT (org_id, membership_id)) AS preference_scopes,
           count(*) FILTER (WHERE enabled = false) AS disabled_rows,
           count(*) FILTER (WHERE enabled = true) AS enabled_rows,
           count(*) FILTER (WHERE k.source_key IS NULL) AS unknown_source_keys,
-          count(*) FILTER (WHERE org_id IS NULL OR user_id IS NULL) AS invalid_owner_rows
+          count(*) FILTER (WHERE org_id IS NULL OR membership_id IS NULL) AS invalid_owner_rows
         FROM calendar_source_preferences p
         LEFT JOIN known k ON k.source_key = p.source_key
         WHERE p.org_id = ${orgId}

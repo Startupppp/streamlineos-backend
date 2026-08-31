@@ -1,6 +1,12 @@
 import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
 
-function makeDb(rows: Array<{ sourceKey: string }> = []) {
+const ORG = "org-1";
+const USER = "user-1";
+const MEMBERSHIP_ID = 42;
+
+function makeDb(rows: Array<{ sourceKey: string }> = [], membership: { id: number } | null = { id: MEMBERSHIP_ID }) {
+  const findFirst = jest.fn().mockResolvedValue(membership);
+
   const where = jest.fn().mockResolvedValue(rows);
   const select = jest.fn().mockReturnValue({
     from: jest.fn().mockReturnValue({ where }),
@@ -14,7 +20,12 @@ function makeDb(rows: Array<{ sourceKey: string }> = []) {
   const insert = jest.fn().mockReturnValue({ values });
 
   return {
-    db: { select, delete: remove, insert },
+    db: {
+      select,
+      delete: remove,
+      insert,
+      query: { organizationMembers: { findFirst } },
+    },
     select,
     where,
     remove,
@@ -22,31 +33,41 @@ function makeDb(rows: Array<{ sourceKey: string }> = []) {
     insert,
     values,
     conflict,
+    findFirst,
   };
 }
 
 describe("CalendarSourcePreferencesService", () => {
-  it("returns only disabled source keys for the requested person and organisation", async () => {
+  it("returns only disabled source keys for the requested membership", async () => {
     const mocks = makeDb([{ sourceKey: "hr-leaves" }, { sourceKey: "tasks" }]);
     const service = new CalendarSourcePreferencesService(mocks.db as never);
 
-    await expect(service.getDisabledKeys("org-1", "user-1")).resolves.toEqual(
+    await expect(service.getDisabledKeys(ORG, USER)).resolves.toEqual(
       new Set(["hr-leaves", "tasks"]),
     );
+    expect(mocks.findFirst).toHaveBeenCalledTimes(1);
     expect(mocks.select).toHaveBeenCalledTimes(1);
     expect(mocks.where).toHaveBeenCalledTimes(1);
   });
 
-  it("stores an explicit opt-out and upserts repeated changes", async () => {
+  it("returns empty set when caller has no active membership", async () => {
+    const mocks = makeDb([{ sourceKey: "hr-leaves" }], null);
+    const service = new CalendarSourcePreferencesService(mocks.db as never);
+
+    await expect(service.getDisabledKeys(ORG, USER)).resolves.toEqual(new Set());
+    expect(mocks.select).not.toHaveBeenCalled();
+  });
+
+  it("stores an explicit opt-out keyed on membershipId", async () => {
     const mocks = makeDb();
     const service = new CalendarSourcePreferencesService(mocks.db as never);
 
-    await service.setPreference("org-1", "user-1", "hr-leaves", false);
+    await service.setPreference(ORG, USER, "hr-leaves", false);
 
     expect(mocks.insert).toHaveBeenCalledTimes(1);
     expect(mocks.values).toHaveBeenCalledWith({
-      orgId: "org-1",
-      userId: "user-1",
+      orgId: ORG,
+      membershipId: MEMBERSHIP_ID,
       sourceKey: "hr-leaves",
       enabled: false,
     });
@@ -59,10 +80,20 @@ describe("CalendarSourcePreferencesService", () => {
     const mocks = makeDb();
     const service = new CalendarSourcePreferencesService(mocks.db as never);
 
-    await service.setPreference("org-1", "user-1", "hr-leaves", true);
+    await service.setPreference(ORG, USER, "hr-leaves", true);
 
     expect(mocks.remove).toHaveBeenCalledTimes(1);
     expect(mocks.deleteWhere).toHaveBeenCalledTimes(1);
     expect(mocks.insert).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when membership cannot be resolved and preference is set", async () => {
+    const mocks = makeDb([], null);
+    const service = new CalendarSourcePreferencesService(mocks.db as never);
+
+    await service.setPreference(ORG, USER, "hr-leaves", false);
+
+    expect(mocks.insert).not.toHaveBeenCalled();
+    expect(mocks.remove).not.toHaveBeenCalled();
   });
 });

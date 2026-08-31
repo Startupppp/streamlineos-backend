@@ -6,7 +6,7 @@ import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
 
-const actor: EntityActor = { orgId: "org1", userId: "user1", isOrgOwner: false };
+const actor: EntityActor = { orgId: "org1", userId: "user1", membershipId: 10, isOrgOwner: false };
 
 const FALLBACK = entityChannelFallbackName("ticket", "1");
 

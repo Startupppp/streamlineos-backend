@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { orgUnitMembers, orgUnits, type OrgUnitKind } from "../../db/schema";
+import { orgUnitMembers, orgUnits, organizationMembers, type OrgUnitKind } from "../../db/schema";
 import type { DbOrTx } from "../rbac/access-invalidate";
 
 export type PlacementUpdate = Partial<Record<OrgUnitKind, string | null | undefined>>;
@@ -41,13 +41,26 @@ export async function syncOrgUnitPlacement(
     if (unitId === undefined) continue;
     if (unitId !== null) await assertActiveOrgUnit(tx, orgId, unitId, kind);
 
+    const [member] = await tx
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+        ),
+      )
+      .limit(1);
+
+    if (!member) continue;
+
     const existing = await tx
       .select({ id: orgUnitMembers.id })
       .from(orgUnitMembers)
       .innerJoin(orgUnits, eq(orgUnitMembers.orgUnitId, orgUnits.id))
       .where(
         and(
-          eq(orgUnitMembers.userId, userId),
+          eq(orgUnitMembers.membershipId, member.id),
           eq(orgUnitMembers.orgId, orgId),
           eq(orgUnits.kind, kind),
         ),
@@ -60,7 +73,13 @@ export async function syncOrgUnitPlacement(
     if (unitId !== null) {
       await tx
         .insert(orgUnitMembers)
-        .values({ id: randomUUID(), orgId, orgUnitId: unitId, userId, role: "member" })
+        .values({
+          id: randomUUID(),
+          orgId,
+          orgUnitId: unitId,
+          membershipId: member.id,
+          role: "member",
+        })
         .onConflictDoNothing();
     }
   }

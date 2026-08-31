@@ -5,6 +5,7 @@ import { NotificationsModule } from "../notifications/notifications.module";
 import { OutboxModule } from "../../common/outbox/outbox.module";
 import {
   ExpenseDecidedConsumer,
+  ExpenseExportRequestedConsumer,
   ExpenseSubmittedConsumer,
 } from "./expense-outbox.consumer";
 import { ExpensesController } from "./expenses.controller";
@@ -31,6 +32,7 @@ import { ExpenseExportWorkerService } from "./expense-export-worker.service";
     TravelService,
     ExpenseSubmittedConsumer,
     ExpenseDecidedConsumer,
+    ExpenseExportRequestedConsumer,
     ExpenseExportService,
     ExpenseExportWorkerService,
   ],

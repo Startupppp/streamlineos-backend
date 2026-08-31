@@ -2,6 +2,8 @@ import { ForbiddenException, NotFoundException, ServiceUnavailableException } fr
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { SupportAiService } from "./support-ai.service";
+import { SupportAiTriageService } from "./support-ai-triage.service";
+import { SupportAiTranslationService } from "./support-ai-translation.service";
 import { SupportAiEmbeddingsHelper } from "./support-ai-embeddings.helper";
 import { SupportAiSettingsService } from "./support-ai-settings.service";
 import { SupportAiReportHelper } from "./support-ai-report.helper";
@@ -103,6 +105,8 @@ describe("SupportAiService", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SupportAiService,
+        SupportAiTriageService,
+        SupportAiTranslationService,
         SupportAiEmbeddingsHelper,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AiGatewayService, useValue: mockGateway },

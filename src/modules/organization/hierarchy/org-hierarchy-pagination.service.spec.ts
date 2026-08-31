@@ -72,7 +72,8 @@ function makeCursorDb(rows?: Array<Record<string, unknown>>) {
   const limit = jest.fn().mockResolvedValue(rows ?? [row]);
   const orderBy = jest.fn().mockReturnValue({ limit });
   const rowWhere = jest.fn().mockReturnValue({ orderBy });
-  const leftJoin = jest.fn().mockReturnValue({ where: rowWhere });
+  const leftJoin: jest.Mock = jest.fn();
+  leftJoin.mockReturnValue({ where: rowWhere, leftJoin });
   const rowFrom = jest.fn().mockReturnValue({ where: rowWhere, leftJoin });
   const select = jest.fn().mockReturnValue({ from: rowFrom });
 

@@ -4,10 +4,11 @@ import { CrmAutomationStudioModule } from "../automation-studio/crm-automation-s
 import { CrmInboxController } from "./crm-inbox.controller";
 import { CrmInboxService } from "./crm-inbox.service";
 import { CrmInboxAiActionsService } from "./crm-inbox-ai-actions.service";
+import { CrmInboxQueriesService } from "./crm-inbox-queries.service";
 
 @Module({
   imports: [DrizzleModule, CrmAutomationStudioModule],
   controllers: [CrmInboxController],
-  providers: [CrmInboxService, CrmInboxAiActionsService],
+  providers: [CrmInboxService, CrmInboxAiActionsService, CrmInboxQueriesService],
 })
 export class CrmInboxModule {}

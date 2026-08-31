@@ -7,6 +7,8 @@
  *   src/modules/ai/core/services/crm-pipeline.service.ts
  */
 
+export {};
+
 const OWNER_ORG = "org-owner-abc";
 const ATTACKER_ORG = "org-attacker-xyz";
 const USER_ID = "user-111";

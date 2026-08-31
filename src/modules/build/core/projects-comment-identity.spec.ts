@@ -39,7 +39,7 @@ const activity = { logTicketActivity: jest.fn() } as never;
 const access = {
   resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:tickets:view"])),
   scopeFor: jest.fn().mockResolvedValue("all"),
-} as never;
+} as any;
 const webhooks = { dispatch: jest.fn() } as never;
 
 beforeEach(() => {

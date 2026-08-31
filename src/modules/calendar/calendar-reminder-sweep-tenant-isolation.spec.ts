@@ -1,4 +1,4 @@
-import type { Db } from "../../db/drizzle.module";
+import type { Db, TenantTx } from "../../db/drizzle.types";
 import { CalendarReminderSweepService } from "./calendar-reminder-sweep.service";
 
 jest.mock("../../common/tenant", () => ({
@@ -36,7 +36,7 @@ describe("CalendarReminderSweepService — cross-tenant isolation", () => {
         where: jest.fn().mockImplementation((a: unknown) => { wheres.push(a); return chain; }),
       }),
     });
-    return { select: jest.fn().mockReturnValue({ from }) } as unknown as Db;
+    return { select: jest.fn().mockReturnValue({ from }) } as unknown as TenantTx;
   }
 
   it("scopes reminder queries to the correct org (tenant isolation — different orgs don't share data)", async () => {
@@ -45,7 +45,7 @@ describe("CalendarReminderSweepService — cross-tenant isolation", () => {
 
     mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
       await cb(txA, ORG_A);
-      return { processed: 1, failed: 0 };
+      return { organizations: 1, succeeded: 1, failed: 0 };
     });
 
     const db = {} as unknown as Db;
@@ -64,7 +64,7 @@ describe("CalendarReminderSweepService — cross-tenant isolation", () => {
 
     mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
       await cb(txOwner, ORG_A);
-      return { processed: 1, failed: 0 };
+      return { organizations: 1, succeeded: 1, failed: 0 };
     });
 
     const db = {} as unknown as Db;

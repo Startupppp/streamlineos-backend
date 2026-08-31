@@ -33,6 +33,7 @@ import { LeavesWriteService } from "./leaves-write.service";
 import { WfhService } from "./wfh.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const leaveIdParams = z.object({ leaveId: z.coerce.number().int().positive() }).strict();
 
@@ -80,6 +81,7 @@ export class EmployeeTimeOffController {
   }
 
   @Patch(":leaveId/cancel")
+  @BodylessAction()
   @RequirePermission("self:leaves")
   @Validate({ params: leaveIdParams })
   async cancel(

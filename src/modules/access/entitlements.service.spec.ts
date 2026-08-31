@@ -22,7 +22,11 @@ function buildMockDb(ownerMembershipId: number | null = 42, mockRoleId: number |
   const limit = jest.fn()
     .mockResolvedValueOnce(ownerMembershipId !== null ? [{ ownerMembershipId }] : [])
     .mockResolvedValue(mockRoleId !== null ? [{ id: mockRoleId }] : []);
-  const txWhere = jest.fn().mockReturnValue({ limit });
+  const activeMemberRows = [{ userId: "member-1" }, { userId: "member-2" }];
+  const txWhere = jest.fn().mockReturnValue({
+    limit,
+    then: (resolve: (rows: { userId: string }[]) => unknown) => resolve(activeMemberRows),
+  });
   const txFrom = jest.fn().mockReturnValue({ where: txWhere });
   const txSelect = jest.fn().mockReturnValue({ from: txFrom });
 
@@ -57,6 +61,7 @@ function buildMockDb(ownerMembershipId: number | null = 42, mockRoleId: number |
       txFrom,
       txWhere,
       limit,
+      activeMemberRows,
     },
   };
 }
@@ -327,8 +332,18 @@ describe("EntitlementsService", () => {
 
       expect(cacheMocks.invalidate).toHaveBeenCalledWith("org-1:entitlements:module:hr");
       expect(cacheMocks.invalidate).toHaveBeenCalledWith("org-1:entitlements:modules");
-      expect(cacheMocks.invalidate).toHaveBeenCalledWith("user:session:user-1");
-      expect(cacheMocks.invalidate).toHaveBeenCalledTimes(3);
+      expect(cacheMocks.invalidate).toHaveBeenCalledTimes(4);
+    });
+
+    it("busts the session cache of every active member, not just the actor", async () => {
+      const { db, mocks } = buildMockDb();
+      const { cache, mocks: cacheMocks } = buildMockCache();
+
+      await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "actor-not-a-member");
+
+      for (const row of mocks.activeMemberRows)
+        expect(cacheMocks.invalidate).toHaveBeenCalledWith(`user:session:${row.userId}`);
+      expect(cacheMocks.invalidate).not.toHaveBeenCalledWith("user:session:actor-not-a-member");
     });
 
     describe("ownership seeding", () => {
@@ -352,7 +367,7 @@ describe("EntitlementsService", () => {
 
         await buildService(db, cache).setModuleEnabled("org-1", "hr", false, "user-1");
 
-        expect(mocks.txSelect).not.toHaveBeenCalled();
+        expect(mocks.txSelect).toHaveBeenCalledTimes(1);
         expect(mocks.onConflictDoNothing).not.toHaveBeenCalled();
         expect(mocks.insert).toHaveBeenCalledTimes(2);
       });
@@ -363,7 +378,7 @@ describe("EntitlementsService", () => {
 
         await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-        expect(mocks.txSelect).toHaveBeenCalledTimes(1);
+        expect(mocks.txSelect).toHaveBeenCalledTimes(2);
         expect(mocks.onConflictDoNothing).not.toHaveBeenCalled();
         expect(mocks.insert).toHaveBeenCalledTimes(2);
       });

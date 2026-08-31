@@ -18,6 +18,7 @@ import {
 } from "./dto/inv-purchase-orders.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const poIdParams = z.object({ poId: z.coerce.number().int().positive() }).strict();
 
@@ -79,6 +80,7 @@ export class InvPurchaseOrdersController {
   }
 
   @Post(":poId/approve")
+  @BodylessAction()
   @Idempotent("inventory.purchase-order.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
@@ -92,6 +94,7 @@ export class InvPurchaseOrdersController {
   }
 
   @Post(":poId/send")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)
@@ -105,6 +108,7 @@ export class InvPurchaseOrdersController {
   }
 
   @Post(":poId/close")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)
@@ -117,6 +121,7 @@ export class InvPurchaseOrdersController {
   }
 
   @Post(":poId/cancel")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)

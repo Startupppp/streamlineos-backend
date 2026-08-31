@@ -43,7 +43,7 @@ export class TaxAdminController {
     @CurrentUser() u: CurrentUserContext,
     @Query() query: TaxDeclarationsQuery,
   ) {
-    return this.service.listDeclarations(u.orgId, query);
+    return this.service.listDeclarations(u.orgId, query, query.page ?? 1, query.limit ?? 50);
   }
 
   @Patch("declarations/:declarationId/approve")

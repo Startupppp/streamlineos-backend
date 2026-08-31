@@ -13,6 +13,7 @@ import { PaymentProviderResolver } from "../payments/payment-provider-resolver.s
 import { aiCreditsUsageQuerySchema, autoTopUpSchema, listTransactionsSchema, purchaseAiPackSchema, type PurchaseAiPackInput } from "./dto/ai-credits.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const appIdParams = z.object({ appId: z.coerce.number().int().positive() }).strict();
 
@@ -35,6 +36,7 @@ export class BillingMarketplaceController {
   }
 
   @Post("marketplace/:appId/install")
+  @BodylessAction()
   @Idempotent("billing.marketplace.install")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:install")
@@ -58,6 +60,7 @@ export class BillingMarketplaceController {
   }
 
   @Post("marketplace/:appId/trial")
+  @BodylessAction()
   @Idempotent("billing.marketplace.trial")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:marketplace:install")

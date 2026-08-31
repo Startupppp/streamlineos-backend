@@ -1,7 +1,7 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { auditLogs, dealActivities, deals, leadActivities } from "../../../../db/schema";
+import { auditLogs, dealActivities, deals } from "../../../../db/schema";
 import { businessParties, leadPartyMap } from "../../../../db/schema/party";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
@@ -14,12 +14,10 @@ import {
   leadPartyScope,
 } from "../../../leads/lead-party-reader";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
-
 import { OrgFeaturesService } from "./org-features.service";
-import { CrmScoringService } from "./crm-scoring.service";
 import { CrmContentService } from "./crm-content.service";
 import { CrmPipelineService } from "./crm-pipeline.service";
-import { findDuplicateLeads } from "../../../leads/duplicate-leads";
+import { CrmCopilotLeadService } from "./crm-copilot-lead.service";
 import { ConversationSummarySchema } from "../dto/output.schemas";
 import { throwOnAiFailure } from "./gateway-result.util";
 
@@ -38,13 +36,6 @@ const DealInsightsSchema = z.object({
 
 type DealInsights = z.infer<typeof DealInsightsSchema>;
 
-const LeadSummarySchema = z.object({
-  summary: z.string(),
-  nextBestActions: z.array(z.string()),
-});
-
-const URGENCY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 } as const;
-
 function truncate(s: string | null | undefined, max: number): string {
   if (!s) return "";
   return s.length > max ? s.slice(0, max) + "…" : s;
@@ -56,9 +47,9 @@ export class CrmCopilotService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly gateway: AiGatewayService,
     private readonly orgFeatures: OrgFeaturesService,
-    private readonly scoring: CrmScoringService,
     private readonly content: CrmContentService,
     private readonly pipeline: CrmPipelineService,
+    private readonly leadCopilot: CrmCopilotLeadService,
   ) {}
 
   private async auditAiAction(
@@ -80,92 +71,20 @@ export class CrmCopilotService {
     }, { orgId });
   }
 
-  async leadSummary(orgId: string, leadId: number, userId: string) {
-    const flags = await this.orgFeatures.getFlags(orgId);
-    if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
+  leadSummary(orgId: string, leadId: number, userId: string) {
+    return this.leadCopilot.leadSummary(orgId, leadId, userId);
+  }
 
-    const ctx = await runInTenantTransaction(this.db, async (tx) => {
-      const [[lead], activities] = await Promise.all([
-        // A deleted lead's detail page has always rendered, and so has its
-        // summary; the party answers for it the same way.
-        tx
-          .select({
-            id: LEAD_PARTY_COLUMNS.id,
-            name: LEAD_PARTY_COLUMNS.name,
-            email: LEAD_PARTY_COLUMNS.email,
-            company: LEAD_PARTY_COLUMNS.company,
-            status: LEAD_PARTY_COLUMNS.status,
-            priority: LEAD_PARTY_COLUMNS.priority,
-            score: LEAD_PARTY_COLUMNS.score,
-            potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
-            notes: LEAD_PARTY_COLUMNS.notes,
-          })
-          .from(leadPartyMap)
-          .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(leadId))),
-        tx
-          .select({
-            type: leadActivities.type,
-            date: leadActivities.date,
-            subject: leadActivities.subject,
-            notes: leadActivities.notes,
-            outcome: leadActivities.outcome,
-          })
-          .from(leadActivities)
-          .where(eq(leadActivities.leadId, leadId))
-          .orderBy(desc(leadActivities.date))
-          .limit(10),
-      ]);
-      return { lead: lead ?? null, activities };
-    }, { orgId });
+  leadSummaryWithCitations(orgId: string, leadId: number, userId: string) {
+    return this.leadCopilot.leadSummaryWithCitations(orgId, leadId, userId);
+  }
 
-    if (!ctx.lead) throw new NotFoundException("Lead not found");
-    const { lead, activities } = ctx;
+  nextBestActionsAcrossPipeline(orgId: string, userId: string, limit: number) {
+    return this.leadCopilot.nextBestActionsAcrossPipeline(orgId, userId, limit);
+  }
 
-    const activitiesText = activities.length === 0
-      ? "No activities recorded."
-      : activities.map((a) => {
-          const d = a.date ? new Date(a.date).toLocaleDateString("en-IN") : "?";
-          return `[${d}] ${a.type}${a.subject ? `: ${a.subject}` : ""}${a.notes ? ` — ${truncate(a.notes, 200)}` : ""}${a.outcome ? ` | ${a.outcome}` : ""}`;
-        }).join("\n");
-
-    const userPrompt = `Summarize this CRM lead and suggest 3 next best actions.
-
-Lead: ${lead.name}
-Email: ${lead.email ?? "N/A"}
-Company: ${lead.company ?? "N/A"}
-Status: ${lead.status}
-Priority: ${lead.priority ?? "N/A"}
-AI Score: ${lead.score ?? "Not scored"}
-Potential Value: ${lead.potentialValue ?? "Not set"}
-Notes: ${truncate(lead.notes, 500)}
-
-Recent Activities (newest first):
-${truncate(activitiesText, 1500)}`;
-
-    const result = await this.gateway.invokeStructured({
-      actor: { orgId, userId },
-      feature: "crm.copilot.summary",
-      prompt: {
-        system: "You are a CRM sales assistant. Return valid JSON only matching the requested schema.",
-        user: userPrompt,
-      },
-      schema: LeadSummarySchema,
-      tier: "standard",
-      maxTokens: 512,
-      charge: true,
-      dedupe: true,
-    });
-
-    if (!result.ok) throwOnAiFailure(result);
-
-    await this.auditAiAction(orgId, userId, "ai.crm.lead_summary", "lead", String(leadId));
-
-    return {
-      summary: result.data.summary ?? "",
-      nextBestActions: result.data.nextBestActions ?? [],
-      generatedAt: new Date().toISOString(),
-    };
+  duplicateSuggestionsForLead(orgId: string, leadId: number, userId: string) {
+    return this.leadCopilot.duplicateSuggestionsForLead(orgId, leadId, userId);
   }
 
   async dealSummary(orgId: string, dealId: number, userId: string) {
@@ -244,51 +163,6 @@ ${truncate(activitiesText, 1500)}`;
     await this.auditAiAction(orgId, userId, "ai.crm.deal_summary", "deal", String(dealId));
 
     return { stage: deal.stage, ...result.data, generatedAt: new Date().toISOString() };
-  }
-
-  async nextBestActionsAcrossPipeline(orgId: string, userId: string, limit: number) {
-    const flags = await this.orgFeatures.getFlags(orgId);
-    if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
-
-    const fetchLimit = Math.min(limit * 2, 40);
-    const topLeads = await runInTenantTransaction(this.db, (tx) =>
-      tx
-        .select({
-          id: LEAD_PARTY_COLUMNS.id,
-          name: LEAD_PARTY_COLUMNS.name,
-          score: LEAD_PARTY_COLUMNS.score,
-        })
-        .from(leadPartyMap)
-        .innerJoin(businessParties, LEAD_PARTY_JOIN)
-        .where(and(...leadPartyScope(orgId)))
-        // Scores tie constantly -- every unscored lead is a zero -- so the id
-        // decides which of them the top-N contains rather than the heap order,
-        // which reading through the map changes.
-        .orderBy(desc(LEAD_PARTY_COLUMNS.score), desc(LEAD_PARTY_COLUMNS.id))
-        .limit(fetchLimit),
-      { orgId },
-    );
-
-    const results: Array<{ leadId: number; leadName: string; action: string; urgency: string; reasoning: string; evidence: unknown[]; rationale: string }> = [];
-
-    for (const lead of topLeads) {
-      try {
-        const nba = await this.scoring.nextBestActionWithEvidence(orgId, lead.id, userId);
-        if (nba) {
-          results.push({ leadId: lead.id, leadName: lead.name, action: nba.action, urgency: nba.urgency, reasoning: nba.reasoning, evidence: nba.evidence, rationale: nba.rationale });
-        }
-      } catch {
-        continue;
-      }
-    }
-
-    results.sort((a, b) => {
-      const ao = URGENCY_ORDER[a.urgency as keyof typeof URGENCY_ORDER] ?? 3;
-      const bo = URGENCY_ORDER[b.urgency as keyof typeof URGENCY_ORDER] ?? 3;
-      return ao - bo;
-    });
-
-    return { actions: results.slice(0, limit) };
   }
 
   async emailDraftForEntity(
@@ -379,105 +253,6 @@ Return JSON with summary, keyPoints, actionItems, objections, sentiment.`,
     }, actor);
   }
 
-  async duplicateSuggestionsForLead(orgId: string, leadId: number, userId: string) {
-    const flags = await this.orgFeatures.getFlags(orgId);
-    if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
-
-    const { lead, allGroups } = await runInTenantTransaction(this.db, async (tx) => {
-      const [lead] = await tx
-        .select({ id: LEAD_PARTY_COLUMNS.id, name: LEAD_PARTY_COLUMNS.name })
-        .from(leadPartyMap)
-        .innerJoin(businessParties, LEAD_PARTY_JOIN)
-        .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(leadId)));
-
-      if (!lead) return { lead: null, allGroups: [] as Awaited<ReturnType<typeof findDuplicateLeads>> };
-
-      // this.db is the ALS proxy; within runInTenantTransaction the ALS context is
-      // active, so the proxy routes through the open transaction's tenant GUC.
-      const allGroups = await findDuplicateLeads(this.db, orgId);
-      return { lead, allGroups };
-    }, { orgId });
-
-    if (!lead) throw new NotFoundException("Lead not found");
-
-    const relevant = allGroups.filter((g) => g.leads.some((l) => l.id === leadId));
-
-    let aiExplanation = "No likely duplicates found for this lead.";
-    if (relevant.length > 0) {
-      const groupSummaries = relevant.map((g) =>
-        `- Leads: ${g.leads.map((l) => `${l.name} (id:${l.id})`).join(" vs ")} | Match: ${g.matchReason.join(", ")} | Score: ${g.score}`
-      ).join("\n");
-
-      const result = await this.gateway.invokeText({
-        actor: { orgId, userId },
-        feature: "crm.copilot.duplicates",
-        prompt: {
-          system: "You are a CRM data quality assistant. Explain duplicate lead matches in 2-3 sentences and recommend what to do.",
-          user: `Lead "${lead.name}" (id: ${leadId}) has these potential duplicate groups:\n${groupSummaries}\n\nExplain the situation and recommend action.`,
-        },
-        tier: "fast",
-        maxTokens: 512,
-        charge: true,
-      });
-
-      if (!result.ok) throwOnAiFailure(result);
-      aiExplanation = result.data;
-    }
-
-    await this.auditAiAction(orgId, userId, "ai.crm.duplicate_suggestions", "lead", String(leadId));
-
-    return { leadId, duplicates: relevant, aiExplanation, generatedAt: new Date().toISOString() };
-  }
-
-  async leadSummaryWithCitations(orgId: string, leadId: number, userId: string) {
-    const flags = await this.orgFeatures.getFlags(orgId);
-    if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
-
-    const { lead, citations } = await runInTenantTransaction(this.db, async (tx) => {
-      const [[lead], activityCount] = await Promise.all([
-        tx
-          .select({
-            id: LEAD_PARTY_COLUMNS.id,
-            name: LEAD_PARTY_COLUMNS.name,
-            score: LEAD_PARTY_COLUMNS.score,
-            priority: LEAD_PARTY_COLUMNS.priority,
-            status: LEAD_PARTY_COLUMNS.status,
-            source: LEAD_PARTY_COLUMNS.source,
-          })
-          .from(leadPartyMap)
-          .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(leadId))),
-        tx
-          .select({ date: leadActivities.date })
-          .from(leadActivities)
-          .where(eq(leadActivities.leadId, leadId))
-          .orderBy(desc(leadActivities.date))
-          .limit(10),
-      ]);
-
-      if (!lead) return { lead: null, citations: [] as CitationItem[] };
-
-      const built: CitationItem[] = [
-        { id: `lead-score-${leadId}`, title: "AI Lead Score", snippet: `Score: ${lead.score ?? "Not scored"}, Priority: ${lead.priority ?? "N/A"}` },
-        { id: `lead-status-${leadId}`, title: "Lead Status", snippet: `Status: ${lead.status}, Source: ${lead.source ?? "N/A"}` },
-      ];
-      if (activityCount.length > 0) {
-        built.push({
-          id: `lead-activity-${leadId}`,
-          title: "Activity History",
-          snippet: `${activityCount.length} activities. Latest: ${activityCount[0]?.date ? new Date(activityCount[0].date).toLocaleDateString("en-IN") : "N/A"}`,
-        });
-      }
-
-      return { lead, citations: built };
-    }, { orgId });
-
-    if (!lead) throw new NotFoundException("Lead not found");
-
-    const base = await this.leadSummary(orgId, leadId, userId);
-    return { ...base, citations };
-  }
-
   async dealSummaryWithCitations(orgId: string, dealId: number, userId: string) {
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.aiLeadScoring) throw new ForbiddenException("AI features are disabled for this organization");
@@ -520,8 +295,6 @@ Return JSON with summary, keyPoints, actionItems, objections, sentiment.`,
   }
 
   stalePipelineDigest(orgId: string, userId: string, inactiveDays?: number) {
-    // CrmPipelineService needs its own @NoTenantTransaction conversion; wrapping
-    // here preserves the ambient GUC for its DB calls without regressing behaviour.
     return runInTenantTransaction(this.db, () => this.pipeline.stalePipelineDigest(orgId, userId, inactiveDays), { orgId });
   }
 

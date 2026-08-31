@@ -1,9 +1,9 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const listSchema = z.object({
-  page: pageNumberField,
-  pageSize: pageSizeField(25, 100),
+  cursor: z.string().optional(),
+  limit: pageSizeField(25, 100),
   action: z.string().min(1).max(200).optional(),
   actions: z
     .string()
@@ -20,5 +20,5 @@ export const listSchema = z.object({
 
 export type ListInput = z.infer<typeof listSchema>;
 
-export const exportSchema = listSchema.omit({ page: true, pageSize: true });
+export const exportSchema = listSchema.omit({ cursor: true, limit: true });
 export type ExportInput = z.infer<typeof exportSchema>;

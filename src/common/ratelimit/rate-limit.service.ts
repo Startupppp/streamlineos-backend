@@ -29,6 +29,9 @@ const TIERS: Record<string, Tier> = {
   // COMP-002. @Public() one-click unsubscribe; generous enough for a mail client
   // prefetching the link, bounded against enumeration.
   "notifications:unsubscribe": { limit: 30, windowSecs: 60 },
+  // SSE stream token: one token per reconnect. 30/min is ample for legitimate
+  // reconnects but stops a script inflating the in-process token map.
+  "notifications:stream-token": { limit: 30, windowSecs: 60 },
   "public:contact": { limit: 5, windowSecs: 3600 },
   "public:waitlist": { limit: 5, windowSecs: 3600 },
   "public:kb": { limit: 60, windowSecs: 60 },
@@ -90,6 +93,17 @@ const TIERS: Record<string, Tier> = {
   "public:referrer-portal": { limit: 30, windowSecs: 60 },
   "public:referral-submit": { limit: 5, windowSecs: 3600 },
   "public:vendor-portal": { limit: 30, windowSecs: 60 },
+  // Payment webhooks are @Public and unauthenticated — bounded per IP to prevent
+  // a forged-signature flood from locking up the write path. Generous enough for
+  // a real provider that can burst at retry time.
+  "billing:webhook": { limit: 600, windowSecs: 60 },
+  // Checkout creates a provider order; 5/hour per user prevents order flooding
+  // while leaving headroom for legitimate retries with different plans.
+  "billing:checkout": { limit: 5, windowSecs: 3600 },
+  // Vector ANN search under RLS is the highest-cost read in the system.
+  // 30 calls/min per user matches the AI chat tier and leaves room for typeahead
+  // without letting a single user monopolise the embedding + ANN budget.
+  "search:global": { limit: 30, windowSecs: 60 },
 };
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;

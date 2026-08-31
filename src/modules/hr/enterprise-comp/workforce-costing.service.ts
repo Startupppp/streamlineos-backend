@@ -29,7 +29,8 @@ export class WorkforceCostingService {
           AND (effective_to IS NULL OR effective_to > ${periodEndStr})
         ORDER BY user_id, effective_from DESC
       ) esp
-      JOIN org_unit_members oum ON oum.user_id = esp.user_id
+      JOIN organization_members om ON om.user_id = esp.user_id AND om.org_id = ${orgId}
+      JOIN org_unit_members oum ON oum.membership_id = om.id
       JOIN org_units d ON d.id = oum.org_unit_id AND d.org_id = ${orgId} AND d.kind = 'DEPARTMENT'
       GROUP BY d.id, d.name
       ORDER BY monthly_cost_cents DESC

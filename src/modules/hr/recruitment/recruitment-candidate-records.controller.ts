@@ -46,6 +46,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const candidateIdParams = z.object({ candidateId: z.coerce.number().int().positive() }).strict();
 const candidateAndCheckIdParams = z.object({ candidateId: z.coerce.number().int().positive(), checkId: z.coerce.number().int().positive() }).strict();
@@ -61,6 +62,7 @@ export class RecruitmentCandidateRecordsController {
   ) {}
 
   @Post("ai-score")
+  @BodylessAction()
   @RequirePermission("hr:employees:manage")
   @Validate({ params: candidateIdParams })
   aiScore(
@@ -71,6 +73,7 @@ export class RecruitmentCandidateRecordsController {
   }
 
   @Post("composite-score")
+  @BodylessAction()
   @RequirePermission("hr:employees:manage")
   @Validate({ params: candidateIdParams })
   compositeScore(

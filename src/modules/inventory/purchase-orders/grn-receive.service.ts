@@ -123,17 +123,18 @@ export class GrnReceiveService {
         const maxAllowed =
           remaining * (1 + overReceiptTolerancePct / 100);
 
-        if (line.quantityReceived > maxAllowed + 0.0001) {
+        const incomingQuantityReceived = Number(line.quantityReceived);
+        if (incomingQuantityReceived > maxAllowed + 0.0001) {
           throw new BadRequestException(
-            `Line ${line.poLineId}: received qty ${line.quantityReceived} exceeds allowed max ${maxAllowed.toFixed(4)} (over-receipt tolerance ${settings.overReceiptTolerancePct}%)`,
+            `Line ${line.poLineId}: received qty ${incomingQuantityReceived} exceeds allowed max ${maxAllowed.toFixed(4)} (over-receipt tolerance ${settings.overReceiptTolerancePct}%)`,
           );
         }
 
         if (trackingMethod === "SERIAL") {
           const serials = line.serialNumbers ?? [];
-          if (serials.length !== line.quantityReceived) {
+          if (serials.length !== incomingQuantityReceived) {
             throw new BadRequestException(
-              `Line ${line.poLineId}: SERIAL-tracked product requires ${line.quantityReceived} serial numbers, got ${serials.length}`,
+              `Line ${line.poLineId}: SERIAL-tracked product requires ${incomingQuantityReceived} serial numbers, got ${serials.length}`,
             );
           }
 
@@ -266,6 +267,7 @@ export class GrnReceiveService {
         }
 
         await tx.insert(invGrnLines).values({
+          orgId,
           grnId: grn.id,
           poLineId: line.poLineId,
           quantityReceived: line.quantityReceived.toString(),
@@ -312,7 +314,7 @@ export class GrnReceiveService {
               locationId,
               lotId,
               serialId: undefined,
-              quantityDelta: line.quantityReceived.toFixed(4),
+              quantityDelta: Number(line.quantityReceived).toFixed(4),
               unitCost: poLine.unitCost ?? undefined,
             });
           }
@@ -360,7 +362,7 @@ export class GrnReceiveService {
     let totalValue = 0;
     for (const line of acceptedLines) {
       const poLine = po.lines.find((l) => l.id === line.poLineId)!;
-      totalValue += line.quantityReceived * parseFloat(poLine.unitCost);
+      totalValue += Number(line.quantityReceived) * parseFloat(poLine.unitCost);
     }
 
     if (totalValue > 0) {

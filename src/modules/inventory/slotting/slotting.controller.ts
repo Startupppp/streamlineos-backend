@@ -33,13 +33,8 @@ import {
   setSlottingRuleActiveSchema,
 } from "./dto/slotting.schemas";
 import type {
-  ApproveRecommendationInput,
-  CreateSlottingRuleInput,
-  DismissRecommendationInput,
-  ListRecommendationsQuery,
-  ListSlottingRulesQuery,
-  SetSlottingRuleActiveInput,
-} from "./dto/slotting.schemas";
+  ApproveRecommendationInput, CreateSlottingRuleInput, DismissRecommendationInput, ListRecommendationsQuery, ListSlottingRulesQuery, SetSlottingRuleActiveInput } from "./dto/slotting.schemas";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 
 /**
  * NEO-6 - slotting.
@@ -125,6 +120,7 @@ export class SlottingController {
   async approve(
     @Param("recommendationId", ParseIntPipe) recommendationId: number,
     @Body(new ZodValidationPipe(approveRecommendationSchema)) body: ApproveRecommendationInput,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const approved = await this.svc.approve(
@@ -143,7 +139,7 @@ export class SlottingController {
           quantity: Number(approved.move.quantity),
         },
       ],
-    });
+    }, idempotencyKey);
     return { ...approved, transfer };
   }
 }

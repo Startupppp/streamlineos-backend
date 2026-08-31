@@ -604,11 +604,7 @@ export const BUDGETS = [
     sql: `
       SELECT id, name, sku, status, category_id
       FROM inv_products
-<<<<<<< HEAD
-      WHERE org_id = $1 AND deleted_at IS NULL
-=======
-      WHERE org_id = $1 AND status <> 'DISCONTINUED'
->>>>>>> origin/main
+      WHERE org_id = $1 AND deleted_at IS NULL AND status <> 'DISCONTINUED'
       ORDER BY id DESC
       LIMIT 50`,
     planAssertions: [
@@ -654,12 +650,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM inv_stock_transactions WHERE org_id = $1`,
     params: (f) => [f.orgId],
     sql: `
-<<<<<<< HEAD
-      SELECT id, product_variant_id, transaction_type, quantity_change, posting_date, created_at,
-             to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') AS cursor_at
-=======
       SELECT id, product_variant_id, transaction_type, quantity_change, posting_date, created_at
->>>>>>> origin/main
       FROM inv_stock_transactions
       WHERE org_id = $1
       ORDER BY created_at DESC, id DESC
@@ -846,7 +837,6 @@ export const BUDGETS = [
       { kind: "forbid-seq-scan", relation: "chat_saved_messages" },
     ],
   },
-<<<<<<< HEAD
   /**
    * D1 — one hop of the lot/serial genealogy walk.
    *
@@ -927,7 +917,6 @@ export const BUDGETS = [
       { kind: "forbid-seq-scan", relation: "inv_stock_transactions" },
     ],
   },
-=======
   {
     id: "accounting-receivables-list",
     ceiling: 5_000,
@@ -1228,5 +1217,204 @@ export const BUDGETS = [
       LIMIT 100`,
     planAssertions: [],
   },
->>>>>>> origin/main
+  {
+    id: "dashboard-personal-my-tasks",
+    ceiling: 2_000,
+    minRows: 50,
+    rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    sql: `
+      SELECT t.id, t.title, t.status, t.priority, t.updated_at,
+             p.id AS project_id, p.name AS project_name
+      FROM build.tickets t
+      LEFT JOIN build.projects p ON p.id = t.project_id
+      WHERE t.org_id = $1 AND t.assignee_id = $2 AND t.deleted_at IS NULL
+        AND t.status IN ('TODO', 'IN_PROGRESS', 'IN_REVIEW')
+      ORDER BY t.updated_at DESC
+      LIMIT 10`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "tickets" },
+    ],
+  },
+  {
+    id: "dashboard-my-issues",
+    ceiling: 2_000,
+    minRows: 50,
+    rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    sql: `
+      SELECT t.id, t.title, t.status, t.priority, t.type, t.ticket_number, t.updated_at,
+             p.id AS project_id, p.name AS project_name, p.key AS project_key,
+             u.id AS assignee_id, u.first_name, u.last_name, u.image
+      FROM build.tickets t
+      LEFT JOIN build.projects p ON p.id = t.project_id
+      LEFT JOIN users u ON u.id = t.assignee_id
+      WHERE t.org_id = $1 AND t.assignee_id = $2 AND t.deleted_at IS NULL
+      ORDER BY t.updated_at DESC
+      LIMIT 10`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "tickets" },
+    ],
+  },
+  {
+    id: "dashboard-personal-calendar-events",
+    ceiling: 500,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM calendar_events WHERE org_id = $1`,
+    params: (f) => (f.hasCalendarEvents && f.userId ? [f.orgId, f.userId] : null),
+    sql: `
+      SELECT id, title, start_date, end_date, category
+      FROM calendar_events
+      WHERE org_id = $1 AND start_date >= NOW()
+        AND (
+          visibility = 'org'
+          OR EXISTS (
+            SELECT 1 FROM organization_members om
+            WHERE om.org_id = $1 AND om.id = calendar_events.created_by_membership_id
+              AND om.user_id = $2 AND om.status = 'ACTIVE'
+          )
+          OR EXISTS (
+            SELECT 1 FROM event_attendees ea
+            INNER JOIN organization_members om2
+              ON ea.org_id = om2.org_id AND ea.membership_id = om2.id
+            WHERE ea.org_id = $1 AND ea.event_id = calendar_events.id
+              AND om2.user_id = $2 AND om2.status = 'ACTIVE' AND ea.status != 'declined'
+          )
+        )
+      ORDER BY start_date ASC
+      LIMIT 3`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "calendar_events" },
+    ],
+  },
+  {
+    id: "dashboard-personal-notifications-count",
+    ceiling: 3_000,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    sql: `
+      SELECT count(*)::int
+      FROM notifications
+      WHERE org_id = $1 AND user_id = $2 AND is_read = false`,
+    planAssertions: [],
+  },
+  {
+    id: "dashboard-stats-attendance-count",
+    ceiling: 500,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM attendance WHERE org_id = $1`,
+    params: (f) => {
+      const today = new Date().toISOString().slice(0, 10);
+      return [f.orgId, today];
+    },
+    sql: `SELECT count(*)::int FROM attendance WHERE org_id = $1 AND date = $2`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "attendance" },
+    ],
+  },
+  {
+    id: "dashboard-announcements",
+    ceiling: 2_000,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM announcements WHERE org_id = $1`,
+    params: (f) => (f.hasAnnouncements ? [f.orgId] : null),
+    sql: `
+      SELECT a.id, a.content, a.is_pinned, a.expires_at, a.created_at,
+             a.author_id, u.name, u.first_name, u.last_name
+      FROM announcements a
+      INNER JOIN users u ON a.author_id = u.id
+      WHERE a.org_id = $1 AND a.status != 'DRAFT'
+        AND (a.expires_at IS NULL OR a.expires_at > NOW())
+      ORDER BY a.is_pinned DESC, a.created_at DESC
+      LIMIT 20`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "announcements" },
+    ],
+  },
+  {
+    id: "dashboard-leaves-today",
+    ceiling: 2_000,
+    minRows: 5,
+    rowCountSql: `SELECT count(*)::int FROM leave_requests WHERE org_id = $1`,
+    params: (f) => {
+      const today = new Date().toISOString().slice(0, 10);
+      return [f.orgId, today];
+    },
+    sql: `
+      SELECT lr.id, lr.start_date, lr.end_date, lr.leave_type_id,
+             u.name, u.image
+      FROM leave_requests lr
+      INNER JOIN users u ON lr.user_id = u.id
+      WHERE lr.org_id = $1 AND lr.status = 'APPROVED'
+        AND lr.start_date <= $2 AND lr.end_date >= $2`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "leave_requests" },
+    ],
+  },
+  {
+    id: "dashboard-team-attendance",
+    ceiling: 2_000,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM attendance WHERE org_id = $1`,
+    params: (f) => {
+      const today = new Date().toISOString().slice(0, 10);
+      return [f.orgId, today];
+    },
+    sql: `
+      SELECT a.user_id, u.name, u.image, a.check_in, a.check_out, a.status, a.created_at
+      FROM attendance a
+      INNER JOIN users u ON a.user_id = u.id
+      WHERE a.org_id = $1 AND a.date = $2`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "attendance" },
+    ],
+  },
+  {
+    id: "dashboard-active-sprint",
+    ceiling: 1_000,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM build.sprints WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT s.id, s.name, s.status, s.end_date, p.id AS project_id, p.name AS project_name
+      FROM build.sprints s
+      LEFT JOIN build.projects p ON p.id = s.project_id
+      WHERE s.org_id = $1 AND s.status = 'ACTIVE' AND s.deleted_at IS NULL
+      LIMIT 1`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "sprints" },
+    ],
+  },
+  {
+    id: "dashboard-recent-projects",
+    ceiling: 2_000,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM build.project_members WHERE org_id = $1`,
+    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    sql: `
+      SELECT p.id, p.name, p.status, p.created_at
+      FROM build.projects p
+      INNER JOIN build.project_members pm
+        ON pm.project_id = p.id AND pm.org_id = $1 AND pm.user_id = $2
+      WHERE p.org_id = $1 AND p.deleted_at IS NULL
+      ORDER BY p.id DESC
+      LIMIT 5`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "projects" },
+    ],
+  },
 ];
+
+export const REQUIRED_BUDGET_IDS = new Set([
+  "dashboard-personal-my-tasks",
+  "dashboard-my-issues",
+  "dashboard-personal-calendar-events",
+  "dashboard-personal-notifications-count",
+  "dashboard-stats-attendance-count",
+  "dashboard-announcements",
+  "dashboard-leaves-today",
+  "dashboard-team-attendance",
+  "dashboard-active-sprint",
+  "dashboard-recent-projects",
+]);

@@ -9,6 +9,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
 import { SignAiService } from "./sign-ai.service";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
 
@@ -20,6 +21,7 @@ export class SignAiController {
   constructor(private readonly signAi: SignAiService) {}
 
   @Post("summarize")
+  @BodylessAction()
   @Validate({ params: envelopeIdParams })
   summarize(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,

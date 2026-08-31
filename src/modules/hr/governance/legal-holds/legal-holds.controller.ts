@@ -32,6 +32,7 @@ import {
 } from "./legal-holds.dto";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
 
 const holdIdParams = z.object({ holdId: z.coerce.number().int().positive() }).strict();
 const holdIditemIdParams = z.object({ holdId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
@@ -86,6 +87,7 @@ export class LegalHoldsController {
   }
 
   @Post(":holdId/release")
+  @BodylessAction()
   @RequirePermission("hr:legalhold:manage")
   @Validate({ params: holdIdParams })
   async release(

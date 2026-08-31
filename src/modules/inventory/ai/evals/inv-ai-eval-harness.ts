@@ -39,6 +39,11 @@ export const EVAL_ACTOR: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-eval",
   tokenScopes: null,
+  principal: {
+    kind: "human-session",
+    membershipId: 1,
+    isOrgOwner: false,
+  },
 };
 
 /**

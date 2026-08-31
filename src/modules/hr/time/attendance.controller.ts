@@ -32,6 +32,7 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const holidayIdParams = z.object({ holidayId: z.string().min(1) }).strict();
 
@@ -77,6 +78,7 @@ export class AttendanceController {
   }
 
   @Post("break")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("hr:attendance:view")
   @Idempotent("hr.attendance.toggle-break")

@@ -13,7 +13,7 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
-type ChainResult = Promise<unknown[]> & { limit: jest.Mock; orderBy: jest.Mock; groupBy: jest.Mock; offset: jest.Mock };
+type ChainResult = any;
 
 function makeChainResult(): ChainResult {
   const p = Promise.resolve([]) as ChainResult;

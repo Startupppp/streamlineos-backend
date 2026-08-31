@@ -15,6 +15,7 @@ import {
 } from "./dto/assets.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const assetIdParams = z.object({ assetId: z.coerce.number().int().positive() }).strict();
 
@@ -71,6 +72,7 @@ export class AssetsController {
   }
 
   @Post(":assetId/activate")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:update")
   @HttpCode(200)

@@ -2,6 +2,7 @@ process.env.APP_URL ??= "http://localhost:1000";
 
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { WfhService } from "../time/wfh.service";
+import { type HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.service";
 
 function makeWfhRequest(overrides: Record<string, unknown> = {}) {
   return { id: 1, orgId: "org-1", userId: "employee-1", date: "2026-09-01", status: "PENDING", ...overrides };
@@ -55,7 +56,7 @@ describe("HR actor migration — organization membership identity enforcement", 
 
     it("rejects a user with no membership in the org — throws NotFoundException, not written", async () => {
       const db = buildDb([]);
-      const service = new WfhService(db as never, null);
+      const service = new WfhService(db as never, {} as HrPolicyEvaluationService);
 
       await expect(service.update(ORG, "unknown-user", REQUEST_ID, { status: "APPROVED" }))
         .rejects.toBeInstanceOf(NotFoundException);
@@ -63,7 +64,7 @@ describe("HR actor migration — organization membership identity enforcement", 
 
     it("rejects a SUSPENDED member — throws ForbiddenException", async () => {
       const db = buildDb([activeMemberRow({ status: "SUSPENDED" })]);
-      const service = new WfhService(db as never, null);
+      const service = new WfhService(db as never, {} as HrPolicyEvaluationService);
 
       await expect(service.update(ORG, "approver-user", REQUEST_ID, { status: "APPROVED" }))
         .rejects.toBeInstanceOf(ForbiddenException);
@@ -71,7 +72,7 @@ describe("HR actor migration — organization membership identity enforcement", 
 
     it("rejects a member of a different organization with 404, never 403", async () => {
       const db = buildDb([]);
-      const service = new WfhService(db as never, null);
+      const service = new WfhService(db as never, {} as HrPolicyEvaluationService);
 
       const error = await service.update(ORG, "org2-user", REQUEST_ID, { status: "APPROVED" })
         .then(() => null)
@@ -86,7 +87,7 @@ describe("HR actor migration — organization membership identity enforcement", 
       const setFn = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
       db.update = jest.fn().mockReturnValue({ set: setFn });
 
-      const service = new WfhService(db as never, null);
+      const service = new WfhService(db as never, {} as HrPolicyEvaluationService);
 
       await service.update(ORG, "approver-user", REQUEST_ID, { status: "APPROVED" });
 

@@ -32,11 +32,15 @@ export async function resolveMentionedUserIds(
       eq(chatChannelMembers.orgId, input.orgId),
       eq(chatChannelMembers.channelId, input.channelId),
     ),
-    columns: { userId: true },
+    with: {
+      membership: {
+        columns: { userId: true },
+      },
+    },
   });
 
   const recipients = members
-    .map((member) => member.userId)
+    .map((member) => member.membership.userId)
     .filter((userId) => userId !== input.senderId);
 
   if (everyone) return recipients;

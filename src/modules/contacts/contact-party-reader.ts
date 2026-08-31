@@ -61,6 +61,7 @@ export const CONTACT_PARTY_COLUMNS = {
   linkedinUrl: businessParties.linkedinUrl,
   twitterUrl: sql<string | null>`${businessParties.socialProfiles} ->> 'twitter'`,
   websiteUrl: businessParties.website,
+  notes: businessParties.notes,
   tags: businessParties.tags,
   deletedAt: businessParties.deletedAt,
   createdAt: businessParties.createdAt,

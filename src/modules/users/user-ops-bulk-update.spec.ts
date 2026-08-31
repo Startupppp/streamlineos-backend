@@ -64,7 +64,7 @@ function buildService(scopedMembers: Array<{ userId: string }> = [{ userId: "use
   return { db, tx, service, updatedTables, setCalls };
 }
 
-const actor = { userId: "actor-1", orgId: "org-a" };
+const actor = { userId: "actor-1", orgId: "org-a", isOrgOwner: true };
 
 describe("bulkUpdateUsers — removed-column regression", () => {
   it("users table has no orgDepartmentId, branchId, or reportingTo columns", () => {

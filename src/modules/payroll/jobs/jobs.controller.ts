@@ -20,28 +20,9 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PayrollJobsService, type PayrollJobType } from "./payroll-jobs.service";
 import { PayrollJobsWorkerService } from "./payroll-jobs-worker.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { listJobsQuerySchema, enqueueJobSchema, type ListJobsQuery, type EnqueueJobInput } from "./dto/jobs.schemas";
 
 const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
-
-const listQuerySchema = z.object({
-  failedOnly: z
-    .enum(["true", "false"])
-    .optional()
-    .transform((v) => v === "true"),
-  runId: z.coerce.number().int().positive().optional(),
-});
-
-const enqueueSchema = z.object({
-  jobType: z.enum([
-    "GENERATE",
-    "RECALCULATE",
-    "PDF_PUBLISH",
-    "FILING_EXPORT",
-  ]),
-  runId: z.number().int().positive().optional(),
-  payload: z.record(z.string(), z.unknown()).optional(),
-  idempotencyKey: z.string().min(1).max(200).optional(),
-});
 
 @RequireModule("payroll")
 @Controller("payroll/jobs")
@@ -54,15 +35,15 @@ export class PayrollJobsController {
 
   @Get()
   @RequirePermission("payroll:runs:view")
-  @Validate({ query: listQuerySchema })
+  @Validate({ query: listJobsQuerySchema })
   async list(
     @CurrentUser() u: CurrentUserContext,
-    @Query() query: z.infer<typeof listQuerySchema>,
+    @Query() query: ListJobsQuery,
   ) {
     if (query.runId) {
-      return this.jobs.listForResource(u.orgId, "payroll_run", String(query.runId));
+      return this.jobs.listForResource(u.orgId, "payroll_run", String(query.runId), query.page, query.limit);
     }
-    return this.jobs.listFailed(u.orgId);
+    return this.jobs.listFailed(u.orgId, query.page, query.limit);
   }
 
   @Get(":jobId")
@@ -78,10 +59,10 @@ export class PayrollJobsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("payroll:runs:manage")
-  @Validate({ body: enqueueSchema })
+  @Validate({ body: enqueueJobSchema })
   async enqueue(
     @CurrentUser() u: CurrentUserContext,
-    @Body() body: z.infer<typeof enqueueSchema>,
+    @Body() body: EnqueueJobInput,
   ) {
     const job = await this.jobs.enqueue({
       orgId: u.orgId,

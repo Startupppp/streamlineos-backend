@@ -14,6 +14,7 @@ import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { EmailWebhookService, type EmailWebhookProvider } from "./email-webhook.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const providerParams = z.object({ provider: z.string().min(1) }).strict();
 
@@ -37,6 +38,7 @@ export class EmailWebhookController {
   ) {}
 
   @Post(":provider")
+  @BodylessAction()
   @Validate({ params: providerParams })
   async handle(
     @Param("provider") provider: string,

@@ -1,9 +1,8 @@
 import { CrmAutomationsService } from "./crm-automations.service";
+import { encodeCursor } from "../../../common/pagination/cursor";
 import type { Db } from "../../../db/drizzle.module";
 import type { CrmAutomationRunnerService } from "../automation-studio/crm-automation-runner.service";
 import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
-
-// The total used to come from a second statement that selected one id per run and took the array's length.
 
 const ORG_ID = "org-1";
 const RULE_ID = 4;
@@ -11,41 +10,40 @@ const RULE_ID = 4;
 interface Harness {
   readonly service: CrmAutomationsService;
   readonly statements: () => number;
-  readonly lastOffset: () => number | undefined;
+  readonly lastLimit: () => number | undefined;
 }
 
 function buildHarness(page: { rows: number; total: number }): Harness {
   let statements = 0;
-  let lastOffset: number | undefined;
+  let lastLimit: number | undefined;
 
   const runRows = Array.from({ length: page.rows }, (_, i) => ({
     id: i + 1,
     orgId: ORG_ID,
     ruleId: RULE_ID,
     startedAt: new Date(Date.UTC(2024, 0, 1, 0, 0, i)),
-    total: String(page.total),
   }));
 
-  const chain = (result: unknown): Record<string, unknown> => {
+  function makeChain(result: unknown): Record<string, unknown> {
     const link: Record<string, unknown> = {};
-    for (const method of ["from", "where", "orderBy", "innerJoin", "leftJoin"])
+    for (const method of ["from", "where", "orderBy", "innerJoin", "leftJoin", "offset"])
       link[method] = jest.fn(() => link);
-    link["limit"] = jest.fn(() => link);
-    link["offset"] = jest.fn((value: number) => {
-      lastOffset = value;
-      return Promise.resolve(result);
+    link["limit"] = jest.fn((n: number) => {
+      lastLimit = n;
+      return link;
     });
     link["then"] = (resolve: (v: unknown) => unknown) => Promise.resolve(result).then(resolve);
     return link;
-  };
+  }
 
   let call = 0;
   const db = {
     select: jest.fn(() => {
       statements += 1;
       call += 1;
-      // The rule-ownership probe is the first statement; the page is the second.
-      return chain(call === 1 ? [{ id: RULE_ID }] : runRows);
+      if (call === 1) return makeChain([{ id: RULE_ID }]);
+      if (call === 2) return makeChain(runRows);
+      return makeChain([{ c: page.total }]);
     }),
   } as unknown as Db;
 
@@ -56,52 +54,57 @@ function buildHarness(page: { rows: number; total: number }): Harness {
       {} as unknown as PlanLimitsService,
     ),
     statements: () => statements,
-    lastOffset: () => lastOffset,
+    lastLimit: () => lastLimit,
   };
 }
 
-describe("automation run list — the total costs no extra round trip", () => {
-  it("reads the total out of the page query rather than a second statement", async () => {
+describe("automation run list — cursor pagination with optional first-page count", () => {
+  it("returns total from a separate count statement on the first page", async () => {
     const harness = buildHarness({ rows: 20, total: 137 });
 
-    const result = await harness.service.getRuns(ORG_ID, RULE_ID, 1);
+    const result = await harness.service.getRuns(ORG_ID, RULE_ID);
 
     expect(result.total).toBe(137);
-    expect(harness.statements()).toBe(2);
+    expect(harness.statements()).toBe(3);
   });
 
-  it("never returns the window column as part of a run", async () => {
+  it("never leaks the count field onto run items", async () => {
     const harness = buildHarness({ rows: 3, total: 3 });
 
-    const result = await harness.service.getRuns(ORG_ID, RULE_ID, 1);
+    const result = await harness.service.getRuns(ORG_ID, RULE_ID);
 
-    for (const run of result.runs) expect(run).not.toHaveProperty("total");
+    for (const run of result.runs) {
+      expect(run).not.toHaveProperty("c");
+      expect(run).toHaveProperty("id");
+    }
   });
 
-  it("issues the same number of statements for a page of 20 as for a page of 1", async () => {
-    const small = buildHarness({ rows: 1, total: 1 });
-    const full = buildHarness({ rows: 20, total: 4_000 });
+  it("cursor page skips the count statement", async () => {
+    const first = buildHarness({ rows: 20, total: 4_000 });
+    const cursor = buildHarness({ rows: 20, total: 0 });
 
-    await small.service.getRuns(ORG_ID, RULE_ID, 1);
-    await full.service.getRuns(ORG_ID, RULE_ID, 1);
+    await first.service.getRuns(ORG_ID, RULE_ID);
+    const validCursor = encodeCursor({ sortValue: "2024-01-01T00:00:00.000Z", id: "1" });
+    await cursor.service.getRuns(ORG_ID, RULE_ID, validCursor);
 
-    expect(full.statements()).toBe(small.statements());
+    expect(first.statements()).toBe(3);
+    expect(cursor.statements()).toBe(2);
   });
 
-  it("reports zero for an empty first page without counting again", async () => {
+  it("reports zero total and empty runs for an empty first page", async () => {
     const harness = buildHarness({ rows: 0, total: 0 });
 
-    const result = await harness.service.getRuns(ORG_ID, RULE_ID, 1);
+    const result = await harness.service.getRuns(ORG_ID, RULE_ID);
 
-    expect(result).toEqual({ runs: [], total: 0 });
-    expect(harness.statements()).toBe(2);
+    expect(result).toEqual({ runs: [], hasMore: false, nextCursor: null, total: 0 });
+    expect(harness.statements()).toBe(3);
   });
 
-  it("still pages by twenty", async () => {
+  it("fetches limit+1 rows to detect hasMore without a second count", async () => {
     const harness = buildHarness({ rows: 20, total: 137 });
 
-    await harness.service.getRuns(ORG_ID, RULE_ID, 3);
+    await harness.service.getRuns(ORG_ID, RULE_ID);
 
-    expect(harness.lastOffset()).toBe(40);
+    expect(harness.lastLimit()).toBe(21);
   });
 });

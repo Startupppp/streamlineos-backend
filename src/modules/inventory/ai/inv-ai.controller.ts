@@ -17,6 +17,7 @@ import {
 } from "./dto/ai-insights.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const insightIdParams = z.object({ insightId: z.coerce.number().int().positive() }).strict();
 
@@ -38,6 +39,7 @@ export class InvAiController {
   }
 
   @Post("insights/generate")
+  @BodylessAction()
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("inventory:ai:manage")
   @UseRateLimit("ai:invoke")

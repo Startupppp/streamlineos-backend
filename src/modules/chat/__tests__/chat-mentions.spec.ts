@@ -8,7 +8,11 @@ function makeDb(members: { userId: string; name: string }[]) {
   return {
     query: {
       chatChannelMembers: {
-        findMany: jest.fn().mockResolvedValue(members.map((m) => ({ userId: m.userId }))),
+        // chat_channel_members no longer carries user_id: the actor is reached
+        // through the membership relation, which is the shape the query asks for.
+        findMany: jest
+          .fn()
+          .mockResolvedValue(members.map((m) => ({ membership: { userId: m.userId } }))),
       },
     },
   };

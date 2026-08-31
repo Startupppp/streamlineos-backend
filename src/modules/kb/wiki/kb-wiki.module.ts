@@ -10,6 +10,7 @@ import { KbPagesService } from "./kb-pages.service";
 import { KbPageVersionsService } from "./kb-page-versions.service";
 import { KbPageVisitsService } from "./kb-page-visits.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
+import { KbPageDuplicateService } from "./kb-page-duplicate.service";
 import { KbPageCommentsService } from "./kb-page-comments.service";
 import { KbPageTemplatesService } from "./kb-page-templates.service";
 import { KbPageReviewsService } from "./kb-page-reviews.service";
@@ -56,6 +57,7 @@ import { KbPageAiController } from "./kb-page-ai.controller";
     KbPageVersionsService,
     KbPageVisitsService,
     KbPageTreeService,
+    KbPageDuplicateService,
     KbPageCommentsService,
     KbPageTemplatesService,
     KbPageReviewsService,

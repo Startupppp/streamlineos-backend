@@ -19,6 +19,7 @@ import {
 } from "./dto/settings.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const sequenceIdParams = z.object({ sequenceId: z.coerce.number().int().positive() }).strict();
 
@@ -112,6 +113,7 @@ export class SettingsController {
   }
 
   @Post("maintenance/expire-reservations")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")
   expireReservations(@CurrentUser() u: CurrentUserContext) {

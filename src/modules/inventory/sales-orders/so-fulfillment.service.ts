@@ -116,7 +116,7 @@ export class SoFulfillmentService {
               locationId: allocation.locationId,
               lotId: allocation.lotId,
               serialId: allocation.serialId,
-              qty: allocation.qty.toFixed(4),
+              qty: addDec(allocation.qty, "0"),
               channelId: so.channelId ?? null,
             });
           } catch (reserveErr) {
@@ -479,7 +479,7 @@ export class SoFulfillmentService {
     // commit, so a rolled-back shipment leaves no entry behind.
     const cogsTotal = Number(cogs.total);
     if (cogsTotal > 0) {
-      await this.journalPosting.postJournalEntry({
+      await this.journalPosting.persistJournalEntry({
         orgId,
         entryDate: data.shipDate,
         description: `COGS: ${cogs.soNumber}`,

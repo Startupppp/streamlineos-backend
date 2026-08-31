@@ -7,6 +7,7 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 }));
 
 import { CrmCopilotService } from "./services/crm-copilot.service";
+import { CrmCopilotLeadService } from "./services/crm-copilot-lead.service";
 import { AiGatewayService } from "./gateway/ai-gateway.service";
 import { OrgFeaturesService } from "./services/org-features.service";
 import { CrmScoringService } from "./services/crm-scoring.service";
@@ -94,6 +95,7 @@ describe("CrmCopilotService", () => {
         { provide: AiGatewayService, useValue: mockGateway },
         { provide: OrgFeaturesService, useValue: mockOrgFeatures },
         { provide: CrmScoringService, useValue: mockScoring },
+        CrmCopilotLeadService,
         { provide: CrmContentService, useValue: mockContent },
         { provide: CrmPipelineService, useValue: mockPipeline },
       ],

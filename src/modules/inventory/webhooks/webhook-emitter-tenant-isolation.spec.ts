@@ -16,15 +16,24 @@ describe("InventoryWebhookEmitter — cross-tenant isolation", () => {
   const OWNER = "org-owner";
 
   function makeDb(rows: unknown[]): { db: Db; where: jest.Mock } {
+    // `.where(...)` is where this query ends, so it has to resolve to the rows.
+    // It was also given `mockReturnValue(builder)` below it, which won -- the
+    // service then called `.map` on the builder.
     const where = jest.fn().mockResolvedValue(rows);
     const innerJoin = jest.fn();
     const from = jest.fn();
     const builder = { from, innerJoin, where };
     from.mockReturnValue(builder);
     innerJoin.mockReturnValue(builder);
-    where.mockReturnValue(builder);
     const select = jest.fn().mockReturnValue(builder);
-    const insert = jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }) });
+    // The insert chains .values().onConflictDoNothing().returning().
+    const insert = jest.fn().mockReturnValue({
+      values: jest.fn().mockReturnValue({
+        onConflictDoNothing: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue(rows.map((_, i) => ({ id: i + 1 }))),
+        }),
+      }),
+    });
     const db = { select, insert } as unknown as Db;
     return { db, where };
   }
@@ -32,7 +41,7 @@ describe("InventoryWebhookEmitter — cross-tenant isolation", () => {
   it("emits nothing when no webhooks match the requesting org (cross-tenant isolation)", async () => {
     const { db, where } = makeDb([]);
     const svc = new InventoryWebhookEmitter(db);
-    await svc.emit(ATTACKER, "product.created", { id: 1 });
+    await svc.emit(ATTACKER, "inventory.product.created", { id: 1 });
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
@@ -41,6 +50,6 @@ describe("InventoryWebhookEmitter — cross-tenant isolation", () => {
     const webhookRow = { id: 1, url: "https://example.com/hook", secret: null };
     const { db } = makeDb([webhookRow]);
     const svc = new InventoryWebhookEmitter(db);
-    await expect(svc.emit(OWNER, "product.created", { id: 1 })).resolves.toBeUndefined();
+    await expect(svc.emit(OWNER, "inventory.product.created", { id: 1 })).resolves.toBeDefined();
   });
 });

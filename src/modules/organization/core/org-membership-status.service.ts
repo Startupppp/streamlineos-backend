@@ -243,7 +243,7 @@ export class OrgMembershipStatusService {
             .delete(orgUnitMembers)
             .where(
               and(
-                eq(orgUnitMembers.userId, memberUserId),
+                eq(orgUnitMembers.membershipId, member.id),
                 eq(orgUnitMembers.orgId, orgId),
               ),
             );

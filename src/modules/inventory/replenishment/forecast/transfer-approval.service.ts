@@ -124,7 +124,7 @@ export class TransferApprovalService {
               quantity: fromExact(allocation.quantity),
               ...(allocation.lotId === null ? {} : { lotId: allocation.lotId }),
             })),
-          });
+          }, `${idempotencyKey}:transfer`);
           return {
             transferId: transfer.id,
             referenceNumber: transfer.referenceNumber,

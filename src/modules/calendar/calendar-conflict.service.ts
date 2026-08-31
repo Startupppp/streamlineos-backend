@@ -1,8 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gt, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
-import { calendarEvents, calendarEventExceptions, eventAttendees, organizationMembers } from "../../db/schema";
+import { and, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
+import { calendarEvents, calendarEventExceptions, eventAttendees, leaveRequests, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db, TenantTx } from "../../db/drizzle.types";
+import { dateOnly, type OooConflict } from "./calendar.types";
 import {
   expandToOccurrences,
   type CalendarEventException,
@@ -155,5 +156,33 @@ export class CalendarConflictService {
       );
     }
     return occurrences;
+  }
+
+  async getOooConflicts(
+    orgId: string,
+    attendeeIds: string[],
+    start: Date,
+    end: Date,
+  ): Promise<OooConflict[]> {
+    if (attendeeIds.length === 0) return [];
+
+    return this.db
+      .select({
+        userId: leaveRequests.userId,
+        userName: users.name,
+        leaveStart: leaveRequests.startDate,
+        leaveEnd: leaveRequests.endDate,
+      })
+      .from(leaveRequests)
+      .innerJoin(users, eq(leaveRequests.userId, users.id))
+      .where(
+        and(
+          eq(leaveRequests.orgId, orgId),
+          eq(leaveRequests.status, "APPROVED"),
+          inArray(leaveRequests.userId, attendeeIds),
+          lte(leaveRequests.startDate, dateOnly(end)),
+          gte(leaveRequests.endDate, dateOnly(start)),
+        ),
+      );
   }
 }

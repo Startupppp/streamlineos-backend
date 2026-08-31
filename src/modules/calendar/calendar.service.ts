@@ -1,10 +1,8 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, gte, lte, inArray, like } from "drizzle-orm";
+import { and, eq, inArray, like } from "drizzle-orm";
 import {
   calendarEvents,
-  calendarEventExceptions,
   eventAttendees,
-  leaveRequests,
   users,
   userIntegrationConnections,
   organizationMembers,
@@ -14,13 +12,17 @@ import type { TenantTx } from "../../db/drizzle.types";
 import { ExternalCalendarSyncService } from "./external-calendar-sync.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import type { CreateEventInput, RsvpInput, UpdateEventInput } from "./dto/calendar.schemas";
+import type { CreateEventInput, UpdateEventInput } from "./dto/calendar.schemas";
 import type { UpsertOccurrenceExceptionInput } from "./dto/occurrence-exception.schemas";
 import { CalendarEventsAggregateService } from "./calendar-events-aggregate.service";
 import { CalendarConflictService } from "./calendar-conflict.service";
-import type { CalendarEventItem, CalendarEventsResult, OooConflict } from "./calendar.types";
-import { dateOnly } from "./calendar.types";
+import type { CalendarEventItem, CalendarEventsResult } from "./calendar.types";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
+import { CalendarAttendeesService } from "./calendar-attendees.service";
+import { CalendarRecurrenceService } from "./calendar-recurrence.service";
+import { CalendarExportService } from "./calendar-export.service";
+import type { RsvpInput } from "./dto/calendar.schemas";
+import type { DataScope } from "../access/access.types";
 
 @Injectable()
 export class CalendarService {
@@ -31,6 +33,9 @@ export class CalendarService {
     private readonly sync: ExternalCalendarSyncService,
     private readonly eventsAggregate: CalendarEventsAggregateService,
     private readonly conflict: CalendarConflictService,
+    private readonly attendees: CalendarAttendeesService,
+    private readonly recurrence: CalendarRecurrenceService,
+    private readonly calendarExport: CalendarExportService,
   ) {}
 
   getEvents(
@@ -40,34 +45,6 @@ export class CalendarService {
     end: Date,
   ): Promise<CalendarEventsResult> {
     return this.eventsAggregate.getEvents(orgId, userId, start, end);
-  }
-
-  private async getOooConflicts(
-    orgId: string,
-    attendeeIds: string[],
-    start: Date,
-    end: Date,
-  ): Promise<OooConflict[]> {
-    if (attendeeIds.length === 0) return [];
-
-    return this.db
-      .select({
-        userId: leaveRequests.userId,
-        userName: users.name,
-        leaveStart: leaveRequests.startDate,
-        leaveEnd: leaveRequests.endDate,
-      })
-      .from(leaveRequests)
-      .innerJoin(users, eq(leaveRequests.userId, users.id))
-      .where(
-        and(
-          eq(leaveRequests.orgId, orgId),
-          eq(leaveRequests.status, "APPROVED"),
-          inArray(leaveRequests.userId, attendeeIds),
-          lte(leaveRequests.startDate, dateOnly(end)),
-          gte(leaveRequests.endDate, dateOnly(start)),
-        ),
-      );
   }
 
   async createEvent(orgId: string, userId: string, input: CreateEventInput) {
@@ -153,7 +130,7 @@ export class CalendarService {
           }).onConflictDoNothing({ target: [notificationOutbox.orgId, notificationOutbox.dedupeKey] });
         return { event, eventConflicts: conflicts, attendeeMemberships: memberships };
       }),
-      this.getOooConflicts(orgId, attendeeIds, startDate, endDate),
+      this.conflict.getOooConflicts(orgId, attendeeIds, startDate, endDate),
     ] as const);
 
     let meetingUrl: string | null = null;
@@ -333,6 +310,9 @@ export class CalendarService {
             .from(organizationMembers)
             .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, attendeeIds)));
 
+    const newUserIdSet = new Set(memberships.map((m) => m.userId));
+    const anyRemoved = [...currentUserIds].some((uid) => !newUserIdSet.has(uid));
+
     await tx
       .delete(eventAttendees)
       .where(and(eq(eventAttendees.orgId, orgId), eq(eventAttendees.eventId, eventId)));
@@ -342,6 +322,28 @@ export class CalendarService {
         .insert(eventAttendees)
         .values(memberships.map((m) => ({ orgId, eventId, membershipId: m.id })))
         .onConflictDoNothing();
+
+    if (anyRemoved) {
+      await tx
+        .delete(notificationOutbox)
+        .where(
+          and(
+            eq(notificationOutbox.orgId, orgId),
+            eq(notificationOutbox.state, "PENDING"),
+            like(notificationOutbox.dedupeKey, `calendar:reminder:${eventId}:%`),
+          ),
+        );
+      await tx
+        .update(calendarEvents)
+        .set({ reminder15MinSent: false })
+        .where(
+          and(
+            eq(calendarEvents.orgId, orgId),
+            eq(calendarEvents.id, eventId),
+            eq(calendarEvents.reminder15MinSent, true),
+          ),
+        );
+    }
 
     return memberships
       .filter((m) => !currentUserIds.has(m.userId) && m.userId !== actorUserId)
@@ -443,150 +445,29 @@ export class CalendarService {
     return rows.map((r) => r.email);
   }
 
-  private getEventForOrg(orgId: string, id: number) {
-    return this.db.query.calendarEvents.findFirst({
-      where: and(eq(calendarEvents.id, id), eq(calendarEvents.orgId, orgId)),
-    });
+  rsvp(orgId: string, userId: string, id: number, input: RsvpInput) {
+    return this.attendees.rsvp(orgId, userId, id, input);
   }
 
-  async rsvp(orgId: string, userId: string, id: number, input: RsvpInput) {
-    const event = await this.getEventForOrg(orgId, id);
-    if (!event) return null;
-
-    const membership = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-      columns: { id: true },
-    });
-    if (!membership) return null;
-
-    const [attendee] = await this.db
-      .insert(eventAttendees)
-      .values({
-        orgId,
-        eventId: id,
-        membershipId: membership.id,
-        status: input.status,
-        updatedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [eventAttendees.orgId, eventAttendees.eventId, eventAttendees.membershipId],
-        set: { status: input.status, updatedAt: new Date() },
-      })
-      .returning();
-
-    return attendee;
+  listAttendees(orgId: string, userId: string, id: number) {
+    return this.attendees.listAttendees(orgId, userId, id);
   }
 
-  async listAttendees(orgId: string, id: number) {
-    const event = await this.getEventForOrg(orgId, id);
-    if (!event) return null;
-
-    const rows = await this.db
-      .select({
-        id: eventAttendees.id,
-        status: eventAttendees.status,
-        userId: users.id,
-        userName: users.name,
-        userEmail: users.email,
-        userImage: users.image,
-      })
-      .from(eventAttendees)
-      .innerJoin(
-        organizationMembers,
-        and(eq(eventAttendees.orgId, organizationMembers.orgId), eq(eventAttendees.membershipId, organizationMembers.id)),
-      )
-      .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(eventAttendees.orgId, orgId), eq(eventAttendees.eventId, id)))
-      .limit(100);
-
-    return rows.map((row) => ({
-      id: row.id,
-      status: row.status,
-      user: { id: row.userId, name: row.userName, email: row.userEmail, image: row.userImage },
-    }));
-  }
-
-  private async getRecurringEventForOwner(orgId: string, userId: string, eventId: number) {
-    const memberRow = await this.db.query.organizationMembers.findFirst({
-      columns: { id: true },
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-    });
-    if (!memberRow) return null;
-    const rows = await this.db
-      .select({ createdByMembershipId: calendarEvents.createdByMembershipId, rrule: calendarEvents.rrule })
-      .from(calendarEvents)
-      .where(and(eq(calendarEvents.id, eventId), eq(calendarEvents.orgId, orgId)))
-      .limit(1);
-    const ev = rows[0];
-    if (!ev || ev.createdByMembershipId !== memberRow.id || !ev.rrule) return null;
-    return ev;
-  }
-
-  async upsertOccurrenceException(
+  upsertOccurrenceException(
     orgId: string,
     userId: string,
     eventId: number,
     occurrenceStartIso: string,
     input: UpsertOccurrenceExceptionInput,
   ) {
-    if (!(await this.getRecurringEventForOwner(orgId, userId, eventId))) return null;
-    const occurrenceStart = new Date(occurrenceStartIso);
-    const [row] = await this.db
-      .insert(calendarEventExceptions)
-      .values({
-        orgId,
-        eventId,
-        occurrenceStart,
-        isCancelled: false,
-        modifiedTitle: input.modifiedTitle ?? null,
-        modifiedStart: input.modifiedStart ? new Date(input.modifiedStart) : null,
-        modifiedEnd: input.modifiedEnd ? new Date(input.modifiedEnd) : null,
-      })
-      .onConflictDoUpdate({
-        target: [calendarEventExceptions.orgId, calendarEventExceptions.eventId, calendarEventExceptions.occurrenceStart],
-        set: {
-          isCancelled: false,
-          modifiedTitle: input.modifiedTitle ?? null,
-          modifiedStart: input.modifiedStart ? new Date(input.modifiedStart) : null,
-          modifiedEnd: input.modifiedEnd ? new Date(input.modifiedEnd) : null,
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
-    return row;
+    return this.recurrence.upsertOccurrenceException(orgId, userId, eventId, occurrenceStartIso, input);
   }
 
-  async cancelOccurrence(orgId: string, userId: string, eventId: number, occurrenceStartIso: string) {
-    if (!(await this.getRecurringEventForOwner(orgId, userId, eventId))) return null;
-    const occurrenceStart = new Date(occurrenceStartIso);
-    const [row] = await this.db
-      .insert(calendarEventExceptions)
-      .values({ orgId, eventId, occurrenceStart, isCancelled: true })
-      .onConflictDoUpdate({
-        target: [calendarEventExceptions.orgId, calendarEventExceptions.eventId, calendarEventExceptions.occurrenceStart],
-        set: { isCancelled: true, updatedAt: new Date() },
-      })
-      .returning();
-    return row;
+  cancelOccurrence(orgId: string, userId: string, eventId: number, occurrenceStartIso: string) {
+    return this.recurrence.cancelOccurrence(orgId, userId, eventId, occurrenceStartIso);
   }
 
-  exportEvents(orgId: string, from: Date, to: Date) {
-    return this.db.query.calendarEvents.findMany({
-      where: and(
-        eq(calendarEvents.orgId, orgId),
-        gte(calendarEvents.startDate, from),
-        lte(calendarEvents.startDate, to),
-      ),
-      orderBy: (t, { asc }) => [asc(t.startDate)],
-      limit: 100,
-    });
+  exportEvents(orgId: string, userId: string, from: Date, to: Date, scope: DataScope = "all") {
+    return this.calendarExport.exportEvents(orgId, userId, from, to, scope);
   }
 }

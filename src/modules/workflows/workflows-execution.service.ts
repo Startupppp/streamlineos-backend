@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   workflows,
   workflowVersions,
@@ -155,7 +155,13 @@ export class WorkflowsExecutionService {
     const [updated] = await this.db
       .update(workflowExecutions)
       .set({ status: "cancelled", completedAt: new Date() })
-      .where(eq(workflowExecutions.id, executionId))
+      .where(
+        and(
+          eq(workflowExecutions.id, executionId),
+          eq(workflowExecutions.orgId, orgId),
+          inArray(workflowExecutions.status, ["pending", "running", "waiting"]),
+        ),
+      )
       .returning();
 
     await this.db.insert(workflowAuditLogs).values({
@@ -291,7 +297,13 @@ export class WorkflowsExecutionService {
         approvedAt: dto.action === "approve" ? now : null,
         rejectedAt: dto.action === "reject" ? now : null,
       })
-      .where(eq(workflowApprovals.id, approvalId))
+      .where(
+        and(
+          eq(workflowApprovals.id, approvalId),
+          eq(workflowApprovals.approverId, userId),
+          eq(workflowApprovals.status, "pending"),
+        ),
+      )
       .returning();
 
     await this.db.insert(workflowAuditLogs).values({

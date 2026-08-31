@@ -258,20 +258,24 @@ export class StockEngineBatchService {
 
           let newAvgCost = state.averageCost;
           if (bucket === "ON_HAND") {
-            newAvgCost = await this.movementCosting.applyCosting(
-              tx,
+            const costingInput = {
               orgId,
               costing,
-              movement,
-              txnRow.id,
+              movement: {
+                productVariantId: movement.productVariantId,
+                locationId: movement.locationId,
+                lotId: movement.lotId ?? null,
+              },
               delta,
               unitCost,
-              state.onHand,
-              state.averageCost,
-              settings.allowNegativeStock,
-              cmd.sourceType ?? null,
-              cmd.sourceId,
-            );
+              onHandBefore: state.onHand,
+              averageCostBefore: state.averageCost,
+              allowNegativeStock: settings.allowNegativeStock,
+              sourceType: cmd.sourceType ?? null,
+              sourceId: cmd.sourceId,
+            };
+            const plan = await this.movementCosting.plan(tx, costingInput);
+            newAvgCost = await this.movementCosting.commit(tx, costingInput, plan, txnRow.id);
           }
 
           await tx

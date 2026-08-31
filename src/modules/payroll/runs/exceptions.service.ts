@@ -16,7 +16,12 @@ export class ExceptionsService {
     runId: number,
     severity?: string,
     status?: string,
+    page = 1,
+    limit = 50,
   ) {
+    const cap = Math.min(limit, 100);
+    const offset = (page - 1) * cap;
+
     const runCheck = await this.db
       .select({ id: payrollRuns.id })
       .from(payrollRuns)
@@ -49,7 +54,8 @@ export class ExceptionsService {
       .leftJoin(users, eq(users.id, payrollExceptions.userId))
       .where(and(...conditions))
       .orderBy(payrollExceptions.severity, payrollExceptions.createdAt)
-      .limit(1000);
+      .limit(cap)
+      .offset(offset);
 
     return rows;
   }

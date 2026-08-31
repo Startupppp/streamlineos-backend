@@ -177,8 +177,12 @@ export class DockService {
         and(
           eq(invDockAppointments.orgId, orgId),
           query.warehouseId ? eq(invDockAppointments.warehouseId, query.warehouseId) : sql`TRUE`,
-          sql`${invDockAppointments.windowStart} >= ${new Date(query.from)}`,
-          sql`${invDockAppointments.windowStart} < ${new Date(query.to)}`,
+          // `from`/`to` are already ISO strings (`z.string().datetime()`), so the
+          // Date round-trip only produced the shape `keyset.spec.ts` forbids:
+          // a bare Date interpolated into a sql template binds an object the
+          // driver cannot serialise, and throws against a real database.
+          sql`${invDockAppointments.windowStart} >= ${query.from}::timestamptz`,
+          sql`${invDockAppointments.windowStart} < ${query.to}::timestamptz`,
           scope.warehouse(sql`${invDockAppointments.warehouseId}`),
         ),
       )

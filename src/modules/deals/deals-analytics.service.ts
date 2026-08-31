@@ -1,5 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, inArray, isNull, notInArray, sql, sum } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, lt, notInArray, sql, sum } from "drizzle-orm";
+import { buildCursorPage, decodeCursor, encodeCursor } from "../../common/pagination/cursor";
+import { keysetBefore } from "../../common/pagination/keyset";
 import { deals, dealActivities, crmForecastSnapshots, users } from "../../db/schema";
 import type { ForecastSnapshotData } from "../../db/schema/crm/deals";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -306,15 +308,24 @@ export class DealsAnalyticsService {
   }
 
   async getForecastSnapshots(orgId: string, query: ForecastSnapshotsQueryInput) {
-    const conditions = [eq(crmForecastSnapshots.orgId, orgId)];
-    if (query.period) conditions.push(eq(crmForecastSnapshots.period, query.period));
-    return this.db
+    const limit = query.limit ?? 20;
+    const position = decodeCursor(query.cursor);
+    const baseConditions = [eq(crmForecastSnapshots.orgId, orgId)];
+    if (query.period) baseConditions.push(eq(crmForecastSnapshots.period, query.period));
+    const where = position
+      ? and(...baseConditions, keysetBefore(crmForecastSnapshots.capturedAt, crmForecastSnapshots.id, position))
+      : and(...baseConditions);
+    const rows = await this.db
       .select()
       .from(crmForecastSnapshots)
-      .where(and(...conditions))
-      .orderBy(desc(crmForecastSnapshots.capturedAt))
-      .limit(query.limit ?? 20)
-      .offset(query.offset ?? 0);
+      .where(where)
+      .orderBy(desc(crmForecastSnapshots.capturedAt), desc(crmForecastSnapshots.id))
+      .limit(limit + 1);
+    const cursorPage = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.capturedAt.toISOString(),
+      id: row.id,
+    }));
+    return { snapshots: cursorPage.data, hasMore: cursorPage.pagination.hasMore, nextCursor: cursorPage.pagination.nextCursor };
   }
 
   async overrideForecastSnapshot(

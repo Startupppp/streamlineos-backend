@@ -4,14 +4,16 @@ import {
   and,
   desc,
   asc,
-  sql,
   count,
   gte,
   lte,
   or,
   inArray,
+  sql,
   type SQL,
 } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetBefore, keysetAfter } from "../../common/pagination/keyset";
 import { leadActivities, users, crmCampaigns } from "../../db/schema";
 import { businessParties, leadPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -88,67 +90,78 @@ export class LeadsReadService {
       if (combined) where.push(combined);
     }
 
+    const sortBy = filters?.sortBy ?? "createdAt";
+    const sortOrder = filters?.sortOrder ?? "desc";
+    const limit = filters?.limit ?? 50;
+    const position = decodeCursor(filters?.cursor);
+
     const colMap = {
       name: LEAD_PARTY_COLUMNS.name,
       email: LEAD_PARTY_COLUMNS.email,
       company: LEAD_PARTY_COLUMNS.company,
-      status: LEAD_PARTY_COLUMNS.status,
-      priority: LEAD_PARTY_COLUMNS.priority,
-      source: LEAD_PARTY_COLUMNS.source,
       score: LEAD_PARTY_COLUMNS.score,
       potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
       createdAt: LEAD_PARTY_COLUMNS.createdAt,
     } as const;
 
-    const sortBy = filters?.sortBy ?? "createdAt";
-    const sortOrder = filters?.sortOrder ?? "desc";
-    const orderCol = colMap[sortBy as keyof typeof colMap] ?? LEAD_PARTY_COLUMNS.createdAt;
-    const orderFn = sortOrder === "asc" ? asc(orderCol) : desc(orderCol);
+    const sortableCol = sortBy in colMap ? colMap[sortBy as keyof typeof colMap] : LEAD_PARTY_COLUMNS.createdAt;
+    const isTimestampSort = sortBy === "createdAt";
+    const idCol = LEAD_PARTY_COLUMNS.id;
 
-    const page = filters?.page ?? 1;
-    const limit = filters?.limit ?? 50;
-    const offset = (page - 1) * limit;
-    const whereClause = and(...where);
+    const keysetCond = position
+      ? isTimestampSort
+        ? sortOrder === "desc"
+          ? keysetBefore(businessParties.createdAt, leadPartyMap.leadId, position)
+          : keysetAfter(businessParties.createdAt, leadPartyMap.leadId, position)
+        : sortOrder === "desc"
+          ? sql`(${sortableCol}, ${idCol}) < (${sql.param(position.sortValue, businessParties.createdAt)}, ${sql.param(position.id, idCol)})`
+          : sql`(${sortableCol}, ${idCol}) > (${sql.param(position.sortValue, businessParties.createdAt)}, ${sql.param(position.id, idCol)})`
+      : undefined;
 
-    const rows = await this.db
-      .select({
-        lead: LEAD_PARTY_COLUMNS,
-        assigneeId: users.id,
-        assigneeName: users.name,
-        assigneeImage: users.image,
-        campaignId: crmCampaigns.id,
-        campaignName: crmCampaigns.name,
-        _total: sql<string>`count(*) OVER ()`,
-      })
-      .from(leadPartyMap)
-      .innerJoin(businessParties, LEAD_PARTY_JOIN)
-      .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
-      .leftJoin(
-        crmCampaigns,
-        and(
-          eq(crmCampaigns.id, LEAD_PARTY_COLUMNS.campaignId),
-          eq(crmCampaigns.orgId, orgId),
-        ),
-      )
-      .where(whereClause)
-      .orderBy(orderFn, desc(LEAD_PARTY_COLUMNS.id))
-      .limit(limit)
-      .offset(offset);
+    const orderFn = sortOrder === "asc" ? asc(sortableCol) : desc(sortableCol);
+    const whereClause = keysetCond ? and(...where, keysetCond) : and(...where);
+    const baseWhereClause = and(...where);
 
-    const first = rows[0];
-    const totalCount = first
-      ? Number(first._total)
-      : offset === 0
-      ? 0
-      : await this.db
-          .select({ c: count() })
-          .from(leadPartyMap)
-          .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(whereClause)
-          .then((r) => Number(r[0]?.c ?? 0));
+    const [rows, countResult] = await Promise.all([
+      this.db
+        .select({
+          lead: LEAD_PARTY_COLUMNS,
+          assigneeId: users.id,
+          assigneeName: users.name,
+          assigneeImage: users.image,
+          campaignId: crmCampaigns.id,
+          campaignName: crmCampaigns.name,
+        })
+        .from(leadPartyMap)
+        .innerJoin(businessParties, LEAD_PARTY_JOIN)
+        .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
+        .leftJoin(
+          crmCampaigns,
+          and(
+            eq(crmCampaigns.id, LEAD_PARTY_COLUMNS.campaignId),
+            eq(crmCampaigns.orgId, orgId),
+          ),
+        )
+        .where(whereClause)
+        .orderBy(orderFn, desc(idCol))
+        .limit(limit + 1),
+      filters?.cursor === undefined
+        ? this.db
+            .select({ c: count() })
+            .from(leadPartyMap)
+            .innerJoin(businessParties, LEAD_PARTY_JOIN)
+            .where(baseWhereClause)
+        : Promise.resolve(null),
+    ]);
+
+    const page = buildCursorPage(rows, limit, (row) => ({
+      sortValue: isTimestampSort ? row.lead.createdAt.toISOString() : String(row.lead.createdAt),
+      id: String(row.lead.id),
+    }));
+    const totalCount = countResult ? Number(countResult[0]?.c ?? 0) : undefined;
 
     return {
-      leads: rows.map(({ _total, ...row }) => ({
+      leads: page.data.map((row) => ({
         ...row.lead,
         assignedTo: row.assigneeId
           ? { id: row.assigneeId, name: row.assigneeName, image: row.assigneeImage }
@@ -159,8 +172,8 @@ export class LeadsReadService {
             : null,
       })),
       totalCount,
-      page,
-      totalPages: Math.ceil(totalCount / limit),
+      hasMore: page.pagination.hasMore,
+      nextCursor: page.pagination.nextCursor,
     };
   }
 

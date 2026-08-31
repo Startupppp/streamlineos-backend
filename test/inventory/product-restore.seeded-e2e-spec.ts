@@ -252,7 +252,7 @@ describe("[seeded-e2e] product restore and retired-SKU demand", () => {
           fromLocationId: scene.locationId,
           toLocationId: scene.otherLocationId,
           lines: [{ productVariantId: scene.variantId, quantity: 1 }],
-        } as never),
+        } as never, `spec-transfer-${crypto.randomUUID()}`),
       ),
     ).rejects.toThrow(/can no longer be ordered/i);
 

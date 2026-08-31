@@ -1,4 +1,13 @@
-import { BadRequestException, Controller, Get, Headers, Param, ParseIntPipe, Post, Body, Query, UseGuards } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Body,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -15,6 +24,9 @@ import {
 } from "./dto/inv-stock.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 
 const adjustmentIdParams = z.object({ adjustmentId: z.coerce.number().int().positive() }).strict();
 
@@ -44,7 +56,7 @@ export class InvStockAdjustmentsController {
   @RequirePermission("inventory:stock:adjust")
   @Validate({ body: createAdjustmentSchema })
   createAdjustment(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Body() body: CreateAdjustmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -63,11 +75,13 @@ export class InvStockAdjustmentsController {
   }
 
   @Post(":adjustmentId/approve")
+  @BodylessAction()
+  @Idempotent("inventory.stock-adjustment.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:adjustments:approve")
   @Validate({ params: adjustmentIdParams })
   approveAdjustment(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -75,11 +89,12 @@ export class InvStockAdjustmentsController {
   }
 
   @Post(":adjustmentId/post")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:adjustments:post")
   @Validate({ params: adjustmentIdParams })
   postAdjustment(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -87,6 +102,7 @@ export class InvStockAdjustmentsController {
   }
 
   @Post(":adjustmentId/cancel")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
   @Validate({ params: adjustmentIdParams })

@@ -49,14 +49,14 @@ describe("HrHelpdeskService — cross-tenant isolation", () => {
   it("hides helpdesk tickets from different org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
     const svc = new HrHelpdeskService(db);
-    await svc.list(ATTACKER, "user-1", false, { page: 1, limit: 10 });
+    await svc.list(ATTACKER, "user-1", false, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
   it("returns helpdesk tickets for owning org (control — same-tenant access works)", async () => {
     const { db, where, findMany } = makeDb([ROW]);
     const svc = new HrHelpdeskService(db);
-    await svc.list(OWNER, "user-1", false, { page: 1, limit: 10 });
+    await svc.list(OWNER, "user-1", false, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });
@@ -71,7 +71,7 @@ describe("HrCalendarService — cross-tenant isolation", () => {
     const mockAccess = { holds: jest.fn().mockResolvedValue(false) };
     const svc = new HrCalendarService(db, mockCelebrations as never, mockAccess as never);
     const userCtx = { orgId: ATTACKER, userId: "user-1", email: "a@b.com", roles: [] };
-    await svc.getEvents(userCtx as never, { from: "2024-01-01", to: "2024-01-31" });
+    await svc.getEvents(userCtx as never, { from: "2024-01-01", to: "2024-01-31", types: [] });
     const arg = isolationArg(where, findMany);
     expect(sqlValues(arg).includes(ATTACKER) || (db.select as jest.Mock).mock.calls.length === 0).toBe(true);
   });
@@ -82,7 +82,7 @@ describe("HrCalendarService — cross-tenant isolation", () => {
     const mockAccess = { holds: jest.fn().mockResolvedValue(false) };
     const svc = new HrCalendarService(db, mockCelebrations as never, mockAccess as never);
     const userCtx = { orgId: OWNER, userId: "user-2", email: "b@c.com", roles: [] };
-    const result = await svc.getEvents(userCtx as never, { from: "2024-01-01", to: "2024-01-31" });
+    const result = await svc.getEvents(userCtx as never, { from: "2024-01-01", to: "2024-01-31", types: [] });
     expect(Array.isArray(result)).toBe(true);
   });
 });

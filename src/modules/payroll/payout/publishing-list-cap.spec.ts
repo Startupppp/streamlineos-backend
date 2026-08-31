@@ -22,6 +22,8 @@ describe("PublishingService — listPublications cap", () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
+      {} as never,
     );
   }
 

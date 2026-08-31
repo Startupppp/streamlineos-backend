@@ -3,6 +3,8 @@ import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { crmSequences, crmSequenceSteps, crmSequenceEnrollments } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetAfter } from "../../../common/pagination/keyset";
 import type {
   CreateSequenceInput,
   UpdateSequenceInput,
@@ -78,7 +80,8 @@ export class CrmSequencesService {
       .select()
       .from(crmSequenceSteps)
       .where(eq(crmSequenceSteps.sequenceId, sequenceId))
-      .orderBy(asc(crmSequenceSteps.sortOrder));
+      .orderBy(asc(crmSequenceSteps.sortOrder))
+      .limit(200);
     return { steps };
   }
 
@@ -117,18 +120,25 @@ export class CrmSequencesService {
     return { success: true as const };
   }
 
-  async listEnrollments(orgId: string, sequenceId: string, page: number) {
+  async listEnrollments(orgId: string, sequenceId: string, cursor?: string) {
     await this.assertOwns(orgId, sequenceId);
     const limit = 20;
-    const offset = (page - 1) * limit;
-    const enrollments = await this.db
+    const position = decodeCursor(cursor);
+    const baseConditions = [
+      eq(crmSequenceEnrollments.orgId, orgId),
+      eq(crmSequenceEnrollments.sequenceId, sequenceId),
+    ];
+    const where = position
+      ? and(...baseConditions, keysetAfter(crmSequenceEnrollments.createdAt, crmSequenceEnrollments.id, position))
+      : and(...baseConditions);
+    const rows = await this.db
       .select()
       .from(crmSequenceEnrollments)
-      .where(and(eq(crmSequenceEnrollments.orgId, orgId), eq(crmSequenceEnrollments.sequenceId, sequenceId)))
-      .orderBy(desc(crmSequenceEnrollments.createdAt))
-      .limit(limit)
-      .offset(offset);
-    return { enrollments };
+      .where(where)
+      .orderBy(asc(crmSequenceEnrollments.createdAt), asc(crmSequenceEnrollments.id))
+      .limit(limit + 1);
+    const page = buildCursorPage(rows, limit, (r) => ({ sortValue: r.createdAt.toISOString(), id: r.id }));
+    return { enrollments: page.data, hasMore: page.pagination.hasMore, nextCursor: page.pagination.nextCursor };
   }
 
   async enroll(orgId: string, sequenceId: string, input: EnrollInSequenceInput) {

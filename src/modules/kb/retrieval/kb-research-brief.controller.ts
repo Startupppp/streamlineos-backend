@@ -11,6 +11,7 @@ import {
   kbResearchBriefCreateSchema,
   kbResearchBriefListSchema,
   kbResearchBriefRateSchema,
+  type KbResearchBriefCreateInput,
 } from "./dto/kb-ai.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -27,10 +28,9 @@ export class KbResearchBriefController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @HttpCode(201)
-  async enqueue(@Body() body: unknown, @CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    const parsed = kbResearchBriefCreateSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.briefs.enqueue(u, parsed.data);
+  @Validate({ body: kbResearchBriefCreateSchema })
+  async enqueue(@Body() body: KbResearchBriefCreateInput, @CurrentUser() u: CurrentUserContext): Promise<unknown> {
+    return this.briefs.enqueue(u, body);
   }
 
   @Get("research-briefs")
@@ -54,15 +54,13 @@ export class KbResearchBriefController {
   @Post("research-briefs/:briefId/rate")
   @HttpCode(200)
   @RequirePermission("kb:pages:view")
-  @Validate({ params: briefIdParams })
+  @Validate({ params: briefIdParams, body: kbResearchBriefRateSchema })
   async rateBrief(
     @Param("briefId", ParseIntPipe) briefId: number,
-    @Body() body: unknown,
+    @Body() body: { rating: "helpful" | "not_helpful" },
     @CurrentUser() u: CurrentUserContext,
   ): Promise<{ success: boolean }> {
-    const parsed = kbResearchBriefRateSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    await this.briefs.rateBrief(u, briefId, parsed.data.rating);
+    await this.briefs.rateBrief(u, briefId, body.rating);
     return { success: true };
   }
 }

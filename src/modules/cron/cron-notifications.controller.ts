@@ -18,6 +18,7 @@ import { CrmFollowupSweepService } from "../crm/core/crm-followup-sweep.service"
 import { NotificationTimeSweepsService } from "../notifications/time-sweeps/notification-time-sweeps.service";
 import { CronLeaseService } from "./cron-lease.service";
 import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 @Public()
 @Controller("cron")
@@ -40,6 +41,7 @@ export class CronNotificationsController {
   }
 
   @Post("notification-time-sweeps")
+  @BodylessAction()
   @HttpCode(200)
   postNotificationTimeSweeps(@Headers("authorization") authorization?: string) {
     return this.runNotificationTimeSweeps(authorization);
@@ -51,6 +53,7 @@ export class CronNotificationsController {
   }
 
   @Post("notification-digest-flush")
+  @BodylessAction()
   @HttpCode(200)
   postNotificationDigestFlush(@Headers("authorization") authorization?: string) {
     return this.runNotificationDigestFlush(authorization);
@@ -62,6 +65,7 @@ export class CronNotificationsController {
   }
 
   @Post("notification-outbox-flush")
+  @BodylessAction()
   @HttpCode(200)
   postNotificationOutboxFlush(@Headers("authorization") authorization?: string) {
     return this.runNotificationOutboxFlush(authorization);
@@ -73,6 +77,7 @@ export class CronNotificationsController {
   }
 
   @Post("notifications-retention-sweep")
+  @BodylessAction()
   @HttpCode(200)
   postNotificationsRetentionSweep(@Headers("authorization") authorization?: string) {
     return this.runNotificationsRetentionSweep(authorization);
@@ -84,6 +89,7 @@ export class CronNotificationsController {
   }
 
   @Post("notifications-retention-detach")
+  @BodylessAction()
   @HttpCode(200)
   postNotificationsRetentionDetach(@Headers("authorization") authorization?: string) {
     return this.runNotificationsRetentionDetach(authorization);
@@ -95,6 +101,7 @@ export class CronNotificationsController {
   }
 
   @Post("chat-reply-reminders")
+  @BodylessAction()
   @HttpCode(200)
   postChatReplyReminders(@Headers("authorization") authorization?: string) {
     return this.runChatReplyReminders(authorization);
@@ -106,6 +113,7 @@ export class CronNotificationsController {
   }
 
   @Post("notification-delivery-flush")
+  @BodylessAction()
   @HttpCode(200)
   postNotificationDeliveryFlush(@Headers("authorization") authorization?: string) {
     return this.runNotificationDeliveryFlush(authorization);

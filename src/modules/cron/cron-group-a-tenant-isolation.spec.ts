@@ -33,6 +33,7 @@ import { WorkAuthorizationsService } from "../hr/global/work-authorizations.serv
 import { ContractsService } from "../hr/global/contracts.service";
 import { AutomationService } from "../automation/automation.service";
 import { SeatLedgerService } from "../billing/core/seat-ledger.service";
+import { RetentionService } from "../hr/governance/retention/retention.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -366,6 +367,7 @@ describe("CronHrService — cross-tenant isolation", () => {
         { provide: AutomationService, useValue: { runAutomationsForEvent: jest.fn() } },
         { provide: HrAutomationEngineService, useValue: { emit: jest.fn() } },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
+        { provide: RetentionService, useValue: { sweepStrandedDeleteRequests: jest.fn().mockResolvedValue({ processed: 0, skipped: 0 }) } },
       ],
     }).compile().then((m) => m.get(CronHrService));
   }

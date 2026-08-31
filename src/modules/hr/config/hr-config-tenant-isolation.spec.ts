@@ -107,14 +107,14 @@ describe("HrInterviewQuestionsService — cross-tenant isolation", () => {
   it("hides interview questions from different org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
     const svc = new HrInterviewQuestionsService(db);
-    await svc.list(ATTACKER, { page: 1, limit: 10, isActive: true });
+    await svc.list(ATTACKER, {});
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
   it("returns interview questions for owning org (control)", async () => {
     const { db, where, findMany } = makeDb([ROW]);
     const svc = new HrInterviewQuestionsService(db);
-    await svc.list(OWNER, { page: 1, limit: 10, isActive: true });
+    await svc.list(OWNER, {});
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });

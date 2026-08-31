@@ -1,11 +1,13 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { crmCampaigns, crmOptions, crmPipelineStages, deals } from "../../../db/schema";
 import { businessParties, leadPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_LEAD, leadPriority, leadSource, leadStatus } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { resolveLeadStatusSemantics } from "../../leads/lead-status-semantics";
+import { buildCursorPage, buildIdCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBefore } from "../../../common/pagination/keyset";
 import type { CampaignCreateInput, CampaignUpdateInput, CampaignListQuery } from "./dto/campaigns.schemas";
 
 @Injectable()
@@ -13,17 +15,30 @@ export class CrmCampaignsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(orgId: string, query: CampaignListQuery) {
-    const offset = (query.page - 1) * query.limit;
-    const conditions = [eq(crmCampaigns.orgId, orgId), isNull(crmCampaigns.deletedAt)];
-    if (query.status) conditions.push(eq(crmCampaigns.status, query.status as never));
+    const limit = query.limit;
+    const position = decodeCursor(query.cursor);
+    const baseConditions = [eq(crmCampaigns.orgId, orgId), isNull(crmCampaigns.deletedAt)];
+    if (query.status) baseConditions.push(eq(crmCampaigns.status, query.status as never));
+    const where = position
+      ? and(...baseConditions, keysetBefore(crmCampaigns.createdAt, crmCampaigns.id, position))
+      : and(...baseConditions);
 
-    const [items, [{ total }]] = await Promise.all([
-      this.db.select().from(crmCampaigns).where(and(...conditions))
-        .limit(query.limit).offset(offset),
-      this.db.select({ total: count() }).from(crmCampaigns).where(and(...conditions)),
+    const [rows, totalResult] = await Promise.all([
+      this.db.select().from(crmCampaigns).where(where)
+        .orderBy(desc(crmCampaigns.createdAt), desc(crmCampaigns.id))
+        .limit(limit + 1),
+      query.cursor === undefined
+        ? this.db.select({ c: count() }).from(crmCampaigns).where(and(...baseConditions))
+        : Promise.resolve(null),
     ]);
 
-    return { items, total, page: query.page, limit: query.limit };
+    const page = buildCursorPage(rows, limit, (r) => ({ sortValue: r.createdAt.toISOString(), id: String(r.id) }));
+    return {
+      items: page.data,
+      hasMore: page.pagination.hasMore,
+      nextCursor: page.pagination.nextCursor,
+      total: totalResult ? Number(totalResult[0]?.c ?? 0) : undefined,
+    };
   }
 
   async create(orgId: string, input: CampaignCreateInput) {
@@ -144,11 +159,16 @@ export class CrmCampaignsService {
     };
   }
 
-  async getCampaignLeads(orgId: string, campaignId: number, page: number, limit: number) {
-    const safeLimit = Math.min(limit, 50);
-    const offset = (page - 1) * safeLimit;
+  async getCampaignLeads(orgId: string, campaignId: number, cursor?: string) {
+    const safeLimit = 50;
+    const afterId = cursor !== undefined ? Number(cursor) : undefined;
+    const baseWhere = and(
+      eq(leadPartyMap.organizationId, orgId),
+      eq(businessParties.acquisitionCampaignId, campaignId),
+      afterId !== undefined && !Number.isNaN(afterId) ? gt(leadPartyMap.leadId, afterId) : undefined,
+    );
 
-    const [items, [{ total }]] = await Promise.all([
+    const [rows, totalResult] = await Promise.all([
       this.db
         .select({
           id: leadPartyMap.leadId,
@@ -171,25 +191,23 @@ export class CrmCampaignsService {
         })
         .from(leadPartyMap)
         .innerJoin(businessParties, PARTY_OF_LEAD)
-        .where(and(
-          eq(leadPartyMap.organizationId, orgId),
-          eq(businessParties.acquisitionCampaignId, campaignId),
-        ))
-        // The legacy read had no ORDER BY and leaned on the heap order of a
-        // serial primary key. Reading through the map changes what that order
-        // is, so the page says what it is ordered by rather than inheriting one.
+        .where(baseWhere)
         .orderBy(leadPartyMap.leadId)
-        .limit(safeLimit)
-        .offset(offset),
-      this.db.select({ total: count() })
-        .from(leadPartyMap)
-        .innerJoin(businessParties, PARTY_OF_LEAD)
-        .where(and(
-          eq(leadPartyMap.organizationId, orgId),
-          eq(businessParties.acquisitionCampaignId, campaignId),
-        )),
+        .limit(safeLimit + 1),
+      cursor === undefined
+        ? this.db.select({ c: count() })
+            .from(leadPartyMap)
+            .innerJoin(businessParties, PARTY_OF_LEAD)
+            .where(and(eq(leadPartyMap.organizationId, orgId), eq(businessParties.acquisitionCampaignId, campaignId)))
+        : Promise.resolve(null),
     ]);
 
-    return { items, total, page, limit: safeLimit };
+    const page = buildIdCursorPage(rows, safeLimit, (r) => r.id);
+    return {
+      items: page.data,
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor !== null ? String(page.nextCursor) : null,
+      total: totalResult ? Number(totalResult[0]?.c ?? 0) : undefined,
+    };
   }
 }

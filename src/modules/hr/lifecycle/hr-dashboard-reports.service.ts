@@ -226,10 +226,11 @@ export class HrDashboardReportsService {
           .select({ departmentName: orgUnits.name, presentCount: count(attendance.id) })
           .from(orgUnits)
           .leftJoin(orgUnitMembers, eq(orgUnitMembers.orgUnitId, orgUnits.id))
+          .leftJoin(organizationMembers, eq(organizationMembers.id, orgUnitMembers.membershipId))
           .leftJoin(
             attendance,
             and(
-              eq(attendance.userId, orgUnitMembers.userId),
+              eq(attendance.userId, organizationMembers.userId),
               eq(attendance.orgId, orgId),
               gte(attendance.date, monthStart),
               lte(attendance.date, monthEnd),
@@ -318,7 +319,7 @@ export class HrDashboardReportsService {
       .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
       .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .leftJoin(hrEmployeeSensitiveFields, and(eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id), eq(hrEmployeeSensitiveFields.orgId, orgId)))
-      .leftJoin(orgUnitMembers, and(eq(orgUnitMembers.userId, organizationMembers.userId), eq(orgUnitMembers.orgId, orgId)))
+      .leftJoin(orgUnitMembers, and(eq(orgUnitMembers.membershipId, organizationMembers.id), eq(orgUnitMembers.orgId, orgId)))
       .leftJoin(orgUnits, orgUnitInOrg(orgId, orgUnitMembers.orgUnitId))
       .where(eq(organizationMembers.orgId, orgId));
   }

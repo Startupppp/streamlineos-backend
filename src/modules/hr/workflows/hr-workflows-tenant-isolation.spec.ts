@@ -72,7 +72,7 @@ describe("HrWorkflowDefinitionsService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockEngine = { getInstanceTimeline: jest.fn() };
     const svc = new HrWorkflowDefinitionsService(db, mockEngine as never);
-    await svc.list(ATTACKER, {});
+    await svc.list(ATTACKER, { page: 1, limit: 20 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -80,7 +80,7 @@ describe("HrWorkflowDefinitionsService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockEngine = { getInstanceTimeline: jest.fn() };
     const svc = new HrWorkflowDefinitionsService(db, mockEngine as never);
-    await svc.list(OWNER, {});
+    await svc.list(OWNER, { page: 1, limit: 20 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });
@@ -96,7 +96,7 @@ describe("HrWorkflowInstancesService — cross-tenant isolation", () => {
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) };
     const mockEmployment = { getFactsBatch: jest.fn().mockResolvedValue([]) };
     const svc = new HrWorkflowInstancesService(db, mockEngine as never, mockAccess as never, mockEmployment as never);
-    await svc.listForDefinition(ATTACKER, 1, {});
+    await svc.listForDefinition(ATTACKER, 1, { page: 1, limit: 20 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -106,7 +106,7 @@ describe("HrWorkflowInstancesService — cross-tenant isolation", () => {
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) };
     const mockEmployment = { getFactsBatch: jest.fn().mockResolvedValue([]) };
     const svc = new HrWorkflowInstancesService(db, mockEngine as never, mockAccess as never, mockEmployment as never);
-    await svc.listForDefinition(OWNER, 1, {});
+    await svc.listForDefinition(OWNER, 1, { page: 1, limit: 20 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });

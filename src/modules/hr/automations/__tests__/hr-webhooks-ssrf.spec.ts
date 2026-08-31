@@ -1,5 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { HrWebhooksService } from "../hr-webhooks.service";
+import type { Db } from "../../../../db/drizzle.module";
+import { type HrAutomationEvent } from "../hr-automation-events";
 
 jest.mock("../../../../common/security/ssrf-guard", () => ({
   checkWebhookUrl: jest.fn(),
@@ -25,7 +27,7 @@ const mockDb = {
       findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: "org1", url: "https://ok.example.com", name: "w1" }),
     },
   },
-} as never;
+} as unknown as Db;
 
 function makeSvc() {
   return new HrWebhooksService(mockDb);
@@ -34,7 +36,7 @@ function makeSvc() {
 const VALID_INPUT = {
   name: "my-hook",
   url: "https://hooks.example.com/crm",
-  events: ["employee.created"] as string[],
+  events: ["employee.created"] as HrAutomationEvent[],
   isActive: true,
 };
 

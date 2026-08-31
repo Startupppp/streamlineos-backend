@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Param, Body, Query, ParseIntPipe, UseGuards, HttpCode, HttpStatus, Headers } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Body,
+  Query,
+  ParseIntPipe,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -19,6 +30,8 @@ import {
 } from "./dto/shipments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 
 const loadIdParams = z.object({ loadId: z.coerce.number().int().positive() }).strict();
 
@@ -67,7 +80,7 @@ export class LoadsController {
   @HttpCode(HttpStatus.OK)
   @Validate({ params: loadIdParams, body: dispatchLoadSchema })
   dispatch(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("loadId", ParseIntPipe) loadId: number,
     @Body() body: DispatchLoadInput,
     @CurrentUser() u: CurrentUserContext,
@@ -89,6 +102,7 @@ export class LoadsController {
   }
 
   @Post(":loadId/cancel")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @HttpCode(HttpStatus.OK)

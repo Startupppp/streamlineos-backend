@@ -90,7 +90,7 @@ describe("CrmValidationService — cross-tenant isolation", () => {
   it("evaluate: queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
     const svc = new CrmValidationService(db);
-    const result = await svc.evaluate(ATTACKER, "lead", {});
+    const result = await svc.evaluate(ATTACKER, "lead", {}, {});
     expect(result).toBeDefined();
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -99,7 +99,7 @@ describe("CrmValidationService — cross-tenant isolation", () => {
   it("evaluate: queries scoped to owner org (control)", async () => {
     const { db, where } = makeDb([]);
     const svc = new CrmValidationService(db);
-    await svc.evaluate(OWNER, "lead", {});
+    await svc.evaluate(OWNER, "lead", {}, {});
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });

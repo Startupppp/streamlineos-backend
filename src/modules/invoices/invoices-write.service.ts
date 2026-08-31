@@ -174,6 +174,7 @@ export class InvoicesWriteService {
       this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId)),
       this.cache.invalidateNamespace(CACHE_KEYS.finTaxReportsNamespace(orgId)),
       this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId)),
+      this.cache.invalidateNamespaceForOrg(orgId, "invoices:list"),
     ]);
     if (!registerAfterCommit(invalidate)) await invalidate();
 
@@ -201,6 +202,7 @@ export class InvoicesWriteService {
       this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId)),
       this.cache.invalidateNamespace(CACHE_KEYS.finTaxReportsNamespace(orgId)),
       this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId)),
+      this.cache.invalidateNamespaceForOrg(orgId, "invoices:list"),
     ]);
     if (!registerAfterCommit(invalidate)) await invalidate();
     return result;
@@ -226,6 +228,7 @@ export class InvoicesWriteService {
       this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId)),
       this.cache.invalidateNamespace(CACHE_KEYS.finTaxReportsNamespace(orgId)),
       this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId)),
+      this.cache.invalidateNamespaceForOrg(orgId, "invoices:list"),
     ]);
     if (!registerAfterCommit(invalidate)) await invalidate();
     return result;

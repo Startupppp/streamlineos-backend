@@ -227,7 +227,6 @@ describe("expense outbox — atomicity", () => {
     expect(inserts.map((i) => i.table)).toEqual(["expenses", "outbox_events"]);
     expect(inserts[0]?.handle).toBe(inserts[1]?.handle);
     expect(inserts[1]?.handle).toBe(transactionCalls[0]);
-    // Moving the emit outside db.transaction would leave txOpen false here.
     expect(inserts[0]?.txOpen).toBe(true);
     expect(inserts[1]?.txOpen).toBe(true);
   });
@@ -271,8 +270,6 @@ describe("expense outbox — atomicity", () => {
     await expect(service.create(ORG, SUBMITTER, CREATE_INPUT)).rejects.toThrow(
       "outbox insert failed",
     );
-    // The outbox insert was attempted inside the transaction and threw, so the
-    // expense insert made in the same transaction is rolled back with it.
     expect(inserts.map((i) => i.table)).toEqual(["expenses", "outbox_events"]);
     expect(inserts[1]?.txOpen).toBe(true);
   });
@@ -372,8 +369,6 @@ describe("expense outbox — consumers", () => {
     await consumer.handle(event);
 
     expect(dispatch.emit).not.toHaveBeenCalled();
-    // Terminal, not retriable: a mismatched organization is baked into the committed event
-    // and would fail identically on all eight relay retries before dead-lettering.
     expect(updates.some((u) => u.status === "SKIPPED")).toBe(true);
     expect(updates.some((u) => u.status === "FAILED")).toBe(false);
   });

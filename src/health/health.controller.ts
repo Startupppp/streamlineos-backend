@@ -16,6 +16,7 @@ import { Public } from "../common/auth/public.decorator";
 import { drainBacklog } from "../common/workflow/workflow-store";
 
 const DRAIN_STALL_SECONDS = 300;
+const SCHEDULE_STALL_SECONDS = 300;
 
 const SETTLING_DELAY_MS = Math.max(
   0,
@@ -26,6 +27,8 @@ interface WorkflowHealth {
   status: "ok" | "stalled";
   due: number;
   oldestDueSeconds: number | null;
+  overdueSchedules: number;
+  oldestOverdueScheduleSeconds: number | null;
   hint?: string;
 }
 
@@ -74,19 +77,44 @@ export class HealthController implements BeforeApplicationShutdown {
     const expected = process.env.INTERNAL_API_SECRET;
     if (!expected || secret !== expected) throw new UnauthorizedException();
 
-    const backlog = await drainBacklog(this.db);
-    const stalled =
+    const [backlog, scheduleRows] = await Promise.all([
+      drainBacklog(this.db),
+      this.db.execute(sql`
+        SELECT count(*)::int AS overdue,
+               COALESCE(EXTRACT(EPOCH FROM (now() - min(next_run_at)))::int, 0) AS oldest
+        FROM workflow_schedules
+        WHERE is_enabled = true AND next_run_at IS NOT NULL AND next_run_at <= now()
+      `),
+    ]);
+
+    const scheduleRow = ([...scheduleRows][0] ?? {}) as Record<string, unknown>;
+    const overdueSchedules = Number(scheduleRow.overdue ?? 0);
+    const oldestOverdueScheduleSeconds =
+      overdueSchedules > 0 ? Number(scheduleRow.oldest ?? 0) : null;
+
+    const drainStalled =
       backlog.oldestDueSeconds !== null && backlog.oldestDueSeconds > DRAIN_STALL_SECONDS;
+    const schedulesStalled =
+      oldestOverdueScheduleSeconds !== null &&
+      oldestOverdueScheduleSeconds > SCHEDULE_STALL_SECONDS;
+
+    const hints: string[] = [];
+    if (drainStalled)
+      hints.push(
+        "Nothing is calling GET|POST /cron/workflow-tick. Schedule it at least every minute with the cron secret.",
+      );
+    if (schedulesStalled)
+      hints.push(
+        "Nothing is calling POST /cron/workflow-schedules-tick. Schedule it at least every minute with the cron secret, or scheduled workflows never fire.",
+      );
 
     return {
-      status: stalled ? "stalled" : "ok",
+      status: drainStalled || schedulesStalled ? "stalled" : "ok",
       due: backlog.due,
       oldestDueSeconds: backlog.oldestDueSeconds,
-      ...(stalled
-        ? {
-            hint: "Nothing is calling GET|POST /cron/workflow-tick. Schedule it at least every minute with the cron secret.",
-          }
-        : {}),
+      overdueSchedules,
+      oldestOverdueScheduleSeconds,
+      ...(hints.length ? { hint: hints.join(" ") } : {}),
     };
   }
 

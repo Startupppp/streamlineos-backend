@@ -7,6 +7,7 @@ import { AiConfirmationModule } from "../ai/confirmation/ai-confirmation.module"
 import { AutomationController } from "./automation.controller";
 import { AutomationService } from "./automation.service";
 import { AutomationEmailService } from "./automation-email.service";
+import { AutomationWebhookService } from "./automation-webhook.service";
 import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import { WorkflowAiNodeHandler } from "./ai-workflow-nodes/ai-job-handlers/workflow-ai-node.handler";
 
@@ -16,6 +17,7 @@ import { WorkflowAiNodeHandler } from "./ai-workflow-nodes/ai-job-handlers/workf
   providers: [
     AutomationService,
     AutomationEmailService,
+    AutomationWebhookService,
     AiNodeExecutorService,
     WorkflowAiNodeHandler,
   ],

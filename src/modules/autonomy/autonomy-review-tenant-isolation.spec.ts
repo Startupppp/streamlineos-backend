@@ -36,7 +36,7 @@ const ATTACKER_ORG = "org-attacker";
 
 const QUERY: ListDecisionsQuery = {
   limit: 20,
-  cursor: null,
+  cursor: undefined,
   includeRoutine: false,
 };
 

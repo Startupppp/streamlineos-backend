@@ -36,6 +36,7 @@ import {
 } from "./dto/crm-import.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const crmImportIdParams = z.object({ crmImportId: z.string().min(1) }).strict();
 const crmConnectorSyncIdParams = z.object({ crmConnectorSyncId: z.string().min(1) }).strict();
@@ -118,6 +119,7 @@ export class CrmImportController {
    * run is between attempts, not that anything is wrong.
    */
   @Post("imports/:crmImportId/commit")
+  @BodylessAction()
   @Idempotent("crm.import.commit")
   @RequirePermission("crm:imports:manage")
   @Validate({ params: crmImportIdParams })
@@ -140,6 +142,7 @@ export class CrmImportController {
    * request is worse than the import it was undoing.
    */
   @Post("imports/:crmImportId/revert")
+  @BodylessAction()
   @Idempotent("crm.import.revert")
   @RequirePermission("crm:imports:manage")
   @Validate({ params: crmImportIdParams })

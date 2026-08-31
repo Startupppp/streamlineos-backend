@@ -44,6 +44,7 @@ export const createAutomationRuleSchema = z.object({
 export const updateAutomationRuleSchema = z.object({
   name: z.string().trim().min(1).max(150).optional(),
   description: z.string().trim().max(2000).nullable().optional(),
+  triggerEvent: z.string().trim().min(1).max(100).optional(),
   conditions: z.array(automationConditionSchema).optional(),
   actions: z.array(automationActionSchema).optional(),
   isEnabled: z.boolean().optional(),

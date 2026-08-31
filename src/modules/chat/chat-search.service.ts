@@ -17,11 +17,6 @@ export class ChatSearchService {
     private readonly entities: EntityReferenceService,
   ) {}
 
-  /**
-   * Trigram index is unusable under RLS, so selective terms resolve through the
-   * SECURITY DEFINER helper; an over-broad term (cap+1 hits) falls back to plain
-   * ILIKE, which is the faster plan in exactly that case.
-   */
   private async resolveContentMatch(term: string): Promise<SQL<unknown>> {
     const like = sql`${chatMessages.content} ILIKE ${"%" + term + "%"}`;
     if (term.length < TRIGRAM_MIN_TERM_LENGTH) return like;
@@ -35,18 +30,17 @@ export class ChatSearchService {
   }
 
   async searchMessages(actor: EntityActor, query: string, limit = 20, cursor?: number, from?: string, to?: string, sender?: string) {
-    const { orgId, userId } = actor;
+    const { orgId, membershipId } = actor;
+    if (!membershipId) return { results: [], nextCursor: undefined };
     const term = query.trim();
     if (!term) return { results: [], nextCursor: undefined };
 
     const conditions = [
       eq(chatMessages.orgId, orgId),
-      // Membership is an indexed correlated subquery, not an unbounded id list
-      // materialised into the statement on every request.
       sql`EXISTS (SELECT 1 FROM ${chatChannelMembers} m
                   WHERE m.channel_id = ${chatMessages.channelId}
                     AND m.org_id = ${orgId}
-                    AND m.user_id = ${userId})`,
+                    AND m.membership_id = ${membershipId})`,
       await this.resolveContentMatch(term),
       eq(chatMessages.isDeleted, false),
     ];
@@ -80,7 +74,15 @@ export class ChatSearchService {
     const memberChannels = await this.db
       .select({ channelId: chatChannelMembers.channelId })
       .from(chatChannelMembers)
-      .where(and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.userId, userId)));
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.id, chatChannelMembers.membershipId),
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+        ),
+      )
+      .where(eq(chatChannelMembers.orgId, orgId));
 
     const memberChannelIds = new Set(memberChannels.map(m => m.channelId));
 

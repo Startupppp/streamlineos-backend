@@ -16,7 +16,7 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
 type WhereResult = Promise<unknown[]> & { limit: jest.Mock; orderBy: jest.Mock; groupBy: jest.Mock };
 
 function makeWhereResult(): WhereResult {
-  const p = Promise.resolve([]) as WhereResult;
+  const p = Promise.resolve([]) as any as WhereResult;
   p.limit = jest.fn().mockResolvedValue([]);
   p.orderBy = jest.fn().mockResolvedValue([]);
   p.groupBy = jest.fn().mockResolvedValue([]);

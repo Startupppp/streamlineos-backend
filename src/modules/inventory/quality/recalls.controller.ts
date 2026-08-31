@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -14,6 +24,7 @@ import { simulateRecallSchema } from "./dto/recall-simulation.schemas";
 import type { SimulateRecallInput } from "./dto/recall-simulation.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 
 const recallIdParams = z.object({ recallId: z.coerce.number().int().positive() }).strict();
 
@@ -78,9 +89,10 @@ export class RecallsController {
   @Validate({ body: createRecallSchema })
   create(
     @Body() body: CreateRecallInput,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.create(u.orgId, u.userId, body);
+    return this.svc.create(u.orgId, u.userId, body, idempotencyKey);
   }
 
   @Patch(":recallId")

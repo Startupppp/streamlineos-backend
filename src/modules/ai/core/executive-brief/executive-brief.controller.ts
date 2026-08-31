@@ -8,6 +8,7 @@ import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import { ExecutiveBriefService } from "./executive-brief.service";
+import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
 
 @UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller("ai/executive-brief")
@@ -25,6 +26,7 @@ export class ExecutiveBriefController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @Post("generate")
+  @BodylessAction()
   async generate(@CurrentUser() u: CurrentUserContext) {
     return this.service.generate(u.orgId, u.userId);
   }

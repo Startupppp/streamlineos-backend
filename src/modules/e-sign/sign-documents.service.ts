@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { signDocuments, signEnvelopes } from "../../db/schema";
+import { storagePendingPurge } from "../../db/schema/common/storage-pending-purge";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { StorageService } from "../storage/storage.service";
@@ -9,6 +10,8 @@ import { SignPdfService } from "./sign-pdf.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignAuditService } from "./sign-audit.service";
 import { isEnvelopeEditable } from "./sign-state";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { RequestActorContext } from "../../common/audit/actor-context";
 
 const SIGNED_URL_EXPIRY_SECONDS = 900;
@@ -138,8 +141,65 @@ export class SignDocumentsService {
   async delete(orgId: string, documentId: number) {
     const doc = await this.get(orgId, documentId);
     await this.loadEditableEnvelope(orgId, doc.envelopeId);
-    await this.db.delete(signDocuments).where(and(eq(signDocuments.id, documentId), eq(signDocuments.orgId, orgId)));
-    await this.storage.deleteFile(orgId, doc.currentFileKey).catch(() => undefined);
+
+    const keysToDelete = new Set([doc.currentFileKey]);
+    if (doc.originalFileKey !== doc.currentFileKey) keysToDelete.add(doc.originalFileKey);
+
+    for (const key of keysToDelete) {
+      await this.db
+        .insert(storagePendingPurge)
+        .values({ orgId, storageKey: key, purpose: "e-sign:document:delete", status: "pending" })
+        .onConflictDoUpdate({
+          target: [storagePendingPurge.orgId, storagePendingPurge.storageKey],
+          set: { status: "pending", lastAttemptedAt: null, failedReason: null },
+        });
+    }
+
+    await this.db
+      .delete(signDocuments)
+      .where(and(eq(signDocuments.id, documentId), eq(signDocuments.orgId, orgId)));
+
+    const attemptDeletes = async () => {
+      await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+        for (const key of keysToDelete) {
+          try {
+            await this.storage.deleteFile(orgId, key);
+            await tx
+              .update(storagePendingPurge)
+              .set({
+                status: "confirmed",
+                confirmedAt: new Date(),
+                lastAttemptedAt: new Date(),
+                attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
+              })
+              .where(
+                and(
+                  eq(storagePendingPurge.orgId, orgId),
+                  eq(storagePendingPurge.storageKey, key),
+                ),
+              );
+          } catch (err) {
+            await tx
+              .update(storagePendingPurge)
+              .set({
+                status: "failed",
+                failedReason: String(err),
+                lastAttemptedAt: new Date(),
+                attemptCount: sql`${storagePendingPurge.attemptCount} + 1`,
+              })
+              .where(
+                and(
+                  eq(storagePendingPurge.orgId, orgId),
+                  eq(storagePendingPurge.storageKey, key),
+                ),
+              );
+          }
+        }
+      });
+    };
+
+    const registered = registerAfterCommit(attemptDeletes);
+    if (!registered) await attemptDeletes();
   }
 
   /** Fetches the current (pre-signing) PDF bytes for an envelope's documents, in order. */

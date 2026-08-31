@@ -8,20 +8,33 @@ const emailArg = args.find((a) => !a.startsWith("--"));
 const execute = args.includes("--execute");
 const keepOwnedOrgs = args.includes("--keep-owned-orgs");
 const assumeYes = args.includes("--yes");
+const skipLegalHoldCheck = args.includes("--skip-legal-hold-check");
 
 if (!emailArg) {
   console.error(`
 Purge every trace of a user, and by default every organization they own.
 
-  node src/scripts/purge-user.mjs <email> [--execute] [--keep-owned-orgs] [--yes]
+  node src/scripts/purge-user.mjs <email> [--execute] [--keep-owned-orgs] [--yes] [--skip-legal-hold-check]
 
-  (no flags)          Dry run. Performs the real deletes inside a transaction,
-                      reports exact row counts, then ROLLS BACK. Changes nothing.
-  --execute           Actually commit the deletion. Irreversible.
-  --keep-owned-orgs   Only remove this user and their memberships. Organizations
-                      they own are left intact (ownership must be transferred
-                      separately or the org is left without an owner).
-  --yes               Skip the interactive confirmation prompt.
+  (no flags)              Dry run. Performs the real deletes inside a transaction,
+                          reports exact row counts, then ROLLS BACK. Changes nothing.
+  --execute               Actually commit the deletion. Irreversible.
+  --keep-owned-orgs       Only remove this user and their memberships. Organizations
+                          they own are left intact (ownership must be transferred
+                          separately or the org is left without an owner).
+  --yes                   Skip the interactive confirmation prompt.
+  --skip-legal-hold-check Bypass the legal hold gate. USE ONLY when you have verified
+                          the hold is released and the check is a false positive.
+                          Requires an explicit audit note — the operator will be prompted.
+
+Storage deletion:
+  Object-storage blobs are NOT deleted by this script — storage keys have no
+  org_id segment (format: folder/uuid-filename) so they cannot be enumerated
+  from the DB alone.  After committing, run the storage audit separately:
+    node src/scripts/audit-storage-keys.mjs <email> --delete
+  That script queries all file_key columns for this user's data and issues
+  S3/R2 DeleteObject calls.  Set R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY,
+  R2_BUCKET_NAME in env before running.
 `);
   process.exit(1);
 }
@@ -147,6 +160,25 @@ async function deleteWithRetries(tx, jobs, tally) {
   }
 }
 
+async function checkLegalHolds(userId) {
+  const hrHolds = await sql`
+    SELECT h.id, h.org_id, h.reason, h.placed_at
+    FROM hr_legal_holds h
+    WHERE h.subject_user_id = ${userId}
+      AND h.status = 'active'
+      AND h.deleted_at IS NULL`;
+
+  const orgHolds = await sql`
+    SELECT h.hold_id, h.org_id, h.reason, h.placed_at
+    FROM organization_legal_holds h
+    WHERE h.released_at IS NULL
+      AND h.org_id IN (
+        SELECT org_id FROM organization_members WHERE user_id = ${userId}
+      )`;
+
+  return { hrHolds, orgHolds };
+}
+
 async function main() {
   const [user] = await sql`
     SELECT id, email, name, is_active, user_status
@@ -156,6 +188,38 @@ async function main() {
     console.error(`No user found with email ${email}`);
     await sql.end();
     process.exit(1);
+  }
+
+  const { hrHolds, orgHolds } = await checkLegalHolds(user.id);
+  const hasHolds = hrHolds.length > 0 || orgHolds.length > 0;
+
+  if (hasHolds) {
+    console.error(`\n⚠  LEGAL HOLD DETECTED — erasure is blocked.`);
+    if (hrHolds.length > 0) {
+      console.error(`\n  HR legal holds (${hrHolds.length}):`);
+      for (const h of hrHolds)
+        console.error(`    - id=${h.id} org=${h.org_id} reason="${h.reason}" placed=${h.placed_at}`);
+    }
+    if (orgHolds.length > 0) {
+      console.error(`\n  Org-level legal holds (${orgHolds.length}):`);
+      for (const h of orgHolds)
+        console.error(`    - holdId=${h.hold_id} org=${h.org_id} reason="${h.reason}" placed=${h.placed_at}`);
+    }
+    if (!skipLegalHoldCheck) {
+      console.error(`\n  Aborting. Release all active legal holds before running an erasure.`);
+      console.error(`  To bypass (use only when holds are confirmed released): --skip-legal-hold-check`);
+      await sql.end();
+      process.exit(1);
+    }
+    const rl2 = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const auditNote = await rl2.question(`\n  Legal hold bypassed. Enter audit justification (required): `);
+    rl2.close();
+    if (!auditNote.trim()) {
+      console.error("  Justification required. Aborted.");
+      await sql.end();
+      process.exit(1);
+    }
+    console.log(`\n  Bypass recorded: "${auditNote.trim()}"`);
   }
 
   const memberships = await sql`
@@ -267,6 +331,11 @@ async function main() {
   if (!execute) {
     console.log(`\nDry run only — transaction rolled back, nothing was changed.`);
     console.log(`Re-run with --execute to commit.`);
+  } else {
+    console.log(`\n⚠  OBJECT STORAGE: database rows are deleted, but blobs in R2/S3 are NOT.`);
+    console.log(`   Enumerate and delete storage objects separately:`);
+    console.log(`   node src/scripts/audit-storage-keys.mjs ${email} --delete`);
+    console.log(`   (set R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME in env)`);
   }
 
   await sql.end();

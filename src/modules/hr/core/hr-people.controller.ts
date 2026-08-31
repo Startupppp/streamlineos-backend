@@ -20,7 +20,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 import { HrPeopleService } from "./hr-people.service";
 import { HrEmployeeRecordListsService } from "./hr-employee-record-lists.service";
-import { PersonEmploymentSyncService } from "./person-employment-sync.service";
+import { PersonEmploymentBackfillService } from "./person-employment-backfill.service";
 import { AccessService } from "../../access/access.service";
 import { resolveEmployeesScope } from "../directory/employees-scope";
 import {
@@ -36,6 +36,7 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const personIdParams = z.object({ personId: z.coerce.number().int().positive() }).strict();
 
@@ -46,7 +47,7 @@ export class HrPeopleController {
   constructor(
     private readonly people: HrPeopleService,
     private readonly employeeRecordLists: HrEmployeeRecordListsService,
-    private readonly personEmploymentSync: PersonEmploymentSyncService,
+    private readonly personEmploymentBackfill: PersonEmploymentBackfillService,
     private readonly access: AccessService,
   ) {}
 
@@ -76,6 +77,7 @@ export class HrPeopleController {
   }
 
   @Post("backfill-from-members")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @Idempotent("hr.people.backfill-from-members")
@@ -83,7 +85,7 @@ export class HrPeopleController {
   @UseRateLimit("hr:employee-backfill")
   @HttpCode(200)
   backfillFromMembers(@CurrentUser() currentUser: CurrentUserContext) {
-    return this.personEmploymentSync.backfillOrg(
+    return this.personEmploymentBackfill.backfillOrg(
       currentUser.orgId,
       currentUser.userId,
     );

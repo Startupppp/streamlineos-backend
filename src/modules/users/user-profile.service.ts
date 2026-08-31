@@ -236,10 +236,11 @@ export class UserProfileService {
           name: orgUnits.name,
         })
         .from(orgUnitMembers)
+        .innerJoin(organizationMembers, eq(organizationMembers.id, orgUnitMembers.membershipId))
         .innerJoin(orgUnits, eq(orgUnitMembers.orgUnitId, orgUnits.id))
         .where(
           and(
-            eq(orgUnitMembers.userId, userId),
+            eq(organizationMembers.userId, userId),
             eq(orgUnitMembers.orgId, orgId),
           ),
         ),
@@ -364,7 +365,7 @@ export class UserProfileService {
       this.getPreferences(orgId, userId),
       this.getUserSessions(orgId, userId),
       this.getLoginHistory(orgId, userId, { page: 1, limit: EXPORT_HISTORY_LIMIT, success: undefined }),
-      this.activity.getUserAuditLog(orgId, userId, { page: 1, limit: EXPORT_HISTORY_LIMIT }),
+      this.activity.getUserAuditLog(orgId, userId, { limit: EXPORT_HISTORY_LIMIT }),
     ]);
 
     return {

@@ -80,14 +80,25 @@ export class CalendarReminderSweepService {
                 eventId: calendarEventExceptions.eventId,
                 occurrenceStart: calendarEventExceptions.occurrenceStart,
                 isCancelled: calendarEventExceptions.isCancelled,
+                modifiedStart: calendarEventExceptions.modifiedStart,
+                modifiedTitle: calendarEventExceptions.modifiedTitle,
               })
               .from(calendarEventExceptions)
               .where(
                 and(
                   eq(calendarEventExceptions.orgId, orgId),
                   inArray(calendarEventExceptions.eventId, recurringIds),
-                  gte(calendarEventExceptions.occurrenceStart, now),
-                  lte(calendarEventExceptions.occurrenceStart, dueBy),
+                  or(
+                    and(
+                      gte(calendarEventExceptions.occurrenceStart, now),
+                      lte(calendarEventExceptions.occurrenceStart, dueBy),
+                    ),
+                    and(
+                      isNotNull(calendarEventExceptions.modifiedStart),
+                      gte(calendarEventExceptions.modifiedStart, now),
+                      lte(calendarEventExceptions.modifiedStart, dueBy),
+                    ),
+                  ),
                 ),
               )
               .limit(EVENT_BATCH_LIMIT * 10);
@@ -96,10 +107,17 @@ export class CalendarReminderSweepService {
         exceptions.filter((e) => e.isCancelled).map((e) => `${e.eventId}:${e.occurrenceStart.getTime()}`),
       );
 
-      const recurringOccurrences: Array<{ id: number; title: string; startDate: Date }> = [];
+      const exceptionByNominalKey = new Map<string, (typeof exceptions)[number]>();
+      for (const ex of exceptions)
+        exceptionByNominalKey.set(`${ex.eventId}:${ex.occurrenceStart.getTime()}`, ex);
+
+      type Occurrence = { id: number; title: string; startDate: Date; nominalStart: Date };
+      const recurringOccurrences: Occurrence[] = [];
+      const addedNominalKeys = new Set<string>();
+
       for (const event of recurring) {
         if (!event.rrule) continue;
-        const occurrences = expandToOccurrences(
+        const nominalOccurrences = expandToOccurrences(
           {
             id: event.id,
             title: event.title,
@@ -114,15 +132,41 @@ export class CalendarReminderSweepService {
           now,
           dueBy,
         );
-        for (const occ of occurrences) {
-          if (cancelledKeys.has(`${event.id}:${occ.startDate.getTime()}`)) continue;
-          recurringOccurrences.push({ id: event.id, title: occ.title, startDate: occ.startDate });
+        for (const occ of nominalOccurrences) {
+          const nominalKey = `${event.id}:${occ.startDate.getTime()}`;
+          if (cancelledKeys.has(nominalKey)) continue;
+          const ex = exceptionByNominalKey.get(nominalKey);
+          const effectiveStart = ex?.modifiedStart ?? occ.startDate;
+          if (effectiveStart < now || effectiveStart > dueBy) continue;
+          addedNominalKeys.add(nominalKey);
+          recurringOccurrences.push({
+            id: event.id,
+            title: ex?.modifiedTitle ?? occ.title,
+            startDate: effectiveStart,
+            nominalStart: occ.startDate,
+          });
         }
       }
 
-      type Candidate = { id: number; title: string; startDate: Date; isRecurring: boolean };
+      for (const ex of exceptions) {
+        if (ex.isCancelled || !ex.modifiedStart) continue;
+        const effectiveStart = ex.modifiedStart;
+        if (effectiveStart < now || effectiveStart > dueBy) continue;
+        const nominalKey = `${ex.eventId}:${ex.occurrenceStart.getTime()}`;
+        if (addedNominalKeys.has(nominalKey)) continue;
+        const event = recurring.find((e) => e.id === ex.eventId);
+        if (!event) continue;
+        recurringOccurrences.push({
+          id: ex.eventId,
+          title: ex.modifiedTitle ?? event.title,
+          startDate: effectiveStart,
+          nominalStart: ex.occurrenceStart,
+        });
+      }
+
+      type Candidate = { id: number; title: string; startDate: Date; nominalStart: Date; isRecurring: boolean };
       const allCandidates: Candidate[] = [
-        ...nonRecurring.map((e) => ({ ...e, isRecurring: false as const })),
+        ...nonRecurring.map((e) => ({ ...e, nominalStart: e.startDate, isRecurring: false as const })),
         ...recurringOccurrences.map((e) => ({ ...e, isRecurring: true as const })),
       ];
 
@@ -158,21 +202,22 @@ export class CalendarReminderSweepService {
 
       for (const candidate of allCandidates) {
         const targetUserIds = [...new Set(recipientsByEvent.get(candidate.id) ?? [])];
-        const occurrenceIso = candidate.startDate.toISOString();
+        const nominalIso = candidate.nominalStart.toISOString();
+        const effectiveIso = candidate.startDate.toISOString();
         const inserted = await tx
           .insert(notificationOutbox)
           .values({
             orgId,
             eventKey: "calendar.reminder",
-            dedupeKey: `calendar:reminder:${candidate.id}:${occurrenceIso}`,
+            dedupeKey: `calendar:reminder:${candidate.id}:${nominalIso}`,
             actorUserId: null,
             targetUserIds,
             entityType: "calendar_event",
             entityId: String(candidate.id),
             title: `Upcoming event: ${candidate.title}`,
-            message: `"${candidate.title}" starts at ${occurrenceIso}`,
+            message: `"${candidate.title}" starts at ${effectiveIso}`,
             link: "/calendar",
-            variables: { eventTitle: candidate.title, startIso: occurrenceIso },
+            variables: { eventTitle: candidate.title, startIso: effectiveIso },
           })
           .onConflictDoNothing({ target: [notificationOutbox.orgId, notificationOutbox.dedupeKey] })
           .returning({ id: notificationOutbox.id });

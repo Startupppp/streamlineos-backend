@@ -20,6 +20,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { ListInput } from "./dto/notification.schemas";
 import type { NotificationTicketContext } from "./notifications.types";
+import { ASSIGNED_EVENT_KEYS, MENTION_EVENT_KEYS } from "./inbox-section-keys";
 
 type NotificationListRow = {
   id: number;
@@ -160,6 +161,14 @@ export class NotificationsReadService {
         break;
       case "PINNED":
         conditions.push(eq(notifications.pinned, true));
+        break;
+      case "MENTIONS":
+        conditions.push(isNull(notifications.archivedAt));
+        conditions.push(inArray(notifications.eventKey, MENTION_EVENT_KEYS));
+        break;
+      case "ASSIGNED_TO_ME":
+        conditions.push(isNull(notifications.archivedAt));
+        conditions.push(inArray(notifications.eventKey, ASSIGNED_EVENT_KEYS));
         break;
       case "APPROVALS":
         conditions.push(isNull(notifications.archivedAt));

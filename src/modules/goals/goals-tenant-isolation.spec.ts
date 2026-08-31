@@ -65,7 +65,7 @@ function userCtx(orgId: string): CurrentUserContext {
 describe("GoalsService — cross-tenant isolation", () => {
   it("returns nothing for a different org (cross-tenant access denied)", async () => {
     const db = makeDb([]);
-    const svc = new GoalsService(db, makeAccessService());
+    const svc = new GoalsService(db, makeAccessService(), {} as never);
     const result = await svc.list(userCtx(ATTACKER_ORG), { page: 1, limit: 20 });
     expect(result).toHaveLength(0);
   });
@@ -91,14 +91,14 @@ describe("GoalsService — cross-tenant isolation", () => {
       projectId: null,
     };
     const db = makeDb([goalRow]);
-    const svc = new GoalsService(db, makeAccessService());
+    const svc = new GoalsService(db, makeAccessService(), {} as never);
     const result = await svc.list(userCtx(OWNER_ORG), { page: 1, limit: 20 });
     expect(result).toHaveLength(1);
   });
 
   it("returns null for a goal in another org (getGoal cross-tenant isolation)", async () => {
     const db = makeDb([]);
-    const svc = new GoalsService(db, makeAccessService());
+    const svc = new GoalsService(db, makeAccessService(), {} as never);
     const result = await svc.getGoal(ATTACKER_ORG, 999);
     expect(result).toBeNull();
   });

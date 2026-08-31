@@ -68,7 +68,7 @@ describe("InventoryWebhookEmitter — tenant isolation", () => {
     const { db, getPredicate } = makeSelectChain([]);
     const service = new InventoryWebhookEmitter(db);
 
-    await service.emit(ATTACKER_ORG, "inventory.item.created", { itemId: 1 });
+    await service.emit(ATTACKER_ORG, "inventory.product.created", { itemId: 1 }, {});
 
     expect(sqlValues(getPredicate())).toContain(ATTACKER_ORG);
     expect(db.insert).not.toHaveBeenCalled();
@@ -77,22 +77,26 @@ describe("InventoryWebhookEmitter — tenant isolation", () => {
   it("CONTROL: emit queries OWNER_ORG's webhooks, inserts an event, and delivers", async () => {
     const eventRow = { id: 7, attempts: 0, createdAt: new Date() };
     const returning = jest.fn().mockResolvedValue([eventRow]);
-    const insertValues = jest.fn().mockReturnValue({ returning });
+    // The emitter dedupes on insert: .values().onConflictDoNothing().returning().
+    const insertValues = jest.fn().mockReturnValue({
+      returning,
+      onConflictDoNothing: jest.fn().mockReturnValue({ returning }),
+    });
     const updateWhere = jest.fn().mockResolvedValue(undefined);
     const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
 
     const { db, getPredicate } = makeSelectChain([
       { id: 42, url: "https://example.com/hook", secret: "s3cr3t" },
     ]);
-    (db as Record<string, unknown>).insert = jest.fn().mockReturnValue({ values: insertValues });
-    (db as Record<string, unknown>).update = jest.fn().mockReturnValue({ set: updateSet });
+    (db as any).insert = jest.fn().mockReturnValue({ values: insertValues });
+    (db as any).update = jest.fn().mockReturnValue({ set: updateSet });
 
     (checkWebhookUrl as jest.Mock).mockResolvedValue({ allowed: true });
     global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, type: "basic" } as unknown as Response);
 
     const service = new InventoryWebhookEmitter(db);
 
-    await service.emit(OWNER_ORG, "inventory.item.created", { itemId: 2 });
+    await service.emit(OWNER_ORG, "inventory.product.created", { itemId: 2 }, {});
 
     expect(sqlValues(getPredicate())).toContain(OWNER_ORG);
     expect(db.insert).toHaveBeenCalled();

@@ -151,7 +151,7 @@ export const compareForecastSnapshotsSchema = z.object({
 export const forecastSnapshotsQuerySchema = z.object({
   period: z.string().optional(),
   limit: optionalPageSizeField(50),
-  offset: z.coerce.number().min(0).optional(),
+  cursor: z.string().optional(),
 });
 
 export const createStakeholderSchema = z.object({

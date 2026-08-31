@@ -33,7 +33,7 @@ describe("BuildSprintCompletedConsumerService — cross-tenant isolation", () =>
       payload: { sprintId: 1, name: "Sprint 1" },
     } as never;
     await expect(svc.handle(event)).resolves.not.toThrow();
-    const insertArg = (db as { insert: jest.Mock }).insert.mock.calls[0]?.[0];
+    const insertArg = (db as unknown as { insert: jest.Mock }).insert.mock.calls[0]?.[0];
     expect(insertArg).toBeDefined();
   });
 

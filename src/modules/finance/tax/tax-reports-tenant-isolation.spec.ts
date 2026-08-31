@@ -57,7 +57,7 @@ describe("TaxReportsService — cross-tenant isolation", () => {
     const posting = {} as never;
     const svc = new TaxReportsService(db, cache, posting);
 
-    await svc.getOutputReport(ATTACKER_ORG, { from: "2024-01-01", to: "2024-12-31" });
+    await svc.getOutputReport(ATTACKER_ORG, { from: "2024-01-01", to: "2024-12-31", page: 1, pageSize: 50, format: "json" });
 
     expect(allWhereArgs.length).toBeGreaterThan(0);
     const allVals = allWhereArgs.flatMap(w => sqlValues(w));
@@ -70,7 +70,7 @@ describe("TaxReportsService — cross-tenant isolation", () => {
     const posting = {} as never;
     const svc = new TaxReportsService(db, cache, posting);
 
-    const result = await svc.getOutputReport(OWNER_ORG, { from: "2024-01-01", to: "2024-12-31" });
+    const result = await svc.getOutputReport(OWNER_ORG, { from: "2024-01-01", to: "2024-12-31", page: 1, pageSize: 50, format: "json" });
 
     expect(result).toBeDefined();
   });

@@ -35,6 +35,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
 
@@ -110,6 +111,7 @@ export class RecruitmentJobsController {
   }
 
   @Post("jobs/:jobId/duplicate")
+  @BodylessAction()
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: jobIdParams })

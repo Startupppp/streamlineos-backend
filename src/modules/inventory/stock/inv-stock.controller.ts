@@ -1,4 +1,11 @@
-import { Controller, Get, Post, Body, Query, UseGuards, Headers } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -16,6 +23,7 @@ import {
   type OpeningStockInput,
 } from "./dto/inv-stock.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 
 @RequireModule("inventory")
 @Controller("inventory/stock")
@@ -75,7 +83,7 @@ export class InvStockController {
   @RequirePermission("inventory:stock:reserve")
   @Validate({ body: createReservationSchema })
   createReservation(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Body() body: CreateReservationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -87,10 +95,11 @@ export class InvStockController {
   @RequirePermission("inventory:stock:reserve")
   @Validate({ body: releaseReservationSchema })
   releaseReservation(
+    @IdempotencyKey() idempotencyKey: string,
     @Body() body: ReleaseReservationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reservations.releaseReservation(u.orgId, u.userId, body);
+    return this.reservations.releaseReservation(u.orgId, u.userId, body, idempotencyKey);
   }
 
   @Post("opening")
@@ -98,7 +107,7 @@ export class InvStockController {
   @RequirePermission("inventory:stock:adjust")
   @Validate({ body: openingStockSchema })
   createOpeningBalance(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Body() body: OpeningStockInput,
     @CurrentUser() u: CurrentUserContext,
   ) {

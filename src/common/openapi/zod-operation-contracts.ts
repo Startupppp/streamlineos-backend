@@ -1,6 +1,6 @@
 import { PATH_METADATA, ROUTE_ARGS_METADATA } from "@nestjs/common/constants";
 import { RouteParamtypes } from "@nestjs/common/enums/route-paramtypes.enum";
-import type { INestApplication } from "@nestjs/common";
+import { SetMetadata, type INestApplication } from "@nestjs/common";
 import { DiscoveryService, MetadataScanner } from "@nestjs/core";
 import { z, ZodType } from "zod";
 import {
@@ -10,11 +10,22 @@ import {
 import { ZodValidationPipe } from "../pipes/zod-validation.pipe";
 import { IDEMPOTENCY_COMMAND } from "../idempotency/idempotency.constants";
 
+export const RESPONSE_SCHEMA = "openapi:response-schema";
+export const BODYLESS_ACTION = "openapi:bodyless";
+
+export const ResponseSchema = (schema: ZodType): MethodDecorator =>
+  SetMetadata(RESPONSE_SCHEMA, schema);
+
+export const BodylessAction = (): MethodDecorator =>
+  SetMetadata(BODYLESS_ACTION, true);
+
 export interface OperationContract {
   body?: JsonSchema;
   query?: JsonSchema;
   params?: JsonSchema;
   idempotencyCommand?: string;
+  response?: JsonSchema;
+  bodyless?: true;
 }
 
 export type JsonSchema = Record<string, unknown>;
@@ -145,6 +156,18 @@ export function scanOperationContracts(
       );
       if (typeof command === "string" && command !== "")
         contract.idempotencyCommand = command;
+
+      const responseRaw: unknown = Reflect.getMetadata(RESPONSE_SCHEMA, handler);
+      if (responseRaw instanceof ZodType) {
+        const result = toJsonSchema(responseRaw);
+        if (result.ok) {
+          contract.response = result.schema;
+          converted += 1;
+        } else unconvertible.push(`${operationId}.response: ${result.reason}`);
+      }
+
+      const isBodyless: unknown = Reflect.getMetadata(BODYLESS_ACTION, handler);
+      if (isBodyless === true) contract.bodyless = true;
 
       if (Object.keys(contract).length > 0)
         contracts.set(operationId, contract);

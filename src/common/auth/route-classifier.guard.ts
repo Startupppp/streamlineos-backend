@@ -52,7 +52,12 @@ export class RouteClassifierGuard implements CanActivate, OnApplicationBootstrap
   ) {}
 
   private enforce(): boolean {
-    return this.config.REQUIRE_ROUTE_CLASSIFICATION === "true";
+    // Opt-OUT, not opt-in. The comment above and the spec both say absence
+    // denies; this predicate still read the opt-in form the flag had while 107
+    // routes were undeclared, so an unset variable -- the default everywhere --
+    // silently let an undeclared route through. Only a literal "false" disables
+    // it, so a typo enforces rather than opens the surface.
+    return this.config.REQUIRE_ROUTE_CLASSIFICATION !== "false";
   }
 
   private isDeclared(handler: ReflectTarget, classRef: ReflectTarget): boolean {

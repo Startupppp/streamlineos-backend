@@ -50,13 +50,9 @@ export const CACHE_KEYS = {
   dealsForecast: (orgId: string) => `deals:forecast:${orgId}`,
   approvalsList: (orgId: string) => `deals:approvals:${orgId}`,
 
-  clientsHealth: (orgId: string) => `clients:health:${orgId}`,
-  churnAlerts: (orgId: string) => `clients:churn:${orgId}`,
 
   quotasList: (orgId: string, filters: string) => `sales:quotas:${orgId}:${filters}`,
-  quotasListPattern: (orgId: string) => `sales:quotas:${orgId}:*`,
   commissionsList: (orgId: string, filters: string) => `sales:commissions:${orgId}:${filters}`,
-  commissionsListPattern: (orgId: string) => `sales:commissions:${orgId}:*`,
 
   searchResults: (orgId: string, userId: string, hash: string) =>
     `search:${orgId}:${userId}:${hash}`,
@@ -103,7 +99,6 @@ export const CACHE_KEYS = {
     `inv:products:detail:${orgId}:${id}`,
   invStockSummary: (orgId: string) => `inv:stock:summary:${orgId}`,
   invLowStock: (orgId: string) => `inv:low-stock:${orgId}`,
-  invWarehousesList: (orgId: string) => `inv:warehouses:${orgId}`,
   invWarehouseDetail: (orgId: string, id: number) =>
     `inv:warehouses:detail:${orgId}:${id}`,
   invVendorsNamespace: (orgId: string) => `inv:vendors:list:${orgId}`,
@@ -162,7 +157,6 @@ export const CACHE_KEYS = {
     cursor: string,
     q: string,
   ) => `mail:messages:${accountId}:${folder}:${cursor}:${q}`,
-  mailMessagesPattern: (accountId: number) => `mail:messages:${accountId}:*`,
 
   featureFlags: () => "feature-flags:all",
 
@@ -218,7 +212,6 @@ export const CACHE_KEYS = {
   finBvaNamespace: (orgId: string, budgetId: number) =>
     `fin:bva:${orgId}:${budgetId}`,
 
-  orgSettings: (orgId: string) => `org:settings:${orgId}`,
   orgProfileNamespace: (orgId: string) => `org:profile:${orgId}`,
   orgMembersListNamespace: (orgId: string) => `org:members:list:${orgId}`,
   usersStats: (orgId: string) => `users:stats:${orgId}`,
@@ -226,7 +219,6 @@ export const CACHE_KEYS = {
   permissionsMatrix: (orgId: string, version: number) => `rbac:matrix:${orgId}:v${version}`,
   rolePerms: (orgId: string, roleId: number, version: number) =>
     `rbac:role-perms:${orgId}:${roleId}:v${version}`,
-  rbacDiscoveryMembers: (orgId: string) => `rbac:members:${orgId}`,
 
   moduleRolesList: (orgId: string, moduleKey: string, version: number) =>
     `module-access:roles:${orgId}:${moduleKey}:v${version}`,
@@ -257,10 +249,8 @@ export const CACHE_KEYS = {
     `ownership:module:${orgId}:${moduleKey}`,
   ownershipTransfersList: (orgId: string, hash: string) =>
     `ownership:transfers:${orgId}:${hash}`,
-  ownershipTransfersPattern: (orgId: string) => `ownership:transfers:${orgId}:*`,
   incomingTransfers: (orgId: string, userId: string) =>
     `ownership:incoming:${orgId}:${userId}`,
-  incomingTransfersPattern: (orgId: string) => `ownership:incoming:${orgId}:*`,
 } as const;
 
 export const CACHE_TTL = {

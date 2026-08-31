@@ -1,5 +1,7 @@
 import { AutomationService } from "../automation.service";
+import { AutomationWebhookService } from "../automation-webhook.service";
 import type { AutomationAction } from "../../../db/schema";
+import type { Db } from "../../../db/drizzle.module";
 
 jest.mock("../../../common/security/ssrf-guard", () => ({
   checkWebhookUrl: jest.fn(),
@@ -24,7 +26,7 @@ const makeDb = (endpoints: typeof ACTIVE_ENDPOINT[]) => ({
     },
   },
   insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
-} as never);
+} as unknown as Db);
 
 const mockNotifications = { create: jest.fn() } as never;
 const mockEmail = { send: jest.fn() } as never;
@@ -32,7 +34,14 @@ const mockPlanLimits = { assertWithinLimit: jest.fn() } as never;
 const mockAiNodeExecutor = { executeNode: jest.fn() } as never;
 
 function makeSvc(db: ReturnType<typeof makeDb>) {
-  return new AutomationService(db, mockNotifications, mockEmail, mockPlanLimits, mockAiNodeExecutor);
+  return new AutomationService(
+    db,
+    mockNotifications,
+    mockEmail,
+    new AutomationWebhookService(db),
+    mockPlanLimits,
+    mockAiNodeExecutor,
+  );
 }
 
 const WEBHOOK_ACTION: AutomationAction = {

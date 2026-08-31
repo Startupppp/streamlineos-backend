@@ -18,6 +18,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { ChatSummarizeService } from "./chat-summarize.service";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 
@@ -30,6 +31,7 @@ export class ChatSummarizeController {
   constructor(private readonly chatSummarizeService: ChatSummarizeService) {}
 
   @Post()
+  @BodylessAction()
   @HttpCode(HttpStatus.OK)
   @Validate({ params: channelIdParams })
   summarize(

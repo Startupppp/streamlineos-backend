@@ -10,6 +10,7 @@ import { JournalApprovalsService } from "./journal-approvals.service";
 import { approvalDecisionSchema, type ApprovalDecisionInput } from "./dto/journal-approvals.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
 
@@ -20,6 +21,7 @@ export class JournalApprovalsController {
   constructor(private readonly approvals: JournalApprovalsService) {}
 
   @Post(":entryId/submit-approval")
+  @BodylessAction()
   @Idempotent("accounting.journal.submit-approval")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:create")

@@ -1,3 +1,8 @@
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: jest.fn().mockResolvedValue(undefined),
+  runInTenantTransaction: jest.fn().mockResolvedValue(undefined),
+}));
+
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { SignDocumentsService } from "../sign-documents.service";
@@ -46,6 +51,11 @@ describe("SignDocumentsService.delete — orgId present in DELETE WHERE clause",
         signEnvelopes: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: OWNER_ORG, status: "draft" }) },
       },
       delete: deleteChain,
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          onConflictDoUpdate: jest.fn().mockResolvedValue([]),
+        }),
+      }),
     } as unknown as Db;
     const mockStorage = { deleteFile: jest.fn().mockResolvedValue(undefined) } as never;
     const mockPdf = {} as never;
@@ -62,7 +72,7 @@ describe("SignDocumentsService.delete — orgId present in DELETE WHERE clause",
   });
 
   it("CONTROL — DELETE WHERE clause includes orgId for same-tenant document", async () => {
-    const doc = { id: 42, orgId: OWNER_ORG, envelopeId: 1, currentFileKey: "esign/doc.pdf" };
+    const doc = { id: 42, orgId: OWNER_ORG, envelopeId: 1, currentFileKey: "esign/doc.pdf", originalFileKey: "esign/doc.pdf" };
     const { db, getWhere, mockStorage, mockPdf, mockSettings, mockAudit } = makeDb(doc);
     const svc = new SignDocumentsService(db, mockStorage, mockPdf, mockSettings, mockAudit);
 

@@ -9,6 +9,9 @@ import { CacheService } from "../../common/cache/cache.service";
 import { InventoryAuditService } from "./stock-engine/inventory-audit.service";
 import { CostVisibilityService } from "./stock-engine/cost-visibility";
 import { WarehouseScopeService } from "./stock-engine/warehouse-scope.service";
+import { INVENTORY_ISOLATION_STUBS } from "./__tests__/isolation-stubs";
+
+const USER = "user-1";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -60,6 +63,7 @@ function makeQueryDb(rows: unknown[]) {
 const mockCache = {
   cached: jest.fn().mockImplementation(async (_k: string, fn: () => unknown) => fn()),
   cachedVersioned: jest.fn().mockImplementation(async (_ns: string, _h: string, fn: () => unknown) => fn()),
+  cachedVersionedForOrg: jest.fn().mockImplementation(async (_o: string, _ns: string, _k: string, fn: () => unknown) => fn()),
   invalidate: jest.fn(),
   invalidateNamespace: jest.fn(),
 };
@@ -73,6 +77,7 @@ describe("InvProductCrudService — cross-tenant isolation", () => {
     const { db, findMany } = makeQueryDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvProductCrudService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: mockCache },
@@ -91,6 +96,7 @@ describe("InvProductCrudService — cross-tenant isolation", () => {
     const { db } = makeQueryDb([PRODUCT]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvProductCrudService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: mockCache },
@@ -112,6 +118,7 @@ describe("InvProductCatalogService — cross-tenant isolation", () => {
     const { db, findFirst } = makeQueryDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvProductCatalogService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: mockCache },
@@ -128,6 +135,7 @@ describe("InvProductCatalogService — cross-tenant isolation", () => {
     const { db, findMany } = makeQueryDb([CAT]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvProductCatalogService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: mockCache },
@@ -150,6 +158,7 @@ describe("InvVendorsService — cross-tenant isolation", () => {
     const { db } = makeQueryDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvVendorsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: mockCache },
@@ -164,6 +173,7 @@ describe("InvVendorsService — cross-tenant isolation", () => {
     const { db } = makeQueryDb([VENDOR]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvVendorsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: mockCache },
@@ -185,6 +195,7 @@ describe("InvWarehousesService — cross-tenant isolation", () => {
     const scope = { resolve: jest.fn().mockResolvedValue(null), warehousePredicate: jest.fn().mockReturnValue({ queryChunks: [] }) };
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvWarehousesService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: mockCache },
@@ -204,6 +215,7 @@ describe("InvWarehousesService — cross-tenant isolation", () => {
     const scope = { resolve: jest.fn().mockResolvedValue(null), warehousePredicate: jest.fn().mockReturnValue({ queryChunks: [] }) };
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvWarehousesService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: mockCache },

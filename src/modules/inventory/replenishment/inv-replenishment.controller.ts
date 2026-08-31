@@ -1,4 +1,17 @@
-import { Controller, Get, Post, Patch, Delete, Param, ParseIntPipe, Query, Body, UseGuards, HttpCode, HttpStatus, Headers } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Param,
+  ParseIntPipe,
+  Query,
+  Body,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -21,6 +34,7 @@ import {
 } from "./dto/replenishment.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 
@@ -92,7 +106,7 @@ export class InvReplenishmentController {
   @RequirePermission("inventory:purchase-orders:create")
   @Validate({ body: generatePoSchema })
   generatePo(
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @Body() body: GeneratePoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {

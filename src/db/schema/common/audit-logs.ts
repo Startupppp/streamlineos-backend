@@ -8,6 +8,7 @@ import {
   integer,
   index,
   check,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "./auth";
@@ -24,7 +25,7 @@ export const auditLogs = pgTable(
     targetId: text("target_id"),
     targetType: text("target_type"),
     actorUserId: text("actor_user_id"),
-    actorMembershipId: integer("actor_membership_id").references(() => organizationMembers.id, { onDelete: "set null" }),
+    actorMembershipId: integer("actor_membership_id"),
     resourceType: text("resource_type"),
     resourceId: text("resource_id"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
@@ -40,6 +41,11 @@ export const auditLogs = pgTable(
     index("idx_audit_logs_user_id").on(table.userId),
     index("idx_audit_logs_org_id").on(table.orgId),
     index("idx_audit_logs_org_actor_membership").on(table.orgId, table.actorMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.actorMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_audit_logs_org_actor_membership",
+    }),
     index("idx_audit_logs_action").on(table.action),
     index("idx_audit_logs_created_at").on(table.createdAt),
     index("idx_audit_logs_org_created").on(table.orgId, table.createdAt),

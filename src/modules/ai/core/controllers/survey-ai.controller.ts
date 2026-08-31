@@ -18,6 +18,7 @@ import { LlmService } from "../providers/llm.service";
 import { SurveyAiService } from "../services/survey-ai.service";
 import { Validate } from "../../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
 
 const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 
@@ -38,6 +39,7 @@ export class SurveyAiController {
   @Post("surveys/:surveyId/summarize-responses")
   @RequirePermission("surveys:ai:use")
   @Validate({ params: surveyIdParams })
+  @BodylessAction()
   async summarizeResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,

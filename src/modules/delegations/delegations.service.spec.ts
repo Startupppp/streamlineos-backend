@@ -105,8 +105,12 @@ describe("DelegationsService normalized permission grants", () => {
         permissionKey: "hr:employees:manage",
       },
     ]);
+    // `create` projects the two actor user ids beside the membership ids -- both
+    // are on `DelegationRecord`, and API consumers still read the user form.
     expect(result).toEqual({
       ...created,
+      delegatorId: actor.userId,
+      delegateeId: "delegatee-1",
       permissions: ["hr:employees:view", "hr:employees:manage"],
     });
     expect(bumpPermissionsVersion).toHaveBeenCalledWith(db, actor.orgId);
@@ -121,16 +125,8 @@ describe("DelegationsService normalized permission grants", () => {
     const row = {
       id: "delegation-1",
       orgId: actor.orgId,
-<<<<<<< HEAD
-      delegatorMembershipId: 11,
-      delegateeMembershipId: 12,
-      delegatorId: actor.userId,
-      delegateeId: "delegatee-1",
-=======
       delegatorMembershipId: 1,
-      delegateeMembershipId: 2,
->>>>>>> origin/main
-      startsAt: new Date("2026-08-01T00:00:00.000Z"),
+      delegateeMembershipId: 2,      startsAt: new Date("2026-08-01T00:00:00.000Z"),
       endsAt: new Date("2026-08-08T00:00:00.000Z"),
       reason: null,
       status: "ACTIVE",

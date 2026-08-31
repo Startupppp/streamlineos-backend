@@ -7,6 +7,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   Res,
   UseGuards,
 } from "@nestjs/common";
@@ -24,6 +25,8 @@ import {
   type PrepareFilingInput,
   attachAcknowledgementSchema,
   type AttachAcknowledgementInput,
+  listFilingsQuerySchema,
+  type ListFilingsQuery,
 } from "./dto/filings.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -39,8 +42,9 @@ export class PayrollFilingsController {
 
   @Get()
   @RequirePermission("payroll:tax:view")
-  list(@CurrentUser() u: CurrentUserContext) {
-    return this.service.list(u.orgId);
+  @Validate({ query: listFilingsQuerySchema })
+  list(@CurrentUser() u: CurrentUserContext, @Query() query: ListFilingsQuery) {
+    return this.service.list(u.orgId, query.page, query.limit);
   }
 
   @Get("capabilities")

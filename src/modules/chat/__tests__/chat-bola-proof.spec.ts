@@ -71,7 +71,8 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 
   it("DENY: getChannel returns NotFoundException for an unknown channel — cross-org channel id resolves to null", async () => {
     const db = makeDb({ channelRow: null, memberRow: null });
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities);
+    const stubAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
+    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly as never);
 
     await expect(service.getChannel(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER)).rejects.toThrow(NotFoundException);
 
@@ -81,7 +82,8 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 
   it("DENY: listMembers throws when caller is not a channel member of this org", async () => {
     const db = makeDb({ channelRow: null, memberRow: null });
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities);
+    const stubAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
+    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly as never);
 
     await expect(service.listMembers(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER)).rejects.toThrow(NotFoundException);
 
@@ -91,7 +93,8 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 
   it("DENY: markRead WHERE predicate binds orgId — cannot mark another org's channel read", async () => {
     const db = makeDb();
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities);
+    const stubAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
+    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly as never);
 
     await service.markRead(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER);
 
@@ -107,7 +110,8 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 
   it("CONTROL: owner org member can mark their channel read", async () => {
     const db = makeDb();
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities);
+    const stubAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
+    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly as never);
 
     await service.markRead(CHANNEL_ID, USER_OWNER, ORG_OWNER);
 
@@ -117,7 +121,8 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 
   it("DENY: 404 not 403 when channel does not exist in caller's org (cross-tenant oracle prevention)", async () => {
     const db = makeDb({ channelRow: null, memberRow: null });
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities);
+    const stubAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
+    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly as never);
 
     const error = await service.getChannel(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(NotFoundException);
@@ -129,7 +134,7 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 // ---------------------------------------------------------------------------
 
 describe("ChatReplyRemindersService — orgId in member lookup", () => {
-  function makeDb(members: { userId: string }[]) {
+  function makeDb(members: { membershipId: number; membership: { userId: string } }[]) {
     const findMany = jest.fn().mockResolvedValue(members);
     const memberFindFirst = jest.fn().mockResolvedValue({ id: 1 });
     const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
@@ -174,7 +179,10 @@ describe("ChatReplyRemindersService — orgId in member lookup", () => {
   });
 
   it("CONTROL: scheduleForMessage inserts reminders for OWNER_ORG members only", async () => {
-    const { db, findMany, insert, values } = makeDb([{ userId: "u2" }, { userId: "u3" }]);
+    const { db, findMany, insert, values } = makeDb([
+      { membershipId: 2, membership: { userId: "u2" } },
+      { membershipId: 3, membership: { userId: "u3" } },
+    ]);
     const module = await Test.createTestingModule({
       providers: [
         ChatReplyRemindersService,
@@ -228,7 +236,8 @@ describe("Chat channel existence oracle prevention", () => {
       update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }) }),
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }) }) }),
     };
-    return new ChatChannelMembersService(db as never, stubCache as never, stubEntities);
+    const stubAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
+    return new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly as never);
   }
 
   const cases = [

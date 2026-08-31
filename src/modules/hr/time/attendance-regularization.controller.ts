@@ -15,6 +15,7 @@ import {
 } from "./dto/attendance.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const regularizationIdParams = z.object({ regularizationId: z.coerce.number().int().positive() }).strict();
 
@@ -61,6 +62,7 @@ export class AttendanceRegularizationController {
   }
 
   @Post(":regularizationId/apply")
+  @BodylessAction()
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")

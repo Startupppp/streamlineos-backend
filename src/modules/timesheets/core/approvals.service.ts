@@ -34,7 +34,6 @@ import {
   userDelegations,
   users,
 } from "../../../db/schema";
-import { alias } from "drizzle-orm/pg-core";
 import { AccessService } from "../../access/access.service";
 import { applyScope } from "../../access/apply-scope";
 import { resolveApprovalScope } from "./timesheets-core-scope";
@@ -77,33 +76,12 @@ export class ApprovalsService {
     approverId: string,
     actorUserId: string,
   ): Promise<boolean> {
-<<<<<<< HEAD
-    // A delegation names memberships, not logins. Both sides are joined back
-    // to the membership so this stays a question about user ids, which is
-    // what the caller has.
-    const delegator = alias(organizationMembers, "delegator_member");
-    const delegatee = alias(organizationMembers, "delegatee_member");
-=======
     const delegatorMember = alias(organizationMembers, "delegation_delegator");
     const delegateeMember = alias(organizationMembers, "delegation_delegatee");
->>>>>>> origin/main
     const [row] = await this.db
       .select({ id: userDelegations.id })
       .from(userDelegations)
       .innerJoin(
-<<<<<<< HEAD
-        delegator,
-        and(
-          eq(delegator.orgId, userDelegations.orgId),
-          eq(delegator.id, userDelegations.delegatorMembershipId),
-        ),
-      )
-      .innerJoin(
-        delegatee,
-        and(
-          eq(delegatee.orgId, userDelegations.orgId),
-          eq(delegatee.id, userDelegations.delegateeMembershipId),
-=======
         delegatorMember,
         and(
           eq(delegatorMember.orgId, userDelegations.orgId),
@@ -115,19 +93,13 @@ export class ApprovalsService {
         and(
           eq(delegateeMember.orgId, userDelegations.orgId),
           eq(delegateeMember.id, userDelegations.delegateeMembershipId),
->>>>>>> origin/main
         ),
       )
       .where(
         and(
           eq(userDelegations.orgId, orgId),
-<<<<<<< HEAD
-          eq(delegator.userId, approverId),
-          eq(delegatee.userId, actorUserId),
-=======
           eq(delegatorMember.userId, approverId),
           eq(delegateeMember.userId, actorUserId),
->>>>>>> origin/main
           eq(userDelegations.status, "ACTIVE"),
           lte(userDelegations.startsAt, new Date()),
           gt(userDelegations.endsAt, new Date()),
@@ -188,52 +160,45 @@ export class ApprovalsService {
       conditions.push(lte(timesheetPeriods.periodEnd, query.endDate));
     }
 
-    const rows = await this.db
-      .select({
-        id: timesheetPeriods.id,
-        orgId: timesheetPeriods.orgId,
-        userId: timesheetPeriods.userId,
-        periodStart: timesheetPeriods.periodStart,
-        periodEnd: timesheetPeriods.periodEnd,
-        status: timesheetPeriods.status,
-        totalHours: timesheetPeriods.totalHours,
-        billableHours: timesheetPeriods.billableHours,
-        nonBillableHours: timesheetPeriods.nonBillableHours,
-        submittedAt: timesheetPeriods.submittedAt,
-        approvedAt: timesheetPeriods.approvedAt,
-        rejectedAt: timesheetPeriods.rejectedAt,
-        lockedAt: timesheetPeriods.lockedAt,
-        currentApproverId: timesheetPeriods.currentApproverId,
-        approvedBy: timesheetPeriods.approvedBy,
-        rejectionReason: timesheetPeriods.rejectionReason,
-        createdAt: timesheetPeriods.createdAt,
-        updatedAt: timesheetPeriods.updatedAt,
-        userEmail: users.email,
-        userName: users.name,
-        windowTotal: sql<string>`count(*) OVER ()`,
-      })
-      .from(timesheetPeriods)
-      .leftJoin(users, eq(timesheetPeriods.userId, users.id))
-      .where(and(...conditions))
-      .orderBy(desc(timesheetPeriods.submittedAt))
-      .limit(limit)
-      .offset(offset);
-
-    const firstRow = rows[0];
-    let paginationTotal: number;
-    if (firstRow) {
-      paginationTotal = Number(firstRow.windowTotal);
-    } else if (offset === 0) {
-      paginationTotal = 0;
-    } else {
-      const fallback = await this.db
+    const [rows, [countRow]] = await Promise.all([
+      this.db
+        .select({
+          id: timesheetPeriods.id,
+          orgId: timesheetPeriods.orgId,
+          userId: timesheetPeriods.userId,
+          periodStart: timesheetPeriods.periodStart,
+          periodEnd: timesheetPeriods.periodEnd,
+          status: timesheetPeriods.status,
+          totalHours: timesheetPeriods.totalHours,
+          billableHours: timesheetPeriods.billableHours,
+          nonBillableHours: timesheetPeriods.nonBillableHours,
+          submittedAt: timesheetPeriods.submittedAt,
+          approvedAt: timesheetPeriods.approvedAt,
+          rejectedAt: timesheetPeriods.rejectedAt,
+          lockedAt: timesheetPeriods.lockedAt,
+          currentApproverId: timesheetPeriods.currentApproverId,
+          approvedBy: timesheetPeriods.approvedBy,
+          rejectionReason: timesheetPeriods.rejectionReason,
+          createdAt: timesheetPeriods.createdAt,
+          updatedAt: timesheetPeriods.updatedAt,
+          userEmail: users.email,
+          userName: users.name,
+        })
+        .from(timesheetPeriods)
+        .leftJoin(users, eq(timesheetPeriods.userId, users.id))
+        .where(and(...conditions))
+        .orderBy(desc(timesheetPeriods.submittedAt))
+        .limit(limit)
+        .offset(offset),
+      this.db
         .select({ n: sql<string>`count(*)` })
         .from(timesheetPeriods)
-        .where(and(...conditions));
-      paginationTotal = Number(fallback[0]?.n ?? 0);
-    }
+        .where(and(...conditions)),
+    ]);
 
-    const data = rows.map(({ windowTotal: _w, ...r }) => ({
+    const paginationTotal = Number(countRow?.n ?? 0);
+
+    const data = rows.map((r) => ({
       ...r,
       user: {
         id: r.userId,

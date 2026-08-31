@@ -1,12 +1,13 @@
 import "reflect-metadata";
 import { Module } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
-import { and, count, eq, isNull, or } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import { DrizzleModule } from "../db/drizzle.module";
 import { DRIZZLE } from "../db/drizzle.constants";
 import type { Db } from "../db/drizzle.module";
 import { runInNewTenantTransaction } from "../common/tenant/run-in-tenant-transaction";
+import type { RemovalAction } from "../modules/organization/core/membership-artifacts";
 import {
   agentTokens,
   invitations,
@@ -145,6 +146,98 @@ function printUncoveredArtifacts(): void {
   }
 }
 
+const FK_ACTION_BY_CODE: Record<string, RemovalAction> = {
+  c: "cascade",
+  n: "set-null",
+  a: "blocks-removal",
+  r: "blocks-removal",
+};
+
+async function checkArtifactFkDrift(db: Db): Promise<boolean> {
+  const result = await db.execute(sql`
+    SELECT
+      n.nspname AS schema_name,
+      cl.relname AS table_name,
+      c.conname AS constraint_name,
+      c.confdeltype AS delete_code,
+      c.convalidated AS is_validated,
+      array_length(c.confdelsetcols, 1) AS set_null_col_count,
+      (SELECT string_agg(a.attname, ',' ORDER BY k.ord)
+         FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord)
+         JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum) AS columns,
+      (SELECT string_agg(a.attname, ',' ORDER BY k.ord)
+         FROM unnest(c.confdelsetcols) WITH ORDINALITY AS k(attnum, ord)
+         JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum) AS set_null_cols
+    FROM pg_constraint c
+    JOIN pg_class cl ON cl.oid = c.conrelid
+    JOIN pg_namespace n ON n.oid = cl.relnamespace
+    WHERE c.contype = 'f' AND c.confrelid = 'organization_members'::regclass
+  `);
+  const rows = Array.isArray(result) ? result : [];
+
+  console.log("\n=== INVENTORY vs pg_constraint (declared onRemoval must match the real FK) ===");
+  let pass = true;
+  for (const artifact of MEMBERSHIP_ARTIFACTS) {
+    if (artifact.table === null) continue;
+    if (artifact.onRemoval !== "cascade" && artifact.onRemoval !== "set-null" && artifact.onRemoval !== "blocks-removal") continue;
+
+    const keys = artifact.keyedBy.split(/\s*\/\s*/);
+    const matches = rows.filter((row) => {
+      const record: Record<string, unknown> = row;
+      if (String(record.table_name ?? "") !== artifact.table) return false;
+      const fkCols = String(record.columns ?? "").split(",");
+      return keys.some((key) => fkCols.includes(key.trim()));
+    });
+
+    if (matches.length === 0) {
+      console.log(`  SKIP  ${(artifact.table ?? "").padEnd(34)} no FK on [${keys.join(", ")}] references organization_members`);
+      continue;
+    }
+
+    for (const match of matches) {
+      const record: Record<string, unknown> = match;
+      const actual = FK_ACTION_BY_CODE[String(record.delete_code ?? "")];
+      let ok = actual === artifact.onRemoval;
+
+      if (actual === "set-null") {
+        const fkCols = String(record.columns ?? "").split(",");
+        const hasOrgId = fkCols.includes("org_id");
+        const setNullColCount = Number(record.set_null_col_count ?? 0);
+        if (hasOrgId && setNullColCount === 0) {
+          ok = false;
+          console.log(
+            `  FAIL  ${(artifact.table ?? "").padEnd(34)} SET NULL without column list on composite FK — org_id is NOT NULL, will 23502 (${String(record.constraint_name ?? "")})`,
+          );
+          pass = false;
+          continue;
+        }
+      }
+
+      if (!ok) pass = false;
+      console.log(
+        `  ${ok ? "PASS" : "FAIL"}  ${(artifact.table ?? "").padEnd(34)} declared=${artifact.onRemoval} actual=${actual ?? "unknown"} (${String(record.constraint_name ?? "")})`,
+      );
+    }
+  }
+
+  const brokenSetNull = rows.filter((row) => {
+    const record: Record<string, unknown> = row;
+    if (String(record.delete_code ?? "") !== "n") return false;
+    const fkCols = String(record.columns ?? "").split(",");
+    if (!fkCols.includes("org_id")) return false;
+    return Number(record.set_null_col_count ?? 0) === 0;
+  });
+  if (brokenSetNull.length > 0) {
+    console.log("\n  WARNING — SET NULL FKs without column list (will 23502 if triggered):");
+    for (const row of brokenSetNull) {
+      const record: Record<string, unknown> = row;
+      console.log(`    ${String(record.schema_name ?? "")}.${String(record.table_name ?? "")} → ${String(record.constraint_name ?? "")} on (${String(record.columns ?? "")})`);
+    }
+  }
+
+  return pass;
+}
+
 async function main(): Promise<void> {
   const app = await NestFactory.createApplicationContext(RevocationContextModule, { logger: ["error"] });
   const db = app.get<Db>(DRIZZLE);
@@ -153,9 +246,16 @@ async function main(): Promise<void> {
   let orgSeeded = false;
 
   try {
-    const [permRow] = await db.select({ name: permissions.name }).from(permissions).limit(1);
+    const [permRow] = await db
+      .select({ name: permissions.name, administeringModuleKey: permissions.administeringModuleKey })
+      .from(permissions)
+      .where(isNotNull(permissions.administeringModuleKey))
+      .orderBy(permissions.name)
+      .limit(1);
     if (!permRow) throw new Error("No permissions in DB — run pnpm seed:permissions first");
     const permKey = permRow.name;
+    const permModuleKey = permRow.administeringModuleKey;
+    if (permModuleKey === null) throw new Error(`Permission ${permKey} has no administering module — the catalog boot sync did not run`);
 
     await db.insert(users).values([
       { id: MEM_USER_ID, email: MEM_EMAIL, name: "Revoc Member" },
@@ -197,7 +297,7 @@ async function main(): Promise<void> {
       if (!roleRow) throw new Error("role insert failed");
 
       await tx.insert(roleAssignments).values({ orgId: ORG_ID, organizationMembershipId: memRow.id, roleId: roleRow.id });
-      await tx.insert(userPermissionGrants).values({ orgId: ORG_ID, organizationMembershipId: memRow.id, permissionKey: permKey, moduleKey: "home" });
+      await tx.insert(userPermissionGrants).values({ orgId: ORG_ID, organizationMembershipId: memRow.id, permissionKey: permKey, moduleKey: permModuleKey });
 
       const [groupRow] = await tx
         .insert(principalGroups)
@@ -335,16 +435,16 @@ async function main(): Promise<void> {
       if (!pass) inheritancePass = false;
     }
 
+    const driftPass = await checkArtifactFkDrift(db);
+
     console.log(`\n=== SUMMARY ===`);
     console.log(`  Removal artifacts: ${removalPass ? "PASS" : "FAIL"}`);
     console.log(`  No inheritance:    ${inheritancePass ? "PASS" : "FAIL"}`);
+    console.log(`  Inventory vs FKs:  ${driftPass ? "PASS" : "FAIL"}`);
 
-    process.exitCode = removalPass && inheritancePass ? 0 : 1;
+    process.exitCode = removalPass && inheritancePass && driftPass ? 0 : 1;
   } finally {
     try {
-      // Delete the org first: cascades memberships (guard trigger sees no org row, allows
-      // the cascade), which cascades role_assignments, user_permission_grants, etc.
-      // Also cascades invitations, resource_grants, kb_space_grants, user_delegations.
       if (orgSeeded) {
         await runInNewTenantTransaction(db, ORG_ID, async (tx) => {
           await tx.delete(organizations).where(eq(organizations.id, ORG_ID));

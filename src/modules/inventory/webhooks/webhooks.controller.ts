@@ -7,7 +7,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { WebhooksService } from "./webhooks.service";
@@ -19,6 +18,12 @@ import {
   type UpdateWebhookInput,
   type ListEventsQueryInput,
 } from "./dto/webhooks.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+
+const webhookIdParams = z.object({ webhookId: z.coerce.number().int().positive() }).strict();
+const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/webhooks")
@@ -36,8 +41,9 @@ export class WebhooksController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
+  @Validate({ body: createWebhookSchema })
   create(
-    @Body(new ZodValidationPipe(createWebhookSchema)) body: CreateWebhookInput,
+    @Body() body: CreateWebhookInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.create(u.orgId, u.userId, body);
@@ -46,9 +52,10 @@ export class WebhooksController {
   @Patch(":webhookId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
+  @Validate({ params: webhookIdParams, body: updateWebhookSchema })
   update(
     @Param("webhookId", ParseIntPipe) id: number,
-    @Body(new ZodValidationPipe(updateWebhookSchema)) body: UpdateWebhookInput,
+    @Body() body: UpdateWebhookInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.update(u.orgId, u.userId, id, body);
@@ -57,6 +64,7 @@ export class WebhooksController {
   @Delete(":webhookId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
+  @Validate({ params: webhookIdParams })
   remove(
     @Param("webhookId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,
@@ -67,17 +75,20 @@ export class WebhooksController {
   @Get(":webhookId/events")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
+  @Validate({ params: webhookIdParams, query: listEventsQuerySchema })
   listEvents(
     @Param("webhookId", ParseIntPipe) id: number,
-    @Query(new ZodValidationPipe(listEventsQuerySchema)) q: ListEventsQueryInput,
+    @Query() q: ListEventsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listEvents(u.orgId, id, q);
   }
 
   @Post("events/:eventId/retry")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
+  @Validate({ params: eventIdParams })
   retryEvent(
     @Param("eventId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,

@@ -19,8 +19,11 @@
 -- this one follows the consumer that will actually detach these partitions. Whoever unifies them
 -- owns both.
 --
--- NOT VERIFIED AGAINST A DATABASE. No database has been touched this program. Apply to a branch
--- first and check the verification block at the foot of this file before promoting.
+-- APPLIED AND VERIFIED 2026-08-31 against the dev database via pg_catalog:
+--   notifications.relkind = 'p' (partitioned)
+--   notification_deliveries_notification_fk = FOREIGN KEY (notification_id, notification_created_at)
+--     REFERENCES notifications(id, created_at) ON DELETE CASCADE, convalidated = true
+--   per-partition FKs present through notifications_default; notifications_default holds 0 rows.
 --
 -- OPERATOR, after applying:
 --     VACUUM ANALYZE notifications, notification_deliveries, notification_audit_logs;

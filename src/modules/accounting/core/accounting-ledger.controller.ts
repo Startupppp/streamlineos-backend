@@ -35,6 +35,7 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const accountIdParams = z.object({ accountId: z.coerce.number().int().positive() }).strict();
 const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
@@ -119,6 +120,7 @@ export class AccountingLedgerController {
   }
 
   @Post("journal/:entryId/post")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:manage")
   @HttpCode(200)
@@ -131,6 +133,7 @@ export class AccountingLedgerController {
   }
 
   @Post("journal/:entryId/reverse")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:manage")
   @Validate({ params: entryIdParams })

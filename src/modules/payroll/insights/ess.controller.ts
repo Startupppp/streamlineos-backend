@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -19,6 +19,7 @@ import {
   type EssSubmitTaxDeclaration,
   type EssAddTaxProof,
 } from "./dto/insights.schemas";
+import { listPageQuerySchema, type ListPageQueryInput } from "../hr-payroll/dto/payroll.schemas";
 
 @Controller("payroll/me")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -48,8 +49,9 @@ export class EssController {
 
   @Get("reimbursements")
   @RequirePermission("self:payroll")
-  listReimbursements(@CurrentUser() u: CurrentUserContext) {
-    return this.essSelfService.listReimbursements(u.orgId, u.userId);
+  @Validate({ query: listPageQuerySchema })
+  listReimbursements(@CurrentUser() u: CurrentUserContext, @Query() query: ListPageQueryInput) {
+    return this.essSelfService.listReimbursements(u.orgId, u.userId, query.page, query.limit);
   }
 
   @Post("reimbursements")

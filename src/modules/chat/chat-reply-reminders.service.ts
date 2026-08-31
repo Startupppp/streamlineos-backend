@@ -58,17 +58,18 @@ export class ChatReplyRemindersService {
 
     const members = await this.db.query.chatChannelMembers.findMany({
       where: and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)),
-      columns: { userId: true, membershipId: true },
+      columns: { membershipId: true },
+      with: { membership: { columns: { userId: true } } },
     });
 
     const reminders = members
-      .filter((member) => member.userId !== senderId)
-      .map((member) => ({
+      .filter((m) => m.membership?.userId !== undefined && m.membership.userId !== senderId)
+      .map((m) => ({
         orgId,
         channelId,
         messageId,
-        recipientUserId: member.userId,
-        recipientMembershipId: member.membershipId ?? null,
+        recipientUserId: m.membership!.userId,
+        recipientMembershipId: m.membershipId,
         senderUserId: senderId,
         senderMembershipId,
         remindAt,
@@ -160,10 +161,16 @@ export class ChatReplyRemindersService {
       return "cancelled";
     }
 
+    const recipientMembershipId = reminder.recipientMembershipId ??
+      await this.resolveMembershipId(reminder.orgId, reminder.recipientUserId);
+    if (!recipientMembershipId) {
+      await this.markCancelled(reminderId);
+      return "cancelled";
+    }
     const membership = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.channelId, reminder.channelId),
-        eq(chatChannelMembers.userId, reminder.recipientUserId),
+        eq(chatChannelMembers.membershipId, recipientMembershipId),
       ),
       columns: { mutedUntil: true, archivedAt: true },
     });

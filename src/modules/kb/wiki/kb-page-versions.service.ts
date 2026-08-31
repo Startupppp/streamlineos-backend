@@ -5,10 +5,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { kbPages, kbPageVersions, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
@@ -106,6 +108,7 @@ export class KbPageVersionsService {
           content: version.content,
           contentText: version.contentText,
           lastEditedById: user.userId,
+          contentRevision: sql`content_revision + 1`,
         })
         .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
         .returning();
@@ -124,6 +127,17 @@ export class KbPageVersionsService {
       if (version.content) {
         await resyncPageLinks(tx, orgId, pageId, version.content);
       }
+
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "kb_page",
+        aggregateId: String(pageId),
+        aggregateVersion: Date.now(),
+        eventType: "kb.content.index",
+        payload: { contentType: "page", contentId: pageId, contentRevision: updated.contentRevision, aclRevision: updated.aclRevision },
+        occurredAt: new Date(),
+      });
 
       return updated;
     });

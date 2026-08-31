@@ -171,6 +171,8 @@ export type CancelGrnInput = z.infer<typeof cancelGrnSchema>;
 export const listGrnSchema = z.object({
   poId: z.coerce.number().int().positive().optional(),
   vendorId: z.coerce.number().int().positive().optional(),
+  status: z.enum(["DRAFT", "COUNTING", "QUALITY_REVIEW", "POSTED", "CANCELLED"]).optional(),
+  warehouseId: z.coerce.number().int().positive().optional(),
   dateFrom: isoDate.optional(),
   dateTo: isoDate.optional(),
   page: pageNumberField,

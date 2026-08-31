@@ -9,6 +9,7 @@ import {
   index,
   unique,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
@@ -139,6 +140,63 @@ export const platformSubscriptions = pgTable(
     unique("uniq_platform_subscriptions_org_id").on(table.orgId, table.id),
   ],
 );
+
+export const operatorAccessGrants = pgTable(
+  "operator_access_grants",
+  {
+    grantId: uuid("grant_id").defaultRandom().primaryKey(),
+    operatorUserId: text("operator_user_id").notNull(),
+    orgId: text("org_id").notNull(),
+    incidentRef: text("incident_ref").notNull(),
+    grantedBy: text("granted_by").notNull(),
+    scope: text("scope").notNull(),
+    status: text("status").notNull().default("active"),
+    approverId: text("approver_id"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revocationReason: text("revocation_reason"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_oag_active").on(
+      table.operatorUserId,
+      table.orgId,
+      table.scope,
+      table.expiresAt,
+    ),
+  ],
+);
+
+export const operatorAccessLog = pgTable(
+  "operator_access_log",
+  {
+    logId: uuid("log_id").defaultRandom().primaryKey(),
+    grantId: uuid("grant_id")
+      .notNull()
+      .references(() => operatorAccessGrants.grantId),
+    operatorUserId: text("operator_user_id").notNull(),
+    orgId: text("org_id").notNull(),
+    action: text("action").notNull(),
+    detail: jsonb("detail").$type<Record<string, unknown>>(),
+    ipAddress: text("ip_address"),
+    accessedAt: timestamp("accessed_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index("idx_oal_grant").on(table.grantId),
+    index("idx_oal_org_time").on(table.orgId, table.accessedAt),
+  ],
+);
+
+export const operatorAccessGrantsRelations = relations(operatorAccessGrants, ({ many }) => ({
+  logs: many(operatorAccessLog),
+}));
+
+export const operatorAccessLogRelations = relations(operatorAccessLog, ({ one }) => ({
+  grant: one(operatorAccessGrants, {
+    fields: [operatorAccessLog.grantId],
+    references: [operatorAccessGrants.grantId],
+  }),
+}));
 
 export const platformMessagesRelations = relations(platformMessages, ({ one }) => ({
   repliedBy: one(users, {

@@ -121,6 +121,9 @@ export const testHrAutomationSchema = z.object({
   payload: z.record(z.string(), z.unknown()).default({}),
 });
 
+export const toggleHrAutomationRuleSchema = z.object({ isEnabled: z.boolean() }).strict();
+export type ToggleHrAutomationRuleInput = z.infer<typeof toggleHrAutomationRuleSchema>;
+
 export const listRunsSchema = z.object({
   page: pageNumberField,
   limit: pageSizeField(50, 100),

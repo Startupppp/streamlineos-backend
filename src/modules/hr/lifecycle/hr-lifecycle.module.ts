@@ -21,6 +21,8 @@ import { ExitWriteService } from "./exit-write.service";
 import { ExperienceLetterService } from "./experience-letter.service";
 import { ExitCompletionGuardService } from "./exit-completion-guard.service";
 import { TerminationService } from "./termination.service";
+import { TerminationReadService } from "./termination-read.service";
+import { TerminationLifecycleService } from "./termination-lifecycle.service";
 import { TerminationCommunicationsService } from "./termination-communications.service";
 import { AlumniService } from "./alumni.service";
 import { HrAnalyticsService } from "./hr-analytics.service";
@@ -51,6 +53,8 @@ import { EmploymentFactsModule } from "../../directory/employment-facts.module";
     ExitWriteService,
     ExperienceLetterService,
     ExitCompletionGuardService,
+    TerminationReadService,
+    TerminationLifecycleService,
     TerminationService,
     TerminationCommunicationsService,
     AlumniService,

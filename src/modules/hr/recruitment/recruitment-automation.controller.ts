@@ -36,6 +36,7 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const automationIdParams = z.object({ automationId: z.coerce.number().int().positive() }).strict();
 const messageIdParams = z.object({ messageId: z.coerce.number().int().positive() }).strict();
@@ -113,6 +114,7 @@ export class RecruitmentAutomationController {
   }
 
   @Patch("messages/:messageId")
+  @BodylessAction()
   @RequirePermission("hr:employees:view")
   @Validate({ params: messageIdParams })
   markMessageRead(

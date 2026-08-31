@@ -119,7 +119,7 @@ describe("PaymentWebhookReceiverService — cross-tenant isolation", () => {
       }),
     };
     mockRunInTenantTransaction.mockImplementation(async (_db, fn, _opts) =>
-      fn(emptyTx as Parameters<typeof fn>[0]),
+      fn(emptyTx as unknown as Parameters<typeof fn>[0]),
     );
     await expect(svc.recordSignatureFailure(ATTACKER_ORG, "razorpay")).resolves.toBeUndefined();
     expect(paymentAnalytics.notifyOwner).not.toHaveBeenCalled();
@@ -137,7 +137,7 @@ describe("PaymentWebhookReceiverService — cross-tenant isolation", () => {
       }),
     };
     mockRunInTenantTransaction.mockImplementation(async (_db, fn, _opts) =>
-      fn(emptyTx as Parameters<typeof fn>[0]),
+      fn(emptyTx as unknown as Parameters<typeof fn>[0]),
     );
     await svc.recordSignatureFailure(ATTACKER_ORG, "razorpay");
     expect(mockRunInTenantTransaction).toHaveBeenCalledWith(
@@ -174,8 +174,8 @@ describe("PaymentWebhookReceiverService — cross-tenant isolation", () => {
     };
 
     mockRunInTenantTransaction
-      .mockImplementationOnce(async (_db, fn, _opts) => fn(tx1 as Parameters<typeof fn>[0]))
-      .mockImplementationOnce(async (_db, fn, _opts) => fn(tx2 as Parameters<typeof fn>[0]));
+      .mockImplementationOnce(async (_db, fn, _opts) => fn(tx1 as unknown as Parameters<typeof fn>[0]))
+      .mockImplementationOnce(async (_db, fn, _opts) => fn(tx2 as unknown as Parameters<typeof fn>[0]));
 
     await svc.recordSignatureFailure(OWNER_ORG, "razorpay");
 

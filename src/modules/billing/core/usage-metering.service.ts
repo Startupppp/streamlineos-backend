@@ -9,6 +9,7 @@ import {
 } from "../../../db/schema";
 import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import { runInTenantTransaction, runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { forEachOrg } from "../../../common/tenant";
 import { readCount } from "./quota-counts";
 
 export const RESERVATION_STATUSES = ["ACTIVE", "SETTLED", "RELEASED", "EXPIRED"] as const;
@@ -348,44 +349,46 @@ export class UsageMeteringService {
   }
 
   async sweepExpiredReservations(limit = 500): Promise<number> {
-    const expired = await this.db
-      .select({
-        id: billingUsageReservations.id,
-        orgId: billingUsageReservations.orgId,
-        meterKey: billingUsageReservations.meterKey,
-      })
-      .from(billingUsageReservations)
-      .where(
-        and(
-          eq(billingUsageReservations.status, "ACTIVE"),
-          lte(billingUsageReservations.expiresAt, new Date()),
-        ),
-      )
-      .limit(limit);
-
+    const now = new Date();
     let swept = 0;
-    for (const row of expired) {
-      try {
-        await runInNewTenantTransaction(this.db, row.orgId, async (tx) => {
-          await tx.execute(lockMeter(row.orgId, row.meterKey));
-          await tx
-            .update(billingUsageReservations)
-            .set({ status: "EXPIRED", settledAt: new Date(), settledQuantity: 0 })
-            .where(
-              and(
-                eq(billingUsageReservations.id, row.id),
-                eq(billingUsageReservations.status, "ACTIVE"),
-              ),
-            );
-        });
-        swept++;
-      } catch (err: unknown) {
-        this.logger.error(`Failed to expire usage reservation ${row.id}`, {
-          orgId: row.orgId,
-          cause: err instanceof Error ? err.message : String(err),
-        });
+    await forEachOrg(this.db, "sweep:expired-usage-reservations", async (tx, orgId) => {
+      const expired = await tx
+        .select({
+          id: billingUsageReservations.id,
+          meterKey: billingUsageReservations.meterKey,
+        })
+        .from(billingUsageReservations)
+        .where(
+          and(
+            eq(billingUsageReservations.orgId, orgId),
+            eq(billingUsageReservations.status, "ACTIVE"),
+            lte(billingUsageReservations.expiresAt, now),
+          ),
+        )
+        .limit(limit);
+      for (const row of expired) {
+        try {
+          await runInNewTenantTransaction(this.db, orgId, async (rtx) => {
+            await rtx.execute(lockMeter(orgId, row.meterKey));
+            await rtx
+              .update(billingUsageReservations)
+              .set({ status: "EXPIRED", settledAt: new Date(), settledQuantity: 0 })
+              .where(
+                and(
+                  eq(billingUsageReservations.id, row.id),
+                  eq(billingUsageReservations.status, "ACTIVE"),
+                ),
+              );
+          });
+          swept++;
+        } catch (err: unknown) {
+          this.logger.error(`Failed to expire usage reservation ${row.id}`, {
+            orgId,
+            cause: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
-    }
+    });
     return swept;
   }
 }

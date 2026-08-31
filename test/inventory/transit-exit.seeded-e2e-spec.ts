@@ -179,7 +179,7 @@ describe("[seeded-e2e] transit exit and pick-location resolution", () => {
         fromWarehouseId: scene.sourceWarehouseId,
         toWarehouseId: scene.destWarehouseId,
         lines: [{ productVariantId: scene.variantId, quantity: dispatch }],
-      } as never),
+      } as never, `spec-transfer-${crypto.randomUUID()}`),
     );
     const transferId = (created as { id: number }).id;
 
@@ -618,7 +618,7 @@ describe("[seeded-e2e] transit exit and pick-location resolution", () => {
           fromWarehouseId: scene.sourceWarehouseId,
           toWarehouseId: scene.destWarehouseId,
           lines: [{ productVariantId: scene.variantId, quantity: 7 }],
-        } as never),
+        } as never, `spec-transfer-${crypto.randomUUID()}`),
       );
       transferId = (created as { id: number }).id;
       await asTenant(() =>
@@ -691,7 +691,7 @@ describe("[seeded-e2e] transit exit and pick-location resolution", () => {
           fromWarehouseId: scene.sourceWarehouseId,
           toWarehouseId: scene.destWarehouseId,
           lines: [{ productVariantId: scene.variantId, quantity: 3 }],
-        } as never),
+        } as never, `spec-transfer-${crypto.randomUUID()}`),
       );
       const pendingId = (created as { id: number }).id;
 

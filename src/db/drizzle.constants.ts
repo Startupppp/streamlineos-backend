@@ -1,2 +1,4 @@
 export const DRIZZLE = "DRIZZLE";
 export const DB_POOL_CONFIG = "DB_POOL_CONFIG";
+export const DRIZZLE_REPLICA = "DRIZZLE_REPLICA";
+export const REPLICA_ROUTER = "REPLICA_ROUTER";

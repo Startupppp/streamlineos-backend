@@ -1,7 +1,7 @@
 import { ExecutionContext, HttpException, HttpStatus } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { RateLimitGuard } from "./rate-limit.guard";
-import { RateLimitService } from "./rate-limit.service";
+import { RateLimitService, effectiveRateLimit } from "./rate-limit.service";
 import { RATE_LIMIT_TIER } from "./use-rate-limit.decorator";
 
 function makeContext(overrides: { userId?: string; ip?: string } = {}): ExecutionContext {
@@ -78,5 +78,15 @@ describe("RateLimitGuard", () => {
     const ctx = makeContext({ userId: "u1" });
     await guard.canActivate(ctx);
     expect(rateLimitService.check).toHaveBeenCalledWith(setMetaTier, "u1");
+  });
+});
+
+describe("TIERS — rate-limit key registration", () => {
+  it("search:global resolves to a real tier so the guard is not silently disabled", () => {
+    expect(effectiveRateLimit("search:global")).toBeGreaterThan(0);
+  });
+
+  it("an unknown key returns 0 (deny), not a positive limit", () => {
+    expect(effectiveRateLimit("not-a-real-tier-xyz")).toBe(0);
   });
 });

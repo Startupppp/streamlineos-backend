@@ -43,14 +43,14 @@ describe("CrmConsentService — cross-tenant isolation", () => {
   it("filterSendable: returns all as blocked for empty contact list (deny — no cross-org data exposed)", async () => {
     const { db } = makeDb([]);
     const svc = buildSvc(db);
-    const result = await svc.filterSendable(ATTACKER, "email", []);
+    const result = await svc.filterSendable(ATTACKER, "EMAIL", []);
     expect(result.sendable).toHaveLength(0);
   });
 
   it("filterSendable: queries scoped to attacker org (deny — only attacker org's consent records)", async () => {
     const { db, where } = makeDb([]);
     const svc = buildSvc(db);
-    await svc.filterSendable(ATTACKER, "email", [1, 2]);
+    await svc.filterSendable(ATTACKER, "EMAIL", [1, 2]);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
@@ -59,7 +59,7 @@ describe("CrmConsentService — cross-tenant isolation", () => {
     const row = { contactId: 1, status: "opted_in", expiresAt: null };
     const { db, where } = makeDb([row]);
     const svc = buildSvc(db);
-    const result = await svc.filterSendable(OWNER, "email", [1]);
+    const result = await svc.filterSendable(OWNER, "EMAIL", [1]);
     expect(result.sendable).toHaveLength(1);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);

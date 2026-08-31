@@ -35,6 +35,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
 const projectAndTicketIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
@@ -66,6 +67,7 @@ export class TimeEntriesController {
   }
 
   @Patch(":entryId/approve")
+  @BodylessAction()
   @Idempotent("build.timesheet.approve-entry")
   @RequirePermission("build:timesheets:manage")
   @Validate({ params: entryIdParams })

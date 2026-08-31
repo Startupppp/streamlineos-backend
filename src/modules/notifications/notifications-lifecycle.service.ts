@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { eq, and, isNull, inArray, max } from "drizzle-orm";
 import { notifications, notificationReadWatermarks } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -16,7 +16,7 @@ export class NotificationsLifecycleService {
   ) {}
 
   async approve(orgId: string, userId: string, notificationId: number) {
-    await this.db
+    const rows = await this.db
       .update(notifications)
       .set({
         isRead: true,
@@ -33,13 +33,15 @@ export class NotificationsLifecycleService {
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
-      );
+      )
+      .returning({ id: notifications.id });
+    if (rows.length === 0) throw new NotFoundException();
     await this.invalidateCache(userId, orgId);
     return { success: true };
   }
 
   async reject(orgId: string, userId: string, notificationId: number) {
-    await this.db
+    const rows = await this.db
       .update(notifications)
       .set({
         isRead: true,
@@ -56,13 +58,15 @@ export class NotificationsLifecycleService {
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
-      );
+      )
+      .returning({ id: notifications.id });
+    if (rows.length === 0) throw new NotFoundException();
     await this.invalidateCache(userId, orgId);
     return { success: true };
   }
 
   async markRead(orgId: string, userId: string, notificationId: number) {
-    await this.db
+    const rows = await this.db
       .update(notifications)
       .set({ isRead: true })
       .where(
@@ -72,7 +76,9 @@ export class NotificationsLifecycleService {
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
-      );
+      )
+      .returning({ id: notifications.id });
+    if (rows.length === 0) throw new NotFoundException();
     await this.invalidateCache(userId, orgId);
     this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
@@ -105,7 +111,7 @@ export class NotificationsLifecycleService {
   }
 
   async archive(orgId: string, userId: string, notificationId: number) {
-    await this.db
+    const rows = await this.db
       .update(notifications)
       .set({ archivedAt: new Date() })
       .where(
@@ -115,14 +121,16 @@ export class NotificationsLifecycleService {
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
-      );
+      )
+      .returning({ id: notifications.id });
+    if (rows.length === 0) throw new NotFoundException();
     await this.invalidateCache(userId, orgId);
     this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
   }
 
   async unarchive(orgId: string, userId: string, notificationId: number) {
-    await this.db
+    const rows = await this.db
       .update(notifications)
       .set({ archivedAt: null })
       .where(
@@ -132,13 +140,15 @@ export class NotificationsLifecycleService {
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
-      );
+      )
+      .returning({ id: notifications.id });
+    if (rows.length === 0) throw new NotFoundException();
     await this.invalidateCache(userId, orgId);
     return { success: true };
   }
 
   async softDelete(orgId: string, userId: string, notificationId: number) {
-    await this.db
+    const rows = await this.db
       .update(notifications)
       .set({ deletedAt: new Date() })
       .where(
@@ -147,14 +157,16 @@ export class NotificationsLifecycleService {
           eq(notifications.userId, userId),
           eq(notifications.orgId, orgId),
         ),
-      );
+      )
+      .returning({ id: notifications.id });
+    if (rows.length === 0) throw new NotFoundException();
     await this.invalidateCache(userId, orgId);
     this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
   }
 
   async pin(orgId: string, userId: string, notificationId: number) {
-    await this.db
+    const rows = await this.db
       .update(notifications)
       .set({ pinned: true })
       .where(
@@ -164,13 +176,15 @@ export class NotificationsLifecycleService {
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
-      );
+      )
+      .returning({ id: notifications.id });
+    if (rows.length === 0) throw new NotFoundException();
     await this.invalidateCache(userId, orgId);
     return { success: true };
   }
 
   async unpin(orgId: string, userId: string, notificationId: number) {
-    await this.db
+    const rows = await this.db
       .update(notifications)
       .set({ pinned: false })
       .where(
@@ -180,7 +194,9 @@ export class NotificationsLifecycleService {
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
-      );
+      )
+      .returning({ id: notifications.id });
+    if (rows.length === 0) throw new NotFoundException();
     await this.invalidateCache(userId, orgId);
     return { success: true };
   }
@@ -191,7 +207,7 @@ export class NotificationsLifecycleService {
     notificationId: number,
     input: SnoozeInput,
   ) {
-    await this.db
+    const rows = await this.db
       .update(notifications)
       .set({ snoozedUntil: new Date(input.snoozedUntil) })
       .where(
@@ -201,7 +217,9 @@ export class NotificationsLifecycleService {
           eq(notifications.orgId, orgId),
           isNull(notifications.deletedAt),
         ),
-      );
+      )
+      .returning({ id: notifications.id });
+    if (rows.length === 0) throw new NotFoundException();
     await this.invalidateCache(userId, orgId);
     return { success: true };
   }

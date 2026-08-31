@@ -14,6 +14,8 @@
  *   3. runInTenantTransaction is called with the correct orgId for the tenant GUC.
  */
 
+import { NotFoundException } from "@nestjs/common";
+
 jest.mock("../../../../common/tenant/run-in-tenant-transaction");
 
 const OWNER_ORG = "org-owner-blog";
@@ -88,3 +90,5 @@ describe("BlogAiService — tenant isolation (global content, scoped billing)", 
     expect(opts.orgId).toBe(OWNER_ORG);
   });
 });
+
+export {};

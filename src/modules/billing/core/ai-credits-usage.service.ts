@@ -2,10 +2,12 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { aiUsageLogs } from "../../../db/schema";
+import { aiUsageLogs, orgAiCredits } from "../../../db/schema";
 import { milliToCredits } from "../../ai/core/billing/ai-model-pricing.constants";
 
 export interface AiCreditsUsageResult {
+  lifetimeConsumedCredits: number;
+  lifetimeConsumedMilli: number;
   totals: {
     requests: number;
     promptTokens: number;
@@ -45,7 +47,7 @@ export class AiCreditsUsageService {
   async getUsage(orgId: string, days: number): Promise<AiCreditsUsageResult> {
     const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    const [totalsRows, byFeatureRows, byModelRows, dailyRows] = await Promise.all([
+    const [totalsRows, byFeatureRows, byModelRows, dailyRows, walletRows] = await Promise.all([
       this.db
         .select({
           requests: sql<number>`count(*)::int`,
@@ -94,11 +96,22 @@ export class AiCreditsUsageService {
         .from(aiUsageLogs)
         .where(and(eq(aiUsageLogs.orgId, orgId), gte(aiUsageLogs.createdAt, since)))
         .groupBy(sql`date_trunc('day', ${aiUsageLogs.createdAt})`),
+
+      this.db
+        .select({
+          lifetimeConsumed: orgAiCredits.lifetimeConsumed,
+        })
+        .from(orgAiCredits)
+        .where(eq(orgAiCredits.orgId, orgId))
+        .limit(1),
     ]);
 
     const totalsRow = totalsRows[0];
+    const lifetimeConsumedMilli = Number(walletRows[0]?.lifetimeConsumed ?? 0);
 
     return {
+      lifetimeConsumedCredits: milliToCredits(lifetimeConsumedMilli),
+      lifetimeConsumedMilli,
       totals: {
         requests: Number(totalsRow?.requests ?? 0),
         promptTokens: Number(totalsRow?.promptTokens ?? 0),

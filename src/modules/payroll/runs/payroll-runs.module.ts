@@ -25,6 +25,7 @@ import { PayrollCommandReceiptsService } from "../command-receipts.service";
 import { PayrollRunLockService } from "../run-lock.service";
 import { PayrollRunCalculationGuardsService } from "./payroll-run-calculation-guards.service";
 import { PayrollRunVarianceService } from "./payroll-run-variance.service";
+import { PayrollRunEmployeesService } from "./payroll-run-employees.service";
 import { SalaryProfilesRepository } from "./salary-profiles.repository";
 import { RunDataLoaderService } from "./run-data-loader.service";
 import { RunResultPersisterService } from "./run-result-persister.service";
@@ -61,6 +62,7 @@ import { PayrollRunExportWorkerService } from "./payroll-export-worker.service";
     PayrollRunLockService,
     PayrollRunCalculationGuardsService,
     PayrollRunVarianceService,
+    PayrollRunEmployeesService,
     SalaryProfilesRepository,
     RunDataLoaderService,
     RunResultPersisterService,

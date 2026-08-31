@@ -5,9 +5,6 @@ import { queryBoolean } from "../../../../common/validation/query-boolean";
 export const listVendorsSchema = z.object({
   search: z.string().trim().max(200).optional(),
   isActive: queryBoolean.optional(),
-export const listVendorsSchema = z.object({
-  search: z.string().trim().max(200).optional(),
-  isActive: queryBoolean.optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
 }).strict();
@@ -18,7 +15,6 @@ export const vendorDeliveriesSchema = z.object({
   page: pageNumberField,
   limit: pageSizeField(25, 100),
 }).strict();
-export type VendorDeliveriesInput = z.infer<typeof vendorDeliveriesSchema>;
 export type VendorDeliveriesInput = z.infer<typeof vendorDeliveriesSchema>;
 
 export const createVendorSchema = z.object({

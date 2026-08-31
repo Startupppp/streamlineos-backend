@@ -55,6 +55,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Deprecated } from "../../common/deprecation/deprecated.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const accountIdParams = z.object({ accountId: z.coerce.number().int().positive() }).strict();
 const oppIdParams = z.object({ oppId: z.coerce.number().int().positive() }).strict();
@@ -126,6 +127,7 @@ export class ClientsController {
   }
 
   @Post("assign-crm")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("crm:clients:manage")
   async runCrmAssignments(@CurrentUser() u: CurrentUserContext) {

@@ -169,7 +169,7 @@ describe("[seeded-e2e] stock in transit", () => {
         fromWarehouseId: scene.sourceWarehouseId,
         toWarehouseId: scene.destWarehouseId,
         lines: [{ productVariantId: scene.variantId, quantity: TRANSFER_QTY }],
-      } as never),
+      } as never, `spec-transfer-${crypto.randomUUID()}`),
     );
     transferId = (transfer as { id: number }).id;
   }, 300_000);
@@ -312,7 +312,7 @@ describe("[seeded-e2e] stock in transit", () => {
           fromWarehouseId: scene.sourceWarehouseId,
           toWarehouseId: scene.destWarehouseId,
           lines: [{ productVariantId: scene.variantId, quantity: SHORT_TRANSFER_QTY }],
-        } as never),
+        } as never, `spec-transfer-${crypto.randomUUID()}`),
       );
       shortTransferId = (transfer as { id: number }).id;
 
@@ -436,7 +436,7 @@ describe("[seeded-e2e] stock in transit", () => {
           fromWarehouseId: scene.sourceWarehouseId,
           toWarehouseId: scene.destWarehouseId,
           lines: [{ productVariantId: fifoVariantId, quantity: FIFO_TRANSFER_QTY }],
-        } as never),
+        } as never, `spec-transfer-${crypto.randomUUID()}`),
       );
       fifoTransferId = (transfer as { id: number }).id;
 
@@ -583,7 +583,7 @@ describe("[seeded-e2e] stock in transit", () => {
           fromWarehouseId: scene.sourceWarehouseId,
           toWarehouseId: scene.destWarehouseId,
           lines: [{ productVariantId: scene.variantId, quantity: EVENT_QTY }],
-        } as never),
+        } as never, `spec-transfer-${crypto.randomUUID()}`),
       );
       eventTransferId = (transfer as { id: number }).id;
 

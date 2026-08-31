@@ -16,6 +16,7 @@ import {
 } from "./dto/assets.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
 
@@ -50,6 +51,7 @@ export class DepreciationRunsController {
   }
 
   @Post(":runId/reverse")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:manage")
   @HttpCode(200)

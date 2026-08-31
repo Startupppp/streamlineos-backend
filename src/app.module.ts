@@ -84,6 +84,7 @@ import { FeedbucketModule } from "./modules/feedbucket/feedbucket.module";
 import { FinanceModule } from "./modules/finance/finance.module";
 import { AgentAccessModule } from "./modules/agent-access/agent-access.module";
 import { MailModule } from "./modules/mail/mail.module";
+import { GdprModule } from "./modules/gdpr/gdpr.module";
 import { DirectoryModule } from "./modules/directory/directory.module";
 import { PartyModule } from "./modules/party/party.module";
 import { ActivitiesModule } from "./modules/activities/activities.module";
@@ -98,6 +99,7 @@ import { OutboxModule } from "./common/outbox/outbox.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
 import { MeService } from "./me/me.service";
+import { InboxController } from "./me/inbox.controller";
 import { BuildModule } from "./modules/build/build.module";
 import { ZodValidationInterceptor } from "./common/validation/zod-validation.interceptor";
 import { DataQualityModule } from "./modules/data-quality/data-quality.module";
@@ -193,8 +195,9 @@ import { EmploymentFactsModule } from "./modules/directory/employment-facts.modu
     FeedbucketModule,
     AgentAccessModule,
     MailModule,
+    GdprModule,
   ],
-  controllers: [HealthController, MeController],
+  controllers: [HealthController, MeController, InboxController],
   providers: [
     MeService,
     Reflector,

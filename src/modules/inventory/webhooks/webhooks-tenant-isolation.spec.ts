@@ -63,7 +63,7 @@ describe("WebhooksService — cross-tenant isolation", () => {
         insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
       } as unknown as Db;
 
-      const svc = new WebhooksService(db, null as never);
+      const svc = new WebhooksService(db, { insert: jest.fn() } as any, { deliver: jest.fn().mockResolvedValue({ ok: true }) } as any);
       await expect(svc.retryEvent(ATTACKER_ORG, USER_ID, EVENT_ID)).rejects.toThrow(NotFoundException);
     });
 
@@ -96,7 +96,7 @@ describe("WebhooksService — cross-tenant isolation", () => {
         insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
       } as unknown as Db;
 
-      const svc = new WebhooksService(db, null as never);
+      const svc = new WebhooksService(db, { insert: jest.fn() } as any, { deliver: jest.fn().mockResolvedValue({ ok: true }) } as any);
 
       try {
         await svc.retryEvent(OWNER_ORG, USER_ID, EVENT_ID);

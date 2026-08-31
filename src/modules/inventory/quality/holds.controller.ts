@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards, Headers } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -11,6 +11,8 @@ import { listHoldsQuerySchema, createHoldSchema } from "./dto/quality.schemas";
 import type { ListHoldsQueryInput, CreateHoldInput } from "./dto/quality.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 
 const holdIdParams = z.object({ holdId: z.coerce.number().int().positive() }).strict();
 
@@ -47,20 +49,23 @@ export class HoldsController {
   @RequirePermission("inventory:quality:inspect")
   @Validate({ body: createHoldSchema })
   create(
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @Body() body: CreateHoldInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {return this.svc.create(u.orgId, u.userId, idempotencyKey, body);
+  ) {
+    return this.svc.create(u.orgId, u.userId, idempotencyKey, body);
   }
 
   @Post(":holdId/release")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:release")
   @Validate({ params: holdIdParams })
   release(
     @Param("holdId", ParseIntPipe) holdId: number,
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
-  ) {return this.svc.release(u.orgId, u.userId, holdId, idempotencyKey);
+  ) {
+    return this.svc.release(u.orgId, u.userId, holdId, idempotencyKey);
   }
 }

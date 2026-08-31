@@ -165,7 +165,8 @@ export class PayrollJobsService {
     return row;
   }
 
-  async listFailed(orgId: string, limit = 50) {
+  async listFailed(orgId: string, page = 1, limit = 50) {
+    const cap = Math.min(limit, 100);
     return this.db
       .select()
       .from(payrollJobs)
@@ -175,7 +176,8 @@ export class PayrollJobsService {
           inArray(payrollJobs.status, ["FAILED", "DEAD_LETTER"]),
         ),
       )
-      .limit(limit);
+      .limit(cap)
+      .offset((page - 1) * cap);
   }
 
   /** Claim a batch of PENDING jobs for a worker (cross-process safe-ish via status flip). */
@@ -204,7 +206,8 @@ export class PayrollJobsService {
     return claimed;
   }
 
-  async listForResource(orgId: string, resourceType: string, resourceId: string, limit = 20) {
+  async listForResource(orgId: string, resourceType: string, resourceId: string, page = 1, limit = 20) {
+    const cap = Math.min(limit, 100);
     return this.db
       .select()
       .from(payrollJobs)
@@ -216,6 +219,7 @@ export class PayrollJobsService {
         ),
       )
       .orderBy(asc(payrollJobs.createdAt))
-      .limit(limit);
+      .limit(cap)
+      .offset((page - 1) * cap);
   }
 }

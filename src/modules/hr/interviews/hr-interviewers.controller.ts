@@ -23,6 +23,7 @@ import {
   type InterviewerPerformanceQuery,
 } from "./dto/hr-interviews.schemas";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const linkIdParams = z.object({ linkId: z.coerce.number().int().positive() }).strict();
 
@@ -60,6 +61,7 @@ export class HrInterviewersController {
   }
 
   @Patch("booking-links/:linkId")
+  @BodylessAction()
   @RequirePermission("hr:interviews:manage")
   @Validate({ params: linkIdParams })
   async cancelBookingLink(

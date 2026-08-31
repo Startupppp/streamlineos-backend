@@ -16,6 +16,7 @@ import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronLeaseService } from "./cron-lease.service";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 @Public()
 @Controller("cron")
@@ -36,6 +37,7 @@ export class CronBuildController {
   }
 
   @Post("projects-recurring-flush")
+  @BodylessAction()
   @HttpCode(200)
   postProjectsRecurringFlush(@Headers("authorization") authorization?: string) {
     return this.runProjectsRecurringFlush(authorization);
@@ -47,6 +49,7 @@ export class CronBuildController {
   }
 
   @Post("crm-sequences-flush")
+  @BodylessAction()
   @HttpCode(200)
   postCrmSequencesFlush(@Headers("authorization") authorization?: string) {
     return this.runCrmSequencesFlush(authorization);
@@ -58,6 +61,7 @@ export class CronBuildController {
   }
 
   @Post("finance-recurring-flush")
+  @BodylessAction()
   @HttpCode(200)
   postFinanceRecurringFlush(@Headers("authorization") authorization?: string) {
     return this.runFinanceRecurringFlush(authorization);
@@ -69,6 +73,7 @@ export class CronBuildController {
   }
 
   @Post("finance-due-checks")
+  @BodylessAction()
   @HttpCode(200)
   postFinanceDueChecks(@Headers("authorization") authorization?: string) {
     return this.runFinanceDueChecks(authorization);
@@ -80,6 +85,7 @@ export class CronBuildController {
   }
 
   @Post("finance-depreciation")
+  @BodylessAction()
   @HttpCode(200)
   postFinanceDepreciation(@Headers("authorization") authorization?: string) {
     return this.runFinanceDepreciation(authorization);
@@ -91,6 +97,7 @@ export class CronBuildController {
   }
 
   @Post("crm-tasks-overdue-flush")
+  @BodylessAction()
   @HttpCode(200)
   postCrmTasksOverdueFlush(@Headers("authorization") authorization?: string) {
     return this.runCrmTasksOverdueFlush(authorization);
@@ -102,6 +109,7 @@ export class CronBuildController {
   }
 
   @Post("build-retention-prune")
+  @BodylessAction()
   @HttpCode(200)
   postBuildRetentionPrune(@Headers("authorization") authorization?: string) {
     return this.runBuildRetentionPrune(authorization);
@@ -113,6 +121,7 @@ export class CronBuildController {
   }
 
   @Post("build-daily-snapshots")
+  @BodylessAction()
   @HttpCode(200)
   postBuildDailySnapshots(@Headers("authorization") authorization?: string) {
     return this.runBuildDailySnapshots(authorization);

@@ -50,6 +50,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const referralIdParams = z.object({ referralId: z.coerce.number().int().positive() }).strict();
 const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
@@ -130,6 +131,7 @@ export class RecruitmentSourcingController {
   }
 
   @Post("vendors/:vendorId/portal-link")
+  @BodylessAction()
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: vendorIdParams })
@@ -205,6 +207,7 @@ export class RecruitmentSourcingController {
   }
 
   @Post("headcount/:requestId/approve")
+  @BodylessAction()
   @Idempotent("hr.headcount.approve")
   @RequirePermission("hr:employees:manage")
   @Validate({ params: requestIdParams })
@@ -225,6 +228,7 @@ export class RecruitmentSourcingController {
   }
 
   @Post("headcount/:requestId/create-job")
+  @BodylessAction()
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: requestIdParams })

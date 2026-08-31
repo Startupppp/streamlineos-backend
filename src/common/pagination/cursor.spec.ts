@@ -1,14 +1,11 @@
-<<<<<<< HEAD
 import {
   buildCursorPage,
+  buildIdCursorPage,
   decodeCursor,
   decodeIntegerCursor,
   decodeTimestampCursor,
   encodeCursor,
 } from "./cursor";
-=======
-import { buildCursorPage, buildIdCursorPage, decodeCursor, encodeCursor } from "./cursor";
->>>>>>> origin/main
 
 describe("cursor encoding", () => {
   it("round-trips a position", () => {

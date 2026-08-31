@@ -1,6 +1,5 @@
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { AccessService } from "../../access/access.service";
-import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
@@ -78,10 +77,8 @@ describe("board query count is bounded and independent of card count", () => {
       ),
     } as unknown as AccessService;
 
-    const audit = { log: jest.fn() } as unknown as AuditService;
-
     return {
-      svc: new ProjectsTicketsReadService(db, access, audit),
+      svc: new ProjectsTicketsReadService(db, access),
       getQueries: () => queries,
     };
   }

@@ -1,3 +1,4 @@
+import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -50,11 +51,13 @@ function makeEmbeddings() {
 describe("KB embedding guard — an unseeded knowledge base costs nothing", () => {
   it("does not embed the question when the org has no indexed chunks", async () => {
     const embeddings = makeEmbeddings();
+    const db = makeDb([]);
     const svc = new KbSearchService(
-      makeDb([]) as never,
+      db as never,
       makeAccess() as never,
       embeddings as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     await svc.retrieveTopArticles(makeUser(), "how do I reset my password", 6);
@@ -64,11 +67,13 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
 
   it("returns nothing from retrieveTopSources without embedding when there are no chunks", async () => {
     const embeddings = makeEmbeddings();
+    const db = makeDb([]);
     const svc = new KbSearchService(
-      makeDb([]) as never,
+      db as never,
       makeAccess() as never,
       embeddings as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     const result = await svc.retrieveTopSources(makeUser(), "anything at all", 4);
@@ -79,11 +84,13 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
 
   it("does embed once the org has at least one indexed chunk", async () => {
     const embeddings = makeEmbeddings();
+    const db = makeDb([{ id: 1 }]);
     const svc = new KbSearchService(
-      makeDb([{ id: 1 }]) as never,
+      db as never,
       makeAccess() as never,
       embeddings as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     await svc.retrieveTopArticles(makeUser(), "how do I reset my password", 6);

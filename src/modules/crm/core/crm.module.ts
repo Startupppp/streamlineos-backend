@@ -30,6 +30,8 @@ import { CrmOrganizationsInsightsService } from "./crm-organizations-insights.se
 import { CrmConsentModule } from "../consent/crm-consent.module";
 import { CrmCustomer360Service } from "./crm-customer360.service";
 import { CrmCustomer360SectionsService } from "./crm-customer360-sections.service";
+import { CrmCustomer360FinanceService } from "./crm-customer360-finance.service";
+import { CrmCustomer360EngagementService } from "./crm-customer360-engagement.service";
 import { TerritoryMatchService } from "./territory-match.service";
 import { SlaResolverService } from "./sla-resolver.service";
 import { NotificationsModule } from "../../notifications/notifications.module";
@@ -73,6 +75,8 @@ import { CrmFollowupSweepService } from "./crm-followup-sweep.service";
     CrmOrganizationsInsightsService,
     CrmCustomer360Service,
     CrmCustomer360SectionsService,
+    CrmCustomer360FinanceService,
+    CrmCustomer360EngagementService,
     TerritoryMatchService,
     SlaResolverService,
   ],

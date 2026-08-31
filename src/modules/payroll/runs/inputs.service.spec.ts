@@ -7,6 +7,7 @@ describe("InputsService.listInputs scope gate", () => {
   const actorUserId = "actor-1";
 
   function createService(options: { rows?: unknown[]; run?: { id: number; status: string } | null }) {
+    const resolved = options.rows ?? [];
     const db = {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
@@ -14,13 +15,21 @@ describe("InputsService.listInputs scope gate", () => {
             limit: jest.fn().mockResolvedValue(options.run ? [options.run] : []),
             innerJoin: jest.fn().mockReturnValue({
               where: jest.fn().mockReturnValue({
-                orderBy: jest.fn().mockResolvedValue(options.rows ?? []),
+                orderBy: jest.fn().mockReturnValue({
+                  limit: jest.fn().mockReturnValue({
+                    offset: jest.fn().mockResolvedValue(resolved),
+                  }),
+                }),
               }),
             }),
           }),
           innerJoin: jest.fn().mockReturnValue({
             where: jest.fn().mockReturnValue({
-              orderBy: jest.fn().mockResolvedValue(options.rows ?? []),
+              orderBy: jest.fn().mockReturnValue({
+                limit: jest.fn().mockReturnValue({
+                  offset: jest.fn().mockResolvedValue(resolved),
+                }),
+              }),
             }),
           }),
         }),

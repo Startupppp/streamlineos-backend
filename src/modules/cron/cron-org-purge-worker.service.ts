@@ -9,6 +9,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import { OrgMembershipService } from "../organization/core/org-membership.service";
+import { StorageService } from "../storage/storage.service";
 import {
   PURGE_ADAPTERS,
   PURGE_ADAPTER_REGISTRY,
@@ -33,6 +34,7 @@ export class CronOrgPurgeWorkerService {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly orgMembership: OrgMembershipService,
+    private readonly storage: StorageService,
   ) {}
 
   async run(): Promise<{ processed: number; skipped: number }> {
@@ -177,6 +179,7 @@ export class CronOrgPurgeWorkerService {
           orgId,
           purgeJobId,
           this.db,
+          this.storage,
         );
       } catch (err) {
         adapterResults[adapter] = { state: "FAILED", detail: String(err) };

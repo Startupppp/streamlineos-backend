@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   chatAttachments,
@@ -74,38 +74,24 @@ export class ChatMessagesService {
     channelId: number,
     orgId: string,
     membershipId?: number | null,
-    userId?: string,
   ): Promise<boolean> {
-    if (membershipId) {
-      const m = await this.db.query.chatChannelMembers.findFirst({
-        where: and(
-          eq(chatChannelMembers.orgId, orgId),
-          eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.membershipId, membershipId),
-        ),
-        columns: { id: true },
-      });
-      if (m) return true;
-    }
-    if (userId) {
-      const m = await this.db.query.chatChannelMembers.findFirst({
-        where: and(
-          eq(chatChannelMembers.orgId, orgId),
-          eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, userId),
-        ),
-        columns: { id: true },
-      });
-      return Boolean(m);
-    }
-    return false;
+    if (!membershipId) return false;
+    const m = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
+        eq(chatChannelMembers.orgId, orgId),
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.membershipId, membershipId),
+      ),
+      columns: { id: true },
+    });
+    return Boolean(m);
   }
 
   async send(channelId: number, userId: string, orgId: string, body: SendMessageInput) {
     const senderMembershipId = await this.resolveMembershipId(orgId, userId);
     if (
       senderMembershipId === null ||
-      !(await this.isMember(channelId, orgId, senderMembershipId, userId))
+      !(await this.isMember(channelId, orgId, senderMembershipId))
     )
       throw new ForbiddenException("You are not a member of this channel");
 
@@ -151,6 +137,18 @@ export class ChatMessagesService {
           .where(eq(users.id, userId))
           .limit(1);
 
+        const [updatedChannel] = await tx
+          .update(chatChannels)
+          .set({
+            lastMessageAt: new Date(),
+            updatedAt: new Date(),
+            messageCount: sql`${chatChannels.messageCount} + 1`,
+          })
+          .where(and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)))
+          .returning({ position: chatChannels.messageCount });
+
+        const channelPosition = updatedChannel?.position ?? 0;
+
         const [created] = await tx
           .insert(chatMessages)
           .values({
@@ -161,6 +159,7 @@ export class ChatMessagesService {
             content: sanitizedContent?.trim() || null,
             replyToId: body.replyToId,
             metadata: body.metadata ?? null,
+            channelPosition,
           })
           .returning();
 
@@ -181,11 +180,6 @@ export class ChatMessagesService {
             )
             .returning();
         }
-
-        await tx
-          .update(chatChannels)
-          .set({ lastMessageAt: new Date(), updatedAt: new Date() })
-          .where(eq(chatChannels.id, channelId));
 
         await tx
           .update(chatChannelMembers)
@@ -280,7 +274,7 @@ export class ChatMessagesService {
     const membershipId = await this.resolveMembershipId(orgId, userId);
     if (
       membershipId === null ||
-      !(await this.isMember(message.channelId, orgId, membershipId, userId))
+      !(await this.isMember(message.channelId, orgId, membershipId))
     )
       throw new ForbiddenException("You are not a member of this channel");
 
@@ -324,7 +318,7 @@ export class ChatMessagesService {
     const membershipId = await this.resolveMembershipId(orgId, userId);
     if (
       membershipId === null ||
-      !(await this.isMember(message.channelId, orgId, membershipId, userId))
+      !(await this.isMember(message.channelId, orgId, membershipId))
     )
       throw new ForbiddenException("You are not a member of this channel");
 
@@ -405,6 +399,8 @@ export class ChatMessagesService {
     content: string,
     metadata: Record<string, unknown>,
   ): Promise<void> {
+    const senderMembershipId = await this.resolveMembershipId(orgId, senderId);
+
     const { message, senderName } = await this.db.transaction(async (tx) => {
       const [channel] = await tx
         .select({ id: chatChannels.id })
@@ -420,23 +416,31 @@ export class ChatMessagesService {
         .where(eq(users.id, senderId))
         .limit(1);
 
+      const [updatedChannel] = await tx
+        .update(chatChannels)
+        .set({
+          lastMessageAt: new Date(),
+          updatedAt: new Date(),
+          messageCount: sql`${chatChannels.messageCount} + 1`,
+        })
+        .where(and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)))
+        .returning({ position: chatChannels.messageCount });
+
+      const channelPosition = updatedChannel?.position ?? 0;
+
       const [created] = await tx
         .insert(chatMessages)
         .values({
           orgId,
           channelId,
           senderId,
-          senderMembershipId: await this.resolveMembershipId(orgId, senderId),
+          senderMembershipId,
           content,
           messageType: "system",
           metadata,
+          channelPosition,
         })
         .returning();
-
-      await tx
-        .update(chatChannels)
-        .set({ lastMessageAt: new Date(), updatedAt: new Date() })
-        .where(eq(chatChannels.id, channelId));
 
       return { message: created, senderName: senderRow?.name ?? null };
     });

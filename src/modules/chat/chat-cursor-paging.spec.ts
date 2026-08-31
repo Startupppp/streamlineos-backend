@@ -19,11 +19,12 @@ import { ChatMessageTimelineService } from "./chat-message-timeline.service";
 
 const dialect = new PgDialect();
 const CHANNEL_ID = 7;
-const ACTOR: EntityActor = { userId: "user-1", orgId: "org-1", isOrgOwner: false };
+const ACTOR: EntityActor = { userId: "user-1", orgId: "org-1", membershipId: 1, isOrgOwner: false };
 
 interface StoredMessage {
   id: number;
   channelId: number;
+  channelPosition: number;
   createdAt: Date;
   content: string;
   metadata: Record<string, unknown> | null;
@@ -42,6 +43,7 @@ class MessageStore {
     const row: StoredMessage = {
       id,
       channelId: CHANNEL_ID,
+      channelPosition: id,
       createdAt: at ?? new Date(Date.UTC(2024, 0, 1, 0, 0, id)),
       content: `m${id}`,
       metadata: null,
@@ -53,8 +55,8 @@ class MessageStore {
   /** Newest first, strictly below `cursor` when one is given. */
   newestFirst(cursor: number | undefined, limit: number): StoredMessage[] {
     return this.rows
-      .filter((r) => (cursor === undefined ? true : r.id < cursor))
-      .sort((a, b) => b.id - a.id)
+      .filter((r) => (cursor === undefined ? true : r.channelPosition < cursor))
+      .sort((a, b) => b.channelPosition - a.channelPosition)
       .slice(0, limit);
   }
 
@@ -73,7 +75,7 @@ function cursorFromPredicate(where: SQL): number | undefined {
     throw new Error(`read is not tenant-bound: ${text}`);
   if (!/"chat_messages"\."channel_id"\s*=\s*\$/i.test(text))
     throw new Error(`read is not channel-bound: ${text}`);
-  const bound = /"chat_messages"\."id"\s*<\s*\$(\d+)/i.exec(text);
+  const bound = /"chat_messages"\."channel_position"\s*<\s*\$(\d+)/i.exec(text);
   if (!bound) return undefined;
   const value = params[Number(bound[1]) - 1];
   if (typeof value !== "number") throw new Error(`cursor parameter was ${typeof value}: ${text}`);
@@ -173,7 +175,7 @@ describe("chat message paging — every row exactly once", () => {
 
     const first = await harness.service.list(CHANNEL_ID, ACTOR, undefined, limit);
     expect(first.messages).toHaveLength(limit);
-    expect(first.nextCursor).toBe(Math.min(...first.messages.map((m) => m.id)));
+    expect(first.nextCursor).toBe(Math.min(...first.messages.map((m) => m.channelPosition)));
 
     const second = await harness.service.list(CHANNEL_ID, ACTOR, first.nextCursor ?? undefined, limit);
     expect(second.messages).toHaveLength(1);

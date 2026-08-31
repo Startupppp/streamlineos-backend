@@ -5,6 +5,7 @@ import { Public } from "../../common/auth/public.decorator";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { SignPublicService } from "./sign-public.service";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import {
   publicAuthSchema,
   publicConsentSchema,
@@ -59,6 +60,7 @@ export class SignPublicController {
   }
 
   @Post(":token/request-otp")
+  @BodylessAction()
   @HttpCode(200)
   @Validate({ params: tokenParams })
   async requestOtp(@Param("token") token: string, @Req() req: Request) {
@@ -116,6 +118,7 @@ export class SignPublicController {
   }
 
   @Post(":token/complete")
+  @BodylessAction()
   @HttpCode(200)
   @Validate({ params: tokenParams })
   async complete(@Param("token") token: string, @Req() req: Request) {

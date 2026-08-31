@@ -53,10 +53,10 @@ describe("PURGE_ADAPTER_REGISTRY — static adapters", () => {
     expect(result.state).toBe("NOT_APPLICABLE");
   });
 
-  it("object_storage → FAILED with org-prefix explanation", async () => {
+  it("object_storage → FAILED when no storage service is provided", async () => {
     const result = await PURGE_ADAPTER_REGISTRY.object_storage.confirm(ORG_A, PURGE_JOB, FAKE_DB);
     expect(result.state).toBe("FAILED");
-    expect(result.detail).toMatch(/org-scoped prefix/i);
+    expect(result.detail).toMatch(/storage service not available/i);
   });
 
   it("analytics_copies → FAILED", async () => {

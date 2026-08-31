@@ -4,6 +4,7 @@ import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { CacheService } from "../../common/cache/cache.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
+import { AblyService } from "../realtime/ably.service";
 
 const ORG = "org1";
 const CH = 1;
@@ -29,6 +30,8 @@ const stubEntities = {
   submitAction: jest.fn(),
   isKnownType: jest.fn().mockReturnValue(true),
 } as unknown as EntityReferenceService;
+
+const stubAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
 
 function makeDb(opts: {
   channelRow?: object | null;
@@ -84,6 +87,7 @@ async function build(db: ReturnType<typeof makeDb>) {
       { provide: DRIZZLE, useValue: db },
       { provide: CacheService, useValue: stubCache },
       { provide: EntityReferenceService, useValue: stubEntities },
+      { provide: AblyService, useValue: stubAbly },
     ],
   }).compile();
   return module.get(ChatChannelMembersService);
@@ -134,7 +138,7 @@ describe("ChatChannelMembersService", () => {
     });
 
     it("updates role when requester is ADMIN", async () => {
-      const db = makeDb({ memberRows: [ADMIN_ROW] });
+      const db = makeDb({ memberRows: [ADMIN_ROW, { id: 10, membershipId: 55 }] });
       const service = await build(db);
       const result = await service.updateMemberRole(CH, TARGET_ID, ADMIN_ID, ORG, "ADMIN");
       expect(db.update).toHaveBeenCalled();

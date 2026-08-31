@@ -19,6 +19,11 @@ const USER: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: {
+    kind: "human-session",
+    membershipId: 1,
+    isOrgOwner: false,
+  },
 };
 
 /** The persisted C2 proposal a confirm re-resolves. */

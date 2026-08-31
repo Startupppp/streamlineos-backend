@@ -1,5 +1,7 @@
 import { Body, Controller, Headers, HttpCode, Post, UnauthorizedException } from "@nestjs/common";
 import { Public } from "../auth/public.decorator";
+import { Validate } from "../validation/validate.decorator";
+import { auditEntrySchema } from "./audit-entry.schema";
 import { AuditService, type AuditEntry } from "./audit.service";
 
 @Controller("internal")
@@ -9,6 +11,7 @@ export class InternalAuditController {
   @Public()
   @Post("audit")
   @HttpCode(201)
+  @Validate({ body: auditEntrySchema })
   logAudit(
     @Headers("x-internal-secret") secret: string | undefined,
     @Body() body: AuditEntry,

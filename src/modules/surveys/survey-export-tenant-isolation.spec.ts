@@ -30,7 +30,7 @@ describe("SurveyExportService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new SurveyExportService(db);
 
-    const result = await svc.exportResponsesCsv(ATTACKER_ORG, 1, {});
+    const result = await svc.exportResponsesCsv(ATTACKER_ORG, 1, { format: "csv" });
 
     const lines = result.csv.split("\n").filter(Boolean);
     expect(lines).toHaveLength(1);
@@ -60,7 +60,7 @@ describe("SurveyExportService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new SurveyExportService(db);
 
-    const result = await svc.exportResponsesCsv(OWNER_ORG, 1, {});
+    const result = await svc.exportResponsesCsv(OWNER_ORG, 1, { format: "csv" });
 
     const lines = result.csv.split("\n").filter(Boolean);
     expect(lines.length).toBeGreaterThan(1);

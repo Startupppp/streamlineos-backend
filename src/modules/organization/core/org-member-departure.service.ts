@@ -126,20 +126,20 @@ export class OrgMemberDepartureService {
             );
 
           await tx
+            .delete(orgUnitMembers)
+            .where(
+              and(
+                eq(orgUnitMembers.membershipId, member.id),
+                eq(orgUnitMembers.orgId, orgId),
+              ),
+            );
+
+          await tx
             .delete(organizationMembers)
             .where(
               and(
                 eq(organizationMembers.userId, memberUserId),
                 eq(organizationMembers.orgId, orgId),
-              ),
-            );
-
-          await tx
-            .delete(orgUnitMembers)
-            .where(
-              and(
-                eq(orgUnitMembers.userId, memberUserId),
-                eq(orgUnitMembers.orgId, orgId),
               ),
             );
 
@@ -252,20 +252,20 @@ export class OrgMemberDepartureService {
             );
 
           await tx
+            .delete(orgUnitMembers)
+            .where(
+              and(
+                eq(orgUnitMembers.membershipId, membership.id),
+                eq(orgUnitMembers.orgId, orgId),
+              ),
+            );
+
+          await tx
             .delete(organizationMembers)
             .where(
               and(
                 eq(organizationMembers.orgId, orgId),
                 eq(organizationMembers.userId, userId),
-              ),
-            );
-
-          await tx
-            .delete(orgUnitMembers)
-            .where(
-              and(
-                eq(orgUnitMembers.userId, userId),
-                eq(orgUnitMembers.orgId, orgId),
               ),
             );
 

@@ -206,11 +206,17 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     }).onConflictDoNothing();
   }
 
+  const membershipRows = await db
+    .select({ userId: organizationMembers.userId, id: organizationMembers.id })
+    .from(organizationMembers)
+    .where(eq(organizationMembers.orgId, ORG_ID));
+  const membershipByUserId = new Map<string, number>(membershipRows.map((m) => [m.userId, m.id]));
+
   for (const d of [
     { name: "Engineering", code: "ENG", headUserId: PEOPLE[0].id },
     { name: "People Operations", code: "HR", headUserId: PEOPLE[1].id },
   ]) {
-    await db.insert(orgUnits).values({ orgId: ORG_ID, kind: "DEPARTMENT", name: d.name, code: d.code, headUserId: d.headUserId }).onConflictDoNothing();
+    await db.insert(orgUnits).values({ orgId: ORG_ID, kind: "DEPARTMENT", name: d.name, code: d.code, headMembershipId: membershipByUserId.get(d.headUserId) ?? null }).onConflictDoNothing();
   }
   const deptUnitRows = await db
     .select({ id: orgUnits.id, name: orgUnits.name })
@@ -221,7 +227,7 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
     { name: "Platform Team", code: "PLAT", leadId: PEOPLE[0].id },
     { name: "Talent Team", code: "TA", leadId: PEOPLE[1].id },
   ]) {
-    await db.insert(orgUnits).values({ orgId: ORG_ID, kind: "TEAM", name: t.name, code: t.code, headUserId: t.leadId }).onConflictDoNothing();
+    await db.insert(orgUnits).values({ orgId: ORG_ID, kind: "TEAM", name: t.name, code: t.code, headMembershipId: membershipByUserId.get(t.leadId) ?? null }).onConflictDoNothing();
   }
   for (const loc of [
     { name: "Mumbai HQ", code: "BOM", city: "Mumbai" },

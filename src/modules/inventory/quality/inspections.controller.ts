@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -23,6 +23,8 @@ import type {
 } from "./dto/quality.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 
 const inspectionIdParams = z.object({ inspectionId: z.coerce.number().int().positive() }).strict();
 
@@ -66,6 +68,7 @@ export class InspectionsController {
   }
 
   @Post(":inspectionId/start")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
   @Validate({ params: inspectionIdParams })
@@ -77,14 +80,16 @@ export class InspectionsController {
   }
 
   @Post(":inspectionId/pass")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:release")
   @Validate({ params: inspectionIdParams })
   pass(
     @Param("inspectionId", ParseIntPipe) id: number,
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
-  ) {return this.svc.pass(u.orgId, u.userId, id, idempotencyKey);
+  ) {
+    return this.svc.pass(u.orgId, u.userId, id, idempotencyKey);
   }
 
   @Post(":inspectionId/fail")
@@ -105,10 +110,11 @@ export class InspectionsController {
   @Validate({ params: inspectionIdParams, body: disposeInspectionSchema })
   dispose(
     @Param("inspectionId", ParseIntPipe) id: number,
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @Body() body: DisposeInspectionInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {return this.svc.dispose(u.orgId, u.userId, id, body, idempotencyKey);
+  ) {
+    return this.svc.dispose(u.orgId, u.userId, id, body, idempotencyKey);
   }
 
   /**
@@ -116,12 +122,13 @@ export class InspectionsController {
    * stock and takes a key like every other command that does.
    */
   @Post(":inspectionId/cancel")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
   @Validate({ params: inspectionIdParams })
   cancel(
     @Param("inspectionId", ParseIntPipe) id: number,
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.cancel(u.orgId, u.userId, id, idempotencyKey);

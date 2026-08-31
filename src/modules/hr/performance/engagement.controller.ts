@@ -21,6 +21,8 @@ import { EngagementService } from "./engagement.service";
 import {
   createEnpsSchema,
   createFeedbackSchema,
+  createOrRespondSurveySchema,
+  createOrSubmitAssessmentSchema,
   createRecognitionSchema,
   submitFeedbackSchema,
   updateSurveySchema,
@@ -89,6 +91,7 @@ export class EngagementController {
   @Post("assessments")
   @HttpCode(201)
   @RequirePermission("hr:engagement:view")
+  @Validate({ body: createOrSubmitAssessmentSchema })
   createOrSubmitAssessment(
     @Headers("x-action") action: string | undefined,
     @Body() body: unknown,
@@ -147,6 +150,7 @@ export class EngagementController {
   @Post("surveys")
   @HttpCode(201)
   @RequirePermission("hr:engagement:view")
+  @Validate({ body: createOrRespondSurveySchema })
   createOrRespondSurvey(
     @Headers("x-action") action: string | undefined,
     @Body() body: unknown,

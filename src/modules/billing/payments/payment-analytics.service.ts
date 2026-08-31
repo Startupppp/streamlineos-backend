@@ -6,9 +6,6 @@ import { organizationMembers } from "../../../db/schema";
 import { OnboardingAnalyticsService } from "../../hr/onboarding/flow/onboarding-analytics.service";
 import { NotificationsService } from "../../notifications/notifications.service";
 
-// Bridges payment lifecycle moments into the existing onboarding activation-metrics pipeline
-// (onboarding_analytics_events, type=payment_setup) and the existing notification system —
-// deliberately reusing both rather than building parallel infra, per 09_Analytics_Notifications.
 @Injectable()
 export class PaymentAnalyticsService {
   constructor(

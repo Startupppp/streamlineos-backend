@@ -29,6 +29,7 @@ import {
 } from "./dto/autonomy-review.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const decisionIdParams = z.object({ decisionId: z.string().min(1) }).strict();
 const shadowScoreIdParams = z.object({ shadowScoreId: z.string().min(1) }).strict();
@@ -129,6 +130,7 @@ export class AutonomyReviewController {
   }
 
   @Post("review-queue/:shadowScoreId/reviewed")
+  @BodylessAction()
   @Idempotent("crm.autonomy.reviewed")
   @RequirePermission(REVIEW_PERMISSION)
   @Validate({ params: shadowScoreIdParams })

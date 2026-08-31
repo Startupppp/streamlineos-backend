@@ -11,75 +11,13 @@ import {
 } from "../inbound-event";
 import type { WebFormField, WebFormSubmission } from "./web-form-submission";
 
-/**
- * Turning a web-form submission into the one event shape.
- *
- * This file's entire responsibility is that translation. It resolves no
- * parties, writes nothing, calls nothing — because the seam exists so that
- * adding a channel requires no change below it, and an adapter that starts
- * making decisions is an adapter that has to be re-tested through the whole
- * pipeline every time a form provider renames a field.
- *
- * What makes this channel different from mail is not the shape, it is the
- * trust. A mailbox hands over what a provider we authorised against says
- * arrived. A form hands over whatever somebody typed into a box, under field
- * names somebody else chose, and every character of it reaches an extractor that
- * can create a task and move a deal. So the rules that look paranoid below are
- * the ones that make this channel safe to have at all:
- *
- *  - the tenant and the form's identity come from the caller's context, never
- *    from the submission;
- *  - the subject is the form's name, never the submitter's words, because the
- *    subject is quoted verbatim into decision summaries a person reads;
- *  - the body is the only place submitted content lands, it is capped, and the
- *    markers that fence untrusted content in the extraction prompt are defused
- *    inside it;
- *  - and a submitter this system cannot resolve produces nothing at all rather
- *    than something approximate.
- *
- * Nothing here lowers a threshold on the grounds that a form feels structured.
- * It is the least authenticated input in the system: a mail message at least
- * came from a mailbox somebody had to control.
- */
-
-/** The seam's channels are fixed; a form submission is a message from its submitter. */
 const CHANNEL: InboundChannel = "message";
 
-/**
- * How much of a submission becomes the body.
- *
- * The seam allows a hundred thousand characters and a mail thread can need
- * them. A form submission cannot: the extractor reads four thousand, a person
- * reads the first screen, and the boundary already caps each field. Staying well
- * under the wire limit also means the truncation marker `capText` appends can
- * never push the body past what `inboundEventSchema` accepts.
- */
 const MAX_BODY_CHARS = 20_000;
-
-/**
- * How far before receipt a provider's own `submittedAt` may reach, and how far
- * ahead of it.
- *
- * The submitter writes everything in the payload, so the only timestamp not
- * under their control is the one we stamp on arrival. A stated time is still
- * worth honouring — a provider retrying a webhook an hour later should not have
- * its submissions bunched at the retry — but only within a window that keeps it
- * a correction rather than a claim. Outside it, receipt time is used and the
- * caller is told: `occurredAt` orders the timeline, and a submission dated 2099
- * would sit at the top of a rep's day for the rest of the product's life.
- */
 const MAX_BACKDATE_MS = 24 * 60 * 60 * 1000;
 const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
-
-/**
- * The shape of a form key.
- *
- * Bounded and lower-case because it becomes the provider label, which the seam
- * caps at sixty characters and uses as half of the deduplication namespace.
- */
 const FORM_KEY = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
-/** The label a provider prefix gives a form, so two channels cannot collide. */
 export function webFormProvider(formKey: string): string {
   return `webform:${formKey}`;
 }
@@ -106,48 +44,15 @@ export type WebFormIngressResult =
   | {
       readonly ok: true;
       readonly event: InboundCommunicationEvent;
-      /**
-       * `occurredAt` is receipt time because the stated one was unusable or out
-       * of bounds. Reported rather than hidden so a provider sending nonsense
-       * timestamps is visible as a fact rather than as a strangely ordered
-       * timeline.
-       */
       readonly occurredAtEstimated: boolean;
-      /**
-       * The provider minted no submission id, so the deduplication key is a hash
-       * of what was submitted.
-       *
-       * The caller needs to know because it changes what "the same delivery"
-       * means: with a provider id, a retry of the same submission is a
-       * duplicate; with a content hash, so is a second, genuinely separate
-       * submission that happens to be character-for-character identical.
-       */
       readonly messageIdDerived: boolean;
     }
   | { readonly ok: false; readonly reason: WebFormSkipReason };
 
-/**
- * A submission as an inbound communication event, or a reason it is not one.
- *
- * Refusing is half the job, and the refusals run first — a submission this
- * adapter cannot attribute to anybody must not be half-built and then thrown
- * away downstream. Each is a named skip rather than a throw, because the caller
- * is an HTTP handler answering a form provider, and one odd submission must not
- * turn into a retry storm.
- */
 export function webFormToInboundEvent(
   submission: WebFormSubmission,
   context: WebFormIngressContext,
 ): WebFormIngressResult {
-  /**
-   * Checked first: without the form's identity there is no provider label.
-   *
-   * Refused rather than defaulted to something generic like `webform`. A shared
-   * label would put every form in the tenant into one deduplication namespace,
-   * where the contact form's submission `1` silently suppresses the careers
-   * form's submission `1` — a lost enquiry that leaves no trace anywhere,
-   * because a suppressed duplicate is the seam working as designed.
-   */
   const formKey = context.formKey?.trim().toLowerCase() ?? "";
   if (!FORM_KEY.test(formKey)) return { ok: false, reason: "unknown-form" };
 
@@ -156,25 +61,6 @@ export function webFormToInboundEvent(
 
   const identity = identify(readings);
 
-  /**
-   * Whichever identifier the submitter gave, labelled as what it is.
-   *
-   * This used to refuse a submitter who left a phone number and no email, under
-   * the name `unresolvable-identity`, because the resolver below the seam
-   * matched against `business_parties.email` and would have written a telephone
-   * number into that column. Ticket 22 keyed the resolver on
-   * `party_identifiers` instead, so a phone number is now an identifier of kind
-   * `phone` and files exactly as an address does — and the refusal is deleted
-   * rather than left beside the new path, because two ways of handling the same
-   * submission is how one of them silently stops being reached.
-   *
-   * Email is preferred where both were given: it is the channel this system can
-   * currently reply on, and the one a form labels explicitly most often.
-   *
-   * A submission with neither is still `no-identity`. That is not the same gap
-   * — it is a form somebody put no contact details into, and there is nobody to
-   * file it against at all.
-   */
   const sender = identity.email
     ? { address: identity.email, identifierKind: "email" as IdentifierKind }
     : identity.phone
@@ -204,26 +90,8 @@ export function webFormToInboundEvent(
       channel: CHANNEL,
       provider: webFormProvider(formKey),
       providerMessageId: messageId.value,
-      /**
-       * Every submission is its own thread, and it has to be said explicitly.
-       *
-       * A form is not a conversation, so there is no provider thread to carry.
-       * But leaving this null does not mean "no thread" — `threadIdentity` falls
-       * back to the organisation and the subject, and the subject of every
-       * submission to one form is identical, so a thousand unrelated enquiries
-       * would be filed as one thread a thousand messages long.
-       */
       providerThreadId: messageId.value,
       occurredAt: occurredAt.iso,
-      /**
-       * The form's name, never the submitter's words.
-       *
-       * The subject is quoted verbatim into `autonomous_decisions.summary`,
-       * which a manager reads in the review feed, and it joins the conversation
-       * the extractor sees. A submitted field called "Subject" reaching either
-       * would be attacker-authored text in the one part of the context that is
-       * outside the untrusted-content fence.
-       */
       subject: capText(sanitise(context.formName ?? formKey), 200) || formKey,
       body: bodyOf(readings),
       participants,

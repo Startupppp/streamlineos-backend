@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq, and, asc, sql, count, or, ilike, gt, type SQL } from "drizzle-orm";
+import { buildIdCursorPage } from "../../common/pagination/cursor";
 import { alias } from "drizzle-orm/pg-core";
 import { deals } from "../../db/schema";
 import { businessParties, contactPartyMap } from "../../db/schema/party";
@@ -70,7 +71,7 @@ export class ContactsService {
   ) {}
 
   list(orgId: string, filters: ListInput) {
-    const hash = `${filters.search ?? ""}:${filters.organizationId ?? ""}:${filters.limit ?? ""}:${filters.offset ?? ""}`;
+    const hash = `${filters.search ?? ""}:${filters.organizationId ?? ""}:${filters.limit ?? ""}:${filters.cursor ?? ""}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.contactsListNamespace(orgId),
       hash,
@@ -114,6 +115,7 @@ export class ContactsService {
         twitterUrl: CONTACT_PARTY_COLUMNS.twitterUrl,
         websiteUrl: CONTACT_PARTY_COLUMNS.websiteUrl,
         avatarUrl: CONTACT_PARTY_COLUMNS.avatarUrl,
+        notes: CONTACT_PARTY_COLUMNS.notes,
         tags: CONTACT_PARTY_COLUMNS.tags,
         deletedAt: CONTACT_PARTY_COLUMNS.deletedAt,
         createdAt: CONTACT_PARTY_COLUMNS.createdAt,
@@ -209,46 +211,48 @@ export class ContactsService {
   }
 
   private async queryContacts(orgId: string, filters: ListInput) {
-    /*
-     * The employer filter arrives as a `crm_organizations` id and is turned into
-     * the party it means once, here, rather than joining the map into the query.
-     * That keeps the predicate on `employer_party_id` -- which is indexed and
-     * cannot multiply rows -- and an id naming no company in this tenant returns
-     * nothing, which is what filtering on it has always done.
-     */
     const employerPartyId = filters.organizationId
       ? ((await partyIdsOfCrmOrgs(this.db, orgId, [filters.organizationId])).get(
           filters.organizationId,
         ) ?? null)
       : null;
-    if (filters.organizationId && !employerPartyId) return { items: [], total: 0 };
+    if (filters.organizationId && !employerPartyId) return { items: [], total: 0, hasMore: false, nextCursor: null };
 
+    const afterId = filters.cursor !== undefined ? Number(filters.cursor) : undefined;
     const conditions = this.listConditions(orgId, filters, employerPartyId);
+    if (afterId !== undefined && !Number.isNaN(afterId))
+      conditions.push(gt(CONTACT_PARTY_COLUMNS.id, afterId));
     const whereClause = and(...conditions);
-    const [totalResult, rows] = await Promise.all([
-      this.db
-        .select({ count: count() })
-        .from(contactPartyMap)
-        .innerJoin(businessParties, CONTACT_PARTY_JOIN)
-        .where(whereClause),
+    const limit = filters.limit ?? 50;
+
+    const [countResult, rows] = await Promise.all([
+      afterId === undefined
+        ? this.db
+            .select({ count: count() })
+            .from(contactPartyMap)
+            .innerJoin(businessParties, CONTACT_PARTY_JOIN)
+            .where(and(...this.listConditions(orgId, filters, employerPartyId)))
+        : Promise.resolve(null),
       this.contactBase(orgId)
         .where(whereClause)
-        // Names repeat, and this list pages by offset -- without a unique
-        // tiebreaker two people called "John Smith" can appear on both page one
-        // and page two while somebody else appears on neither.
         .orderBy(asc(CONTACT_PARTY_COLUMNS.name), asc(CONTACT_PARTY_COLUMNS.id))
-        .limit(filters.limit ?? 50)
-        .offset(filters.offset ?? 0),
+        .limit(limit + 1),
     ]);
 
-    const items = (await this.withAssociationIds(orgId, rows)).map(
+    const cursorPage = buildIdCursorPage(rows, limit, (r) => r.id);
+    const items = (await this.withAssociationIds(orgId, cursorPage.data)).map(
       ({ leadName, dealName, crmOrganizationName, ...contact }) => ({
         ...contact,
         ...associationsOf({ ...contact, leadName, dealName, crmOrganizationName }),
       }),
     );
 
-    return { items, total: totalResult[0]?.count ?? 0 };
+    return {
+      items,
+      total: countResult ? Number(countResult[0]?.count ?? 0) : undefined,
+      hasMore: cursorPage.hasMore,
+      nextCursor: cursorPage.nextCursor !== null ? String(cursorPage.nextCursor) : null,
+    };
   }
 
   search(orgId: string, query: string) {
@@ -321,6 +325,7 @@ export class ContactsService {
       linkedinUrl: input.linkedinUrl,
       twitterUrl: input.twitterUrl,
       websiteUrl: input.websiteUrl,
+      notes: input.notes,
       leadId: input.leadId,
       dealId: input.dealId,
       tags: input.tags,
@@ -357,6 +362,7 @@ export class ContactsService {
       phone: row.phone?.trim() || null,
       company: row.company?.trim() || null,
       title: row.title?.trim() || null,
+      notes: row.notes?.trim() || null,
       tags: [],
     }));
 

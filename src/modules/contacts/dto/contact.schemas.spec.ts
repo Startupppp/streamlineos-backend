@@ -1,11 +1,11 @@
 import { listSchema, searchSchema, createSchema, updateSchema } from "./contact.schemas";
 
 describe("contact schemas", () => {
-  it("listSchema coerces organizationId/limit/offset and enforces limit<=100", () => {
-    expect(listSchema.parse({ organizationId: "5", limit: "50", offset: "10" })).toMatchObject({
+  it("listSchema coerces organizationId/limit and enforces limit<=100", () => {
+    expect(listSchema.parse({ organizationId: "5", limit: "50", cursor: "tok" })).toMatchObject({
       organizationId: 5,
       limit: 50,
-      offset: 10,
+      cursor: "tok",
     });
     expect(listSchema.parse({ limit: "500" }).limit).toBe(100);
   });

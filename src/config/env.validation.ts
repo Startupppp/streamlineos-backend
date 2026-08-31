@@ -37,7 +37,10 @@ const baseSchema = z
     /** Release identifier stamped onto every error report and span. */
     APP_RELEASE: z.preprocess(emptyToUndefined, z.string().optional()),
     /** Set to "false" to disable RouteClassifierGuard's boot-time and request-time enforcement. */
-    REQUIRE_ROUTE_CLASSIFICATION: z.preprocess(emptyToUndefined, z.string().optional()),
+    REQUIRE_ROUTE_CLASSIFICATION: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
     /** Comma-separated regions this deployment serves; each secondary needs its own REGION_<KEY>_APP_DATABASE_URL. */
     REGION_KEYS: z.preprocess(emptyToUndefined, z.string().optional()),
     /** The cell this deployment is. Defaults to `legacy-1`, the pre-cell production deployment. */
@@ -235,11 +238,6 @@ const baseSchema = z
     ),
     VIRUSTOTAL_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
     OUTBOX_DISPATCH_ENABLED: z.preprocess(
-      emptyToUndefined,
-      z.enum(["true", "false"]).optional(),
-    ),
-    /** Turns an undeclared route from a logged warning into a hard failure. */
-    REQUIRE_ROUTE_CLASSIFICATION: z.preprocess(
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
     ),

@@ -10,10 +10,11 @@ import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { createTenantAwareDb, type DbWithClient } from "../common/tenant/tenant-db";
-import { DB_POOL_CONFIG, DRIZZLE } from "./drizzle.constants";
+import { DB_POOL_CONFIG, DRIZZLE, DRIZZLE_REPLICA, REPLICA_ROUTER } from "./drizzle.constants";
 import { poolTelemetry } from "./pool-telemetry";
 import { instrumentPostgresClient } from "./query-telemetry";
 import { resolvePoolConfig, type ResolvedPoolConfig } from "./pool.config";
+import { ReplicaRouter, type PoolHandle } from "./replica-router";
 import * as schema from "./schema";
 
 export type { Db } from "./drizzle.types";
@@ -34,14 +35,44 @@ export type { Db } from "./drizzle.types";
         return createTenantAwareDb(Object.assign(drizzle(client, { schema }), { __client: client }));
       },
     },
+    {
+      provide: DRIZZLE_REPLICA,
+      inject: [DB_POOL_CONFIG],
+      useFactory: (config: ResolvedPoolConfig): DbWithClient => {
+        const isReplica = !!config.replicaConnectionString;
+        const connectionString = config.replicaConnectionString ?? config.connectionString;
+        if (!isReplica)
+          new Logger("Drizzle").log(
+            "DB_REPLICA_URL is unset — replica reads fall through to primary connection string",
+          );
+        const options = {
+          ...config.options,
+          max: isReplica ? Math.max(2, Math.floor(config.max / 2)) : 2,
+        };
+        const client = instrumentPostgresClient(postgres(connectionString, options));
+        return Object.assign(drizzle(client, { schema }), { __client: client });
+      },
+    },
+    {
+      provide: REPLICA_ROUTER,
+      inject: [DB_POOL_CONFIG],
+      useFactory: (config: ResolvedPoolConfig): ReplicaRouter => {
+        const primary: PoolHandle = { id: "primary", connectionString: config.connectionString };
+        const replica: PoolHandle | null = config.replicaConnectionString
+          ? { id: "replica", connectionString: config.replicaConnectionString }
+          : null;
+        return new ReplicaRouter(primary, replica);
+      },
+    },
   ],
-  exports: [DRIZZLE, DB_POOL_CONFIG],
+  exports: [DRIZZLE, DB_POOL_CONFIG, DRIZZLE_REPLICA, REPLICA_ROUTER],
 })
 export class DrizzleModule implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly logger = new Logger("Drizzle");
 
   constructor(
     @Inject(DRIZZLE) private readonly db: DbWithClient,
+    @Inject(DRIZZLE_REPLICA) private readonly replicaDb: DbWithClient,
     @Inject(DB_POOL_CONFIG) private readonly config: ResolvedPoolConfig,
   ) {}
 
@@ -119,5 +150,6 @@ export class DrizzleModule implements OnApplicationBootstrap, OnApplicationShutd
     if (inFlight > 0 || waiting > 0)
       this.logger.log(`Draining pool — ${inFlight} in flight, ${waiting} queued`);
     await this.db.__client.end({ timeout: this.config.shutdownTimeoutSeconds });
+    await this.replicaDb.__client.end({ timeout: this.config.shutdownTimeoutSeconds });
   }
 }

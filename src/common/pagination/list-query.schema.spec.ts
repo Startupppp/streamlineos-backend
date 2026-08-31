@@ -316,7 +316,7 @@ describe("migrated schemas — clamp at their ceiling and preserve their own def
       const result = listJournalQuerySchema.parse({});
       expect(result.limit).toBe(20);
       if (Object.prototype.hasOwnProperty.call(result, "page")) {
-        expect(result.page).toBe(1);
+        expect((result as any).page).toBe(1);
       }
     });
 

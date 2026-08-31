@@ -26,6 +26,7 @@ import {
 } from "./dto/enterprise-comp.schemas";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const seedPresetsSchema = z.object({ countryCode: z.string().length(2), periodKey: z.string().min(7) }).strict();
 const varianceIdParams = z.object({ varianceId: z.coerce.number().int().positive() }).strict();
@@ -98,6 +99,7 @@ export class PayrollComplianceController {
   }
 
   @Patch("arrears/:arrearId/apply")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
   @Validate({ params: arrearIdParams })

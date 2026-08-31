@@ -21,6 +21,7 @@ import {
 import { HrWorkflowInstancesService } from "./hr-workflow-instances.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const workflowIdParams = z.object({ workflowId: z.coerce.number().int().positive() }).strict();
 
@@ -91,6 +92,7 @@ export class HrWorkflowDefinitionsController {
   }
 
   @Post(":workflowId/activate")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @HttpCode(200)
@@ -103,6 +105,7 @@ export class HrWorkflowDefinitionsController {
   }
 
   @Post(":workflowId/archive")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @HttpCode(200)
@@ -115,6 +118,7 @@ export class HrWorkflowDefinitionsController {
   }
 
   @Post(":workflowId/duplicate")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:manage")
   @Validate({ params: workflowIdParams })

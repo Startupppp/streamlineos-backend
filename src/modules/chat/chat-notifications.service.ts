@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { chatChannelMembers } from "../../db/schema";
+import { chatChannelMembers, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AblyService } from "../realtime/ably.service";
@@ -61,11 +61,12 @@ export class ChatNotificationsService {
   ) {
     const members = await this.db
       .select({
-        userId: chatChannelMembers.userId,
+        userId: organizationMembers.userId,
         mutedUntil: chatChannelMembers.mutedUntil,
         notificationPreference: chatChannelMembers.notificationPreference,
       })
       .from(chatChannelMembers)
+      .innerJoin(organizationMembers, eq(organizationMembers.id, chatChannelMembers.membershipId))
       .where(and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)));
 
     const settings = await this.orgSettings.getSettings(orgId);
@@ -116,15 +117,16 @@ export class ChatNotificationsService {
 
     const members = await this.db
       .select({
-        userId: chatChannelMembers.userId,
+        userId: organizationMembers.userId,
         notificationPreference: chatChannelMembers.notificationPreference,
       })
       .from(chatChannelMembers)
+      .innerJoin(organizationMembers, eq(organizationMembers.id, chatChannelMembers.membershipId))
       .where(
         and(
           eq(chatChannelMembers.orgId, orgId),
           eq(chatChannelMembers.channelId, channelId),
-          inArray(chatChannelMembers.userId, mentionedUserIds),
+          inArray(organizationMembers.userId, mentionedUserIds),
         ),
       );
     const preferenceByUser = new Map(members.map((m) => [m.userId, m.notificationPreference]));

@@ -1,3 +1,4 @@
+import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import { pageVisibleTo } from "./kb-page-visibility";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -87,6 +88,7 @@ describe("KbSearchService — page retrieval crosses the visibility seam", () =>
       access as never,
       makeEmbeddings() as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     const user = makeUser();
@@ -104,6 +106,7 @@ describe("KbSearchService — page retrieval crosses the visibility seam", () =>
       access as never,
       makeEmbeddings() as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     const user = makeUser();
@@ -120,6 +123,7 @@ describe("KbSearchService — page retrieval crosses the visibility seam", () =>
       access as never,
       makeEmbeddings() as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     const user = makeUser();
@@ -140,6 +144,7 @@ describe("KbSearchService — page retrieval crosses the visibility seam", () =>
       access as never,
       makeConfiguredEmbeddings() as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     const user = makeUser();

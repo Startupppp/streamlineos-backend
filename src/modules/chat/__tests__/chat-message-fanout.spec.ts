@@ -27,10 +27,12 @@ function makeDb() {
   chain.query = {
     chatChannelMembers: {
       findFirst: jest.fn().mockResolvedValue({ userId: "sender" }),
+      // The roster is read through the membership relation now, not a user_id
+      // column on chat_channel_members.
       findMany: jest.fn().mockResolvedValue([
-        { userId: "sender" },
-        { userId: "user-alex" },
-        { userId: "user-alexander" },
+        { membership: { userId: "sender" } },
+        { membership: { userId: "user-alex" } },
+        { membership: { userId: "user-alexander" } },
       ]),
     },
     chatChannels: { findFirst: jest.fn().mockResolvedValue({ type: "PUBLIC" }) },

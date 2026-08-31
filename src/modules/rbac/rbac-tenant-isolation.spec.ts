@@ -26,7 +26,10 @@ describe("RbacService — cross-tenant isolation", () => {
   it("returns empty members for a different org (cross-tenant isolation)", async () => {
     const { db, where } = makeDb([]);
     const mockAccess = {} as any;
-    const mockCache = { cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()) } as any;
+    const mockCache = {
+      cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
+      cachedForOrg: jest.fn().mockImplementation((_o: unknown, _n: unknown, fn: () => Promise<unknown>) => fn()),
+    } as any;
     const svc = new RbacService(db, mockAccess, mockCache);
     const result = await svc.getDiscoveryMembers(ATTACKER);
     expect(result).toHaveLength(0);
@@ -38,7 +41,10 @@ describe("RbacService — cross-tenant isolation", () => {
     const memberRow = { userId: "u-1", name: "Alice", email: "alice@owner.com" };
     const { db } = makeDb([memberRow]);
     const mockAccess = {} as any;
-    const mockCache = { cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()) } as any;
+    const mockCache = {
+      cached: jest.fn().mockImplementation((_k: unknown, fn: () => Promise<unknown>) => fn()),
+      cachedForOrg: jest.fn().mockImplementation((_o: unknown, _n: unknown, fn: () => Promise<unknown>) => fn()),
+    } as any;
     const svc = new RbacService(db, mockAccess, mockCache);
     const result = await svc.getDiscoveryMembers(OWNER);
     expect(result).toHaveLength(1);

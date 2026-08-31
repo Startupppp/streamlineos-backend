@@ -241,7 +241,8 @@ export class LeavesService {
           rejected: sql<number>`SUM(CASE WHEN ${leaveRequests.status} = 'REJECTED' THEN 1 ELSE 0 END)`.mapWith(Number),
         })
         .from(leaveRequests)
-        .innerJoin(orgUnitMembers, eq(orgUnitMembers.userId, leaveRequests.userId))
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, leaveRequests.orgId), eq(organizationMembers.userId, leaveRequests.userId)))
+        .innerJoin(orgUnitMembers, eq(orgUnitMembers.membershipId, organizationMembers.id))
         .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
         .where(
           and(
@@ -302,7 +303,8 @@ export class LeavesService {
           ), 1)`.mapWith(Number),
         })
         .from(leaveRequests)
-        .innerJoin(orgUnitMembers, eq(orgUnitMembers.userId, leaveRequests.userId))
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, leaveRequests.orgId), eq(organizationMembers.userId, leaveRequests.userId)))
+        .innerJoin(orgUnitMembers, eq(orgUnitMembers.membershipId, organizationMembers.id))
         .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
         .where(
           and(

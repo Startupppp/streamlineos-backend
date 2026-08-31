@@ -170,13 +170,13 @@ describe("relational query routing through real Drizzle internals", () => {
       Object.assign(db, { __client: poolClient }) as unknown as DbWithClient,
     );
 
-    await (db as { session: { transaction: (fn: (tx: TenantTx) => Promise<void>) => Promise<void> } }).session.transaction(
-      async (tx: TenantTx) => {
-        await service.run({ orgId: "org-1", audience: "INTERNAL", tx }, async () => {
+    await db.transaction(
+      async (tx: any) => {
+        await service.run({ orgId: "org-1", audience: "INTERNAL", tx: tx as TenantTx }, async () => {
           txUnsafe.mockClear();
           poolUnsafe.mockClear();
 
-          await (proxy as { query: { testProjects: { findFirst: (cfg: unknown) => Promise<unknown> } } }).query.testProjects.findFirst({
+          await (proxy as unknown as { query: { testProjects: { findFirst: (cfg: unknown) => Promise<unknown> } } }).query.testProjects.findFirst({
             with: { members: true },
           });
 
@@ -192,8 +192,8 @@ describe("relational query routing through real Drizzle internals", () => {
 
     const db = drizzle(poolClient as never, { schema: testSchema });
 
-    await (db as { session: { transaction: (fn: (tx: TenantTx) => Promise<void>) => Promise<void> } }).session.transaction(
-      async (_tx: TenantTx) => {
+    await db.transaction(
+      async (_tx: any) => {
         poolUnsafe.mockClear();
         txUnsafe.mockClear();
 

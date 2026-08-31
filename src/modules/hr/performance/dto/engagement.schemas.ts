@@ -106,6 +106,9 @@ export const updateSurveySchema = z.object({
   title: z.string().min(1).max(200).optional(),
 });
 
+export const createOrSubmitAssessmentSchema = z.union([submitAssessmentSchema, createAssessmentSchema]);
+export const createOrRespondSurveySchema = z.union([submitSurveyResponseSchema, createSurveySchema]);
+
 export type CreateFeedbackInput = z.infer<typeof createFeedbackSchema>;
 export type SubmitFeedbackInput = z.infer<typeof submitFeedbackSchema>;
 export type CreateRecognitionInput = z.infer<typeof createRecognitionSchema>;

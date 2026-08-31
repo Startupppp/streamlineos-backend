@@ -32,11 +32,12 @@ export class ChatPresenceService {
 
   async heartbeat(userId: string, orgId: string) {
     const membershipId = await this.resolveMembershipId(orgId, userId);
+    if (!membershipId) return { ok: true };
     await this.db
       .insert(chatUserPresence)
-      .values({ userId, orgId, membershipId, status: "ONLINE", lastSeenAt: new Date() })
+      .values({ orgId, membershipId, status: "ONLINE", lastSeenAt: new Date() })
       .onConflictDoUpdate({
-        target: [chatUserPresence.orgId, chatUserPresence.userId],
+        target: [chatUserPresence.orgId, chatUserPresence.membershipId],
         set: { status: "ONLINE", lastSeenAt: new Date() },
       });
 
@@ -48,32 +49,37 @@ export class ChatPresenceService {
 
     return this.db
       .select({
-        userId: chatUserPresence.userId,
+        userId: organizationMembers.userId,
         status: chatUserPresence.status,
         lastSeenAt: chatUserPresence.lastSeenAt,
         userName: users.name,
         userImage: users.image,
       })
       .from(chatUserPresence)
-      .innerJoin(users, eq(chatUserPresence.userId, users.id))
+      .innerJoin(organizationMembers, eq(organizationMembers.id, chatUserPresence.membershipId))
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(and(eq(chatUserPresence.orgId, orgId), gt(chatUserPresence.lastSeenAt, cutoff)));
   }
 
   async setStatus(userId: string, orgId: string, body: StatusInput) {
     const membershipId = await this.resolveMembershipId(orgId, userId);
+    if (!membershipId) return { ok: true };
     await this.db
       .insert(chatUserPresence)
-      .values({ userId, orgId, membershipId, status: body.status, lastSeenAt: new Date() })
+      .values({ orgId, membershipId, status: body.status, lastSeenAt: new Date() })
       .onConflictDoUpdate({
-        target: [chatUserPresence.orgId, chatUserPresence.userId],
+        target: [chatUserPresence.orgId, chatUserPresence.membershipId],
         set: { status: body.status, lastSeenAt: new Date() },
       });
 
     return { ok: true };
   }
 
-  async getUnreadTotal(userId: string): Promise<number> {
+  async getUnreadTotal(userId: string, orgId: string): Promise<number> {
     try {
+      const membershipId = await this.resolveMembershipId(orgId, userId);
+      if (!membershipId) return 0;
+      const memberWhere = eq(chatChannelMembers.membershipId, membershipId);
       const [row] = await this.db
         .select({ total: count() })
         .from(chatChannelMembers)
@@ -85,7 +91,7 @@ export class ChatPresenceService {
             eq(chatMessages.isDeleted, false),
           ),
         )
-        .where(eq(chatChannelMembers.userId, userId));
+        .where(memberWhere);
 
       return row?.total ?? 0;
     } catch (error) {
@@ -97,15 +103,18 @@ export class ChatPresenceService {
   }
 
   async searchMessages(userId: string, orgId: string, query: string, channelId: number | undefined, limit: number) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
+    if (!membershipId) return [];
+    const memberExistsCondition = sql`EXISTS (SELECT 1 FROM ${chatChannelMembers} m
+                    WHERE m.channel_id = ${chatMessages.channelId}
+                      AND m.org_id = ${orgId}
+                      AND m.membership_id = ${membershipId})`;
     const safeQuery = query.replace(/[%_\\]/g, "\\$&");
     const conditions = [
       eq(chatMessages.orgId, orgId),
       ilike(chatMessages.content, `%${safeQuery}%`),
       eq(chatMessages.isDeleted, false),
-      sql`EXISTS (SELECT 1 FROM ${chatChannelMembers} m
-                  WHERE m.channel_id = ${chatMessages.channelId}
-                    AND m.org_id = ${orgId}
-                    AND m.user_id = ${userId})`,
+      memberExistsCondition,
     ];
 
     if (channelId) conditions.push(eq(chatMessages.channelId, channelId));

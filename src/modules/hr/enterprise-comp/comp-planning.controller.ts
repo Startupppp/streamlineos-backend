@@ -29,6 +29,7 @@ import {
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const cycleIdParams = z.object({ cycleId: z.coerce.number().int().positive() }).strict();
 const recIdParams = z.object({ recId: z.coerce.number().int().positive() }).strict();
@@ -145,6 +146,7 @@ export class CompPlanningController {
   }
 
   @Patch("recommendations/:recId/submit")
+  @BodylessAction()
   @Idempotent("hr.comp-recommendation.submit")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")

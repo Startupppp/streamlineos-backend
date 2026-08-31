@@ -16,7 +16,8 @@ import {
   orgAiCredits,
 } from "../../../db/schema";
 import { TRIAL_GRANT_MILLI } from "./ai-credit-units";
-import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { runInTenantTransaction, runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { forEachOrg } from "../../../common/tenant";
 import type {
   AiCreditReserveInput,
   AiCreditSettleInput,
@@ -278,31 +279,32 @@ export class AiCreditsReservationService {
 
   async sweepExpiredReservations(): Promise<number> {
     const now = new Date();
-    const expired = await this.db
-      .select({
-        id: aiCreditReservations.id,
-        orgId: aiCreditReservations.orgId,
-      })
-      .from(aiCreditReservations)
-      .where(
-        and(
-          eq(aiCreditReservations.status, "RESERVED"),
-          lte(aiCreditReservations.expiresAt, now),
-        ),
-      )
-      .limit(500);
-
     let swept = 0;
-    for (const row of expired) {
-      try {
-        await this.release(row.id, "expired", row.orgId);
-        swept++;
-      } catch (err) {
-        this.logger.warn(
-          `Failed to sweep expired reservation ${row.id}: ${err instanceof Error ? err.message : String(err)}`,
-        );
+    await forEachOrg(this.db, "sweep:expired-ai-reservations", async (tx, orgId) => {
+      const expired = await tx
+        .select({ id: aiCreditReservations.id })
+        .from(aiCreditReservations)
+        .where(
+          and(
+            eq(aiCreditReservations.orgId, orgId),
+            eq(aiCreditReservations.status, "RESERVED"),
+            lte(aiCreditReservations.expiresAt, now),
+          ),
+        )
+        .limit(500);
+      for (const row of expired) {
+        try {
+          await runInNewTenantTransaction(this.db, orgId, () =>
+            this.release(row.id, "expired", orgId),
+          );
+          swept++;
+        } catch (err) {
+          this.logger.warn(
+            `Failed to sweep expired reservation ${row.id}: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
-    }
+    });
     return swept;
   }
 }

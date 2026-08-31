@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const sizeEnum = z.enum(["1-10", "11-50", "51-200", "201-1000", "1000+"]);
 
 export const organizationListSchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   pageSize: pageSizeField(20),
   q: z.string().trim().max(200).optional(),
   search: z.string().trim().max(200).optional(),
@@ -46,7 +46,7 @@ export const mergeOrgsSchema = z.object({
 });
 
 export const orgDuplicatesQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20),
 });
 

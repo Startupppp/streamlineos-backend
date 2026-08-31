@@ -29,14 +29,15 @@ describe("ApprovalPoliciesService — cross-tenant isolation", () => {
     const from = jest.fn().mockReturnValue({ where });
     const select = jest.fn().mockReturnValue({ from });
     const db = { select } as unknown as Db;
-    const svc = new ApprovalPoliciesService(db, {} as never);
+    const audit = { log: jest.fn() } as any;
+    const svc = new ApprovalPoliciesService(db, audit);
     return { svc, where };
   }
 
   it("scopes list to the requesting org (tenant isolation)", async () => {
     const { svc, where } = makeService([]);
 
-    await svc.list(ATTACKER_ORG, undefined, 20);
+    await svc.list(ATTACKER_ORG, 1, 20);
 
     expect(where).toHaveBeenCalled();
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
@@ -46,7 +47,7 @@ describe("ApprovalPoliciesService — cross-tenant isolation", () => {
   it("returns items for the owning org (same-tenant control)", async () => {
     const { svc } = makeService([{ id: 1, orgId: OWNER_ORG }]);
 
-    const result = await svc.list(OWNER_ORG, undefined, 20);
+    const result = await svc.list(OWNER_ORG, 1, 20);
 
     expect(result.items).toHaveLength(1);
   });

@@ -8,7 +8,8 @@ import { type Db } from "../../../db/drizzle.module";
 export class SalaryStructureTemplatesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  list(orgId: string) {
+  list(orgId: string, page = 1, limit = 50) {
+    const cap = Math.min(limit, 100);
     return this.db
       .select({
         id: salaryStructureTemplates.id,
@@ -30,7 +31,8 @@ export class SalaryStructureTemplatesService {
       .from(salaryStructureTemplates)
       .where(eq(salaryStructureTemplates.orgId, orgId))
       .orderBy(desc(salaryStructureTemplates.createdAt))
-      .limit(100);
+      .limit(cap)
+      .offset((page - 1) * cap);
   }
 
   async create(

@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Redis } from "@upstash/redis";
 import { randomUUID } from "node:crypto";
 import { withSpan } from "../observability/tracing";
@@ -8,6 +8,7 @@ export const REDIS = "REDIS";
 
 @Injectable()
 export class CacheService {
+  private readonly logger = new Logger(CacheService.name);
   private readonly inFlight = new Map<string, Promise<unknown>>();
   private readonly regionalRedis = new Map<string, Redis>();
 
@@ -58,7 +59,8 @@ export class CacheService {
     if (!redis) return;
     try {
       await this.timedRedis(() => redis.incr(this.namespaceVersionKey(namespace)));
-    } catch {
+    } catch (err) {
+      this.logger.warn(`cache invalidateNamespace failed: ${namespace}`, err);
       return;
     }
   }
@@ -170,7 +172,8 @@ export class CacheService {
     if (!redis) return;
     try {
       await this.timedRedis(() => redis.del(key));
-    } catch {
+    } catch (err) {
+      this.logger.warn(`cache invalidate failed: ${key}`, err);
       return;
     }
   }
@@ -255,7 +258,8 @@ export class CacheService {
     if (!redis) return;
     try {
       await this.timedRedis(() => redis.incr(this.namespaceVersionKey(ns)));
-    } catch {
+    } catch (err) {
+      this.logger.warn(`cache invalidateNamespaceForOrg failed: ${ns}`, err);
       return;
     }
   }
@@ -267,7 +271,8 @@ export class CacheService {
     if (!redis) return;
     try {
       await this.timedRedis(() => redis.del(key));
-    } catch {
+    } catch (err) {
+      this.logger.warn(`cache invalidateForOrg failed: ${key}`, err);
       return;
     }
   }

@@ -1,5 +1,5 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, asc, inArray, sql } from "drizzle-orm";
 import { livePersonOfUser, primaryEmploymentOfPerson, orgUnitInOrg } from "../../directory/employment-query";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -14,7 +14,7 @@ import {
   users,
 } from "../../../db/schema";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
-import { findRunForMonth, getLineItemsForRun, type LineItemFilters, type RunRow } from "./lib/report-builders";
+import { findRunForMonth, getLineItemsForRun, getRunEmployeeIds, type LineItemFilters, type RunRow } from "./lib/report-builders";
 
 type SalaryComponentCategory = typeof payrollLineItems.$inferSelect["category"];
 
@@ -95,12 +95,6 @@ function deltaDec(a: string, b: string): string {
   return (parseFloat(b) - parseFloat(a)).toFixed(2);
 }
 
-function applyPage<T>(rows: T[], pagination: PaginationParams): T[] {
-  const limit = Math.min(pagination.limit ?? 100, 100);
-  const offset = pagination.offset ?? 0;
-  return rows.slice(offset, offset + limit);
-}
-
 function pivotByEmployee(
   items: Awaited<ReturnType<typeof getLineItemsForRun>>,
   categoryFilter: (cat: SalaryComponentCategory) => boolean,
@@ -162,7 +156,13 @@ export class ReportsService {
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
 
-    const items = await getLineItemsForRun(this.db, orgId, run.id, filters);
+    const limit = Math.min(pagination.limit ?? 100, 100);
+    const offset = pagination.offset ?? 0;
+    const runEmployeeIds = await getRunEmployeeIds(this.db, orgId, run.id, filters, limit, offset);
+
+    if (runEmployeeIds.length === 0) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
+
+    const items = await getLineItemsForRun(this.db, orgId, run.id, undefined, runEmployeeIds);
     const empMap = new Map<string, EmployeeRegisterRow>();
 
     for (const { lineItem, runEmployee, userName, userDept } of items) {
@@ -186,9 +186,8 @@ export class ReportsService {
       row.components[lineItem.code] = (parseFloat(existing) + parseFloat(lineItem.amount)).toFixed(2);
     }
 
-    const allRows = [...empMap.values()];
-    const columns = [...new Set(allRows.flatMap((r) => Object.keys(r.components)))].sort();
-    const rows = applyPage(allRows, pagination);
+    const rows = [...empMap.values()];
+    const columns = [...new Set(rows.flatMap((r) => Object.keys(r.components)))].sort();
     return { provisional, columns, rows };
   }
 
@@ -197,9 +196,12 @@ export class ReportsService {
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, rows: [] as DeptCostRow[] };
 
-    const whereClause = filters.workerType
-      ? and(eq(payrollRunEmployees.runId, run.id), eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]))
-      : eq(payrollRunEmployees.runId, run.id);
+    const limit = Math.min(pagination.limit ?? 100, 100);
+    const offset = pagination.offset ?? 0;
+
+    const deptConditions = [eq(payrollRunEmployees.runId, run.id)];
+    if (filters.workerType) deptConditions.push(eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]));
+    if (filters.department) deptConditions.push(eq(orgUnits.name, filters.department));
 
     const aggRows = await this.db
       .select({
@@ -214,20 +216,20 @@ export class ReportsService {
       .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
       .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .leftJoin(orgUnits, and(orgUnitInOrg(orgId, hrEmployments.departmentId), eq(orgUnits.kind, "DEPARTMENT")))
-      .where(whereClause)
-      .groupBy(orgUnits.name);
+      .where(and(...deptConditions))
+      .groupBy(orgUnits.name)
+      .limit(limit)
+      .offset(offset);
 
-    const allRows: DeptCostRow[] = aggRows
-      .filter((r) => !filters.department || r.department === filters.department)
-      .map((r) => ({
-        department: r.department ?? null,
-        employeeCount: r._count,
-        grossTotal: r.grossTotal,
-        netTotal: r.netTotal,
-        employerCostTotal: r.employerCostTotal,
-      }));
+    const rows: DeptCostRow[] = aggRows.map((r) => ({
+      department: r.department ?? null,
+      employeeCount: r._count,
+      grossTotal: r.grossTotal,
+      netTotal: r.netTotal,
+      employerCostTotal: r.employerCostTotal,
+    }));
 
-    return { provisional, rows: applyPage(allRows, pagination) };
+    return { provisional, rows };
   }
 
   async getCostCenter(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
@@ -235,9 +237,12 @@ export class ReportsService {
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, rows: [] as CostCenterRow[] };
 
-    const whereClause = filters.workerType
-      ? and(eq(payrollRunEmployees.runId, run.id), eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]))
-      : eq(payrollRunEmployees.runId, run.id);
+    const limit = Math.min(pagination.limit ?? 100, 100);
+    const offset = pagination.offset ?? 0;
+
+    const ccConditions = [eq(payrollRunEmployees.runId, run.id)];
+    if (filters.workerType) ccConditions.push(eq(payrollRunEmployees.workerType, filters.workerType as typeof payrollRunEmployees.$inferSelect["workerType"]));
+    if (filters.costCenter) ccConditions.push(eq(employeeSalaryProfiles.costCenter, filters.costCenter));
 
     const aggRows = await this.db
       .select({
@@ -248,19 +253,19 @@ export class ReportsService {
       })
       .from(payrollRunEmployees)
       .leftJoin(employeeSalaryProfiles, eq(employeeSalaryProfiles.id, payrollRunEmployees.profileId))
-      .where(whereClause)
-      .groupBy(employeeSalaryProfiles.costCenter);
+      .where(and(...ccConditions))
+      .groupBy(employeeSalaryProfiles.costCenter)
+      .limit(limit)
+      .offset(offset);
 
-    const allRows: CostCenterRow[] = aggRows
-      .filter((r) => !filters.costCenter || (r.costCenter ?? null) === filters.costCenter)
-      .map((r) => ({
-        costCenter: r.costCenter ?? null,
-        employeeCount: r._count,
-        grossTotal: r.grossTotal,
-        netTotal: r.netTotal,
-      }));
+    const rows: CostCenterRow[] = aggRows.map((r) => ({
+      costCenter: r.costCenter ?? null,
+      employeeCount: r._count,
+      grossTotal: r.grossTotal,
+      netTotal: r.netTotal,
+    }));
 
-    return { provisional, rows: applyPage(allRows, pagination) };
+    return { provisional, rows };
   }
 
   async getEarnings(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
@@ -268,9 +273,15 @@ export class ReportsService {
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
 
-    const items = await getLineItemsForRun(this.db, orgId, run.id, filters);
-    const { columns, rows: allRows } = pivotByEmployee(items, (cat) => cat === "EARNING" || cat === "REIMBURSEMENT");
-    return { provisional, columns, rows: applyPage(allRows, pagination) };
+    const limit = Math.min(pagination.limit ?? 100, 100);
+    const offset = pagination.offset ?? 0;
+    const runEmployeeIds = await getRunEmployeeIds(this.db, orgId, run.id, filters, limit, offset);
+
+    if (runEmployeeIds.length === 0) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
+
+    const items = await getLineItemsForRun(this.db, orgId, run.id, undefined, runEmployeeIds);
+    const { columns, rows } = pivotByEmployee(items, (cat) => cat === "EARNING" || cat === "REIMBURSEMENT");
+    return { provisional, columns, rows };
   }
 
   async getDeductions(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
@@ -278,9 +289,15 @@ export class ReportsService {
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
 
-    const items = await getLineItemsForRun(this.db, orgId, run.id, filters);
-    const { columns, rows: allRows } = pivotByEmployee(items, (cat) => cat === "DEDUCTION" || cat === "TAX" || cat === "ADJUSTMENT");
-    return { provisional, columns, rows: applyPage(allRows, pagination) };
+    const limit = Math.min(pagination.limit ?? 100, 100);
+    const offset = pagination.offset ?? 0;
+    const runEmployeeIds = await getRunEmployeeIds(this.db, orgId, run.id, filters, limit, offset);
+
+    if (runEmployeeIds.length === 0) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
+
+    const items = await getLineItemsForRun(this.db, orgId, run.id, undefined, runEmployeeIds);
+    const { columns, rows } = pivotByEmployee(items, (cat) => cat === "DEDUCTION" || cat === "TAX" || cat === "ADJUSTMENT");
+    return { provisional, columns, rows };
   }
 
   async getReimbursements(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
@@ -288,9 +305,15 @@ export class ReportsService {
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
 
-    const items = await getLineItemsForRun(this.db, orgId, run.id, filters);
-    const { columns, rows: allRows } = pivotByEmployee(items, (cat) => cat === "REIMBURSEMENT");
-    return { provisional, columns, rows: applyPage(allRows, pagination) };
+    const limit = Math.min(pagination.limit ?? 100, 100);
+    const offset = pagination.offset ?? 0;
+    const runEmployeeIds = await getRunEmployeeIds(this.db, orgId, run.id, filters, limit, offset);
+
+    if (runEmployeeIds.length === 0) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
+
+    const items = await getLineItemsForRun(this.db, orgId, run.id, undefined, runEmployeeIds);
+    const { columns, rows } = pivotByEmployee(items, (cat) => cat === "REIMBURSEMENT");
+    return { provisional, columns, rows };
   }
 
   async getTax(orgId: string, month: string, filters: LineItemFilters, pagination: PaginationParams = {}) {
@@ -298,9 +321,15 @@ export class ReportsService {
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
 
-    const items = await getLineItemsForRun(this.db, orgId, run.id, filters);
-    const { columns, rows: allRows } = pivotByEmployee(items, (cat) => cat === "TAX" || cat === "EMPLOYER_CONTRIBUTION");
-    return { provisional, columns, rows: applyPage(allRows, pagination) };
+    const limit = Math.min(pagination.limit ?? 100, 100);
+    const offset = pagination.offset ?? 0;
+    const runEmployeeIds = await getRunEmployeeIds(this.db, orgId, run.id, filters, limit, offset);
+
+    if (runEmployeeIds.length === 0) return { provisional, columns: [] as string[], rows: [] as EmployeeRegisterRow[] };
+
+    const items = await getLineItemsForRun(this.db, orgId, run.id, undefined, runEmployeeIds);
+    const { columns, rows } = pivotByEmployee(items, (cat) => cat === "TAX" || cat === "EMPLOYER_CONTRIBUTION");
+    return { provisional, columns, rows };
   }
 
   async getBankPayout(orgId: string, month: string, pagination: PaginationParams = {}) {
@@ -308,64 +337,67 @@ export class ReportsService {
     const provisional = run === null || !isLocked(run.status);
     if (!run) return { provisional, batches: [] as BankBatchResult[] };
 
-    const joined = await this.db
+    const limit = Math.min(pagination.limit ?? 100, 100);
+    const offset = pagination.offset ?? 0;
+
+    const batches = await this.db
       .select({
-        batchId: payrollBankBatches.id,
+        id: payrollBankBatches.id,
         batchNumber: payrollBankBatches.batchNumber,
-        batchFormat: payrollBankBatches.format,
+        format: payrollBankBatches.format,
         totalAmount: payrollBankBatches.totalAmount,
         itemCount: payrollBankBatches.itemCount,
-        batchStatus: payrollBankBatches.status,
+        status: payrollBankBatches.status,
         generatedAt: payrollBankBatches.generatedAt,
+      })
+      .from(payrollBankBatches)
+      .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, run.id)))
+      .orderBy(asc(payrollBankBatches.id))
+      .limit(limit)
+      .offset(offset);
+
+    if (batches.length === 0) return { provisional, batches: [] as BankBatchResult[] };
+
+    const batchIds = batches.map((b) => b.id);
+    const items = await this.db
+      .select({
+        batchId: payrollBankBatchItems.batchId,
         itemAmount: payrollBankBatchItems.amount,
         accountMasked: payrollBankBatchItems.accountMasked,
         ifsc: payrollBankBatchItems.ifsc,
         itemStatus: payrollBankBatchItems.status,
         userName: users.name,
       })
-      .from(payrollBankBatches)
-      .leftJoin(payrollBankBatchItems, eq(payrollBankBatchItems.batchId, payrollBankBatches.id))
+      .from(payrollBankBatchItems)
       .leftJoin(users, eq(payrollBankBatchItems.userId, users.id))
-      .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, run.id)));
+      .where(inArray(payrollBankBatchItems.batchId, batchIds));
 
-    const batchMap = new Map<
-      number,
-      {
-        batchNumber: string;
-        format: string;
-        totalAmount: string;
-        itemCount: number;
-        status: string;
-        generatedAt: Date;
-        items: BankItem[];
-      }
-    >();
-
-    for (const row of joined) {
-      if (!batchMap.has(row.batchId)) {
-        batchMap.set(row.batchId, {
-          batchNumber: row.batchNumber,
-          format: row.batchFormat,
-          totalAmount: row.totalAmount,
-          itemCount: row.itemCount,
-          status: row.batchStatus,
-          generatedAt: row.generatedAt,
-          items: [],
-        });
-      }
-      if (row.itemAmount !== null && row.accountMasked !== null && row.itemStatus !== null) {
-        batchMap.get(row.batchId)!.items.push({
-          userName: row.userName,
-          accountMasked: row.accountMasked,
-          ifsc: row.ifsc ?? null,
-          amount: row.itemAmount,
-          status: row.itemStatus,
-        });
-      }
+    const itemsByBatch = new Map<number, BankItem[]>();
+    for (const item of items) {
+      if (item.itemAmount === null || item.accountMasked === null || item.itemStatus === null) continue;
+      const list = itemsByBatch.get(item.batchId) ?? [];
+      list.push({
+        userName: item.userName,
+        accountMasked: item.accountMasked,
+        ifsc: item.ifsc ?? null,
+        amount: item.itemAmount,
+        status: item.itemStatus,
+      });
+      itemsByBatch.set(item.batchId, list);
     }
 
-    const allBatches = [...batchMap.values()];
-    return { provisional, batches: applyPage(allBatches, pagination) };
+    return {
+      provisional,
+      batches: batches.map((b) => ({
+        batchNumber: b.batchNumber,
+        format: b.format,
+        totalAmount: b.totalAmount,
+        itemCount: b.itemCount,
+        status: b.status,
+        generatedAt: b.generatedAt,
+        items: itemsByBatch.get(b.id) ?? [],
+      })),
+    };
   }
 
   async getVariance(orgId: string, month: string, pagination: PaginationParams = {}) {
@@ -391,6 +423,9 @@ export class ReportsService {
 
     if (!currentRun) return { provisional, current, previous, delta, perEmployee: [] as VarianceEmployeeRow[] };
 
+    const limit = Math.min(pagination.limit ?? 100, 100);
+    const offset = pagination.offset ?? 0;
+
     const currEmps = await this.db
       .select({
         userId: payrollRunEmployees.userId,
@@ -400,10 +435,17 @@ export class ReportsService {
       })
       .from(payrollRunEmployees)
       .innerJoin(users, eq(payrollRunEmployees.userId, users.id))
-      .where(eq(payrollRunEmployees.runId, currentRun.id));
+      .where(eq(payrollRunEmployees.runId, currentRun.id))
+      .orderBy(asc(payrollRunEmployees.id))
+      .limit(limit)
+      .offset(offset);
+
+    const currUserIds = currEmps
+      .filter((e): e is typeof e & { userId: string } => e.userId !== null)
+      .map((e) => e.userId);
 
     const prevMap = new Map<string, { gross: string; net: string }>();
-    if (previousRun) {
+    if (previousRun && currUserIds.length > 0) {
       const prevEmps = await this.db
         .select({
           userId: payrollRunEmployees.userId,
@@ -411,28 +453,28 @@ export class ReportsService {
           net: payrollRunEmployees.net,
         })
         .from(payrollRunEmployees)
-        .where(eq(payrollRunEmployees.runId, previousRun.id));
+        .where(and(eq(payrollRunEmployees.runId, previousRun.id), inArray(payrollRunEmployees.userId, currUserIds)));
       for (const e of prevEmps) {
         if (e.userId) prevMap.set(e.userId, { gross: e.gross, net: e.net });
       }
     }
 
-    const allPerEmployee: VarianceEmployeeRow[] = currEmps
+    const perEmployee: VarianceEmployeeRow[] = currEmps
       .filter((e): e is typeof e & { userId: string } => e.userId !== null)
       .map((e) => {
-      const prev = prevMap.get(e.userId) ?? { gross: "0.00", net: "0.00" };
-      return {
-        userId: e.userId,
-        name: e.userName,
-        prevGross: prev.gross,
-        currGross: e.gross,
-        grossDelta: deltaDec(prev.gross, e.gross),
-        prevNet: prev.net,
-        currNet: e.net,
-        netDelta: deltaDec(prev.net, e.net),
-      };
-    });
+        const prev = prevMap.get(e.userId) ?? { gross: "0.00", net: "0.00" };
+        return {
+          userId: e.userId,
+          name: e.userName,
+          prevGross: prev.gross,
+          currGross: e.gross,
+          grossDelta: deltaDec(prev.gross, e.gross),
+          prevNet: prev.net,
+          currNet: e.net,
+          netDelta: deltaDec(prev.net, e.net),
+        };
+      });
 
-    return { provisional, current, previous, delta, perEmployee: applyPage(allPerEmployee, pagination) };
+    return { provisional, current, previous, delta, perEmployee };
   }
 }

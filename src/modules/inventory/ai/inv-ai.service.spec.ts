@@ -2,6 +2,23 @@ import { InvAiService } from "./inv-ai.service";
 
 const mockCache = { cached: jest.fn((_, fn) => fn()), invalidate: jest.fn(), invalidateNamespace: jest.fn() };
 const mockNumSeq = { next: jest.fn() };
+// `resolve: null` is the unrestricted caller: every anomaly is visible, which is
+// the control these deduplication tests want -- they are about `sourceKey`, not
+// about who may see a finding.
+const mockWarehouseScope = {
+  resolve: jest.fn().mockResolvedValue(null),
+  scopeKey: jest.fn().mockReturnValue("all"),
+  forUser: jest.fn().mockResolvedValue({
+    key: "all",
+    isEmpty: false,
+    unrestricted: true,
+    warehouse: () => ({ queryChunks: [] }),
+    location: () => ({ queryChunks: [] }),
+    anyOf: () => ({ queryChunks: [] }),
+  }),
+  locationPredicate: jest.fn().mockReturnValue({ queryChunks: [] }),
+  warehousePredicate: jest.fn().mockReturnValue({ queryChunks: [] }),
+};
 
 function buildAiService(db: object) {
   return new InvAiService(db as never, mockCache as never, mockWarehouseScope as never);

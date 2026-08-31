@@ -7,7 +7,7 @@ import {
 import { and, desc, eq, sql } from "drizzle-orm";
 import { randomBytes, createHash } from "node:crypto";
 import { randomUUID } from "node:crypto";
-import { apiKeys } from "../../../db/schema/common/auth";
+import { apiKeys } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";

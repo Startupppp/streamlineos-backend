@@ -81,7 +81,7 @@ describe("ChatMessageTimelineService — cross-tenant isolation", () => {
 
     it("DENY: channel in org-a, user not a member returns ForbiddenException (403)", async () => {
       const actor = makeActor(ORG_A);
-      db.query.chatChannels.findFirst.mockResolvedValue({ id: CHANNEL_ID });
+      db.query.chatChannels.findFirst.mockResolvedValue({ id: CHANNEL_ID, type: "PUBLIC" });
       db.query.chatChannelMembers.findFirst.mockResolvedValue(undefined);
       await expect(service.list(CHANNEL_ID, actor, undefined, 20)).rejects.toThrow(ForbiddenException);
       expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
@@ -141,7 +141,7 @@ describe("ChatMessageTimelineService — cross-tenant isolation", () => {
       db.query.chatMessages.findFirst.mockResolvedValue({ id: MESSAGE_ID, channelId: CHANNEL_ID });
       db.query.chatChannelMembers.findFirst.mockResolvedValue(undefined);
       const actor = makeActor(ORG_B);
-      await expect(service.listThreadReplies(MESSAGE_ID, actor, undefined, 20)).rejects.toThrow(ForbiddenException);
+      await expect(service.listThreadReplies(MESSAGE_ID, actor, undefined, 20)).rejects.toThrow(NotFoundException);
 
       const call = db.query.chatChannelMembers.findFirst.mock.calls[0]?.[0];
       expect(flatValues(call?.where)).toContain(ORG_B);

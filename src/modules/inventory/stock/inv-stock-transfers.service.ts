@@ -131,7 +131,19 @@ export class InvStockTransfersService {
   }
 
   // B1-04: Header + lines inserted in a single transaction.
-  async createTransfer(orgId: string, userId: string, data: CreateTransferInput) {
+  /**
+   * The route demanded an `Idempotency-Key` and then called this without it —
+   * the same defect `reserveTransfer` below documents, one step earlier and
+   * with no status guard to soften it. A retried create took a second reference
+   * number from the sequence and wrote a second transfer document for the same
+   * goods, so the duplicate was indistinguishable from a real one.
+   */
+  async createTransfer(
+    orgId: string,
+    userId: string,
+    data: CreateTransferInput,
+    idempotencyKey: string,
+  ) {
     if (data.fromLocationId === data.toLocationId) {
       throw new BadRequestException("From and to locations must be different");
     }
@@ -141,7 +153,29 @@ export class InvStockTransfersService {
     // lifecycle gate covered selling but not this.
     await loadOrderableVariants(this.db, orgId, data.lines.map((l) => l.productVariantId));
 
-    const transfer = await this.db.transaction(async (tx) => {
+    const transferId = await this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
+        orgId,
+        idempotencyKey,
+        { command: "inventory.transfers.create", input: data },
+        () => this.createTransferInTx(tx, orgId, userId, data),
+        revivedId,
+      ),
+    );
+
+    const transfer = await this.getTransfer(orgId, transferId);
+    if (!transfer) throw new NotFoundException("Transfer not found after create");
+    return transfer;
+  }
+
+  private async createTransferInTx(
+    tx: Tx,
+    orgId: string,
+    userId: string,
+    data: CreateTransferInput,
+  ): Promise<number> {
+    {
       const referenceNumber = await this.numSeq.next(orgId, "TRANSFER", tx);
       const [created] = await tx.insert(invStockTransfers).values({
         orgId,
@@ -165,10 +199,8 @@ export class InvStockTransfersService {
         }))
       );
 
-      return created!;
-    });
-
-    return transfer;
+      return created!.id;
+    }
   }
 
   // B1-03: All line reservations created atomically in one transaction.

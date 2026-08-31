@@ -21,10 +21,12 @@ import {
   createHrAutomationRuleSchema,
   updateHrAutomationRuleSchema,
   testHrAutomationSchema,
+  toggleHrAutomationRuleSchema,
   listRunsSchema,
   type CreateHrAutomationRuleInput,
   type UpdateHrAutomationRuleInput,
   type TestHrAutomationInput,
+  type ToggleHrAutomationRuleInput,
   type ListRunsInput,
 } from "./dto/hr-automation.schemas";
 import { HR_AUTOMATION_EVENTS, HR_EVENT_FIELD_DOCS, HR_EVENT_SAMPLE_PAYLOADS } from "./hr-automation-events";
@@ -120,13 +122,13 @@ export class HrAutomationsController {
   @Post(":ruleId/toggle")
   @HttpCode(200)
   @RequirePermission("hr:automations:manage")
-  @Validate({ params: ruleIdParams })
+  @Validate({ params: ruleIdParams, body: toggleHrAutomationRuleSchema })
   toggle(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Body() body: { isEnabled: boolean },
+    @Body() body: ToggleHrAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.engine.toggleRule(u.orgId, ruleId, Boolean(body.isEnabled));
+    return this.engine.toggleRule(u.orgId, ruleId, body.isEnabled);
   }
 
   @Delete(":ruleId")

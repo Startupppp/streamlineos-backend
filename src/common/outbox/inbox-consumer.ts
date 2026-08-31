@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 import { inboxRecords } from "../../db/schema/common/outbox";
 import { type DbOrTx } from "../rbac/access-invalidate";
 import { getTenantContext } from "../tenant/tenant-context";
@@ -44,7 +44,7 @@ export class InboxConsumer {
         aggregateType: event.aggregateType ?? null,
         aggregateId: event.aggregateId ?? null,
         aggregateVersion: event.aggregateVersion,
-        status: "PENDING",
+        status: "IN_FLIGHT",
       })
       .onConflictDoNothing({
         target: [inboxRecords.producerEventId, inboxRecords.consumerName],
@@ -60,7 +60,9 @@ export class InboxConsumer {
 
     const existing = await this.readExisting(consumerName, event);
     const row = existing[0];
-    if (!row || row.status !== "FAILED") return false;
+    if (!row) return false;
+    if (row.status === "COMPLETED" || row.status === "SKIPPED") return false;
+    if (row.status !== "FAILED" && row.status !== "IN_FLIGHT") return false;
 
     if (await this.isOlderThanApplied(consumerName, event)) {
       await this.markSkipped(consumerName, event);
@@ -69,12 +71,15 @@ export class InboxConsumer {
 
     const reclaimed = await this.db
       .update(inboxRecords)
-      .set({ status: "PENDING", lastError: null, retryCount: sql`${inboxRecords.retryCount} + 1` })
+      .set({ status: "IN_FLIGHT", lastError: null, retryCount: sql`${inboxRecords.retryCount} + 1` })
       .where(
         and(
           eq(inboxRecords.producerEventId, event.eventId),
           eq(inboxRecords.consumerName, consumerName),
-          eq(inboxRecords.status, "FAILED"),
+          or(
+            eq(inboxRecords.status, "FAILED"),
+            eq(inboxRecords.status, "IN_FLIGHT"),
+          ),
         ),
       )
       .returning({ id: inboxRecords.inboxRecordId });

@@ -19,7 +19,7 @@ describe("PublishingService — cross-tenant isolation", () => {
         payrollRuns: { findFirst: jest.fn().mockResolvedValue(null) },
       },
     } as unknown as Db;
-    const svc = new PublishingService(db, audit, storage, access, notifications, notifDispatch, efService);
+    const svc = new PublishingService(db, audit, storage, access, notifications, notifDispatch, efService, {} as never, {} as never);
     await expect(svc.listPublications(ATTACKER_ORG, 99)).rejects.toThrow(NotFoundException);
   });
 
@@ -32,7 +32,7 @@ describe("PublishingService — cross-tenant isolation", () => {
         payslipPublications: { findMany: jest.fn().mockResolvedValue(pubs) },
       },
     } as unknown as Db;
-    const svc = new PublishingService(db, audit, storage, access, notifications, notifDispatch, efService);
+    const svc = new PublishingService(db, audit, storage, access, notifications, notifDispatch, efService, {} as never, {} as never);
     const result = await svc.listPublications(OWNER_ORG, 1);
     expect(result.items).toHaveLength(1);
     expect(result.truncated).toBe(false);

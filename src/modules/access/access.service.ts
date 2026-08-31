@@ -1,6 +1,8 @@
 import {
+  BadRequestException,
   Inject,
   Injectable,
+  NotFoundException,
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
@@ -29,9 +31,11 @@ import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import type { AccessSnapshot, DataScope } from "./access.types";
 import { EntitlementsService, MODULE_CATALOG } from "./entitlements.service";
 import { MfaPolicyService } from "./mfa-policy.service";
+import { ADMINISTRABLE_MODULES } from "../../common/rbac/module-vocabulary";
 import {
   broadest,
   EMPLOYEE_SELF_SERVICE_GRANTS,
+  MANAGEABLE_MODULE_SET,
   moduleOf,
 } from "./access-policy";
 import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
@@ -98,7 +102,6 @@ const VERSION_CACHE_TTL_MS = 1_000;
 const SHARED_VERSION_TTL_SECONDS = 300;
 const PERMS_CACHE_TTL_MS = 30_000;
 
-<<<<<<< HEAD
 function undefinedColumn(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   if ("code" in error && error.code === "42703") return true;
@@ -121,12 +124,11 @@ function undefinedColumn(error: unknown): boolean {
  * here". Everything else is a fault, and a fault in authorization should be
  * loud.
  */
-=======
+
 function withinCeiling(ceiling: readonly string[], key: string): boolean {
   return isPersonalTokenPermissionDelegable(key) && ceiling.includes(key);
 }
 
->>>>>>> origin/main
 function isMissingRelationError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   if ("code" in error && error.code === "42P01") return true;
@@ -228,6 +230,20 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     const prefix = `${orgId}:`;
     for (const key of cache.keys()) {
       if (key.startsWith(prefix)) cache.delete(key);
+    }
+  }
+
+  private deleteMemberEntries(orgId: string, userId: string): void {
+    const prefix = `${orgId}:${userId}:`;
+    for (const key of this.permsCache.keys()) {
+      if (key.startsWith(prefix)) this.permsCache.delete(key);
+    }
+    for (const key of this.deniedModulesCache.keys()) {
+      if (key.startsWith(prefix)) this.deniedModulesCache.delete(key);
+    }
+    const memberPrefix = `${orgId}:${userId}:`;
+    for (const key of this.membershipAccessCache.keys()) {
+      if (key.startsWith(memberPrefix)) this.membershipAccessCache.delete(key);
     }
   }
   private noteMissingAccessTables(error: unknown): void {
@@ -531,12 +547,6 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
             this.db
               .select({ moduleKey: userModuleAccess.moduleKey })
               .from(userModuleAccess)
-<<<<<<< HEAD
-              // The deny-override keys on the membership; the caller still
-              // speaks user ids, so the membership is resolved here rather
-              // than pushed onto every caller.
-=======
->>>>>>> origin/main
               .innerJoin(
                 organizationMembers,
                 and(
@@ -569,7 +579,6 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     });
     return modules;
   }
-<<<<<<< HEAD
   async getUserModuleAccess(
     orgId: string,
     userId: string,
@@ -674,8 +683,6 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
     return this.getUserModuleAccess(orgId, userId);
   }
-=======
->>>>>>> origin/main
   async isModuleEnabled(orgId: string, moduleKey: string): Promise<boolean> {
     return this.entitlements.isModuleEnabled(orgId, moduleKey);
   }

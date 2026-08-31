@@ -237,44 +237,35 @@ export class PayrollExportService {
       `${query.page}:${query.pageSize}`,
       async () => {
         const offset = (query.page - 1) * query.pageSize;
-        const rows = await this.db
-          .select({
-            export: timesheetExports,
-            creatorName: organizationPeople.displayName,
-            windowTotal: sql<string>`count(*) OVER ()`,
-          })
-          .from(timesheetExports)
-          .leftJoin(
-            organizationPeople,
-            and(
-              eq(organizationPeople.organizationId, timesheetExports.orgId),
-              eq(organizationPeople.organizationMembershipId, timesheetExports.createdByMembershipId),
-            ),
-          )
-          .where(eq(timesheetExports.orgId, orgId))
-          .orderBy(desc(timesheetExports.createdAt))
-          .limit(query.pageSize)
-          .offset(offset);
-
-        const first = rows[0];
-        let total: number;
-        if (first) {
-          total = Number(first.windowTotal);
-        } else if (offset === 0) {
-          total = 0;
-        } else {
-          const fallback = await this.db
+        const [rows, [countRow]] = await Promise.all([
+          this.db
+            .select({
+              export: timesheetExports,
+              creatorName: organizationPeople.displayName,
+            })
+            .from(timesheetExports)
+            .leftJoin(
+              organizationPeople,
+              and(
+                eq(organizationPeople.organizationId, timesheetExports.orgId),
+                eq(organizationPeople.organizationMembershipId, timesheetExports.createdByMembershipId),
+              ),
+            )
+            .where(eq(timesheetExports.orgId, orgId))
+            .orderBy(desc(timesheetExports.createdAt))
+            .limit(query.pageSize)
+            .offset(offset),
+          this.db
             .select({ n: sql<string>`count(*)` })
             .from(timesheetExports)
-            .where(eq(timesheetExports.orgId, orgId));
-          total = Number(fallback[0]?.n ?? 0);
-        }
+            .where(eq(timesheetExports.orgId, orgId)),
+        ]);
 
         return {
-          items: rows.map(({ windowTotal: _, export: exp, creatorName }) =>
+          items: rows.map(({ export: exp, creatorName }) =>
             toExportDto(exp, creatorName ?? null),
           ),
-          total,
+          total: Number(countRow?.n ?? 0),
           page: query.page,
           pageSize: query.pageSize,
         };

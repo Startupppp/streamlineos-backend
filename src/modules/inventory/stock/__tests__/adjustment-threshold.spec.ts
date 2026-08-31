@@ -2,6 +2,15 @@ import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { InvStockAdjustmentsService } from "../inv-stock-adjustments.service";
 
 const mockWarehouseScope = {
+  forUser: jest.fn().mockResolvedValue({
+    key: "all",
+    isEmpty: false,
+    unrestricted: true,
+    warehouse: () => ({ queryChunks: [] }),
+    location: () => ({ queryChunks: [] }),
+    anyOf: () => ({ queryChunks: [] }),
+  }),
+  scopeKey: jest.fn().mockReturnValue("all"),
   resolve: jest.fn(async () => null),
   warehouseIdList: jest.fn(() => null),
   assertLocationsInScope: jest.fn(async () => undefined),

@@ -9,6 +9,7 @@ import { ChatSavedService } from "./chat-saved.service";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const messageIdParams = z.object({ messageId: z.coerce.number().int().positive() }).strict();
 
@@ -40,6 +41,7 @@ export class ChatSavedController {
   @ApiOperation({ summary: "Save a message to the current user's saved list" })
   @ApiResponse({ status: 200, description: "OK" })
   @Post(":messageId")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("chat:messages:write")
   @Validate({ params: messageIdParams })

@@ -16,6 +16,7 @@ import {
 } from "./dto/finance-planning.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const scenarioIdParams = z.object({ scenarioId: z.coerce.number().int().positive() }).strict();
 
@@ -68,6 +69,7 @@ export class ScenariosController {
   }
 
   @Post("scenarios/seed-defaults")
+  @BodylessAction()
   @RequirePermission("accounting:forecast:manage")
   @HttpCode(200)
   seedDefaults(@CurrentUser() u: CurrentUserContext) {

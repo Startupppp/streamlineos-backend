@@ -13,8 +13,8 @@ import { StockEngineService } from "./stock-engine/stock-engine.service";
 import { ReservationService } from "./stock-engine/reservation.service";
 import { JournalPostingService } from "../accounting/posting/journal-posting.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
-import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { SoLifecycleService as _SoLifecycleImport } from "./sales-orders/so-lifecycle.service";
+import { INVENTORY_ISOLATION_STUBS } from "./__tests__/isolation-stubs";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -61,6 +61,7 @@ describe("PoService — cross-tenant isolation", () => {
     const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         PoService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -80,6 +81,7 @@ describe("PoService — cross-tenant isolation", () => {
     const { db } = makeDb([PO]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         PoService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -101,6 +103,7 @@ describe("GrnService — cross-tenant isolation", () => {
     const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         GrnService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -119,6 +122,7 @@ describe("GrnService — cross-tenant isolation", () => {
     const { db } = makeDb([GRN]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         GrnService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -139,6 +143,7 @@ describe("SoCoreService — cross-tenant isolation", () => {
     const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         SoCoreService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -158,6 +163,7 @@ describe("SoCoreService — cross-tenant isolation", () => {
     const { db } = makeDb([SO]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         SoCoreService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -179,6 +185,7 @@ describe("SoFulfillmentService — cross-tenant isolation", () => {
     const { db, findFirst } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         SoFulfillmentService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -188,11 +195,10 @@ describe("SoFulfillmentService — cross-tenant isolation", () => {
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
         { provide: JournalPostingService, useValue: { persistJournalEntry: jest.fn() } },
         { provide: SoCoreService, useValue: { getSo: jest.fn() } },
-        { provide: OutboxWriter, useValue: { emit: jest.fn() } },
       ],
     }).compile().then((m) => m.get(SoFulfillmentService));
 
-    await expect(svc.reserveSo(ATTACKER, 99, "user-1", "key-1", { lineIds: [], strategy: "FIFO" })).rejects.toBeDefined();
+    await expect(svc.reserveSo(ATTACKER, 99, "user-1", "key-1", {})).rejects.toBeDefined();
     expect(findFirst).toHaveBeenCalled();
     const firstCallArg = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
     expect(sqlValues(firstCallArg?.where)).toContain(ATTACKER);
@@ -203,6 +209,7 @@ describe("SoFulfillmentService — cross-tenant isolation", () => {
     const { db } = makeDb([SO]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         SoFulfillmentService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -212,7 +219,6 @@ describe("SoFulfillmentService — cross-tenant isolation", () => {
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
         { provide: JournalPostingService, useValue: { persistJournalEntry: jest.fn() } },
         { provide: SoCoreService, useValue: { getSo: jest.fn() } },
-        { provide: OutboxWriter, useValue: { emit: jest.fn() } },
       ],
     }).compile().then((m) => m.get(SoFulfillmentService));
 
@@ -229,6 +235,7 @@ describe("SoLifecycleService — cross-tenant isolation", () => {
     const { db, findFirst } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         SoLifecycleService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -240,7 +247,7 @@ describe("SoLifecycleService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(SoLifecycleService));
 
-    await expect(svc.confirmSo(ATTACKER, 99, "user-1")).rejects.toBeDefined();
+    await expect(svc.confirmSo(ATTACKER, 99, "user-1", "key-1")).rejects.toBeDefined();
     const arg = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
     expect(sqlValues(arg?.where)).toContain(ATTACKER);
   });
@@ -250,6 +257,7 @@ describe("SoLifecycleService — cross-tenant isolation", () => {
     const { db, findFirst } = makeDb([SO]);
     await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         SoLifecycleService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },

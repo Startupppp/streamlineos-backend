@@ -14,6 +14,7 @@ import {
 } from "./dto/inv-counts.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const auditIdParams = z.object({ auditId: z.coerce.number().int().positive() }).strict();
 
@@ -57,6 +58,7 @@ export class InvPhysicalAuditsController {
   }
 
   @Post(":auditId/start")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: auditIdParams })
@@ -80,6 +82,7 @@ export class InvPhysicalAuditsController {
   }
 
   @Post(":auditId/review")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: auditIdParams })
@@ -91,6 +94,7 @@ export class InvPhysicalAuditsController {
   }
 
   @Post(":auditId/post")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: auditIdParams })
@@ -102,6 +106,7 @@ export class InvPhysicalAuditsController {
   }
 
   @Post(":auditId/cancel")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: auditIdParams })

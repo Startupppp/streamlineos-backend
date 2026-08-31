@@ -17,7 +17,8 @@ describe("VendorPaymentsAllocationsService — cross-tenant isolation", () => {
     const db = {
       select: jest.fn().mockReturnValue(makeSelectOnce([])),
     } as unknown as Db;
-    const svc = new VendorPaymentsAllocationsService(db);
+    const audit = { log: jest.fn() } as any;
+    const svc = new VendorPaymentsAllocationsService(db, audit);
 
     await expect(
       svc.allocate("org-attacker", "user-1", { vendorPaymentId: 99, allocations: [] }),

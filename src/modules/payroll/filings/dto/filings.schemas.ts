@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const prepareFilingSchema = z.object({
   filingType: z.enum(["PF_ECR", "ESI", "PT", "TDS_24Q", "FORM16", "LWF"]),
@@ -18,3 +19,9 @@ export const attachAcknowledgementSchema = z.object({
   acknowledgementRef: z.string().max(120).optional(),
 });
 export type AttachAcknowledgementInput = z.infer<typeof attachAcknowledgementSchema>;
+
+export const listFilingsQuerySchema = z.object({
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
+});
+export type ListFilingsQuery = z.infer<typeof listFilingsQuerySchema>;

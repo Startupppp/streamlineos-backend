@@ -148,6 +148,7 @@ export class ChatAssistantController {
   @Post("conversations")
   @HttpCode(201)
   @RequirePermission("ai:chat:use")
+  @Validate({ body: conversationCreateSchema })
   async createConversation(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = conversationCreateSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid request body");
@@ -156,7 +157,7 @@ export class ChatAssistantController {
 
   @Patch("conversations/:conversationId")
   @RequirePermission("ai:chat:use")
-  @Validate({ params: conversationIdParams })
+  @Validate({ params: conversationIdParams, body: conversationRenameSchema })
   async renameConversation(
     @Param("conversationId") conversationIdParam: string,
     @Body() body: unknown,
@@ -204,9 +205,8 @@ export class ChatAssistantController {
   @RequirePermission("ai:chat:use")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:chat")
-  // pipeTextStreamToResponse returns before the stream ends; the request transaction
-  // would commit under the still-running tools and onFinish. Both open their own.
   @NoTenantTransaction()
+  @Validate({ body: chatRequestSchema })
   async chatAssistant(
     @Body() body: unknown,
     @CurrentUser() u: CurrentUserContext,
@@ -236,6 +236,7 @@ export class ChatAssistantController {
 
   @Post("confirm")
   @RequirePermission("ai:chat:use")
+  @Validate({ body: confirmActionBodySchema })
   async confirmAction(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = confirmActionBodySchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid request body");

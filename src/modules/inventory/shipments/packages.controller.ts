@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Patch, Param, Body, Query, ParseIntPipe, UseGuards, HttpCode, HttpStatus, Headers } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Param,
+  Body,
+  Query,
+  ParseIntPipe,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -23,6 +35,8 @@ import {
 } from "./dto/shipments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 
 const packageIdParams = z.object({ packageId: z.coerce.number().int().positive() }).strict();
 
@@ -109,7 +123,7 @@ export class PackagesController {
   @HttpCode(HttpStatus.OK)
   @Validate({ params: packageIdParams, body: scanIntoPackageSchema })
   scan(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("packageId", ParseIntPipe) packageId: number,
     @Body() body: ScanIntoPackageInput,
     @CurrentUser() u: CurrentUserContext,
@@ -118,6 +132,7 @@ export class PackagesController {
   }
 
   @Post(":packageId/close")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   @HttpCode(HttpStatus.OK)
@@ -131,6 +146,7 @@ export class PackagesController {
   }
 
   @Post(":packageId/reopen")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   @HttpCode(HttpStatus.OK)

@@ -38,6 +38,7 @@ import {
 import { AccessService } from "../../access/access.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const caseIdParams = z.object({ caseId: z.coerce.number().int().positive() }).strict();
 
@@ -127,6 +128,7 @@ export class HrCasesController {
   }
 
   @Post(":caseId/investigate")
+  @BodylessAction()
   @RequirePermission("hr:cases:manage")
   @Validate({ params: caseIdParams })
   async startInvestigation(

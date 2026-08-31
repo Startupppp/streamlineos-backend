@@ -28,6 +28,13 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
+type ChainBuilder = {
+  from?: jest.Mock; leftJoin?: jest.Mock; innerJoin?: jest.Mock; where?: jest.Mock;
+  orderBy?: jest.Mock; groupBy?: jest.Mock; limit?: jest.Mock; offset?: jest.Mock;
+  having?: jest.Mock;
+  then?: <T>(resolve: (rows: unknown[]) => T) => Promise<T>;
+};
+
 function makeSelectDb(rows: unknown[]): { db: Db; where: jest.Mock } {
   const where = jest.fn();
   const builder: Record<string, unknown> & { then: (r: (v: unknown) => void) => void } = {

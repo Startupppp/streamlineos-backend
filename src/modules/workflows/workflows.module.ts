@@ -11,6 +11,8 @@ import { WorkflowRunnerService } from "./engine/workflow-runner.service";
 import { WorkflowNodeDispatcher } from "./engine/node-dispatcher.service";
 import { NODE_DISPATCH_PORT } from "./engine/node-outcome";
 import { WorkflowsCronController } from "./engine/workflows-cron.controller";
+import { WorkflowScheduleTickService } from "./engine/workflow-schedule-tick.service";
+import { CronLeaseService } from "../cron/cron-lease.service";
 import {
   ActionExecutor,
   AUTOMATION_ACTION_RUNNER,
@@ -47,6 +49,8 @@ import { ComposioGateway } from "../integrations/core/composio.gateway";
     WorkflowsAnalyticsService,
     WorkflowsService,
     WorkflowRunnerService,
+    WorkflowScheduleTickService,
+    CronLeaseService,
     WorkflowNodeDispatcher,
     ActionExecutor,
     WorkflowAiActionExecutor,

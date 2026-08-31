@@ -210,21 +210,12 @@ export class DelegationsService {
     const actorMembershipId = actorMembership.id;
     const participantColumn =
       direction === "received"
-<<<<<<< HEAD
-        ? delegatorMember.userId
-        : delegateeMember.userId;
-    const actorColumn =
-      direction === "received"
-        ? delegateeMember.userId
-        : delegatorMember.userId;
-=======
         ? userDelegations.delegatorMembershipId
         : userDelegations.delegateeMembershipId;
     const actorColumn =
       direction === "received"
         ? userDelegations.delegateeMembershipId
         : userDelegations.delegatorMembershipId;
->>>>>>> origin/main
     const search = query.search?.trim();
     const searchPattern = search ? `%${escapeLike(search)}%` : null;
     const participantSearch = searchPattern
@@ -348,17 +339,6 @@ export class DelegationsService {
         }
         if (!delegatee) {
           throw new NotFoundException("Active delegatee not found");
-        }
-        const delegator = await tx.query.organizationMembers.findFirst({
-          where: and(
-            eq(organizationMembers.orgId, actor.orgId),
-            eq(organizationMembers.userId, actor.userId),
-            eq(organizationMembers.status, "ACTIVE"),
-          ),
-          columns: { id: true },
-        });
-        if (!delegator) {
-          throw new NotFoundException("Active delegator not found");
         }
         const [created] = await tx
           .insert(userDelegations)

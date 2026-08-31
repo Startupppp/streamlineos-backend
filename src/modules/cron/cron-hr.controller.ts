@@ -19,8 +19,10 @@ import { CronHrEnginesService } from "./cron-hr-engines.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronLeaseService } from "./cron-lease.service";
+import { CronHrRetentionService } from "./cron-hr-retention.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const sweepNameParams = z.object({ sweepName: z.string().min(1) }).strict();
 
@@ -37,6 +39,7 @@ export class CronHrController {
     private readonly hrEngines: CronHrEnginesService,
     private readonly weeklyRecap: CronWeeklyRecapService,
     private readonly cronLease: CronLeaseService,
+    private readonly hrRetention: CronHrRetentionService,
   ) {}
 
   @Get("auto-checkout")
@@ -45,6 +48,7 @@ export class CronHrController {
   }
 
   @Post("auto-checkout")
+  @BodylessAction()
   @HttpCode(200)
   postAutoCheckout(@Headers("authorization") authorization?: string) {
     return this.runAutoCheckout(authorization);
@@ -56,6 +60,7 @@ export class CronHrController {
   }
 
   @Post("monthly-leave-reset")
+  @BodylessAction()
   @HttpCode(200)
   postMonthlyLeaveReset(@Headers("authorization") authorization?: string) {
     return this.runMonthlyLeaveReset(authorization);
@@ -67,6 +72,7 @@ export class CronHrController {
   }
 
   @Post("daily-notifications")
+  @BodylessAction()
   @HttpCode(200)
   postDailyNotifications(@Headers("authorization") authorization?: string) {
     return this.runDailyNotifications(authorization);
@@ -78,6 +84,7 @@ export class CronHrController {
   }
 
   @Post("holiday-notifications")
+  @BodylessAction()
   @HttpCode(200)
   postHolidayNotifications(@Headers("authorization") authorization?: string) {
     return this.runHolidayNotifications(authorization);
@@ -89,6 +96,7 @@ export class CronHrController {
   }
 
   @Post("offer-deadline-reminders")
+  @BodylessAction()
   @HttpCode(200)
   postOfferDeadlineReminders(@Headers("authorization") authorization?: string) {
     return this.runOfferDeadlineReminders(authorization);
@@ -100,6 +108,7 @@ export class CronHrController {
   }
 
   @Post("interview-no-shows")
+  @BodylessAction()
   @HttpCode(200)
   postInterviewNoShows(@Headers("authorization") authorization?: string) {
     return this.runInterviewNoShows(authorization);
@@ -111,6 +120,7 @@ export class CronHrController {
   }
 
   @Post("certification-expiry")
+  @BodylessAction()
   @HttpCode(200)
   postCertificationExpiry(@Headers("authorization") authorization?: string) {
     return this.runCertificationExpiry(authorization);
@@ -122,6 +132,7 @@ export class CronHrController {
   }
 
   @Post("onboarding-sweep")
+  @BodylessAction()
   @HttpCode(200)
   postOnboardingSweep(@Headers("authorization") authorization?: string) {
     return this.runOnboardingSweep(authorization);
@@ -133,6 +144,7 @@ export class CronHrController {
   }
 
   @Post("weekly-exec-recap")
+  @BodylessAction()
   @HttpCode(200)
   postWeeklyExecRecap(@Headers("authorization") authorization?: string) {
     return this.runWeeklyExecRecap(authorization);
@@ -144,12 +156,14 @@ export class CronHrController {
   }
 
   @Post("document-expiry")
+  @BodylessAction()
   @HttpCode(200)
   postDocumentExpiry(@Headers("authorization") authorization?: string) {
     return this.runDocumentExpiry(authorization);
   }
 
   @Post("hr-engines-sweep")
+  @BodylessAction()
   @HttpCode(200)
   postHrEnginesSweep(@Headers("authorization") authorization?: string) {
     return this.runHrEnginesSweep(authorization);
@@ -161,6 +175,7 @@ export class CronHrController {
   }
 
   @Post("hr-engines-sweep/:sweepName")
+  @BodylessAction()
   @HttpCode(200)
   @Validate({ params: sweepNameParams })
   postHrEnginesSweepByName(
@@ -378,6 +393,66 @@ export class CronHrController {
       };
     } catch (error) {
       logger.error("HR engines sweep (all) cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Post("retention-delete-sweep")
+  @BodylessAction()
+  @HttpCode(200)
+  postRetentionDeleteSweep(@Headers("authorization") authorization?: string) {
+    return this.runRetentionDeleteSweep(authorization);
+  }
+
+  @Get("retention-delete-sweep")
+  getRetentionDeleteSweep(@Headers("authorization") authorization?: string) {
+    return this.runRetentionDeleteSweep(authorization);
+  }
+
+  private async runRetentionDeleteSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("retention-delete-sweep", 600, () =>
+        this.hr.sweepRetentionDeleteRequests(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "retention-delete-sweep already running" };
+      return { success: true, ...outcome.result };
+    } catch (error) {
+      logger.error("Retention delete sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("hr-policy-retention-sweep")
+  getHrPolicyRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runHrPolicyRetentionSweep(authorization);
+  }
+
+  @Post("hr-policy-retention-sweep")
+  @BodylessAction()
+  @HttpCode(200)
+  postHrPolicyRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runHrPolicyRetentionSweep(authorization);
+  }
+
+  private async runHrPolicyRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("hr-policy-retention-sweep", 1800, () =>
+        this.hrRetention.sweep(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "hr-policy-retention-sweep already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message:
+          `HR policy retention: ${result.employeeSoftDeleted} employees, ` +
+          `${result.caseSoftDeleted} cases, ${result.attendanceDeleted} attendance rows across ${result.organizations} orgs`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("HR policy retention sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

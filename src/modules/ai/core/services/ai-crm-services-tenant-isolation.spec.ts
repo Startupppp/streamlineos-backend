@@ -77,7 +77,7 @@ describe("CrmBriefService — tenant isolation", () => {
     };
     const gateway = { invokeText: jest.fn(), invokeStructured: jest.fn() };
 
-    const service = new CrmBriefService(db as never, gateway as never, {} as never);
+    const service = new CrmBriefService(db as never, gateway as never, {} as never, {} as never);
 
     await expect(service.accountSummary(ATTACKER_ORG, { clientId: 1 })).rejects.toThrow(NotFoundException);
 
@@ -123,7 +123,7 @@ describe("CrmBriefService — tenant isolation", () => {
       invokeStructured: jest.fn(),
     };
 
-    const service = new CrmBriefService(db as never, gateway as never, {} as never);
+    const service = new CrmBriefService(db as never, gateway as never, {} as never, {} as never);
     const result = await service.accountSummary(OWNER_ORG, { clientId: 1 });
 
     expect(result).toMatchObject({ summary: "Account summary text", clientName: "Acme Corp" });
@@ -151,7 +151,7 @@ describe("CrmScoringService — tenant isolation", () => {
     };
     const gateway = { invokeStructured: jest.fn(), invokeText: jest.fn() };
 
-    const service = new CrmScoringService(db as never, gateway as never);
+    const service = new CrmScoringService(db as never, gateway as never, {} as never);
     const result = await service.scoreLead(ATTACKER_ORG, 99);
 
     expect(result).toBeNull();
@@ -201,7 +201,7 @@ describe("CrmScoringService — tenant isolation", () => {
       invokeText: jest.fn(),
     };
 
-    const service = new CrmScoringService(db as never, gateway as never);
+    const service = new CrmScoringService(db as never, gateway as never, {} as never);
     const result = await service.scoreLead(OWNER_ORG, 42);
 
     expect(result).toMatchObject({ score: 75, reasoning: "Strong profile" });

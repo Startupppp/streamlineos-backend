@@ -5,10 +5,15 @@ import { MODULE_MANIFEST_VERSION, MODULE_REGISTRY } from "./module-registry";
 const RBAC_DIR = join(__dirname);
 const MODULES_BASE = join(__dirname, "../../modules");
 const SCHEMA_BASE = join(__dirname, "../../db/schema");
-const FRONTEND_NAV_TYPES = join(
-  __dirname,
-  "../../../../frontend/components/layout/sidebar/sidebar-nav-types.ts",
-);
+/**
+ * The frontend checkout, wherever it is. A sibling `frontend/` is the flat
+ * layout; `streamlineos-frontend/frontend/` is this workspace's. Hard-coding one
+ * made the spec pass or ENOENT purely on how somebody had cloned the repos.
+ */
+const FRONTEND_NAV_TYPES = [
+  join(__dirname, "../../../../frontend/components/layout/sidebar/sidebar-nav-types.ts"),
+  join(__dirname, "../../../../streamlineos-frontend/frontend/components/layout/sidebar/sidebar-nav-types.ts"),
+].find((candidate) => existsSync(candidate));
 
 function parseProductKeyUnion(source: string): Set<string> {
   const match = source.match(/type\s+ProductKey\s*=([^;]+)/s);
@@ -81,6 +86,8 @@ describe("productKey values are in the frontend ProductKey union", () => {
   let frontendProductKeys: Set<string> = new Set();
 
   beforeAll(() => {
+    // Names the failure instead of an ENOENT on a path nobody can read.
+    if (!FRONTEND_NAV_TYPES) throw new Error("frontend checkout not found beside this repo");
     const source = readFileSync(FRONTEND_NAV_TYPES, "utf8");
     frontendProductKeys = parseProductKeyUnion(source);
   });

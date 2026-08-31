@@ -159,6 +159,7 @@ export const PARTY_FIELD_MIRROR: Record<keyof PartyRow, PartyFieldMirror> = {
   notes: {
     LEAD: { derive: (p) => ({ notes: p.notes }), absorb: (l) => ({ notes: l.notes }) },
     CLIENT: { derive: (p) => ({ notes: p.notes }), absorb: (l) => ({ notes: l.notes }) },
+    CONTACT: { derive: (p) => ({ notes: p.notes }), absorb: (l) => ({ notes: l.notes }) },
     ORGANISATION: { derive: (p) => ({ notes: p.notes }), absorb: (l) => ({ notes: l.notes }) },
   },
   jobTitle: {

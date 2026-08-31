@@ -11,8 +11,10 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { hrRetentionPolicies, hrDataRequests } from "../../../../db/schema/hr/governance";
 import { users, organizationMembers } from "../../../../db/schema/common/auth";
+import { organizationLegalHolds } from "../../../../db/schema/common/organization-purge";
 import { HrAuditService } from "../../core/hr-audit.service";
 import { isUnderLegalHold } from "../legal-holds/legal-hold-check.helper";
+import { logger } from "../../../../common/logger/logger.service";
 import type {
   CreateRetentionPolicyInput,
   UpdateRetentionPolicyInput,
@@ -257,8 +259,9 @@ export class RetentionService {
     }
 
     if (existing.type !== "export") {
-      const held = await isUnderLegalHold(orgId, existing.subjectUserId, this.db);
-      if (held) {
+      const hrHeld = await isUnderLegalHold(orgId, existing.subjectUserId, this.db);
+      const orgHeld = await this.isOrgUnderLegalHold(orgId);
+      if (hrHeld || orgHeld) {
         throw new ForbiddenException(
           "Subject is under an active legal hold. Deletion and anonymization are blocked until the hold is released.",
         );
@@ -281,7 +284,6 @@ export class RetentionService {
     });
 
     let result: Record<string, unknown> = {};
-    let finalStatus: "completed" | "processing" = "completed";
 
     if (existing.type === "export") {
       result = await this.exportSubjectData(orgId, existing.subjectUserId);
@@ -289,21 +291,13 @@ export class RetentionService {
       await this.anonymizeSubject(orgId, existing.subjectUserId);
       result = { anonymized: true };
     } else if (existing.type === "delete") {
-      finalStatus = "processing";
-      result = {
-        scheduled: true,
-        subjectUserId: existing.subjectUserId,
-        note: "Hard deletion is queued for an operator; employment history is retained per retention policy.",
-      };
+      await this.anonymizeSubject(orgId, existing.subjectUserId);
+      result = { anonymized: true, subjectUserId: existing.subjectUserId };
     }
 
     await this.db
       .update(hrDataRequests)
-      .set({
-        status: finalStatus,
-        ...(finalStatus === "completed" ? { completedAt: new Date() } : {}),
-        updatedAt: new Date(),
-      })
+      .set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
       .where(and(eq(hrDataRequests.orgId, orgId), eq(hrDataRequests.id, requestId)));
 
     await this.audit.log({
@@ -317,6 +311,70 @@ export class RetentionService {
     });
 
     return result;
+  }
+
+  async sweepStrandedDeleteRequests(orgId: string): Promise<{ processed: number; skipped: number }> {
+    const stranded = await this.db
+      .select()
+      .from(hrDataRequests)
+      .where(
+        and(
+          eq(hrDataRequests.orgId, orgId),
+          eq(hrDataRequests.status, "processing"),
+          eq(hrDataRequests.type, "delete"),
+          isNull(hrDataRequests.deletedAt),
+        ),
+      )
+      .limit(50);
+
+    let processed = 0;
+    let skipped = 0;
+
+    for (const req of stranded) {
+      const hrHeld = await isUnderLegalHold(orgId, req.subjectUserId, this.db);
+      const orgHeld = await this.isOrgUnderLegalHold(orgId);
+      if (hrHeld || orgHeld) {
+        skipped++;
+        logger.warn("[retention-sweep] stranded delete request blocked by legal hold", {
+          orgId,
+          requestId: req.id,
+          subjectUserId: req.subjectUserId,
+        });
+        continue;
+      }
+
+      try {
+        await this.anonymizeSubject(orgId, req.subjectUserId);
+        await this.db
+          .update(hrDataRequests)
+          .set({ status: "completed", completedAt: new Date(), updatedAt: new Date() })
+          .where(and(eq(hrDataRequests.orgId, orgId), eq(hrDataRequests.id, req.id)));
+        processed++;
+      } catch (err) {
+        skipped++;
+        logger.error("[retention-sweep] failed to process stranded delete request", {
+          orgId,
+          requestId: req.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return { processed, skipped };
+  }
+
+  private async isOrgUnderLegalHold(orgId: string): Promise<boolean> {
+    const [hold] = await this.db
+      .select({ holdId: organizationLegalHolds.holdId })
+      .from(organizationLegalHolds)
+      .where(
+        and(
+          eq(organizationLegalHolds.orgId, orgId),
+          isNull(organizationLegalHolds.releasedAt),
+        ),
+      )
+      .limit(1);
+    return hold !== undefined;
   }
 
   private async getRequestById(orgId: string, requestId: number) {

@@ -30,6 +30,7 @@ import {
 } from "./dto/import-job.dto";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const jobIdParams = z.object({ jobId: z.string().min(1) }).strict();
 const entityParams = z.object({ entity: z.string().min(1) }).strict();
@@ -77,6 +78,7 @@ export class HrImportController {
   }
 
   @Post("hr/import/jobs/:jobId/commit")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
   @Validate({ params: jobIdParams })
@@ -88,6 +90,7 @@ export class HrImportController {
   }
 
   @Post("hr/import/jobs/:jobId/rollback")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:import:manage")
   @Validate({ params: jobIdParams })

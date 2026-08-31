@@ -1,4 +1,3 @@
-
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, uniqueIndex, unique, primaryKey, uuid } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { genderEnum, onboardingStatusEnum, onboardingDocStatusEnum, membershipStatusEnum, organizationStatusEnum, invitationStatusEnum } from "./enums";
@@ -453,15 +452,6 @@ export const userApiTokensRelations = relations(userApiTokens, ({ one }) => ({
 export const userDelegations = pgTable("user_delegations", {
   id: text("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-<<<<<<< HEAD
-  /**
-   * Acting-for hangs off the membership, not the login — the same reason the
-   * rest of the RBAC tables key that way. A delegation keyed on the user id
-   * outlived the person's membership and could not carry the composite tenant
-   * FK, so a delegatee from another organisation was representable.
-   */
-=======
->>>>>>> origin/main
   delegatorMembershipId: integer("delegator_membership_id").notNull(),
   delegateeMembershipId: integer("delegatee_membership_id").notNull(),
   startsAt: timestamp("starts_at").defaultNow().notNull(),
@@ -517,17 +507,6 @@ export const userDelegationPermissions = pgTable("user_delegation_permissions", 
 
 export const userDelegationsRelations = relations(userDelegations, ({ one, many }) => ({
   org: one(organizations, { fields: [userDelegations.orgId], references: [organizations.id] }),
-<<<<<<< HEAD
-  delegator: one(organizationMembers, {
-    fields: [userDelegations.delegatorMembershipId],
-    references: [organizationMembers.id],
-    relationName: "delegator_membership",
-  }),
-  delegatee: one(organizationMembers, {
-    fields: [userDelegations.delegateeMembershipId],
-    references: [organizationMembers.id],
-    relationName: "delegatee_membership",
-=======
   delegatorMembership: one(organizationMembers, {
     fields: [userDelegations.orgId, userDelegations.delegatorMembershipId],
     references: [organizationMembers.orgId, organizationMembers.id],
@@ -537,7 +516,6 @@ export const userDelegationsRelations = relations(userDelegations, ({ one, many 
     fields: [userDelegations.orgId, userDelegations.delegateeMembershipId],
     references: [organizationMembers.orgId, organizationMembers.id],
     relationName: "delegateeMembership",
->>>>>>> origin/main
   }),
   permissionGrants: many(userDelegationPermissions),
 }));

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, isNull, ne } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import {
   kbArticleChunks,
   kbArticles,
@@ -362,6 +362,29 @@ export class KbIndexingService {
           eq(kbArticleChunks.orgId, orgId),
         ),
       );
+  }
+
+  async syncAclRevisionForSpace(orgId: string, spaceId: number): Promise<void> {
+    await Promise.all([
+      this.db.execute(sql`
+        UPDATE kb_article_chunks c
+        SET acl_revision = p.acl_revision
+        FROM kb_pages p
+        WHERE c.page_id = p.id
+          AND c.org_id = ${orgId}
+          AND p.space_id = ${spaceId}
+          AND c.acl_revision != p.acl_revision
+      `),
+      this.db.execute(sql`
+        UPDATE kb_article_chunks c
+        SET acl_revision = a.acl_revision
+        FROM kb_articles a
+        WHERE c.article_id = a.id
+          AND c.org_id = ${orgId}
+          AND a.space_id = ${spaceId}
+          AND c.acl_revision != a.acl_revision
+      `),
+    ]);
   }
 
   async reindexAllPages(orgId?: string): Promise<{ reindexed: number }> {

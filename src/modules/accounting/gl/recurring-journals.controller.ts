@@ -17,6 +17,7 @@ import {
 } from "./dto/recurring-journals.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
@@ -74,6 +75,7 @@ export class RecurringJournalsController {
   }
 
   @Post(":templateId/run-now")
+  @BodylessAction()
   @Idempotent("accounting.recurring-journal.run-now")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")

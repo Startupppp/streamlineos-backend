@@ -12,12 +12,18 @@ import { NotificationsModule } from "../notifications/notifications.module";
 import { CalendarNativeEventSource } from "./calendar-native-event-source";
 import { CalendarConflictService } from "./calendar-conflict.service";
 import { CalendarReminderSweepService } from "./calendar-reminder-sweep.service";
+import { CalendarAttendeesService } from "./calendar-attendees.service";
+import { CalendarRecurrenceService } from "./calendar-recurrence.service";
+import { CalendarExportService } from "./calendar-export.service";
 
 @Module({
   imports: [IntegrationsModule, NotificationsModule],
   controllers: [CalendarController, CalendarAdminSettingsController],
   providers: [
     CalendarEventsAggregateService,
+    CalendarAttendeesService,
+    CalendarRecurrenceService,
+    CalendarExportService,
     CalendarService,
     CalendarConflictService,
     CalendarReminderSweepService,

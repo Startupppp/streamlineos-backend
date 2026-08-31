@@ -241,34 +241,47 @@ export class UserOpsService {
 
       if (unitMoves.length > 0) {
         for (const { kind, unitId } of unitMoves) {
-          const existing = await tx
-            .select({ id: orgUnitMembers.id })
-            .from(orgUnitMembers)
-            .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
+          const memberRows = await tx
+            .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+            .from(organizationMembers)
             .where(
               and(
-                eq(orgUnitMembers.orgId, orgId),
-                inArray(orgUnitMembers.userId, tenantUserIds),
-                eq(orgUnits.kind, kind),
+                eq(organizationMembers.orgId, orgId),
+                inArray(organizationMembers.userId, tenantUserIds),
               ),
             );
-          if (existing.length > 0) {
-            await tx
-              .delete(orgUnitMembers)
-              .where(inArray(orgUnitMembers.id, existing.map((row) => row.id)));
+          const membershipIds = memberRows.map((m) => m.id);
+
+          if (membershipIds.length > 0) {
+            const existing = await tx
+              .select({ id: orgUnitMembers.id })
+              .from(orgUnitMembers)
+              .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
+              .where(
+                and(
+                  eq(orgUnitMembers.orgId, orgId),
+                  inArray(orgUnitMembers.membershipId, membershipIds),
+                  eq(orgUnits.kind, kind),
+                ),
+              );
+            if (existing.length > 0) {
+              await tx
+                .delete(orgUnitMembers)
+                .where(inArray(orgUnitMembers.id, existing.map((row) => row.id)));
+            }
           }
 
-          if (unitId !== null) {
+          if (unitId !== null && membershipIds.length > 0) {
             await tx
-                .insert(orgUnitMembers)
-                .values(tenantUserIds.map((userId) => ({
-                  id: randomUUID(),
-                  orgId,
-                  orgUnitId: unitId,
-                  userId,
-                  role: "member",
-                })))
-                .onConflictDoNothing();
+              .insert(orgUnitMembers)
+              .values(memberRows.map((m) => ({
+                id: randomUUID(),
+                orgId,
+                orgUnitId: unitId,
+                membershipId: m.id,
+                role: "member",
+              })))
+              .onConflictDoNothing();
           }
         }
       }

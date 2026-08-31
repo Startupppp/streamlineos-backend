@@ -79,7 +79,6 @@ WHERE hp.organization_person_id IS NULL
 -- Add the FK constraint NOT VALID: existing rows are not scanned, so no long lock.
 -- New inserts and updates are checked immediately.
 -- Migration 0487 runs VALIDATE CONSTRAINT.
-<<<<<<< HEAD
 --
 -- PEND-DB: this said `ADD CONSTRAINT IF NOT EXISTS`, which Postgres does not
 -- have — `ALTER TABLE ... ADD CONSTRAINT` takes no `IF NOT EXISTS`, and the
@@ -91,16 +90,9 @@ WHERE hp.organization_person_id IS NULL
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'fk_hr_people_org_person'
-=======
--- Postgres has no ADD CONSTRAINT IF NOT EXISTS; the guard has to be a catalog check.
-DO $$
-BEGIN
-  IF NOT EXISTS (
     SELECT 1 FROM pg_constraint
     WHERE conname = 'fk_hr_people_org_person'
       AND conrelid = 'hr_people'::regclass
->>>>>>> origin/main
   ) THEN
     ALTER TABLE hr_people
       ADD CONSTRAINT fk_hr_people_org_person

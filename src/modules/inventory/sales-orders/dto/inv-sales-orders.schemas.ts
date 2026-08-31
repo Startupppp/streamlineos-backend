@@ -67,7 +67,7 @@ const reserveAllocationSchema = z.object({
   locationId: z.number().int().positive(),
   lotId: z.number().int().positive().optional(),
   serialId: z.number().int().positive().optional(),
-  qty: z.number().positive(),
+  qty: positiveDecimalQuantity,
 }).strict();
 
 export const reserveSoSchema = z.object({

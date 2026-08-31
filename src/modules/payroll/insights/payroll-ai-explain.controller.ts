@@ -8,8 +8,6 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
-import { ModuleGuard } from "../../../common/rbac/module.guard";
-import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
@@ -22,9 +20,8 @@ import { z } from "zod";
 
 const publicationIdParams = z.object({ publicationId: z.coerce.number().int().positive() }).strict();
 
-@RequireModule("payroll")
 @Controller("payroll/me/payslips")
-@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 export class PayrollAiExplainController {
   constructor(private readonly explainService: PayrollAiExplainService) {}
 

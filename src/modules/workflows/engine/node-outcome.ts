@@ -11,10 +11,18 @@ export interface NodeExecutionInput {
   variables: Record<string, unknown>;
 }
 
+/**
+ * Permissions resolved once per execution advance from the triggering user's grants.
+ * null means system/scheduled context — all actions are permitted.
+ * A Map means user-triggered — each action must appear in this set.
+ */
+export type ResolvedPermissionSet = ReadonlyMap<string, string> | null;
+
 export interface NodeExecutionContext {
   orgId: string;
   executionId: string;
   userId: string | null;
+  resolvedPermissions: ResolvedPermissionSet;
 }
 
 /**

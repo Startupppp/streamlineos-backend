@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, isNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import {
   hrEmployments,
   hrPeople,
@@ -8,6 +9,8 @@ import {
   users,
   type OrgUnitMetadata,
 } from "../../db/schema";
+
+const branchHeadMember = alias(organizationMembers, "branch_head_member");
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -48,11 +51,20 @@ export class BranchesService {
             isNull(orgUnits.deletedAt),
           ),
           with: {
-            head: { columns: { id: true, name: true, image: true } },
+            headMember: {
+              with: {
+                user: { columns: { id: true, name: true, image: true } },
+              },
+            },
           },
         });
 
-        const hrContactIds = rows
+        const processedRows = rows.map((row) => ({
+          ...row,
+          head: row.headMember?.user ?? null,
+        }));
+
+        const hrContactIds = processedRows
           .map((branchRow) =>
             readBranchMeta(branchRow.metadata).hrContactUserId,
           )
@@ -69,7 +81,7 @@ export class BranchesService {
           hrUsers.map((hrUser) => [hrUser.id, hrUser]),
         );
 
-        return rows.map((branchRow) => {
+        return processedRows.map((branchRow) => {
           const meta = readBranchMeta(branchRow.metadata);
           return {
             id: branchRow.id,
@@ -107,7 +119,9 @@ export class BranchesService {
         isNull(orgUnits.deletedAt),
       ),
       with: {
-        head: { columns: { id: true, name: true, image: true, email: true } },
+        headMember: {
+          with: { user: { columns: { id: true, name: true, image: true, email: true } } },
+        },
       },
     });
     if (!branch) return null;
@@ -163,7 +177,7 @@ export class BranchesService {
       status: branch.status === "ACTIVE" ? "ACTIVE" : "INACTIVE",
       createdAt: branch.createdAt,
       updatedAt: branch.updatedAt,
-      branchManager: branch.head ?? null,
+      branchManager: branch.headMember?.user ?? null,
       branchHr: hrUser,
       employees,
     };
@@ -182,6 +196,20 @@ export class BranchesService {
     };
 
     const branch = await this.db.transaction(async (tx) => {
+      const managerMembershipId = input.branchManagerId
+        ? await tx
+            .select({ id: organizationMembers.id })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.userId, input.branchManagerId),
+              ),
+            )
+            .limit(1)
+            .then((rows) => rows[0]?.id ?? null)
+        : null;
+
       const [created] = await tx
         .insert(orgUnits)
         .values({
@@ -189,7 +217,7 @@ export class BranchesService {
           kind: "BRANCH",
           name: input.name,
           code: input.code.toUpperCase(),
-          headUserId: input.branchManagerId ?? null,
+          headMembershipId: managerMembershipId,
           metadata: meta,
         })
         .returning();
@@ -212,8 +240,9 @@ export class BranchesService {
 
   async update(orgId: string, branchId: string, input: UpdateBranchInput) {
     const current = await this.db
-      .select({ metadata: orgUnits.metadata })
+      .select({ metadata: orgUnits.metadata, currentManagerId: branchHeadMember.userId })
       .from(orgUnits)
+      .leftJoin(branchHeadMember, eq(branchHeadMember.id, orgUnits.headMembershipId))
       .where(
         and(
           eq(orgUnits.id, branchId),
@@ -228,6 +257,7 @@ export class BranchesService {
 
     const existingMeta = readBranchMeta(current.metadata);
     const oldHrId = existingMeta.hrContactUserId;
+    const currentManagerId = input.branchManagerId !== undefined ? (input.branchManagerId ?? null) : (current.currentManagerId ?? null);
 
     const patchedMeta: OrgUnitMetadata = {
       ...existingMeta,
@@ -242,13 +272,32 @@ export class BranchesService {
     };
 
     const updated = await this.db.transaction(async (tx) => {
+      let managerMembershipId: number | null | undefined = undefined;
+      if (input.branchManagerId !== undefined) {
+        if (input.branchManagerId) {
+          const [member] = await tx
+            .select({ id: organizationMembers.id })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.userId, input.branchManagerId),
+              ),
+            )
+            .limit(1);
+          managerMembershipId = member?.id ?? null;
+        } else {
+          managerMembershipId = null;
+        }
+      }
+
       const [updatedBranch] = await tx
         .update(orgUnits)
         .set({
           ...(input.name !== undefined ? { name: input.name } : {}),
           ...(input.code !== undefined ? { code: input.code.toUpperCase() } : {}),
           ...(input.branchManagerId !== undefined
-            ? { headUserId: input.branchManagerId }
+            ? { headMembershipId: managerMembershipId }
             : {}),
           ...(input.status !== undefined
             ? { status: input.status === "ACTIVE" ? "ACTIVE" : "DISABLED" }
@@ -282,7 +331,7 @@ export class BranchesService {
         if (
           oldHrId &&
           oldHrId !== input.branchHrId &&
-          oldHrId !== updatedBranch.headUserId
+          oldHrId !== currentManagerId
         ) {
           await syncOrgUnitPlacement(tx, orgId, oldHrId, { BRANCH: null });
         }
@@ -302,8 +351,9 @@ export class BranchesService {
 
   async remove(orgId: string, branchId: string) {
     const current = await this.db
-      .select({ headUserId: orgUnits.headUserId, metadata: orgUnits.metadata })
+      .select({ headUserId: branchHeadMember.userId, metadata: orgUnits.metadata })
       .from(orgUnits)
+      .leftJoin(branchHeadMember, eq(branchHeadMember.id, orgUnits.headMembershipId))
       .where(
         and(
           eq(orgUnits.id, branchId),

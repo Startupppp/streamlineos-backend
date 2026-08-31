@@ -29,7 +29,7 @@ function makeCreateInput(overrides: Partial<CreateInvoiceInput> = {}): CreateInv
 
 describe("InvoicesWriteService — cache invalidation", () => {
   let service: InvoicesWriteService;
-  let mockCache: { invalidateNamespace: jest.Mock; invalidate: jest.Mock };
+  let mockCache: { invalidateNamespace: jest.Mock; invalidateNamespaceForOrg: jest.Mock; invalidate: jest.Mock };
   let mockUpdateService: { updateInvoice: jest.Mock };
   let mockLifecycle: { voidInvoice: jest.Mock; markOverdueInvoices: jest.Mock };
 
@@ -93,6 +93,7 @@ describe("InvoicesWriteService — cache invalidation", () => {
 
     mockCache = {
       invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
       invalidate: jest.fn().mockResolvedValue(undefined),
     };
 

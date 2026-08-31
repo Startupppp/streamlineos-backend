@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus, Headers } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  ParseIntPipe,
+  Query,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -14,6 +25,8 @@ import {
 } from "./dto/inv-returns.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 
 const returnIdParams = z.object({ returnId: z.coerce.number().int().positive() }).strict();
 
@@ -78,12 +91,13 @@ export class VendorReturnsController {
   post(
     @Param("returnId", ParseIntPipe) returnId: number,
     @Body() body: PostVendorReturnInput,
-    @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
+    @IdempotencyKey() idempotencyKeyHeader: string,
     @CurrentUser() u: CurrentUserContext,
   ) {return this.service.post(u.orgId, returnId, u.userId, idempotencyKeyHeader, body);
   }
 
   @Post(":returnId/cancel")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
   @HttpCode(HttpStatus.OK)

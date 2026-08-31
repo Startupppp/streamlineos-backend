@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Patch, Param, Body, Query, ParseIntPipe, UseGuards, HttpCode, HttpStatus, Headers } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Param,
+  Body,
+  Query,
+  ParseIntPipe,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -19,6 +31,8 @@ import {
 } from "./dto/shipments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 
 const shipmentIdParams = z.object({ shipmentId: z.coerce.number().int().positive() }).strict();
 
@@ -81,13 +95,14 @@ export class ShipmentsController {
   ship(
     @Param("shipmentId", ParseIntPipe) shipmentId: number,
     @Body() body: ShipActionInput,
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.ship(u.orgId, u.userId, shipmentId, body, idempotencyKey);
   }
 
   @Post(":shipmentId/cancel")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @HttpCode(HttpStatus.OK)

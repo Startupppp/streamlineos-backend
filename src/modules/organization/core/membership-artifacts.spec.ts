@@ -182,6 +182,17 @@ describe("the membership artifact inventory is derived from the schema", () => {
 });
 
 describe("the membership artifact inventory is well formed", () => {
+  it("has no reason text that describes a pending FK change without the matching onRemoval", () => {
+    for (const artifact of MEMBERSHIP_ARTIFACTS) {
+      if (/fk must change to cascade/i.test(artifact.reason)) {
+        expect(artifact.onRemoval).toBe("cascade");
+      }
+      if (/fk must change to set null/i.test(artifact.reason)) {
+        expect(artifact.onRemoval).toBe("set-null");
+      }
+    }
+  });
+
   it("has a unique id per artifact", () => {
     expect(new Set(MEMBERSHIP_ARTIFACT_IDS).size).toBe(
       MEMBERSHIP_ARTIFACT_IDS.length,

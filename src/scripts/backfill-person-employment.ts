@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
 import { AppModule } from "../app.module";
-import { PersonEmploymentSyncService } from "../modules/hr/core/person-employment-sync.service";
+import { PersonEmploymentBackfillService } from "../modules/hr/core/person-employment-backfill.service";
 import { DRIZZLE } from "../db/drizzle.constants";
 import type { Db } from "../db/drizzle.module";
 import { organizations } from "../db/schema";
@@ -15,7 +15,7 @@ async function main(): Promise<void> {
   });
 
   try {
-    const sync = app.get(PersonEmploymentSyncService);
+    const sync = app.get(PersonEmploymentBackfillService);
     const db = app.get<Db>(DRIZZLE);
 
     const targets = orgId

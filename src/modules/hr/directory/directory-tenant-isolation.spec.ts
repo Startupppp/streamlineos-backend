@@ -350,7 +350,7 @@ describe("OrgStructureService — cross-tenant isolation", () => {
     (db.query as Record<string, unknown>).orgUnits = { findMany: jest.fn().mockResolvedValue([]) };
     const cache = makeCacheMock();
     const employment = makeEmploymentFactsMock();
-    const svc = new OrgStructureService(db as never, cache as never, employment as never);
+    const svc = new OrgStructureService(db as never, cache as never, employment as never, undefined as never);
     await svc.getDirectory(ATTACKER, "actor-1", "all");
     // The org predicate lives in the innerJoin condition:
     // innerJoin(organizationMembers, and(eq(userId, users.id), eq(orgId, orgId)))
@@ -365,7 +365,7 @@ describe("OrgStructureService — cross-tenant isolation", () => {
     (db.query as Record<string, unknown>).orgUnits = { findMany: jest.fn().mockResolvedValue([]) };
     const cache = makeCacheMock();
     const employment = makeEmploymentFactsMock();
-    const svc = new OrgStructureService(db as never, cache as never, employment as never);
+    const svc = new OrgStructureService(db as never, cache as never, employment as never, undefined as never);
     await svc.getDirectory(OWNER, "actor-1", "all");
     expect(innerJoin).toHaveBeenCalled();
     expect(sqlValues(innerJoin.mock.calls[0]?.[1])).toContain(OWNER);

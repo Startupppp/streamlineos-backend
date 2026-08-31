@@ -40,6 +40,9 @@ export class InputsService {
     ];
     if (query.userId) conditions.push(eq(payrollInputs.userId, query.userId));
 
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 50, 100);
+
     const rows = await this.db
       .select({
         id: payrollInputs.id,
@@ -62,7 +65,9 @@ export class InputsService {
       .from(payrollInputs)
       .innerJoin(users, eq(users.id, payrollInputs.userId))
       .where(and(...conditions))
-      .orderBy(users.name);
+      .orderBy(users.name)
+      .limit(limit)
+      .offset((page - 1) * limit);
 
     return rows;
   }

@@ -31,6 +31,7 @@ import {
 } from "../automation-studio/dto/automation-studio.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 
@@ -95,6 +96,7 @@ export class CrmAutomationsController {
   }
 
   @Patch("automations/:ruleId/enable")
+  @BodylessAction()
   @RequirePermission("crm:automations:manage")
   @Validate({ params: ruleIdParams })
   enable(
@@ -105,6 +107,7 @@ export class CrmAutomationsController {
   }
 
   @Patch("automations/:ruleId/disable")
+  @BodylessAction()
   @RequirePermission("crm:automations:manage")
   @Validate({ params: ruleIdParams })
   disable(
@@ -131,10 +134,9 @@ export class CrmAutomationsController {
   @Validate({ params: ruleIdParams })
   getRuns(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Query("page") page = "1",
+    @Query("cursor") cursor: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const pageNum = Math.max(1, Math.min(100, parseInt(page, 10) || 1));
-    return this.automations.getRuns(u.orgId, ruleId, pageNum);
+    return this.automations.getRuns(u.orgId, ruleId, cursor);
   }
 }

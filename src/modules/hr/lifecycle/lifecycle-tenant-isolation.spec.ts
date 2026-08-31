@@ -10,10 +10,11 @@ import { ProbationReviewReaderService } from "./probation-review-reader.service"
 import { ProbationService } from "./probation.service";
 import { ResignationJobsService } from "./resignation-jobs.service";
 import { TerminationService } from "./termination.service";
+import { TerminationReadService } from "./termination-read.service";
 import { TerminationCommunicationsService } from "./termination-communications.service";
 import { ExperienceLetterService } from "./experience-letter.service";
-import type { EmploymentFactsService } from "../../directory/employment-facts.service";
 import type { CacheService } from "../../../common/cache/cache.service";
+import type { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -268,10 +269,11 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
   describe("TerminationService", () => {
     it("hides terminations for a different org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
+      const reader = new TerminationReadService(db, {} as never);
       const svc = new TerminationService(
         db,
         {} as never, {} as never, {} as never,
-        {} as never, {} as never, {} as never, {} as never,
+        reader, {} as never,
       );
       const result = await svc.list(ATTACKER, { page: 1, limit: 10 });
       expect(result.data).toHaveLength(0);
@@ -281,10 +283,11 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
 
     it("returns terminations for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
+      const reader = new TerminationReadService(db, {} as never);
       const svc = new TerminationService(
         db,
         {} as never, {} as never, {} as never,
-        {} as never, {} as never, {} as never, {} as never,
+        reader, {} as never,
       );
       const result = await svc.list(OWNER, { page: 1, limit: 10 });
       expect(result.data).toHaveLength(1);
@@ -387,7 +390,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("scopes employment queries to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
       const svc = new ExperienceLetterService(db, {} as never);
-      await expect(svc.create(ATTACKER, "user-1", {})).rejects.toThrow();
+      await expect(svc.create(ATTACKER, "user-1", { userId: "user-1", relievingDate: "2024-01-01" })).rejects.toThrow();
       expect(where).toHaveBeenCalled();
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
       expect(allValues).toContain(ATTACKER);
@@ -396,7 +399,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("scopes employment queries to the owning org (CONTROL)", async () => {
       const { db, where } = makeDb([]);
       const svc = new ExperienceLetterService(db, {} as never);
-      await expect(svc.create(OWNER, "user-1", {})).rejects.toThrow();
+      await expect(svc.create(OWNER, "user-1", { userId: "user-1", relievingDate: "2024-01-01" })).rejects.toThrow();
       expect(where).toHaveBeenCalled();
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
       expect(allValues).toContain(OWNER);

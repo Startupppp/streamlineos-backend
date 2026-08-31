@@ -1,22 +1,49 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { TenantTx } from "../../../db/drizzle.types";
 import {
+  organizationMembers,
   workflowExecutions,
   workflowExecutionSteps,
   workflowVersions,
 } from "../../../db/schema";
 import { nextNodeId, parseWorkflowGraph, type WorkflowGraph } from "./workflow-graph";
-import { type NodeDispatchPort } from "./node-outcome";
+import { type NodeDispatchPort, type ResolvedPermissionSet } from "./node-outcome";
 import { readRunState, writeRunState } from "./workflow-execution-context";
 import { type ClaimedExecution } from "./execution-claim";
 
 export const MAX_STEPS_PER_EXECUTION = 200;
 
+async function assertTriggerActorActive(
+  tx: TenantTx,
+  orgId: string,
+  userId: string,
+): Promise<boolean> {
+  const [row] = await tx
+    .select({ status: organizationMembers.status })
+    .from(organizationMembers)
+    .where(and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)))
+    .limit(1);
+  return row?.status === "ACTIVE";
+}
+
 export async function advanceExecution(
   tx: TenantTx,
   execution: ClaimedExecution,
   dispatcher: NodeDispatchPort,
+  resolvedPermissions: ResolvedPermissionSet = null,
 ): Promise<"completed" | "failed" | "suspended"> {
+  if (execution.triggeredBy != null) {
+    const actorActive = await assertTriggerActorActive(tx, execution.orgId, execution.triggeredBy);
+    if (!actorActive) {
+      await recordStep(tx, execution.id, "authority-check", "trigger", {
+        status: "failed",
+        error: "Execution actor is no longer an active member of this organisation",
+      });
+      await finishExecution(tx, execution.id, "failed");
+      return "failed";
+    }
+  }
+
   const parsed = await loadGraph(tx, execution);
   if (!parsed.ok) {
     await recordStep(tx, execution.id, "definition", "trigger", {
@@ -63,6 +90,7 @@ export async function advanceExecution(
         orgId: execution.orgId,
         executionId: execution.id,
         userId: execution.triggeredBy,
+        resolvedPermissions,
       },
     );
     steps += 1;

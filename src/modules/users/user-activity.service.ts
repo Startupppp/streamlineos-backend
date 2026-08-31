@@ -1,8 +1,10 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, gte, ilike, lte } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { auditLogs, organizationMembers } from "../../db/schema";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetBeforeId } from "../../common/pagination/keyset";
 import type { ListAuditInput } from "./dto/users.schemas";
 
 @Injectable()
@@ -24,13 +26,19 @@ export class UserActivityService {
   async getUserActivity(
     orgId: string,
     userId: string,
-    params?: { page?: number; limit?: number },
+    params?: { cursor?: string; limit?: number },
   ) {
     await this.assertMember(orgId, userId);
 
-    const page = params?.page ?? 1;
     const limit = Math.min(params?.limit ?? 20, 100);
-    const offset = (page - 1) * limit;
+    const position = decodeCursor(params?.cursor);
+
+    const conditions = [
+      eq(auditLogs.orgId, orgId),
+      eq(auditLogs.targetId, userId),
+      eq(auditLogs.targetType, "user"),
+    ];
+    if (position) conditions.push(keysetBeforeId(auditLogs.createdAt, auditLogs.id, position));
 
     const rows = await this.db
       .select({
@@ -46,19 +54,17 @@ export class UserActivityService {
         createdAt: auditLogs.createdAt,
       })
       .from(auditLogs)
-      .where(
-        and(
-          eq(auditLogs.orgId, orgId),
-          eq(auditLogs.targetId, userId),
-          eq(auditLogs.targetType, "user"),
-        ),
-      )
-      .orderBy(desc(auditLogs.createdAt))
-      .limit(limit)
-      .offset(offset);
+      .where(and(...conditions))
+      .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
+      .limit(limit + 1);
+
+    const page = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
 
     return {
-      data: rows.map((row) => ({
+      data: page.data.map((row) => ({
         id: String(row.id),
         orgId: row.orgId ?? "",
         userId: row.targetId ?? "",
@@ -70,14 +76,13 @@ export class UserActivityService {
         ipAddress: row.ipAddress ?? null,
         createdAt: row.createdAt,
       })),
-      page,
-      limit,
+      pagination: page.pagination,
     };
   }
 
   async getAuditLog(orgId: string, params: ListAuditInput) {
-    const { page, limit, actorUserId, action, from, to } = params;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, actorUserId, action, from, to } = params;
+    const position = decodeCursor(cursor);
 
     const conditions = [
       eq(auditLogs.orgId, orgId),
@@ -87,34 +92,33 @@ export class UserActivityService {
     if (action) conditions.push(ilike(auditLogs.action, `%${action}%`));
     if (from) conditions.push(gte(auditLogs.createdAt, new Date(from)));
     if (to) conditions.push(lte(auditLogs.createdAt, new Date(to)));
+    if (position) conditions.push(keysetBeforeId(auditLogs.createdAt, auditLogs.id, position));
 
-    const [rows, countResult] = await Promise.all([
-      this.db
-        .select({
-          id: auditLogs.id,
-          orgId: auditLogs.orgId,
-          targetId: auditLogs.targetId,
-          actorUserId: auditLogs.actorUserId,
-          action: auditLogs.action,
-          resourceType: auditLogs.resourceType,
-          resourceId: auditLogs.resourceId,
-          metadata: auditLogs.metadata,
-          ipAddress: auditLogs.ipAddress,
-          createdAt: auditLogs.createdAt,
-        })
-        .from(auditLogs)
-        .where(and(...conditions))
-        .orderBy(desc(auditLogs.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(auditLogs)
-        .where(and(...conditions)),
-    ]);
+    const rows = await this.db
+      .select({
+        id: auditLogs.id,
+        orgId: auditLogs.orgId,
+        targetId: auditLogs.targetId,
+        actorUserId: auditLogs.actorUserId,
+        action: auditLogs.action,
+        resourceType: auditLogs.resourceType,
+        resourceId: auditLogs.resourceId,
+        metadata: auditLogs.metadata,
+        ipAddress: auditLogs.ipAddress,
+        createdAt: auditLogs.createdAt,
+      })
+      .from(auditLogs)
+      .where(and(...conditions))
+      .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
+      .limit(limit + 1);
+
+    const page = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
 
     return {
-      data: rows.map((row) => ({
+      data: page.data.map((row) => ({
         id: String(row.id),
         orgId: row.orgId ?? "",
         userId: row.targetId ?? "",
@@ -126,20 +130,15 @@ export class UserActivityService {
         ipAddress: row.ipAddress ?? null,
         createdAt: row.createdAt,
       })),
-      pagination: {
-        page,
-        limit,
-        total: countResult[0]?.total ?? 0,
-        totalPages: Math.ceil((countResult[0]?.total ?? 0) / limit),
-      },
+      pagination: page.pagination,
     };
   }
 
   async getUserAuditLog(orgId: string, userId: string, params: ListAuditInput) {
     await this.assertMember(orgId, userId);
 
-    const { page, limit, from, to } = params;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, from, to } = params;
+    const position = decodeCursor(cursor);
 
     const conditions = [
       eq(auditLogs.orgId, orgId),
@@ -148,34 +147,33 @@ export class UserActivityService {
     ];
     if (from) conditions.push(gte(auditLogs.createdAt, new Date(from)));
     if (to) conditions.push(lte(auditLogs.createdAt, new Date(to)));
+    if (position) conditions.push(keysetBeforeId(auditLogs.createdAt, auditLogs.id, position));
 
-    const [rows, countResult] = await Promise.all([
-      this.db
-        .select({
-          id: auditLogs.id,
-          orgId: auditLogs.orgId,
-          targetId: auditLogs.targetId,
-          actorUserId: auditLogs.actorUserId,
-          action: auditLogs.action,
-          resourceType: auditLogs.resourceType,
-          resourceId: auditLogs.resourceId,
-          metadata: auditLogs.metadata,
-          ipAddress: auditLogs.ipAddress,
-          createdAt: auditLogs.createdAt,
-        })
-        .from(auditLogs)
-        .where(and(...conditions))
-        .orderBy(desc(auditLogs.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(auditLogs)
-        .where(and(...conditions)),
-    ]);
+    const rows = await this.db
+      .select({
+        id: auditLogs.id,
+        orgId: auditLogs.orgId,
+        targetId: auditLogs.targetId,
+        actorUserId: auditLogs.actorUserId,
+        action: auditLogs.action,
+        resourceType: auditLogs.resourceType,
+        resourceId: auditLogs.resourceId,
+        metadata: auditLogs.metadata,
+        ipAddress: auditLogs.ipAddress,
+        createdAt: auditLogs.createdAt,
+      })
+      .from(auditLogs)
+      .where(and(...conditions))
+      .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
+      .limit(limit + 1);
+
+    const page = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
 
     return {
-      data: rows.map((row) => ({
+      data: page.data.map((row) => ({
         id: String(row.id),
         orgId: row.orgId ?? "",
         userId: row.targetId ?? "",
@@ -187,12 +185,7 @@ export class UserActivityService {
         ipAddress: row.ipAddress ?? null,
         createdAt: row.createdAt,
       })),
-      pagination: {
-        page,
-        limit,
-        total: countResult[0]?.total ?? 0,
-        totalPages: Math.ceil((countResult[0]?.total ?? 0) / limit),
-      },
+      pagination: page.pagination,
     };
   }
 }

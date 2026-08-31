@@ -1,8 +1,8 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull } from "drizzle-orm";
-import { deals, dealActivities, dealApprovals, dealStageTransitions, chatChannels, chatChannelMembers } from "../../db/schema";
+import { and, eq, isNull, inArray } from "drizzle-orm";
+import { deals, dealActivities, dealApprovals, dealStageTransitions, chatChannels, chatChannelMembers, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
@@ -165,12 +165,17 @@ export class DealsService {
       memberIds.push(dealRow.assignedToId);
     }
 
+    const memberships = await this.db
+      .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, memberIds)));
+
     await this.db.insert(chatChannelMembers).values(
-      memberIds.map((uid) => ({
+      memberships.map((m) => ({
         orgId,
         channelId: newChannel.id,
-        userId: uid,
-        role: uid === userId ? "ADMIN" : "MEMBER",
+        membershipId: m.id,
+        role: m.userId === userId ? "ADMIN" : "MEMBER",
       })),
     );
   }

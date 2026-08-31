@@ -3,6 +3,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { AutomationService } from "./automation.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
+import { AutomationWebhookService } from "./automation-webhook.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -15,7 +16,11 @@ const mockDb = {
   },
   select: jest.fn().mockReturnValue({
     from: jest.fn().mockReturnValue({
-      where: jest.fn().mockResolvedValue([{ total: 0 }]),
+      where: jest.fn().mockReturnValue(
+        Object.assign(Promise.resolve([{ total: 0 }]), {
+          limit: jest.fn().mockResolvedValue([{ status: "ACTIVE" }]),
+        }),
+      ),
     }),
   }),
   insert: jest.fn().mockReturnThis(),
@@ -32,6 +37,7 @@ const mockDb = {
 
 const mockNotifications = { create: jest.fn() };
 const mockEmail = { send: jest.fn() };
+const mockWebhook = { dispatchWebhook: jest.fn().mockResolvedValue(undefined) };
 const mockPlanLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
 const mockAiNodeExecutor = { executeNode: jest.fn().mockResolvedValue({ ok: true }) };
 
@@ -51,6 +57,7 @@ describe("AutomationService — support_* actions", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
+        { provide: AutomationWebhookService, useValue: mockWebhook },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
         { provide: AiNodeExecutorService, useValue: mockAiNodeExecutor },
       ],
@@ -154,6 +161,7 @@ describe("AutomationService — rule CRUD", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
+        { provide: AutomationWebhookService, useValue: mockWebhook },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
         { provide: AiNodeExecutorService, useValue: mockAiNodeExecutor },
       ],
@@ -289,6 +297,7 @@ describe("AutomationService.runAutomationsForEvent() — batch writes", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
+        { provide: AutomationWebhookService, useValue: mockWebhook },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
         { provide: AiNodeExecutorService, useValue: mockAiNodeExecutor },
       ],
@@ -379,5 +388,235 @@ describe("AutomationService.runAutomationsForEvent() — batch writes", () => {
     await service.runAutomationsForEvent("org1", "ticket.priority_changed", { ticketId: 2 });
 
     expect(insertedRuns).toHaveLength(2);
+  });
+});
+
+describe("AutomationService — support_add_tag org-scoping", () => {
+  let service: AutomationService;
+
+  function makeModule(tagLookupResult: Array<{ id: number }>) {
+    jest.clearAllMocks();
+    const limitMock = jest.fn().mockResolvedValue(tagLookupResult);
+    const selectMock = jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue(
+          Object.assign(Promise.resolve([]), { limit: limitMock }),
+        ),
+      }),
+    });
+    const insertTracker: unknown[] = [];
+    const localDb = {
+      query: { automationRules: { findMany: jest.fn(), findFirst: jest.fn() }, automationRuns: { findMany: jest.fn() } },
+      select: selectMock,
+      insert: jest.fn().mockImplementation(() => ({
+        values: jest.fn().mockImplementation((row: unknown) => {
+          insertTracker.push(row);
+          return { onConflictDoNothing: jest.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+      update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }) }) }),
+    };
+    return { localDb, insertTracker, limitMock };
+  }
+
+  async function buildService(localDb: unknown) {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AutomationService,
+        { provide: DRIZZLE, useValue: localDb },
+        { provide: NotificationsService, useValue: { create: jest.fn() } },
+        { provide: AutomationEmailService, useValue: { send: jest.fn() } },
+        { provide: AutomationWebhookService, useValue: { dispatchWebhook: jest.fn().mockResolvedValue(undefined) } },
+        { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
+        { provide: AiNodeExecutorService, useValue: { executeNode: jest.fn() } },
+      ],
+    }).compile();
+    return module.get(AutomationService);
+  }
+
+  it("proof — skipping the tag lookup (always inserts) lets a foreign tag be applied", async () => {
+    const { localDb, insertTracker } = makeModule([{ id: 99 }]);
+    service = await buildService(localDb);
+
+    const result = await service.executeAction(
+      "org-a",
+      { type: "support_add_tag", config: { tagId: 99 } },
+      { ticketId: 10 },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(insertTracker).toContainEqual({ ticketId: 10, tagId: 99 });
+  });
+
+  it("rejects a tagId that does not belong to the caller's org (cross-org tag isolation)", async () => {
+    const { localDb } = makeModule([]);
+    service = await buildService(localDb);
+
+    const result = await service.executeAction(
+      "org-a",
+      { type: "support_add_tag", config: { tagId: 999 } },
+      { ticketId: 10 },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/not found in this organisation/i);
+  });
+
+  it("allows a valid org-owned tag and inserts without error", async () => {
+    const { localDb, insertTracker } = makeModule([{ id: 7 }]);
+    service = await buildService(localDb);
+
+    const result = await service.executeAction(
+      "org-a",
+      { type: "support_add_tag", config: { tagId: 7 } },
+      { ticketId: 42 },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(insertTracker).toContainEqual({ ticketId: 42, tagId: 7 });
+  });
+});
+
+describe("AutomationService — W-6: live membership check on assigneeId", () => {
+  async function buildServiceWithMemberLookup(memberRow: { status: string } | null) {
+    jest.clearAllMocks();
+
+    const limitMock = jest.fn().mockResolvedValue(memberRow ? [memberRow] : []);
+    const localDb = {
+      query: {
+        automationRules: { findMany: jest.fn(), findFirst: jest.fn() },
+        automationRuns: { findMany: jest.fn() },
+      },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue(
+            Object.assign(Promise.resolve([]), { limit: limitMock }),
+          ),
+        }),
+      }),
+      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
+        }),
+      }),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AutomationService,
+        { provide: DRIZZLE, useValue: localDb },
+        { provide: NotificationsService, useValue: { create: jest.fn() } },
+        { provide: AutomationEmailService, useValue: { send: jest.fn() } },
+        { provide: AutomationWebhookService, useValue: { dispatchWebhook: jest.fn().mockResolvedValue(undefined) } },
+        { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
+        { provide: AiNodeExecutorService, useValue: { executeNode: jest.fn() } },
+      ],
+    }).compile();
+
+    return { service: module.get(AutomationService), localDb };
+  }
+
+  it("proof — skipping the membership check (active member) lets support_assign_ticket succeed", async () => {
+    const { service } = await buildServiceWithMemberLookup({ status: "ACTIVE" });
+
+    const result = await service.executeAction(
+      "org-a",
+      { type: "support_assign_ticket", config: { assigneeId: "agent-1" } },
+      { ticketId: 5 },
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("support_assign_ticket rejects a departed assignee (not found)", async () => {
+    const { service } = await buildServiceWithMemberLookup(null);
+
+    const result = await service.executeAction(
+      "org-a",
+      { type: "support_assign_ticket", config: { assigneeId: "gone-agent" } },
+      { ticketId: 5 },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/not an active member/i);
+  });
+
+  it("support_assign_ticket rejects a SUSPENDED assignee", async () => {
+    const { service } = await buildServiceWithMemberLookup({ status: "SUSPENDED" });
+
+    const result = await service.executeAction(
+      "org-a",
+      { type: "support_assign_ticket", config: { assigneeId: "suspended-agent" } },
+      { ticketId: 5 },
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/not an active member/i);
+  });
+
+  it("create_task with an assigneeId rejects a departed user (not found)", async () => {
+    const { service } = await buildServiceWithMemberLookup(null);
+
+    const result = await service.executeAction(
+      "org-a",
+      { type: "create_task", config: { title: "Do it", assigneeId: "gone-user" } },
+      {},
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/not an active member/i);
+  });
+
+  it("create_task with an assigneeId allows an active member", async () => {
+    const { service } = await buildServiceWithMemberLookup({ status: "ACTIVE" });
+
+    const result = await service.executeAction(
+      "org-a",
+      { type: "create_task", config: { title: "Do it", assigneeId: "good-user" } },
+      {},
+    );
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("create_task without an assigneeId skips the membership check entirely", async () => {
+    const limitMock = jest.fn();
+    const localDb = {
+      query: {
+        automationRules: { findMany: jest.fn(), findFirst: jest.fn() },
+        automationRuns: { findMany: jest.fn() },
+      },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue(
+            Object.assign(Promise.resolve([]), { limit: limitMock }),
+          ),
+        }),
+      }),
+      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
+      update: jest.fn(),
+    };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AutomationService,
+        { provide: DRIZZLE, useValue: localDb },
+        { provide: NotificationsService, useValue: { create: jest.fn() } },
+        { provide: AutomationEmailService, useValue: { send: jest.fn() } },
+        { provide: AutomationWebhookService, useValue: { dispatchWebhook: jest.fn().mockResolvedValue(undefined) } },
+        { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
+        { provide: AiNodeExecutorService, useValue: { executeNode: jest.fn() } },
+      ],
+    }).compile();
+    const service = module.get(AutomationService);
+
+    const result = await service.executeAction(
+      "org-a",
+      { type: "create_task", config: { title: "Unassigned task" } },
+      {},
+    );
+
+    expect(result.ok).toBe(true);
+    expect(limitMock).not.toHaveBeenCalled();
   });
 });

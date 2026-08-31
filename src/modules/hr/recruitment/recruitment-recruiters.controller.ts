@@ -27,6 +27,7 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const platformParams = z.object({ platform: z.string().min(1) }).strict();
 
@@ -56,6 +57,7 @@ export class RecruitmentRecruitersController {
   }
 
   @Post("portals/:platform/sync")
+  @BodylessAction()
   @RequirePermission("hr:employees:manage")
   @Validate({ params: platformParams })
   syncPortal(

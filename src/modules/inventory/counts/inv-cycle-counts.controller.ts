@@ -14,6 +14,7 @@ import {
 } from "./dto/inv-counts.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const countIdParams = z.object({ countId: z.coerce.number().int().positive() }).strict();
 
@@ -57,6 +58,7 @@ export class InvCycleCountsController {
   }
 
   @Post(":countId/start")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: countIdParams })
@@ -80,6 +82,7 @@ export class InvCycleCountsController {
   }
 
   @Post(":countId/review")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: countIdParams })
@@ -91,6 +94,7 @@ export class InvCycleCountsController {
   }
 
   @Post(":countId/post")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: countIdParams })
@@ -102,6 +106,7 @@ export class InvCycleCountsController {
   }
 
   @Post(":countId/cancel")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: countIdParams })

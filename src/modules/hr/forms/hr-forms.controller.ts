@@ -36,6 +36,7 @@ import {
 } from "./dto/hr-forms.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const formIdParams = z.object({ formId: z.coerce.number().int().positive() }).strict();
 const submissionIdParams = z.object({ submissionId: z.coerce.number().int().positive() }).strict();
@@ -98,6 +99,7 @@ export class HrFormsController {
   }
 
   @Post(":formId/activate")
+  @BodylessAction()
   @RequirePermission("hr:forms:manage")
   @Validate({ params: formIdParams })
   activate(
@@ -108,6 +110,7 @@ export class HrFormsController {
   }
 
   @Post(":formId/archive")
+  @BodylessAction()
   @RequirePermission("hr:forms:manage")
   @Validate({ params: formIdParams })
   archive(

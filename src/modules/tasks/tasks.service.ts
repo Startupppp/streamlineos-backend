@@ -1,5 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, and, asc, desc, count } from "drizzle-orm";
+import { eq, and, desc, count } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetBefore } from "../../common/pagination/keyset";
 import { tasks, crmActivities } from "../../db/schema";
 import { crmActivityTypeEnum } from "../../db/schema/common/enums";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -32,9 +34,9 @@ export class TasksService {
 
   async list(actor: CurrentUserContext, filters: ListInput) {
     const { orgId, userId } = actor;
-    const offset = (filters.page - 1) * filters.limit;
     const canViewAll = await this.canViewAllTasks(actor);
     const resolvedAssigneeId = filters.assigneeId === "me" ? userId : filters.assigneeId;
+    const limit = filters.limit;
 
     const conditions = [eq(tasks.orgId, orgId)];
     if (!canViewAll) conditions.push(eq(tasks.assigneeId, userId));
@@ -45,20 +47,30 @@ export class TasksService {
     if (filters.entityType) conditions.push(eq(tasks.entityType, filters.entityType));
     if (filters.entityId) conditions.push(eq(tasks.entityId, Number(filters.entityId)));
 
-    const whereClause = and(...conditions);
+    const position = decodeCursor(filters.cursor);
+    const where = position
+      ? and(...conditions, keysetBefore(tasks.createdAt, tasks.id, position))
+      : and(...conditions);
 
     const [rows, totalResult] = await Promise.all([
       this.db
         .select()
         .from(tasks)
-        .where(whereClause)
-        .orderBy(asc(tasks.dueDate), desc(tasks.createdAt))
-        .limit(filters.limit)
-        .offset(offset),
-      this.db.select({ count: count() }).from(tasks).where(whereClause),
+        .where(where)
+        .orderBy(desc(tasks.createdAt), desc(tasks.id))
+        .limit(limit + 1),
+      filters.cursor === undefined
+        ? this.db.select({ count: count() }).from(tasks).where(and(...conditions))
+        : Promise.resolve(null),
     ]);
 
-    return { tasks: rows, total: totalResult[0]?.count ?? 0, page: filters.page, limit: filters.limit };
+    const page = buildCursorPage(rows, limit, (t) => ({ sortValue: t.createdAt.toISOString(), id: String(t.id) }));
+    return {
+      tasks: page.data,
+      hasMore: page.pagination.hasMore,
+      nextCursor: page.pagination.nextCursor,
+      total: totalResult ? (totalResult[0]?.count ?? 0) : undefined,
+    };
   }
 
   async create(orgId: string, userId: string, input: CreateInput) {
