@@ -18,9 +18,13 @@ export interface EnqueueInput {
 
 export interface ListJobsOptions {
   type?: string;
-  status?: string;
+  status?: AiJob["status"];
   cursor?: number;
   limit?: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 @Injectable()
@@ -82,11 +86,10 @@ export class AiJobsService {
       id: Number(row["id"]),
       orgId: String(row["org_id"]),
       userId: row["user_id"] != null ? String(row["user_id"]) : null,
-      userMembershipId:
-        row["user_membership_id"] != null ? Number(row["user_membership_id"]) : null,
+      userMembershipId: row["user_membership_id"] != null ? Number(row["user_membership_id"]) : null,
       type: String(row["type"]),
-      payload: (row["payload"] ?? {}) as Record<string, unknown>,
-      status: String(row["status"]) as AiJob["status"],
+      payload: isRecord(row["payload"]) ? row["payload"] : {},
+      status: "RUNNING",
       priority: Number(row["priority"]),
       attempts: Number(row["attempts"]),
       maxAttempts: Number(row["max_attempts"]),
@@ -95,7 +98,7 @@ export class AiJobsService {
       lockedBy: row["locked_by"] != null ? String(row["locked_by"]) : null,
       lockedAt: row["locked_at"] != null ? new Date(String(row["locked_at"])) : null,
       lastError: row["last_error"] != null ? String(row["last_error"]) : null,
-      result: (row["result"] ?? null) as Record<string, unknown> | null,
+      result: isRecord(row["result"]) ? row["result"] : null,
       createdAt: new Date(String(row["created_at"])),
       updatedAt: new Date(String(row["updated_at"])),
     }));
@@ -157,7 +160,7 @@ export class AiJobsService {
     const conditions = [eq(aiJobs.orgId, orgId)];
 
     if (opts.type) conditions.push(eq(aiJobs.type, opts.type));
-    if (opts.status) conditions.push(eq(aiJobs.status, opts.status as AiJob["status"]));
+    if (opts.status) conditions.push(eq(aiJobs.status, opts.status));
     if (opts.cursor) conditions.push(lt(aiJobs.id, opts.cursor));
 
     const items = await this.db.query.aiJobs.findMany({

@@ -42,14 +42,14 @@ describe("LeadsImportService — cross-tenant isolation", () => {
 
   it("scopes dedup query to the importing org (cross-tenant isolation)", async () => {
     const { svc, where } = makeService([]);
-    await svc.importLeads(ATTACKER, "user-1", { leads: [{ name: "Test", email: "t@test.com", phone: null }] });
+    await svc.importLeads(ATTACKER, "user-1", { leads: [{ name: "Test", email: "t@test.com", phone: undefined }], duplicateAction: "skip", autoDistribute: false });
     const allVals = where.mock.calls.flat().flatMap((c: unknown) => sqlValues(c));
     expect(allVals).toContain(ATTACKER);
   });
 
   it("uses the correct org for dedup lookup (control)", async () => {
     const { svc, where } = makeService([]);
-    await svc.importLeads(OWNER, "user-1", { leads: [{ name: "Test", email: "o@owner.com", phone: null }] });
+    await svc.importLeads(OWNER, "user-1", { leads: [{ name: "Test", email: "o@owner.com", phone: undefined }], duplicateAction: "skip", autoDistribute: false });
     const allVals = where.mock.calls.flat().flatMap((c: unknown) => sqlValues(c));
     expect(allVals).toContain(OWNER);
   });

@@ -47,6 +47,11 @@ function makeDb(queue: unknown[][], rec: Recorded) {
         return { where: () => Promise.resolve(undefined) };
       },
     }),
+    query: {
+      organizationMembers: {
+        findFirst: (_opts: unknown) => Promise.resolve(next()[0]),
+      },
+    },
   };
   db.transaction = async (cb: (tx: unknown) => Promise<unknown>) => cb(db);
   return db;
@@ -115,6 +120,7 @@ describe("journal outbox — reversal", () => {
       [original],                       // requireBatch
       [{ ...original, lineNo: 1, account: "Salary Expense", description: "Basic (BASIC)", debit: "1000.00", credit: "0.00", costCenter: "CC1" },
        { ...original, lineNo: 2, account: "Salaries Payable", description: "Net payable", debit: "0.00", credit: "1000.00", costCenter: null }],
+      [{ id: 1 }],                      // resolveMembershipId
       [{ maxVersion: 1 }],              // version lookup
       [{ id: 11 }],                     // reversal batch insert returning
       [batchRow({ id: 11, reversalOfBatchId: 10, totalDebits: "1000.00", totalCredits: "1000.00" })], // final get
@@ -207,6 +213,7 @@ describe("journal outbox — creation", () => {
     const existing = batchRow({ id: 42 });
     const { service, rec } = build([
       [{ id: 5, orgId: "org1", month: "2025-07", status: "LOCKED", runType: "REGULAR" }], // run
+      [{ id: 1 }],  // resolveMembershipId
       [existing],   // source-hash lookup hits
       [existing],   // final get
       [],           // final get lines

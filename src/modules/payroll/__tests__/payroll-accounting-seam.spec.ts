@@ -1,3 +1,7 @@
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: (_db: unknown, _orgId: unknown, fn: () => Promise<unknown>) => fn(),
+}));
+
 import { PayrollPostingService } from "../payroll-posting.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -22,7 +26,7 @@ function makePoster(override?: Partial<{ postJournal: jest.Mock; reverseJournal:
 }
 
 function build(poster = makePoster()): { service: PayrollPostingService; poster: ReturnType<typeof makePoster> } {
-  const service = new PayrollPostingService(poster as never);
+  const service = new PayrollPostingService(poster as never, {} as never);
   return { service, poster };
 }
 
@@ -70,14 +74,16 @@ describe("payroll → accounting seam — replay idempotency", () => {
   });
 });
 
-describe("payroll → accounting seam — DLQ gap: postPaid swallows errors", () => {
-  it("resolves without throwing when postJournal rejects (silent failure)", async () => {
-    const { service } = build(makePoster({ postJournal: jest.fn().mockRejectedValue(new Error("42501: permission denied for table journal_entries")) }));
-    await expect(service.postPaid(USER, 42, "2026-08", "400000")).resolves.toBeUndefined();
-  });
-
-  it("OPEN: a failed postPaid leaves no DLQ record — the journal entry is silently dropped", () => {
-    expect("postPaid has no outbox, no DLQ, and catches its own errors").toBeTruthy();
+describe("payroll → accounting seam — postPaid surfaces failures instead of swallowing them", () => {
+  it("rejects when postJournal rejects, so the after-commit drain logs and reports the failure", async () => {
+    const { service } = build(
+      makePoster({
+        postJournal: jest
+          .fn()
+          .mockRejectedValue(new Error("42501: permission denied for table journal_entries")),
+      }),
+    );
+    await expect(service.postPaid(USER, 42, "2026-08", "400000")).rejects.toThrow("42501");
   });
 });
 

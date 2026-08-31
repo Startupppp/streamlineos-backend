@@ -52,9 +52,7 @@ export class BranchesService {
           ),
           with: {
             headMember: {
-              with: {
-                user: { columns: { id: true, name: true, image: true } },
-              },
+              with: { user: { columns: { id: true, name: true, image: true } } },
             },
           },
         });
@@ -99,7 +97,7 @@ export class BranchesService {
               branchRow.status === "ACTIVE" ? "ACTIVE" : "INACTIVE",
             createdAt: branchRow.createdAt,
             updatedAt: branchRow.updatedAt,
-            branchManager: branchRow.head ?? null,
+            branchManager: branchRow.headMember?.user ?? null,
             branchHr: meta.hrContactUserId
               ? (hrMap.get(meta.hrContactUserId) ?? null)
               : null,

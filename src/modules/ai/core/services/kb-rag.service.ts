@@ -159,18 +159,11 @@ export class KbRagService {
     );
   }
 
-  private recordNoContext(orgId: string, question: string, actorId?: string): void {
+  private recordNoContext(orgId: string, question: string): void {
     void runInNewTenantTransaction(this.db, orgId, async (tx) => {
-      const actor =
-        actorId === undefined
-          ? null
-          : await assertOrganizationActor(tx, orgId, { kind: "user", userId: actorId }).catch(
-              () => null,
-            );
       await tx.insert(kbEvents).values({
         orgId,
         eventType: "ai_answer_no_context",
-        actorMembershipId: actor?.membershipId ?? null,
         query: question,
       });
     }).catch((err: unknown) => {

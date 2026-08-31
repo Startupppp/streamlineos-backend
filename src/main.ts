@@ -3,6 +3,7 @@ import { NestFactory } from "@nestjs/core";
 import { VERSION_NEUTRAL, VersioningType, type LogLevel } from "@nestjs/common";
 import { setDefaultResultOrder } from "node:dns";
 import type { NestExpressApplication } from "@nestjs/platform-express";
+import type { Request, Response, NextFunction } from "express";
 
 import helmet from "helmet";
 import compression from "compression";
@@ -26,7 +27,6 @@ import { ResponseTransformInterceptor } from "./common/interceptors/response-tra
 import { resolveAdmissionConfig } from "./common/admission/admission.config";
 import { logger } from "./common/logger/logger.service";
 import { API_VERSION_CURRENT } from "./common/http/api-version";
-import type { NextFunction, Request, Response } from "express";
 
 setDefaultResultOrder("ipv4first");
 

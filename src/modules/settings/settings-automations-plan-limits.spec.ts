@@ -62,7 +62,7 @@ describe("SettingsAutomationsService — createAutomation plan limits", () => {
     const db = makeDb(insertSpy);
     const planLimits = {
       assertWithinLimit: jest.fn().mockRejectedValue(
-        new PaymentRequiredException("Automation limit reached on your plan."),
+        new PaymentRequiredException({ message: "Automation limit reached on your plan." }),
       ),
     } as unknown as PlanLimitsService;
 

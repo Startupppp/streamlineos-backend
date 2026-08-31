@@ -40,7 +40,7 @@ describe("TaxCodesService — cross-tenant isolation", () => {
     const cache = { cachedVersioned: jest.fn().mockImplementation((_n: unknown, _k: unknown, fn: () => unknown) => fn()) } as never;
     const svc = new TaxCodesService(db, cache, {} as never, {} as never);
 
-    await svc.list(ATTACKER_ORG, { page: 1, pageSize: 10 });
+    await svc.list(ATTACKER_ORG, { limit: 10 });
 
     expect(allWhereArgs.length).toBeGreaterThan(0);
     const allVals = allWhereArgs.flatMap(w => sqlValues(w));
@@ -52,7 +52,7 @@ describe("TaxCodesService — cross-tenant isolation", () => {
     const cache = { cachedVersioned: jest.fn().mockImplementation((_n: unknown, _k: unknown, fn: () => unknown) => fn()) } as never;
     const svc = new TaxCodesService(db, cache, {} as never, {} as never);
 
-    const result = await svc.list(OWNER_ORG, { page: 1, pageSize: 10 });
+    const result = await svc.list(OWNER_ORG, { limit: 10 });
 
     expect(result.data).toHaveLength(1);
   });

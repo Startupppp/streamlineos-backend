@@ -150,8 +150,9 @@ describe("CrmScoringService — tenant isolation", () => {
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(db)),
     };
     const gateway = { invokeStructured: jest.fn(), invokeText: jest.fn() };
+    const cache = { get: jest.fn(), set: jest.fn(), del: jest.fn(), invalidateNamespace: jest.fn() };
 
-    const service = new CrmScoringService(db as never, gateway as never, {} as never);
+    const service = new CrmScoringService(db as never, gateway as never, cache as never);
     const result = await service.scoreLead(ATTACKER_ORG, 99);
 
     expect(result).toBeNull();
@@ -200,8 +201,9 @@ describe("CrmScoringService — tenant isolation", () => {
       invokeStructured: jest.fn().mockResolvedValue(okResult(scoreData)),
       invokeText: jest.fn(),
     };
+    const cache = { get: jest.fn(), set: jest.fn(), del: jest.fn(), invalidateNamespace: jest.fn() };
 
-    const service = new CrmScoringService(db as never, gateway as never, {} as never);
+    const service = new CrmScoringService(db as never, gateway as never, cache as never);
     const result = await service.scoreLead(OWNER_ORG, 42);
 
     expect(result).toMatchObject({ score: 75, reasoning: "Strong profile" });

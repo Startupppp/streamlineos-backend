@@ -25,7 +25,7 @@ describe("inbox section event keys", () => {
   });
 
   it("derives every key from the catalog, so no section can reference a dead key", () => {
-    const catalog = new Set(NOTIFICATION_EVENT_CATALOG.map((event) => event.eventKey));
+    const catalog = new Set<string>(NOTIFICATION_EVENT_CATALOG.map((event) => event.eventKey));
     for (const key of [...MENTION_EVENT_KEYS, ...ASSIGNED_EVENT_KEYS])
       expect(catalog.has(key)).toBe(true);
   });

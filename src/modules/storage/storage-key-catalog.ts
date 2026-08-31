@@ -37,7 +37,7 @@ export async function enumerateFileKeyColumns(db: Db): Promise<FileKeyColumn[]> 
       )
     ORDER BY "table", "column"
   `);
-  return (rows as Array<Record<string, unknown>>).map((r) => ({
+  return rows.map((r) => ({
     table: String(r["table"]),
     column: String(r["column"]),
   }));
@@ -64,7 +64,7 @@ export async function collectOrgFileKeys(
           `SELECT "${column}" AS k FROM ${table} WHERE org_id = '${orgId.replace(/'/g, "''")}' AND "${column}" IS NOT NULL`,
         ),
       );
-      for (const row of rows as Array<Record<string, unknown>>) {
+      for (const row of rows) {
         const k = row["k"];
         if (typeof k === "string" && k.length > 0) keys.add(k);
       }
@@ -93,7 +93,7 @@ export async function collectUserFileKeys(
             `SELECT "${column}" AS k FROM ${table} WHERE "${userCol}" = '${userId.replace(/'/g, "''")}' AND "${column}" IS NOT NULL`,
           ),
         );
-        for (const row of rows as Array<Record<string, unknown>>) {
+        for (const row of rows) {
           const k = row["k"];
           if (typeof k === "string" && k.length > 0) keys.add(k);
         }
@@ -140,7 +140,7 @@ export async function discoverUserFkColumns(
       AND array_length(k.conkey, 1) = 1
   `);
   const map = new Map<string, string[]>();
-  for (const row of rows as Array<Record<string, unknown>>) {
+  for (const row of rows) {
     const tbl = String(row["table"]);
     const col = String(row["col"]);
     if (!map.has(tbl)) map.set(tbl, []);
@@ -232,7 +232,7 @@ async function drainPages(
 
   for (;;) {
     const q = buildSubjectKeyQuery(table, column, filterCol, filterValue, userId, filterKind, afterKey);
-    const rows = (await db.execute(q)) as Array<Record<string, unknown>>;
+    const rows = await db.execute(q);
     let lastKey: string | undefined;
 
     for (const row of rows) {

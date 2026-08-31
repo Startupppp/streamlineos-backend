@@ -33,10 +33,7 @@ export class ChatSavedService {
       with: {
         message: {
           with: {
-            senderMembership: {
-              columns: {},
-              with: { user: { columns: { id: true, name: true, image: true } } },
-            },
+            senderMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true, image: true } } } },
             channel: { columns: { id: true, name: true, type: true } },
             attachments: true,
           },

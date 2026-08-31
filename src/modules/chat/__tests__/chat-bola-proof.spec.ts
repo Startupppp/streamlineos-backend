@@ -42,6 +42,7 @@ const stubCache = {
 };
 
 const stubEntities = {} as unknown as EntityReferenceService;
+const stubAbly = {} as unknown as AblyService;
 
 beforeEach(() => jest.resetAllMocks());
 
@@ -80,8 +81,7 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 
   it("DENY: getChannel returns NotFoundException for an unknown channel — cross-org channel id resolves to null", async () => {
     const db = makeDb({ channelRow: null, memberRow: null });
-    const stubAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly as never);
+    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
 
     await expect(service.getChannel(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER)).rejects.toThrow(NotFoundException);
 
@@ -91,8 +91,7 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 
   it("DENY: listMembers throws when caller is not a channel member of this org", async () => {
     const db = makeDb({ channelRow: null, memberRow: null });
-    const stubAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly as never);
+    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
 
     await expect(service.listMembers(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER)).rejects.toThrow(NotFoundException);
 
@@ -102,8 +101,7 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 
   it("DENY: markRead WHERE predicate binds orgId — cannot mark another org's channel read", async () => {
     const db = makeDb();
-    const stubAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly as never);
+    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
 
     await service.markRead(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER);
 
@@ -119,8 +117,7 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 
   it("CONTROL: owner org member can mark their channel read", async () => {
     const db = makeDb();
-    const stubAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly as never);
+    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
 
     await service.markRead(CHANNEL_ID, USER_OWNER, ORG_OWNER);
 
@@ -130,8 +127,7 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 
   it("DENY: 404 not 403 when channel does not exist in caller's org (cross-tenant oracle prevention)", async () => {
     const db = makeDb({ channelRow: null, memberRow: null });
-    const stubAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly as never);
+    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
 
     const error = await service.getChannel(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(NotFoundException);
@@ -245,8 +241,7 @@ describe("Chat channel existence oracle prevention", () => {
       update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }) }),
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }) }) }),
     };
-    const stubAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
-    return new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly as never);
+    return new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
   }
 
   const cases = [
@@ -286,8 +281,6 @@ describe("Private channel non-member BOLA", () => {
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }) }) }),
     };
   }
-
-  const stubAbly = { publishToUser: jest.fn() } as unknown as AblyService;
 
   it("DENY: private channel non-member → 404 (not 403)", async () => {
     const db = makeDb(true, false);

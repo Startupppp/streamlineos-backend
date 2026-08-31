@@ -264,7 +264,7 @@ describe("InvPhysicalAuditsService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(InvPhysicalAuditsService));
 
-    const result = await svc.listAudits(ATTACKER, "user-1", { page: 1, limit: 20 });
+    const result = await svc.listAudits(ATTACKER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
     expect(sqlValues(arg?.where)).toContain(ATTACKER);
@@ -285,7 +285,7 @@ describe("InvPhysicalAuditsService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(InvPhysicalAuditsService));
 
-    const result = await svc.listAudits(OWNER, "user-1", { page: 1, limit: 20 });
+    const result = await svc.listAudits(OWNER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
   });
 });

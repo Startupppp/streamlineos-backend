@@ -33,7 +33,7 @@ const mockCache = {
   cachedVersioned: jest.fn((_ns: unknown, _key: unknown, fn: () => unknown) => fn()),
 };
 
-const BASE_QUERY = { from: "2025-01-01", to: "2025-03-31", limit: 20 };
+const BASE_QUERY = { from: "2025-01-01", to: "2025-03-31", limit: 20, format: "json" as const };
 
 async function captureOutput(cursor: string | undefined): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };

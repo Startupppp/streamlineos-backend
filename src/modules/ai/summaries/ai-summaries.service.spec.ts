@@ -23,6 +23,7 @@ const baseSnapshot = (overrides: Partial<AiSummarySnapshot> = {}): AiSummarySnap
   citations: null,
   correlationId: null,
   generatedBy: USER_ID,
+  generatedByMembershipId: null,
   createdAt: new Date("2026-01-01T00:00:00Z"),
   ...overrides,
 });

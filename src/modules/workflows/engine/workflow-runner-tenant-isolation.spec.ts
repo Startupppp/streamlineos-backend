@@ -3,7 +3,9 @@ jest.mock("../../../common/tenant/for-each-org", () => ({
 }));
 
 import { forEachOrg } from "../../../common/tenant/for-each-org";
+import type { ForEachOrgResult } from "../../../common/tenant/for-each-org";
 import type { Db } from "../../../db/drizzle.module";
+import type { TenantTx } from "../../../common/tenant/with-tenant";
 import { WorkflowRunnerService } from "./workflow-runner.service";
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
@@ -45,7 +47,7 @@ describe("WorkflowRunnerService — cross-tenant isolation", () => {
           }),
         }),
       }),
-    } as unknown as Db;
+    } as unknown as TenantTx;
   }
 
   it("scopes sweep queries to the correct org (tenant isolation — different orgs don't share data)", async () => {
@@ -54,10 +56,10 @@ describe("WorkflowRunnerService — cross-tenant isolation", () => {
 
     mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
       await cb(txA, ORG_A);
-      return { processed: 1, failed: 0 };
+      return { organizations: 1, succeeded: 1, failed: 0 } satisfies ForEachOrgResult;
     });
 
-    const svc = new WorkflowRunnerService({} as unknown as Db, {} as never);
+    const svc = new WorkflowRunnerService({} as unknown as Db, {} as never, {} as never);
     await svc.sweep();
 
     expect(wheresA.length).toBeGreaterThan(0);
@@ -68,10 +70,10 @@ describe("WorkflowRunnerService — cross-tenant isolation", () => {
 
   it("returns sweep totals (same-tenant control)", async () => {
     mockedForEachOrg.mockImplementation(async (_db, _key, _cb) => {
-      return { processed: 0, failed: 0 };
+      return { organizations: 0, succeeded: 0, failed: 0 } satisfies ForEachOrgResult;
     });
 
-    const svc = new WorkflowRunnerService({} as unknown as Db, {} as never);
+    const svc = new WorkflowRunnerService({} as unknown as Db, {} as never, {} as never);
     const result = await svc.sweep();
 
     expect(result).toBeDefined();

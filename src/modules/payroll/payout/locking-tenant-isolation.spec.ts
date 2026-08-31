@@ -35,9 +35,24 @@ describe("LockingService — cross-tenant isolation", () => {
       }),
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
     }));
+    let outerSelectIdx = 0;
     const db = {
       query: { payrollRuns: { findFirst: jest.fn().mockResolvedValue(run) } },
       transaction: txFn,
+      select: jest.fn().mockImplementation(() => {
+        const idx = outerSelectIdx++;
+        const data =
+          idx === 0
+            ? [{ id: 99, orgId: OWNER_ORG, userId: "u1", role: "MEMBER", isOwner: false, status: "ACTIVE" }]
+            : [];
+        return {
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue(data),
+            }),
+          }),
+        };
+      }),
     } as unknown as Db;
     const svc = new LockingService(db, audit, generate, payrollPosting);
     await expect(svc.lock(OWNER_ORG, "u1", 1)).resolves.not.toThrow();

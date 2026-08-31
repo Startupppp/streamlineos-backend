@@ -10,14 +10,16 @@ import type { ApprovalInboxRow } from "../build/approvals/build-approvals-inbox.
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { decodeInboxCursor } from "./dto/unified-inbox.schemas";
 
-function makeChain(rows: unknown[] = []): Record<string, jest.Mock> {
-  const chain: Record<string, jest.Mock> = {};
+type ChainMethods = Record<string, jest.Mock>;
+
+function makeChain(rows: unknown[] = []): ChainMethods {
+  const chain: ChainMethods = {};
   for (const method of ["from", "leftJoin", "where", "orderBy", "limit", "offset"]) {
     chain[method] = jest.fn().mockImplementation(
       () => (method === "limit" ? Promise.resolve(rows) : chain),
     );
   }
-  return chain as ReturnType<typeof makeChain>;
+  return chain;
 }
 
 function makeDb(rows: unknown[] = []): Db {
@@ -63,9 +65,10 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     orgId: "org-1",
     role: "MEMBER",
     isOrgOwner: false,
-    tokenScopes: null,
     sessionId: "s-1",
-    principal: { kind: "human-session" } as CurrentUserContext["principal"],
+    tokenScopes: null,
+    principal: { kind: "human-session", membershipId: 1, isOrgOwner: false },
+    ...overrides,
   };
 }
 

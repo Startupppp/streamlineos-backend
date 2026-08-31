@@ -60,7 +60,8 @@ describe("HrExportFileService — cross-tenant isolation", () => {
       scope: "all" as const,
       filters: {},
     };
-    await svc.fetchBatch(input, null);
+    const proto: Record<string, (...args: unknown[]) => Promise<unknown>> = Object.getPrototypeOf(svc);
+    await proto["fetchBatch"].call(svc, input, null);
     const allWhere = where.mock.calls.flatMap((call: unknown[]) => sqlValues(call[0]));
     expect(allWhere).toContain(ATTACKER);
   });
@@ -75,7 +76,8 @@ describe("HrExportFileService — cross-tenant isolation", () => {
       scope: "all" as const,
       filters: {},
     };
-    await svc.fetchBatch(input, null);
+    const proto: Record<string, (...args: unknown[]) => Promise<unknown>> = Object.getPrototypeOf(svc);
+    await proto["fetchBatch"].call(svc, input, null);
     const allWhere = where.mock.calls.flatMap((call: unknown[]) => sqlValues(call[0]));
     expect(allWhere).toContain(OWNER);
   });

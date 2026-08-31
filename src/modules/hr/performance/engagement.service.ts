@@ -12,6 +12,7 @@ import {
   enpsScores,
   feedbackRequests,
   hrAuditLogs,
+  organizationMembers,
   pulseSurveys,
   recognitions,
   skillAssessments,
@@ -243,11 +244,15 @@ export class EngagementService {
       })
       .returning();
 
-    const actor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId });
+    const [actorMember] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
 
     await this.db.insert(hrAuditLogs).values({
       orgId,
-      actorMembershipId: actor.membershipId,
+      actorMembershipId: actorMember?.id ?? null,
       entityType: "hr_recognition",
       entityId: String(recognition.id),
       action: "kudos_given",

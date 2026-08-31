@@ -1,6 +1,5 @@
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { AccessService } from "../../access/access.service";
-import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
@@ -56,8 +55,6 @@ describe("board list projection", () => {
       ),
       scopeFor: jest.fn().mockResolvedValue("all"),
     } as unknown as AccessService;
-
-    const audit = { log: jest.fn() } as unknown as AuditService;
 
     const svc = new ProjectsTicketsReadService(db, access);
 

@@ -34,10 +34,7 @@ function makeFluentChain<T = unknown>(finalResult: T[]): FluentChain<T> {
   chain.where = jest.fn().mockReturnValue(chain);
   chain.orderBy = jest.fn().mockReturnValue(chain);
   chain.limit = jest.fn().mockResolvedValue(finalResult);
-  chain.then = <TResult1 = T[], TResult2 = never>(
-    onfulfilled?: ((value: T[]) => TResult1 | PromiseLike<TResult1>) | null | undefined,
-    onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | null | undefined,
-  ): PromiseLike<TResult1 | TResult2> => Promise.resolve(finalResult).then(onfulfilled, onrejected);
+  chain.then = (resolve, reject) => Promise.resolve(finalResult).then(resolve, reject);
   return chain;
 }
 

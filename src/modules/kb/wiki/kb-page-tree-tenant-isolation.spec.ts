@@ -18,9 +18,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
     return { orgId, userId: "user-1", isOrgOwner: false } as never;
   }
 
-  const indexing = {} as never;
   const audit = {} as never;
-  const planLimits = {} as never;
 
   function makeDb() {
     const wheres: unknown[] = [];
@@ -49,7 +47,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
 
   it("scopes page tree query to the requesting org (cross-tenant isolation)", async () => {
     const { db, wheres } = makeDb();
-    const svc = new KbPageTreeService(db, indexing, audit, planLimits);
+    const svc = new KbPageTreeService(db, audit);
 
     await svc.getTree(makeUser(ATTACKER));
 
@@ -61,7 +59,7 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
 
   it("returns page tree for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
-    const svc = new KbPageTreeService(db, indexing, audit, planLimits);
+    const svc = new KbPageTreeService(db, audit);
 
     const result = await svc.getTree(makeUser(OWNER));
 

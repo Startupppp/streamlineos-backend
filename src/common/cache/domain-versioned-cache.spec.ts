@@ -68,7 +68,7 @@ describe("finance and expense versioned cache contracts", () => {
       {} as never,
       cache as never,
     );
-    await service.list("org-1", {});
+    await service.list("org-1", { limit: 25 });
 
     const [, key] = cachedVersioned.mock.calls[0] ?? [];
     expect(String(key)).not.toContain("undefined");

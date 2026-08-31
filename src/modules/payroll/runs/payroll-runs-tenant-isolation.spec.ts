@@ -153,14 +153,14 @@ describe("PayrollJobsService — cross-tenant isolation", () => {
   it("scopes job enqueue to attacker org (cross-tenant isolation)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new PayrollJobsService(db);
-    await svc.enqueue({ orgId: ATTACKER, idempotencyKey: "k1", type: "GENERATE", runId: 999, actorId: "u1", payload: {} });
+    await svc.enqueue({ orgId: ATTACKER, idempotencyKey: "k1", jobType: "GENERATE", actorId: "u1", payload: {} });
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 
   it("scopes job enqueue to owner org (control — same-tenant creates job)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new PayrollJobsService(db);
-    await svc.enqueue({ orgId: OWNER, idempotencyKey: "k2", type: "GENERATE", runId: 1, actorId: "u2", payload: {} });
+    await svc.enqueue({ orgId: OWNER, idempotencyKey: "k2", jobType: "GENERATE", actorId: "u2", payload: {} });
     expect(allArgs(where, findFirst, findMany)).toContain(OWNER);
   });
 

@@ -26,11 +26,12 @@ describe("BuildReleasePublishedConsumerService — cross-tenant isolation", () =
     const select = jest.fn().mockReturnValue({ from: selectFrom });
     const selectDistinct = jest.fn().mockReturnValue({ from: selectFrom2 });
 
-    return { insert, update, select, selectDistinct } as unknown as any;
+    const db = { insert, update, select, selectDistinct } as unknown as Db;
+    return { db, insert };
   }
 
   it("scopes ticket queries to the event's orgId — not another org (cross-tenant isolation)", async () => {
-    const db = makeDb();
+    const { db, insert } = makeDb();
     const svc = new BuildReleasePublishedConsumerService(db, dispatch, registry);
 
     const ownerEvent = {
@@ -53,8 +54,8 @@ describe("BuildReleasePublishedConsumerService — cross-tenant isolation", () =
     await svc.handle(ownerEvent);
     await svc.handle(otherEvent);
 
-    const insertCalls = (db as any).insert.mock.calls;
-    const orgIds = insertCalls.flatMap((args: unknown[]) => {
+    const insertCalls = insert.mock.calls;
+    const orgIds = insertCalls.flatMap((args) => {
       const table = args[0];
       return table ? [OWNER_ORG, OTHER_ORG] : [];
     });
@@ -62,7 +63,7 @@ describe("BuildReleasePublishedConsumerService — cross-tenant isolation", () =
   });
 
   it("processes event for the owning org without throwing (same-tenant control)", async () => {
-    const db = makeDb();
+    const { db } = makeDb();
     const svc = new BuildReleasePublishedConsumerService(db, dispatch, registry);
     const event = {
       eventId: "ev1",

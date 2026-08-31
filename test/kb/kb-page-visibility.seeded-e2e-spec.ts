@@ -18,6 +18,7 @@ const asMember = (userId: string, orgId: string): CurrentUserContext => ({
   role: "MEMBER",
   sessionId: `seeded-${userId}`,
   tokenScopes: null,
+  principal: { kind: "human-session", membershipId: 1, isOrgOwner: false },
 });
 
 describe("[seeded-e2e] a page that belongs to a project", () => {

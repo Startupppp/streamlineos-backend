@@ -221,7 +221,6 @@ describe("ModuleAccessRosterService.listMembers — access guard", () => {
 
     await expect(
       rosterSvc.listMembers(makeActor({ isOrgOwner: false}), "hr", {
-        page: 1,
         pageSize: 20,
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
@@ -255,7 +254,6 @@ describe("ModuleAccessRosterService.listMembers — access guard", () => {
 
     await expect(
       m.get(ModuleAccessRosterService).listMembers(makeActor(), "hr", {
-        page: 1,
         pageSize: 20,
         userId: "u-target",
       }),

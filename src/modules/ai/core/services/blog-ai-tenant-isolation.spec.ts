@@ -14,7 +14,7 @@
  *   3. runInTenantTransaction is called with the correct orgId for the tenant GUC.
  */
 
-import { NotFoundException } from "@nestjs/common";
+export {};
 
 jest.mock("../../../../common/tenant/run-in-tenant-transaction");
 

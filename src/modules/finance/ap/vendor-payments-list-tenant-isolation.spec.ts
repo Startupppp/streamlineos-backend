@@ -34,7 +34,7 @@ describe("VendorPaymentsListService — cross-tenant isolation", () => {
     const { db, where } = makeDb([]);
     const svc = new VendorPaymentsListService(db);
 
-    const result = await svc.list(ATTACKER_ORG, { page: 1, pageSize: 20 });
+    const result = await svc.list(ATTACKER_ORG, { limit: 20 });
 
     expect(result.data).toHaveLength(0);
     expect(where).toHaveBeenCalledTimes(1);
@@ -46,7 +46,7 @@ describe("VendorPaymentsListService — cross-tenant isolation", () => {
     const { db } = makeDb([row]);
     const svc = new VendorPaymentsListService(db);
 
-    const result = await svc.list(OWNER_ORG, { page: 1, pageSize: 20 });
+    const result = await svc.list(OWNER_ORG, { limit: 20 });
 
     expect(result.data).toHaveLength(1);
   });

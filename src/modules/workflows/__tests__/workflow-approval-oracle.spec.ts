@@ -1,5 +1,5 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
-import type { Db } from "../../db/drizzle.module";
+import type { Db } from "../../../db/drizzle.module";
 import { WorkflowsExecutionService } from "../workflows-execution.service";
 
 const OWNER_ORG = "org-owner-uuid";

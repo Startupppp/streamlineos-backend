@@ -272,6 +272,7 @@ describe("SupportKbGapService", () => {
       const db = makeDb();
       db.query.supportKnowledgeGaps.findFirst.mockResolvedValue(baseGap);
       db.query.kbSpaces.findFirst.mockResolvedValue({ id: 7 });
+      db.limit.mockResolvedValueOnce([]);
       db.limit.mockResolvedValueOnce([{ userId: "kbowner1" }]);
       db.returning.mockResolvedValue([
         { ...baseGap, status: SupportKnowledgeGapStatus.ROUTED, proposedArticleId: 99, draftedBy: "user1" },
@@ -357,6 +358,7 @@ describe("SupportKbGapService", () => {
       const db = makeDb();
       db.query.supportKnowledgeGaps.findFirst.mockResolvedValue(baseGap);
       db.query.kbSpaces.findFirst.mockResolvedValue({ id: 7 });
+      db.limit.mockResolvedValueOnce([]);
       db.limit.mockResolvedValueOnce([{ userId: "owner1" }, { userId: "owner2" }]);
       db.returning.mockResolvedValue([
         { ...baseGap, status: SupportKnowledgeGapStatus.ROUTED, proposedArticleId: 99 },

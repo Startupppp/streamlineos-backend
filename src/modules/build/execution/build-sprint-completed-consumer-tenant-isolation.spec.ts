@@ -18,11 +18,12 @@ describe("BuildSprintCompletedConsumerService — cross-tenant isolation", () =>
     const selectFrom = jest.fn().mockReturnValue({ where: selectWhere, innerJoin });
     const select = jest.fn().mockReturnValue({ from: selectFrom });
     const selectDistinct = jest.fn().mockReturnValue({ from: selectFrom });
-    return { insert, update, select, selectDistinct } as unknown as Db;
+    const db = { insert, update, select, selectDistinct } as unknown as Db;
+    return { db, insert };
   }
 
   it("processes event using the event's orgId — scoped per org (cross-tenant isolation)", async () => {
-    const db = makeDb();
+    const { db, insert } = makeDb();
     const svc = new BuildSprintCompletedConsumerService(db, dispatch, registry);
     const event = {
       eventId: "ev1",
@@ -33,12 +34,12 @@ describe("BuildSprintCompletedConsumerService — cross-tenant isolation", () =>
       payload: { sprintId: 1, name: "Sprint 1" },
     } as never;
     await expect(svc.handle(event)).resolves.not.toThrow();
-    const insertArg = (db as unknown as { insert: jest.Mock }).insert.mock.calls[0]?.[0];
+    const insertArg = insert.mock.calls[0]?.[0];
     expect(insertArg).toBeDefined();
   });
 
   it("handles different-org events without cross-contamination (same-tenant control)", async () => {
-    const db = makeDb();
+    const { db } = makeDb();
     const svc = new BuildSprintCompletedConsumerService(db, dispatch, registry);
     const event = {
       eventId: "ev2",

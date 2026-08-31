@@ -25,29 +25,26 @@ describe("InvoicesPaymentService — cross-tenant isolation", () => {
 
   it("throws NotFoundException when invoice belongs to a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
-    const mockOutbox = {} as any;
     const mockAudit = { log: jest.fn() } as any;
     const mockJournal = {} as any;
     const mockDispatch = { emit: jest.fn() } as any;
     const mockLifecycle = {} as any;
     const mockRate = {} as any;
     const mockFx = {} as any;
-    const svc = new InvoicesPaymentService(db, mockOutbox, mockAudit, mockJournal, mockDispatch, mockLifecycle, mockRate, mockFx);
-    const actor = { userId: USER_ID, orgId: ATTACKER } as any;
-    await expect(svc.recordPayment(ATTACKER, USER_ID, INVOICE_ID, { amount: 100, currency: "INR", method: "bank_transfer" })).rejects.toThrow(NotFoundException);
+    const svc = new InvoicesPaymentService(db, mockJournal, mockDispatch, mockLifecycle, mockAudit, mockRate, mockFx);
+    await expect(svc.recordPayment(ATTACKER, USER_ID, INVOICE_ID, { amount: 100, paymentDate: "2024-01-15", paymentMethod: "bank_transfer" })).rejects.toThrow(NotFoundException);
   });
 
   it("proceeds for invoice in the owning org (control — same-tenant)", async () => {
     const invoiceRow = { id: INVOICE_ID, orgId: OWNER, status: "SENT", total: "500", invoiceNumber: "INV-005" };
     const db = makeDb(invoiceRow);
-    const mockOutbox = {} as any;
     const mockAudit = { log: jest.fn() } as any;
     const mockJournal = {} as any;
     const mockDispatch = { emit: jest.fn() } as any;
     const mockLifecycle = { recomputeInvoiceBalance: jest.fn() } as any;
     const mockRate = {} as any;
     const mockFx = {} as any;
-    const svc = new InvoicesPaymentService(db, mockOutbox, mockAudit, mockJournal, mockDispatch, mockLifecycle, mockRate, mockFx);
-    await expect(svc.recordPayment(OWNER, USER_ID, INVOICE_ID, { amount: 100, currency: "INR", method: "bank_transfer" })).rejects.toThrow();
+    const svc = new InvoicesPaymentService(db, mockJournal, mockDispatch, mockLifecycle, mockAudit, mockRate, mockFx);
+    await expect(svc.recordPayment(OWNER, USER_ID, INVOICE_ID, { amount: 100, paymentDate: "2024-01-15", paymentMethod: "bank_transfer" })).rejects.toThrow();
   });
 });

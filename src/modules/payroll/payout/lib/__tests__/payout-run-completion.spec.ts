@@ -46,6 +46,9 @@ function makeDb(overrides?: { pendingCount?: number }) {
       payrollBankBatches: {
         findFirst: jest.fn().mockResolvedValue({ runId: 100 }),
       },
+      organizationMembers: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
     },
     select: jest.fn().mockImplementation(() => {
       const call = outerSelectCall++;

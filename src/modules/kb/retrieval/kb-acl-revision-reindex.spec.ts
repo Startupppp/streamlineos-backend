@@ -124,7 +124,7 @@ describe("KbMembersService.remove — triggers chunk aclRevision sync after memb
     const indexing = { syncAclRevisionForSpace: jest.fn().mockResolvedValue(undefined) };
 
     const svc = new KbMembersService(db as never, access as never, indexing as never);
-    await svc.add("org-2", 5, { spaceRole: "member" });
+    await svc.add("org-2", 5, { spaceRole: "viewer" });
 
     expect(indexing.syncAclRevisionForSpace).toHaveBeenCalledWith("org-2", 5);
   });

@@ -16,12 +16,13 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
 type ChainResult = any;
 
 function makeChainResult(): ChainResult {
-  const p = Promise.resolve([]) as ChainResult;
-  p.limit = jest.fn().mockResolvedValue([]);
-  p.orderBy = jest.fn().mockResolvedValue([]);
-  p.groupBy = jest.fn().mockResolvedValue([]);
-  p.offset = jest.fn().mockResolvedValue([]);
-  return p;
+  const arr: unknown[] = [];
+  return Object.assign(Promise.resolve(arr), {
+    limit: jest.fn().mockResolvedValue([]),
+    orderBy: jest.fn().mockResolvedValue([]),
+    groupBy: jest.fn().mockResolvedValue([]),
+    offset: jest.fn().mockResolvedValue([]),
+  });
 }
 
 function makeDb(): { db: Db; allWhereArgs: unknown[] } {

@@ -117,7 +117,7 @@ export class AccountingLedgerService {
   }
 
   async listJournal(orgId: string, query: ListJournalQuery, scope: DataScope, userId: string) {
-    const { cursor, limit, from, to, sourceType } = query;
+    const { cursor, limit, from, to, sourceType, status } = query;
     const fromStr = from ? from.toISOString().slice(0, 10) : undefined;
     const toStr = to ? to.toISOString().slice(0, 10) : undefined;
 
@@ -125,6 +125,7 @@ export class AccountingLedgerService {
     if (fromStr) conds.push(gte(journalEntries.entryDate, fromStr));
     if (toStr) conds.push(lte(journalEntries.entryDate, toStr));
     if (sourceType) conds.push(eq(journalEntries.sourceType, sourceType));
+    if (status) conds.push(eq(journalEntries.status, status));
     conds.push(applyScope(scope, orgId, userId, { ownerColumn: journalEntries.createdBy }));
 
     const pos = decodeCursor(cursor);

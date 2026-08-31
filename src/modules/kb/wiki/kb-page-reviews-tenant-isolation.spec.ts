@@ -25,7 +25,8 @@ describe("KbPageReviewsService — cross-tenant isolation", () => {
 
   const audit = { log: jest.fn() } as never;
   const dispatch = { dispatch: jest.fn() } as never;
-  const access = { holds: jest.fn().mockResolvedValue(true) } as never;
+  const holdsMock = jest.fn().mockResolvedValue(true);
+  const access = { holds: holdsMock } as never;
 
   function makeDb() {
     const wheres: unknown[] = [];
@@ -56,7 +57,7 @@ describe("KbPageReviewsService — cross-tenant isolation", () => {
 
   it("scopes review list query to the requesting org (cross-tenant isolation)", async () => {
     const { db, wheres } = makeDb();
-    (access.holds as jest.Mock).mockResolvedValue(true);
+    holdsMock.mockResolvedValue(true);
     const svc = new KbPageReviewsService(db, audit, dispatch, access);
 
     await svc.list(makeUser(ATTACKER), undefined, undefined);
@@ -69,7 +70,7 @@ describe("KbPageReviewsService — cross-tenant isolation", () => {
 
   it("returns reviews for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
-    (access.holds as jest.Mock).mockResolvedValue(true);
+    holdsMock.mockResolvedValue(true);
     const svc = new KbPageReviewsService(db, audit, dispatch, access);
 
     const result = await svc.list(makeUser(OWNER), undefined, undefined);

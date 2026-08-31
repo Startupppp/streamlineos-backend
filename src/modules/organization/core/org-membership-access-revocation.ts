@@ -1,5 +1,5 @@
 import { Logger } from "@nestjs/common";
-import { and, count, eq, isNull, ne, or } from "drizzle-orm";
+import { and, count, eq, isNull, ne, or, sql } from "drizzle-orm";
 import {
   agentTokens,
   chatHuddleParticipants,
@@ -228,42 +228,34 @@ export class OrgMembershipAccessRevocation {
             }
           }
 
+          const senderFilter = membershipId !== undefined
+            ? eq(chatMessages.senderMembershipId, membershipId)
+            : sql`false`;
           await tx
             .update(chatMessages)
             .set({ senderMembershipId: null })
-            .where(
-              and(
-                eq(chatMessages.orgId, orgId),
-                eq(chatMessages.senderMembershipId, membershipId),
-              ),
-            );
+            .where(and(eq(chatMessages.orgId, orgId), senderFilter));
+          const savedFilter = membershipId !== undefined
+            ? eq(chatSavedMessages.membershipId, membershipId)
+            : sql`false`;
           await tx
             .delete(chatSavedMessages)
-            .where(
-              and(
-                eq(chatSavedMessages.orgId, orgId),
-                eq(chatSavedMessages.membershipId, membershipId),
-              ),
-            );
+            .where(and(eq(chatSavedMessages.orgId, orgId), savedFilter));
+          const reminderFilter = membershipId !== undefined
+            ? or(
+                eq(chatReplyReminders.recipientMembershipId, membershipId),
+                eq(chatReplyReminders.senderMembershipId, membershipId),
+              )
+            : sql`false`;
           await tx
             .delete(chatReplyReminders)
-            .where(
-              and(
-                eq(chatReplyReminders.orgId, orgId),
-                or(
-                  eq(chatReplyReminders.recipientMembershipId, membershipId),
-                  eq(chatReplyReminders.senderMembershipId, membershipId),
-                ),
-              ),
-            );
+            .where(and(eq(chatReplyReminders.orgId, orgId), reminderFilter));
+          const huddleFilter = membershipId !== undefined
+            ? eq(chatHuddleParticipants.membershipId, membershipId)
+            : sql`false`;
           await tx
             .delete(chatHuddleParticipants)
-            .where(
-              and(
-                eq(chatHuddleParticipants.orgId, orgId),
-                eq(chatHuddleParticipants.membershipId, membershipId),
-              ),
-            );
+            .where(and(eq(chatHuddleParticipants.orgId, orgId), huddleFilter));
         }
 
         const updatedConns = await tx

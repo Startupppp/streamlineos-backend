@@ -316,9 +316,8 @@ describe("migrated schemas — clamp at their ceiling and preserve their own def
     it("pages consistently with whichever style it exposes", () => {
       const result = listJournalQuerySchema.parse({});
       expect(result.limit).toBe(20);
-      if (Object.prototype.hasOwnProperty.call(result, "page")) {
-        expect((result as any).page).toBe(1);
-      }
+      expect("page" in result).toBe(false);
+      expect(result.cursor).toBeUndefined();
     });
 
     it("still enforces the from<=to refine", () => {

@@ -13,11 +13,12 @@ function makeSelectDirect(result: unknown[]): Record<string, jest.Mock> {
 }
 
 describe("VendorPaymentsAllocationsService — cross-tenant isolation", () => {
+  const audit = { log: jest.fn() } as never;
+
   it("throws NotFoundException when payment belongs to a different org (BOLA isolation)", async () => {
     const db = {
       select: jest.fn().mockReturnValue(makeSelectOnce([])),
     } as unknown as Db;
-    const audit = { log: jest.fn() } as any;
     const svc = new VendorPaymentsAllocationsService(db, audit);
 
     await expect(
@@ -36,7 +37,6 @@ describe("VendorPaymentsAllocationsService — cross-tenant isolation", () => {
       }),
       transaction: jest.fn().mockResolvedValue(undefined),
     } as unknown as Db;
-    const audit = { log: jest.fn() } as never;
     const svc = new VendorPaymentsAllocationsService(db, audit);
 
     await expect(

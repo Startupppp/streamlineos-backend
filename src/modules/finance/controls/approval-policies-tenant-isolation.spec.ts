@@ -31,7 +31,7 @@ describe("ApprovalPoliciesService — cross-tenant isolation", () => {
   it("scopes list to the requesting org (tenant isolation)", async () => {
     const { svc, where } = makeService([]);
 
-    await svc.list(ATTACKER_ORG, 1, 20);
+    await svc.list(ATTACKER_ORG, undefined, 20);
 
     expect(where).toHaveBeenCalled();
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
@@ -41,7 +41,7 @@ describe("ApprovalPoliciesService — cross-tenant isolation", () => {
   it("returns items for the owning org (same-tenant control)", async () => {
     const { svc } = makeService([{ id: 1, orgId: OWNER_ORG }]);
 
-    const result = await svc.list(OWNER_ORG, 1, 20);
+    const result = await svc.list(OWNER_ORG, undefined, 20);
 
     expect(result.data).toHaveLength(1);
   });

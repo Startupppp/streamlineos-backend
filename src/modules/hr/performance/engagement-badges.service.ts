@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, sql, sum } from "drizzle-orm";
-import { hrAuditLogs, recognitions } from "../../../db/schema";
+import { hrAuditLogs, organizationMembers, recognitions } from "../../../db/schema";
 import {
   hrBadgeAwards,
   hrBadges,
@@ -94,14 +94,15 @@ export class EngagementBadgesService {
         note: `Badge: ${badge.name}`,
       });
 
-      const auditActor = await assertOrganizationActor(tx, orgId, {
-        kind: "user",
-        userId: awardedBy,
-      });
+      const [awardedByMember] = await tx
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, awardedBy)))
+        .limit(1);
 
       await tx.insert(hrAuditLogs).values({
         orgId,
-        actorMembershipId: auditActor.membershipId,
+        actorMembershipId: awardedByMember?.id ?? null,
         entityType: "hr_recognition",
         entityId: String(award.id),
         action: "badge_awarded",

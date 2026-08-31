@@ -513,11 +513,19 @@ export const LEGACY_OWNED_COLUMNS: Record<MappedLegacyKind, Readonly<Record<stri
     dmLeadId: "An id in the upstream DM system. Party has no home for another system's key.",
     mergedIntoId:
       "The legacy merge pointer. `party_merges` is the Party mechanism, and re-pointing the map row is how a merge reaches this table.",
+    assignedToMembershipId:
+      "The `organization_members` id for the same person Party tracks as `ownerUserId`. Party uses only user IDs; the membership id cannot be derived without a DB join and is maintained by the legacy writer for its own join paths.",
+    assignedByMembershipId:
+      "The `organization_members` id for the same person Party tracks as `assignedByUserId`. Same situation as `assignedToMembershipId` — unreachable from a Party row without a DB join.",
+    verifiedByMembershipId:
+      "The `organization_members` id for the same person Party tracks as `verifiedByUserId`. Same situation as `assignedToMembershipId` — unreachable from a Party row without a DB join.",
     createdAt: "Stamped by the table.",
     updatedAt: "Stamped by the table.",
   },
   CLIENT: {
     id: "The legacy identity itself.",
+    accountManagerMembershipId:
+      "The `organization_members` id for the same person Party tracks as `ownerUserId` (mirrored to `accountManagerId`). Party uses only user IDs; the membership id cannot be derived without a DB join.",
     leadId:
       "Which lead this client converted from, which Party now owns as `converted_from_party_id`. Listed here because the two speak different id spaces -- an integer `leads` id against a party id -- so the column is maintained by `party-legacy-associations.ts` through `lead_party_map` rather than by a pure cell above. Legacy-owned in shape only; nothing outside the writer sets it.",
     createdAt: "Stamped by the table.",

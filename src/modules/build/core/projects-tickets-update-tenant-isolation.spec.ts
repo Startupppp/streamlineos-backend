@@ -25,7 +25,7 @@ describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
     const db = makeDb(null);
     const svc = new ProjectsTicketsUpdateService(db, dispatch, activity, query, read, transfer, webhooksDispatch, automationRunner, cache);
     const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false } as never;
-    await expect(svc.updateTicket(u, 1, {})).rejects.toThrow(NotFoundException);
+    await expect(svc.updateTicket(u, 99, {})).rejects.toThrow(NotFoundException);
   });
 
   it("processes ticket for the owning org (same-tenant control)", async () => {

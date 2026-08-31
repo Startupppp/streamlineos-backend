@@ -79,9 +79,9 @@ describe("HrExportJobsService — cross-tenant isolation", () => {
   it("returns null for different org export claim (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
     const mockStorage = { getFileStream: jest.fn(), storeFile: jest.fn() };
+    const mockAuditSvc = { log: jest.fn() };
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) };
-    const mockAudit = { log: jest.fn() };
-    const svc = new HrExportJobsService(db, mockStorage as never, mockAudit as never, mockAccess as never);
+    const svc = new HrExportJobsService(db, mockStorage as never, mockAuditSvc as never, mockAccess as never);
     const result = await svc.claimForOrg(ATTACKER);
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
     expect(result).toBeNull();
@@ -100,9 +100,9 @@ describe("HrExportJobsService — cross-tenant isolation", () => {
     builder.limit.mockReturnValue(builder);
     const db = { select: jest.fn().mockReturnValue(builder), update, query: new Proxy({} as Record<string, unknown>, { get: () => ({ findMany: jest.fn().mockResolvedValue([]) }) }) } as unknown as Db;
     const mockStorage = { getFileStream: jest.fn(), storeFile: jest.fn() };
+    const mockAuditSvc = { log: jest.fn() };
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) };
-    const mockAudit = { log: jest.fn() };
-    const svc = new HrExportJobsService(db, mockStorage as never, mockAudit as never, mockAccess as never);
+    const svc = new HrExportJobsService(db, mockStorage as never, mockAuditSvc as never, mockAccess as never);
     await svc.claimForOrg(OWNER);
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });

@@ -1,6 +1,6 @@
 import type { Db } from "../../../db/drizzle.module";
 import { AccountingBillApprovedConsumerService } from "./accounting-bill-approved-consumer.service";
-import { OutboxConsumerRegistry, OutboxEventRow } from "../../../common/outbox/outbox-consumer.registry";
+import { OutboxConsumerRegistry, type OutboxEventRow } from "../../../common/outbox/outbox-consumer.registry";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -16,6 +16,7 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
 
 function makeEvent(orgId: string): OutboxEventRow {
   return {
+    outboxEventId: 1,
     eventId: "evt-1",
     organizationId: orgId,
     eventType: "accounting.bill.approved",
@@ -29,16 +30,21 @@ function makeEvent(orgId: string): OutboxEventRow {
     aggregateType: "purchase_bill",
     aggregateId: "1",
     aggregateVersion: 1,
-    createdAt: new Date(),
-    occurredAt: new Date(),
-    audience: "internal",
-    actorMembershipId: null,
+    schemaVersion: 1,
+    causationId: null,
     correlationId: null,
+    actorMembershipId: null,
+    audience: "INTERNAL",
+    lifecycleState: "ACTIVE",
+    deliveryState: "PENDING",
+    occurredAt: new Date("2026-01-01T00:00:00.000Z"),
+    publishedAt: null,
+    leaseExpiresAt: null,
+    retryCount: 0,
+    lastError: null,
     deadLetteredAt: null,
-    processingAttemptCount: 0,
-    processingLastError: null,
-    nextProcessingAt: new Date(),
-  } as unknown as OutboxEventRow;
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+  };
 }
 
 describe("AccountingBillApprovedConsumerService — cross-tenant isolation (background)", () => {

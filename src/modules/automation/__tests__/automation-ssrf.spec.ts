@@ -19,21 +19,25 @@ const ACTIVE_ENDPOINT = {
   isActive: true,
 };
 
-const makeDb = (endpoints: typeof ACTIVE_ENDPOINT[]) => ({
-  query: {
-    webhookEndpoints: {
-      findMany: jest.fn().mockResolvedValue(endpoints),
+function makeDb(endpoints: typeof ACTIVE_ENDPOINT[]) {
+  const insert = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) });
+  const db = {
+    query: {
+      webhookEndpoints: {
+        findMany: jest.fn().mockResolvedValue(endpoints),
+      },
     },
-  },
-  insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
-} as unknown as Db);
+    insert,
+  } as never;
+  return { db, insert };
+}
 
 const mockNotifications = { create: jest.fn() } as never;
 const mockEmail = { send: jest.fn() } as never;
 const mockPlanLimits = { assertWithinLimit: jest.fn() } as never;
 const mockAiNodeExecutor = { executeNode: jest.fn() } as never;
 
-function makeSvc(db: ReturnType<typeof makeDb>) {
+function makeSvc(db: ReturnType<typeof makeDb>["db"]) {
   return new AutomationService(
     db,
     mockNotifications,
@@ -59,7 +63,7 @@ beforeEach(() => {
 describe("AutomationService — deliverWebhook SSRF guard", () => {
   it("blocks an internal endpoint URL and does not call fetch", async () => {
     mockCheckWebhookUrl.mockResolvedValue({ allowed: false, reason: "blocked-address" });
-    const db = makeDb([ACTIVE_ENDPOINT]);
+    const { db } = makeDb([ACTIVE_ENDPOINT]);
     const svc = makeSvc(db);
 
     const result = await svc.executeAction("org-1", WEBHOOK_ACTION, PAYLOAD);
@@ -70,13 +74,13 @@ describe("AutomationService — deliverWebhook SSRF guard", () => {
 
   it("writes a failed log entry when SSRF guard blocks the endpoint", async () => {
     mockCheckWebhookUrl.mockResolvedValue({ allowed: false, reason: "blocked-address" });
-    const db = makeDb([ACTIVE_ENDPOINT]);
+    const { db, insert } = makeDb([ACTIVE_ENDPOINT]);
     const svc = makeSvc(db);
 
     await svc.executeAction("org-1", WEBHOOK_ACTION, PAYLOAD);
 
-    expect(db.insert).toHaveBeenCalledTimes(1);
-    const insertValuesCall = (db.insert as jest.Mock).mock.results[0]?.value as { values: jest.Mock };
+    expect(insert).toHaveBeenCalledTimes(1);
+    const insertValuesCall = insert.mock.results[0]?.value as { values: jest.Mock };
     const [logRow] = insertValuesCall.values.mock.calls[0] as [Record<string, unknown>];
     expect(logRow.success).toBe(false);
     expect(String(logRow.responseBody)).toMatch(/SSRF/);
@@ -89,7 +93,7 @@ describe("AutomationService — deliverWebhook SSRF guard", () => {
       status: 200,
       text: jest.fn().mockResolvedValue("ok"),
     });
-    const db = makeDb([ACTIVE_ENDPOINT]);
+    const { db } = makeDb([ACTIVE_ENDPOINT]);
     const svc = makeSvc(db);
 
     const result = await svc.executeAction("org-1", WEBHOOK_ACTION, PAYLOAD);
@@ -108,7 +112,7 @@ describe("AutomationService — deliverWebhook SSRF guard", () => {
       text: jest.fn().mockResolvedValue("ok"),
     });
     const internalEndpoint = { ...ACTIVE_ENDPOINT, url: "http://169.254.169.254/metadata" };
-    const db = makeDb([internalEndpoint]);
+    const { db } = makeDb([internalEndpoint]);
     const svc = makeSvc(db);
 
     await svc.executeAction("org-1", WEBHOOK_ACTION, PAYLOAD);
@@ -119,7 +123,7 @@ describe("AutomationService — deliverWebhook SSRF guard", () => {
   });
 
   it("skips dispatch when no active endpoints match", async () => {
-    const db = makeDb([]);
+    const { db } = makeDb([]);
     const svc = makeSvc(db);
 
     const result = await svc.executeAction("org-1", WEBHOOK_ACTION, PAYLOAD);

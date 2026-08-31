@@ -143,6 +143,25 @@ describe("createTenantAwareDb", () => {
   });
 });
 
+function dbHasSession<T extends object>(
+  db: T,
+): db is T & { session: { transaction: (fn: (tx: TenantTx) => Promise<void>) => Promise<void> } } {
+  return "session" in db;
+}
+
+function hasTestProjectsQuery(
+  x: unknown,
+): x is { query: { testProjects: { findFirst: (cfg: unknown) => Promise<unknown> } } } {
+  return (
+    typeof x === "object" &&
+    x !== null &&
+    "query" in x &&
+    typeof x.query === "object" &&
+    x.query !== null &&
+    "testProjects" in x.query
+  );
+}
+
 describe("relational query routing through real Drizzle internals", () => {
   const service = new TenantContextService();
 
@@ -170,13 +189,17 @@ describe("relational query routing through real Drizzle internals", () => {
       Object.assign(db, { __client: poolClient }) as unknown as DbWithClient,
     );
 
-    await db.transaction(
-      async (tx: any) => {
-        await service.run({ orgId: "org-1", audience: "INTERNAL", tx: tx as TenantTx }, async () => {
+    if (!dbHasSession(db)) throw new Error("drizzle db must expose an internal session");
+
+    await db.session.transaction(
+      async (tx) => {
+        await service.run({ orgId: "org-1", audience: "INTERNAL", tx }, async () => {
           txUnsafe.mockClear();
           poolUnsafe.mockClear();
 
-          await (proxy as unknown as { query: { testProjects: { findFirst: (cfg: unknown) => Promise<unknown> } } }).query.testProjects.findFirst({
+          if (!hasTestProjectsQuery(proxy)) throw new Error("proxy must expose testProjects query");
+
+          await proxy.query.testProjects.findFirst({
             with: { members: true },
           });
 
@@ -192,12 +215,14 @@ describe("relational query routing through real Drizzle internals", () => {
 
     const db = drizzle(poolClient as never, { schema: testSchema });
 
-    await db.transaction(
-      async (_tx: any) => {
+    if (!dbHasSession(db)) throw new Error("drizzle db must expose an internal session");
+
+    await db.session.transaction(
+      async (_tx) => {
         poolUnsafe.mockClear();
         txUnsafe.mockClear();
 
-        await (db as { query: { testProjects: { findFirst: (cfg: unknown) => Promise<unknown> } } }).query.testProjects.findFirst({
+        await db.query.testProjects.findFirst({
           with: { members: true },
         });
 

@@ -15,18 +15,9 @@ type ClaimedPayrollJob = typeof payrollJobs.$inferSelect;
 
 const POLL_MS = 5_000;
 const BATCH_SIZE = 5;
-/**
- * Modelled on NotificationDeliveryWorker (10 min). Payroll generation for a large
- * org can take several minutes, so we use a wider window before assuming a crash.
- */
 const STALE_LOCK_MS = 15 * 60 * 1_000;
 const RECLAIM_INTERVAL_MS = 60_000;
 
-/**
- * In-process durable worker for payroll jobs.
- * Claims PENDING rows, executes GENERATE / RECALCULATE / PDF_PUBLISH / FILING_EXPORT,
- * persists progress and FAILED/DEAD_LETTER states for operator retry.
- */
 @Injectable()
 export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PayrollJobsWorkerService.name);
@@ -45,11 +36,9 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
-    // Lazy resolve to avoid circular DI hard-failures at bootstrap
     this.timer = setInterval(() => {
       void this.tick();
     }, POLL_MS);
-    // Kick once shortly after boot
     setTimeout(() => void this.tick(), 2_000);
   }
 
@@ -57,7 +46,6 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
   }
 
-  /** Exposed for cron/manual flush and tests. */
   async flush(limit = BATCH_SIZE): Promise<{ claimed: number; completed: number; failed: number }> {
     await this.reclaimStale();
 
@@ -101,11 +89,6 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
     return { claimed: claimed.length, completed, failed };
   }
 
-  /**
-   * Reclaim RUNNING jobs whose lock has aged past STALE_LOCK_MS, resetting them to
-   * PENDING so the next flush can re-claim them. Mirrors NotificationDeliveryWorker's
-   * stale-lock reclaim pattern (staleBefore = now − STALE_LOCK_MS on lockedAt).
-   */
   private inTenant<T>(orgId: string, fn: () => Promise<T>): Promise<T> {
     return withTenant(this.db, { orgId, audience: "INTERNAL" }, (tx) =>
       runWithTenantContext({ orgId, audience: "INTERNAL", tx }, fn),
@@ -230,13 +213,13 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
         if (!pub) throw new Error("PublishingService unavailable");
         if (!Number.isFinite(runId)) throw new Error("runId required");
         const userIds = Array.isArray(ctx.payload.userIds)
-          ? (ctx.payload.userIds as string[])
+          ? ctx.payload.userIds.filter((id): id is string => typeof id === "string")
           : undefined;
         const runEmployeeIds = Array.isArray(ctx.payload.runEmployeeIds)
-          ? (ctx.payload.runEmployeeIds as number[])
+          ? ctx.payload.runEmployeeIds.filter((id): id is number => typeof id === "number")
           : undefined;
         const result = await pub.publish(ctx.orgId, runId, ctx.actorId, userIds, runEmployeeIds);
-        return result as unknown as Record<string, unknown>;
+        return result;
       }
       case "FILING_EXPORT": {
         const filings = await this.resolveFilings();
@@ -247,7 +230,9 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
           periodId: typeof ctx.payload.periodId === "number" ? ctx.payload.periodId : undefined,
           entityId: typeof ctx.payload.entityId === "number" ? ctx.payload.entityId : undefined,
           fiscalYear: typeof ctx.payload.fiscalYear === "string" ? ctx.payload.fiscalYear : undefined,
-          payload: (ctx.payload.exportPayload as Record<string, unknown>) ?? {},
+          payload: typeof ctx.payload.exportPayload === "object" && ctx.payload.exportPayload !== null
+            ? { ...ctx.payload.exportPayload }
+            : {},
           ruleVersion: typeof ctx.payload.ruleVersion === "string" ? ctx.payload.ruleVersion : undefined,
         });
         return {

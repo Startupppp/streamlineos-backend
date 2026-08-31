@@ -3,7 +3,7 @@ import postgres from "postgres";
 import { sql } from "drizzle-orm";
 import { encryptSecret, isEncryptedSecret } from "../common/security/secret-encryption.util";
 
-type PlaintextRow = {
+interface PlaintextRow extends Record<string, unknown> {
   id: string;
   encrypted_value: string;
 };

@@ -91,7 +91,7 @@ describe("HrEffectiveChangeApplierService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn() };
     const svc = new HrEffectiveChangeApplierService(db, mockAudit as never);
-    await svc.applyDue(ATTACKER, "system", new Date().toISOString().slice(0, 10), 100);
+    await svc.applyDue(ATTACKER, null, new Date().toISOString().slice(0, 10), 100);
     const arg = isolationArg(where, findMany);
     expect(sqlValues(arg).includes(ATTACKER) || where.mock.calls.length === 0).toBe(true);
   });
@@ -100,7 +100,7 @@ describe("HrEffectiveChangeApplierService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn() };
     const svc = new HrEffectiveChangeApplierService(db, mockAudit as never);
-    await svc.applyDue(OWNER, "system", new Date().toISOString().slice(0, 10), 100);
+    await svc.applyDue(OWNER, null, new Date().toISOString().slice(0, 10), 100);
     expect(db).toBeDefined();
     const arg = isolationArg(where, findMany);
     expect(sqlValues(arg).includes(OWNER) || where.mock.calls.length === 0).toBe(true);

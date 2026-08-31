@@ -71,7 +71,7 @@ describe("HrCalendarService — cross-tenant isolation", () => {
     const mockAccess = { holds: jest.fn().mockResolvedValue(false) };
     const svc = new HrCalendarService(db, mockCelebrations as never, mockAccess as never);
     const userCtx = { orgId: ATTACKER, userId: "user-1", email: "a@b.com", roles: [] };
-    await svc.getEvents(userCtx as never, { from: "2024-01-01", to: "2024-01-31", types: [] });
+    await svc.getEvents(userCtx as never, { from: "2024-01-01", to: "2024-01-31", types: undefined });
     const arg = isolationArg(where, findMany);
     expect(sqlValues(arg).includes(ATTACKER) || (db.select as jest.Mock).mock.calls.length === 0).toBe(true);
   });
@@ -82,7 +82,7 @@ describe("HrCalendarService — cross-tenant isolation", () => {
     const mockAccess = { holds: jest.fn().mockResolvedValue(false) };
     const svc = new HrCalendarService(db, mockCelebrations as never, mockAccess as never);
     const userCtx = { orgId: OWNER, userId: "user-2", email: "b@c.com", roles: [] };
-    const result = await svc.getEvents(userCtx as never, { from: "2024-01-01", to: "2024-01-31", types: [] });
+    const result = await svc.getEvents(userCtx as never, { from: "2024-01-01", to: "2024-01-31", types: undefined });
     expect(Array.isArray(result)).toBe(true);
   });
 });

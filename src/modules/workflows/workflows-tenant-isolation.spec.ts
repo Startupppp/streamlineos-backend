@@ -8,7 +8,7 @@ describe("WorkflowsService — cross-tenant isolation (delegation)", () => {
     return {
       listWorkflows: jest.fn().mockResolvedValue({ data: [], pagination: { nextCursor: null, hasMore: false } }),
       getWorkflow: jest.fn().mockResolvedValue(null),
-    } as never;
+    };
   }
 
   function makeExecution() {
@@ -46,7 +46,7 @@ describe("WorkflowsService — cross-tenant isolation (delegation)", () => {
 
   it("passes the requesting org to the crud layer (tenant isolation)", async () => {
     const crud = makeCrud();
-    const svc = new WorkflowsService(crud, makeExecution(), makeSchedules(), makeSecrets(), makeVariables(), makeAnalytics());
+    const svc = new WorkflowsService(crud as never, makeExecution(), makeSchedules(), makeSecrets(), makeVariables(), makeAnalytics());
 
     await svc.listWorkflows(ATTACKER, { cursor: undefined, limit: 20, sort: "createdAt", direction: "desc" });
 
@@ -56,7 +56,7 @@ describe("WorkflowsService — cross-tenant isolation (delegation)", () => {
 
   it("returns workflows for the owning org (same-tenant control)", async () => {
     const crud = makeCrud();
-    const svc = new WorkflowsService(crud, makeExecution(), makeSchedules(), makeSecrets(), makeVariables(), makeAnalytics());
+    const svc = new WorkflowsService(crud as never, makeExecution(), makeSchedules(), makeSecrets(), makeVariables(), makeAnalytics());
 
     const result = await svc.listWorkflows(OWNER, { cursor: undefined, limit: 20, sort: "createdAt", direction: "desc" });
 

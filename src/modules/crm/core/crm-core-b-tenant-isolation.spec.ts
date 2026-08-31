@@ -186,8 +186,7 @@ describe("CrmSupportDashboardService — cross-tenant isolation", () => {
 
 describe("CrmOrganizationsService — cross-tenant isolation", () => {
   function buildSvc(db: Db) {
-    const cache = makeCache();
-    return new CrmOrganizationsService(db, cache as never);
+    return new CrmOrganizationsService(db, makeCache() as never);
   }
 
   it("list: queries scoped to attacker org (deny)", async () => {

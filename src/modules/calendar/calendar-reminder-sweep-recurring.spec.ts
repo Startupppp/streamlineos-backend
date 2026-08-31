@@ -1,5 +1,5 @@
 import type { Db } from "../../db/drizzle.module";
-import type { TenantTx } from "../../db/drizzle.types";
+import type { TenantTx } from "../../common/tenant";
 import { CalendarReminderSweepService } from "./calendar-reminder-sweep.service";
 
 jest.mock("../../common/tenant", () => ({
@@ -51,7 +51,7 @@ describe("CalendarReminderSweepService — recurring event reminder dedupeKey", 
     const insertCap = makeInsertCapture();
     const updateCap = makeUpdateCapture();
 
-    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb, _intent?) => {
       let selectCallCount = 0;
       const tx = {
         select: jest.fn().mockImplementation(() => {
@@ -80,9 +80,9 @@ describe("CalendarReminderSweepService — recurring event reminder dedupeKey", 
         }),
         ...insertCap,
         ...updateCap,
-      } as unknown as Db;
+      } as unknown as TenantTx;
 
-      await cb(tx as unknown as TenantTx, ORG);
+      await cb(tx, ORG);
       return { organizations: 1, succeeded: 1, failed: 0 };
     });
 
@@ -111,7 +111,7 @@ describe("CalendarReminderSweepService — recurring event reminder dedupeKey", 
     const insertCap = makeInsertCapture();
     const updateCap = makeUpdateCapture();
 
-    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb, _intent?) => {
       let selectCallCount = 0;
       const tx = {
         select: jest.fn().mockImplementation(() => {
@@ -137,9 +137,9 @@ describe("CalendarReminderSweepService — recurring event reminder dedupeKey", 
         }),
         ...insertCap,
         ...updateCap,
-      } as unknown as Db;
+      } as unknown as TenantTx;
 
-      await cb(tx as unknown as TenantTx, ORG);
+      await cb(tx, ORG);
       return { organizations: 1, succeeded: 1, failed: 0 };
     });
 
@@ -160,7 +160,7 @@ describe("CalendarReminderSweepService — recurring event reminder dedupeKey", 
     const insertCap = makeInsertCapture();
     const updateCap = makeUpdateCapture();
 
-    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb, _intent?) => {
       let selectCallCount = 0;
       const tx = {
         select: jest.fn().mockImplementation(() => {
@@ -174,9 +174,9 @@ describe("CalendarReminderSweepService — recurring event reminder dedupeKey", 
         }),
         ...insertCap,
         ...updateCap,
-      } as unknown as Db;
+      } as unknown as TenantTx;
 
-      await cb(tx as unknown as TenantTx, ORG);
+      await cb(tx, ORG);
       return { organizations: 1, succeeded: 1, failed: 0 };
     });
 
@@ -223,7 +223,7 @@ describe("CalendarReminderSweepService — recurring event reminder dedupeKey", 
     };
     const attendeeRow = { eventId, userId, membershipId };
 
-    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb, _intent?) => {
       let selectCallCount = 0;
       const tx = {
         select: jest.fn().mockImplementation(() => {
@@ -236,10 +236,10 @@ describe("CalendarReminderSweepService — recurring event reminder dedupeKey", 
         }),
         ...insertCapIdempotent,
         ...updateCap,
-      } as unknown as Db;
+      } as unknown as TenantTx;
 
       await cb(tx, ORG);
-      return { processed: 1, failed: 0 };
+      return { organizations: 1, succeeded: 1, failed: 0 };
     });
 
     const db = {} as unknown as Db;
@@ -265,7 +265,7 @@ describe("CalendarReminderSweepService — recurring event reminder dedupeKey", 
     const insertCap = makeInsertCapture();
     const updateCap = makeUpdateCapture();
 
-    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb, _intent?) => {
       let selectCallCount = 0;
       const tx = {
         select: jest.fn().mockImplementation(() => {
@@ -295,9 +295,9 @@ describe("CalendarReminderSweepService — recurring event reminder dedupeKey", 
         }),
         ...insertCap,
         ...updateCap,
-      } as unknown as Db;
+      } as unknown as TenantTx;
 
-      await cb(tx as unknown as TenantTx, ORG);
+      await cb(tx, ORG);
       return { organizations: 1, succeeded: 1, failed: 0 };
     });
 
@@ -326,7 +326,7 @@ describe("CalendarReminderSweepService — rescheduled recurring occurrences (mo
     const insertCap = makeInsertCapture();
     const updateCap = makeUpdateCapture();
 
-    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb, _intent?) => {
       let selectCallCount = 0;
       const tx = {
         select: jest.fn().mockImplementation(() => {
@@ -366,9 +366,9 @@ describe("CalendarReminderSweepService — rescheduled recurring occurrences (mo
         }),
         ...insertCap,
         ...updateCap,
-      } as unknown as Db;
+      } as unknown as TenantTx;
 
-      await cb(tx as unknown as TenantTx, ORG);
+      await cb(tx, ORG);
       return { organizations: 1, succeeded: 1, failed: 0 };
     });
 
@@ -393,7 +393,7 @@ describe("CalendarReminderSweepService — rescheduled recurring occurrences (mo
     const insertCap = makeInsertCapture();
     const updateCap = makeUpdateCapture();
 
-    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb, _intent?) => {
       let selectCallCount = 0;
       const tx = {
         select: jest.fn().mockImplementation(() => {
@@ -431,9 +431,9 @@ describe("CalendarReminderSweepService — rescheduled recurring occurrences (mo
         }),
         ...insertCap,
         ...updateCap,
-      } as unknown as Db;
+      } as unknown as TenantTx;
 
-      await cb(tx as unknown as TenantTx, ORG);
+      await cb(tx, ORG);
       return { organizations: 1, succeeded: 1, failed: 0 };
     });
 
@@ -456,7 +456,7 @@ describe("CalendarReminderSweepService — rescheduled recurring occurrences (mo
     const insertCap = makeInsertCapture();
     const updateCap = makeUpdateCapture();
 
-    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb, _intent?) => {
       let selectCallCount = 0;
       const tx = {
         select: jest.fn().mockImplementation(() => {
@@ -496,9 +496,9 @@ describe("CalendarReminderSweepService — rescheduled recurring occurrences (mo
         }),
         ...insertCap,
         ...updateCap,
-      } as unknown as Db;
+      } as unknown as TenantTx;
 
-      await cb(tx as unknown as TenantTx, ORG);
+      await cb(tx, ORG);
       return { organizations: 1, succeeded: 1, failed: 0 };
     });
 
@@ -526,7 +526,7 @@ describe("CalendarReminderSweepService — rescheduled recurring occurrences (mo
     const insertCap = makeInsertCapture();
     const updateCap = makeUpdateCapture();
 
-    mockedForEachOrg.mockImplementation(async (_db, _key, cb) => {
+    mockedForEachOrg.mockImplementation(async (_db, _key, cb, _intent?) => {
       let selectCallCount = 0;
       const tx = {
         select: jest.fn().mockImplementation(() => {
@@ -564,9 +564,9 @@ describe("CalendarReminderSweepService — rescheduled recurring occurrences (mo
         }),
         ...insertCap,
         ...updateCap,
-      } as unknown as Db;
+      } as unknown as TenantTx;
 
-      await cb(tx as unknown as TenantTx, ORG);
+      await cb(tx, ORG);
       return { organizations: 1, succeeded: 1, failed: 0 };
     });
 

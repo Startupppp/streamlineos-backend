@@ -129,6 +129,7 @@ export class ChatChannelsService {
   private async listMemberChannels(actor: EntityActor, archived: boolean) {
     const { orgId } = actor;
     if (!actor.membershipId) return [];
+    const actorMembershipId = actor.membershipId;
     try {
       const memberships = await this.db
         .select({ channelId: chatChannelMembers.channelId })
@@ -171,7 +172,7 @@ export class ChatChannelsService {
               chatChannelMembers,
               and(
                 eq(chatChannelMembers.channelId, chatMessages.channelId),
-                eq(chatChannelMembers.membershipId, actor.membershipId!),
+                eq(chatChannelMembers.membershipId, actorMembershipId),
               ),
             )
             .where(
@@ -423,8 +424,8 @@ export class ChatChannelsService {
 
     if (existing) return this.resolveEntityChannelDisplayName(existing, actor);
 
-    const membershipId = actor.membershipId;
-    if (!membershipId) throw new ForbiddenException("Membership required to create a channel");
+    const actorMembershipId = actor.membershipId;
+    if (!actorMembershipId) throw new ForbiddenException("Membership required to create a channel");
 
     return this.db.transaction(async (tx) => {
       const [created] = await tx
@@ -433,7 +434,7 @@ export class ChatChannelsService {
           orgId: actor.orgId,
           name: resolution.card.title,
           type: "GROUP",
-          createdByMembershipId: actor.membershipId,
+          createdByMembershipId: actorMembershipId,
           entityType,
           entityId,
         })
@@ -445,8 +446,8 @@ export class ChatChannelsService {
 
       await tx.insert(chatChannelMembers).values({
         orgId: actor.orgId,
-        channelId: Number(created!.id),
-        membershipId: membershipId,
+        channelId: created.id,
+        membershipId: actorMembershipId,
         role: "ADMIN",
         notificationPreference: "DEFAULT",
       });

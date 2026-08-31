@@ -1,6 +1,6 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
-import { timesheets, users } from "../../../db/schema";
+import { organizationMembers, timesheets, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -167,17 +167,17 @@ export class WorkLogsService {
 
     if (!existing) throw new NotFoundException("Work log not found.");
 
-    // `approved_by` was contracted onto the membership actor.
-    const approver = await assertOrganizationActor(this.db, u.orgId, {
-      kind: "user",
-      userId: u.userId,
-    });
+    const [approverMember] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
+      .limit(1);
 
     const [updated] = await this.db
       .update(timesheets)
       .set({
         status: body.status,
-        approvedByMembershipId: approver.membershipId,
+        approvedByMembershipId: approverMember?.id ?? null,
         approvedAt: new Date(),
         rejectionReason: body.status === "REJECTED" ? (body.rejectionReason ?? null) : null,
       })

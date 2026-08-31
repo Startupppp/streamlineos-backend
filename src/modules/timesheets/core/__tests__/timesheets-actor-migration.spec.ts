@@ -85,8 +85,9 @@ function makeDb(period: unknown, settings: unknown, postApprovalPeriod: unknown)
   const txSelectFrom = jest.fn().mockReturnValue({ where: txSelectWhere });
   const txSelect = jest.fn().mockReturnValue({ from: txSelectFrom });
 
-  const tx = { update: txUpdate, select: txSelect };
-  const transaction = jest.fn().mockImplementation(async (fn: (tx: typeof tx) => Promise<void>) => fn(tx));
+  type TxMock = { update: typeof txUpdate; select: typeof txSelect };
+  const tx: TxMock = { update: txUpdate, select: txSelect };
+  const transaction = jest.fn().mockImplementation(async (fn: (tx: TxMock) => Promise<void>) => fn(tx));
 
   return {
     select: dbSelect,

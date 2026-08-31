@@ -26,11 +26,10 @@ import type { DataScope } from "../../access/access.types";
 import type {
   AgedReceivablesQuery,
   CreatePurchaseBillInput,
-  ListCustomersOutstandingQuery,
   ListPurchaseBillsQuery,
+  ListVendorsQuery,
   RecordVendorPaymentInput,
   UpdatePurchaseBillStatusInput,
-  ListVendorsQuery,
 } from "./dto/accounting.schemas";
 
 function round2(n: number): number {

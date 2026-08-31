@@ -70,7 +70,7 @@ describe("TeamMembersService — cross-tenant isolation (BOLA)", () => {
     const teams = makeTeams(ATTACKER_ORG);
     const svc = new TeamMembersService(db, teams, mockAudit);
     await expect(
-      svc.listTeamMembers(ATTACKER_ORG, TEAM_ID, { page: 1, pageSize: 20 }),
+      svc.listTeamMembers(ATTACKER_ORG, TEAM_ID, { pageSize: 20 }),
     ).rejects.toThrow(NotFoundException);
   });
 

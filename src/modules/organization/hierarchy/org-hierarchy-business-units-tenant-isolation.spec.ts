@@ -40,7 +40,7 @@ describe("OrgHierarchyBusinessUnitsService — cross-tenant isolation", () => {
 
   it("listBusinessUnits returns empty for a different org (cross-tenant isolation)", async () => {
     const { svc, where } = makeService([]);
-    const result = await svc.listBusinessUnits(ATTACKER, { limit: 25 });
+    const result = await svc.listBusinessUnits(ATTACKER, { limit: 20 });
     expect(result.data).toHaveLength(0);
     expect(where).toHaveBeenCalled();
     const vals = sqlValues(where.mock.calls[0]?.[0]);
@@ -49,7 +49,7 @@ describe("OrgHierarchyBusinessUnitsService — cross-tenant isolation", () => {
 
   it("listBusinessUnits returns rows for the owning org (control)", async () => {
     const { svc } = makeService([BU]);
-    const result = await svc.listBusinessUnits(OWNER, { limit: 25 });
+    const result = await svc.listBusinessUnits(OWNER, { limit: 20 });
     expect(result.data.length).toBeGreaterThan(0);
   });
 });

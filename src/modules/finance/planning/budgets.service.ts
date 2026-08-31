@@ -9,7 +9,7 @@ import { and, desc, eq, inArray, max } from "drizzle-orm";
 import { finBudgets, finBudgetLines, finBudgetRevisions, ledgerAccounts, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -32,10 +32,6 @@ export class BudgetsService {
     private readonly cache: CacheService,
   ) {}
 
-  // The return type is inferred from the projection below. The hand-written one
-  // had drifted from the table it selects -- `dimensionType` as a bare string
-  // where the column is an enum, and the two membership ids as strings where
-  // they are integers.
   async listBudgets(orgId: string, query: ListBudgetsQuery) {
     const { cursor, limit, status, fiscalYear } = query;
     const pos = decodeCursor(cursor);

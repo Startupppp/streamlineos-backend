@@ -158,7 +158,7 @@ describe("KB ACL revision gate — stale chunks cannot surface in vector search"
 
     const svc = new KbSearchService(
       db as never,
-      makeAccess([]),
+      makeAccess([]) as never,
       makeEmbeddings() as never,
       makeEvents() as never,
       new KbCandidateService(db as never),

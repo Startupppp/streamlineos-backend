@@ -177,7 +177,7 @@ describe("TimesheetsAuditService — cross-tenant isolation", () => {
   it("listAuditEvents: WHERE contains attacker orgId (deny — different org isolation)", async () => {
     const { db, where } = makeDb([]);
     const svc = new TimesheetsAuditService(db);
-    await svc.listAuditEvents(ATTACKER_ORG, {});
+    await svc.listAuditEvents(ATTACKER_ORG, { limit: 50 });
     expect(where).toHaveBeenCalled();
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
     expect(allVals).toContain(ATTACKER_ORG);
@@ -186,7 +186,7 @@ describe("TimesheetsAuditService — cross-tenant isolation", () => {
   it("listAuditEvents: returns empty data for own org with no events (control)", async () => {
     const { db } = makeDb([]);
     const svc = new TimesheetsAuditService(db);
-    const result = await svc.listAuditEvents(OWNER_ORG, {});
+    const result = await svc.listAuditEvents(OWNER_ORG, { limit: 50 });
     expect(result.data).toHaveLength(0);
   });
 });

@@ -44,7 +44,7 @@ describe("WorkflowsSchedulesService — cross-tenant isolation", () => {
 
       const svc = new WorkflowsSchedulesService(db);
       await expect(
-        svc.createSchedule(ATTACKER_ORG, WORKFLOW_ID, { cronExpression: "0 * * * *", isActive: true }),
+        svc.createSchedule(ATTACKER_ORG, WORKFLOW_ID, { cronExpression: "0 * * * *", timezone: "UTC", isEnabled: true }),
       ).rejects.toThrow(NotFoundException);
     });
   });

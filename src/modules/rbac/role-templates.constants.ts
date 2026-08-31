@@ -2,7 +2,7 @@ import { moduleScopedPermissions } from "./permissions";
 import { CRM_HR_ROLE_TEMPLATES } from "./role-templates-crm-hr.constants";
 import { BUILD_ROLE_TEMPLATES } from "./role-templates-build.constants";
 import type { RoleTemplate } from "./role-template.types";
-export type { RoleTemplate } from "./role-template.types";
+export type { RoleTemplate };
 
 export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
   ...CRM_HR_ROLE_TEMPLATES,

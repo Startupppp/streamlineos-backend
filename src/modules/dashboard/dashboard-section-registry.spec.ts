@@ -65,8 +65,8 @@ describe("DASHBOARD_HOME_SECTIONS — authoritative section registry (ITEMS A+B)
   it("universal sections carry no module or permission field", () => {
     const universals = DASHBOARD_HOME_SECTIONS.filter((s) => s.kind === "universal");
     for (const s of universals) {
-      expect((s as Record<string, unknown>)["permission"]).toBeUndefined();
-      expect((s as Record<string, unknown>)["module"]).toBeUndefined();
+      expect(Object.prototype.hasOwnProperty.call(s, "permission")).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(s, "module")).toBe(false);
     }
   });
 

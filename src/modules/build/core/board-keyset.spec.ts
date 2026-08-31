@@ -2,7 +2,6 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
-import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { DataScope } from "../../access/access.types";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -72,7 +71,6 @@ async function capture(cursor: string | undefined): Promise<Captured> {
   const svc = new ProjectsTicketsReadService(
     buildDb(captured),
     buildAccess(),
-    {} as AuditService,
   );
   await svc.listTickets(USER, PROJECT, cursorQuery(cursor));
   return captured;

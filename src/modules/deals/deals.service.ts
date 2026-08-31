@@ -1,7 +1,7 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { randomUUID } from "node:crypto";
-import { and, eq, isNull, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { deals, dealActivities, dealApprovals, dealStageTransitions, chatChannels, chatChannelMembers, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -160,30 +160,34 @@ export class DealsService {
         name: channelName,
         type: "GROUP",
         description: `Auto-created deal channel for deal #${dealId}`,
-        createdByMembershipId: creator.membershipId,
         entityType: "deal",
         entityId: String(dealId),
       })
       .returning({ id: chatChannels.id });
 
-    const memberIds = [userId];
-    if (dealRow?.assignedToId && dealRow.assignedToId !== userId) {
-      memberIds.push(dealRow.assignedToId);
-    }
+    if (!newChannel) return;
 
-    const memberships = await this.db
-      .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+    const memberUserIds = [userId];
+    if (dealRow?.assignedToId && dealRow.assignedToId !== userId)
+      memberUserIds.push(dealRow.assignedToId);
+
+    const membershipRows = await this.db
+      .select({ userId: organizationMembers.userId, id: organizationMembers.id })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, memberIds)));
+      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, memberUserIds)));
 
-    await this.db.insert(chatChannelMembers).values(
-      memberships.map((m) => ({
-        orgId,
-        channelId: newChannel.id,
-        membershipId: m.id,
-        role: m.userId === userId ? "ADMIN" : "MEMBER",
-      })),
-    );
+    const membershipByUserId = new Map(membershipRows.map((m) => [m.userId, m.id]));
+
+    const memberValues = memberUserIds
+      .map((uid) => {
+        const membershipId = membershipByUserId.get(uid);
+        if (!membershipId) return null;
+        return { orgId, channelId: newChannel.id, membershipId, role: uid === userId ? "ADMIN" : "MEMBER" };
+      })
+      .filter((v) => v !== null);
+
+    if (memberValues.length > 0)
+      await this.db.insert(chatChannelMembers).values(memberValues);
   }
 
   private async sendStageChangeNotification(
@@ -207,11 +211,6 @@ export class DealsService {
     });
   }
 
-  /**
-   * @param actor who is moving the deal. Defaults to the calling human; ticket
-   * 12 passes a system actor so an autonomous stage advance is recorded as one
-   * rather than wearing the name of whoever last touched the record.
-   */
   async updateDeal(
     orgId: string,
     userId: string,
@@ -280,9 +279,6 @@ export class DealsService {
         stageChanged = true;
         previousStage = existing.stage ?? null;
 
-        // Prepared here, written inside the transaction below. The activity row
-        // beside it is the legacy display log and stays for the surfaces that
-        // read it; the ledger is the accountable record.
         transitionRow = toTransitionRow({
           organizationId: orgId,
           dealId,
@@ -319,7 +315,6 @@ export class DealsService {
     }
 
     if (input.name !== undefined) updateData.name = input.name;
-    // `value` is generated from this column now, so writing it would error.
     if (input.value !== undefined) updateData.valueMinor = toMinorUnits(input.value);
     if (input.stage !== undefined) updateData.stage = input.stage;
     if (input.probability !== undefined) updateData.probability = input.probability;
@@ -342,9 +337,6 @@ export class DealsService {
         .returning();
       if (!row) return undefined;
 
-      // In the same transaction as the move it records. A ledger written outside
-      // it can survive a rolled-back update, which is the one failure that makes
-      // the whole record untrustworthy.
       if (transitionRow) await (tx as Db).insert(dealStageTransitions).values(transitionRow);
 
       if (wonStageDetected && stageChanged) {

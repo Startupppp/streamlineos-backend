@@ -390,7 +390,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("scopes employment queries to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
       const svc = new ExperienceLetterService(db, {} as never);
-      await expect(svc.create(ATTACKER, "user-1", { userId: "user-1", relievingDate: "2024-01-01" })).rejects.toThrow();
+      await expect(svc.create(ATTACKER, "user-1", { userId: "user-1", relievingDate: "2025-01-01" })).rejects.toThrow();
       expect(where).toHaveBeenCalled();
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
       expect(allValues).toContain(ATTACKER);
@@ -399,7 +399,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("scopes employment queries to the owning org (CONTROL)", async () => {
       const { db, where } = makeDb([]);
       const svc = new ExperienceLetterService(db, {} as never);
-      await expect(svc.create(OWNER, "user-1", { userId: "user-1", relievingDate: "2024-01-01" })).rejects.toThrow();
+      await expect(svc.create(OWNER, "user-1", { userId: "user-1", relievingDate: "2025-01-01" })).rejects.toThrow();
       expect(where).toHaveBeenCalled();
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
       expect(allValues).toContain(OWNER);

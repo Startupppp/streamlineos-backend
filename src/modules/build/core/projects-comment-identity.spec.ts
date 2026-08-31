@@ -36,15 +36,16 @@ function makeDb(ticketRow: unknown, commentRows: unknown[]) {
 }
 
 const activity = { logTicketActivity: jest.fn() } as never;
+const mockScopeFor = jest.fn().mockResolvedValue("all");
 const access = {
   resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:tickets:view"])),
-  scopeFor: jest.fn().mockResolvedValue("all"),
-} as any;
+  scopeFor: mockScopeFor,
+} as never;
 const webhooks = { dispatch: jest.fn() } as never;
 
 beforeEach(() => {
   jest.resetAllMocks();
-  (access.scopeFor as jest.Mock).mockResolvedValue("all");
+  mockScopeFor.mockResolvedValue("all");
 });
 
 describe("ProjectsTicketCommentsService.getComment — ROW-76 historical identity", () => {
