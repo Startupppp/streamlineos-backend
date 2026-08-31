@@ -232,13 +232,12 @@ export const CACHE_KEYS = {
   moduleAccessMembers: (
     orgId: string,
     moduleKey: string,
-    page: number,
-    pageSize: number,
+    limit: number,
     version: number,
     userId?: string,
     cursor?: number,
   ) =>
-    `module-access:members:${orgId}:${moduleKey}:v${version}:${cursor !== undefined ? `cursor:${cursor}` : `${page}:${pageSize}`}:${userId ?? "all"}`,
+    `module-access:members:${orgId}:${moduleKey}:v${version}:limit:${limit}:cursor:${cursor ?? "start"}:${userId ?? "all"}`,
   moduleAccessOwnership: (orgId: string, moduleKey: string) =>
     `module-access:ownership:${orgId}:${moduleKey}`,
 

@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 
 const APP_SCHEMAS = ["public", "build", "build_events"];
@@ -102,4 +103,142 @@ export async function collectUserFileKeys(
     }
   }
   return [...keys];
+}
+
+export interface SubjectFileKey {
+  key: string;
+  table: string;
+  column: string;
+  source: "user-fk" | "org-id";
+}
+
+/**
+ * Discovers all single-column FK columns pointing to public.users across the
+ * given schemas. Catalog-driven — survives schema evolution without code
+ * changes: a new table with a user FK is picked up automatically.
+ */
+export async function discoverUserFkColumns(
+  db: Db,
+  schemas: string[],
+): Promise<Map<string, string[]>> {
+  const rows = await db.execute(sql`
+    SELECT
+      n.nspname || '.' || c.relname AS "table",
+      a.attname                     AS "col"
+    FROM pg_constraint k
+    JOIN pg_class   c  ON c.oid = k.conrelid
+    JOIN pg_class   p  ON p.oid = k.confrelid
+    JOIN pg_namespace n  ON n.oid = c.relnamespace
+    JOIN pg_namespace pn ON pn.oid = p.relnamespace
+    JOIN LATERAL unnest(k.conkey) ck(attnum) ON true
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ck.attnum
+    WHERE k.contype = 'f'
+      AND n.nspname = ANY(${schemas})
+      AND pn.nspname = 'public' AND p.relname = 'users'
+      AND array_length(k.conkey, 1) = 1
+  `);
+  const map = new Map<string, string[]>();
+  for (const row of rows as Array<Record<string, unknown>>) {
+    const tbl = String(row["table"]);
+    const col = String(row["col"]);
+    if (!map.has(tbl)) map.set(tbl, []);
+    map.get(tbl)!.push(col);
+  }
+  return map;
+}
+
+/**
+ * Builds the per-table enumeration SQL as a Drizzle SQL object. Kept
+ * separate so tests can capture and inspect the rendered SQL.
+ */
+export function buildSubjectKeyQuery(
+  table: string,
+  column: string,
+  filterCol: string,
+  filterValue: string | string[],
+  userId: string,
+  filterKind: "user-col" | "org-id",
+): SQL {
+  const colId = sql.raw(`"${column}"`);
+  const tableId = sql.raw(table);
+  const filterColId = sql.raw(`"${filterCol}"`);
+  const legalHoldBlock = sql`
+    AND NOT EXISTS (
+      SELECT 1 FROM public.hr_legal_holds
+      WHERE  subject_user_id = ${userId}
+        AND  status = 'active'
+        AND  deleted_at IS NULL
+    )`;
+
+  if (filterKind === "user-col") {
+    return sql`
+      SELECT ${colId} AS k
+      FROM   ${tableId}
+      WHERE  ${filterColId} = ${filterValue as string}
+        AND  ${colId} IS NOT NULL
+        ${legalHoldBlock}
+    `;
+  }
+  return sql`
+    SELECT ${colId} AS k
+    FROM   ${tableId}
+    WHERE  ${filterColId} = ANY(${filterValue as string[]})
+      AND  ${colId} IS NOT NULL
+      ${legalHoldBlock}
+  `;
+}
+
+/**
+ * Returns every non-null storage key for a data subject that is NOT under an
+ * active legal hold. The hold exclusion is applied IN the SQL predicate of
+ * every per-table query (NOT as a post-filter), so concurrent hold placement
+ * cannot race with enumeration.
+ *
+ * Discovery is fully catalog-driven:
+ *   - File-key columns via pg_attribute (attname LIKE '%\_key')
+ *   - User-FK columns via pg_constraint → public.users (single-column FKs)
+ * A new table carrying both is included automatically without code changes.
+ *
+ * Org-scoped fallback: tables with no direct FK to users are queried by
+ * org_id using the caller's org membership list so files belonging to an org
+ * the subject owned are also captured.
+ */
+export async function collectSubjectFileKeysWithLegalHold(
+  db: Db,
+  userId: string,
+  orgIds: string[],
+  columns: FileKeyColumn[],
+  schemas: string[] = APP_SCHEMAS,
+): Promise<SubjectFileKey[]> {
+  const userFkMap = await discoverUserFkColumns(db, schemas);
+  const seen = new Set<string>();
+  const result: SubjectFileKey[] = [];
+
+  for (const { table, column } of columns) {
+    const userCols = userFkMap.get(table) ?? [];
+
+    if (userCols.length > 0) {
+      for (const userCol of userCols) {
+        const q = buildSubjectKeyQuery(table, column, userCol, userId, userId, "user-col");
+        for (const row of (await db.execute(q)) as Array<Record<string, unknown>>) {
+          const k = row["k"];
+          if (typeof k === "string" && k.length > 0 && !seen.has(k)) {
+            seen.add(k);
+            result.push({ key: k, table, column, source: "user-fk" });
+          }
+        }
+      }
+    } else if (orgIds.length > 0) {
+      const q = buildSubjectKeyQuery(table, column, "org_id", orgIds, userId, "org-id");
+      for (const row of (await db.execute(q)) as Array<Record<string, unknown>>) {
+        const k = row["k"];
+        if (typeof k === "string" && k.length > 0 && !seen.has(k)) {
+          seen.add(k);
+          result.push({ key: k, table, column, source: "org-id" });
+        }
+      }
+    }
+  }
+
+  return result;
 }

@@ -3242,6 +3242,13 @@
       "when": 1798000087000,
       "tag": "0775_audit_logs_cursor_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 588,
+      "version": "7",
+      "when": 1798000088000,
+      "tag": "0776_inv_compliance_documents_rls",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   auditLogs,
   organizationMembers,
@@ -32,6 +32,8 @@ import type {
   AuditLogQuery,
   SetModuleRolePermissionsInput,
 } from "./dto/module-access.schemas";
+import { buildCursorPage, decodeCursor, encodeCursor } from "../../common/pagination/cursor";
+import { keysetBeforeId } from "../../common/pagination/keyset";
 import { setModuleRolePermissions } from "./module-role-permissions";
 
 export { invalidateRoleAssigneePages } from "./module-role-permissions";
@@ -272,7 +274,7 @@ export class ModuleAccessService {
   async getAuditLog(
     actor: CurrentUserContext,
     moduleKey: string,
-    { page, pageSize }: AuditLogQuery,
+    { limit: rawLimit, cursor: cursorStr }: AuditLogQuery,
   ): Promise<{
     data: {
       id: number;
@@ -288,50 +290,54 @@ export class ModuleAccessService {
       createdAt: string;
     }[];
     pagination: {
-      page: number;
-      pageSize: number;
-      total: number;
-      totalPages: number;
+      limit: number;
+      nextCursor: string | null;
+      hasMore: boolean;
     };
   }> {
     await this.assertModuleAccess(actor, moduleKey, "view");
 
-    const limit = Math.min(pageSize, 100);
-    const offset = (page - 1) * limit;
+    const limit = Math.min(rawLimit, 100);
+    const position = decodeCursor(cursorStr);
+
+    const cursorFilter = position
+      ? keysetBeforeId(auditLogs.createdAt, auditLogs.id, position)
+      : undefined;
 
     const where = and(
       eq(auditLogs.orgId, actor.orgId),
       sql`${auditLogs.metadata}->>'moduleKey' = ${moduleKey}`,
+      cursorFilter,
     );
 
-    const [totalResult, rows] = await Promise.all([
-      this.db.select({ total: count() }).from(auditLogs).where(where),
-      this.db
-        .select({
-          id: auditLogs.id,
-          action: auditLogs.action,
-          actorUserId: auditLogs.userId,
-          actorName: users.name,
-          actorEmail: users.email,
-          targetId: auditLogs.targetId,
-          targetType: auditLogs.targetType,
-          metadata: auditLogs.metadata,
-          ipAddress: auditLogs.ipAddress,
-          createdAt: auditLogs.createdAt,
-        })
-        .from(auditLogs)
-        .leftJoin(users, eq(auditLogs.userId, users.id))
-        .where(where)
-        .orderBy(desc(auditLogs.createdAt))
-        .limit(limit)
-        .offset(offset),
-    ]);
+    const rows = await this.db
+      .select({
+        id: auditLogs.id,
+        action: auditLogs.action,
+        actorUserId: auditLogs.userId,
+        actorName: users.name,
+        actorEmail: users.email,
+        targetId: auditLogs.targetId,
+        targetType: auditLogs.targetType,
+        metadata: auditLogs.metadata,
+        ipAddress: auditLogs.ipAddress,
+        createdAt: auditLogs.createdAt,
+      })
+      .from(auditLogs)
+      .leftJoin(users, eq(auditLogs.userId, users.id))
+      .where(where)
+      .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
+      .limit(limit + 1);
 
-    const total = Number(totalResult[0]?.total ?? 0);
-    const targetUserIds = rows.flatMap((row) =>
+    const cursorPage = buildCursorPage(rows, limit, (r) => ({
+      sortValue: r.createdAt.toISOString(),
+      id: String(r.id),
+    }));
+
+    const targetUserIds = cursorPage.data.flatMap((row) =>
       row.targetType === "user" && row.targetId ? [row.targetId] : [],
     );
-    const targetRoleIds = rows.flatMap((row) => {
+    const targetRoleIds = cursorPage.data.flatMap((row) => {
       if (row.targetType !== "role" || !row.targetId) return [];
       const roleId = Number(row.targetId);
       return Number.isInteger(roleId) ? [roleId] : [];
@@ -366,7 +372,7 @@ export class ModuleAccessService {
     );
     const roleNames = new Map(targetRoles.map((role) => [role.id, role.name]));
 
-    const data = rows.map((r) => ({
+    const data = cursorPage.data.map((r) => ({
       id: r.id,
       action: r.action,
       actorUserId: r.actorUserId,
@@ -385,14 +391,6 @@ export class ModuleAccessService {
       createdAt: r.createdAt.toISOString(),
     }));
 
-    return {
-      data,
-      pagination: {
-        page,
-        pageSize: limit,
-        total,
-        totalPages: total > 0 ? Math.ceil(total / limit) : 0,
-      },
-    };
+    return { data, pagination: cursorPage.pagination };
   }
 }
