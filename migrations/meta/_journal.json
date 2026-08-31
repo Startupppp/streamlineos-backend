@@ -668,13 +668,6 @@
       "breakpoints": true
     },
     {
-      "idx": 366,
-      "version": "7",
-      "when": 1784993507608,
-      "tag": "0649_org_members_org_fk",
-      "breakpoints": true
-    },
-    {
       "idx": 95,
       "version": "7",
       "when": 1784993508607,
@@ -2257,13 +2250,6 @@
       "breakpoints": true
     },
     {
-      "idx": 370,
-      "version": "7",
-      "when": 1787830393442,
-      "tag": "0489_chain_creates_early",
-      "breakpoints": true
-    },
-    {
       "idx": 322,
       "version": "7",
       "when": 1787830394441,
@@ -2565,10 +2551,10 @@
       "breakpoints": true
     },
     {
-      "idx": 371,
+      "idx": 366,
       "version": "7",
       "when": 1787940668255,
-      "tag": "0655_chain_creates_remaining_catalog_objects",
+      "tag": "0649_org_members_org_fk",
       "breakpoints": true
     },
     {
@@ -2590,6 +2576,20 @@
       "version": "7",
       "when": 1787940848254,
       "tag": "0652_repair_chat_reaction_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 370,
+      "version": "7",
+      "when": 1787940848255,
+      "tag": "0489_chain_creates_early",
+      "breakpoints": true
+    },
+    {
+      "idx": 371,
+      "version": "7",
+      "when": 1787940848256,
+      "tag": "0655_chain_creates_remaining_catalog_objects",
       "breakpoints": true
     },
     {
@@ -3318,6 +3318,55 @@
       "version": "7",
       "when": 1798000099000,
       "tag": "0787_workflow_secrets_encrypt_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 600,
+      "version": "7",
+      "when": 1798000100000,
+      "tag": "0788_chat_saved_messages_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 601,
+      "version": "7",
+      "when": 1798000101000,
+      "tag": "0789_chat_saved_messages_drop_user_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 602,
+      "version": "7",
+      "when": 1798000102000,
+      "tag": "0790_calendar_actor_normalize_confirm",
+      "breakpoints": true
+    },
+    {
+      "idx": 604,
+      "version": "7",
+      "when": 1798000104000,
+      "tag": "0792_payroll_run_export_truncated",
+      "breakpoints": true
+    },
+    {
+      "idx": 605,
+      "version": "7",
+      "when": 1798000105000,
+      "tag": "0793_journal_entries_immutability_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 607,
+      "version": "7",
+      "when": 1798000107000,
+      "tag": "0795_gdpr_export_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 608,
+      "version": "7",
+      "when": 1798000108000,
+      "tag": "0796_kb_actor_membership_companion",
       "breakpoints": true
     }
   ]
