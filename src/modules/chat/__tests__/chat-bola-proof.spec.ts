@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { CacheService } from "../../../common/cache/cache.service";
 import { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 import { ChatChannelMembersService } from "../chat-channel-members.service";
+import { ChatMessageTimelineService } from "../chat-message-timeline.service";
 import { ChatReplyRemindersService } from "../chat-reply-reminders.service";
 import { ChatSavedService } from "../chat-saved.service";
 import { ChatSavedController } from "../chat-saved.controller";
@@ -14,6 +15,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { APP_CONFIG } from "../../../config/config.module";
 import { AblyService } from "../../realtime/ably.service";
+import type { EntityActor } from "../../entity-reference/entity-reference.types";
 
 function flatValues(where: unknown, seen = new Set<object>()): unknown[] {
   if (where === null || where === undefined || typeof where !== "object") return [where];
@@ -483,5 +485,93 @@ describe("Departed-member display: sender identity preserved after departure", (
     const rows = [{ senderId: "user-a", senderMembershipId: null, content: "hi" }];
     const senderNames = rows.map((r) => (r.senderMembershipId === null ? "via users" : "via membership"));
     expect(senderNames).toEqual(["via users"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ChatMessageTimelineService — thread (reply-chain) BOLA
+// A non-member of a channel must not be able to read messages (or reply threads)
+// in that channel, regardless of whether the channel is in the same org.
+// ---------------------------------------------------------------------------
+
+describe("ChatMessageTimelineService — thread BOLA", () => {
+  const MEMBERSHIP_ID = 11;
+
+  function makeActor(orgId: string, membershipId?: number): EntityActor {
+    return { orgId, userId: USER_ATTACKER, membershipId, isOrgOwner: false, permissions: [] } as unknown as EntityActor;
+  }
+
+  function makeTimelineDb(channelFound: boolean, channelType: string, isMember: boolean) {
+    return {
+      query: {
+        chatChannels: {
+          findFirst: jest.fn().mockResolvedValue(channelFound ? { id: CHANNEL_ID, type: channelType } : null),
+        },
+        chatChannelMembers: {
+          findFirst: jest.fn().mockResolvedValue(isMember ? { id: MEMBERSHIP_ID } : undefined),
+        },
+        chatMessages: {
+          findMany: jest.fn().mockResolvedValue([]),
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ id: MEMBERSHIP_ID }),
+        },
+      },
+      select: jest.fn().mockReturnThis(),
+      from: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue([]),
+    };
+  }
+
+  function makeStubEntityRef() {
+    return { withResolvedReferences: jest.fn().mockImplementation((_a: unknown, rows: unknown[]) => Promise.resolve(rows)), resolve: jest.fn() } as unknown as EntityReferenceService;
+  }
+
+  async function buildTimeline(db: ReturnType<typeof makeTimelineDb>, entityRef: EntityReferenceService): Promise<ChatMessageTimelineService> {
+    const mod = await Test.createTestingModule({
+      providers: [
+        ChatMessageTimelineService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: EntityReferenceService, useValue: entityRef },
+      ],
+    }).compile();
+    return mod.get(ChatMessageTimelineService);
+  }
+
+  it("DENY: poll returns 404 for a channel that does not exist in the caller's org (cross-org BOLA)", async () => {
+    const db = makeTimelineDb(false, "GROUP", false);
+    const svc = await buildTimeline(db, makeStubEntityRef());
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_ATTACKER, MEMBERSHIP_ID), new Date())).rejects.toThrow(NotFoundException);
+    expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
+  });
+
+  it("DENY: poll returns 403 for a public-channel non-member (thread BOLA — existence known, access denied)", async () => {
+    const db = makeTimelineDb(true, "PUBLIC", false);
+    const svc = await buildTimeline(db, makeStubEntityRef());
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date())).rejects.toThrow(ForbiddenException);
+    expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
+  });
+
+  it("DENY: poll returns 404 for a private-channel non-member (thread BOLA — existence concealed)", async () => {
+    const db = makeTimelineDb(true, "GROUP", false);
+    const svc = await buildTimeline(db, makeStubEntityRef());
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date())).rejects.toThrow(NotFoundException);
+    expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
+  });
+
+  it("DENY: poll returns 403 when caller has no membershipId (not org member, public channel)", async () => {
+    const db = makeTimelineDb(true, "PUBLIC", false);
+    const svc = await buildTimeline(db, makeStubEntityRef());
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, undefined), new Date())).rejects.toThrow(ForbiddenException);
+    expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
+  });
+
+  it("ALLOW: channel member can poll thread messages and receives an array", async () => {
+    const db = makeTimelineDb(true, "GROUP", true);
+    const svc = await buildTimeline(db, makeStubEntityRef());
+    const result = await svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date("2020-01-01"));
+    expect(Array.isArray(result)).toBe(true);
   });
 });

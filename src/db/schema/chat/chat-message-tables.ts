@@ -59,6 +59,7 @@ export const chatMessages = pgTable(
     unique("uniq_chat_messages_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.channelId], foreignColumns: [chatChannels.orgId, chatChannels.id], name: "fk_chat_messages_org_channel" }),
     foreignKey({ columns: [table.orgId, table.replyToId], foreignColumns: [table.orgId, table.id], name: "fk_chat_messages_org_reply" }),
+    foreignKey({ columns: [table.orgId, table.senderMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_messages_org_sender_membership" }).onDelete("set null"),
   ],
 );
 

@@ -3256,6 +3256,27 @@
       "when": 1798000089000,
       "tag": "0777_invoices_reminder_sweep_index",
       "breakpoints": true
+    },
+    {
+      "idx": 590,
+      "version": "7",
+      "when": 1798000090000,
+      "tag": "0778_chat_membership_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 591,
+      "version": "7",
+      "when": 1798000091000,
+      "tag": "0779_chat_membership_fks_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 592,
+      "version": "7",
+      "when": 1798000092000,
+      "tag": "0780_calendar_attendees_sweep_cover",
+      "breakpoints": true
     }
   ]
 }

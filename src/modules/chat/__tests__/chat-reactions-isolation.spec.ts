@@ -141,5 +141,15 @@ describe("ChatReactionsService — cross-tenant isolation", () => {
       expect(result).toHaveProperty("reactions");
       expect(db.delete).toHaveBeenCalled();
     });
+
+    it("CONTROL: removing a non-existent reaction is a no-op — returns reactions without throwing (idempotent)", async () => {
+      const db = makeDb({ reactions: [] });
+      const deleteWhere = jest.fn().mockResolvedValue(undefined);
+      (db.delete as jest.Mock).mockReturnValue({ where: deleteWhere });
+      service = await buildService(db);
+      const result = await service.removeReaction(CHANNEL_ID, MESSAGE_ID, USER_A, ORG_A, EMOJI);
+      expect(result).toHaveProperty("reactions");
+      expect(deleteWhere).toHaveBeenCalledTimes(1);
+    });
   });
 });
