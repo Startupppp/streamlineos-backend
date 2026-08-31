@@ -33,16 +33,24 @@
  *    custom provider object.
  * 5. Report every export token absent from providers and from imports.
  *
+ * ADDITIONAL DI CONSTRUCTOR CHECKS (Checks A, B, C)
+ * Check A — undeclared token: a constructor parameter whose type resolves to a
+ *   class not in the module's providers, not in any imported module's exports,
+ *   and not in a @Global() module's exports.
+ * Check B — non-injectable type: a parameter typed unknown, any, object, a
+ *   primitive, a union without a clear class identity, or an array — none of
+ *   which carry a runtime DI token. @Inject(TOKEN) exempts a parameter.
+ * Check C — import type on injected class: a parameter whose class type is
+ *   imported via `import type { X }` or `import { type X }` with no @Inject.
+ *   TypeScript erases the import so design:paramtypes becomes undefined.
+ *
  * VACUITY GUARDS
  * - Fewer than 100 module files found → exit 2 ("walk is broken")
  * - Zero @Module decorators parsed → exit 2
  *
  * SELF-TEST (--self-test)
- * Runs the real detection functions over synthetic modules: the exact
- * StorageModule defect must be FLAGGED, and the fixed form, a re-exported
- * module, a custom provider token, a forwardRef import and a spread-free
- * multiline factory must all come back CLEAN. Same code path as the scan —
- * not a parallel implementation.
+ * Runs detection functions over synthetic fixtures; includes both the existing
+ * export check cases and new cases for Checks A, B, C.
  *
  * Usage:
  *   node src/scripts/check-module-di.mjs [--self-test]
@@ -51,15 +59,16 @@
  *
  * Exit codes:
  *   0 — clean (or self-test passed)
- *   1 — invalid exports found (or self-test failed)
+ *   1 — invalid exports or DI violations found (or self-test failed)
  *   2 — scan is broken (vacuity check failed)
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, resolve, relative } from "node:path";
+import { join, resolve, relative, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SELF_TEST = process.argv.includes("--self-test");
+const VERBOSE = process.argv.includes("--verbose");
 const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 const SRC_ROOT = join(BACKEND_ROOT, "src");
 
@@ -224,8 +233,610 @@ export function analyseModuleSource(src) {
   return { imports, providers, exports: exports_, invalid };
 }
 
+// ─── DI CONSTRUCTOR ANALYSIS ───────────────────────────────────────────────
+
+/**
+ * NestJS framework tokens always available via platform DI without any module
+ * registration. Exempt from Check A.
+ */
+const NEST_FRAMEWORK_TOKENS = new Set([
+  "Reflector",
+  "ModuleRef",
+  "ApplicationRef",
+  "HttpServer",
+  "HttpAdapter",
+  "ContextId",
+  "ExternalContextCreator",
+  "Logger",
+  "DiscoveryService",
+  "MetadataScanner",
+]);
+
+function isGlobalModule(src) {
+  return /@Global\s*\(\s*\)/.test(src);
+}
+
+function extractModuleClassName(src) {
+  const pos = src.lastIndexOf("@Module(");
+  if (pos === -1) return null;
+  const after = src.slice(pos);
+  const m = /\bexport\s+class\s+([A-Za-z_$][\w$]*)/.exec(after);
+  return m?.[1] ?? null;
+}
+
+/**
+ * Returns the implementation class from a provider entry, or null if there
+ * is no class to instantiate (useValue / useFactory / useExisting / no class).
+ */
+function implClassOf(entry) {
+  const text = entry.trim();
+  if (text.startsWith("{")) {
+    const uc = /\buseClass\s*:\s*([A-Za-z_$][\w$]*)/.exec(text);
+    if (uc) return uc[1];
+    return null;
+  }
+  const fwd = FORWARD_REF.exec(text);
+  if (fwd) return fwd[1];
+  const bare = BARE_IDENT.exec(text);
+  if (bare) return bare[1];
+  return null;
+}
+
+/**
+ * When an exports/imports array entry is an ALL_CAPS or camelCase constant
+ * (e.g. `KB_MODULES`, `MODULES`), try to inline-expand it by finding the
+ * constant's declaration in the same source file.
+ * Returns a flat array of tokens (same shape as splitTopLevel → tokenOf).
+ * Falls back to [constName] when the constant cannot be resolved.
+ */
+function resolveConstantArray(src, constName) {
+  const re = new RegExp(`(?:^|\\n)\\s*(?:const|let|var)\\s+${constName}\\s*(?::[^=]+)?=\\s*\\[`);
+  const m = re.exec(src);
+  if (!m) return [constName];
+  const openBracket = src.indexOf("[", m.index + m[0].length - 1);
+  if (openBracket === -1) return [constName];
+  const body = extractBalanced(src, openBracket + 1);
+  if (!body) return [constName];
+  return splitTopLevel(body).map(tokenOf).filter(Boolean);
+}
+
+/**
+ * Returns true if a token looks like a constant name (ALL_CAPS or _-separated)
+ * rather than a PascalCase class name.
+ */
+function isConstantName(token) {
+  return /^[A-Z][A-Z0-9_]*$/.test(token) && /[_0-9]/.test(token.slice(1));
+}
+
+/**
+ * Builds a registry of all modules from module files.
+ * Returns Map<moduleClassName, moduleInfo>.
+ */
+function buildModuleGraph(moduleFiles) {
+  const registry = new Map();
+  for (const file of moduleFiles) {
+    let src;
+    try { src = readFileSync(file, "utf8"); } catch { continue; }
+
+    const className = extractModuleClassName(src);
+    if (!className) continue;
+
+    const start = findModuleObjectStart(src);
+    if (start === -1) continue;
+    const object = extractBalanced(src, start);
+    if (!object) continue;
+
+    const readTokens = (key) => {
+      const body = extractArray(object, key);
+      const rawList = body !== null
+        ? splitTopLevel(body).map(tokenOf).filter(Boolean)
+        : (() => {
+            const re = new RegExp(`(?:^|[\\s,{])${key}\\s*:\\s*([A-Za-z_$][\\w$]*)\\s*(?:[,}]|$)`, "m");
+            const mm = re.exec(object);
+            return mm ? [mm[1]] : [];
+          })();
+      const expanded = [];
+      for (const t of rawList) {
+        if (isConstantName(t)) {
+          for (const resolved of resolveConstantArray(src, t)) expanded.push(resolved);
+        } else {
+          expanded.push(t);
+        }
+      }
+      return expanded;
+    };
+
+    const readRaw = (key) => {
+      const body = extractArray(object, key);
+      if (!body) return [];
+      return splitTopLevel(body);
+    };
+
+    const providerEntries = readRaw("providers");
+    const providers = providerEntries.map(tokenOf).filter(Boolean);
+    const implClasses = providerEntries.map(implClassOf).filter(Boolean);
+    const imports = readTokens("imports");
+    const exports = readTokens("exports");
+    const controllers = readRaw("controllers").map(tokenOf).filter(Boolean);
+
+    registry.set(className, {
+      className,
+      filePath: file,
+      isGlobal: isGlobalModule(src),
+      providers,
+      implClasses,
+      imports,
+      exports,
+      controllers,
+    });
+  }
+  return registry;
+}
+
+/**
+ * Returns the set of provider tokens that moduleClassName transitively exports
+ * (following re-exported modules). Cycles are guarded by `seen`.
+ */
+function computeModuleExports(moduleClassName, registry, seen = new Set()) {
+  if (seen.has(moduleClassName)) return new Set();
+  seen.add(moduleClassName);
+  const m = registry.get(moduleClassName);
+  if (!m) return new Set();
+  const result = new Set();
+  for (const exp of m.exports) {
+    if (registry.has(exp)) {
+      for (const t of computeModuleExports(exp, registry, seen)) result.add(t);
+    } else {
+      result.add(exp);
+    }
+  }
+  return result;
+}
+
+/**
+ * Returns the full set of tokens injectable into services within moduleClassName:
+ * - own providers
+ * - exports of every imported module (transitively)
+ * - globalExports from @Global() modules
+ * - NEST_FRAMEWORK_TOKENS
+ */
+function computeVisibleTokens(moduleClassName, registry, globalExports) {
+  const m = registry.get(moduleClassName);
+  if (!m) return new Set([...globalExports, ...NEST_FRAMEWORK_TOKENS]);
+
+  const visible = new Set(m.providers);
+  for (const imp of m.imports) {
+    for (const t of computeModuleExports(imp, registry)) visible.add(t);
+  }
+  for (const t of globalExports) visible.add(t);
+  for (const t of NEST_FRAMEWORK_TOKENS) visible.add(t);
+  return visible;
+}
+
+/**
+ * Parses the import statements of a source file to find which identifiers are
+ * imported via `import type { X }` or `import { type X }`.
+ * Returns { typeOnly: Set<string>, regular: Set<string> }.
+ */
+function parseImportTypes(src) {
+  const typeOnly = new Set();
+  const regular = new Set();
+
+  for (const m of src.matchAll(/\bimport\s+type\s*\{([^}]+)\}/g)) {
+    for (const part of m[1].split(",")) {
+      const raw = part.replace(/\bas\s+\w+/, "").trim();
+      if (/^[A-Za-z_$][\w$]*$/.test(raw)) typeOnly.add(raw);
+    }
+  }
+
+  for (const m of src.matchAll(/\bimport\s*\{([^}]+)\}\s*from/g)) {
+    for (const part of m[1].split(",")) {
+      const trimmed = part.trim();
+      if (trimmed.startsWith("type ")) {
+        const name = trimmed.slice(5).replace(/\bas\s+\w+/, "").trim();
+        if (/^[A-Za-z_$][\w$]*$/.test(name)) typeOnly.add(name);
+      } else {
+        const name = trimmed.split(/\s+as\s+/)[0].trim();
+        if (/^[A-Za-z_$][\w$]*$/.test(name)) regular.add(name);
+      }
+    }
+  }
+
+  return { typeOnly, regular };
+}
+
+/**
+ * Extracts the balanced content of `(...)` starting from the `(` at src[0].
+ * Returns the content between the parens (exclusive), or '' if empty.
+ */
+function extractParenContent(src) {
+  if (!src.startsWith("(")) return null;
+  return extractBalanced(src, 1) ?? "";
+}
+
+/**
+ * Parses a single constructor parameter text and returns its structure, or
+ * null if the text does not look like a valid parameter.
+ *
+ * Returns: { index, name, type, injectToken, optional, decorators }
+ *   injectToken: string if @Inject(X) is present, null otherwise
+ *   optional: true if @Optional() or ? suffix is present
+ */
+function parseOneParam(rawText, index) {
+  let text = rawText.trim();
+  if (!text) return null;
+
+  const decorators = [];
+
+  while (text.startsWith("@")) {
+    const nameMatch = /^@([A-Za-z_$][\w$]*)/.exec(text);
+    if (!nameMatch) break;
+    const decName = nameMatch[1];
+    text = text.slice(nameMatch[0].length);
+    let args = null;
+    const trimmed = text.trimStart();
+    if (trimmed.startsWith("(")) {
+      text = trimmed;
+      args = extractParenContent(text) ?? "";
+      text = text.slice(1 + args.length + 1);
+    }
+    decorators.push({ name: decName, args });
+    text = text.trimStart();
+  }
+
+  const MODIFIERS = ["private", "protected", "public", "readonly", "static", "override", "abstract", "declare"];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const mod of MODIFIERS) {
+      if (text.startsWith(mod) && /^\W/.test(text.slice(mod.length) || " ")) {
+        text = text.slice(mod.length).trimStart();
+        changed = true;
+      }
+    }
+  }
+
+  const nameMatch = /^([A-Za-z_$][\w$]*)(\s*\?)?/.exec(text);
+  if (!nameMatch) return null;
+
+  const paramName = nameMatch[1];
+  const optional = (nameMatch[2] ?? "").trim() === "?";
+  text = text.slice(nameMatch[0].length).trimStart();
+
+  let type = null;
+  if (text.startsWith(":")) {
+    type = text.slice(1).trim();
+    if (type) {
+      let depth = 0;
+      for (let j = 0; j < type.length; j++) {
+        const c = type[j];
+        if (c === "<" || c === "(" || c === "[" || c === "{") depth++;
+        else if (c === ">" || c === ")" || c === "]" || c === "}") depth--;
+        else if (c === "=" && depth === 0 && type[j + 1] !== ">") {
+          type = type.slice(0, j).trim();
+          break;
+        }
+      }
+    }
+  }
+
+  let injectToken = null;
+  let isOptional = optional;
+
+  for (const dec of decorators) {
+    if (dec.name === "Optional") isOptional = true;
+    if (dec.name === "Inject" && dec.args !== null) {
+      injectToken = dec.args.trim();
+    }
+    if (dec.name !== "Injectable" && /^Inject[A-Z]/.test(dec.name)) {
+      if (injectToken === null) injectToken = dec.args?.trim() ?? dec.name;
+    }
+  }
+
+  return { index, name: paramName, type, decorators, injectToken, optional: isOptional };
+}
+
+/**
+ * Finds the constructor of a class in source text and returns an array of
+ * parsed parameters, or [] if no constructor is found.
+ * When className is provided, first scopes to that class body so that a
+ * non-injectable error class defined before the @Injectable() class is not
+ * mistakenly parsed.
+ */
+function parseConstructorParams(src, className = null) {
+  let searchSrc = src;
+  if (className) {
+    const classRe = new RegExp(`\\bclass\\s+${className}\\b`);
+    const classMatch = classRe.exec(src);
+    if (classMatch) {
+      let i = classMatch.index + classMatch[0].length;
+      while (i < src.length && src[i] !== "{") i++;
+      if (i < src.length) {
+        const classBody = extractBalanced(src, i + 1);
+        if (classBody) searchSrc = classBody;
+      }
+    }
+  }
+  const m = /\bconstructor\s*\(/.exec(searchSrc);
+  if (!m) return [];
+  const paramStart = m.index + m[0].length;
+  const paramBody = extractBalanced(searchSrc, paramStart);
+  if (!paramBody || !paramBody.trim()) return [];
+  const rawParams = splitTopLevel(paramBody);
+  const params = [];
+  for (let i = 0; i < rawParams.length; i++) {
+    const p = parseOneParam(rawParams[i], i);
+    if (p) params.push(p);
+  }
+  return params;
+}
+
+/**
+ * Returns true if typeStr contains a top-level `|` (union type).
+ */
+function hasTopLevelBar(typeStr) {
+  let depth = 0;
+  for (let i = 0; i < typeStr.length; i++) {
+    const ch = typeStr[i];
+    if (ch === "<" || ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ">" || ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (ch === "|" && depth === 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Splits a union type into its arms at top-level `|` boundaries.
+ */
+function splitUnionArms(typeStr) {
+  const arms = [];
+  let depth = 0;
+  let current = "";
+  for (let i = 0; i < typeStr.length; i++) {
+    const ch = typeStr[i];
+    if (ch === "<" || ch === "(" || ch === "[" || ch === "{") { depth++; current += ch; }
+    else if (ch === ">" || ch === ")" || ch === "]" || ch === "}") { depth--; current += ch; }
+    else if (ch === "|" && depth === 0) {
+      if (current.trim()) arms.push(current.trim());
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  if (current.trim()) arms.push(current.trim());
+  return arms;
+}
+
+const NON_INJECTABLE_KEYWORDS = new Set(["unknown", "any", "never", "void", "object", "Object"]);
+const NULLABLE_ARMS = new Set(["null", "undefined"]);
+const PRIMITIVE_TYPES = new Set(["string", "number", "boolean", "bigint", "symbol", "true", "false"]);
+
+/**
+ * Check B: returns true if the type annotation provably carries no runtime DI
+ * token and therefore @Inject() is required.
+ */
+function isNonInjectableType(typeStr) {
+  if (!typeStr) return false;
+  const t = typeStr.trim();
+
+  if (NON_INJECTABLE_KEYWORDS.has(t)) return true;
+  if (PRIMITIVE_TYPES.has(t)) return true;
+  if (t.startsWith("{")) return true;
+  if (t.endsWith("[]")) return true;
+  if (/^(?:Readonly)?Array\s*</.test(t)) return true;
+
+  if (hasTopLevelBar(t)) {
+    const arms = splitUnionArms(t);
+    const nonNull = arms.filter((a) => !NULLABLE_ARMS.has(a));
+    if (nonNull.length === 1) return isNonInjectableType(nonNull[0]);
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Returns the base class-like identifier from a type string (for Check A/C),
+ * stripping generics and collapsing nullable unions. Returns null when there
+ * is no single class identifier (union, primitive, inline object, etc.).
+ * Only returns an identifier if it starts with an uppercase letter (class
+ * convention), so string/number/boolean identifiers are ignored.
+ */
+function getTypeIdent(typeStr) {
+  if (!typeStr) return null;
+  const t = typeStr.trim();
+
+  if (hasTopLevelBar(t)) {
+    const arms = splitUnionArms(t);
+    const nonNull = arms.filter((a) => !NULLABLE_ARMS.has(a));
+    if (nonNull.length !== 1) return null;
+    return getTypeIdent(nonNull[0]);
+  }
+
+  const withoutGeneric = t.split("<")[0].trim();
+  if (/^[A-Z][A-Za-z0-9_$]*$/.test(withoutGeneric)) return withoutGeneric;
+  return null;
+}
+
+/** Check A — returns a finding or null. */
+function checkUndeclaredToken(param, visibleTokens, className, moduleName) {
+  if (param.injectToken !== null) return null;
+  const ident = getTypeIdent(param.type);
+  if (!ident) return null;
+  if (visibleTokens.has(ident)) return null;
+  return {
+    kind: "A",
+    severity: param.optional ? "warn" : "error",
+    class: className,
+    module: moduleName,
+    paramIndex: param.index,
+    paramName: param.name,
+    missingToken: ident,
+    optional: param.optional,
+  };
+}
+
+/** Check B — returns a finding or null. */
+function checkNonInjectableType(param, className, moduleName) {
+  if (param.injectToken !== null) return null;
+  if (!isNonInjectableType(param.type)) return null;
+  return {
+    kind: "B",
+    severity: "error",
+    class: className,
+    module: moduleName,
+    paramIndex: param.index,
+    paramName: param.name,
+    type: param.type ?? "(untyped)",
+  };
+}
+
+/** Check C — returns a finding or null. */
+function checkImportType(param, typeOnlyImports, className, moduleName) {
+  if (param.injectToken !== null) return null;
+  const ident = getTypeIdent(param.type);
+  if (!ident) return null;
+  if (!typeOnlyImports.has(ident)) return null;
+  return {
+    kind: "C",
+    severity: "error",
+    class: className,
+    module: moduleName,
+    paramIndex: param.index,
+    paramName: param.name,
+    typeIdent: ident,
+  };
+}
+
+/**
+ * Walks src/ and records every `export class X` / `export abstract class X`
+ * with its file path. Returns Map<className, filePath[]>.
+ * Multiple files may export the same class name (rare but possible when the
+ * same class appears under different module subdirectories).
+ */
+function buildClassIndex(srcDir) {
+  const index = new Map();
+  const CLASS_RE = /\bexport\s+(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)/g;
+  function walkDir(dir) {
+    for (const entry of readdirSync(dir)) {
+      if (["node_modules", "dist", ".git"].includes(entry)) continue;
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) walkDir(full);
+      else if (entry.endsWith(".ts") && !entry.endsWith(".d.ts") && !entry.endsWith(".spec.ts")) {
+        let src;
+        try { src = readFileSync(full, "utf8"); } catch { continue; }
+        CLASS_RE.lastIndex = 0;
+        for (const m of src.matchAll(CLASS_RE)) {
+          const name = m[1];
+          if (!index.has(name)) index.set(name, []);
+          index.get(name).push(full);
+        }
+      }
+    }
+  }
+  walkDir(srcDir);
+  return index;
+}
+
+/**
+ * When multiple files share the same basename, pick the one closest in the
+ * directory tree to the module file that registered the class.
+ * "Closest" = fewest "../" segments in the relative path.
+ */
+function findBestCandidate(candidates, moduleFilePath) {
+  if (!candidates || candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+  if (!moduleFilePath) return candidates[0];
+  const moduleDir = moduleFilePath.replace(/\\/g, "/").split("/").slice(0, -1).join("/");
+  let best = candidates[0];
+  let bestScore = Infinity;
+  for (const c of candidates) {
+    const rel = relative(moduleDir, c.replace(/\\/g, "/")).replace(/\\/g, "/");
+    const upCount = (rel.match(/\.\.\//g) ?? []).length;
+    if (upCount < bestScore) { bestScore = upCount; best = c; }
+  }
+  return best;
+}
+
+/**
+ * Runs Checks A, B, C over all registered providers and controllers.
+ *
+ * Skipped classes are classified into:
+ *   nonClassToken  — ALL_CAPS constant or non-PascalCase identifier; no source
+ *                    file is ever expected (string/symbol DI tokens, framework
+ *                    symbols, side-effect-import modules)
+ *   notInFileIndex — PascalCase class name but the file resolver found nothing;
+ *                    may be an external-package class or a non-standard filename
+ *
+ * Returns { findings, checkedCount, skipped }.
+ */
+function runDiConstructorChecks(registry, classIndex) {
+  const globalExports = new Set();
+  for (const [, m] of registry) {
+    if (m.isGlobal) {
+      for (const t of computeModuleExports(m.className, registry)) globalExports.add(t);
+    }
+  }
+
+  const findings = [];
+  let checkedCount = 0;
+  const skipped = {
+    nonClassToken: [],
+    notInClassIndex: [],
+  };
+
+  for (const [moduleName, moduleInfo] of registry) {
+    const visible = computeVisibleTokens(moduleName, registry, globalExports);
+    const classesToCheck = [...new Set([...moduleInfo.implClasses, ...moduleInfo.controllers])];
+
+    for (const className of classesToCheck) {
+      if (!className) continue;
+
+      if (isConstantName(className) || !/^[A-Z]/.test(className) || NEST_FRAMEWORK_TOKENS.has(className)) {
+        skipped.nonClassToken.push({ className, moduleName });
+        continue;
+      }
+
+      const candidates = classIndex.get(className) ?? [];
+      if (candidates.length === 0) {
+        skipped.notInClassIndex.push({ className, moduleName });
+        continue;
+      }
+      const filePath = findBestCandidate(candidates, moduleInfo.filePath);
+      let src;
+      try { src = readFileSync(filePath, "utf8"); } catch {
+        skipped.notInClassIndex.push({ className, moduleName });
+        continue;
+      }
+
+      const importTypes = parseImportTypes(src);
+      const params = parseConstructorParams(src, className);
+      if (params.length === 0) continue;
+      checkedCount++;
+
+      for (const param of params) {
+        const fa = checkUndeclaredToken(param, visible, className, moduleName);
+        if (fa) findings.push({ ...fa, file: relative(BACKEND_ROOT, filePath).replace(/\\/g, "/") });
+
+        const fb = checkNonInjectableType(param, className, moduleName);
+        if (fb) findings.push({ ...fb, file: relative(BACKEND_ROOT, filePath).replace(/\\/g, "/") });
+
+        const fc = checkImportType(param, importTypes.typeOnly, className, moduleName);
+        if (fc) findings.push({ ...fc, file: relative(BACKEND_ROOT, filePath).replace(/\\/g, "/") });
+      }
+    }
+  }
+
+  return { findings, checkedCount, skipped };
+}
+
+// ─── SELF-TEST ──────────────────────────────────────────────────────────────
+
 function runSelfTest() {
-  const cases = [
+  let failures = 0;
+
+  // ── Existing export-check cases ──────────────────────────────────────────
+  const exportCases = [
     {
       name: "the StorageModule defect — exports a provider token from an imported module",
       src: `@Module({
@@ -305,31 +916,197 @@ export class M {}`,
     },
   ];
 
-  let failures = 0;
-  for (const c of cases) {
+  for (const c of exportCases) {
     const result = analyseModuleSource(c.src);
     if (!result) {
-      console.error(`SELF-TEST FAIL: ${c.name} — module object did not parse`);
+      console.error(`SELF-TEST FAIL [export]: ${c.name} — module object did not parse`);
       failures++;
       continue;
     }
     const got = JSON.stringify(result.invalid);
     const want = JSON.stringify(c.expectInvalid);
     if (got !== want) {
-      console.error(`SELF-TEST FAIL: ${c.name}\n  expected invalid ${want}\n  got      invalid ${got}`);
+      console.error(`SELF-TEST FAIL [export]: ${c.name}\n  expected invalid ${want}\n  got      invalid ${got}`);
       failures++;
     }
   }
 
+  // ── Helper: build a synthetic registry from simple descriptor objects ──
+  function makeRegistry(modules) {
+    const reg = new Map();
+    for (const m of modules) {
+      reg.set(m.className, {
+        className: m.className,
+        isGlobal: m.isGlobal ?? false,
+        providers: m.providers ?? [],
+        implClasses: m.implClasses ?? m.providers ?? [],
+        imports: m.imports ?? [],
+        exports: m.exports ?? [],
+        controllers: m.controllers ?? [],
+        filePath: null,
+      });
+    }
+    return reg;
+  }
+
+  function globalExportsFrom(reg) {
+    const ge = new Set();
+    for (const [, m] of reg) {
+      if (m.isGlobal) {
+        for (const t of computeModuleExports(m.className, reg)) ge.add(t);
+      }
+    }
+    return ge;
+  }
+
+  // ── Check A: undeclared token (HrWorkflowEngineService shape) ──
+
+  {
+    const name = "Check A MUST flag: HrWorkflowEngineService shape — dep not in module";
+    const reg = makeRegistry([{
+      className: "HrWorkflowsModule",
+      providers: ["HrWorkflowEngineService"],
+      implClasses: ["HrWorkflowEngineService"],
+      imports: [],
+      exports: [],
+    }]);
+    const visible = computeVisibleTokens("HrWorkflowsModule", reg, new Set());
+    const param = { index: 1, name: "approver", type: "HrWorkflowApproverService", injectToken: null, optional: false };
+    const f = checkUndeclaredToken(param, visible, "HrWorkflowEngineService", "HrWorkflowsModule");
+    if (!f) {
+      console.error(`SELF-TEST FAIL [A]: ${name} — expected a finding, got null`);
+      failures++;
+    }
+  }
+
+  // ── Check B: non-injectable type (CrmBriefService shape) ──
+
+  {
+    const name = "Check B MUST flag: CrmBriefService shape — param typed unknown";
+    const reg = makeRegistry([{ className: "AiModule", providers: ["CrmBriefService"] }]);
+    const visible = computeVisibleTokens("AiModule", reg, new Set());
+    const param = { index: 2, name: "orgFeatures", type: "unknown", injectToken: null, optional: false };
+    const f = checkNonInjectableType(param, "CrmBriefService", "AiModule");
+    if (!f) {
+      console.error(`SELF-TEST FAIL [B]: ${name} — expected a finding, got null`);
+      failures++;
+    }
+  }
+
+  // ── Check C: import type on injected class ──
+
+  {
+    const name = "Check C MUST flag: service injected with import type — no @Inject";
+    const typeOnly = new Set(["SomeService"]);
+    const param = { index: 0, name: "svc", type: "SomeService", injectToken: null, optional: false };
+    const f = checkImportType(param, typeOnly, "Consumer", "SomeModule");
+    if (!f) {
+      console.error(`SELF-TEST FAIL [C]: ${name} — expected a finding, got null`);
+      failures++;
+    }
+  }
+
+  // ── NOT flagged: dep comes from an imported module's exports ──
+
+  {
+    const name = "Check A MUST NOT flag: dep visible via imported module exports";
+    const reg = makeRegistry([
+      { className: "ModuleA", providers: ["ServiceA"], exports: ["ServiceA"] },
+      { className: "ModuleB", providers: ["ServiceB"], imports: ["ModuleA"] },
+    ]);
+    const visible = computeVisibleTokens("ModuleB", reg, new Set());
+    const param = { index: 0, name: "a", type: "ServiceA", injectToken: null, optional: false };
+    const f = checkUndeclaredToken(param, visible, "ServiceB", "ModuleB");
+    if (f) {
+      console.error(`SELF-TEST FAIL [A]: ${name} — got unexpected finding: ${JSON.stringify(f)}`);
+      failures++;
+    }
+  }
+
+  // ── NOT flagged: dep comes from a @Global() module ──
+
+  {
+    const name = "Check A MUST NOT flag: dep visible via @Global() module";
+    const reg = makeRegistry([
+      { className: "GlobalModule", isGlobal: true, providers: ["GlobalService"], exports: ["GlobalService"] },
+      { className: "LocalModule", providers: ["LocalService"] },
+    ]);
+    const ge = globalExportsFrom(reg);
+    const visible = computeVisibleTokens("LocalModule", reg, ge);
+    const param = { index: 0, name: "gs", type: "GlobalService", injectToken: null, optional: false };
+    const f = checkUndeclaredToken(param, visible, "LocalService", "LocalModule");
+    if (f) {
+      console.error(`SELF-TEST FAIL [A]: ${name} — got unexpected finding: ${JSON.stringify(f)}`);
+      failures++;
+    }
+  }
+
+  // ── NOT flagged: @Inject(DRIZZLE) db: Db — explicit token, type-only import ──
+
+  {
+    const name = "Check B MUST NOT flag: @Inject(DRIZZLE) db: Db (explicit token exempts)";
+    const param = { index: 0, name: "db", type: "Db", injectToken: "DRIZZLE", optional: false };
+    const fb = checkNonInjectableType(param, "SomeService", "SomeModule");
+    if (fb) {
+      console.error(`SELF-TEST FAIL [B]: ${name} — unexpected finding: ${JSON.stringify(fb)}`);
+      failures++;
+    }
+    const name2 = "Check C MUST NOT flag: @Inject(DRIZZLE) db: Db (explicit token exempts)";
+    const typeOnly = new Set(["Db"]);
+    const fc = checkImportType(param, typeOnly, "SomeService", "SomeModule");
+    if (fc) {
+      console.error(`SELF-TEST FAIL [C]: ${name2} — unexpected finding: ${JSON.stringify(fc)}`);
+      failures++;
+    }
+  }
+
+  // ── NOT flagged: forwardRef import ──
+
+  {
+    const name = "Check A MUST NOT flag: dep visible via forwardRef import (tokenOf resolves it)";
+    const reg = makeRegistry([
+      { className: "ModuleA", providers: ["ServiceA"], exports: ["ServiceA"] },
+      { className: "ModuleB", providers: ["ServiceB"], imports: ["ModuleA"] },
+    ]);
+    const visible = computeVisibleTokens("ModuleB", reg, new Set());
+    const param = { index: 0, name: "a", type: "ServiceA", injectToken: null, optional: false };
+    const f = checkUndeclaredToken(param, visible, "ServiceB", "ModuleB");
+    if (f) {
+      console.error(`SELF-TEST FAIL [A]: ${name} — unexpected finding: ${JSON.stringify(f)}`);
+      failures++;
+    }
+  }
+
+  // ── NOT flagged: transitive re-exported module ──
+
+  {
+    const name = "Check A MUST NOT flag: dep transitive via re-exported module (EmploymentFactsModule pattern)";
+    const reg = makeRegistry([
+      { className: "EmploymentFactsModule", providers: ["EmploymentFactsService"], exports: ["EmploymentFactsService"] },
+      { className: "DirectoryModule", imports: ["EmploymentFactsModule"], exports: ["EmploymentFactsModule"] },
+      { className: "HrWorkflowsModule", imports: ["DirectoryModule"], providers: ["HrWorkflowApproverService"] },
+    ]);
+    const visible = computeVisibleTokens("HrWorkflowsModule", reg, new Set());
+    const param = { index: 2, name: "employment", type: "EmploymentFactsService", injectToken: null, optional: false };
+    const f = checkUndeclaredToken(param, visible, "HrWorkflowApproverService", "HrWorkflowsModule");
+    if (f) {
+      console.error(`SELF-TEST FAIL [A]: ${name} — unexpected finding: ${JSON.stringify(f)}`);
+      failures++;
+    }
+  }
+
+  const totalCases = exportCases.length + 8;
   if (failures > 0) {
-    console.error(`\n${String(failures)} of ${String(cases.length)} self-test assertions failed`);
+    console.error(`\n${String(failures)} of ${String(totalCases)} self-test assertions failed`);
     process.exit(1);
   }
-  console.log(`check:module-di self-test passed — ${String(cases.length)} assertions`);
+  console.log(`check:module-di self-test passed — ${String(totalCases)} assertions`);
   process.exit(0);
 }
 
 if (SELF_TEST) runSelfTest();
+
+// ─── MAIN SCAN ──────────────────────────────────────────────────────────────
 
 const files = walk(SRC_ROOT);
 if (files.length < MIN_MODULE_FILES) {
@@ -371,6 +1148,92 @@ if (violations.length > 0) {
   process.exit(1);
 }
 
+// ── Phase 2: DI constructor checks ──────────────────────────────────────────
+
+const registry = buildModuleGraph(files);
+const classIndex = buildClassIndex(SRC_ROOT);
+const { findings, checkedCount, skipped } = runDiConstructorChecks(registry, classIndex);
+
+const findingsA = findings.filter((f) => f.kind === "A");
+const findingsB = findings.filter((f) => f.kind === "B");
+const findingsC = findings.filter((f) => f.kind === "C");
+
+const genuineErrors = findings.filter((f) => f.severity === "error");
+const genuineWarns = findings.filter((f) => f.severity === "warn");
+
+const totalSkipped = skipped.nonClassToken.length + skipped.notInClassIndex.length;
+
+function printSkippedSummary() {
+  console.error(
+    `  skipped: ${String(skipped.nonClassToken.length)} non-class tokens (string/symbol DI tokens, framework symbols)` +
+    ` · ${String(skipped.notInClassIndex.length)} classes with no 'export class' found in src/`,
+  );
+  if (skipped.notInClassIndex.length > 0) {
+    console.error(`  (use --verbose to list the classes not found in the class index)`);
+  }
+}
+
+function printVerboseSkipped() {
+  if (skipped.nonClassToken.length > 0) {
+    console.error(`\nSkipped — non-class tokens (${String(skipped.nonClassToken.length)}, no source file expected):`);
+    for (const s of skipped.nonClassToken) {
+      console.error(`  ${s.className}  [registered in ${s.moduleName}]`);
+    }
+  }
+  if (skipped.notInClassIndex.length > 0) {
+    console.error(`\nSkipped — no 'export class X' found in src/ (${String(skipped.notInClassIndex.length)}, unchecked):`);
+    for (const s of skipped.notInClassIndex) {
+      console.error(`  ${s.className}  [registered in ${s.moduleName}]`);
+    }
+  }
+}
+
+if (findings.length > 0) {
+  if (findingsA.length > 0) {
+    console.error(`\nCheck A — undeclared constructor token (${String(findingsA.length)} finding(s)):`);
+    for (const f of findingsA) {
+      const sev = f.optional ? "WARN" : "ERROR";
+      console.error(`  [${sev}] ${f.class}.${f.paramName} at index [${String(f.paramIndex)}] — ${f.missingToken} is not available in ${f.module}`);
+      console.error(`    ${f.file}`);
+      console.error(`    Fix: add ${f.missingToken} to ${f.module} providers, or import the module that provides it.`);
+    }
+  }
+
+  if (findingsB.length > 0) {
+    console.error(`\nCheck B — non-injectable type annotation (${String(findingsB.length)} finding(s)):`);
+    for (const f of findingsB) {
+      console.error(`  [ERROR] ${f.class}.${f.paramName} at index [${String(f.paramIndex)}] — type '${f.type}' carries no DI token`);
+      console.error(`    ${f.file}`);
+      console.error(`    Fix: add @Inject(TOKEN) to pass an explicit token, or remove the parameter if unused.`);
+    }
+  }
+
+  if (findingsC.length > 0) {
+    console.error(`\nCheck C — import type erases DI token (${String(findingsC.length)} finding(s)):`);
+    for (const f of findingsC) {
+      console.error(`  [ERROR] ${f.class}.${f.paramName} at index [${String(f.paramIndex)}] — ${f.typeIdent} is imported with 'import type', erasing its DI token`);
+      console.error(`    ${f.file}`);
+      console.error(`    Fix: change to a value import, or add @Inject(TOKEN) with an explicit token.`);
+    }
+  }
+
+  if (VERBOSE) printVerboseSkipped();
+
+  console.error(`\ncheck:module-di: ${String(parsed)} modules · ${String(checkedCount)} classes checked`);
+  printSkippedSummary();
+  console.error(`  ${String(findingsA.length)} Check-A (undeclared token) · ${String(findingsB.length)} Check-B (non-injectable type) · ${String(findingsC.length)} Check-C (import type)`);
+
+  if (genuineErrors.length > 0) {
+    console.error(`  ${String(genuineErrors.length)} error(s) + ${String(genuineWarns.length)} warning(s) — failing`);
+    process.exit(1);
+  }
+  console.error(`  0 errors, ${String(genuineWarns.length)} warning(s) — passing`);
+  process.exit(0);
+}
+
+if (VERBOSE) printVerboseSkipped();
+
 console.log(
-  `check:module-di clean — ${String(parsed)} modules parsed of ${String(files.length)} files, 0 invalid exports`,
+  `check:module-di clean — ${String(parsed)} modules · ${String(checkedCount)} classes checked` +
+  ` · skipped: ${String(skipped.nonClassToken.length)} non-class tokens · ${String(skipped.notInClassIndex.length)} not-in-class-index · 0 violations`,
 );
