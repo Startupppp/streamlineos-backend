@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
-import { BUDGETS } from "./read-cost-budgets.mjs";
+import { BUDGETS, REQUIRED_BUDGET_IDS } from "./read-cost-budgets.mjs";
 
 export function validateBudgets(budgets) {
   const errors = [];
@@ -154,6 +154,14 @@ async function main() {
     process.exit(1);
   }
 
+  const budgetIds = new Set(BUDGETS.map((b) => b.id));
+  const missingRequired = [...REQUIRED_BUDGET_IDS].filter((id) => !budgetIds.has(id));
+  if (missingRequired.length > 0) {
+    for (const id of missingRequired)
+      console.error(`MISSING REQUIRED BUDGET: "${id}" — add an entry to read-cost-budgets.mjs or the route is unguarded`);
+    process.exit(1);
+  }
+
   const idsArg = process.argv.find((a) => a.startsWith("--ids="));
   const filterIds = idsArg ? new Set(idsArg.slice("--ids=".length).split(",").filter(Boolean)) : null;
 
@@ -265,6 +273,12 @@ async function main() {
     const [mailMessageRow] = (await tryFixture((tx) => tx`
         SELECT 1 FROM mail_message_metadata WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
 
+    const [calEventRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM calendar_events WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
+
+    const [announcementRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM announcements WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
+
     const fixtures = {
         orgId: ORG,
         projectId: project?.project_id ?? null,
@@ -283,6 +297,8 @@ async function main() {
         hasTaxPayments: taxPaymentRow !== null && taxPaymentRow !== undefined,
         hasReminderPolicies: reminderPolicyRow !== null && reminderPolicyRow !== undefined,
         hasMailMessages: mailMessageRow !== null && mailMessageRow !== undefined,
+        hasCalendarEvents: calEventRow !== null && calEventRow !== undefined,
+        hasAnnouncements: announcementRow !== null && announcementRow !== undefined,
         period,
       };
 

@@ -3095,6 +3095,27 @@
       "when": 1798000066000,
       "tag": "0754_cal_src_pref_user_id_drop",
       "breakpoints": true
+    },
+    {
+      "idx": 567,
+      "version": "7",
+      "when": 1798000067000,
+      "tag": "0755_dashboard_ticket_assignee_updated_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 568,
+      "version": "7",
+      "when": 1798000068000,
+      "tag": "0756_fin_reminder_log_measurement",
+      "breakpoints": true
+    },
+    {
+      "idx": 569,
+      "version": "7",
+      "when": 1798000069000,
+      "tag": "0757_expense_export_truncated_scope",
+      "breakpoints": true
     }
   ]
 }
