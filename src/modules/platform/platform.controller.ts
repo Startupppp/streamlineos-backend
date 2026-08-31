@@ -6,10 +6,13 @@
   Post,
   Req,
   Res,
+  UseGuards,
   } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { Public } from "../../common/auth/public.decorator";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { PlatformService } from "./platform.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import {
@@ -69,6 +72,8 @@ export class PlatformController {
   @Public()
   @Post("contact")
   @HttpCode(200)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:contact")
   @Validate({ body: contactFormSchema })
   submitContact(
     @Body() body: ContactFormInput,

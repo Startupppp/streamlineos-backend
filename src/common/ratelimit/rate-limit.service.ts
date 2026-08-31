@@ -104,6 +104,21 @@ const TIERS: Record<string, Tier> = {
   // 30 calls/min per user matches the AI chat tier and leaves room for typeahead
   // without letting a single user monopolise the embedding + ANN budget.
   "search:global": { limit: 30, windowSecs: 60 },
+  "public:job-apply": { limit: 3, windowSecs: 3600 },
+  "public:referrer-register": { limit: 3, windowSecs: 3600 },
+  "public:intake": { limit: 5, windowSecs: 3600 },
+  "public:form-submit": { limit: 5, windowSecs: 3600 },
+  "public:lead-form-submit": { limit: 5, windowSecs: 3600 },
+  "public:nps-submit": { limit: 5, windowSecs: 3600 },
+  "public:kb-feedback": { limit: 10, windowSecs: 3600 },
+  "public:org-info": { limit: 60, windowSecs: 60 },
+  "public:careers-list": { limit: 60, windowSecs: 60 },
+  "public:careers-job": { limit: 60, windowSecs: 60 },
+  "public:interview-booking": { limit: 30, windowSecs: 60 },
+  "public:nps-view": { limit: 30, windowSecs: 60 },
+  "public:form-view": { limit: 30, windowSecs: 60 },
+  "public:lead-form-view": { limit: 30, windowSecs: 60 },
+  "blog:public-read": { limit: 60, windowSecs: 60 },
 };
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;
@@ -161,7 +176,9 @@ export class RateLimitService {
         }
         return { allowed: true, retryAfterSecs: 0 };
       } catch (err) {
-        this.logger.warn(`Redis rate-limit failed for ${tier}:${identifier}, falling back to in-memory: ${err instanceof Error ? err.message : String(err)}`);
+        this.logger.warn(
+          `Redis rate-limit failed for ${tier}:${identifier}, falling back to in-memory: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
     const memKey = `${tier}:${identifier}`;

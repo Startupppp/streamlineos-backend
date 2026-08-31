@@ -115,7 +115,7 @@ export class StorageController {
 
   @Post("upload")
   @AuthorizedInService("assertUploadAllowed")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 50 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_UPLOAD_SIZE } }))
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body("folder") folderField: string | undefined,

@@ -254,6 +254,103 @@ describe("StorageController.download — cross-org file isolation", () => {
   });
 });
 
+describe("StorageController.upload — interceptor fileSize limit matches MAX_UPLOAD_SIZE", () => {
+  it("rejects a file larger than MAX_UPLOAD_SIZE (10 MB) before the AV scan runs", async () => {
+    const db = {
+      query: {
+        documents: { findFirst: jest.fn().mockResolvedValue(null) },
+        onboardingDocuments: { findFirst: jest.fn().mockResolvedValue(null) },
+        expenses: { findFirst: jest.fn().mockResolvedValue(null) },
+        reimbursements: { findFirst: jest.fn().mockResolvedValue(null) },
+        handbookVersions: { findFirst: jest.fn().mockResolvedValue(null) },
+        payslipPublications: { findFirst: jest.fn().mockResolvedValue(null) },
+        candidateDocumentsVault: { findFirst: jest.fn().mockResolvedValue(null) },
+      },
+    };
+    const storage = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      isValidFileKey: jest.fn().mockReturnValue(true),
+      getFileKeyFromUrl: jest.fn((v: string) => v),
+      getFileUrl: jest.fn(),
+    };
+    const audit = { log: jest.fn() };
+    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) };
+    const avScanner = { scan: jest.fn() };
+
+    const controller = new StorageController(
+      db as never,
+      storage as never,
+      audit as never,
+      access as never,
+      avScanner as never,
+    );
+
+    const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+    const oversizedFile = {
+      size: MAX_UPLOAD_SIZE + 1,
+      mimetype: "application/pdf",
+      originalname: "large.pdf",
+      buffer: Buffer.alloc(0),
+    } as Express.Multer.File;
+
+    const { BadRequestException: Bex } = await import("@nestjs/common");
+
+    await expect(
+      controller.upload(oversizedFile, "uploads", ctx("org-A")),
+    ).rejects.toBeInstanceOf(Bex);
+
+    expect(avScanner.scan).not.toHaveBeenCalled();
+    expect(storage.getFileUrl).not.toHaveBeenCalled();
+  });
+
+  it("accepts a file exactly at MAX_UPLOAD_SIZE boundary (10 MB) if type is valid", async () => {
+    const db = {
+      query: {
+        documents: { findFirst: jest.fn().mockResolvedValue(null) },
+        onboardingDocuments: { findFirst: jest.fn().mockResolvedValue(null) },
+        expenses: { findFirst: jest.fn().mockResolvedValue(null) },
+        reimbursements: { findFirst: jest.fn().mockResolvedValue(null) },
+        handbookVersions: { findFirst: jest.fn().mockResolvedValue(null) },
+        payslipPublications: { findFirst: jest.fn().mockResolvedValue(null) },
+        candidateDocumentsVault: { findFirst: jest.fn().mockResolvedValue(null) },
+      },
+    };
+    const storage = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      isValidFileKey: jest.fn().mockReturnValue(true),
+      getFileKeyFromUrl: jest.fn((v: string) => v),
+      uploadCompressed: jest.fn().mockResolvedValue({ url: "https://cdn.example.com/f.pdf", key: "uploads/f.pdf", size: 10 * 1024 * 1024, mimeType: "application/pdf" }),
+    };
+    const audit = { log: jest.fn() };
+    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) };
+    const avScanner = { scan: jest.fn().mockResolvedValue({ status: "clean" }) };
+
+    const controller = new StorageController(
+      db as never,
+      storage as never,
+      audit as never,
+      access as never,
+      avScanner as never,
+    );
+
+    const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+
+    const pdfMagicBytes = Buffer.from("%PDF");
+    const fileBuffer = Buffer.concat([pdfMagicBytes, Buffer.alloc(MAX_UPLOAD_SIZE - pdfMagicBytes.length)]);
+
+    const boundaryFile = {
+      size: MAX_UPLOAD_SIZE,
+      mimetype: "application/pdf",
+      originalname: "boundary.pdf",
+      buffer: fileBuffer,
+    } as Express.Multer.File;
+
+    const result = await controller.upload(boundaryFile, "uploads", ctx("org-A"));
+    expect(result.size).toBe(MAX_UPLOAD_SIZE);
+    expect(avScanner.scan).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("StorageService private file references", () => {
   it("extracts only keys belonging to the configured storage base", () => {
     const storage = new StorageService({} as never, makeStorageConfig("https://files.example.com"));

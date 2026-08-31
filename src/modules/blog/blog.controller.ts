@@ -8,6 +8,8 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Public } from "../../common/auth/public.decorator";
+import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
+import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { BlogService } from "./blog.service";
 import {
   feedSchema,
@@ -25,6 +27,8 @@ export class BlogController {
 
   @Public()
   @Get("by-slug/:slug")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("blog:public-read")
   @Validate({ params: slugParams })
   async getPostBySlug(@Param("slug") slug: string) {
     const post = await this.blog.getPublishedPostBySlug(slug);
@@ -34,6 +38,8 @@ export class BlogController {
 
   @Public()
   @Get("by-slug/:slug/adjacent")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("blog:public-read")
   @Validate({ params: slugParams })
   getAdjacentPosts(@Param("slug") slug: string) {
     return this.blog.getAdjacentPosts(slug);
@@ -41,12 +47,16 @@ export class BlogController {
 
   @Public()
   @Get("categories")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("blog:public-read")
   listCategories() {
     return this.blog.getCategories();
   }
 
   @Public()
   @Get("feed")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("blog:public-read")
   @Validate({ query: feedSchema })
   feed(@Query() query: FeedInput) {
     return this.blog.getPublishedPosts(query);

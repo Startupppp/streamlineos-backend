@@ -47,6 +47,16 @@ jest.mock("../../ownership/module-owner-role.helper", () => ({
   assertModuleOwnerRoleAssigned: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock("../module-access.helpers", () => ({
+  ...jest.requireActual<typeof import("../module-access.helpers")>(
+    "../module-access.helpers",
+  ),
+  resolveActorRankContext: jest.fn().mockResolvedValue({
+    bestRank: 10,
+    allowedModules: new Set(["hr", "crm", "build", "payroll", "inventory"]),
+  }),
+}));
+
 const ORG = "org-preservation";
 const MODULE = "hr";
 
