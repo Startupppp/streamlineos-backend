@@ -71,6 +71,19 @@ function isSensitiveKey(fileKey: string): boolean {
   return SENSITIVE_KEY_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 }
 
+const ORG_NAMESPACED_KEY_FOLDERS = ["kb-media"];
+
+/**
+ * Some folders carry the owning organisation in the key itself, so ownership is
+ * provable without a table. Without this, `resolveFileOwner` returns null for
+ * them and the cross-org check is skipped entirely.
+ */
+function orgFromNamespacedKey(fileKey: string): string | null {
+  const [folder, orgId] = fileKey.replace(/^\/+/, "").split("/");
+  if (!folder || !orgId) return null;
+  return ORG_NAMESPACED_KEY_FOLDERS.includes(folder) ? orgId : null;
+}
+
 type FileOwner = {
   orgId: string;
   access: "GENERIC" | "HR_DOCUMENT" | "ONBOARDING_DOCUMENT" | "PAYSLIP" | "CANDIDATE_VAULT";
@@ -231,7 +244,7 @@ export class StorageController {
       throw new ServiceUnavailableException("Storage not available");
     }
 
-    if (isSensitiveKey(keyParam)) {
+    if (isSensitiveKey(keyParam) || orgFromNamespacedKey(keyParam)) {
       const fileOwner = await this.resolveFileOwner(keyParam);
       if (fileOwner === null || fileOwner.orgId !== u.orgId) {
         throw new NotFoundException("Not found");
@@ -253,6 +266,9 @@ export class StorageController {
    * own file type out rather than exposing it. Returns the owning orgId, or null if untracked.
    */
   private async resolveFileOwner(fileKey: string): Promise<FileOwner | null> {
+    const namespacedOrgId = orgFromNamespacedKey(fileKey);
+    if (namespacedOrgId) return { orgId: namespacedOrgId, access: "GENERIC" };
+
     const like = `%${fileKey}%`;
     const [doc, onboardingDoc, expense, reimbursement, handbookVersion, payslip, vaultDoc] =
       await Promise.all([

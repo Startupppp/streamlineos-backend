@@ -369,3 +369,87 @@ describe("StorageService private file references", () => {
     expect(storage.isValidFileKey("onboarding-docs/../secret.pdf")).toBe(false);
   });
 });
+
+describe("StorageController — org-namespaced keys prove their own owner", () => {
+  function buildDb() {
+    const empty = { findFirst: jest.fn().mockResolvedValue(null) };
+    return {
+      query: {
+        documents: empty,
+        onboardingDocuments: empty,
+        expenses: empty,
+        reimbursements: empty,
+        handbookVersions: empty,
+        payslipPublications: empty,
+        candidateDocumentsVault: empty,
+      },
+    };
+  }
+
+  function buildStorage() {
+    return {
+      isConfigured: jest.fn().mockReturnValue(true),
+      isValidFileKey: jest.fn().mockReturnValue(true),
+      getFileKeyFromUrl: jest.fn((v: string) => v),
+      getFileUrl: jest.fn().mockResolvedValue("https://signed.example.com/file"),
+      getMimeType: jest.fn().mockReturnValue("image/webp"),
+      getFileStream: jest.fn().mockResolvedValue({
+        body: { on: jest.fn(), pipe: jest.fn() },
+        contentType: "image/webp",
+        contentLength: 10,
+      }),
+    };
+  }
+
+  const audit = { log: jest.fn() };
+  const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) };
+
+  function build() {
+    const storage = buildStorage();
+    const controller = new StorageController(
+      buildDb() as never,
+      storage as never,
+      audit as never,
+      access as never,
+      { scan: jest.fn() } as never,
+    );
+    return { controller, storage };
+  }
+
+  const KEY_B = "kb-media/org-B/2f1c9d0e-4a7b-4c1e-9f3a-8b6d5e2c1a09-policy.pdf";
+  const KEY_A = "kb-media/org-A/2f1c9d0e-4a7b-4c1e-9f3a-8b6d5e2c1a09-policy.pdf";
+
+  it("404s a cross-org kb-media download even though no table tracks the key", async () => {
+    const { controller } = build();
+    await expect(
+      controller.download({ key: KEY_B, expiresIn: 3600 }, ctx("org-A"), mockRes()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("allows the owning org to download its own kb-media key (control)", async () => {
+    const { controller } = build();
+    const res = mockRes();
+    await controller.download({ key: KEY_A, expiresIn: 3600 }, ctx("org-A"), res);
+    expect(res.json).toHaveBeenCalledWith({ url: "https://signed.example.com/file" });
+  });
+
+  it("404s a cross-org kb-media image render", async () => {
+    const { controller } = build();
+    await expect(
+      controller.image({ key: KEY_B }, ctx("org-A"), mockRes()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("serves the owning org's kb-media image (control)", async () => {
+    const { controller, storage } = build();
+    await controller.image({ key: KEY_A }, ctx("org-A"), mockRes());
+    expect(storage.getFileStream).toHaveBeenCalledWith("org-A", KEY_A);
+  });
+
+  it("leaves untracked non-namespaced keys on their existing path", async () => {
+    const { controller } = build();
+    const res = mockRes();
+    await controller.download({ key: "uploads/plain.pdf", expiresIn: 3600 }, ctx("org-A"), res);
+    expect(res.json).toHaveBeenCalledWith({ url: "https://signed.example.com/file" });
+  });
+});
