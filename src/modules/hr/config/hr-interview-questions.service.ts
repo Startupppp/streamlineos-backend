@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, ilike, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, sql, type SQL } from "drizzle-orm";
 import { interviewQuestions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -9,6 +9,8 @@ import type {
   UpdateInterviewQuestionInput,
 } from "./dto/interview-questions.schemas";
 
+const INTERVIEW_QUESTION_SEARCH_CAP = 500;
+
 function dedupe(values: string[]): string[] {
   return [...new Set(values.map((v) => v.toLowerCase().trim()).filter(Boolean))];
 }
@@ -17,18 +19,29 @@ function dedupe(values: string[]): string[] {
 export class HrInterviewQuestionsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  list(orgId: string, query: InterviewQuestionListQuery) {
+  async list(orgId: string, query: InterviewQuestionListQuery) {
     const conditions = [eq(interviewQuestions.orgId, orgId), eq(interviewQuestions.isActive, true)];
     if (query.category) conditions.push(eq(interviewQuestions.category, query.category));
     if (query.role) conditions.push(eq(interviewQuestions.role, query.role));
     if (query.difficulty) conditions.push(eq(interviewQuestions.difficulty, query.difficulty));
-    if (query.q) conditions.push(ilike(interviewQuestions.question, `%${query.q}%`));
+    if (query.q) conditions.push(await this.questionSearchCondition(query.q));
 
     return this.db.query.interviewQuestions.findMany({
       where: and(...conditions),
       orderBy: [desc(interviewQuestions.createdAt)],
       limit: 100,
     });
+  }
+
+  private async questionSearchCondition(search: string): Promise<SQL> {
+    const fallback = ilike(interviewQuestions.question, `%${search}%`);
+    const rows = await this.db.execute(
+      sql`SELECT app.search_hr_interview_question_ids(${search}, ${INTERVIEW_QUESTION_SEARCH_CAP + 1}) AS id`,
+    );
+    if (rows.length === 0) return sql`false`;
+    if (rows.length > INTERVIEW_QUESTION_SEARCH_CAP) return fallback;
+    const ids = rows.map((r) => Number(r["id"]));
+    return inArray(interviewQuestions.id, ids);
   }
 
   getById(orgId: string, id: number) {

@@ -30,12 +30,9 @@ function documentCategoryCondition(category: string): SQL {
     case "Policies":
       return eq(documents.type, "POLICY");
     case "Tax Forms":
-      return sql`(
-        ${documents.type} = 'ID_PROOF'
-        OR array_to_string(${documents.tags}, ' ') ILIKE '%tax%'
-      )`;
+      return sql`(${documents.type} = 'ID_PROOF' OR 'tax' = ANY(${documents.tags}))`;
     case "Templates":
-      return sql`array_to_string(${documents.tags}, ' ') ILIKE '%template%'`;
+      return sql`'template' = ANY(${documents.tags})`;
     case "Payroll":
       return eq(documents.type, "PAYSLIP");
     case "Archives":

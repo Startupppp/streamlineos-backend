@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from "@nestjs/common";
-import { and, count, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import { buildListResponse } from "../../../common/pagination/pagination";
 import {
   candidateApplications,
@@ -33,6 +33,8 @@ import type {
 } from "./dto/candidates.schemas";
 
 type CandidateStage = "NEW" | "SCREENING" | "INTERVIEW" | "OFFER" | "HIRED" | "REJECTED";
+
+const CANDIDATE_SEARCH_CAP = 500;
 
 const UPDATE_TRANSITIONS: Record<string, CandidateStage[]> = {
   NEW: ["SCREENING", "REJECTED"],
@@ -87,16 +89,7 @@ export class RecruitmentCandidatesService {
             sql`exists (select 1 from ${candidateApplications} where ${candidateApplications.candidateId} = ${candidates.id} and ${candidateApplications.jobPostingId} = ${input.jobId})`,
           );
         }
-        if (input.search) {
-          const q = `%${input.search}%`;
-          const searchFilter = or(
-            ilike(candidates.firstName, q),
-            ilike(candidates.lastName, q),
-            ilike(candidates.email, q),
-            ilike(candidates.currentCompany, q),
-          );
-          if (searchFilter) conditions.push(searchFilter);
-        }
+        if (input.search) conditions.push(await this.candidateSearchCondition(input.search));
 
         const where = and(...conditions);
 
@@ -159,6 +152,22 @@ export class RecruitmentCandidatesService {
         key: group[0]!.email,
         candidates: group,
       }));
+  }
+
+  private async candidateSearchCondition(search: string): Promise<SQL> {
+    const fallback = or(
+      ilike(candidates.firstName, `%${search}%`),
+      ilike(candidates.lastName, `%${search}%`),
+      ilike(candidates.email, `%${search}%`),
+      ilike(candidates.currentCompany, `%${search}%`),
+    )!;
+    const rows = await this.db.execute(
+      sql`SELECT app.search_hr_candidate_ids(${search}, ${CANDIDATE_SEARCH_CAP + 1}) AS id`,
+    );
+    if (rows.length === 0) return sql`false`;
+    if (rows.length > CANDIDATE_SEARCH_CAP) return fallback;
+    const ids = rows.map((r) => Number(r["id"]));
+    return inArray(candidates.id, ids);
   }
 
   async linkDuplicate(orgId: string, candidateId: number, duplicateOfId: number) {

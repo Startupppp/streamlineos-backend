@@ -4,10 +4,27 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, avg, count, desc, eq, gte, isNull, lte, or, ilike } from "drizzle-orm";
+import {
+  and,
+  avg,
+  count,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  lte,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { hrSafetyIncidents, hrWellnessCheckins } from "../../../db/schema/hr/safety";
+import {
+  hrSafetyIncidents,
+  hrWellnessCheckins,
+} from "../../../db/schema/hr/safety";
 import { HrAuditService } from "../core/hr-audit.service";
 import type {
   CreateIncidentInput,
@@ -17,6 +34,7 @@ import type {
   WellnessTrendInput,
 } from "./dto/hr-safety.schemas";
 
+const SAFETY_SEARCH_CAP = 500;
 const BURNOUT_SCORE_THRESHOLD = 4;
 const WELLNESS_MIN_GROUP_SIZE = 5;
 
@@ -34,24 +52,23 @@ export class HrSafetyService {
   ) {}
 
   async listIncidents(orgId: string, input: ListIncidentsInput) {
-    const { page, limit, status, type, severity, search, fromDate, toDate } = input;
+    const { page, limit, status, type, severity, search, fromDate, toDate } =
+      input;
     const offset = (page - 1) * limit;
 
-    const conditions = [eq(hrSafetyIncidents.orgId, orgId), isNull(hrSafetyIncidents.deletedAt)];
+    const conditions = [
+      eq(hrSafetyIncidents.orgId, orgId),
+      isNull(hrSafetyIncidents.deletedAt),
+    ];
 
     if (status) conditions.push(eq(hrSafetyIncidents.status, status));
     if (type) conditions.push(eq(hrSafetyIncidents.type, type));
     if (severity) conditions.push(eq(hrSafetyIncidents.severity, severity));
-    if (search) {
-      const searchFilter = or(
-        ilike(hrSafetyIncidents.description, `%${search}%`),
-        ilike(hrSafetyIncidents.incidentNumber, `%${search}%`),
-        ilike(hrSafetyIncidents.location, `%${search}%`),
-      );
-      if (searchFilter) conditions.push(searchFilter);
-    }
-    if (fromDate) conditions.push(gte(hrSafetyIncidents.occurredAt, new Date(fromDate)));
-    if (toDate) conditions.push(lte(hrSafetyIncidents.occurredAt, new Date(toDate)));
+    if (search) conditions.push(await this.incidentSearchCondition(search));
+    if (fromDate)
+      conditions.push(gte(hrSafetyIncidents.occurredAt, new Date(fromDate)));
+    if (toDate)
+      conditions.push(lte(hrSafetyIncidents.occurredAt, new Date(toDate)));
 
     const where = and(...conditions);
 
@@ -87,6 +104,21 @@ export class HrSafetyService {
         totalPages: Math.ceil((totalResult[0]?.total ?? 0) / limit),
       },
     };
+  }
+
+  private async incidentSearchCondition(search: string): Promise<SQL> {
+    const fallback = or(
+      ilike(hrSafetyIncidents.description, `%${search}%`),
+      ilike(hrSafetyIncidents.incidentNumber, `%${search}%`),
+      ilike(hrSafetyIncidents.location, `%${search}%`),
+    )!;
+    const rows = await this.db.execute(
+      sql`SELECT app.search_hr_safety_incident_ids(${search}, ${SAFETY_SEARCH_CAP + 1}) AS id`,
+    );
+    if (rows.length === 0) return sql`false`;
+    if (rows.length > SAFETY_SEARCH_CAP) return fallback;
+    const ids = rows.map((r) => Number(r["id"]));
+    return inArray(hrSafetyIncidents.id, ids);
   }
 
   async getIncidentById(orgId: string, id: number, hasSensitive: boolean) {
@@ -160,7 +192,9 @@ export class HrSafetyService {
     const existing = await this.getIncidentById(orgId, id, hasSensitive);
 
     if (input.confidentialMedicalNote !== undefined && !hasSensitive) {
-      throw new ForbiddenException("Requires hr:sensitive:view to update medical notes");
+      throw new ForbiddenException(
+        "Requires hr:sensitive:view to update medical notes",
+      );
     }
 
     const [updated] = await this.db
@@ -168,14 +202,20 @@ export class HrSafetyService {
       .set({
         ...(input.status !== undefined && { status: input.status }),
         ...(input.severity !== undefined && { severity: input.severity }),
-        ...(input.description !== undefined && { description: input.description }),
-        ...(input.medicalAttention !== undefined && { medicalAttention: input.medicalAttention }),
+        ...(input.description !== undefined && {
+          description: input.description,
+        }),
+        ...(input.medicalAttention !== undefined && {
+          medicalAttention: input.medicalAttention,
+        }),
         ...(input.confidentialMedicalNote !== undefined && {
           confidentialMedicalNote: input.confidentialMedicalNote,
         }),
         updatedAt: new Date(),
       })
-      .where(and(eq(hrSafetyIncidents.orgId, orgId), eq(hrSafetyIncidents.id, id)))
+      .where(
+        and(eq(hrSafetyIncidents.orgId, orgId), eq(hrSafetyIncidents.id, id)),
+      )
       .returning();
 
     await this.audit.log({
@@ -196,7 +236,13 @@ export class HrSafetyService {
     const [row] = await this.db
       .select({ id: hrSafetyIncidents.id })
       .from(hrSafetyIncidents)
-      .where(and(eq(hrSafetyIncidents.orgId, orgId), eq(hrSafetyIncidents.id, id), isNull(hrSafetyIncidents.deletedAt)))
+      .where(
+        and(
+          eq(hrSafetyIncidents.orgId, orgId),
+          eq(hrSafetyIncidents.id, id),
+          isNull(hrSafetyIncidents.deletedAt),
+        ),
+      )
       .limit(1);
 
     if (!row) throw new NotFoundException("Incident not found");
@@ -204,7 +250,9 @@ export class HrSafetyService {
     await this.db
       .update(hrSafetyIncidents)
       .set({ deletedAt: new Date() })
-      .where(and(eq(hrSafetyIncidents.orgId, orgId), eq(hrSafetyIncidents.id, id)));
+      .where(
+        and(eq(hrSafetyIncidents.orgId, orgId), eq(hrSafetyIncidents.id, id)),
+      );
 
     await this.audit.log({
       orgId,
@@ -226,7 +274,11 @@ export class HrSafetyService {
         flags: input.flags ?? null,
       })
       .onConflictDoUpdate({
-        target: [hrWellnessCheckins.orgId, hrWellnessCheckins.userId, hrWellnessCheckins.date],
+        target: [
+          hrWellnessCheckins.orgId,
+          hrWellnessCheckins.userId,
+          hrWellnessCheckins.date,
+        ],
         set: {
           score: input.score,
           flags: input.flags ?? null,
@@ -237,7 +289,12 @@ export class HrSafetyService {
     return row!;
   }
 
-  async myCheckins(orgId: string, userId: string, fromDate?: string, toDate?: string) {
+  async myCheckins(
+    orgId: string,
+    userId: string,
+    fromDate?: string,
+    toDate?: string,
+  ) {
     const conditions = [
       eq(hrWellnessCheckins.orgId, orgId),
       eq(hrWellnessCheckins.userId, userId),
@@ -257,8 +314,10 @@ export class HrSafetyService {
   async orgWellnessTrend(orgId: string, input: WellnessTrendInput) {
     const conditions = [eq(hrWellnessCheckins.orgId, orgId)];
 
-    if (input.fromDate) conditions.push(gte(hrWellnessCheckins.date, input.fromDate));
-    if (input.toDate) conditions.push(lte(hrWellnessCheckins.date, input.toDate));
+    if (input.fromDate)
+      conditions.push(gte(hrWellnessCheckins.date, input.fromDate));
+    if (input.toDate)
+      conditions.push(lte(hrWellnessCheckins.date, input.toDate));
 
     const rows = await this.db
       .select({
@@ -302,7 +361,11 @@ export class HrSafetyService {
       .groupBy(hrWellnessCheckins.userId);
 
     return rows
-      .filter((r) => r.avgScore !== null && parseFloat(String(r.avgScore)) <= BURNOUT_SCORE_THRESHOLD)
+      .filter(
+        (r) =>
+          r.avgScore !== null &&
+          parseFloat(String(r.avgScore)) <= BURNOUT_SCORE_THRESHOLD,
+      )
       .map((r) => ({
         userId: r.userId,
         avgScore: parseFloat(String(r.avgScore ?? "0")),
@@ -327,7 +390,10 @@ export class HrSafetyService {
       })
       .from(hrWellnessCheckins)
       .where(
-        and(eq(hrWellnessCheckins.orgId, orgId), gte(hrWellnessCheckins.date, cutoffStr)),
+        and(
+          eq(hrWellnessCheckins.orgId, orgId),
+          gte(hrWellnessCheckins.date, cutoffStr),
+        ),
       );
 
     const respondents = Number(agg?.respondents ?? 0);

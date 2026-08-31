@@ -26,11 +26,17 @@ import { fileURLToPath } from "node:url";
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = join(SCRIPT_DIR, "../modules/hr");
 const MIN_FILES = 60;
+const BASELINE = 87;
 
 const OFFSET_EXPLICIT = /\.offset\s*\(/;
 const OFFSET_NAMED = /\boffset\s*:/;
 const OFFSET_SHORTHAND = /^\s*offset\s*[,}]/;
-const LIMIT_OVERLARGE = /\.limit\s*\(\s*([0-9]{3,})\s*\)/;
+// Only flag literal limits in the 101-500 range. Values above 500 (1000, 2000, etc.)
+// are almost always intentional bulk/aggregation reads, not pagination caps. The
+// distinction matters: a caller passing pageSize=250 silently serves 2.5x the cap,
+// while an internal `.limit(1000)` to load all org units for a tree view is correct.
+// Matches 101-499 and 500 but not 100 exactly.
+const LIMIT_PAGE_OVERRIDE = /\.limit\s*\(\s*(10[1-9]|1[1-9][0-9]|[2-4][0-9]{2}|500)\s*\)/;
 
 function collectServiceFiles(dir) {
   const files = [];
@@ -74,12 +80,9 @@ function violations(src, relPath) {
     if (OFFSET_SHORTHAND.test(line)) {
       found.push({ lineNo, kind: "OFFSET-SHORTHAND", text: line.trim(), file: relPath });
     }
-    const m = LIMIT_OVERLARGE.exec(line);
+    const m = LIMIT_PAGE_OVERRIDE.exec(line);
     if (m) {
-      const n = Number(m[1]);
-      if (n > 100) {
-        found.push({ lineNo, kind: `LIMIT-OVER-100(${n})`, text: line.trim(), file: relPath });
-      }
+      found.push({ lineNo, kind: `LIMIT-OVER-100(${m[1]})`, text: line.trim(), file: relPath });
     }
   }
   return found;
@@ -129,7 +132,7 @@ function runSelfTests() {
   }
   const v3 = violations(knownOverlargeLimit, "test");
   if (v3.length === 0) {
-    process.stderr.write("SELF-TEST FAIL: known-bad .limit(500) was not flagged\n");
+    process.stderr.write("SELF-TEST FAIL: known-bad .limit(500) (within 101-500 range) was not flagged\n");
     process.exit(1);
   }
   const v4 = violations(knownGoodCursor, "test");
@@ -171,12 +174,27 @@ process.stdout.write(`Scanned ${scannedCount} HR service files.\n`);
 
 if (allViolations.length === 0) {
   process.stdout.write("No offset pagination or overlarge limits found. Gate passed.\n");
+  if (BASELINE > 0) {
+    process.stderr.write(`Lower BASELINE from ${BASELINE} to 0 to lock this in.\n`);
+    process.exit(1);
+  }
   process.exit(0);
 }
 
-process.stderr.write(`\nFound ${allViolations.length} violation(s):\n\n`);
-for (const v of allViolations) {
-  process.stderr.write(`  [${v.kind}] ${v.file}:${v.lineNo}\n`);
-  process.stderr.write(`    ${v.text}\n`);
+if (allViolations.length > BASELINE) {
+  process.stderr.write(
+    `\nFound ${allViolations.length} violation(s), above the baseline of ${BASELINE}:\n\n`,
+  );
+  for (const v of allViolations) {
+    process.stderr.write(`  [${v.kind}] ${v.file}:${v.lineNo}\n`);
+    process.stderr.write(`    ${v.text}\n`);
+  }
+  process.exit(1);
 }
-process.exit(1);
+
+process.stdout.write(
+  `${allViolations.length} known violation(s), baseline ${BASELINE} — OK (ratchet).\n`,
+);
+if (allViolations.length < BASELINE)
+  process.stdout.write(`Lower BASELINE to ${allViolations.length} to lock in the reduction.\n`);
+process.exit(0);

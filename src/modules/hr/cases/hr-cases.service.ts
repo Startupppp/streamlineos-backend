@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -22,6 +22,7 @@ import type {
   AddDocumentInput,
 } from "./dto/hr-cases.schemas";
 
+const CASE_SEARCH_CAP = 500;
 const CASE_NUMBER_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 function generateCaseNumber(): string {
@@ -62,13 +63,7 @@ export class HrCasesService {
     if (category) conditions.push(eq(hrCases.category, category));
     if (severity) conditions.push(eq(hrCases.severity, severity));
     if (assignedTo) conditions.push(eq(hrCases.assignedTo, assignedTo));
-    if (search) {
-      const searchFilter = or(
-        ilike(hrCases.summary, `%${search}%`),
-        ilike(hrCases.caseNumber, `%${search}%`),
-      );
-      if (searchFilter) conditions.push(searchFilter);
-    }
+    if (search) conditions.push(await this.caseSearchCondition(search));
 
     const where = and(...conditions);
 
@@ -106,6 +101,20 @@ export class HrCasesService {
         totalPages: Math.ceil((totalResult[0]?.total ?? 0) / limit),
       },
     };
+  }
+
+  private async caseSearchCondition(search: string): Promise<SQL> {
+    const fallback = or(
+      ilike(hrCases.summary, `%${search}%`),
+      ilike(hrCases.caseNumber, `%${search}%`),
+    )!;
+    const rows = await this.db.execute(
+      sql`SELECT app.search_hr_case_ids(${search}, ${CASE_SEARCH_CAP + 1}) AS id`,
+    );
+    if (rows.length === 0) return sql`false`;
+    if (rows.length > CASE_SEARCH_CAP) return fallback;
+    const ids = rows.map((r) => Number(r["id"]));
+    return inArray(hrCases.id, ids);
   }
 
   async getById(orgId: string, id: number, userId: string, hasConfidential: boolean) {

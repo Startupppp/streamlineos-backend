@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrPolicies, hrPolicyScopes } from "../../../db/schema";
@@ -24,6 +24,7 @@ import { HrPolicyConflictService } from "./hr-policy-conflict.service";
 
 const POLICIES_CACHE = (orgId: string) => `hr:policies:list:${orgId}`;
 const POLICY_CACHE = (orgId: string, id: number) => `hr:policies:detail:${orgId}:${id}`;
+const POLICY_SEARCH_CAP = 500;
 
 @Injectable()
 export class HrPoliciesService {
@@ -41,13 +42,7 @@ export class HrPoliciesService {
     const conditions = [eq(hrPolicies.orgId, orgId), isNull(hrPolicies.deletedAt)];
     if (type) conditions.push(eq(hrPolicies.policyType, type));
     if (status) conditions.push(eq(hrPolicies.status, status));
-    if (search) {
-      const searchFilter = or(
-        ilike(hrPolicies.name, `%${search}%`),
-        ilike(hrPolicies.description, `%${search}%`),
-      );
-      if (searchFilter) conditions.push(searchFilter);
-    }
+    if (search) conditions.push(await this.policySearchCondition(search));
 
     const where = and(...conditions);
 
@@ -66,6 +61,20 @@ export class HrPoliciesService {
     ]);
 
     return { data: rows, total: Number(countRows[0]?.total ?? 0), page, limit };
+  }
+
+  private async policySearchCondition(search: string): Promise<SQL> {
+    const fallback = or(
+      ilike(hrPolicies.name, `%${search}%`),
+      ilike(hrPolicies.description, `%${search}%`),
+    )!;
+    const rows = await this.db.execute(
+      sql`SELECT app.search_hr_policy_ids(${search}, ${POLICY_SEARCH_CAP + 1}) AS id`,
+    );
+    if (rows.length === 0) return sql`false`;
+    if (rows.length > POLICY_SEARCH_CAP) return fallback;
+    const ids = rows.map((r) => Number(r["id"]));
+    return inArray(hrPolicies.id, ids);
   }
 
   async getById(orgId: string, policyId: number) {

@@ -210,7 +210,7 @@ export class HrAutomationEngineService {
       isNull(hrAutomationRules.deletedAt),
       params.triggerEvent ? eq(hrAutomationRules.triggerEvent, params.triggerEvent) : undefined,
       params.isEnabled !== undefined ? eq(hrAutomationRules.isEnabled, params.isEnabled) : undefined,
-      params.search ? ilike(hrAutomationRules.name, `%${params.search}%`) : undefined,
+      params.search ? ilike(hrAutomationRules.name, `${params.search}%`) : undefined,
     );
 
     return this.db.query.hrAutomationRules.findMany({
