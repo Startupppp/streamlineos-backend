@@ -5,11 +5,13 @@ import { logger } from "../logger/logger.service";
 import { reportError } from "../observability/error-reporter";
 import { sqlstateOf } from "../observability/error-classification";
 import { isTransientDbError } from "../db/transient-error";
+import type { RequestWithCorrelation } from "./correlation-id.middleware";
 
 type ApiErrorEnvelope = {
   code: string;
   message: string;
   details?: unknown;
+  correlationId?: string;
 };
 
 function defaultCode(status: number): string {
@@ -122,6 +124,14 @@ function describeUnhandled(exception: unknown): Record<string, unknown> {
   };
 }
 
+function correlationIdOf(host: ArgumentsHost): string | undefined {
+  try {
+    return host.switchToHttp().getRequest<RequestWithCorrelation>().correlationId;
+  } catch {
+    return undefined;
+  }
+}
+
 function describeRequest(host: ArgumentsHost): Record<string, unknown> {
   try {
     const req = host.switchToHttp().getRequest<Request>();
@@ -135,6 +145,8 @@ function describeRequest(host: ArgumentsHost): Record<string, unknown> {
 export class AllExceptionsFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const res = host.switchToHttp().getResponse<Response>();
+    const correlationId = correlationIdOf(host);
+    const cid = correlationId !== undefined ? { correlationId } : {};
 
     if (exception instanceof ZodError) {
       const details = exception.issues.map((issue) => ({
@@ -145,6 +157,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         code: "VALIDATION_FAILED",
         message: "Validation failed.",
         details,
+        ...cid,
       } satisfies ApiErrorEnvelope);
       return;
     }
@@ -154,7 +167,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const body = exception.getResponse();
       res
         .status(status)
-        .json(httpErrorEnvelope(status, body as string | Record<string, unknown>));
+        .json({ ...httpErrorEnvelope(status, body as string | Record<string, unknown>), ...cid });
       return;
     }
 
@@ -165,7 +178,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         code: envelope.code,
         request: describeRequest(host),
       });
-      res.status(status).json(envelope satisfies ApiErrorEnvelope);
+      res.status(status).json({ ...envelope, ...cid } satisfies ApiErrorEnvelope);
       return;
     }
 
@@ -176,29 +189,23 @@ export class AllExceptionsFilter implements ExceptionFilter {
       res.status(HttpStatus.SERVICE_UNAVAILABLE).json({
         code: "SERVICE_UNAVAILABLE",
         message: "The service is temporarily unavailable. Please try again.",
+        ...cid,
       } satisfies ApiErrorEnvelope);
       return;
     }
 
     const request = describeRequest(host);
 
-    // `error: exception` used to be passed here and serialised to `{}` — an Error's
-    // own fields are not enumerable, so it carried nothing. `describeUnhandled`
-    // is the part that actually says what went wrong.
     logger.error("Unhandled exception", {
       ...describeUnhandled(exception),
       request,
     });
 
-    // The logger has the record either way; this is the copy a human gets paged on.
-    // Health probes are polled continuously by the platform, so a database
-    // blip becomes thousands of identical reports and buries everything else.
-    // They still log, and the probe still fails — this only keeps the tracker
-    // readable, which is the whole point of having one.
     if (!isHealthProbe(request)) reportError(exception, request);
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       code: "INTERNAL_ERROR",
       message: "An unexpected error occurred",
+      ...cid,
     } satisfies ApiErrorEnvelope);
   }
 }

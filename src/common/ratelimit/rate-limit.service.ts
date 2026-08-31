@@ -100,6 +100,10 @@ const TIERS: Record<string, Tier> = {
   // Checkout creates a provider order; 5/hour per user prevents order flooding
   // while leaving headroom for legitimate retries with different plans.
   "billing:checkout": { limit: 5, windowSecs: 3600 },
+  // Vector ANN search under RLS is the highest-cost read in the system.
+  // 30 calls/min per user matches the AI chat tier and leaves room for typeahead
+  // without letting a single user monopolise the embedding + ANN budget.
+  "search:global": { limit: 30, windowSecs: 60 },
 };
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;

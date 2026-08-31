@@ -438,6 +438,7 @@ export class AutomationService {
       .set({
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
+        ...(input.triggerEvent !== undefined ? { triggerEvent: input.triggerEvent } : {}),
         ...(input.conditions !== undefined ? { conditions: input.conditions as AutomationCondition[] } : {}),
         ...(input.actions !== undefined ? { actions: input.actions as AutomationAction[] } : {}),
         ...(input.isEnabled !== undefined ? { isEnabled: input.isEnabled } : {}),
