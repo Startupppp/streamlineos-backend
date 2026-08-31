@@ -137,122 +137,71 @@ const SCOPE_KEY_CHECKS = [
   },
 ];
 
-// ─── matrix coverage check ────────────────────────────────────────────────────
+// ─── missing-invalidation checks (cross-file) ─────────────────────────────────
 //
-// Every CACHE_KEYS factory must appear in CACHE_INVALIDATION_MATRIX (or have
-// a declared TTL-only reason).  Keys missing from the matrix have no documented
-// invalidation contract.
+// These catch families where the READ is scope-qualified (extra discriminators
+// appended) AND no invalidation of any kind exists across all service files.
+// A base-key del would be a no-op, so only namespace-invalidation is safe.
 
-const CACHE_KEYS_FAMILIES = [
-  "dashboardStats", "userSession", "membershipAccount",
-  "rolesList", "mfaOrgPolicy", "mfaUserTotp",
-  "accessVersion", "accessPerms", "accessMembersWithPermPage",
-  "leadsList", "leadDetail", "contactsList", "contactsListNamespace",
-  "crmOrganizationDetailNamespace", "crmOrganizationsListNamespace",
-  "projectsList", "projectLabels", "orgMembers", "customStates", "ticketsList",
-  "salesDashboard", "salesKpisNamespace", "ceDashboard", "supportDashboard",
-  "dealsList", "dealsForecast", "approvalsList",
-  "clientsHealth", "churnAlerts",
-  "quotasList", "commissionsList",
-  "searchResults",
-  "leadBoard", "leadStats",
-  "executiveDashboard", "announcementsList",
-  "invoicesList", "invoiceDetail", "invoiceStats",
-  "tasksList", "taskDetail",
-  "quotesList", "quoteDetail",
-  "supportTicketsList", "supportTicketDetail",
-  "calendarEvents", "externalCalendarEvents",
-  "targetsList", "targetLeaderboard",
-  "branchesList",
-  "invProductsNamespace", "invProductDetail",
-  "invStockSummary", "invLowStock",
-  "invWarehousesList", "invWarehouseDetail",
-  "invVendorsNamespace", "invPoNamespace", "invGrnNamespace", "invPoDetail",
-  "invVendorReturnDetail", "invVendorReturnsNamespace",
-  "invCustomerReturnDetail", "invCustomerReturnsNamespace",
-  "invSoNamespace", "invSoDetail",
-  "invDashboard", "invReorderReport",
-  "invShipmentsNamespace", "invPackagesNamespace", "invLoadsNamespace",
-  "invCarriersNamespace", "invChannelsList", "inv3plList",
-  "invSettings", "invCycleCountsNamespace",
-  "invQualityInspectionsNamespace", "invQualityHoldsNamespace",
-  "invQualityRecallsNamespace",
-  "mailMessages",
-  "featureFlags",
-  "orgUnits", "orgHierarchyNamespace", "hrHeadcountNamespace", "leaveAnalyticsNamespace",
-  "supportReportsOverview",
-  "payrollSummary", "payrollSummaryNamespace",
-  "payrollExportsList", "payrollExportsNamespace",
-  "payrollSettings", "payrollSettingsNamespace",
-  "timesheetSettings", "timesheetSettingsNamespace",
-  "timesheetRates", "timesheetRatesNamespace",
-  "finReportsNamespace", "finInsightsAnomalies", "finInsightsDigest",
-  "finAssetsListNamespace", "finAssetCategoriesNamespace",
-  "finTaxCodesNamespace", "finTaxPaymentsNamespace",
-  "finTaxDashboardNamespace", "finTaxReportsNamespace",
-  "finExpensePoliciesNamespace",
-  "finBankAccountsNamespace", "finForecastNamespace", "finBvaNamespace",
-  "expensesListNamespace",
-  "orgSettings", "orgProfileNamespace", "orgMembersListNamespace", "usersStats",
-  "permissionsMatrix", "rolePerms", "rbacDiscoveryMembers",
-  "moduleRolesList", "moduleGroupsList", "moduleGroupMembers",
-  "moduleAccessCandidates", "moduleAccessMembers", "moduleAccessOwnership",
-  "moduleOwnershipsList", "moduleOwnershipDetail",
-  "ownershipTransfersList", "incomingTransfers",
+const MISSING_INVALIDATION_CHECKS = [
+  {
+    id: "clients-health-no-invalidation",
+    severity: "MEDIUM",
+    targetFile: "clients.service.ts",
+    readPattern: /CACHE_KEYS\.clientsHealth/,
+    invalidationPatterns: [
+      /invalidateNamespace.*clients.health/i,
+      /invalidateNamespaceForOrg.*clients.health/i,
+      /invalidate.*["']clients:health["']/,
+      /del.*CACHE_KEYS\.clientsHealth/,
+    ],
+    line: "50",
+    description:
+      "clientsHealth read appends :userId:scope discriminators making the composite key unaddressable by a base-key del; no invalidation of any kind found across all service files — stale client health data served until TTL",
+  },
+  {
+    id: "clients-churn-no-invalidation",
+    severity: "MEDIUM",
+    targetFile: "clients.service.ts",
+    readPattern: /CACHE_KEYS\.churnAlerts/,
+    invalidationPatterns: [
+      /invalidateNamespace.*clients.churn/i,
+      /invalidateNamespaceForOrg.*clients.churn/i,
+      /invalidate.*["']clients:churn["']/,
+      /del.*CACHE_KEYS\.churnAlerts/,
+    ],
+    line: "100",
+    description:
+      "churnAlerts read appends :userId:scope discriminators; no invalidation of any kind found across all service files — stale churn data served until TTL",
+  },
 ];
 
-// Keys that ARE in the matrix (from reading cache-invalidation-matrix.ts)
-const IN_MATRIX = new Set([
-  "acc:settings:<orgId>",
-  "acc:setup-status:<orgId>",
-  "acc:coa:tree:<orgId>",
-  "acc:dimensions:<orgId>",
-  "accounting:periods:<orgId>",
-  "acc:statements:<orgId>",
-  "fin:reports:<orgId>",
-  "fin:bva:<orgId>:<budgetId>",
-  "fin:forecast:<orgId>",
-  "fin:banking:accounts:<orgId>",
-  "fin:assets:list:<orgId>",
-  "fin:asset-categories:<orgId>",
-  "fin:tax-codes:<orgId>",
-  "fin:tax-payments:<orgId>",
-  "fin:tax-dashboard:<orgId>",
-  "fin:tax-reports:<orgId>",
-  "fin:expense-policies:<orgId>",
-  "org:hierarchy:<orgId>",
-  "hr:headcount:<orgId>",
-  "hr:leave-analytics:<orgId>",
-  "hr:expenses:<orgId>",
-  "sales:kpis:<orgId>",
-  "crm:contacts:list:<orgId>",
-  "crm:organizations:list:<orgId>",
-  "crm:organizations:detail:<orgId>",
-  "inv:products:list:<orgId>",
-  "inv:po:list:<orgId>",
-  "inv:grn:list:<orgId>",
-  "inv:vendors:list:<orgId>",
-  "inv:so:list:<orgId>",
-  "inv:stock:summary:<orgId>",
-  "inv:dashboard:<orgId>",
-  "inv:replenishment:suggestions:<orgId>",
-  "rbac:matrix:<orgId>:v<version>",
-  "module-access:roles:<orgId>",
-  "module-access:members:<orgId>",
-  "user:session:<userId>",
-  "dashboard:stats:<orgId>",
-  "dashboard:executive:<orgId>",
-  "support:dashboard:<orgId>",
-  "support:reports:overview:<orgId>",
-  "timesheets:payroll:summary:<orgId>",
-  "timesheets:payroll:exports:<orgId>",
-  "search:<orgId>:<userId>",
-  "access:perms:<orgId>:<userId>:v<version>",
-  "feature-flags:all",
-]);
+// ─── key-mismatch checks ──────────────────────────────────────────────────────
+//
+// These catch families where a READ uses cache.cached(CACHE_KEYS.factory(orgId))
+// producing key "prefix:orgId" while the WRITER uses invalidateForOrg(orgId,"prefix")
+// producing key "orgId:prefix".  The two formats never match; invalidation is a no-op.
 
-// Map CACHE_KEYS factory names to their produced namespace pattern
-// (for checking matrix coverage)
+const KEY_MISMATCH_CHECKS = [
+  {
+    id: "rbac-discovery-members-key-mismatch",
+    severity: "MEDIUM",
+    readFile: "rbac.service.ts",
+    readPattern: /cache\.cached\s*\(\s*CACHE_KEYS\.rbacDiscoveryMembers/,
+    writeFile: "access.service.ts",
+    writePattern: /invalidateForOrg\s*\(\s*orgId\s*,\s*["']rbac:members["']/,
+    description:
+      "rbacDiscoveryMembers: cached(CACHE_KEYS.rbacDiscoveryMembers(orgId)) produces key 'rbac:members:<orgId>' but invalidateForOrg(orgId,'rbac:members') produces '<orgId>:rbac:members' — different formats; invalidation is a no-op. Fix: change rbac.service.ts to cachedForOrg(orgId,'rbac:members',…).",
+  },
+];
+
+// ─── matrix coverage map ──────────────────────────────────────────────────────
+//
+// Maps CACHE_KEYS factory names to the key namespace prefix they produce.
+// Used to verify every factory family has an entry in CACHE_INVALIDATION_MATRIX.
+// The matrix uses `namespace:` fields; after stripping `<placeholder>` parts
+// (everything from the first `<` onward) the prefix must appear here.
+
 const KEY_TO_NAMESPACE_PREFIX = {
   dashboardStats: "dashboard:stats:",
   userSession: "user:session:",
@@ -323,7 +272,6 @@ const KEY_TO_NAMESPACE_PREFIX = {
   invShipmentsNamespace: "inv:shipments:",
   invPackagesNamespace: "inv:packages:",
   invLoadsNamespace: "inv:loads:",
-  invVendorsNamespace2: "inv:vendors:list:",
   payrollSummaryNamespace: "timesheets:payroll:summary:",
   payrollExportsNamespace: "timesheets:payroll:exports:",
   payrollSettingsNamespace: "timesheets:payroll:settings:",
@@ -339,14 +287,12 @@ const KEY_TO_NAMESPACE_PREFIX = {
   finForecastNamespace: "fin:forecast:",
   finBvaNamespace: "fin:bva:",
   expensesListNamespace: "hr:expenses:",
-  orgMembersListNamespace2: "org:members:list:",
   rbacDiscoveryMembers: "rbac:members:",
   permissionsMatrix: "rbac:matrix:",
   rolePerms: "rbac:role-perms:",
   orgHierarchyNamespace: "org:hierarchy:",
   hrHeadcountNamespace: "hr:headcount:",
   leaveAnalyticsNamespace: "hr:leave-analytics:",
-  accessPerms2: "access:perms:",
   featureFlags: "feature-flags:all",
   moduleRolesList: "module-access:roles:",
   moduleGroupsList: "module-access:groups:",
@@ -358,34 +304,32 @@ const KEY_TO_NAMESPACE_PREFIX = {
   ownershipTransfersList: "ownership:transfers:",
   incomingTransfers: "ownership:incoming:",
   supportReportsOverview: "support:reports:overview:",
+  orgSettings: "org:settings:",
+  orgProfileNamespace: "org:profile:",
+  usersStats: "users:stats:",
 };
 
-// Key families NOT in the matrix (missing documentation/enforcement)
-const MATRIX_GAP_FAMILIES = [
-  "membership:account:", "mfa:org-policy:", "mfa:user-totp:",
-  "org:members:", "leads:list:", "leads:detail:", "leads:board:", "leads:stats:",
-  "sales:dashboard:", "ce:dashboard:", "deals:list:", "deals:forecast:", "deals:approvals:",
-  "clients:health:", "clients:churn:", "sales:quotas:", "sales:commissions:",
-  "invoices:list:", "invoices:detail:", "invoices:stats:",
-  "tasks:list:", "tasks:detail:", "quotes:list:", "quotes:detail:",
-  "support:list:", "support:detail:", "calendar:events:", "integrations:extevents:",
-  "targets:list:", "targets:leaderboard:", "branches:list:",
-  "inv:warehouses:", "inv:warehouses:detail:", "inv:grn:list:",
-  "inv:vret:detail:", "inv:vret:list:", "inv:cret:detail:", "inv:cret:list:",
-  "inv:reorder:", "inv:stock:summary-report:", "inv:valuation:report:", "inv:slow-moving:", "inv:expiry:report:",
-  "inv:cycle-counts:", "inv:quality:", "inv:shipments:", "inv:packages:", "inv:loads:",
-  "inv:carriers:", "inv:channels:", "inv:3pl:", "inv:import-jobs:", "inv:export-jobs:",
-  "inv:settings:", "inv:numseq:", "inv:ai-insights:",
-  "inv:low-stock:", "inv:replenishment:suggestions:",
-  "mail:messages:", "org:units:", "projects:list:", "projects:labels:", "projects:customStates:", "tickets:list:",
-  "timesheets:payroll:settings:", "timesheets:settings:", "timesheets:rates:",
-  "org:settings:", "org:profile:", "users:stats:",
-  "fin:insights:", "fin:cat-suggest:",
-  "rbac:members:", "module-access:candidates:", "module-access:groups:", "module-access:group-members:",
-  "module-access:ownership:", "ownership:modules:", "ownership:module:", "ownership:transfers:", "ownership:incoming:",
-  "dashboard:announcements:", "access:members-with-perm:", "access:version:",
-  "org:roles:",
-];
+// ─── dynamic matrix parsing ───────────────────────────────────────────────────
+
+function parseMatrixNamespacePrefixes(matrixPath) {
+  const content = readFile(matrixPath);
+  const nsRegex = /namespace:\s*["']([^"']+)["']/g;
+  const prefixes = new Set();
+  let m;
+  while ((m = nsRegex.exec(content)) !== null) {
+    const prefix = m[1].split("<")[0];
+    prefixes.add(prefix);
+  }
+  return prefixes;
+}
+
+// ─── missing-invalidation check logic ────────────────────────────────────────
+
+function checkMissingInvalidation(targetContent, allContents, check) {
+  if (!check.readPattern.test(targetContent)) return { kind: "skip" };
+  const found = allContents.some((c) => check.invalidationPatterns.some((p) => p.test(c)));
+  return found ? { kind: "pass" } : { kind: "fail", reason: check.description };
+}
 
 // ─── file scanning ────────────────────────────────────────────────────────────
 
@@ -412,7 +356,6 @@ function readFile(path) {
   }
 }
 
-// Detect if a file contains any write to a table (insert, update, delete)
 function fileWritesToTable(content, table) {
   const patterns = [
     new RegExp(`\\.insert\\s*\\(\\s*${table}\\b`),
@@ -463,10 +406,9 @@ function runSelfTests() {
     }
   `;
   const badCheck = runScopeKeyCheck(badWarehouseCode, SCOPE_KEY_CHECKS[0]);
-  const badFired = badCheck.kind === "fail";
   results.push({
     name: "negative-control: scope-key del bug flagged",
-    pass: badFired,
+    pass: badCheck.kind === "fail",
     detail: badCheck,
   });
 
@@ -482,31 +424,64 @@ function runSelfTests() {
     }
   `;
   const goodCheck = runScopeKeyCheck(goodWarehouseCode, SCOPE_KEY_CHECKS[0]);
-  const goodPassed = goodCheck.kind === "pass";
   results.push({
     name: "positive-control: namespace invalidation accepted",
-    pass: goodPassed,
+    pass: goodCheck.kind === "pass",
     detail: goodCheck,
   });
 
   // Self-test 3: vacuity guard rejects empty file list
-  const vacuityFailed = (() => {
-    const fakeFiles = [];
-    return fakeFiles.length < MIN_SERVICE_FILES;
-  })();
   results.push({
     name: "vacuity-guard: empty scan is rejected",
-    pass: vacuityFailed,
+    pass: [].length < MIN_SERVICE_FILES,
     detail: { fileCount: 0, min: MIN_SERVICE_FILES },
   });
 
   // Self-test 4: vacuity guard accepts sufficient file list
   const fakeFiles = Array.from({ length: MIN_SERVICE_FILES }, (_, i) => `file${i}.ts`);
-  const vacuityPassed = fakeFiles.length >= MIN_SERVICE_FILES;
   results.push({
     name: "vacuity-guard: adequate scan accepted",
-    pass: vacuityPassed,
+    pass: fakeFiles.length >= MIN_SERVICE_FILES,
     detail: { fileCount: fakeFiles.length, min: MIN_SERVICE_FILES },
+  });
+
+  // Self-test 5 (negative): clientsHealth scope read + no invalidation = flagged
+  const miCheck = MISSING_INVALIDATION_CHECKS[0];
+  const clientsReadCode = `const cacheKey = \`\${CACHE_KEYS.clientsHealth(orgId)}:\${userId}:\${scope}\`;`;
+  const miResult = checkMissingInvalidation(clientsReadCode, [clientsReadCode], miCheck);
+  results.push({
+    name: "negative-control: clientsHealth missing-invalidation flagged",
+    pass: miResult.kind === "fail",
+    detail: miResult,
+  });
+
+  // Self-test 6 (positive): clientsHealth read + namespace invalidation in another file = passes
+  const clientsInvalidateCode = `await this.cache.invalidateNamespaceForOrg(orgId, "clients:health");`;
+  const miResult2 = checkMissingInvalidation(clientsReadCode, [clientsReadCode, clientsInvalidateCode], miCheck);
+  results.push({
+    name: "positive-control: clientsHealth passes when namespace invalidation exists",
+    pass: miResult2.kind === "pass",
+    detail: miResult2,
+  });
+
+  // Self-test 7 (negative): rbac key-mismatch fires when cached(factory)+invalidateForOrg both present
+  const badRbacRead = `return this.cache.cached(CACHE_KEYS.rbacDiscoveryMembers(orgId), fetch, 300);`;
+  const badRbacWrite = `await this.cache.invalidateForOrg(orgId, "rbac:members");`;
+  const kmCheck = KEY_MISMATCH_CHECKS[0];
+  const mismatchFired = kmCheck.readPattern.test(badRbacRead) && kmCheck.writePattern.test(badRbacWrite);
+  results.push({
+    name: "negative-control: rbac key-mismatch flagged when cached+invalidateForOrg",
+    pass: mismatchFired,
+    detail: { readMatches: kmCheck.readPattern.test(badRbacRead), writeMatches: kmCheck.writePattern.test(badRbacWrite) },
+  });
+
+  // Self-test 8 (positive): rbac mismatch clears when cachedForOrg used instead
+  const goodRbacRead = `return this.cache.cachedForOrg(orgId, "rbac:members", fetch, 300);`;
+  const mismatchCleared = !kmCheck.readPattern.test(goodRbacRead);
+  results.push({
+    name: "positive-control: rbac mismatch not fired when cachedForOrg used",
+    pass: mismatchCleared,
+    detail: { readMatches: kmCheck.readPattern.test(goodRbacRead) },
   });
 
   const allPass = results.every((r) => r.pass);
@@ -534,7 +509,7 @@ function runFullScan() {
 
   const findings = [];
 
-  // Scope-key checks (file-level)
+  // Scope-key checks (single-file)
   for (const check of SCOPE_KEY_CHECKS) {
     const target = serviceFiles.find((f) => f.endsWith(check.file));
     if (!target) {
@@ -551,7 +526,6 @@ function runFullScan() {
     const content = readFile(target);
     const result = runScopeKeyCheck(content, check);
     if (result.kind === "fail") {
-      // Find approximate line number for the dangerous pattern
       const lines = content.split("\n");
       const lineNo = lines.findIndex((l) => check.dangerousPattern.test(l));
       findings.push({
@@ -565,37 +539,93 @@ function runFullScan() {
     }
   }
 
-  // Matrix coverage gaps — key families in CACHE_KEYS but not in matrix
-  const matrixGapFindings = MATRIX_GAP_FAMILIES.map((prefix) => ({
-    id: `matrix-gap:${prefix}`,
-    severity: "LOW",
-    file: "src/common/cache/cache-invalidation-matrix.ts",
-    line: "N/A",
-    description: `Cache key family "${prefix}" has no entry in CACHE_INVALIDATION_MATRIX`,
-    kind: "matrix-gap",
-  }));
-  findings.push(...matrixGapFindings);
+  // Missing-invalidation checks (cross-file)
+  const allContents = serviceFiles.map((f) => readFile(f));
+  for (const check of MISSING_INVALIDATION_CHECKS) {
+    const targetIdx = serviceFiles.findIndex((f) => f.endsWith(check.targetFile));
+    if (targetIdx < 0) continue;
+    const result = checkMissingInvalidation(allContents[targetIdx], allContents, check);
+    if (result.kind === "fail") {
+      findings.push({
+        id: check.id,
+        severity: check.severity,
+        file: serviceFiles[targetIdx].replace(BACKEND_SRC, "src"),
+        line: check.line,
+        description: check.description,
+        kind: "missing-invalidation",
+      });
+    }
+  }
 
-  // Permission/session staleness gap — module enablement only busts enabledBy session
-  findings.push({
-    id: "F03-module-enable-partial-session-bust",
-    severity: "LOW",
-    file: "src/modules/access/entitlements.service.ts",
-    line: "287",
-    description:
-      "setModuleEnabled only invalidates userSession for the enabledBy user. All other org members " +
-      "see stale enabledModules in their session until TTL (300s). Backend RBAC guard (ModuleGuard) " +
-      "is unaffected — it reads live entitlements — so this is a UX/nav staleness issue, not a security hole.",
-    kind: "partial-session-invalidation",
-    patch: `// In entitlements.service.ts, after bumpPermissionsVersion, broadcast a session bust
-// for all active org members, not just enabledBy.  E.g.:
-//   const members = await tx.select({ userId: organizationMembers.userId })
-//     .from(organizationMembers)
-//     .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, 'active')));
-//   await Promise.all(members.map(m => this.cache.invalidate(CACHE_KEYS.userSession(m.userId))));`,
-  });
+  // Key-mismatch checks (two-file structural)
+  for (const check of KEY_MISMATCH_CHECKS) {
+    const readTarget = serviceFiles.find((f) => f.endsWith(check.readFile));
+    const writeTarget = serviceFiles.find((f) => f.endsWith(check.writeFile));
+    if (!readTarget || !writeTarget) continue;
+    const readContent = readFile(readTarget);
+    const writeContent = readFile(writeTarget);
+    if (check.readPattern.test(readContent) && check.writePattern.test(writeContent)) {
+      const lines = readContent.split("\n");
+      const lineNo = lines.findIndex((l) => check.readPattern.test(l));
+      findings.push({
+        id: check.id,
+        severity: check.severity,
+        file: readTarget.replace(BACKEND_SRC, "src"),
+        line: lineNo >= 0 ? lineNo + 1 : "unknown",
+        description: check.description,
+        kind: "key-format-mismatch",
+      });
+    }
+  }
+
+  // Dynamic matrix gap check — every KEY_TO_NAMESPACE_PREFIX prefix must appear in the matrix
+  const matrixPath = join(BACKEND_SRC, "common", "cache", "cache-invalidation-matrix.ts");
+  const matrixPrefixes = parseMatrixNamespacePrefixes(matrixPath);
+  for (const [factory, prefix] of Object.entries(KEY_TO_NAMESPACE_PREFIX)) {
+    const covered = [...matrixPrefixes].some((mp) => mp === prefix || prefix.startsWith(mp) || mp.startsWith(prefix));
+    if (!covered) {
+      findings.push({
+        id: `matrix-gap:${factory}`,
+        severity: "LOW",
+        file: "src/common/cache/cache-invalidation-matrix.ts",
+        line: "N/A",
+        description: `Cache key family "${prefix}" (factory: ${factory}) has no entry in CACHE_INVALIDATION_MATRIX`,
+        kind: "matrix-gap",
+      });
+    }
+  }
+
+  findings.push(...checkModuleEnableSessionBust());
 
   return { findings, vacuityFailed: false, fileCount: serviceFiles.length };
+}
+
+export function moduleEnableBustsEveryMember(source) {
+  const bustsOneActor = /invalidate\(\s*CACHE_KEYS\.userSession\(\s*enabledBy\s*\)\s*\)/.test(source);
+  const bustsEveryMember =
+    /organizationMembers\.status\s*,\s*"ACTIVE"/.test(source) &&
+    /\.map\(\s*\(\s*\w+\s*\)\s*=>\s*this\.cache\.invalidate\(\s*CACHE_KEYS\.userSession\(/.test(source);
+  return bustsEveryMember && !bustsOneActor;
+}
+
+function checkModuleEnableSessionBust() {
+  const file = "src/modules/access/entitlements.service.ts";
+  const abs = join(BACKEND_SRC, "modules/access/entitlements.service.ts".replace("modules/", "modules/"));
+  
+  let src; try { src = readFileSync(abs, "utf8"); } catch { return []; }
+  if (moduleEnableBustsEveryMember(src)) return [];
+  return [
+    {
+      id: "F03-module-enable-partial-session-bust",
+      severity: "MEDIUM",
+      file,
+      line: "setModuleEnabled",
+      description:
+        "setModuleEnabled does not invalidate userSession for every ACTIVE org member. Members keep a " +
+        "stale enabledModules in their session until TTL. Bust each active member, not just the actor.",
+      kind: "partial-session-invalidation",
+    },
+  ];
 }
 
 // ─── output ───────────────────────────────────────────────────────────────────
@@ -617,7 +647,6 @@ if (vacuityFailed) {
   process.exit(2);
 }
 
-// Separate by severity for display
 const critical = findings.filter((f) => f.severity === "CRITICAL");
 const medium = findings.filter((f) => f.severity === "MEDIUM");
 const low = findings.filter((f) => f.severity === "LOW");

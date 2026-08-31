@@ -1,9 +1,9 @@
 /**
- * c19-04 read-after-write verification — all 46 cache namespace matrix entries.
+ * c19-04 read-after-write verification — all 139 cache namespace matrix entries.
  *
- * Of the 46 entries in CACHE_INVALIDATION_MATRIX:
- *   36 are kind:"write" — exercised by the table-driven tests below.
- *   10 are kind:"ttl-only" — excluded from read-after-write; their non-empty
+ * Of the 139 entries in CACHE_INVALIDATION_MATRIX:
+ *   101 are kind:"write" — exercised by the table-driven tests below.
+ *   38 are kind:"ttl-only" — excluded from read-after-write; their non-empty
  *      reason fields are verified in "matrix structure".
  *
  * All tests run against the real CacheService with a stateful in-memory Redis
@@ -65,14 +65,21 @@ function primaryNs(template: string): string {
  */
 function alternateTenantNs(template: string): string {
   if (template.includes("<orgId>")) return fillTemplate(template, "org-b");
-  return fillTemplate(template, "org-a", TEST_ALT_USER_ID);
+  if (template.includes("<userId>")) return fillTemplate(template, "org-a", TEST_ALT_USER_ID);
+  const discriminator = /<(\w+)>/.exec(template);
+  if (!discriminator) {
+    throw new Error(
+      `namespace "${template}" carries no tenant discriminator — it cannot be isolation-tested`,
+    );
+  }
+  return fillTemplate(template.replace(discriminator[0], "alt-owner"), "org-a");
 }
 
 // Matrix structure tests
 
 describe("CACHE_INVALIDATION_MATRIX — structure", () => {
-  it("has exactly 46 entries", () => {
-    expect(CACHE_INVALIDATION_MATRIX).toHaveLength(46);
+  it("has exactly 139 entries", () => {
+    expect(CACHE_INVALIDATION_MATRIX).toHaveLength(139);
   });
 
   it("has no duplicate namespace keys", () => {
@@ -93,7 +100,7 @@ describe("CACHE_INVALIDATION_MATRIX — structure", () => {
   });
 
   it(
-    "coverage guard — 36 write and 10 ttl-only" +
+    "coverage guard — 101 write and 38 ttl-only" +
       " (update both counts when the matrix grows)",
     () => {
       const writeCount = CACHE_INVALIDATION_MATRIX.filter(
@@ -102,8 +109,8 @@ describe("CACHE_INVALIDATION_MATRIX — structure", () => {
       const ttlCount = CACHE_INVALIDATION_MATRIX.filter(
         (e) => e.invalidation.kind === "ttl-only",
       ).length;
-      expect(writeCount).toBe(36);
-      expect(ttlCount).toBe(10);
+      expect(writeCount).toBe(101);
+      expect(ttlCount).toBe(38);
       expect(writeCount + ttlCount).toBe(CACHE_INVALIDATION_MATRIX.length);
     },
   );
@@ -151,7 +158,7 @@ describe("namespace read-after-write — negative control", () => {
 // Read-after-write — table-driven, one case per kind:"write" entry.
 //
 
-describe("namespace read-after-write — event-invalidated (36 namespaces)", () => {
+describe("namespace read-after-write — event-invalidated (101 namespaces)", () => {
   it.each(writeEntries)("$namespace", async (entry) => {
     const cache = makeFreshCache();
     const ns = primaryNs(entry.namespace);

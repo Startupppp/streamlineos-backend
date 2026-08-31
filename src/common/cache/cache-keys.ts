@@ -50,8 +50,6 @@ export const CACHE_KEYS = {
   dealsForecast: (orgId: string) => `deals:forecast:${orgId}`,
   approvalsList: (orgId: string) => `deals:approvals:${orgId}`,
 
-  clientsHealth: (orgId: string) => `clients:health:${orgId}`,
-  churnAlerts: (orgId: string) => `clients:churn:${orgId}`,
 
   quotasList: (orgId: string, filters: string) => `sales:quotas:${orgId}:${filters}`,
   quotasListPattern: (orgId: string) => `sales:quotas:${orgId}:*`,
@@ -223,7 +221,6 @@ export const CACHE_KEYS = {
   permissionsMatrix: (orgId: string, version: number) => `rbac:matrix:${orgId}:v${version}`,
   rolePerms: (orgId: string, roleId: number, version: number) =>
     `rbac:role-perms:${orgId}:${roleId}:v${version}`,
-  rbacDiscoveryMembers: (orgId: string) => `rbac:members:${orgId}`,
 
   moduleRolesList: (orgId: string, moduleKey: string, version: number) =>
     `module-access:roles:${orgId}:${moduleKey}:v${version}`,

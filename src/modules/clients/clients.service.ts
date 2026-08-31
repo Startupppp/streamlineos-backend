@@ -47,9 +47,10 @@ export class ClientsService {
   }
 
   getHealth(orgId: string, status: ClientHealthFilter | undefined, limit: number | undefined, userId: string, scope: DataScope) {
-    const cacheKey = `${CACHE_KEYS.clientsHealth(orgId)}:${userId}:${scope}`;
-    return this.cache.cached(
-      cacheKey,
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "clients:health",
+      `${userId}:${scope}:${status ?? "all"}:${limit ?? 20}`,
       async () => {
         /*
          * `health_status` is NOT NULL on the legacy row and nullable on the
@@ -96,8 +97,10 @@ export class ClientsService {
   }
 
   getChurnAlerts(orgId: string, userId: string, scope: DataScope) {
-    return this.cache.cached(
-      `${CACHE_KEYS.churnAlerts(orgId)}:${userId}:${scope}`,
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "clients:churn",
+      `${userId}:${scope}`,
       async () => {
         const atRiskClients = await this.db
           .select({
