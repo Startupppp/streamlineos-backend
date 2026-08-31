@@ -165,6 +165,16 @@ export class KbSourcesService {
       throw new NotFoundException("Source not found");
     }
     await this.attachmentIndexing.removeSourceChunks(orgId, id);
+    const row = rows[0];
+    if (row.kind === "file" && row.fileKey) {
+      try {
+        await this.storage.deleteFile(orgId, row.fileKey);
+      } catch (err: unknown) {
+        this.logger.warn(
+          `KB source ${id} soft-deleted but binary "${row.fileKey}" could not be deleted from storage: ${String(err)}`,
+        );
+      }
+    }
     return { success: true };
   }
 

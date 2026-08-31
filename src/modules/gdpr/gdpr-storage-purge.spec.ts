@@ -187,3 +187,46 @@ describe("GdprStoragePurgeService.buildManifest — dry-run inventory", () => {
     expect(manifest.keys[0]?.key).toBe(SAMPLE_KEY.key);
   });
 });
+
+describe("GdprStoragePurgeService — Item A: idempotency of repeated purge", () => {
+  it("(bite proof) second purge of same subject does not throw — S3 DELETE of a missing key is 204", async () => {
+    const db = makeDb([]);
+    const deleteFile = jest.fn().mockResolvedValue(undefined);
+
+    jest.spyOn(storageKeyCatalog, "enumerateFileKeyColumns").mockResolvedValue([
+      { table: "public.hr_documents", column: "file_key" },
+    ]);
+    jest.spyOn(storageKeyCatalog, "collectSubjectFileKeysWithLegalHold").mockResolvedValue([SAMPLE_KEY]);
+
+    const svc = await buildService(db, { deleteFile });
+
+    const first = await svc.purgeSubjectStorage(USER_FREE, [ORG_A], ACTOR, ORG_A, { dryRun: false });
+    expect(first.keysDeleted).toBe(1);
+    expect(first.blocked).toBe(false);
+
+    const second = await svc.purgeSubjectStorage(USER_FREE, [ORG_A], ACTOR, ORG_A, { dryRun: false });
+    expect(second.keysDeleted).toBe(1);
+    expect(second.blocked).toBe(false);
+
+    expect(deleteFile).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports what was deleted — manifest and keysDeleted are both present in the result", async () => {
+    const db = makeDb([]);
+    const deleteFile = jest.fn().mockResolvedValue(undefined);
+
+    jest.spyOn(storageKeyCatalog, "enumerateFileKeyColumns").mockResolvedValue([
+      { table: "public.hr_documents", column: "file_key" },
+    ]);
+    jest.spyOn(storageKeyCatalog, "collectSubjectFileKeysWithLegalHold").mockResolvedValue([SAMPLE_KEY]);
+
+    const svc = await buildService(db, { deleteFile });
+    const result = await svc.purgeSubjectStorage(USER_FREE, [ORG_A], ACTOR, ORG_A, { dryRun: false });
+
+    expect(result).toHaveProperty("keysDeleted");
+    expect(result).toHaveProperty("manifest");
+    expect(result.keysDeleted).toBe(1);
+    expect(result.manifest).toHaveLength(1);
+    expect(result.manifest[0]?.key).toBe(SAMPLE_KEY.key);
+  });
+});

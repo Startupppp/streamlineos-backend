@@ -105,6 +105,8 @@ export async function collectUserFileKeys(
   return [...keys];
 }
 
+export const SUBJECT_KEY_PAGE_LIMIT = 5_000;
+
 export interface SubjectFileKey {
   key: string;
   table: string;
@@ -158,10 +160,13 @@ export function buildSubjectKeyQuery(
   filterValue: string | string[],
   userId: string,
   filterKind: "user-col" | "org-id",
+  afterKey?: string,
 ): SQL {
   const colId = sql.raw(`"${column}"`);
   const tableId = sql.raw(table);
   const filterColId = sql.raw(`"${filterCol}"`);
+  const afterClause = afterKey === undefined ? sql`` : sql` AND ${colId} > ${afterKey}`;
+  const orderClause = sql.raw(`ORDER BY "${column}" ASC`);
   const legalHoldBlock = sql`
     AND NOT EXISTS (
       SELECT 1 FROM public.hr_legal_holds
@@ -170,13 +175,18 @@ export function buildSubjectKeyQuery(
         AND  deleted_at IS NULL
     )`;
 
+  const limitClause = sql.raw(`LIMIT ${SUBJECT_KEY_PAGE_LIMIT}`);
+
   if (filterKind === "user-col") {
     return sql`
       SELECT ${colId} AS k
       FROM   ${tableId}
       WHERE  ${filterColId} = ${filterValue as string}
         AND  ${colId} IS NOT NULL
+        ${afterClause}
         ${legalHoldBlock}
+      ${orderClause}
+      ${limitClause}
     `;
   }
   return sql`
@@ -184,7 +194,10 @@ export function buildSubjectKeyQuery(
     FROM   ${tableId}
     WHERE  ${filterColId} = ANY(${filterValue as string[]})
       AND  ${colId} IS NOT NULL
+      ${afterClause}
       ${legalHoldBlock}
+    ${orderClause}
+    ${limitClause}
   `;
 }
 
@@ -203,6 +216,39 @@ export function buildSubjectKeyQuery(
  * org_id using the caller's org membership list so files belonging to an org
  * the subject owned are also captured.
  */
+async function drainPages(
+  db: Db,
+  table: string,
+  column: string,
+  filterCol: string,
+  filterValue: string | string[],
+  userId: string,
+  source: "user-fk" | "org-id",
+  seen: Set<string>,
+  result: SubjectFileKey[],
+): Promise<void> {
+  const filterKind = source === "user-fk" ? "user-col" : "org-id";
+  let afterKey: string | undefined;
+
+  for (;;) {
+    const q = buildSubjectKeyQuery(table, column, filterCol, filterValue, userId, filterKind, afterKey);
+    const rows = (await db.execute(q)) as Array<Record<string, unknown>>;
+    let lastKey: string | undefined;
+
+    for (const row of rows) {
+      const k = row["k"];
+      if (typeof k !== "string" || k.length === 0) continue;
+      lastKey = k;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      result.push({ key: k, table, column, source });
+    }
+
+    if (rows.length < SUBJECT_KEY_PAGE_LIMIT || lastKey === undefined) return;
+    afterKey = lastKey;
+  }
+}
+
 export async function collectSubjectFileKeysWithLegalHold(
   db: Db,
   userId: string,
@@ -219,24 +265,10 @@ export async function collectSubjectFileKeysWithLegalHold(
 
     if (userCols.length > 0) {
       for (const userCol of userCols) {
-        const q = buildSubjectKeyQuery(table, column, userCol, userId, userId, "user-col");
-        for (const row of (await db.execute(q)) as Array<Record<string, unknown>>) {
-          const k = row["k"];
-          if (typeof k === "string" && k.length > 0 && !seen.has(k)) {
-            seen.add(k);
-            result.push({ key: k, table, column, source: "user-fk" });
-          }
-        }
+        await drainPages(db, table, column, userCol, userId, userId, "user-col", seen, result);
       }
     } else if (orgIds.length > 0) {
-      const q = buildSubjectKeyQuery(table, column, "org_id", orgIds, userId, "org-id");
-      for (const row of (await db.execute(q)) as Array<Record<string, unknown>>) {
-        const k = row["k"];
-        if (typeof k === "string" && k.length > 0 && !seen.has(k)) {
-          seen.add(k);
-          result.push({ key: k, table, column, source: "org-id" });
-        }
-      }
+      await drainPages(db, table, column, "org_id", orgIds, userId, "org-id", seen, result);
     }
   }
 

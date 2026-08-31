@@ -4,6 +4,7 @@ import type { Db } from "../../db/drizzle.module";
 import {
   buildSubjectKeyQuery,
   collectSubjectFileKeysWithLegalHold,
+  SUBJECT_KEY_PAGE_LIMIT,
   type FileKeyColumn,
 } from "../storage/storage-key-catalog";
 
@@ -168,5 +169,55 @@ describe("collectSubjectFileKeysWithLegalHold — integration with mocked db", (
 
     const allKeys = keys.map((k) => k.key);
     expect(allKeys.filter((k) => k === SHARED_KEY)).toHaveLength(1);
+  });
+});
+
+describe("buildSubjectKeyQuery — Item A: per-table LIMIT bounds each call (no unbounded listing)", () => {
+  it("(bite proof) user-col query contains LIMIT clause — removing SUBJECT_KEY_PAGE_LIMIT would make this fail", () => {
+    const q = buildSubjectKeyQuery(
+      "public.hr_documents",
+      "file_key",
+      "user_id",
+      USER_ID,
+      USER_ID,
+      "user-col",
+    );
+    const rendered = renderSql(q);
+    expect(rendered.toUpperCase()).toContain("LIMIT");
+    expect(rendered).toContain(String(SUBJECT_KEY_PAGE_LIMIT));
+  });
+
+  it("(bite proof) org-id query contains LIMIT clause — removing SUBJECT_KEY_PAGE_LIMIT would make this fail", () => {
+    const q = buildSubjectKeyQuery(
+      "public.chat_attachments",
+      "file_key",
+      "org_id",
+      [ORG_A, ORG_B],
+      USER_ID,
+      "org-id",
+    );
+    const rendered = renderSql(q);
+    expect(rendered.toUpperCase()).toContain("LIMIT");
+    expect(rendered).toContain(String(SUBJECT_KEY_PAGE_LIMIT));
+  });
+
+  it("SUBJECT_KEY_PAGE_LIMIT is a positive finite number", () => {
+    expect(typeof SUBJECT_KEY_PAGE_LIMIT).toBe("number");
+    expect(SUBJECT_KEY_PAGE_LIMIT).toBeGreaterThan(0);
+    expect(Number.isFinite(SUBJECT_KEY_PAGE_LIMIT)).toBe(true);
+  });
+
+  it("catalog adapter cannot list by org prefix — each call is bounded by LIMIT, not by S3 ListObjectsV2", () => {
+    const q = buildSubjectKeyQuery(
+      "public.hr_documents",
+      "file_key",
+      "user_id",
+      USER_ID,
+      USER_ID,
+      "user-col",
+    );
+    const rendered = renderSql(q);
+    expect(rendered).not.toContain("ListObjectsV2");
+    expect(rendered.toUpperCase()).toContain("LIMIT");
   });
 });

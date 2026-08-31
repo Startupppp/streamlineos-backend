@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 
 export interface RecordKbEventOptions {
-  actorId?: string | null;
+  actorMembershipId?: number | null;
   articleId?: number | null;
   query?: string | null;
   metadata?: Record<string, unknown> | null;
@@ -22,7 +22,7 @@ export class KbEventsService {
     await this.db.insert(kbEvents).values({
       orgId,
       eventType,
-      actorId: options.actorId ?? null,
+      actorMembershipId: options.actorMembershipId ?? null,
       articleId: options.articleId ?? null,
       query: options.query ?? null,
       metadata: options.metadata ?? null,
