@@ -3151,6 +3151,41 @@
       "when": 1798000074000,
       "tag": "0762_chat_presence_membership_not_null",
       "breakpoints": true
+    },
+    {
+      "idx": 575,
+      "version": "7",
+      "when": 1798000075000,
+      "tag": "0763_drop_stale_membership_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 576,
+      "version": "7",
+      "when": 1798000076000,
+      "tag": "0764_managed_products_owner_fk_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 577,
+      "version": "7",
+      "when": 1798000077000,
+      "tag": "0765_chat_messages_sender_fk_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 578,
+      "version": "7",
+      "when": 1798000078000,
+      "tag": "0766_ticket_activity_log_user_fk_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 579,
+      "version": "7",
+      "when": 1798000079000,
+      "tag": "0767_ticket_comment_mentions_fk_set_null",
+      "breakpoints": true
     }
   ]
 }

@@ -19,6 +19,7 @@ import { CronHrEnginesService } from "./cron-hr-engines.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronLeaseService } from "./cron-lease.service";
+import { CronHrRetentionService } from "./cron-hr-retention.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 
@@ -37,6 +38,7 @@ export class CronHrController {
     private readonly hrEngines: CronHrEnginesService,
     private readonly weeklyRecap: CronWeeklyRecapService,
     private readonly cronLease: CronLeaseService,
+    private readonly hrRetention: CronHrRetentionService,
   ) {}
 
   @Get("auto-checkout")
@@ -403,6 +405,39 @@ export class CronHrController {
       return { success: true, ...outcome.result };
     } catch (error) {
       logger.error("Retention delete sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("hr-policy-retention-sweep")
+  getHrPolicyRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runHrPolicyRetentionSweep(authorization);
+  }
+
+  @Post("hr-policy-retention-sweep")
+  @HttpCode(200)
+  postHrPolicyRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runHrPolicyRetentionSweep(authorization);
+  }
+
+  private async runHrPolicyRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("hr-policy-retention-sweep", 1800, () =>
+        this.hrRetention.sweep(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "hr-policy-retention-sweep already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message:
+          `HR policy retention: ${result.employeeSoftDeleted} employees, ` +
+          `${result.caseSoftDeleted} cases, ${result.attendanceDeleted} attendance rows across ${result.organizations} orgs`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("HR policy retention sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

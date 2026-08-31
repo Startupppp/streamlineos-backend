@@ -57,6 +57,7 @@ import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
+import { CronHrRetentionService } from "./cron-hr-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
 import { CronOrganizationService } from "./cron-organization.service";
@@ -139,6 +140,7 @@ import { CalendarModule } from "../calendar/calendar.module";
     CronCrmTasksService,
     CronIdempotencyService,
     CronBuildRetentionService,
+    CronHrRetentionService,
     CronBuildSnapshotsService,
     CronKbChunkRetentionService,
     CronOrganizationService,

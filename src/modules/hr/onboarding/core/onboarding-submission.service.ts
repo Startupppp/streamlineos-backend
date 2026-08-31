@@ -12,6 +12,7 @@ import {
   onboardingFlowSessions,
   onboardingSteps,
   organizationMembers,
+  users,
 } from "../../../../db/schema";
 
 @Injectable()
@@ -44,6 +45,7 @@ export class OnboardingSubmissionService {
       await this.completeFinalReview(tx, orgId, userId);
       await this.initializeLeaveBalances(tx, orgId, userId);
       await this.completeFlowSession(tx, orgId, userId);
+      await tx.update(users).set({ onboardingCompletedAt: new Date() }).where(eq(users.id, userId));
       await tx.insert(onboardingAnalyticsEvents).values({
         orgId,
         userId,

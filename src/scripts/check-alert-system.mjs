@@ -16,6 +16,7 @@ const ALERT_SCRIPTS = [
   "alert-tenant-cost.mjs",
   "alert-queue-age.mjs",
   "alert-dispatch.mjs",
+  "alert-cell-recovery.mjs",
 ];
 
 function runSelfTest(script) {
