@@ -5,7 +5,11 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gt, lt } from "drizzle-orm";
-import { chatChannelMembers, chatChannels, chatMessages } from "../../db/schema";
+import {
+  chatChannelMembers,
+  chatChannels,
+  chatMessages,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { buildIdCursorPage } from "../../common/pagination/cursor";
@@ -17,12 +21,22 @@ import {
   type PersonIdentity,
 } from "../directory/person-seam";
 
-type ChatSender = { id: string | null; name: string | null; image: string | null };
+type ChatSender = {
+  id: string | null;
+  name: string | null;
+  image: string | null;
+};
 
 function senderFromIdentity(identity: PersonIdentity | undefined): ChatSender {
-  const parts = [identity?.firstName, identity?.lastName].filter(Boolean).join(" ");
+  const parts = [identity?.firstName, identity?.lastName]
+    .filter(Boolean)
+    .join(" ");
   const name = identity?.displayName ?? (parts || null);
-  return { id: identity?.userId ?? null, name: name ?? null, image: identity?.avatarUrl ?? null };
+  return {
+    id: identity?.userId ?? null,
+    name: name ?? null,
+    image: identity?.avatarUrl ?? null,
+  };
 }
 
 @Injectable()
@@ -69,25 +83,36 @@ export class ChatMessageTimelineService {
 
   private enrich<
     M extends {
-      senderId: string;
-      replyTo: ({ senderId: string } & Record<string, unknown>) | null;
+      senderMembership: { userId: string } | null;
+      replyTo:
+        | ({ senderMembership: { userId: string } | null } & Record<
+            string,
+            unknown
+          >)
+        | null;
     },
-  >(
-    msg: M,
-    identities: Map<string, PersonIdentity>,
-  ) {
+  >(msg: M, identities: Map<string, PersonIdentity>) {
     return {
       ...msg,
       sender: senderFromIdentity(
-        identities.get(subjectKey({ kind: "user", userId: msg.senderId })),
+        msg.senderMembership
+          ? identities.get(
+              subjectKey({ kind: "user", userId: msg.senderMembership.userId }),
+            )
+          : undefined,
       ),
       replyTo: msg.replyTo
         ? {
             ...msg.replyTo,
             sender: senderFromIdentity(
-              identities.get(
-                subjectKey({ kind: "user", userId: msg.replyTo.senderId }),
-              ),
+              msg.replyTo.senderMembership
+                ? identities.get(
+                    subjectKey({
+                      kind: "user",
+                      userId: msg.replyTo.senderMembership.userId,
+                    }),
+                  )
+                : undefined,
             ),
           }
         : null,
@@ -101,18 +126,25 @@ export class ChatMessageTimelineService {
     limit: number,
   ) {
     const channel = await this.db.query.chatChannels.findFirst({
-      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, actor.orgId)),
+      where: and(
+        eq(chatChannels.id, channelId),
+        eq(chatChannels.orgId, actor.orgId),
+      ),
       columns: { id: true, type: true },
     });
     if (!channel) throw new NotFoundException("Channel not found");
 
     if (!(await this.isMember(channelId, actor.orgId, actor.membershipId))) {
-      if (channel.type !== "PUBLIC") throw new NotFoundException("Channel not found");
+      if (channel.type !== "PUBLIC")
+        throw new NotFoundException("Channel not found");
       throw new ForbiddenException("You are not a member of this channel");
     }
 
     const safeLimit = Math.min(Math.max(1, limit), 100);
-    const conditions = [eq(chatMessages.orgId, actor.orgId), eq(chatMessages.channelId, channelId)];
+    const conditions = [
+      eq(chatMessages.orgId, actor.orgId),
+      eq(chatMessages.channelId, channelId),
+    ];
     if (cursor) conditions.push(lt(chatMessages.channelPosition, cursor));
 
     const rawMessages = await this.db.query.chatMessages.findMany({
@@ -121,15 +153,23 @@ export class ChatMessageTimelineService {
       limit: safeLimit + 1,
       with: {
         attachments: true,
-        replyTo: true,
+        senderMembership: { columns: { userId: true } },
+        replyTo: {
+          with: { senderMembership: { columns: { userId: true } } },
+        },
       },
     });
 
-    const page = buildIdCursorPage(rawMessages, safeLimit, (m) => m.channelPosition);
+    const page = buildIdCursorPage(
+      rawMessages,
+      safeLimit,
+      (m) => m.channelPosition,
+    );
     const senderIds = new Set<string>();
     for (const m of page.data) {
-      senderIds.add(m.senderId);
-      if (m.replyTo?.senderId) senderIds.add(m.replyTo.senderId);
+      if (m.senderMembership?.userId) senderIds.add(m.senderMembership.userId);
+      if (m.replyTo?.senderMembership?.userId)
+        senderIds.add(m.replyTo.senderMembership.userId);
     }
     const identities = await this.resolveIdentities(actor.orgId, senderIds);
     const enriched = page.data.reverse().map((m) => this.enrich(m, identities));
@@ -142,13 +182,17 @@ export class ChatMessageTimelineService {
 
   async poll(channelId: number, actor: EntityActor, since: Date) {
     const channel = await this.db.query.chatChannels.findFirst({
-      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, actor.orgId)),
+      where: and(
+        eq(chatChannels.id, channelId),
+        eq(chatChannels.orgId, actor.orgId),
+      ),
       columns: { id: true, type: true },
     });
     if (!channel) throw new NotFoundException("Channel not found");
 
     if (!(await this.isMember(channelId, actor.orgId, actor.membershipId))) {
-      if (channel.type !== "PUBLIC") throw new NotFoundException("Channel not found");
+      if (channel.type !== "PUBLIC")
+        throw new NotFoundException("Channel not found");
       throw new ForbiddenException("You are not a member of this channel");
     }
 
@@ -162,17 +206,23 @@ export class ChatMessageTimelineService {
       limit: 100,
       with: {
         attachments: true,
-        replyTo: true,
+        senderMembership: { columns: { userId: true } },
+        replyTo: {
+          with: { senderMembership: { columns: { userId: true } } },
+        },
       },
     });
 
     const senderIds = new Set<string>();
     for (const m of rawMessages) {
-      senderIds.add(m.senderId);
-      if (m.replyTo?.senderId) senderIds.add(m.replyTo.senderId);
+      if (m.senderMembership?.userId) senderIds.add(m.senderMembership.userId);
+      if (m.replyTo?.senderMembership?.userId)
+        senderIds.add(m.replyTo.senderMembership.userId);
     }
     const identities = await this.resolveIdentities(actor.orgId, senderIds);
-    const enriched = rawMessages.reverse().map((m) => this.enrich(m, identities));
+    const enriched = rawMessages
+      .reverse()
+      .map((m) => this.enrich(m, identities));
 
     return this.withResolvedReferences(actor, enriched);
   }
@@ -184,26 +234,45 @@ export class ChatMessageTimelineService {
     limit: number,
   ) {
     const rawParent = await this.db.query.chatMessages.findFirst({
-      where: and(eq(chatMessages.id, parentMessageId), eq(chatMessages.orgId, actor.orgId)),
+      where: and(
+        eq(chatMessages.id, parentMessageId),
+        eq(chatMessages.orgId, actor.orgId),
+      ),
       with: {
         attachments: true,
-        replyTo: true,
+        senderMembership: { columns: { userId: true } },
+        replyTo: {
+          with: { senderMembership: { columns: { userId: true } } },
+        },
       },
     });
 
     if (!rawParent) throw new NotFoundException("Message not found");
 
-    if (!(await this.isMember(rawParent.channelId, actor.orgId, actor.membershipId))) {
+    if (
+      !(await this.isMember(
+        rawParent.channelId,
+        actor.orgId,
+        actor.membershipId,
+      ))
+    ) {
       const parentChannel = await this.db.query.chatChannels.findFirst({
-        where: and(eq(chatChannels.id, rawParent.channelId), eq(chatChannels.orgId, actor.orgId)),
+        where: and(
+          eq(chatChannels.id, rawParent.channelId),
+          eq(chatChannels.orgId, actor.orgId),
+        ),
         columns: { type: true },
       });
-      if (parentChannel?.type !== "PUBLIC") throw new NotFoundException("Message not found");
+      if (parentChannel?.type !== "PUBLIC")
+        throw new NotFoundException("Message not found");
       throw new ForbiddenException("You are not a member of this channel");
     }
 
     const safeLimit = Math.min(Math.max(1, limit), 100);
-    const conditions = [eq(chatMessages.orgId, actor.orgId), eq(chatMessages.replyToId, parentMessageId)];
+    const conditions = [
+      eq(chatMessages.orgId, actor.orgId),
+      eq(chatMessages.replyToId, parentMessageId),
+    ];
     if (cursor) conditions.push(lt(chatMessages.channelPosition, cursor));
 
     const rawReplies = await this.db.query.chatMessages.findMany({
@@ -212,24 +281,38 @@ export class ChatMessageTimelineService {
       limit: safeLimit + 1,
       with: {
         attachments: true,
-        replyTo: true,
+        senderMembership: { columns: { userId: true } },
+        replyTo: {
+          with: { senderMembership: { columns: { userId: true } } },
+        },
       },
     });
 
     const senderIds = new Set<string>();
-    senderIds.add(rawParent.senderId);
-    if (rawParent.replyTo?.senderId) senderIds.add(rawParent.replyTo.senderId);
-    const page = buildIdCursorPage(rawReplies, safeLimit, (r) => r.channelPosition);
+    if (rawParent.senderMembership?.userId)
+      senderIds.add(rawParent.senderMembership.userId);
+    if (rawParent.replyTo?.senderMembership?.userId)
+      senderIds.add(rawParent.replyTo.senderMembership.userId);
+    const page = buildIdCursorPage(
+      rawReplies,
+      safeLimit,
+      (r) => r.channelPosition,
+    );
     for (const r of page.data) {
-      senderIds.add(r.senderId);
-      if (r.replyTo?.senderId) senderIds.add(r.replyTo.senderId);
+      if (r.senderMembership?.userId) senderIds.add(r.senderMembership.userId);
+      if (r.replyTo?.senderMembership?.userId)
+        senderIds.add(r.replyTo.senderMembership.userId);
     }
 
     const identities = await this.resolveIdentities(actor.orgId, senderIds);
     const parentMessage = this.enrich(rawParent, identities);
-    const enrichedReplies = page.data.reverse().map((r) => this.enrich(r, identities));
+    const enrichedReplies = page.data
+      .reverse()
+      .map((r) => this.enrich(r, identities));
 
-    const [resolvedParent] = await this.withResolvedReferences(actor, [parentMessage]);
+    const [resolvedParent] = await this.withResolvedReferences(actor, [
+      parentMessage,
+    ]);
     return {
       parentMessage: resolvedParent ?? parentMessage,
       replies: await this.withResolvedReferences(actor, enrichedReplies),

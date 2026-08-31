@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, lt, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.types";
 import {
@@ -15,7 +15,8 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { assertPayrollPayeeEligible } from "../lib/payroll-payee-eligibility";
-import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { buildCursorPage, buildIdCursorPage, decodeCursor, type CursorPage, type IdCursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 const BATCH_LIST_CAP = 100;
 
@@ -73,13 +74,7 @@ export class PayoutBatchesService {
       : [eq(payrollBankBatches.orgId, orgId)];
 
     const cursorCondition = pos
-      ? or(
-          lt(payrollBankBatches.generatedAt, new Date(pos.sortValue)),
-          and(
-            eq(payrollBankBatches.generatedAt, new Date(pos.sortValue)),
-            lt(payrollBankBatches.id, Number(pos.id)),
-          ),
-        )
+      ? keysetBeforeId(payrollBankBatches.generatedAt, payrollBankBatches.id, pos)
       : undefined;
 
     const conditions = cursorCondition ? [...baseConditions, cursorCondition] : baseConditions;
@@ -110,7 +105,13 @@ export class PayoutBatchesService {
     }));
   }
 
-  async getBatch(orgId: string, batchId: number) {
+  async getBatch(
+    orgId: string,
+    batchId: number,
+    itemCursor?: number,
+    itemLimit = 100,
+  ): Promise<{ batch: BatchRow; items: IdCursorPage<BatchItemRow> }> {
+    const pageLimit = Math.min(itemLimit, 100);
     const batch = await this.db
       .select({
         id: payrollBankBatches.id,
@@ -132,7 +133,7 @@ export class PayoutBatchesService {
 
     if (!batch[0]) throw new NotFoundException("Batch not found");
 
-    const items = await this.db
+    const itemRows = await this.db
       .select({
         id: payrollBankBatchItems.id,
         orgId: payrollBankBatchItems.orgId,
@@ -149,9 +150,18 @@ export class PayoutBatchesService {
         paidAt: payrollBankBatchItems.paidAt,
       })
       .from(payrollBankBatchItems)
-      .where(and(eq(payrollBankBatchItems.batchId, batchId), eq(payrollBankBatchItems.orgId, orgId)));
+      .where(
+        itemCursor !== undefined
+          ? and(eq(payrollBankBatchItems.batchId, batchId), eq(payrollBankBatchItems.orgId, orgId), gt(payrollBankBatchItems.id, itemCursor))
+          : and(eq(payrollBankBatchItems.batchId, batchId), eq(payrollBankBatchItems.orgId, orgId)),
+      )
+      .orderBy(asc(payrollBankBatchItems.id))
+      .limit(pageLimit + 1);
 
-    return { batch: batch[0] as BatchRow, items: items as BatchItemRow[] };
+    return {
+      batch: batch[0] as BatchRow,
+      items: buildIdCursorPage(itemRows as BatchItemRow[], pageLimit, (row) => row.id),
+    };
   }
 
   async getFile(orgId: string, batchId: number) {

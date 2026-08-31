@@ -13,8 +13,7 @@ ALTER TABLE chat_messages
   DROP CONSTRAINT IF EXISTS chat_messages_sender_id_users_id_fk;
 --> statement-breakpoint
 
-ALTER TABLE chat_messages
-  DROP INDEX IF EXISTS idx_chat_messages_sender;
+DROP INDEX IF EXISTS idx_chat_messages_sender;
 --> statement-breakpoint
 
 ALTER TABLE chat_messages

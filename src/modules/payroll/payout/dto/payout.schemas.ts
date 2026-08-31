@@ -38,6 +38,12 @@ export const batchesQuerySchema = z.object({
 }).strict();
 export type BatchesQueryInput = z.infer<typeof batchesQuerySchema>;
 
+export const batchDetailQuerySchema = z.object({
+  itemCursor: z.coerce.number().int().positive().optional(),
+  itemLimit: z.coerce.number().int().min(1).max(100).optional().default(100),
+}).strict();
+export type BatchDetailQueryInput = z.infer<typeof batchDetailQuerySchema>;
+
 export const markItemPaidSchema = z.object({
   transactionRef: z.string().min(1).max(100),
 });

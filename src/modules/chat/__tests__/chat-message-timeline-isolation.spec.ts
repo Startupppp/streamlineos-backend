@@ -149,7 +149,7 @@ describe("ChatMessageTimelineService — cross-tenant isolation", () => {
     });
 
     it("CONTROL: member of org-a can read thread replies in their channel", async () => {
-      db.query.chatMessages.findFirst.mockResolvedValue({ id: MESSAGE_ID, channelId: CHANNEL_ID, senderId: USER_A, replyTo: null });
+      db.query.chatMessages.findFirst.mockResolvedValue({ id: MESSAGE_ID, channelId: CHANNEL_ID, senderMembership: { userId: USER_A }, replyTo: null });
       db.query.chatChannelMembers.findFirst.mockResolvedValue({ id: MEMBERSHIP_A });
       db.query.chatMessages.findMany.mockResolvedValue([]);
       const actor = makeActor(ORG_A);

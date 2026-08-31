@@ -23,12 +23,14 @@ import { BatchCreatorService } from "./batch-creator.service";
 import { BatchStatusService } from "./batch-status.service";
 import { PayoutValidationService } from "./payout-validation.service";
 import {
+  batchDetailQuerySchema,
   batchesQuerySchema,
   createBatchSchema,
   markBatchPaidSchema,
   markItemFailedSchema,
   markItemPaidSchema,
   bankReturnImportSchema,
+  type BatchDetailQueryInput,
   type BatchesQueryInput,
   type CreateBatchInput,
   type MarkBatchPaidInput,
@@ -98,12 +100,13 @@ export class PayoutBatchesController {
 
   @Get("batches/:batchId")
   @RequirePermission("payroll:bank:manage")
-  @Validate({ params: batchIdParams })
+  @Validate({ params: batchIdParams, query: batchDetailQuerySchema })
   getBatch(
     @Param("batchId", ParseIntPipe) batchId: number,
+    @Query() query: BatchDetailQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.batches.getBatch(u.orgId, batchId);
+    return this.batches.getBatch(u.orgId, batchId, query.itemCursor, query.itemLimit);
   }
 
   @Get("batches/:batchId/file")

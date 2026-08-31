@@ -151,20 +151,6 @@ describe("ChatHuddlesService", () => {
     });
   });
 
-  describe("setMute", () => {
-    it("throws NotFoundException if huddle inactive", async () => {
-      mockDb.query.chatHuddles.findFirst.mockResolvedValue(null);
-      await expect(service.setMute(1, "user1", true, "org1")).rejects.toThrow(NotFoundException);
-    });
-  });
-
-  describe("setDeafen", () => {
-    it("throws NotFoundException if huddle not found", async () => {
-      mockDb.query.chatHuddles.findFirst.mockResolvedValue(null);
-      await expect(service.setDeafen(1, "user1", "org1", true)).rejects.toThrow(NotFoundException);
-    });
-  });
-
   describe("joinHuddle", () => {
     it("throws NotFoundException if huddle not found or inactive", async () => {
       mockDb.query.chatHuddles.findFirst.mockResolvedValue(null);

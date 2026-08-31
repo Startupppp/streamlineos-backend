@@ -191,25 +191,26 @@ export class ChatChannelsService {
         .selectDistinctOn([chatMessages.channelId], {
           channelId: chatMessages.channelId,
           content: chatMessages.content,
-          senderId: chatMessages.senderId,
+          senderUserId: organizationMembers.userId,
           createdAt: chatMessages.createdAt,
         })
         .from(chatMessages)
+        .leftJoin(organizationMembers, eq(organizationMembers.id, chatMessages.senderMembershipId))
         .where(
           and(inArray(chatMessages.channelId, channelIds), eq(chatMessages.isDeleted, false)),
         )
         .orderBy(chatMessages.channelId, desc(chatMessages.createdAt));
 
-      const lastMsgSenderIds = [...new Set(lastMessageRows.map((r) => r.senderId).filter((id): id is string => id !== null))];
+      const lastMsgSenderIds = [...new Set(lastMessageRows.map((r) => r.senderUserId).filter((id): id is string => id !== null))];
       const senderIdentities = await resolvePeopleIdentities(
         this.db,
         orgId,
-        lastMsgSenderIds.map((userId) => ({ kind: "user" as const, userId })),
+        lastMsgSenderIds.map((uid) => ({ kind: "user" as const, userId: uid })),
       );
 
       const lastMsgMap = new Map(
         lastMessageRows.map((r) => {
-          const identity = r.senderId ? senderIdentities.get(subjectKey({ kind: "user", userId: r.senderId })) : undefined;
+          const identity = r.senderUserId ? senderIdentities.get(subjectKey({ kind: "user", userId: r.senderUserId })) : undefined;
           const parts = [identity?.firstName, identity?.lastName].filter(Boolean).join(" ");
           const senderName = identity?.displayName ?? (parts || null);
           return [r.channelId, { content: r.content, senderName, createdAt: r.createdAt }];
@@ -326,7 +327,6 @@ export class ChatChannelsService {
               ? (currentUser?.name ?? "You")
               : `${currentUser?.name ?? "User"} & ${targetUser?.name ?? "User"}`,
             type: "DIRECT",
-            createdBy: userId,
             createdByMembershipId: creatorMembershipId,
           })
           .returning();
@@ -370,7 +370,6 @@ export class ChatChannelsService {
           type: channelType,
           description,
           avatarUrl,
-          createdBy: userId,
           createdByMembershipId: creatorMembershipId,
           isPrivate,
           ...(entityType ? { entityType } : {}),
@@ -433,7 +432,6 @@ export class ChatChannelsService {
           orgId: actor.orgId,
           name: resolution.card.title,
           type: "GROUP",
-          createdBy: actor.userId,
           createdByMembershipId: actor.membershipId,
           entityType,
           entityId,

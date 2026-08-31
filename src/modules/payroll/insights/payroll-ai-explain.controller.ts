@@ -16,6 +16,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PayrollAiExplainService } from "./payroll-ai-explain.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const publicationIdParams = z.object({ publicationId: z.coerce.number().int().positive() }).strict();
@@ -33,6 +34,7 @@ export class PayrollAiExplainController {
   }
 
   @Post(":publicationId/ai/explain")
+  @BodylessAction()
   @HttpCode(200)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")

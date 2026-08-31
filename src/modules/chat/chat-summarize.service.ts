@@ -47,12 +47,12 @@ export class ChatSummarizeService {
         id: chatMessages.id,
         content: chatMessages.content,
         createdAt: chatMessages.createdAt,
-        senderId: chatMessages.senderId,
         senderName: users.name,
         senderEmail: users.email,
       })
       .from(chatMessages)
-      .leftJoin(users, eq(chatMessages.senderId, users.id))
+      .leftJoin(organizationMembers, eq(organizationMembers.id, chatMessages.senderMembershipId))
+      .leftJoin(users, eq(users.id, organizationMembers.userId))
       .where(
         and(
           eq(chatMessages.orgId, actor.orgId),
@@ -69,7 +69,7 @@ export class ChatSummarizeService {
 
     const transcript = chronological
       .map((row) => {
-        const sender = row.senderName ?? row.senderEmail ?? row.senderId;
+        const sender = row.senderName ?? row.senderEmail ?? "Unknown";
         const ts = row.createdAt.toISOString();
         const content = row.content ?? "";
         return `[${sender}, ${ts}]: ${content}`;

@@ -209,14 +209,16 @@ export class EssSelfServiceService {
       bankCountry: body.bankCountry,
     };
 
-    await syncCanonicalSensitiveFields(this.db, orgId, userId, { bankDetails: stored });
-    await this.db.insert(auditLogs).values({
-      action: "bank_details.updated",
-      userId,
-      orgId,
-      actorUserId: userId,
-      resourceType: "user",
-      resourceId: userId,
+    await this.db.transaction(async (tx) => {
+      await syncCanonicalSensitiveFields(tx, orgId, userId, { bankDetails: stored });
+      await tx.insert(auditLogs).values({
+        action: "bank_details.updated",
+        userId,
+        orgId,
+        actorUserId: userId,
+        resourceType: "user",
+        resourceId: userId,
+      });
     });
     return { updated: true };
   }

@@ -49,21 +49,34 @@ export class ChatSearchService {
     if (cursor) conditions.push(lt(chatMessages.id, cursor));
     if (from) conditions.push(gte(chatMessages.createdAt, new Date(from)));
     if (to) conditions.push(lte(chatMessages.createdAt, new Date(to)));
-    if (sender) conditions.push(eq(chatMessages.senderId, sender));
+    if (sender)
+      conditions.push(
+        sql`EXISTS (SELECT 1 FROM ${organizationMembers} om
+                    WHERE om.id = ${chatMessages.senderMembershipId}
+                      AND om.org_id = ${orgId}
+                      AND om.user_id = ${sender})`,
+      );
 
     const rows = await this.db.query.chatMessages.findMany({
       where: and(...conditions),
       orderBy: [desc(chatMessages.id)],
       limit: limit + 1,
       with: {
-        sender: { columns: { id: true, name: true, image: true } },
+        senderMembership: {
+          columns: {},
+          with: { user: { columns: { id: true, name: true, image: true } } },
+        },
         channel: { columns: { id: true, name: true, type: true } },
       },
     });
 
     const hasMore = rows.length > limit;
     if (hasMore) rows.pop();
-    const results = await this.entities.withResolvedReferences(actor, rows);
+    const resolved = await this.entities.withResolvedReferences(actor, rows);
+    const results = resolved.map((row) => ({
+      ...row,
+      sender: row.senderMembership?.user ?? null,
+    }));
     return { results, nextCursor: hasMore ? rows[rows.length - 1]?.id : undefined };
   }
 

@@ -20,6 +20,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PayrollJobsService, type PayrollJobType } from "./payroll-jobs.service";
 import { PayrollJobsWorkerService } from "./payroll-jobs-worker.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { listJobsQuerySchema, enqueueJobSchema, type ListJobsQuery, type EnqueueJobInput } from "./dto/jobs.schemas";
 
 const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
@@ -84,6 +85,7 @@ export class PayrollJobsController {
   }
 
   @Post(":jobId/retry")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
   @Validate({ params: jobIdParams })

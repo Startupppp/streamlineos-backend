@@ -10,7 +10,7 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 const persisted: PersistedMessage = {
   id: 1,
   channelId: 1,
-  senderId: "sender",
+  senderMembershipId: null,
   content: "hello @alex",
   createdAt: new Date(),
   replyToId: null,
@@ -174,6 +174,7 @@ describe("ChatMessageFanoutService", () => {
     attachments: [],
     senderName: "Sender",
     senderImage: null,
+    senderUserId: "sender",
   };
 
   it("publishes the message to realtime", async () => {
@@ -208,7 +209,7 @@ describe("ChatMessageFanoutService", () => {
     expect(notifications.publishNewMessageNotification).toHaveBeenCalledWith(
       "org-1",
       1,
-      { id: 1, senderId: "sender", senderName: "Sender" },
+      { id: 1, senderUserId: "sender", senderName: "Sender" },
       "DIRECT",
       "chat-message:org-1:1:dm_notification",
     );

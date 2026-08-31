@@ -11,6 +11,7 @@ import { AssetInventoryController } from "./asset-inventory.controller";
 import { BackgroundVerificationController } from "./background-verification.controller";
 import { AccessRequestsController } from "./access-requests.controller";
 import { EmployeesService } from "./employees.service";
+import { EmployeeAnalyticsService } from "./employee-analytics.service";
 import { EmployeeMutationsService } from "./employee-mutations.service";
 import { EmployeeOnboardingService } from "./employee-onboarding.service";
 import { EmployeeBulkOnboardingService } from "./employee-bulk-onboarding.service";
@@ -49,6 +50,7 @@ import { NotificationsModule } from "../../notifications/notifications.module";
   ],
   providers: [
     EmployeesService,
+    EmployeeAnalyticsService,
     EmployeeMutationsService,
     EmployeeOnboardingService,
     EmployeeBulkOnboardingService,

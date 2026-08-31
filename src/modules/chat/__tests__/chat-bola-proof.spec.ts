@@ -459,32 +459,31 @@ describe("Chat controllers hand the service an actor that carries the membership
 });
 
 // ---------------------------------------------------------------------------
-// Departed-member display: messages keep sender_id and users join succeeds
+// Departed-member display: null senderMembershipId renders gracefully
+// After the actor cutover, senderId is dropped. Identity resolves only via
+// senderMembership.userId; a null senderMembershipId yields a null sender,
+// never a crash.
 // ---------------------------------------------------------------------------
 
-describe("Departed-member display: sender identity preserved after departure", () => {
-  it("sender_id FK to users survives membership removal — display does not fail", () => {
-    const SENDER_ID = "user-departed";
-    const messageRow = {
-      id: 1,
-      orgId: ORG_OWNER,
-      channelId: CHANNEL_ID,
-      senderId: SENDER_ID,
-      senderMembershipId: null,
-      content: "hello from the past",
-      isDeleted: false,
-    };
-    const userRow = { id: SENDER_ID, name: "Former Employee", image: null };
-
-    expect(messageRow.senderId).toBe(SENDER_ID);
-    expect(userRow.id).toBe(messageRow.senderId);
-    expect(messageRow.senderMembershipId).toBeNull();
+describe("Departed-member display: null senderMembershipId renders gracefully", () => {
+  it("a null senderMembershipId produces a null sender identity without throwing", () => {
+    const rows: Array<{ senderMembership: { userId: string } | null; content: string }> = [
+      { senderMembership: null, content: "hello from the past" },
+    ];
+    const senderIds = new Set<string>();
+    for (const r of rows)
+      if (r.senderMembership?.userId) senderIds.add(r.senderMembership.userId);
+    expect(senderIds.size).toBe(0);
   });
 
-  it("a null senderMembershipId does not crash display — fallback to users table is safe", () => {
-    const rows = [{ senderId: "user-a", senderMembershipId: null, content: "hi" }];
-    const senderNames = rows.map((r) => (r.senderMembershipId === null ? "via users" : "via membership"));
-    expect(senderNames).toEqual(["via users"]);
+  it("a populated senderMembership yields a userId for identity resolution", () => {
+    const rows: Array<{ senderMembership: { userId: string } | null; content: string }> = [
+      { senderMembership: { userId: "user-a" }, content: "hi" },
+    ];
+    const senderIds = new Set<string>();
+    for (const r of rows)
+      if (r.senderMembership?.userId) senderIds.add(r.senderMembership.userId);
+    expect([...senderIds]).toEqual(["user-a"]);
   });
 });
 

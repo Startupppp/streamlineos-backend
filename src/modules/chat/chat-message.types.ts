@@ -1,7 +1,7 @@
 export type PersistedMessage = {
   id: number;
   channelId: number;
-  senderId: string;
+  senderMembershipId: number | null;
   content: string | null;
   createdAt: Date;
   replyToId: number | null;

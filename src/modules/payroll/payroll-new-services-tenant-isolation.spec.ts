@@ -48,8 +48,21 @@ function makeDb(rows: unknown[]) {
       }),
     }),
     execute: jest.fn().mockResolvedValue(rows),
-    transaction: jest.fn().mockImplementation((fn: (tx: Db) => Promise<unknown>) => fn({ select: jest.fn().mockReturnValue(builder), query: queryProxy } as unknown as Db)),
+    transaction: jest.fn(),
   } as unknown as Db;
+  const dbSurface = db as unknown as Record<string, unknown>;
+  dbSurface["transaction"] = jest
+    .fn()
+    .mockImplementation((fn: (tx: Db) => Promise<unknown>) =>
+      fn({
+        select: jest.fn().mockReturnValue(builder),
+        query: queryProxy,
+        insert: dbSurface["insert"],
+        update: dbSurface["update"],
+        delete: dbSurface["delete"],
+        execute: dbSurface["execute"],
+      } as unknown as Db),
+    );
   return { db, where, findMany, findFirst };
 }
 

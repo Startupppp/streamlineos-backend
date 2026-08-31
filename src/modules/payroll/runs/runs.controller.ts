@@ -91,7 +91,7 @@ export class RunsController {
         throw new ConflictException(msg);
       }
 
-      const generated = await this.generateService.generateRun(u.orgId, result.runId, u.userId, false);
+      const generated = await this.generateService.generateRun({ orgId: u.orgId, runId: result.runId, actorId: u.userId, isRecalc: false });
       const response =
         generated.ok
           ? { runId: result.runId, correlationId: begin.correlationId }
@@ -180,7 +180,7 @@ export class RunsController {
     }
 
     try {
-      const result = await this.generateService.generateRun(u.orgId, runId, u.userId, isRecalc);
+      const result = await this.generateService.generateRun({ orgId: u.orgId, runId, actorId: u.userId, isRecalc });
       if (!result.ok) {
         await this.receipts.fail(begin.receiptId, result.reason);
         if (result.reason === "not_found") throw new NotFoundException("Payroll run not found");
@@ -198,7 +198,6 @@ export class RunsController {
       await this.receipts.succeed(begin.receiptId, response);
       return response;
     } catch (err) {
-      // fail already called on known result.ok=false paths; catch unexpected
       if (!(err instanceof NotFoundException || err instanceof BadRequestException || err instanceof ConflictException)) {
         await this.receipts.fail(begin.receiptId, err instanceof Error ? err.message : "generate failed");
       }
