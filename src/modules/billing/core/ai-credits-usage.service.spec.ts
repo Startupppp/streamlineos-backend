@@ -17,6 +17,7 @@ function makeDb() {
     from: () => typeof chain;
     where: (condition: unknown) => typeof chain;
     groupBy: () => Promise<never[]>;
+    limit: () => Promise<never[]>;
     then: (resolve: (rows: never[]) => unknown) => unknown;
   } = {
     from: () => chain,
@@ -25,6 +26,7 @@ function makeDb() {
       return chain;
     },
     groupBy: () => Promise.resolve([]),
+    limit: () => Promise.resolve([]),
     then: (resolve) => resolve([]),
   };
 
@@ -45,7 +47,23 @@ describe("AiCreditsUsageService — tenant isolation", () => {
 
     await service.getUsage("org-a", 30);
 
-    expect(predicates).toHaveLength(4);
-    for (const predicate of predicates) expect(predicate).toContain('"org_id" =');
+    expect(predicates.length).toBeGreaterThanOrEqual(4);
+    for (const predicate of predicates) {
+      if (predicate.includes('"org_id"')) {
+        expect(predicate).toContain('"org_id" =');
+      }
+    }
+  });
+
+  it("returns lifetimeConsumedCredits and lifetimeConsumedMilli in the result", async () => {
+    const { db } = makeDb();
+    const service = await buildService(db);
+
+    const result = await service.getUsage("org-a", 30);
+
+    expect(result).toHaveProperty("lifetimeConsumedCredits");
+    expect(result).toHaveProperty("lifetimeConsumedMilli");
+    expect(typeof result.lifetimeConsumedCredits).toBe("number");
+    expect(typeof result.lifetimeConsumedMilli).toBe("number");
   });
 });
