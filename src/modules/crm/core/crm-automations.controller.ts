@@ -31,6 +31,7 @@ import {
 } from "../automation-studio/dto/automation-studio.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 
@@ -97,6 +98,7 @@ export class CrmAutomationsController {
   @Patch("automations/:ruleId/enable")
   @RequirePermission("crm:automations:manage")
   @Validate({ params: ruleIdParams })
+  @BodylessAction()
   enable(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -107,6 +109,7 @@ export class CrmAutomationsController {
   @Patch("automations/:ruleId/disable")
   @RequirePermission("crm:automations:manage")
   @Validate({ params: ruleIdParams })
+  @BodylessAction()
   disable(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,

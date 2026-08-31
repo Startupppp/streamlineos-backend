@@ -173,6 +173,11 @@ export type UpdateFieldInput = z.infer<typeof updateFieldSchema>;
 
 // ---- Templates ----
 
+export const createFromEnvelopeBodySchema = z.object({
+  name: z.string().min(1).max(200),
+}).strict();
+export type CreateFromEnvelopeBodyInput = z.infer<typeof createFromEnvelopeBodySchema>;
+
 export const createTemplateSchema = z.object({
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(2000).optional(),

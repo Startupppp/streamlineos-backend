@@ -61,18 +61,14 @@ export class ChatSavedService {
     });
     if (!message) throw new NotFoundException("Message not found");
 
-    const channelMemberWhere = actor.membershipId
-      ? and(
-          eq(chatChannelMembers.orgId, actor.orgId),
-          eq(chatChannelMembers.channelId, message.channelId),
-          eq(chatChannelMembers.membershipId, actor.membershipId),
-        )
-      : and(
-          eq(chatChannelMembers.orgId, actor.orgId),
-          eq(chatChannelMembers.channelId, message.channelId),
-          eq(chatChannelMembers.userId, actor.userId),
-        );
-    const membership = await this.db.query.chatChannelMembers.findFirst({ where: channelMemberWhere });
+    if (!actor.membershipId) throw new ForbiddenException("Access denied");
+    const membership = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
+        eq(chatChannelMembers.orgId, actor.orgId),
+        eq(chatChannelMembers.channelId, message.channelId),
+        eq(chatChannelMembers.membershipId, actor.membershipId),
+      ),
+    });
     if (!membership) throw new ForbiddenException("Access denied");
 
     await this.db.insert(chatSavedMessages).values({

@@ -10,6 +10,7 @@ import {
   WorkflowScheduleTickService,
   type SchedulesTickResult,
 } from "./workflow-schedule-tick.service";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const SCHEDULES_TICK_WINDOW_SECONDS = 55;
 
@@ -23,6 +24,7 @@ export class WorkflowsCronController {
   ) {}
 
   @Post("workflow-executions-sweep")
+  @BodylessAction()
   sweep(
     @Headers("authorization") authorization: string | undefined,
   ): Promise<WorkflowSweepResult> {
@@ -31,6 +33,7 @@ export class WorkflowsCronController {
   }
 
   @Post("workflow-schedules-tick")
+  @BodylessAction()
   async schedulesTick(
     @Headers("authorization") authorization: string | undefined,
   ): Promise<SchedulesTickResult | { skipped: true }> {

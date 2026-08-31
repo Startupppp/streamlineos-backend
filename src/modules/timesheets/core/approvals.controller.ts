@@ -31,6 +31,7 @@ import {
 } from "./dto/approvals.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
@@ -82,6 +83,7 @@ export class ApprovalsController {
   @RequirePermission("timesheets:approvals:manage")
   @Idempotent("timesheets.approval.approve")
   @Validate({ params: periodIdParams })
+  @BodylessAction()
   approve(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,

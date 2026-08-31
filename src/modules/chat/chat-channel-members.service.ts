@@ -85,27 +85,36 @@ export class ChatChannelMembersService {
       with: {
         members: {
           with: {
-            user: { columns: { id: true, name: true, image: true, email: true } },
+            membership: {
+              columns: { id: true, userId: true, role: true },
+              with: { user: { columns: { id: true, name: true, image: true, email: true } } },
+            },
           },
         },
       },
     });
 
-    return channel ?? null;
+    if (!channel) return null;
+    return {
+      ...channel,
+      members: channel.members.map((m) => ({ ...m, user: m.membership?.user ?? null })),
+    };
   }
 
   async listMembers(channelId: number, userId: string, orgId: string) {
     await this.assertMember(channelId, userId, orgId);
 
-    return this.db.query.chatChannelMembers.findMany({
+    const rows = await this.db.query.chatChannelMembers.findMany({
       where: and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)),
       limit: 100,
       with: {
-        user: {
-          columns: { id: true, name: true, image: true, email: true },
+        membership: {
+          columns: { id: true, userId: true, role: true },
+          with: { user: { columns: { id: true, name: true, image: true, email: true } } },
         },
       },
     });
+    return rows.map((m) => ({ ...m, user: m.membership?.user ?? null }));
   }
 
   async addMember(channelId: number, targetUserId: string, requesterId: string, orgId: string) {
@@ -127,7 +136,6 @@ export class ChatChannelMembersService {
     await this.db.insert(chatChannelMembers).values({
       orgId,
       channelId,
-      userId: targetUserId,
       membershipId: targetMembershipId,
       role: "MEMBER",
     });
@@ -141,28 +149,24 @@ export class ChatChannelMembersService {
     if (requesterId !== targetUserId && role !== "ADMIN")
       throw new ForbiddenException("Only channel admins can remove other members");
 
+    const targetMembershipId = await this.resolveMembership(orgId, targetUserId);
     const targetRow = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.orgId, orgId),
         eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.userId, targetUserId),
+        eq(chatChannelMembers.membershipId, targetMembershipId),
       ),
-      columns: { id: true, membershipId: true },
+      columns: { id: true },
     });
 
     if (targetRow) {
-      const deleteWhere = targetRow.membershipId
-        ? and(
-            eq(chatChannelMembers.orgId, orgId),
-            eq(chatChannelMembers.channelId, channelId),
-            eq(chatChannelMembers.membershipId, targetRow.membershipId),
-          )
-        : and(
-            eq(chatChannelMembers.orgId, orgId),
-            eq(chatChannelMembers.channelId, channelId),
-            eq(chatChannelMembers.userId, targetUserId),
-          );
-      await this.db.delete(chatChannelMembers).where(deleteWhere);
+      await this.db.delete(chatChannelMembers).where(
+        and(
+          eq(chatChannelMembers.orgId, orgId),
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.membershipId, targetMembershipId),
+        ),
+      );
     }
 
     void this.ably
@@ -236,7 +240,6 @@ export class ChatChannelMembersService {
     await this.db.insert(chatChannelMembers).values({
       orgId: actor.orgId,
       channelId,
-      userId: actor.userId,
       membershipId: actorMembershipId,
       role: "MEMBER",
     });
@@ -475,30 +478,25 @@ export class ChatChannelMembersService {
     });
     if (!requester || requester.role !== "ADMIN") throw new ForbiddenException("Only admins can change roles");
 
+    const targetMembershipId = await this.resolveMembership(orgId, targetUserId);
     const targetRow = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.orgId, orgId),
         eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.userId, targetUserId),
+        eq(chatChannelMembers.membershipId, targetMembershipId),
       ),
-      columns: { id: true, membershipId: true },
+      columns: { id: true },
     });
 
     if (!targetRow) return { ok: true };
 
-    const updateWhere = targetRow.membershipId
-      ? and(
-          eq(chatChannelMembers.orgId, orgId),
-          eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.membershipId, targetRow.membershipId),
-        )
-      : and(
-          eq(chatChannelMembers.orgId, orgId),
-          eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, targetUserId),
-        );
-
-    await this.db.update(chatChannelMembers).set({ role }).where(updateWhere);
+    await this.db.update(chatChannelMembers).set({ role }).where(
+      and(
+        eq(chatChannelMembers.orgId, orgId),
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.membershipId, targetMembershipId),
+      ),
+    );
     return { ok: true };
   }
 }

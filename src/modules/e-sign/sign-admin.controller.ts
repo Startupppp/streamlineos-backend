@@ -17,6 +17,7 @@ import {
   type UpdateSignSettingsInput,
   type WatermarkPolicyInput,
 } from "./dto/e-sign.schemas";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 const updateWatermarkPolicyBodySchema = watermarkPolicyInputSchema.partial();
@@ -86,6 +87,7 @@ export class SignAdminController {
 
   @Post("run-reminder-sweep")
   @RequirePermission("sign:admin:manage")
+  @BodylessAction()
   async runReminderSweep() {
     const remindedCount = await this.envelopes.runReminderSweep();
     return { remindedCount };
@@ -93,6 +95,7 @@ export class SignAdminController {
 
   @Post("run-expiration-sweep")
   @RequirePermission("sign:admin:manage")
+  @BodylessAction()
   async runExpirationSweep() {
     const expiredCount = await this.envelopes.runExpirationSweep();
     return { expiredCount };

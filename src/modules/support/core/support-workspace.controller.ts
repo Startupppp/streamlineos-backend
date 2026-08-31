@@ -32,6 +32,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const queueIdParams = z.object({ queueId: z.coerce.number().int().positive() }).strict();
 const viewIdParams = z.object({ viewId: z.coerce.number().int().positive() }).strict();
@@ -145,6 +146,7 @@ export class SupportWorkspaceController {
   @RequirePermission("support:tickets:manage")
   @HttpCode(200)
   @Validate({ params: ticketAndTagIdParams })
+  @BodylessAction()
   attachTag(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Param("tagId", ParseIntPipe) tagId: number,
@@ -178,6 +180,7 @@ export class SupportWorkspaceController {
   @RequirePermission("support:tickets:view")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @BodylessAction()
   follow(@Param("supportTicketId", ParseIntPipe) supportTicketId: number, @CurrentUser() u: CurrentUserContext) {
     return this.workspace.follow(u.orgId, supportTicketId, u.userId);
   }

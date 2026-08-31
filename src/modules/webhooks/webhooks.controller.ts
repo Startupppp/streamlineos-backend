@@ -32,6 +32,7 @@ import {
 } from "./dto/webhook.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const webhookIdParams = z.object({ webhookId: z.coerce.number().int().positive() }).strict();
 const webhookIdlogIdParams = z.object({ webhookId: z.coerce.number().int().positive(), logId: z.coerce.number().int().positive() }).strict();
@@ -72,6 +73,7 @@ export class WebhooksController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:webhooks:manage")
   @Validate({ params: webhookIdParams })
+  @BodylessAction()
   rotateSecret(
     @Param("webhookId", ParseIntPipe) webhookId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -139,6 +141,7 @@ export class WebhooksController {
   @RequirePermission("settings:webhooks:manage")
   @Idempotent("webhook.delivery.retry")
   @Validate({ params: webhookIdlogIdParams })
+  @BodylessAction()
   async retryLog(
     @Param("webhookId", ParseIntPipe) webhookId: number,
     @Param("logId", ParseIntPipe) logId: number,

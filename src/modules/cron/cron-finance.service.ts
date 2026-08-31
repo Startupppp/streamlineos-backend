@@ -72,9 +72,9 @@ export class CronFinanceService {
     const ranSet = new Set<string>();
     const errors: Array<{ task: string; error: string }> = [];
 
-    await forEachOrg(this.db, "finance-due-checks", async (_tx, _orgId) => {
+    await forEachOrg(this.db, "finance-due-checks", async (_tx, orgId) => {
       try {
-        await this.invoicesWrite.markOverdueInvoices();
+        await this.invoicesWrite.markOverdueInvoices(orgId);
         ranSet.add("mark-overdue-invoices");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -83,7 +83,7 @@ export class CronFinanceService {
       }
 
       try {
-        await this.reminders.processDueReminders();
+        await this.reminders.processDueReminders(orgId);
         ranSet.add("invoice-reminders");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -92,7 +92,7 @@ export class CronFinanceService {
       }
 
       try {
-        await this.billsDueCheck.checkBillsDue();
+        await this.billsDueCheck.checkBillsDue(orgId);
         ranSet.add("bills-due-check");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -101,7 +101,7 @@ export class CronFinanceService {
       }
 
       try {
-        await this.taxCompliance.checkTaxDue();
+        await this.taxCompliance.checkTaxDue(orgId);
         ranSet.add("tax-compliance");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

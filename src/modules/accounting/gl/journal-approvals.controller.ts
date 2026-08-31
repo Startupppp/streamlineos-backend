@@ -10,6 +10,7 @@ import { JournalApprovalsService } from "./journal-approvals.service";
 import { approvalDecisionSchema, type ApprovalDecisionInput } from "./dto/journal-approvals.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
 
@@ -25,6 +26,7 @@ export class JournalApprovalsController {
   @RequirePermission("accounting:journal:create")
   @HttpCode(200)
   @Validate({ params: entryIdParams })
+  @BodylessAction()
   submitForApproval(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,

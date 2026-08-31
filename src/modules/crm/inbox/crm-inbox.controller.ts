@@ -20,6 +20,7 @@ import { CrmInboxService } from "./crm-inbox.service";
 import { snoozeTaskSchema, type SnoozeTaskInput } from "./crm-inbox.dto";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const taskIdParams = z.object({ taskId: z.coerce.number().int().positive() }).strict();
 
@@ -57,6 +58,7 @@ export class CrmInboxController {
   @Post("tasks/:taskId/complete")
   @RequirePermission("crm:tasks:update")
   @Validate({ params: taskIdParams })
+  @BodylessAction()
   async completeTask(
     @Param("taskId", ParseIntPipe) taskId: number,
     @Req() req: Request,

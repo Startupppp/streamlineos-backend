@@ -22,6 +22,7 @@ import {
 } from "./dto/inv-sales-orders.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const soIdParams = z.object({ soId: z.coerce.number().int().positive() }).strict();
 
@@ -86,6 +87,7 @@ export class InvSalesOrdersController {
   @RequirePermission("inventory:sales-orders:confirm")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: soIdParams })
+  @BodylessAction()
   confirm(
     @Param("soId", ParseIntPipe) soId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -154,6 +156,7 @@ export class InvSalesOrdersController {
   @RequirePermission("inventory:sales-orders:invoice")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: soIdParams })
+  @BodylessAction()
   invoice(
     @Param("soId", ParseIntPipe) soId: number,
     @CurrentUser() u: CurrentUserContext,

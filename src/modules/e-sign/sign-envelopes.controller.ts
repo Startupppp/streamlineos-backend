@@ -26,6 +26,7 @@ import {
   type CorrectEnvelopeInput,
   type ExtendExpirationInput,
 } from "./dto/e-sign.schemas";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 function clientIp(req: Request): string | undefined {
   const forwarded = req.headers["x-forwarded-for"];
@@ -94,6 +95,7 @@ export class SignEnvelopesController {
   @Post(":envelopeId/validate")
   @RequirePermission("sign:envelope:create")
   @Validate({ params: envelopeIdParams })
+  @BodylessAction()
   validate(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
     return this.envelopes.validate(u.orgId, envelopeId);
   }
@@ -102,6 +104,7 @@ export class SignEnvelopesController {
   @Idempotent("sign:envelope.send")
   @RequirePermission("sign:envelope:send")
   @Validate({ params: envelopeIdParams })
+  @BodylessAction()
   send(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.envelopes.send(u.orgId, envelopeId, actorFrom(u, req));
   }
@@ -136,6 +139,7 @@ export class SignEnvelopesController {
   @Idempotent("sign:envelope.resend")
   @RequirePermission("sign:envelope:send")
   @Validate({ params: envelopeIdParams })
+  @BodylessAction()
   resend(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.envelopes.resend(u.orgId, envelopeId, actorFrom(u, req));
   }
@@ -144,6 +148,7 @@ export class SignEnvelopesController {
   @Idempotent("sign:envelope.send_reminder")
   @RequirePermission("sign:envelope:send")
   @Validate({ params: envelopeIdParams })
+  @BodylessAction()
   sendReminder(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.envelopes.sendManualReminder(u.orgId, envelopeId, actorFrom(u, req));
   }

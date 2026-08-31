@@ -31,6 +31,7 @@ export interface BuiltDocument {
   contractsApplied: number;
   unconvertible: string[];
   errorResponsesApplied: number;
+  bodylessConflicts: string[];
 }
 
 interface MutableOperation {
@@ -213,6 +214,31 @@ function applyIdempotency(operation: MutableOperation, command: string): void {
   operation["x-idempotent"] = true;
 }
 
+function buildMultipartSchema(multipart: {
+  textSchema?: JsonSchema;
+  fileFields: string[];
+}): JsonSchema {
+  const properties: Record<string, JsonSchema> = {};
+  const required: string[] = [];
+
+  if (multipart.textSchema) {
+    for (const [name, schema] of Object.entries(propertiesOf(multipart.textSchema))) {
+      properties[name] = schema;
+    }
+    for (const name of requiredOf(multipart.textSchema)) {
+      if (name in properties) required.push(name);
+    }
+  }
+
+  for (const field of multipart.fileFields) {
+    properties[field] = { type: "string", format: "binary" };
+  }
+
+  const schema: JsonSchema = { type: "object", properties };
+  if (required.length > 0) schema.required = required;
+  return schema;
+}
+
 export function applyOperationContract(
   method: string,
   operation: MutableOperation,
@@ -224,12 +250,21 @@ export function applyOperationContract(
       content: { "application/json": { schema: contract.body } },
     };
   }
+  if (contract.multipartBody && BODY_METHODS.has(method)) {
+    operation.requestBody = {
+      required: true,
+      content: {
+        "multipart/form-data": { schema: buildMultipartSchema(contract.multipartBody) },
+      },
+    };
+  }
   if (contract.query) applyQuery(operation, contract.query);
   if (contract.params) applyPathParams(operation, contract.params);
   if (contract.idempotencyCommand)
     applyIdempotency(operation, contract.idempotencyCommand);
   if (contract.response) applyResponseSchema(method, operation, contract.response);
   if (contract.bodyless) operation["x-bodyless"] = true;
+  if (contract.bodylessConflict) operation["x-bodyless-conflict"] = true;
 }
 
 function sortRecord<T>(value: Record<string, T>): Record<string, T> {
@@ -248,7 +283,7 @@ export function buildOpenApiDocument(app: INestApplication): BuiltDocument {
 
   const document = SwaggerModule.createDocument(app, config);
   const classification = recordRouteClassification(app, document);
-  const { contracts, unconvertible } = scanOperationContracts(app);
+  const { contracts, unconvertible, bodylessConflicts } = scanOperationContracts(app);
 
   const components = document.components ?? {};
   components.schemas = sortRecord({
@@ -291,5 +326,6 @@ export function buildOpenApiDocument(app: INestApplication): BuiltDocument {
     contractsApplied,
     unconvertible: unconvertible.sort(),
     errorResponsesApplied,
+    bodylessConflicts,
   };
 }

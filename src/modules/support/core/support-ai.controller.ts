@@ -23,6 +23,7 @@ import {
   type UpdateSupportAiSettingsInput,
 } from "./dto/support.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
 const suggestionIdParams = z.object({ suggestionId: z.coerce.number().int().positive() }).strict();
@@ -84,6 +85,7 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @BodylessAction()
   async analyze(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     return this.ai.analyzeTicket(u.orgId, ticketId);
@@ -95,6 +97,7 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @BodylessAction()
   async findDuplicates(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     return this.ai.findDuplicates(u.orgId, ticketId);
@@ -106,6 +109,7 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @BodylessAction()
   async suggestKbArticles(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     return this.ai.suggestKbArticles(u, ticketId);
@@ -117,6 +121,7 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @BodylessAction()
   async suggestReply(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
     return this.ai.suggestReply(u, ticketId);
@@ -128,6 +133,7 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @BodylessAction()
   async suggestMacro(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
     return this.ai.suggestMacro(u.orgId, u.userId, ticketId);
@@ -154,6 +160,7 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @BodylessAction()
   async generateHandoffSummary(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     return this.ai.generateHandoffSummary(u, ticketId);
@@ -165,6 +172,7 @@ export class SupportAiController {
   @UseRateLimit("ai:invoke")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
+  @BodylessAction()
   async findRootCauseCluster(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     return this.ai.findRootCauseCluster(u.orgId, ticketId, u.userId);

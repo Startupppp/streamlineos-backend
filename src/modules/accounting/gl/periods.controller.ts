@@ -9,6 +9,7 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PeriodsService } from "./periods.service";
 import { generatePeriodsSchema, type GeneratePeriodsInput } from "./dto/periods.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
@@ -54,6 +55,7 @@ export class PeriodsController {
   @RequirePermission("accounting:periods:manage")
   @HttpCode(200)
   @Idempotent("accounting.period.close")
+  @BodylessAction()
   @Validate({ params: periodIdParams })
   closePeriod(
     @Param("periodId", ParseIntPipe) periodId: number,
@@ -67,6 +69,7 @@ export class PeriodsController {
   @RequirePermission("accounting:periods:manage")
   @HttpCode(200)
   @Idempotent("accounting.period.lock")
+  @BodylessAction()
   @Validate({ params: periodIdParams })
   lockPeriod(
     @Param("periodId", ParseIntPipe) periodId: number,
@@ -80,6 +83,7 @@ export class PeriodsController {
   @RequirePermission("accounting:periods:reopen")
   @HttpCode(200)
   @Idempotent("accounting.period.reopen")
+  @BodylessAction()
   @Validate({ params: periodIdParams })
   reopenPeriod(
     @Param("periodId", ParseIntPipe) periodId: number,

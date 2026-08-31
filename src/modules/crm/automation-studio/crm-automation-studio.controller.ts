@@ -33,6 +33,7 @@ import {
 } from "./dto/automation-studio.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const sequenceIdParams = z.object({ sequenceId: z.string().min(1) }).strict();
 const sequenceIdstepIdParams = z.object({ sequenceId: z.string().min(1), stepId: z.string().min(1) }).strict();
@@ -167,6 +168,7 @@ export class CrmAutomationStudioController {
   @Patch(":sequenceId/enrollments/:enrollmentId/stop")
   @RequirePermission("crm:sequences:manage")
   @Validate({ params: sequenceIdenrollmentIdParams })
+  @BodylessAction()
   stopEnrollment(
     @Param("sequenceId") sequenceId: string,
     @Param("enrollmentId") enrollmentId: string,

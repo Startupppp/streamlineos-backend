@@ -19,6 +19,7 @@ import {
   type ListSurveysInput,
   type PatchSurveyInput,
 } from "./dto/survey-forms.schemas";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 @Controller("surveys")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -71,6 +72,7 @@ export class SurveysController {
   @Idempotent("surveys.survey.publish")
   @RequirePermission("surveys:publish")
   @Validate({ params: surveyIdParams })
+  @BodylessAction()
   publish(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.forms.publish(u.orgId, surveyId);
   }
@@ -78,6 +80,7 @@ export class SurveysController {
   @Post(":surveyId/pause")
   @RequirePermission("surveys:publish")
   @Validate({ params: surveyIdParams })
+  @BodylessAction()
   pause(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.forms.pause(u.orgId, surveyId);
   }
@@ -85,6 +88,7 @@ export class SurveysController {
   @Post(":surveyId/close")
   @RequirePermission("surveys:publish")
   @Validate({ params: surveyIdParams })
+  @BodylessAction()
   close(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.forms.close(u.orgId, surveyId);
   }
@@ -92,6 +96,7 @@ export class SurveysController {
   @Post(":surveyId/archive")
   @RequirePermission("surveys:delete")
   @Validate({ params: surveyIdParams })
+  @BodylessAction()
   archive(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.forms.archive(u.orgId, surveyId);
   }
@@ -99,6 +104,7 @@ export class SurveysController {
   @Post(":surveyId/duplicate")
   @RequirePermission("surveys:create")
   @Validate({ params: surveyIdParams })
+  @BodylessAction()
   duplicate(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.forms.duplicate(u.orgId, surveyId, u.userId);
   }

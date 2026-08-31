@@ -14,18 +14,14 @@ export class ChatPinsService {
   ) {}
 
   private async assertMember(channelId: number, actor: EntityActor) {
-    const where = actor.membershipId
-      ? and(
-          eq(chatChannelMembers.orgId, actor.orgId),
-          eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.membershipId, actor.membershipId),
-        )
-      : and(
-          eq(chatChannelMembers.orgId, actor.orgId),
-          eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.userId, actor.userId),
-        );
-    const member = await this.db.query.chatChannelMembers.findFirst({ where });
+    if (!actor.membershipId) throw new ForbiddenException("You are not a member of this channel");
+    const member = await this.db.query.chatChannelMembers.findFirst({
+      where: and(
+        eq(chatChannelMembers.orgId, actor.orgId),
+        eq(chatChannelMembers.channelId, channelId),
+        eq(chatChannelMembers.membershipId, actor.membershipId),
+      ),
+    });
     if (!member) throw new ForbiddenException("You are not a member of this channel");
     return member;
   }

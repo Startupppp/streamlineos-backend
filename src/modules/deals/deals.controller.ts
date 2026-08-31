@@ -46,6 +46,7 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
 
@@ -135,6 +136,7 @@ export class DealsController {
   @RequirePermission("crm:deals:create")
   @HttpCode(200)
   @Validate({ params: dealIdParams })
+  @BodylessAction()
   cloneDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,

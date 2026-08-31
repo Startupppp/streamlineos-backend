@@ -29,6 +29,7 @@ import {
   type UpdateActivityInput,
 } from "./dto/activity.schemas";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const activityIdParams = z.object({ activityId: z.string().min(1) }).strict();
 
@@ -107,6 +108,7 @@ export class ActivitiesController {
   @RequirePermission("crm:activities:manage")
   @Idempotent("crm.activity.complete")
   @Validate({ params: activityIdParams })
+  @BodylessAction()
   complete(@CurrentUser() user: CurrentUserContext, @Param("activityId") activityId: string) {
     return this.activities.complete(user.orgId, activityId, {
       kind: "human",

@@ -5,6 +5,7 @@ import { Public } from "../../../common/auth/public.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { BillingService } from "./billing.service";
 
 const orgIdParams = z.object({ orgId: z.string().min(1) }).strict();
@@ -18,6 +19,7 @@ export class RazorpayWebhookController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("billing:webhook")
   @Validate({ params: orgIdParams })
+  @BodylessAction()
   async handle(
     @Param("orgId") orgId: string,
     @Req() req: RawBodyRequest<Request>,

@@ -41,6 +41,7 @@ import {
 import { enrichUserAgent } from "../../common/http/parse-user-agent";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
@@ -101,6 +102,7 @@ export class AuthController {
   @Universal()
   @HttpCode(200)
   @AllowWithoutMfa()
+  @BodylessAction()
   logout(@CurrentUser() u: CurrentUserContext) {
     return this.authService.logout(u.sessionId ?? "", u.userId);
   }

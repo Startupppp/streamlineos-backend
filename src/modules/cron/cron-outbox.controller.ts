@@ -3,6 +3,7 @@ import { Public } from "../../common/auth/public.decorator";
 import { OutboxPublisherService } from "../../common/outbox/outbox-publisher.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronLeaseService } from "./cron-lease.service";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 /** Platform scheduler entry point for the generic transactional outbox. */
 @Public()
@@ -20,6 +21,7 @@ export class CronOutboxController {
 
   @Post("outbox-events-worker")
   @HttpCode(200)
+  @BodylessAction()
   runPost(@Headers("authorization") authorization?: string) {
     return this.run(authorization);
   }

@@ -23,6 +23,7 @@ import {
 } from "./dto/finance-ap.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const billIdParams = z.object({ billId: z.coerce.number().int().positive() }).strict();
 
@@ -52,6 +53,7 @@ export class BillsWorkflowController {
   @HttpCode(200)
   @Idempotent("accounting.bill.approve")
   @Validate({ params: billIdParams })
+  @BodylessAction()
   approveBill(
     @Param("billId", ParseIntPipe) billId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -12,6 +12,7 @@ const mockDb = {
     chatChannels: { findFirst: jest.fn() },
     chatChannelMembers: { findFirst: jest.fn() },
     chatChannelInviteLinks: { findFirst: jest.fn() },
+    organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 42 }) },
   },
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockResolvedValue(undefined),
@@ -30,6 +31,7 @@ describe("ChatInviteLinksService", () => {
     mockDb.update.mockReturnThis();
     mockDb.set.mockReturnThis();
     mockDb.where.mockResolvedValue(undefined);
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue({ id: 42 });
     const module: TestingModule = await Test.createTestingModule({
       providers: [ChatInviteLinksService, { provide: DRIZZLE, useValue: mockDb }],
     }).compile();

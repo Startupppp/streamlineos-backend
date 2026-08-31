@@ -11,6 +11,7 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { SignBulkSendService } from "./sign-bulk-send.service";
 import { createBulkSendJobSchema, type CreateBulkSendJobInput } from "./dto/e-sign.schemas";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
 
@@ -45,6 +46,7 @@ export class SignBulkSendController {
   @Post("jobs/:jobId/cancel")
   @RequirePermission("sign:bulk_send:run")
   @Validate({ params: jobIdParams })
+  @BodylessAction()
   cancel(@Param("jobId", ParseIntPipe) jobId: number, @CurrentUser() u: CurrentUserContext) {
     return this.bulkSend.cancel(u.orgId, jobId, { userId: u.userId });
   }

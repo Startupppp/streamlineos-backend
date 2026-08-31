@@ -118,6 +118,13 @@ async function bootstrap(): Promise<void> {
   }
 
   await app.listen(config.PORT);
+
+  if (!process.env.ALERT_WEBHOOK_URL) {
+    logger.warn(
+      "ALERT_WEBHOOK_URL is not set — no platform alert will reach an on-call human. " +
+        "Set ALERT_WEBHOOK_URL to a Slack/PagerDuty webhook and verify with: pnpm alert:test-event",
+    );
+  }
 }
 
 bootstrap().catch((error: unknown) => {

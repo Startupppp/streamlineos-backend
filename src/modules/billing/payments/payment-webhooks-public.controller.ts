@@ -5,6 +5,7 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { PaymentWebhookReceiverService } from "./payment-webhook-receiver.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const providerKeyenvironmentorgIdParams = z.object({ providerKey: z.string().min(1), environment: z.string().min(1), orgId: z.string().min(1) }).strict();
@@ -18,6 +19,7 @@ export class PaymentWebhooksPublicController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("billing:webhook")
   @Validate({ params: providerKeyenvironmentorgIdParams })
+  @BodylessAction()
   async handle(
     @Param("providerKey") providerKey: string,
     @Param("environment") environment: string,

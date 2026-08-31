@@ -52,6 +52,7 @@ import {
 } from "./dto/webhook.schemas";
 import type { RequestActorContext } from "../../../common/audit/actor-context";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const providerKeyParams = z.object({ providerKey: z.string().min(1) }).strict();
@@ -267,6 +268,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:webhooks:manage")
   @Validate({ params: providerKeyeventIdParams })
+  @BodylessAction()
   retryWebhookEvent(
     @Param("providerKey") providerKey: string,
     @Param("eventId", ParseIntPipe) eventId: number,
@@ -289,6 +291,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:live:activate")
   @Validate({ params: providerKeyParams })
+  @BodylessAction()
   activateLive(
     @Param("providerKey") providerKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -351,6 +354,7 @@ export class PaymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("payments:manual-methods:manage")
   @Validate({ params: methodIdParams })
+  @BodylessAction()
   disableManualMethod(
     @Param("methodId", ParseIntPipe) methodId: number,
     @CurrentUser() u: CurrentUserContext,

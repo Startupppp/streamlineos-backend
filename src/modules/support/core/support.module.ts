@@ -28,6 +28,8 @@ import { SupportPortalService } from "./support-portal.service";
 import { SupportChannelsService } from "./support-channels.service";
 import { SupportCsatService } from "./support-csat.service";
 import { SupportAiService } from "./support-ai.service";
+import { SupportAiTriageService } from "./support-ai-triage.service";
+import { SupportAiTranslationService } from "./support-ai-translation.service";
 import { SupportAiSettingsService } from "./support-ai-settings.service";
 import { SupportAiEmbeddingsHelper } from "./support-ai-embeddings.helper";
 import { SupportAiReportHelper } from "./support-ai-report.helper";
@@ -71,6 +73,8 @@ import { SupportTicketResolvedConsumer } from "./support-ticket-resolved-consume
     SupportChannelsService,
     SupportCsatService,
     SupportAiService,
+    SupportAiTriageService,
+    SupportAiTranslationService,
     SupportAiSettingsService,
     SupportAiEmbeddingsHelper,
     SupportAiReportHelper,

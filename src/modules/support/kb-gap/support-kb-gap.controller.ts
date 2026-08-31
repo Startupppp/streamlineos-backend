@@ -23,6 +23,7 @@ import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { AiJobsService } from "../../ai/jobs/ai-jobs.service";
 import { SupportKbGapService } from "./support-kb-gap.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const gapIdParams = z.object({ gapId: z.coerce.number().int().positive() }).strict();
 
@@ -53,6 +54,7 @@ export class SupportKbGapController {
   @Post("detect")
   @HttpCode(200)
   @RequirePermission("support:knowledge-gaps:manage")
+  @BodylessAction()
   detectGaps(@CurrentUser() u: CurrentUserContext) {
     const idempotencyKey = `gap-detect:${u.orgId}:${new Date().toISOString().slice(0, 10)}`;
     return this.aiJobs.enqueue({
@@ -70,6 +72,7 @@ export class SupportKbGapController {
   @UseRateLimit("ai:invoke")
   @RequirePermission("support:knowledge-gaps:manage")
   @Validate({ params: gapIdParams })
+  @BodylessAction()
   async proposeDraft(
     @Param("gapId", ParseIntPipe) gapId: number,
     @CurrentUser() u: CurrentUserContext,

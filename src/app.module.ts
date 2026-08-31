@@ -33,6 +33,7 @@ import { GoalsModule } from "./modules/goals/goals.module";
 import { ExpensesModule } from "./modules/expenses/expenses.module";
 import { TasksModule } from "./modules/tasks/tasks.module";
 import { PlatformModule } from "./modules/platform/platform.module";
+import { GdprModule } from "./modules/gdpr/gdpr.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { PushModule } from "./modules/push/push.module";
 import { QuotesModule } from "./modules/quotes/quotes.module";
@@ -128,6 +129,7 @@ import { EmploymentFactsModule } from "./modules/directory/employment-facts.modu
     ExpensesModule,
     TasksModule,
     PlatformModule,
+    GdprModule,
     NotificationsModule,
     PushModule,
     QuotesModule,

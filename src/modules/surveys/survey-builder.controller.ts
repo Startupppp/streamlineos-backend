@@ -24,6 +24,7 @@ import {
   type CreateLogicRuleInput,
   type PatchLogicRuleInput,
 } from "./dto/survey-builder.schemas";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 const surveyAndSectionIdParams = z.object({ surveyId: z.coerce.number().int().positive(), sectionId: z.coerce.number().int().positive() }).strict();
@@ -118,6 +119,7 @@ export class SurveyBuilderController {
   @Post("questions/:questionId/duplicate")
   @RequirePermission("surveys:update")
   @Validate({ params: surveyAndQuestionIdParams })
+  @BodylessAction()
   duplicateQuestion(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("questionId", ParseIntPipe) questionId: number,

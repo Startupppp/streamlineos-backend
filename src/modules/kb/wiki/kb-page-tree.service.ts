@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
-import { kbPages, kbPageLinks, kbArticleChunks } from "../../../db/schema";
+import { kbPages, kbArticleChunks } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";

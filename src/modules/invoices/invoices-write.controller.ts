@@ -26,6 +26,7 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { z } from "zod";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const invoiceIdParams = z.object({ invoiceId: z.coerce.number().int().positive() }).strict();
 
@@ -57,6 +58,7 @@ export class InvoicesWriteController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:manage")
+  @BodylessAction()
   runRecurring(@CurrentUser() u: CurrentUserContext) {
     return this.invoicesWrite.generateDueRecurringInvoices(u.orgId, u.userId, todayIso());
   }
@@ -95,6 +97,7 @@ export class InvoicesWriteController {
   @RequirePermission("accounting:manage")
   @Idempotent("accounting.invoice.void")
   @Validate({ params: invoiceIdParams })
+  @BodylessAction()
   voidInvoice(
     @Param("invoiceId", ParseIntPipe) invoiceId: number,
     @CurrentUser() u: CurrentUserContext,

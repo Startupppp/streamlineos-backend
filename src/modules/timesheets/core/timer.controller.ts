@@ -24,6 +24,7 @@ import {
 } from "./dto/timer.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const timerIdParams = z.object({ timerId: z.coerce.number().int().positive() }).strict();
 
@@ -54,6 +55,7 @@ export class TimerController {
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: timerIdParams })
+  @BodylessAction()
   pause(
     @Param("timerId", ParseIntPipe) timerId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -65,6 +67,7 @@ export class TimerController {
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: timerIdParams })
+  @BodylessAction()
   resume(
     @Param("timerId", ParseIntPipe) timerId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -76,6 +79,7 @@ export class TimerController {
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: timerIdParams })
+  @BodylessAction()
   stop(
     @Param("timerId", ParseIntPipe) timerId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -87,6 +91,7 @@ export class TimerController {
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: timerIdParams })
+  @BodylessAction()
   discard(
     @Param("timerId", ParseIntPipe) timerId: number,
     @CurrentUser() u: CurrentUserContext,

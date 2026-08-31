@@ -38,6 +38,7 @@ import {
 } from "./dto/ownership.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const moduleKeyParams = z.object({ moduleKey: z.string().min(1) }).strict();
 const transferIdParams = z.object({ transferId: z.string().min(1) }).strict();
@@ -144,6 +145,7 @@ export class OwnershipController {
   @RequirePermission("ownership:transfer:respond")
   @UseRateLimit("ownership:transfer")
   @Validate({ params: transferIdParams })
+  @BodylessAction()
   acceptTransfer(
     @Param("transferId") transferId: string,
     @CurrentUser() u: CurrentUserContext,

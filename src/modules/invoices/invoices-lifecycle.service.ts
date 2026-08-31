@@ -8,6 +8,8 @@ import { NotificationDispatchService } from "../notifications/notification-dispa
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { systemActor } from "../../common/auth/system-actor";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
 
 type DbOrTx = Parameters<Parameters<Db["transaction"]>[0]>[0] | Db;
 
@@ -56,11 +58,15 @@ export class InvoicesLifecycleService {
       .where(eq(invoices.id, invoiceId));
 
     if (newStatus === "PAID") {
-      void this.bus.emit(invoice.orgId, "invoice.paid", {
-        entityType: "invoice",
-        entityId: String(invoiceId),
-        data: { invoiceId, paidAt: new Date().toISOString() },
-      }).catch(() => undefined);
+      const emit = () =>
+        this.bus
+          .emit(invoice.orgId, "invoice.paid", {
+            entityType: "invoice",
+            entityId: String(invoiceId),
+            data: { invoiceId, paidAt: new Date().toISOString() },
+          })
+          .catch(logSideEffectFailure("invoice.paid bus emit", { invoiceId }));
+      if (!registerAfterCommit(emit)) void emit();
     }
   }
 
@@ -151,15 +157,17 @@ export class InvoicesLifecycleService {
         targetUserIds.push(...members.map((m) => m.userId));
       }
       if (targetUserIds.length > 0) {
-        await this.dispatch.emit({
-          eventKey: "accounting.invoice.overdue",
-          orgId: inv.orgId,
-          targetUserIds,
-          entityType: "invoice",
-          entityId: String(inv.id),
-          title: "Invoice overdue",
-          message: `Invoice ${inv.invoiceNumber} is now overdue`,
-        }).catch(() => undefined);
+        await this.dispatch
+          .emit({
+            eventKey: "accounting.invoice.overdue",
+            orgId: inv.orgId,
+            targetUserIds,
+            entityType: "invoice",
+            entityId: String(inv.id),
+            title: "Invoice overdue",
+            message: `Invoice ${inv.invoiceNumber} is now overdue`,
+          })
+          .catch(logSideEffectFailure("invoice.overdue notification", { invoiceId: inv.id, orgId: inv.orgId }));
       }
     }
 

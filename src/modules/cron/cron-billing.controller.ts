@@ -12,6 +12,7 @@ import { assertCronSecret } from "./cron-secret";
 import { CronBillingService } from "./cron-billing.service";
 import { AiJobsWorkerService } from "../ai/jobs/ai-jobs-worker.service";
 import { CronLeaseService } from "./cron-lease.service";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 @Public()
 @Controller("cron")
@@ -29,6 +30,7 @@ export class CronBillingController {
 
   @Post("trial-expiry")
   @HttpCode(200)
+  @BodylessAction()
   postTrialExpiry(@Headers("authorization") authorization?: string) {
     return this.runTrialExpiry(authorization);
   }
@@ -40,6 +42,7 @@ export class CronBillingController {
 
   @Post("monthly-plan-grants")
   @HttpCode(200)
+  @BodylessAction()
   postMonthlyPlanGrants(@Headers("authorization") authorization?: string) {
     return this.runMonthlyPlanGrants(authorization);
   }
@@ -51,6 +54,7 @@ export class CronBillingController {
 
   @Post("ai-reservations-sweep")
   @HttpCode(200)
+  @BodylessAction()
   postAiReservationsSweep(@Headers("authorization") authorization?: string) {
     return this.runAiReservationsSweep(authorization);
   }
@@ -62,6 +66,7 @@ export class CronBillingController {
 
   @Post("auto-topup-flush")
   @HttpCode(200)
+  @BodylessAction()
   postAutoTopUpFlush(@Headers("authorization") authorization?: string) {
     return this.runAutoTopUpFlush(authorization);
   }
@@ -73,6 +78,7 @@ export class CronBillingController {
 
   @Post("ai-jobs-flush")
   @HttpCode(200)
+  @BodylessAction()
   postAiJobsFlush(@Headers("authorization") authorization?: string) {
     return this.runAiJobsFlush(authorization);
   }

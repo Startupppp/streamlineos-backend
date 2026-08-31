@@ -12,12 +12,23 @@ import { IDEMPOTENCY_COMMAND } from "../idempotency/idempotency.constants";
 
 export const RESPONSE_SCHEMA = "openapi:response-schema";
 export const BODYLESS_ACTION = "openapi:bodyless";
+export const MULTIPART_ACTION = "openapi:multipart";
 
 export const ResponseSchema = (schema: ZodType): MethodDecorator =>
   SetMetadata(RESPONSE_SCHEMA, schema);
 
 export const BodylessAction = (): MethodDecorator =>
   SetMetadata(BODYLESS_ACTION, true);
+
+export interface MultipartActionOptions {
+  textSchema?: ZodType;
+  fileFields: string[];
+}
+
+export const MultipartAction = (
+  textSchema?: ZodType,
+  fileFields: string[] = [],
+): MethodDecorator => SetMetadata(MULTIPART_ACTION, { textSchema, fileFields });
 
 export interface OperationContract {
   body?: JsonSchema;
@@ -26,6 +37,8 @@ export interface OperationContract {
   idempotencyCommand?: string;
   response?: JsonSchema;
   bodyless?: true;
+  bodylessConflict?: true;
+  multipartBody?: { textSchema?: JsonSchema; fileFields: string[] };
 }
 
 export type JsonSchema = Record<string, unknown>;
@@ -34,6 +47,7 @@ export interface ContractScanResult {
   contracts: Map<string, OperationContract>;
   converted: number;
   unconvertible: string[];
+  bodylessConflicts: string[];
 }
 
 export function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -112,6 +126,16 @@ function readPipeSchemas(
   return found;
 }
 
+function hasBodyParam(classRef: unknown, methodName: string): boolean {
+  if (typeof classRef !== "function") return false;
+  const args: unknown = Reflect.getMetadata(ROUTE_ARGS_METADATA, classRef, methodName);
+  if (typeof args !== "object" || args === null) return false;
+  for (const key of Object.keys(args)) {
+    if (Number(String(key).split(":")[0]) === RouteParamtypes.BODY) return true;
+  }
+  return false;
+}
+
 export function scanOperationContracts(
   app: INestApplication,
 ): ContractScanResult {
@@ -120,6 +144,7 @@ export function scanOperationContracts(
 
   const contracts = new Map<string, OperationContract>();
   const unconvertible: string[] = [];
+  const bodylessConflicts: string[] = [];
   let converted = 0;
 
   for (const wrapper of discovery.getControllers()) {
@@ -167,12 +192,39 @@ export function scanOperationContracts(
       }
 
       const isBodyless: unknown = Reflect.getMetadata(BODYLESS_ACTION, handler);
-      if (isBodyless === true) contract.bodyless = true;
+      if (isBodyless === true) {
+        if (hasBodyParam(classRef, methodName)) {
+          contract.bodylessConflict = true;
+          bodylessConflicts.push(operationId);
+        } else {
+          contract.bodyless = true;
+        }
+      }
+
+      const multipartMeta: unknown = Reflect.getMetadata(MULTIPART_ACTION, handler);
+      if (multipartMeta !== null && multipartMeta !== undefined && typeof multipartMeta === "object") {
+        const textSchemaRaw: unknown = Reflect.get(multipartMeta, "textSchema");
+        const fileFieldsRaw: unknown = Reflect.get(multipartMeta, "fileFields");
+        const fileFields = Array.isArray(fileFieldsRaw)
+          ? fileFieldsRaw.filter((f): f is string => typeof f === "string")
+          : [];
+        if (textSchemaRaw instanceof ZodType) {
+          const result = toJsonSchema(textSchemaRaw);
+          if (result.ok) {
+            contract.multipartBody = { textSchema: result.schema, fileFields };
+            converted += 1;
+          } else {
+            unconvertible.push(`${operationId}.multipartBody: ${result.reason}`);
+          }
+        } else {
+          contract.multipartBody = { fileFields };
+        }
+      }
 
       if (Object.keys(contract).length > 0)
         contracts.set(operationId, contract);
     }
   }
 
-  return { contracts, converted, unconvertible };
+  return { contracts, converted, unconvertible, bodylessConflicts };
 }

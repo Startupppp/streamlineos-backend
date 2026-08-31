@@ -16,6 +16,7 @@ import {
 } from "./dto/assets.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
 
@@ -55,6 +56,7 @@ export class DepreciationRunsController {
   @HttpCode(200)
   @Idempotent("accounting.depreciation-run.reverse")
   @Validate({ params: runIdParams })
+  @BodylessAction()
   reverse(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,

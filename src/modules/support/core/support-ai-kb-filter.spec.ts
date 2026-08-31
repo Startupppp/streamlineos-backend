@@ -1,7 +1,6 @@
-import { SupportAiService } from "./support-ai.service";
+import { SupportAiTriageService } from "./support-ai-triage.service";
 import { SupportAiSettingsService } from "./support-ai-settings.service";
 import { SupportAiEmbeddingsHelper } from "./support-ai-embeddings.helper";
-import { SupportAiReportHelper } from "./support-ai-report.helper";
 
 const EMBEDDING_DIM = 1536;
 
@@ -21,7 +20,6 @@ const makeEmbHelper = (): Partial<SupportAiEmbeddingsHelper> => ({
   getDuplicateThreshold: jest.fn().mockReturnValue(0.86),
   getRootCauseThreshold: jest.fn().mockReturnValue(0.75),
 });
-const makeReportHelper = (): Partial<SupportAiReportHelper> => ({ getAiReport: jest.fn().mockResolvedValue({}) });
 const makeKbAccess = () => ({
   getAccessibleSpaceIds: jest.fn().mockResolvedValue([1]),
   getPrincipalIds: jest.fn().mockResolvedValue({ userId: "u1", roleSlugs: [] }),
@@ -36,7 +34,7 @@ const makeChain = (finalValue: unknown[] = []) => {
   return chain;
 };
 
-describe("SupportAiService.suggestKbArticles — KB filter", () => {
+describe("SupportAiTriageService.suggestKbArticles — KB filter", () => {
   it("returns null when no articles meet similarity threshold", async () => {
     const lowSimilarityRow = [{ articleId: 1, title: "irrelevant", slug: "irrelevant", similarity: 0.05 }];
 
@@ -50,14 +48,13 @@ describe("SupportAiService.suggestKbArticles — KB filter", () => {
       },
     };
 
-    const svc = new SupportAiService(
+    const svc = new SupportAiTriageService(
       db as never,
       makeGateway() as never,
       makeEmbeddings() as never,
       makeOrgFeatures() as never,
       makeAiSettings() as never,
       makeEmbHelper() as never,
-      makeReportHelper() as never,
       makeKbAccess() as never,
     );
 
@@ -76,14 +73,13 @@ describe("SupportAiService.suggestKbArticles — KB filter", () => {
       },
     };
 
-    const svc = new SupportAiService(
+    const svc = new SupportAiTriageService(
       db as never,
       makeGateway() as never,
       makeEmbeddings() as never,
       makeOrgFeatures() as never,
       makeAiSettings() as never,
       makeEmbHelper() as never,
-      makeReportHelper() as never,
       makeKbAccess() as never,
     );
 
@@ -104,14 +100,13 @@ describe("SupportAiService.suggestKbArticles — KB filter", () => {
       },
     };
 
-    const svc = new SupportAiService(
+    const svc = new SupportAiTriageService(
       db as never,
       makeGateway() as never,
       embeddings as never,
       makeOrgFeatures() as never,
       makeAiSettings() as never,
       makeEmbHelper() as never,
-      makeReportHelper() as never,
       makeKbAccess() as never,
     );
 

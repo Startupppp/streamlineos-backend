@@ -26,6 +26,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
 import { SignDocumentsService } from "./sign-documents.service";
 import { uploadDocumentMetaSchema, type UploadDocumentMetaInput } from "./dto/e-sign.schemas";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 function clientIp(req: Request): string | undefined {
   const forwarded = req.headers["x-forwarded-for"];
@@ -47,6 +48,7 @@ export class SignDocumentsController {
   @RequirePermission("sign:documents:upload")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 200 * 1024 * 1024 } }))
   @Validate({ query: uploadDocumentMetaSchema })
+  @BodylessAction()
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Query("envelopeId", ParseIntPipe) envelopeId: number,

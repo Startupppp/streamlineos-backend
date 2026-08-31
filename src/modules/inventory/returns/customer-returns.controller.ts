@@ -16,6 +16,7 @@ import {
 } from "./dto/inv-returns.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const returnIdParams = z.object({ returnId: z.coerce.number().int().positive() }).strict();
 
@@ -78,6 +79,7 @@ export class CustomerReturnsController {
   @RequirePermission("inventory:customer-returns:manage")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: returnIdParams })
+  @BodylessAction()
   cancel(
     @Param("returnId", ParseIntPipe) returnId: number,
     @CurrentUser() u: CurrentUserContext,

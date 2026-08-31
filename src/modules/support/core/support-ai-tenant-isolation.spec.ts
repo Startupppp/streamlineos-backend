@@ -1,6 +1,6 @@
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { SupportAiService } from "./support-ai.service";
+import { SupportAiTriageService } from "./support-ai-triage.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -24,7 +24,7 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
 function makeSvc(
   accessibleSpaceIds: number[],
   selectResult: unknown[],
-): { svc: SupportAiService; selectWhere: jest.Mock } {
+): { svc: SupportAiTriageService; selectWhere: jest.Mock } {
   const ticket = { id: 1, orgId: "org-owner", title: "Login broken", description: null };
 
   const selectWhere = jest.fn().mockReturnValue({
@@ -64,12 +64,11 @@ function makeSvc(
     getPrincipalIds: jest.fn().mockResolvedValue({ userId: "u1", roleSlugs: [] }),
   };
 
-  const svc = new SupportAiService(
+  const svc = new SupportAiTriageService(
     db,
     null as never,
     embeddings as never,
     orgFeatures as never,
-    null as never,
     null as never,
     null as never,
     kbAccess as never,
@@ -78,7 +77,7 @@ function makeSvc(
   return { svc, selectWhere };
 }
 
-describe("SupportAiService — KB space ACL in RAG search (cross-tenant isolation)", () => {
+describe("SupportAiTriageService — KB space ACL in RAG search (cross-tenant isolation)", () => {
   const OWNER_ORG = "org-owner";
   const OWNER_USER = "user-owner-1";
   const TICKET_ID = 1;

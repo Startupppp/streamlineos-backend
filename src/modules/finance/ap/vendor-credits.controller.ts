@@ -26,6 +26,7 @@ import {
 } from "./dto/finance-ap.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const vendorCreditIdParams = z.object({ vendorCreditId: z.coerce.number().int().positive() }).strict();
 
@@ -74,6 +75,7 @@ export class VendorCreditsController {
   @RequirePermission("accounting:vendor-credits:manage")
   @HttpCode(200)
   @Validate({ params: vendorCreditIdParams })
+  @BodylessAction()
   postCredit(
     @Param("vendorCreditId", ParseIntPipe) vendorCreditId: number,
     @CurrentUser() u: CurrentUserContext,

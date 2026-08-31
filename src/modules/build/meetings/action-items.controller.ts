@@ -24,6 +24,7 @@ import {
 } from "./dto/meetings.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const projectAndMeetingIdParams = z.object({ projectId: z.coerce.number().int().positive(), meetingId: z.coerce.number().int().positive() }).strict();
 const projectMeetingAndItemIdParams = z.object({ projectId: z.coerce.number().int().positive(), meetingId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
@@ -77,6 +78,7 @@ export class ActionItemsController {
   @HttpCode(201)
   @RequirePermission("build:meetings:manage")
   @Validate({ params: projectMeetingAndItemIdParams })
+  @BodylessAction()
   convertToTask(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("meetingId", ParseIntPipe) meetingId: number,

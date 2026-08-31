@@ -37,6 +37,7 @@ import {
 import { analyzeBodySchema, type AnalyzeBodyInput } from "./feedbucket-ai.schemas";
 import { z } from "zod";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const widgetIdParams = z.object({ widgetId: z.coerce.number().int().positive() }).strict();
 const submissionIdParams = z.object({ submissionId: z.coerce.number().int().positive() }).strict();
@@ -104,6 +105,7 @@ export class FeedbucketController {
   @RequirePermission("feedbucket:widgets:manage")
   @HttpCode(200)
   @Validate({ params: widgetIdParams })
+  @BodylessAction()
   rotateKey(
     @CurrentUser() user: CurrentUserContext,
     @Param("widgetId", ParseIntPipe) widgetId: number,
@@ -158,6 +160,7 @@ export class FeedbucketController {
   @RequirePermission("feedbucket:submissions:manage")
   @HttpCode(201)
   @Validate({ params: submissionIdParams })
+  @BodylessAction()
   convertToTicket(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
@@ -181,6 +184,7 @@ export class FeedbucketController {
   @RequirePermission("feedbucket:submissions:manage")
   @HttpCode(201)
   @Validate({ params: submissionIdParams })
+  @BodylessAction()
   createTicketFromAnalysis(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,

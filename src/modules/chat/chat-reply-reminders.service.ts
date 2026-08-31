@@ -58,17 +58,22 @@ export class ChatReplyRemindersService {
 
     const members = await this.db.query.chatChannelMembers.findMany({
       where: and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)),
-      columns: { userId: true, membershipId: true },
+      columns: { membershipId: true },
+      with: {
+        membership: {
+          columns: { userId: true },
+        },
+      },
     });
 
     const reminders = members
-      .filter((member) => member.userId !== senderId)
+      .filter((member) => member.membership?.userId !== undefined && member.membership.userId !== senderId)
       .map((member) => ({
         orgId,
         channelId,
         messageId,
-        recipientUserId: member.userId,
-        recipientMembershipId: member.membershipId ?? null,
+        recipientUserId: member.membership!.userId,
+        recipientMembershipId: member.membershipId,
         senderUserId: senderId,
         senderMembershipId,
         remindAt,

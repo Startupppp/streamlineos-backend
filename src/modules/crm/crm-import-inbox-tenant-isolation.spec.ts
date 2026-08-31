@@ -1,7 +1,7 @@
 import type { Db } from "../../db/drizzle.module";
 import { CrmExportService } from "./import/crm-export.service";
 import { CrmInboxAiActionsService } from "./inbox/crm-inbox-ai-actions.service";
-import { CrmInboxService } from "./inbox/crm-inbox.service";
+import { CrmInboxQueriesService } from "./inbox/crm-inbox-queries.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -75,13 +75,13 @@ describe("CrmInboxAiActionsService — cross-tenant isolation", () => {
   });
 });
 
-describe("CrmInboxService — cross-tenant isolation", () => {
+describe("CrmInboxQueriesService — cross-tenant isolation", () => {
   function buildSvc(db: Db) {
     const aiActions = {
       resolveMetadata: jest.fn().mockResolvedValue({ terminalLeadKeys: [], openStageKeys: [] }),
       computeAiActions: jest.fn().mockResolvedValue([]),
     };
-    return new CrmInboxService(db, aiActions as never);
+    return new CrmInboxQueriesService(db, aiActions as never);
   }
 
   it("getInbox: queries scoped to attacker org (deny)", async () => {

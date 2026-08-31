@@ -20,6 +20,7 @@ import {
 import { overviewQuerySchema, type OverviewQuery } from "./dto/reports.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
@@ -34,6 +35,7 @@ export class TimesheetsAiController {
   @RequirePermission("timesheets:entries:view")
   @UseRateLimit("ai:invoke")
   @Validate({ params: periodIdParams })
+  @BodylessAction()
   summarize(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,

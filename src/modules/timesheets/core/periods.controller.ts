@@ -20,6 +20,7 @@ import { periodsQuerySchema, type PeriodsQuery } from "./dto/periods.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
@@ -60,6 +61,7 @@ export class PeriodsController {
   @RequirePermission("timesheets:entries:create")
   @Idempotent("timesheets.period.submit")
   @Validate({ params: periodIdParams })
+  @BodylessAction()
   submit(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -71,6 +73,7 @@ export class PeriodsController {
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: periodIdParams })
+  @BodylessAction()
   recall(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -82,6 +85,7 @@ export class PeriodsController {
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Validate({ params: periodIdParams })
+  @BodylessAction()
   reopen(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -93,6 +97,7 @@ export class PeriodsController {
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Validate({ params: periodIdParams })
+  @BodylessAction()
   lock(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -104,6 +109,7 @@ export class PeriodsController {
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Validate({ params: periodIdParams })
+  @BodylessAction()
   unlock(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,

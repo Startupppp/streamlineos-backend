@@ -9,6 +9,7 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { SurveyLiveSessionService } from "./survey-live-session.service";
 import { SurveyLiveParticipantService } from "./survey-live-participant.service";
 import { createLiveSessionSchema, type CreateLiveSessionInput } from "./dto/survey-live-session.schemas";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 const sessionIdParams = z.object({ sessionId: z.coerce.number().int().positive() }).strict();
@@ -43,6 +44,7 @@ export class SurveyLiveSessionController {
   @Post("live-sessions/:sessionId/start")
   @RequirePermission("surveys:live:host")
   @Validate({ params: sessionIdParams })
+  @BodylessAction()
   start(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
     return this.liveSessions.start(u.orgId, sessionId);
   }
@@ -50,6 +52,7 @@ export class SurveyLiveSessionController {
   @Post("live-sessions/:sessionId/next")
   @RequirePermission("surveys:live:host")
   @Validate({ params: sessionIdParams })
+  @BodylessAction()
   next(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
     return this.liveSessions.next(u.orgId, sessionId);
   }
@@ -64,6 +67,7 @@ export class SurveyLiveSessionController {
   @Post("live-sessions/:sessionId/end")
   @RequirePermission("surveys:live:host")
   @Validate({ params: sessionIdParams })
+  @BodylessAction()
   end(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
     return this.liveSessions.end(u.orgId, sessionId);
   }

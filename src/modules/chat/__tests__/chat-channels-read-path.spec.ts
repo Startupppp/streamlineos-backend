@@ -7,6 +7,7 @@ const actor: EntityActor = {
   userId: "user-1",
   orgId: "org-1",
   isOrgOwner: false,
+  membershipId: 10,
   permissions: [],
 } as unknown as EntityActor;
 

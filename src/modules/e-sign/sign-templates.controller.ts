@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
@@ -10,15 +10,18 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
 import { SignTemplatesService } from "./sign-templates.service";
 import {
+  createFromEnvelopeBodySchema,
   createTemplateSchema,
   updateTemplateSchema,
   createEnvelopeFromTemplateSchema,
   publishPublicFormSchema,
+  type CreateFromEnvelopeBodyInput,
   type CreateTemplateInput,
   type UpdateTemplateInput,
   type CreateEnvelopeFromTemplateInput,
   type PublishPublicFormInput,
 } from "./dto/e-sign.schemas";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
@@ -40,15 +43,13 @@ export class SignTemplatesController {
   @Post("envelopes/:envelopeId/save-as-template")
   @HttpCode(201)
   @RequirePermission("sign:template:manage")
-  @Validate({ params: envelopeIdParams })
+  @Validate({ params: envelopeIdParams, body: createFromEnvelopeBodySchema })
   createFromEnvelope(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
-    @Body() body: unknown,
+    @Body() body: CreateFromEnvelopeBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const parsed = z.object({ name: z.string().min(1).max(200) }).safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request: name is required");
-    return this.templates.createFromEnvelope(u.orgId, u.userId, envelopeId, parsed.data.name);
+    return this.templates.createFromEnvelope(u.orgId, u.userId, envelopeId, body.name);
   }
 
   @Get("templates")
@@ -78,6 +79,7 @@ export class SignTemplatesController {
   @Post("templates/:templateId/duplicate")
   @RequirePermission("sign:template:manage")
   @Validate({ params: templateIdParams })
+  @BodylessAction()
   duplicate(@Param("templateId", ParseIntPipe) templateId: number, @CurrentUser() u: CurrentUserContext) {
     return this.templates.duplicate(u.orgId, templateId, { orgId: u.orgId, userId: u.userId });
   }

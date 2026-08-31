@@ -11,6 +11,7 @@ import { listHoldsQuerySchema, createHoldSchema } from "./dto/quality.schemas";
 import type { ListHoldsQueryInput, CreateHoldInput } from "./dto/quality.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const holdIdParams = z.object({ holdId: z.coerce.number().int().positive() }).strict();
 
@@ -59,6 +60,7 @@ export class HoldsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:release")
   @Validate({ params: holdIdParams })
+  @BodylessAction()
   release(
     @Param("holdId", ParseIntPipe) holdId: number,
     @Headers("idempotency-key") idempotencyKey: string | undefined,

@@ -82,6 +82,63 @@ describe("applyOperationContract", () => {
     expect(operation["x-bodyless"]).toBe(true);
     expect(operation["requestBody"]).toBeUndefined();
   });
+
+  it("stamps x-bodyless-conflict on operations with bodylessConflict", () => {
+    const operation: Record<string, unknown> = { operationId: "FooController_bad" };
+    applyOperationContract("post", operation, { bodylessConflict: true });
+    expect(operation["x-bodyless-conflict"]).toBe(true);
+    expect(operation["x-bodyless"]).toBeUndefined();
+    expect(operation["requestBody"]).toBeUndefined();
+  });
+
+  it("emits multipart/form-data requestBody for multipartBody contract", () => {
+    const operation: Record<string, unknown> = { operationId: "UploadController_upload" };
+    applyOperationContract("post", operation, {
+      multipartBody: {
+        textSchema: {
+          type: "object",
+          required: ["folder"],
+          properties: { folder: { type: "string" } },
+        },
+        fileFields: ["file"],
+      },
+    });
+    const rb = operation["requestBody"] as Record<string, unknown>;
+    expect(rb).toBeDefined();
+    expect(rb["required"]).toBe(true);
+    const content = rb["content"] as Record<string, unknown>;
+    expect(content["multipart/form-data"]).toBeDefined();
+    const schema = (content["multipart/form-data"] as Record<string, unknown>)["schema"] as Record<string, unknown>;
+    const properties = schema["properties"] as Record<string, unknown>;
+    expect((properties["folder"] as Record<string, unknown>)["type"]).toBe("string");
+    expect((properties["file"] as Record<string, unknown>)["format"]).toBe("binary");
+    expect(Array.isArray(schema["required"])).toBe(true);
+    expect((schema["required"] as string[]).includes("folder")).toBe(true);
+  });
+
+  it("emits multipart/form-data with only file fields when no textSchema", () => {
+    const operation: Record<string, unknown> = { operationId: "UploadController_upload2" };
+    applyOperationContract("post", operation, {
+      multipartBody: { fileFields: ["screenshot", "recording"] },
+    });
+    const rb = operation["requestBody"] as Record<string, unknown>;
+    expect(rb).toBeDefined();
+    const content = rb["content"] as Record<string, unknown>;
+    expect(content["multipart/form-data"]).toBeDefined();
+    const schema = (content["multipart/form-data"] as Record<string, unknown>)["schema"] as Record<string, unknown>;
+    const properties = schema["properties"] as Record<string, unknown>;
+    expect((properties["screenshot"] as Record<string, unknown>)["format"]).toBe("binary");
+    expect((properties["recording"] as Record<string, unknown>)["format"]).toBe("binary");
+    expect(schema["required"]).toBeUndefined();
+  });
+
+  it("does not apply multipartBody to GET methods", () => {
+    const operation: Record<string, unknown> = { operationId: "FooController_list" };
+    applyOperationContract("get", operation, {
+      multipartBody: { fileFields: ["file"] },
+    });
+    expect(operation["requestBody"]).toBeUndefined();
+  });
 });
 
 describe("applyErrorResponses", () => {

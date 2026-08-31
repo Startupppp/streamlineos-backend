@@ -16,6 +16,7 @@ import {
 } from "./dto/tax-codes.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const taxCodeIdParams = z.object({ taxCodeId: z.coerce.number().int().positive() }).strict();
 
@@ -52,6 +53,7 @@ export class TaxCodesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:manage")
   @HttpCode(200)
+  @BodylessAction()
   seedDefaults(@CurrentUser() u: CurrentUserContext) {
     return this.taxCodes.seedDefaults(u.orgId, u.userId);
   }

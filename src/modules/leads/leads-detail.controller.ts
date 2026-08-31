@@ -40,6 +40,7 @@ import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const leadIdParams = z.object({ leadId: z.coerce.number().int().positive() }).strict();
 
@@ -167,6 +168,7 @@ export class LeadsDetailController {
   @Patch(":leadId/self-assign")
   @RequirePermission("crm:leads:update")
   @Validate({ params: leadIdParams })
+  @BodylessAction()
   async selfAssign(
     @Param("leadId", ParseIntPipe) leadId: number,
     @CurrentUser() u: CurrentUserContext,

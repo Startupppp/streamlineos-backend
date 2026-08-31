@@ -29,6 +29,7 @@ import {
 } from "./dto/finance-ap.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
@@ -102,6 +103,7 @@ export class RecurringBillsController {
   @RequirePermission("accounting:recurring:manage")
   @HttpCode(200)
   @Validate({ params: templateIdParams })
+  @BodylessAction()
   runNow(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

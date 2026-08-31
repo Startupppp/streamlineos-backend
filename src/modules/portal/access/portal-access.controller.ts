@@ -33,6 +33,7 @@ import {
 } from "./dto/portal-access.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const portalMembershipIdParams = z.object({ portalMembershipId: z.string().min(1) }).strict();
 const projectClientGrantIdParams = z.object({ projectClientGrantId: z.string().min(1) }).strict();
@@ -118,6 +119,7 @@ export class PortalAccessController {
   @HttpCode(200)
   @RequirePermission("build:clientvisibility:manage")
   @Validate({ params: projectClientGrantIdParams })
+  @BodylessAction()
   revokeGrant(
     @Param("projectClientGrantId") projectClientGrantId: string,
     @CurrentUser() u: CurrentUserContext,

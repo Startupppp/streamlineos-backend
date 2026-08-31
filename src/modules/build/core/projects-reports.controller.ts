@@ -24,6 +24,7 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 
@@ -118,6 +119,7 @@ export class ProjectsReportsController {
   @RequirePermission("build:manage")
   @HttpCode(200)
   @Validate({ params: projectIdParams })
+  @BodylessAction()
   snapshot(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,

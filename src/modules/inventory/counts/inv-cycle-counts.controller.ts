@@ -13,6 +13,7 @@ import {
 } from "./dto/inv-counts.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const countIdParams = z.object({ countId: z.coerce.number().int().positive() }).strict();
 
@@ -59,6 +60,7 @@ export class InvCycleCountsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: countIdParams })
+  @BodylessAction()
   start(
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -82,6 +84,7 @@ export class InvCycleCountsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: countIdParams })
+  @BodylessAction()
   review(
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -93,6 +96,7 @@ export class InvCycleCountsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: countIdParams })
+  @BodylessAction()
   post(
     @Headers("idempotency-key") idempotencyKey: string,
     @Param("countId", ParseIntPipe) countId: number,
@@ -106,6 +110,7 @@ export class InvCycleCountsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: countIdParams })
+  @BodylessAction()
   cancel(
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,

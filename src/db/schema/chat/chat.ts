@@ -68,10 +68,7 @@ export const chatChannelMembers = pgTable(
     channelId: integer("channel_id")
       .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     role: text("role").default("MEMBER").notNull(),
     lastReadAt: timestamp("last_read_at").defaultNow().notNull(),
     joinedAt: timestamp("joined_at").defaultNow().notNull(),
@@ -83,9 +80,7 @@ export const chatChannelMembers = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("uniq_channel_member").on(table.channelId, table.userId),
     uniqueIndex("uniq_chat_channel_member_membership").on(table.orgId, table.channelId, table.membershipId),
-    index("idx_chat_members_user").on(table.userId),
     index("idx_chat_members_channel").on(table.channelId),
     index("idx_chat_channel_members_org").on(table.orgId),
     unique("uniq_chat_channel_members_org_id").on(table.orgId, table.id),
@@ -189,18 +184,14 @@ export const chatUserPresence = pgTable(
   "chat_user_presence",
   {
     id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     status: text("status").default("OFFLINE").notNull(),
     lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uniq_chat_presence_org_user").on(table.orgId, table.userId),
     uniqueIndex("uniq_chat_presence_org_membership").on(table.orgId, table.membershipId),
     index("idx_chat_presence_org").on(table.orgId, table.status),
     index("idx_chat_presence_lastseen").on(table.orgId, table.lastSeenAt),
@@ -209,7 +200,7 @@ export const chatUserPresence = pgTable(
       columns: [table.orgId, table.membershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_chat_user_presence_org_membership",
-    }).onDelete("set null"),
+    }).onDelete("cascade"),
   ],
 );
 
@@ -333,10 +324,6 @@ export const chatChannelMembersRelations = relations(
     channel: one(chatChannels, {
       fields: [chatChannelMembers.channelId],
       references: [chatChannels.id],
-    }),
-    user: one(users, {
-      fields: [chatChannelMembers.userId],
-      references: [users.id],
     }),
     membership: one(organizationMembers, {
       fields: [chatChannelMembers.membershipId],

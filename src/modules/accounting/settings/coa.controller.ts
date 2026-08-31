@@ -8,6 +8,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CoaService } from "./coa.service";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const accountIdParams = z.object({ accountId: z.coerce.number().int().positive() }).strict();
 
@@ -47,6 +48,7 @@ export class CoaController {
   @RequirePermission("accounting:accounts:manage")
   @HttpCode(200)
   @Validate({ params: accountIdParams })
+  @BodylessAction()
   deactivateAccount(
     @Param("accountId", ParseIntPipe) accountId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -58,6 +60,7 @@ export class CoaController {
   @RequirePermission("accounting:accounts:manage")
   @HttpCode(200)
   @Validate({ params: accountIdParams })
+  @BodylessAction()
   activateAccount(
     @Param("accountId", ParseIntPipe) accountId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -23,6 +23,7 @@ import {
 import { createReferralSchema } from "./dto/affiliate.schemas";
 import { analyticsQuerySchema } from "./dto/analytics.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const quoteIdParams = z.object({ quoteId: z.coerce.number().int().positive() }).strict();
@@ -175,6 +176,7 @@ export class BillingEnterpriseController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:approve")
   @Validate({ params: quoteIdParams })
+  @BodylessAction()
   sendEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -188,6 +190,7 @@ export class BillingEnterpriseController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:enterprise-quotes:view")
   @Validate({ params: quoteIdParams })
+  @BodylessAction()
   acceptEnterpriseQuote(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,

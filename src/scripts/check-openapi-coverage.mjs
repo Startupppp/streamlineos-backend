@@ -192,6 +192,30 @@ export function findMissingMutatingRequestSchemas(document) {
 }
 
 /**
+ * Find operations with x-bodyless-conflict: true.
+ * These are handlers that were decorated with @BodylessAction() but also carry a @Body()
+ * parameter — a false marking that leaves the body contract undocumented.
+ * Detected at generation time by scanOperationContracts; the stamp is the proof.
+ * Returns an array of { method, path, issue } objects.
+ */
+export function findBodylessConflicts(document) {
+  const violations = [];
+  const paths = document.paths;
+  if (typeof paths !== "object" || paths === null) return violations;
+  for (const [pathTemplate, pathItem] of Object.entries(paths)) {
+    if (typeof pathItem !== "object" || pathItem === null) continue;
+    for (const [method, operation] of Object.entries(pathItem)) {
+      if (!HTTP_METHODS.has(method)) continue;
+      if (typeof operation !== "object" || operation === null) continue;
+      if (operation["x-bodyless-conflict"] === true) {
+        violations.push({ method: method.toUpperCase(), path: pathTemplate, issue: "x-bodyless-conflict: @BodylessAction() on a handler that reads @Body() — body contract is undocumented" });
+      }
+    }
+  }
+  return violations;
+}
+
+/**
  * Count operations by their x-exposure value.
  * Returns a Map<string, number>.
  */
@@ -357,6 +381,26 @@ if (SELF_TEST) {
     fail("bad-mutating-request-schemas", `expected 2 violations (POST and PUT), got ${JSON.stringify(mbBadResult)}`);
   else pass("bad-mutating-request-schemas — POST and PUT without requestBody are flagged; GET ignored");
 
+  const bodylessConflictGood = makeFullDoc([
+    { path: "/a", method: "post", "x-bodyless": true },
+    { path: "/b", method: "post", requestBody: { required: true, content: {} } },
+    { path: "/c", method: "get" },
+  ]);
+  const bcGoodResult = findBodylessConflicts(bodylessConflictGood);
+  if (bcGoodResult.length !== 0)
+    fail("good-no-bodyless-conflict", `expected 0 violations, got ${JSON.stringify(bcGoodResult)}`);
+  else pass("good-no-bodyless-conflict — ops without x-bodyless-conflict are not flagged");
+
+  const bodylessConflictBad = makeFullDoc([
+    { path: "/a", method: "post", "x-bodyless-conflict": true },
+    { path: "/b", method: "put", "x-bodyless-conflict": true },
+    { path: "/c", method: "get", "x-bodyless-conflict": true },
+  ]);
+  const bcBadResult = findBodylessConflicts(bodylessConflictBad);
+  if (bcBadResult.length !== 3)
+    fail("bad-bodyless-conflict", `expected 3 violations (POST, PUT, GET all count), got ${JSON.stringify(bcBadResult)}`);
+  else pass("bad-bodyless-conflict — all methods with x-bodyless-conflict are flagged");
+
   if (failed) {
     process.stderr.write("\nSELF-TEST FAILED\n");
     process.exit(1);
@@ -425,6 +469,22 @@ if (violations.length > 0) {
 }
 
 process.stdout.write(`  OK — all ${String(exposed)} operations are exposure-stamped\n`);
+
+const bodylessConflictViolations = findBodylessConflicts(document);
+if (bodylessConflictViolations.length > 0) {
+  process.stderr.write(
+    `check-openapi-coverage: FAIL — ${String(bodylessConflictViolations.length)} operation(s) have x-bodyless-conflict\n` +
+    `These handlers are decorated with @BodylessAction() but also read @Body() — the body contract is undocumented.\n` +
+    `Fix: remove @BodylessAction() and add @Validate({ body: schema }) or @MultipartAction().\n\n`,
+  );
+  for (const { method, path, issue } of bodylessConflictViolations.slice(0, 30)) {
+    process.stderr.write(`  ${method.padEnd(6)} ${path}\n`);
+    process.stderr.write(`         ${issue}\n`);
+  }
+  if (bodylessConflictViolations.length > 30)
+    process.stderr.write(`  ... and ${String(bodylessConflictViolations.length - 30)} more\n`);
+  process.exit(1);
+}
 
 const errorShapeViolations = findMissingErrorShapes(document);
 const errorShapeCovered = totalOperations - errorShapeViolations.length;

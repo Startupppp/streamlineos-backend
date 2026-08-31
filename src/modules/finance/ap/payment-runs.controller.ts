@@ -29,6 +29,7 @@ import {
 } from "./dto/finance-ap.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
 const runIditemIdParams = z.object({ runId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
@@ -83,6 +84,7 @@ export class PaymentRunsController {
   @HttpCode(200)
   @Idempotent("accounting.payment-run.approve")
   @Validate({ params: runIdParams })
+  @BodylessAction()
   approve(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -96,6 +98,7 @@ export class PaymentRunsController {
   @HttpCode(200)
   @Idempotent("accounting.payment-run.execute")
   @Validate({ params: runIdParams })
+  @BodylessAction()
   execute(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -108,6 +111,7 @@ export class PaymentRunsController {
   @RequirePermission("accounting:payment-runs:manage")
   @HttpCode(200)
   @Validate({ params: runIdParams })
+  @BodylessAction()
   cancel(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -39,6 +39,7 @@ import {
 } from "./dto/rbac.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const targetUserIdParams = z.object({ targetUserId: z.string().min(1) }).strict();
 const roleIdParams = z.object({ roleId: z.string().min(1) }).strict();
@@ -128,6 +129,7 @@ export class RolesController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @BodylessAction()
   seedDefaults(@CurrentUser() u: CurrentUserContext) {
     return this.roles.seedDefaultRoles(u.orgId);
   }

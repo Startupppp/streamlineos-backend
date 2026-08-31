@@ -36,6 +36,7 @@ import {
 } from "./dto/crm-import.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const crmImportIdParams = z.object({ crmImportId: z.string().min(1) }).strict();
 const crmConnectorSyncIdParams = z.object({ crmConnectorSyncId: z.string().min(1) }).strict();
@@ -121,6 +122,7 @@ export class CrmImportController {
   @Idempotent("crm.import.commit")
   @RequirePermission("crm:imports:manage")
   @Validate({ params: crmImportIdParams })
+  @BodylessAction()
   async commit(
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -143,6 +145,7 @@ export class CrmImportController {
   @Idempotent("crm.import.revert")
   @RequirePermission("crm:imports:manage")
   @Validate({ params: crmImportIdParams })
+  @BodylessAction()
   async revert(
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,

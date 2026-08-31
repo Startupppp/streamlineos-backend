@@ -129,7 +129,7 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 // ---------------------------------------------------------------------------
 
 describe("ChatReplyRemindersService — orgId in member lookup", () => {
-  function makeDb(members: { userId: string }[]) {
+  function makeDb(members: { membershipId: number; membership: { userId: string } }[]) {
     const findMany = jest.fn().mockResolvedValue(members);
     const memberFindFirst = jest.fn().mockResolvedValue({ id: 1 });
     const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
@@ -174,7 +174,7 @@ describe("ChatReplyRemindersService — orgId in member lookup", () => {
   });
 
   it("CONTROL: scheduleForMessage inserts reminders for OWNER_ORG members only", async () => {
-    const { db, findMany, insert, values } = makeDb([{ userId: "u2" }, { userId: "u3" }]);
+    const { db, findMany, insert, values } = makeDb([{ membershipId: 2, membership: { userId: "u2" } }, { membershipId: 3, membership: { userId: "u3" } }]);
     const module = await Test.createTestingModule({
       providers: [
         ChatReplyRemindersService,

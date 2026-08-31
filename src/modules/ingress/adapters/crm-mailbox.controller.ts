@@ -10,6 +10,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { CrmMailboxService } from "./crm-mailbox.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const crmMailboxSyncIdParams = z.object({ crmMailboxSyncId: z.string().min(1) }).strict();
 
@@ -27,6 +28,7 @@ export class CrmMailboxController {
   @Post("push")
   @Public()
   @HttpCode(204)
+  @BodylessAction()
   async push(
     @Req() req: RawBodyRequest<Request>,
     @Headers("x-mailbox-signature") signature: string | undefined,
@@ -65,6 +67,7 @@ export class CrmMailboxController {
   @Post(":crmMailboxSyncId/sync")
   @RequirePermission("crm:ingress:submit")
   @Validate({ params: crmMailboxSyncIdParams })
+  @BodylessAction()
   sync(
     @Param("crmMailboxSyncId") crmMailboxSyncId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -74,6 +77,7 @@ export class CrmMailboxController {
 
   @Post("sync")
   @RequirePermission("crm:ingress:submit")
+  @BodylessAction()
   sweepAll(@CurrentUser() u: CurrentUserContext) {
     return this.mailboxes.sweepAll(u.orgId);
   }

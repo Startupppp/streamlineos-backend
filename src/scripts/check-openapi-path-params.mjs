@@ -105,6 +105,34 @@ export function findMissingPathParams(document) {
   return violations;
 }
 
+/**
+ * Find path parameters named "id" — these are non-descriptive and violate the
+ * backend naming rule (backend/CLAUDE.md §2: "Route params are descriptive, never bare id").
+ * A bare :id says nothing about what it identifies and mismatches frontend [resourceId] folders.
+ * Returns an array of { method, path, issue } objects.
+ */
+export function findBareIdParams(document) {
+  const violations = [];
+  const paths = document.paths;
+  if (typeof paths !== "object" || paths === null) return violations;
+
+  for (const [pathTemplate, pathItem] of Object.entries(paths)) {
+    if (typeof pathItem !== "object" || pathItem === null) continue;
+    for (const [method, operation] of Object.entries(pathItem)) {
+      if (!HTTP_METHODS.has(method)) continue;
+      if (typeof operation !== "object" || operation === null) continue;
+      const parameters = Array.isArray(operation.parameters) ? operation.parameters : [];
+      const hasBareId = parameters.some(
+        (p) => typeof p === "object" && p !== null && p.in === "path" && p.name === "id",
+      );
+      if (hasBareId)
+        violations.push({ method: method.toUpperCase(), path: pathTemplate, issue: "bare path param named 'id' — use a descriptive name (e.g. :userId, :orderId)" });
+    }
+  }
+
+  return violations;
+}
+
 if (SELF_TEST) {
   process.stdout.write("Running self-test...\n");
   let failed = false;
@@ -215,6 +243,36 @@ if (SELF_TEST) {
     fail("empty-doc", `expected 0 violations, got ${result8.length}`);
   else pass("empty paths → no violations");
 
+  const docDescriptiveId = {
+    paths: {
+      "/items/{itemId}": { get: { parameters: [{ in: "path", name: "itemId" }] } },
+    },
+  };
+  const bareIdResult1 = findBareIdParams(docDescriptiveId);
+  if (bareIdResult1.length !== 0)
+    fail("bare-id-good", `descriptive param name should not be flagged, got ${JSON.stringify(bareIdResult1)}`);
+  else pass("bare-id-good — descriptive path param name not flagged");
+
+  const docBareId = {
+    paths: {
+      "/items/{id}": { get: { parameters: [{ in: "path", name: "id" }] } },
+    },
+  };
+  const bareIdResult2 = findBareIdParams(docBareId);
+  if (bareIdResult2.length !== 1 || !bareIdResult2[0].issue.includes("descriptive"))
+    fail("bare-id-bad", `bare :id should be flagged, got ${JSON.stringify(bareIdResult2)}`);
+  else pass("bare-id-bad — bare path param named 'id' is flagged");
+
+  const docBareIdInQuery = {
+    paths: {
+      "/items": { get: { parameters: [{ in: "query", name: "id" }] } },
+    },
+  };
+  const bareIdResult3 = findBareIdParams(docBareIdInQuery);
+  if (bareIdResult3.length !== 0)
+    fail("bare-id-query-not-flagged", `query param named 'id' should not be flagged, got ${JSON.stringify(bareIdResult3)}`);
+  else pass("bare-id-query-not-flagged — query param named 'id' is not flagged (only path params)");
+
   const vacuityOperations = { paths: { "/a": { get: { parameters: [] } } } };
   const totalOps = Object.values(vacuityOperations.paths).reduce((acc, item) => {
     for (const m of Object.keys(item)) if (HTTP_METHODS.has(m)) acc++;
@@ -265,23 +323,40 @@ if (totalOperations < MIN_OPERATIONS) {
 }
 
 const violations = findMissingPathParams(document);
+const bareIdViolations = findBareIdParams(document);
 
-if (violations.length === 0) {
+const allClean = violations.length === 0 && bareIdViolations.length === 0;
+
+if (allClean) {
   process.stdout.write(
-    `check-openapi-path-params: OK — ${totalOperations} operations checked, all path parameters declared\n`,
+    `check-openapi-path-params: OK — ${totalOperations} operations checked, all path parameters declared and descriptively named\n`,
   );
   process.exit(0);
 }
 
-process.stderr.write(
-  `check-openapi-path-params: FAIL — ${violations.length} operation(s) have undeclared path parameters\n\n`,
-);
-for (const { method, path, missing } of violations) {
-  process.stderr.write(`  ${method.padEnd(6)} ${path}\n`);
-  process.stderr.write(`         missing: ${missing.join(", ")}\n`);
+if (violations.length > 0) {
+  process.stderr.write(
+    `check-openapi-path-params: FAIL — ${violations.length} operation(s) have undeclared path parameters\n\n`,
+  );
+  for (const { method, path, missing } of violations) {
+    process.stderr.write(`  ${method.padEnd(6)} ${path}\n`);
+    process.stderr.write(`         missing: ${missing.join(", ")}\n`);
+  }
+  process.stderr.write(
+    `\nRun: pnpm openapi:generate to regenerate the document.\n` +
+    `If the count is still non-zero after regeneration, the handler is missing @Validate({ params }) for these parameters.\n`,
+  );
 }
-process.stderr.write(
-  `\nRun: pnpm openapi:generate to regenerate the document.\n` +
-  `If the count is still non-zero after regeneration, the handler is missing @Validate({ params }) for these parameters.\n`,
-);
+
+if (bareIdViolations.length > 0) {
+  process.stderr.write(
+    `\ncheck-openapi-path-params: FAIL — ${bareIdViolations.length} operation(s) have bare path params named "id"\n` +
+    `Use a descriptive name (e.g. :userId, :orderId) — backend/CLAUDE.md §2.\n\n`,
+  );
+  for (const { method, path, issue } of bareIdViolations) {
+    process.stderr.write(`  ${method.padEnd(6)} ${path}\n`);
+    process.stderr.write(`         ${issue}\n`);
+  }
+}
+
 process.exit(1);

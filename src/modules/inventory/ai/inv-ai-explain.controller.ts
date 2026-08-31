@@ -21,6 +21,7 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { InvAiExplainService } from "./inv-ai-explain.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const insightIdParams = z.object({ insightId: z.coerce.number().int().positive() }).strict();
 
@@ -42,6 +43,7 @@ export class InvAiExplainController {
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:reports:read")
   @Validate({ params: insightIdParams })
+  @BodylessAction()
   explainInsight(
     @Param("insightId", ParseIntPipe) insightId: number,
     @CurrentUser() u: CurrentUserContext,

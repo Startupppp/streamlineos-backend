@@ -31,6 +31,7 @@ import type {
 } from "./dto/channels.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 
@@ -74,6 +75,7 @@ export class ChannelsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
   @Validate({ params: channelIdParams })
+  @BodylessAction()
   syncStock(
     @Param("channelId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,

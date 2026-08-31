@@ -26,6 +26,7 @@ import {
 } from "./dto/api-tokens.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const tokenIdParams = z.object({ tokenId: z.string().min(1) }).strict();
 
@@ -62,6 +63,7 @@ export class ApiTokensController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:settings:manage")
   @Validate({ params: tokenIdParams })
+  @BodylessAction()
   revokeToken(
     @CurrentUser() u: CurrentUserContext,
     @Param("tokenId") tokenId: string,

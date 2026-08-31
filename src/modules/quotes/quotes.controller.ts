@@ -39,6 +39,7 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { z } from "zod";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const quoteIdParams = z.object({ quoteId: z.coerce.number().int().positive() }).strict();
 
@@ -128,6 +129,7 @@ export class QuotesController {
   @RequirePermission("crm:quotes:update")
   @Idempotent("crm.quote.send")
   @Validate({ params: quoteIdParams })
+  @BodylessAction()
   async send(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -142,6 +144,7 @@ export class QuotesController {
   @Idempotent("quotes.quote.approve")
   @RequirePermission("crm:quotes:approve")
   @Validate({ params: quoteIdParams })
+  @BodylessAction()
   async approve(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -165,6 +168,7 @@ export class QuotesController {
   @RequirePermission("crm:quotes:create")
   @Idempotent("crm.quote.convertToInvoice")
   @Validate({ params: quoteIdParams })
+  @BodylessAction()
   async convertToInvoice(
     @Param("quoteId", ParseIntPipe) quoteId: number,
     @CurrentUser() u: CurrentUserContext,

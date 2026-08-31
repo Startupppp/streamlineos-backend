@@ -46,8 +46,12 @@ import {
   type DownloadQueryInput,
   type ImageQueryInput,
 } from "./dto/storage.schemas";
+import { z } from "zod";
+import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+
+const uploadFolderSchema = z.object({ folder: z.string().optional() });
 
 const SENSITIVE_KEY_PREFIXES = [
   "payroll/",
@@ -116,6 +120,7 @@ export class StorageController {
   @Post("upload")
   @AuthorizedInService("assertUploadAllowed")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 50 * 1024 * 1024 } }))
+  @MultipartAction(uploadFolderSchema, ["file"])
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body("folder") folderField: string | undefined,

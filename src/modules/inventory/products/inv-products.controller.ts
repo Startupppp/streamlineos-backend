@@ -19,6 +19,7 @@ import {
 } from "./dto/inv-products.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const categoryIdParams = z.object({ categoryId: z.coerce.number().int().positive() }).strict();
 const uomIdParams = z.object({ uomId: z.coerce.number().int().positive() }).strict();
@@ -122,6 +123,7 @@ export class InvProductsController {
   @RequirePermission("inventory:products:update")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: productIdParams })
+  @BodylessAction()
   archive(
     @Param("productId", ParseIntPipe) productId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -134,6 +136,7 @@ export class InvProductsController {
   @RequirePermission("inventory:products:update")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: productIdParams })
+  @BodylessAction()
   restore(
     @Param("productId", ParseIntPipe) productId: number,
     @CurrentUser() u: CurrentUserContext,

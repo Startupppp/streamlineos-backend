@@ -16,6 +16,7 @@ import {
 } from "./dto/inv-stock.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const adjustmentIdParams = z.object({ adjustmentId: z.coerce.number().int().positive() }).strict();
 
@@ -69,6 +70,7 @@ export class InvStockAdjustmentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:adjustments:approve")
   @Validate({ params: adjustmentIdParams })
+  @BodylessAction()
   approveAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -80,6 +82,7 @@ export class InvStockAdjustmentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:adjustments:post")
   @Validate({ params: adjustmentIdParams })
+  @BodylessAction()
   postAdjustment(
     @Headers("idempotency-key") idempotencyKey: string,
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
@@ -93,6 +96,7 @@ export class InvStockAdjustmentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
   @Validate({ params: adjustmentIdParams })
+  @BodylessAction()
   cancelAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,

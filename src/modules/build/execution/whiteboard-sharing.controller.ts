@@ -34,6 +34,7 @@ import {
 } from "./dto/workspace.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const projectAndWhiteboardIdParams = z.object({ projectId: z.coerce.number().int().positive(), whiteboardId: z.coerce.number().int().positive() }).strict();
 const projectWhiteboardAndTargetUserParams = z.object({ projectId: z.coerce.number().int().positive(), whiteboardId: z.coerce.number().int().positive(), targetUserId: z.string().min(1) }).strict();
@@ -67,6 +68,7 @@ export class WhiteboardSharingController {
   @RequirePermission("build:whiteboards:manage")
   @HttpCode(200)
   @Validate({ params: projectAndWhiteboardIdParams })
+  @BodylessAction()
   rotateShareToken(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,

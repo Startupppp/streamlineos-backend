@@ -24,6 +24,7 @@ import {
 } from "./dto/integrations.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const connectionIdParams = z.object({ connectionId: z.coerce.number().int().positive() }).strict();
 
@@ -73,6 +74,7 @@ export class IntegrationsController {
   @Patch("connections/:connectionId/primary")
   @RequirePermission("integrations:connections:manage")
   @Validate({ params: connectionIdParams })
+  @BodylessAction()
   setPrimary(
     @Param("connectionId", ParseIntPipe) connectionId: number,
     @CurrentUser() u: CurrentUserContext,

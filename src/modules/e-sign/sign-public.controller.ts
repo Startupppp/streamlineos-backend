@@ -19,6 +19,7 @@ import {
   type DeclineInput,
   type PublicFormESignSubmitInput,
 } from "./dto/e-sign.schemas";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 function clientIp(req: Request): string {
   const forwarded = req.headers["x-forwarded-for"];
@@ -61,6 +62,7 @@ export class SignPublicController {
   @Post(":token/request-otp")
   @HttpCode(200)
   @Validate({ params: tokenParams })
+  @BodylessAction()
   async requestOtp(@Param("token") token: string, @Req() req: Request) {
     await this.guard("sign:public-otp-request", token, req);
     return this.publicSigning.requestOtp(token);
@@ -118,6 +120,7 @@ export class SignPublicController {
   @Post(":token/complete")
   @HttpCode(200)
   @Validate({ params: tokenParams })
+  @BodylessAction()
   async complete(@Param("token") token: string, @Req() req: Request) {
     await this.guard("sign:public-complete", token, req);
     return this.publicSigning.complete(token, { ipAddress: clientIp(req), userAgent: req.headers["user-agent"] });

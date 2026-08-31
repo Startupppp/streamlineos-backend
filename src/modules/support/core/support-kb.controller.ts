@@ -41,6 +41,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
 const articleAndAttachmentIdParams = z
@@ -263,6 +264,7 @@ export class SupportKbController {
   @RequirePermission("support:kb:manage")
   @HttpCode(200)
   @Validate({ params: articleIdParams })
+  @BodylessAction()
   reindexArticle(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -274,6 +276,7 @@ export class SupportKbController {
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
   @HttpCode(200)
+  @BodylessAction()
   reindexAll(@CurrentUser() u: CurrentUserContext) {
     return this.reindex.reindexAll(u.orgId);
   }

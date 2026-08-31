@@ -23,6 +23,7 @@ import {
   type DisableMfaInput,
   type ResetMfaInput,
 } from "./dto/mfa.schemas";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 @Controller("auth/mfa")
 @UseGuards(JwtAuthGuard)
@@ -33,6 +34,7 @@ export class MfaController {
   @Post("setup")
   @Universal()
   @HttpCode(200)
+  @BodylessAction()
   setup(@CurrentUser() u: CurrentUserContext) {
     return this.mfa.setup(u.userId);
   }

@@ -43,6 +43,7 @@ import type { Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
 
 const publicKeyParams = z.object({ publicKey: z.string().min(1) }).strict();
 
@@ -162,6 +163,7 @@ export class FeedbucketPublicController {
     ),
   )
   @Validate({ params: publicKeyParams })
+  @MultipartAction(publicSubmitSchema, ["screenshot", "recording"])
   async submit(
     @Param("publicKey") publicKey: string,
     @Body() rawBody: Record<string, unknown>,
@@ -317,6 +319,7 @@ export class FeedbucketPublicController {
     }),
   )
   @Validate({ params: publicKeyParams })
+  @MultipartAction(publicAiAssistSchema, ["screenshot"])
   async aiAssist(
     @Param("publicKey") publicKey: string,
     @Body() rawBody: Record<string, unknown>,

@@ -11,6 +11,7 @@ import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.se
 import { createWebhookSchema, type CreateWebhookInput } from "./dto/webhook.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const projectIdwebhookIdParams = z.object({ projectId: z.string().min(1), webhookId: z.coerce.number().int().positive() }).strict();
@@ -74,6 +75,7 @@ export class ProjectsWebhooksController {
   @RequirePermission("build:manage")
   @HttpCode(200)
   @Validate({ params: projectIdwebhookIdParams_ })
+  @BodylessAction()
   async sendTest(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("webhookId", ParseIntPipe) webhookId: number,

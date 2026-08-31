@@ -11,6 +11,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
 import { SignAuditService } from "./sign-audit.service";
 import { SignFinalizationService } from "./sign-finalization.service";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 function clientIp(req: Request): string | undefined {
   const forwarded = req.headers["x-forwarded-for"];
@@ -53,6 +54,7 @@ export class SignCertificatesController {
   @Post(":envelopeId/regenerate-certificate")
   @RequirePermission("sign:admin:manage")
   @Validate({ params: envelopeIdParams })
+  @BodylessAction()
   regenerateCertificate(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     return this.finalization.regenerateCertificate(u.orgId, envelopeId, { userId: u.userId, ipAddress: clientIp(req) });
   }

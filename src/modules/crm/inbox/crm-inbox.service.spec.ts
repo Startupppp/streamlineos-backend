@@ -1,12 +1,12 @@
 import { NotFoundException } from "@nestjs/common";
 import { CrmInboxService } from "./crm-inbox.service";
+import { CrmInboxQueriesService } from "./crm-inbox-queries.service";
 import type { CrmInboxAiActionsService } from "./crm-inbox-ai-actions.service";
 
 function makeQueryChain(resolvedValue: unknown) {
   const chain = {
     select: jest.fn(),
     from: jest.fn(),
-    // The lead sections read `business_parties` through `lead_party_map`.
     innerJoin: jest.fn(),
     where: jest.fn(),
     orderBy: jest.fn(),
@@ -28,8 +28,8 @@ function makeQueryChain(resolvedValue: unknown) {
   return chain;
 }
 
-describe("CrmInboxService", () => {
-  let service: CrmInboxService;
+describe("CrmInboxQueriesService", () => {
+  let queriesService: CrmInboxQueriesService;
   let mockDb: ReturnType<typeof makeQueryChain>;
 
   beforeEach(() => {
@@ -38,15 +38,15 @@ describe("CrmInboxService", () => {
       resolveMetadata: jest.fn().mockResolvedValue({ terminalLeadKeys: [], openStageKeys: [] }),
       computeAiActions: jest.fn().mockResolvedValue([]),
     } as unknown as CrmInboxAiActionsService;
-    service = new CrmInboxService(mockDb as never, mockAiActions);
+    queriesService = new CrmInboxQueriesService(mockDb as never, mockAiActions);
   });
 
   it("should be defined", () => {
-    expect(service).toBeDefined();
+    expect(queriesService).toBeDefined();
   });
 
   it("getInbox returns 8 sections", async () => {
-    const result = await service.getInbox("org1", "user1", "all");
+    const result = await queriesService.getInbox("org1", "user1", "all");
     expect(result.sections).toHaveLength(8);
     const keys = result.sections.map((s) => s.key);
     expect(keys).toContain("dueTasks");
@@ -58,9 +58,38 @@ describe("CrmInboxService", () => {
   it("getCounts returns all 8 keys as numbers", async () => {
     const countChain = makeQueryChain([{ n: "5" }]);
     mockDb.select = jest.fn().mockReturnValue(countChain);
-    const result = await service.getCounts("org1", "user1", "own");
+    const result = await queriesService.getCounts("org1", "user1", "own");
     expect(Object.keys(result)).toHaveLength(8);
     Object.values(result).forEach((v) => expect(typeof v).toBe("number"));
+  });
+});
+
+describe("CrmInboxService", () => {
+  let service: CrmInboxService;
+  let mockDb: ReturnType<typeof makeQueryChain>;
+  let mockQueriesService: CrmInboxQueriesService;
+
+  beforeEach(() => {
+    mockDb = makeQueryChain([]);
+    mockQueriesService = {
+      getInbox: jest.fn().mockResolvedValue({ sections: [], aiActions: [] }),
+      getCounts: jest.fn().mockResolvedValue({ dueTasks: 0, overdueTasks: 0, slaRisk: 0, stuckDeals: 0, followUpsDue: 0, newReplies: 0, meetingsToday: 0, newlyAssigned: 0 }),
+    } as unknown as CrmInboxQueriesService;
+    service = new CrmInboxService(mockDb as never, mockQueriesService);
+  });
+
+  it("should be defined", () => {
+    expect(service).toBeDefined();
+  });
+
+  it("getInbox delegates to queries service", async () => {
+    await service.getInbox("org1", "user1", "all");
+    expect(mockQueriesService.getInbox).toHaveBeenCalledWith("org1", "user1", "all");
+  });
+
+  it("getCounts delegates to queries service", async () => {
+    await service.getCounts("org1", "user1", "own");
+    expect(mockQueriesService.getCounts).toHaveBeenCalledWith("org1", "user1", "own");
   });
 
   it("snoozeTask throws NotFoundException for unknown task", async () => {

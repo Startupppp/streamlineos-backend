@@ -19,6 +19,7 @@ import {
 } from "./dto/shipments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const shipmentIdParams = z.object({ shipmentId: z.coerce.number().int().positive() }).strict();
 
@@ -93,6 +94,7 @@ export class ShipmentsController {
   @RequirePermission("inventory:shipments:manage")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: shipmentIdParams })
+  @BodylessAction()
   cancel(
     @Param("shipmentId", ParseIntPipe) shipmentId: number,
     @CurrentUser() u: CurrentUserContext,

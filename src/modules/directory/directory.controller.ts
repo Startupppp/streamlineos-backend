@@ -37,6 +37,7 @@ import {
 } from "./dto/directory.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const organizationPersonIdParams = z.object({ organizationPersonId: z.string().min(1) }).strict();
 const workerIdParams = z.object({ workerId: z.string().min(1) }).strict();
@@ -183,6 +184,7 @@ export class DirectoryController {
   @UseGuards(PermissionGuard)
   @RequirePermission("directory:workers:manage")
   @Validate({ params: workerEngagementIdParams })
+  @BodylessAction()
   cancelEngagement(
     @Param("workerEngagementId") workerEngagementId: string,
     @CurrentUser() u: CurrentUserContext,

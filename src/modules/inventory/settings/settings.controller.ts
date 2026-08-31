@@ -6,6 +6,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { SettingsService } from "./settings.service";
 import {
   updateSettingsSchema,
@@ -71,6 +72,7 @@ export class SettingsController {
   @Post("maintenance/expire-reservations")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")
+  @BodylessAction()
   expireReservations(@CurrentUser() u: CurrentUserContext) {
     return this.svc.expireReservations(u.orgId, u.userId);
   }

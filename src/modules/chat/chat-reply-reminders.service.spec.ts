@@ -3,7 +3,8 @@ import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 describe("ChatReplyRemindersService", () => {
   it("inserts reply reminders in bounded batches and excludes the sender", async () => {
     const members = Array.from({ length: 1_201 }, (_, index) => ({
-      userId: index === 0 ? "sender" : `member-${index}`,
+      membershipId: index + 1,
+      membership: { userId: index === 0 ? "sender" : `member-${index}` },
     }));
     const insertedBatches: unknown[][] = [];
     const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
@@ -49,7 +50,7 @@ describe("ChatReplyRemindersService", () => {
     const db = {
       query: {
         chatChannelMembers: {
-          findMany: jest.fn().mockResolvedValue([{ userId: "sender" }]),
+          findMany: jest.fn().mockResolvedValue([{ membershipId: 1, membership: { userId: "sender" } }]),
         },
         organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
       },

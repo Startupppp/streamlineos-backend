@@ -8,6 +8,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { WebhooksService } from "./webhooks.service";
 import {
@@ -86,6 +87,7 @@ export class WebhooksController {
   @Post("events/:eventId/retry")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
+  @BodylessAction()
   @Validate({ params: eventIdParams })
   retryEvent(
     @Param("eventId", ParseIntPipe) id: number,

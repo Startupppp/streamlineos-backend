@@ -44,10 +44,12 @@ beforeEach(() => jest.resetAllMocks());
 describe("ChatPresenceService — tenant isolation", () => {
   function makeDb(rows: unknown[]) {
     const where = jest.fn().mockResolvedValue(rows);
+    const chainable: Record<string, unknown> = { where };
+    chainable.innerJoin = jest.fn().mockReturnValue(chainable);
     const db = {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
-          innerJoin: jest.fn().mockReturnValue({ where }),
+          innerJoin: jest.fn().mockReturnValue(chainable),
         }),
       }),
     };
@@ -308,7 +310,7 @@ describe("ChatNotificationsService — orgId threading", () => {
 // ---------------------------------------------------------------------------
 
 describe("ChatReplyRemindersService — tenant isolation", () => {
-  function makeDb(memberRows: { userId: string }[]) {
+  function makeDb(memberRows: { membershipId: number; membership: { userId: string } }[]) {
     const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
     const values = jest.fn().mockReturnValue({ onConflictDoNothing });
     const insert = jest.fn().mockReturnValue({ values });
@@ -327,7 +329,7 @@ describe("ChatReplyRemindersService — tenant isolation", () => {
   }
 
   it("DENY: scheduleForMessage inserts no reminders when there are no other channel members", async () => {
-    const { db, insert } = makeDb([]);
+    const { db, insert } = makeDb([] as never);
     const dispatch = {} as unknown as NotificationDispatchService;
     const service = new ChatReplyRemindersService(db, dispatch, { CHAT_REPLY_REMINDER_MINUTES: 15 } as never);
 
@@ -337,7 +339,7 @@ describe("ChatReplyRemindersService — tenant isolation", () => {
   });
 
   it("CONTROL: scheduleForMessage inserts reminders with the caller's orgId for each non-sender member", async () => {
-    const { db, insert, values } = makeDb([{ userId: "u2" }]);
+    const { db, insert, values } = makeDb([{ membershipId: 2, membership: { userId: "u2" } }]);
     const dispatch = {} as unknown as NotificationDispatchService;
     const service = new ChatReplyRemindersService(db, dispatch, { CHAT_REPLY_REMINDER_MINUTES: 15 } as never);
 

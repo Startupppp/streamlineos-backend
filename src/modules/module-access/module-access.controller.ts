@@ -58,6 +58,7 @@ import {
 } from "./dto/module-access.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const moduleKeyParams = z.object({ moduleKey: z.string().min(1) }).strict();
 const moduleKeymembershipIdParams = z.object({ moduleKey: z.string().min(1), membershipId: z.string().min(1) }).strict();
@@ -116,6 +117,7 @@ export class ModuleAccessController {
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
   @Validate({ params: moduleKeymembershipIdParams })
+  @BodylessAction()
   grantAdminStanding(
     @Param() params: StandingMemberParam,
     @CurrentUser() u: CurrentUserContext,
