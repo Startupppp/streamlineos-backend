@@ -5,12 +5,20 @@ import { CurrentUser } from "../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../common/auth/backend-claims";
 import { Validate } from "../common/validation/validate.decorator";
 import { NotificationsService } from "../modules/notifications/notifications.service";
+import { UnifiedInboxService } from "../modules/notifications/unified-inbox.service";
 import { inboxQuerySchema, type InboxQuery } from "./dto/inbox.schemas";
+import {
+  unifiedInboxQuerySchema,
+  type UnifiedInboxQuery,
+} from "../modules/notifications/dto/unified-inbox.schemas";
 
 @Controller("me/inbox")
 @UseGuards(JwtAuthGuard)
 export class InboxController {
-  constructor(private readonly notifications: NotificationsService) {}
+  constructor(
+    private readonly notifications: NotificationsService,
+    private readonly unifiedInbox: UnifiedInboxService,
+  ) {}
 
   @Get()
   @Universal()
@@ -27,5 +35,15 @@ export class InboxController {
   @Universal()
   count(@CurrentUser() u: CurrentUserContext) {
     return this.notifications.unreadCount(u.orgId, u.userId);
+  }
+
+  @Get("unified")
+  @Universal()
+  @Validate({ query: unifiedInboxQuerySchema })
+  unified(
+    @Query() query: UnifiedInboxQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.unifiedInbox.list(u.orgId, u.userId, query, u);
   }
 }

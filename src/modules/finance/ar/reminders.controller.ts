@@ -78,4 +78,10 @@ export class RemindersController {
   ) {
     return this.svc.listLog(u.orgId, query);
   }
+
+  @Get("effectiveness")
+  @RequirePermission("accounting:reminders:read")
+  effectiveness(@CurrentUser() u: CurrentUserContext) {
+    return this.svc.effectiveness(u.orgId);
+  }
 }

@@ -238,18 +238,7 @@ export class BroadcastsService {
     return { success: true };
   }
 
-  /**
-   * C21-02. Per-user inbox: SENT broadcasts this user is in the audience for and
-   * has not yet dismissed. Unread state is the absence of a receipt row — no per-user
-   * rows are written at publish time.
-   *
-   * The audience check runs a subquery against broadcast_audience_targets, filtering
-   * by the three possible kinds (USER / ROLE / DEPARTMENT). audienceType='all'
-   * bypasses the subquery and matches every org member.
-   */
-  async listInbox(orgId: string, userId: string, limit: number) {
-    const clampedLimit = Math.min(limit, 100);
-
+  private async resolveAudienceFilter(orgId: string, userId: string) {
     const [userRow, roleRows] = await Promise.all([
       this.db
         .select({ deptId: hrEmployments.departmentId })
@@ -294,19 +283,27 @@ export class BroadcastsService {
     const audienceTargetRows = await this.db
       .select({ broadcastId: broadcastAudienceTargets.broadcastId })
       .from(broadcastAudienceTargets)
-      .where(
-        and(
-          eq(broadcastAudienceTargets.orgId, orgId),
-          or(...audienceKindConditions),
-        ),
-      );
+      .where(and(eq(broadcastAudienceTargets.orgId, orgId), or(...audienceKindConditions)));
 
     const targetedBroadcastIds = audienceTargetRows.map((r) => r.broadcastId);
 
-    const audienceFilter =
-      targetedBroadcastIds.length > 0
-        ? or(eq(broadcasts.audienceType, "all"), inArray(broadcasts.id, targetedBroadcastIds))
-        : eq(broadcasts.audienceType, "all");
+    return targetedBroadcastIds.length > 0
+      ? or(eq(broadcasts.audienceType, "all"), inArray(broadcasts.id, targetedBroadcastIds))
+      : eq(broadcasts.audienceType, "all");
+  }
+
+  /**
+   * C21-02. Per-user inbox: SENT broadcasts this user is in the audience for and
+   * has not yet dismissed. Unread state is the absence of a receipt row — no per-user
+   * rows are written at publish time.
+   *
+   * The audience check runs a subquery against broadcast_audience_targets, filtering
+   * by the three possible kinds (USER / ROLE / DEPARTMENT). audienceType='all'
+   * bypasses the subquery and matches every org member.
+   */
+  async listInbox(orgId: string, userId: string, limit: number) {
+    const clampedLimit = Math.min(limit, 100);
+    const audienceFilter = await this.resolveAudienceFilter(orgId, userId);
 
     const rows = await this.db
       .select({
@@ -341,6 +338,49 @@ export class BroadcastsService {
       .limit(clampedLimit);
 
     return { items: rows };
+  }
+
+  async listInboxPage(
+    orgId: string,
+    userId: string,
+    limit: number,
+    cursor: number | null,
+  ) {
+    const audienceFilter = await this.resolveAudienceFilter(orgId, userId);
+
+    const rows = await this.db
+      .select({
+        id: broadcasts.id,
+        title: broadcasts.title,
+        message: broadcasts.message,
+        type: broadcasts.type,
+        priority: broadcasts.priority,
+        category: broadcasts.category,
+        sentAt: broadcasts.sentAt,
+        createdAt: broadcasts.createdAt,
+      })
+      .from(broadcasts)
+      .leftJoin(
+        broadcastReadReceipts,
+        and(
+          eq(broadcastReadReceipts.broadcastId, broadcasts.id),
+          eq(broadcastReadReceipts.userId, userId),
+          eq(broadcastReadReceipts.orgId, orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(broadcasts.orgId, orgId),
+          eq(broadcasts.status, "SENT"),
+          isNull(broadcastReadReceipts.id),
+          audienceFilter,
+          cursor !== null ? lt(broadcasts.id, cursor) : undefined,
+        ),
+      )
+      .orderBy(desc(broadcasts.id))
+      .limit(limit);
+
+    return rows;
   }
 
   /**

@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
+import { MailModule } from "../mail/mail.module";
 import { NotificationsController } from "./notifications.controller";
 import { NotificationsService } from "./notifications.service";
+import { UnifiedInboxService } from "./unified-inbox.service";
 import { NotificationsReadService } from "./notifications-read.service";
 import { NotificationsLifecycleService } from "./notifications-lifecycle.service";
 import { NotificationEventService } from "./notification-event.service";
@@ -33,7 +35,7 @@ import { NotificationPolicyService } from "./notification-policy.service";
 import { NotificationPolicyController } from "./notification-policy.controller";
 
 @Module({
-  imports: [RealtimeModule],
+  imports: [RealtimeModule, MailModule],
   controllers: [
     NotificationsController,
     NotificationTemplatesController,
@@ -68,9 +70,11 @@ import { NotificationPolicyController } from "./notification-policy.controller";
     NotificationWhatsAppProvider,
     NotificationSmsProvider,
     NotificationTimeSweepsService,
+    UnifiedInboxService,
   ],
   exports: [
     NotificationsService,
+    UnifiedInboxService,
     NotificationEventService,
     NotificationDispatchService,
     NotificationEventRegistryService,

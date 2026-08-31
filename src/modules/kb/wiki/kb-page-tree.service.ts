@@ -5,12 +5,14 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { randomUUID } from "node:crypto";
 import { and, eq, inArray, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { kbPages, kbPageLinks, kbArticleChunks } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { extractPageLinkIds } from "./kb-page-content.util";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
@@ -170,6 +172,29 @@ export class KbPageTreeService {
           .update(kbPages)
           .set({ parentPageId })
           .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)));
+      }
+
+      const pagesToIndex = await tx
+        .select({
+          id: kbPages.id,
+          contentRevision: kbPages.contentRevision,
+          aclRevision: kbPages.aclRevision,
+          contentText: kbPages.contentText,
+        })
+        .from(kbPages)
+        .where(and(eq(kbPages.orgId, orgId), inArray(kbPages.id, subtreeIds)));
+      for (const p of pagesToIndex) {
+        if (!p.contentText?.trim()) continue;
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "kb_page",
+          aggregateId: String(p.id),
+          aggregateVersion: Date.now(),
+          eventType: "kb.content.index",
+          payload: { contentType: "page", contentId: p.id, contentRevision: p.contentRevision, aclRevision: p.aclRevision },
+          occurredAt: new Date(),
+        });
       }
 
       const [restoredPage] = await tx

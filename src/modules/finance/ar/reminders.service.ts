@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, gt, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { finReminderPolicies, finReminderLog, invoices, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -92,7 +92,9 @@ export class RemindersService {
       id: finReminderLog.id,
       orgId: finReminderLog.orgId,
       invoiceId: finReminderLog.invoiceId,
+      scheduledAt: finReminderLog.scheduledAt,
       sentAt: finReminderLog.sentAt,
+      paidAt: finReminderLog.paidAt,
       channel: finReminderLog.channel,
       offsetDays: finReminderLog.offsetDays,
       status: finReminderLog.status,
@@ -102,10 +104,21 @@ export class RemindersService {
     return { items: result.data, pagination: { limit: pageLimit, hasMore: result.hasMore, nextCursor: result.nextCursor } };
   }
 
+  async effectiveness(orgId: string): Promise<{ sent: number; paidAfterReminder: number; effectivenessRate: number }> {
+    const rows = await this.db.select({
+      sent: sql<number>`count(*) filter (where ${finReminderLog.status} = 'SENT')`,
+      paidAfterReminder: sql<number>`count(*) filter (where ${finReminderLog.status} = 'SENT' and ${finReminderLog.paidAt} is not null and ${finReminderLog.paidAt} > ${finReminderLog.sentAt})`,
+    }).from(finReminderLog).where(eq(finReminderLog.orgId, orgId));
+    const row = rows[0];
+    const sent = Number(row?.sent ?? 0);
+    const paidAfterReminder = Number(row?.paidAfterReminder ?? 0);
+    return { sent, paidAfterReminder, effectivenessRate: sent > 0 ? paidAfterReminder / sent : 0 };
+  }
+
   async processDueReminders(orgId?: string): Promise<{ sent: number }> {
+    if (orgId !== undefined) return this.sweepOrg(orgId);
     let sent = 0;
     await forEachOrg(this.db, "finance:invoice-reminders", async (_tx, oid) => {
-      if (orgId !== undefined && orgId !== oid) return;
       const result = await this.sweepOrg(oid);
       sent += result.sent;
     });
@@ -216,12 +229,13 @@ export class RemindersService {
       if (targetUserIds.length === 0) return 0;
 
       const queued = await this.db.transaction(async (tx) => {
+        const now = new Date();
         const insertResult = await tx
           .insert(finReminderLog)
-          .values({ orgId, invoiceId: inv.id, channel: policy.channel, offsetDays, status: "PENDING" })
+          .values({ orgId, invoiceId: inv.id, channel: policy.channel, offsetDays, status: "PENDING", scheduledAt: now })
           .onConflictDoUpdate({
             target: [finReminderLog.orgId, finReminderLog.invoiceId, finReminderLog.offsetDays],
-            set: { status: "PENDING" },
+            set: { status: "PENDING", scheduledAt: now },
             where: inArray(finReminderLog.status, ["FAILED", "PENDING"]),
           })
           .returning({ id: finReminderLog.id });

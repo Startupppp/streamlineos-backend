@@ -216,33 +216,110 @@ describe("AccountingMappingsService — create XOR validation", () => {
 describe("ReportsService — pagination cap", () => {
   const mockDb = {
     select: jest.fn().mockReturnThis(),
+    selectDistinct: jest.fn().mockReturnThis(),
     from: jest.fn().mockReturnThis(),
     where: jest.fn(),
     innerJoin: jest.fn().mockReturnThis(),
     leftJoin: jest.fn().mockReturnThis(),
     limit: jest.fn().mockReturnThis(),
+    offset: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
   };
 
   const service = new ReportsService(mockDb as never);
 
-  it("caps limit at 100 for getBankPayout", async () => {
-    mockDb.where.mockReturnValueOnce(chain([{ id: 10, status: "LOCKED", month: "2026-07", orgId: "org1" }]));
-    mockDb.where.mockReturnValueOnce(chain([]));
+  it("caps limit at 100 for getBankPayout — batches query returns empty", async () => {
+    mockDb.where.mockReset();
+    mockDb.where
+      .mockReturnValueOnce(chain([{ id: 10, status: "LOCKED", month: "2026-07", orgId: "org1", runType: "REGULAR" }]))
+      .mockReturnValueOnce(chain([]));
 
     const result = await service.getBankPayout("org1", "2026-07", { limit: 999, offset: 0 });
     expect(result.batches.length).toBeLessThanOrEqual(100);
   });
 
   it("respects offset for getVariance perEmployee", async () => {
-    const run = { id: 10, status: "LOCKED", month: "2026-07", orgId: "org1", grossTotal: "10000.00", netTotal: "9000.00" };
+    const run = { id: 10, status: "LOCKED", month: "2026-07", orgId: "org1", grossTotal: "10000.00", netTotal: "9000.00", runType: "REGULAR" };
+    mockDb.where.mockReset();
     mockDb.where
       .mockReturnValueOnce(chain([run]))
-      .mockReturnValueOnce(chain([]))
       .mockReturnValueOnce(chain([]))
       .mockReturnValueOnce(chain([]));
 
     const result = await service.getVariance("org1", "2026-07", { limit: 10, offset: 100 });
     expect(result.perEmployee).toHaveLength(0);
+  });
+});
+
+describe("ReportsService — SQL cap bites at 100", () => {
+  function limitedChain(data: unknown[]) {
+    let result = [...data];
+    const c: Record<string, unknown> = {};
+    c["then"] = (resolve: (v: unknown) => void) => resolve(result);
+    c["limit"] = (n: number) => { result = result.slice(0, n); return c; };
+    c["offset"] = (n: number) => { result = result.slice(n); return c; };
+    c["orderBy"] = () => c;
+    c["groupBy"] = () => c;
+    c["having"] = () => c;
+    return c;
+  }
+
+  it("getVariance: clamps limit to 100 even when 999 is requested", async () => {
+    const run = {
+      id: 10, status: "LOCKED", month: "2026-07", orgId: "org1",
+      grossTotal: "1000000.00", netTotal: "900000.00", runType: "REGULAR",
+    };
+    const fakeEmployees = Array.from({ length: 200 }, (_, i) => ({
+      userId: `user-${i}`,
+      gross: "5000.00",
+      net: "4500.00",
+      userName: `User ${i}`,
+    }));
+
+    const mockDb2 = {
+      select: jest.fn().mockReturnThis(),
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn()
+        .mockReturnValueOnce(limitedChain([run]))
+        .mockReturnValueOnce(limitedChain([]))
+        .mockReturnValueOnce(limitedChain(fakeEmployees)),
+    };
+
+    const service2 = new ReportsService(mockDb2 as never);
+    const result = await service2.getVariance("org1", "2026-07", { limit: 999, offset: 0 });
+
+    expect(result.perEmployee.length).toBe(100);
+  });
+
+  it("getBankPayout: clamps limit to 100 when 999 is requested", async () => {
+    const run = { id: 10, status: "LOCKED", month: "2026-07", orgId: "org1", runType: "REGULAR" };
+    const fakeBatches = Array.from({ length: 200 }, (_, i) => ({
+      id: i + 1,
+      batchNumber: `BATCH-${i}`,
+      format: "NEFT",
+      totalAmount: "50000.00",
+      itemCount: 10,
+      status: "GENERATED",
+      generatedAt: new Date(),
+    }));
+
+    const mockDb3 = {
+      select: jest.fn().mockReturnThis(),
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn()
+        .mockReturnValueOnce(limitedChain([run]))
+        .mockReturnValueOnce(limitedChain(fakeBatches))
+        .mockReturnValueOnce(limitedChain([])),
+    };
+
+    const service3 = new ReportsService(mockDb3 as never);
+    const result = await service3.getBankPayout("org1", "2026-07", { limit: 999, offset: 0 });
+
+    expect(result.batches.length).toBe(100);
   });
 });
 

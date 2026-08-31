@@ -1,4 +1,4 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, asc, inArray } from "drizzle-orm";
 import { livePersonOfUser, primaryEmploymentOfPerson, orgUnitInOrg } from "../../../directory/employment-query";
 import type { Db } from "../../../../db/drizzle.module";
 import { hrEmployments, hrPeople } from "../../../../db/schema/hr/core-people";
@@ -66,26 +66,65 @@ export async function findRunForMonth(
   return rows[0] ?? null;
 }
 
-export async function getLineItemsForRun(
+export async function getRunEmployeeIds(
   db: Db,
   orgId: string,
   runId: number,
-  filters?: LineItemFilters,
-): Promise<EnrichedLineItem[]> {
-  const conditions = [eq(payrollLineItems.runId, runId)];
-  if (filters?.workerType)
+  filters: LineItemFilters,
+  limit: number,
+  offset: number,
+): Promise<number[]> {
+  const conditions = [eq(payrollRunEmployees.runId, runId)];
+  if (filters.workerType)
     conditions.push(
       eq(
         payrollRunEmployees.workerType,
         filters.workerType as (typeof payrollRunEmployees.$inferSelect)["workerType"],
       ),
     );
+  if (filters.department) conditions.push(eq(orgUnits.name, filters.department));
+  if (filters.costCenter) conditions.push(eq(employeeSalaryProfiles.costCenter, filters.costCenter));
 
-  if (filters?.department)
-    conditions.push(eq(orgUnits.name, filters.department));
+  const rows = await db
+    .selectDistinct({ id: payrollRunEmployees.id })
+    .from(payrollRunEmployees)
+    .innerJoin(users, eq(payrollRunEmployees.userId, users.id))
+    .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+    .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+    .leftJoin(orgUnits, and(orgUnitInOrg(orgId, hrEmployments.departmentId), eq(orgUnits.kind, "DEPARTMENT")))
+    .leftJoin(employeeSalaryProfiles, eq(employeeSalaryProfiles.id, payrollRunEmployees.profileId))
+    .where(and(...conditions))
+    .orderBy(asc(payrollRunEmployees.id))
+    .limit(limit)
+    .offset(offset);
 
-  if (filters?.costCenter)
-    conditions.push(eq(employeeSalaryProfiles.costCenter, filters.costCenter));
+  return rows.map((r) => r.id);
+}
+
+export async function getLineItemsForRun(
+  db: Db,
+  orgId: string,
+  runId: number,
+  filters?: LineItemFilters,
+  runEmployeeIds?: number[],
+): Promise<EnrichedLineItem[]> {
+  const conditions = [eq(payrollLineItems.runId, runId)];
+
+  if (runEmployeeIds && runEmployeeIds.length > 0) {
+    conditions.push(inArray(payrollLineItems.runEmployeeId, runEmployeeIds));
+  } else if (!runEmployeeIds) {
+    if (filters?.workerType)
+      conditions.push(
+        eq(
+          payrollRunEmployees.workerType,
+          filters.workerType as (typeof payrollRunEmployees.$inferSelect)["workerType"],
+        ),
+      );
+    if (filters?.department)
+      conditions.push(eq(orgUnits.name, filters.department));
+    if (filters?.costCenter)
+      conditions.push(eq(employeeSalaryProfiles.costCenter, filters.costCenter));
+  }
 
   const rows = await db
     .select({

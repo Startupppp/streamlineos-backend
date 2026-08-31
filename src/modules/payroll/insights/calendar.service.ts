@@ -75,7 +75,8 @@ export class CalendarService {
       .select()
       .from(payrollCalendarEvents)
       .where(whereClause)
-      .orderBy(asc(payrollCalendarEvents.date));
+      .orderBy(asc(payrollCalendarEvents.date))
+      .limit(500);
 
     return rows.map(toRow);
   }
