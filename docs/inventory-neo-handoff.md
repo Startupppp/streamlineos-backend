@@ -1,5 +1,7 @@
 # InventoryOS — NEO handoff
 
+**Close pass update — 2026-08-31.** Code commit `6c8f68fc` fixes the remaining replay-boundary defects by making PO-batch and recall execution reach `runIdempotent` before command-invalidated preconditions, storing a replayable PO response, and fixing the proposal-refresh route order; local checks passed for inventory reachability, PO quantity/override guards, recall execute units, transit-exit arithmetic, frontend route states, and the proposal refresh route-order regression. RF is still blocked by no real signed-in session/cookie, and Neon was not migrated because `pg_stat_activity` showed live `streamlineos-api` sessions, including one active. Remaining non-code blockers are unchanged: live Blinkit/Zepto/Instamart secrets and a real WES adapter.
+
 **Branch:** `feat/inventory-world-class-implementation` (both repos)
 **Written:** 2026-08-30. Revised the same day by the PEND pass, which closed §6.
 Re-verify anything dated before you rely on it.
