@@ -20,7 +20,6 @@ import type { SnapshotWithDiff } from "./ai-summaries.types";
 import type { AiSummarySnapshot } from "../../../db/schema/ai/ai-summaries";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const entityTypeentityIdParams = z.object({ entityType: z.string().min(1), entityId: z.string().min(1) }).strict();
 
@@ -47,19 +46,16 @@ export class AiSummariesController {
   @Post(":entityType/:entityId/snapshot")
   @HttpCode(201)
   @RequirePermission("ai:summaries:create")
-  @Validate({ params: entityTypeentityIdParams })
-  @BodylessAction()
+  @Validate({ params: entityTypeentityIdParams, body: saveSnapshotSchema })
   async saveSnapshot(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
-    @Body() body: unknown,
+    @Body() body: z.infer<typeof saveSnapshotSchema>,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<AiSummarySnapshot> {
     if (!isAllowedEntityType(entityType)) {
       throw new BadRequestException(`Invalid entityType: ${entityType}`);
     }
-    const parsed = saveSnapshotSchema.safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.aiSummaries.saveSnapshot(u.orgId, entityType, entityId, parsed.data, u.userId);
+    return this.aiSummaries.saveSnapshot(u.orgId, entityType, entityId, body, u.userId);
   }
 }
