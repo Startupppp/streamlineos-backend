@@ -3,6 +3,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { AutomationService } from "./automation.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
+import { AutomationWebhookService } from "./automation-webhook.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -36,6 +37,7 @@ const mockDb = {
 
 const mockNotifications = { create: jest.fn() };
 const mockEmail = { send: jest.fn() };
+const mockWebhook = { dispatchWebhook: jest.fn().mockResolvedValue(undefined) };
 const mockPlanLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
 const mockAiNodeExecutor = { executeNode: jest.fn().mockResolvedValue({ ok: true }) };
 
@@ -55,6 +57,7 @@ describe("AutomationService — support_* actions", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
+        { provide: AutomationWebhookService, useValue: mockWebhook },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
         { provide: AiNodeExecutorService, useValue: mockAiNodeExecutor },
       ],
@@ -158,6 +161,7 @@ describe("AutomationService — rule CRUD", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
+        { provide: AutomationWebhookService, useValue: mockWebhook },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
         { provide: AiNodeExecutorService, useValue: mockAiNodeExecutor },
       ],
@@ -293,6 +297,7 @@ describe("AutomationService.runAutomationsForEvent() — batch writes", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: mockNotifications },
         { provide: AutomationEmailService, useValue: mockEmail },
+        { provide: AutomationWebhookService, useValue: mockWebhook },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
         { provide: AiNodeExecutorService, useValue: mockAiNodeExecutor },
       ],
@@ -421,6 +426,7 @@ describe("AutomationService — support_add_tag org-scoping", () => {
         { provide: DRIZZLE, useValue: localDb },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: AutomationEmailService, useValue: { send: jest.fn() } },
+        { provide: AutomationWebhookService, useValue: { dispatchWebhook: jest.fn().mockResolvedValue(undefined) } },
         { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
         { provide: AiNodeExecutorService, useValue: { executeNode: jest.fn() } },
       ],
@@ -502,6 +508,7 @@ describe("AutomationService — W-6: live membership check on assigneeId", () =>
         { provide: DRIZZLE, useValue: localDb },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: AutomationEmailService, useValue: { send: jest.fn() } },
+        { provide: AutomationWebhookService, useValue: { dispatchWebhook: jest.fn().mockResolvedValue(undefined) } },
         { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
         { provide: AiNodeExecutorService, useValue: { executeNode: jest.fn() } },
       ],
@@ -596,6 +603,7 @@ describe("AutomationService — W-6: live membership check on assigneeId", () =>
         { provide: DRIZZLE, useValue: localDb },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: AutomationEmailService, useValue: { send: jest.fn() } },
+        { provide: AutomationWebhookService, useValue: { dispatchWebhook: jest.fn().mockResolvedValue(undefined) } },
         { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
         { provide: AiNodeExecutorService, useValue: { executeNode: jest.fn() } },
       ],

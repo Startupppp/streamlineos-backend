@@ -125,6 +125,7 @@ export const contacts = pgTable("contacts", {
   avatarUrl: text("avatar_url"),
   leadId: integer("lead_id").references(() => leads.id, { onDelete: "set null" }),
   dealId: integer("deal_id"),
+  notes: text("notes"),
   tags: jsonb("tags").$type<string[]>().default([]).notNull(),
   deletedAt: timestamp("deleted_at"),
   mergedIntoId: integer("merged_into_id"),

@@ -19,7 +19,7 @@ import { organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
 import { clientAccounts } from "./contacts";
 import { crmPeople } from "./analytics";
-import { deals } from "./deal-pipeline";
+import { deals } from "./deals";
 
 export const salesQuotas = pgTable(
   "sales_quotas",

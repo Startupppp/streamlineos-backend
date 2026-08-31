@@ -3,6 +3,7 @@ import { Test } from "@nestjs/testing";
 import { AutomationService } from "./automation.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
+import { AutomationWebhookService } from "./automation-webhook.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -36,6 +37,7 @@ describe("AutomationService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: AutomationEmailService, useValue: { send: jest.fn() } },
+        { provide: AutomationWebhookService, useValue: { dispatchWebhook: jest.fn().mockResolvedValue(undefined) } },
         { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } },
         { provide: AiNodeExecutorService, useValue: { executeNode: jest.fn().mockResolvedValue({ ok: true }) } },
       ],

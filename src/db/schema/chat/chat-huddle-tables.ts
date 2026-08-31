@@ -1,0 +1,99 @@
+import {
+  pgTable,
+  text,
+  timestamp,
+  boolean,
+  integer,
+  index,
+  uniqueIndex,
+  foreignKey,
+  unique,
+} from "drizzle-orm/pg-core";
+import { organizations, users, organizationMembers } from "../common/auth";
+import { chatChannels } from "./chat-channel-tables";
+
+export const chatUserPresence = pgTable(
+  "chat_user_presence",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    membershipId: integer("membership_id").notNull(),
+    status: text("status").default("OFFLINE").notNull(),
+    lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uniq_chat_presence_org_membership").on(table.orgId, table.membershipId),
+    index("idx_chat_presence_org").on(table.orgId, table.status),
+    index("idx_chat_presence_lastseen").on(table.orgId, table.lastSeenAt),
+    unique("uniq_chat_user_presence_org_id").on(table.orgId, table.id),
+    foreignKey({
+      columns: [table.orgId, table.membershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_chat_user_presence_org_membership",
+    }).onDelete("cascade"),
+  ],
+);
+
+export const chatHuddles = pgTable(
+  "chat_huddles",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    channelId: integer("channel_id")
+      .references(() => chatChannels.id, { onDelete: "cascade" })
+      .notNull(),
+    startedBy: text("started_by")
+      .references(() => users.id)
+      .notNull(),
+    startedByMembershipId: integer("started_by_membership_id"),
+    status: text("status").default("active").notNull(),
+    calendarEventId: integer("calendar_event_id"),
+    hasVideo: boolean("has_video").default(false).notNull(),
+    startedAt: timestamp("started_at").defaultNow().notNull(),
+    endedAt: timestamp("ended_at"),
+  },
+  (table) => [
+    index("idx_chat_huddles_channel").on(table.channelId, table.status),
+    index("idx_chat_huddles_org").on(table.orgId),
+    unique("uniq_chat_huddles_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.channelId], foreignColumns: [chatChannels.orgId, chatChannels.id], name: "fk_chat_huddles_org_channel" }),
+    foreignKey({ columns: [table.orgId, table.startedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_huddles_org_starter_membership" }).onDelete("set null"),
+  ],
+);
+
+export const chatHuddleParticipants = pgTable(
+  "chat_huddle_participants",
+  {
+    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    huddleId: integer("huddle_id")
+      .references(() => chatHuddles.id, { onDelete: "cascade" })
+      .notNull(),
+    userId: text("user_id")
+      .references(() => users.id, { onDelete: "cascade" })
+      .notNull(),
+    membershipId: integer("membership_id"),
+    joinedAt: timestamp("joined_at").defaultNow().notNull(),
+    leftAt: timestamp("left_at"),
+    isMuted: boolean("is_muted").default(false).notNull(),
+    handRaised: boolean("hand_raised").default(false).notNull(),
+    isCameraOff: boolean("is_camera_off").default(false).notNull(),
+    isScreenSharing: boolean("is_screen_sharing").default(false).notNull(),
+    isDeafened: boolean("is_deafened").default(false).notNull(),
+    lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("uniq_huddle_participant").on(table.huddleId, table.userId),
+    index("idx_huddle_participants_huddle").on(table.huddleId),
+    index("idx_chat_huddle_participants_org").on(table.orgId),
+    unique("uniq_chat_huddle_participants_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.huddleId], foreignColumns: [chatHuddles.orgId, chatHuddles.id], name: "fk_chat_huddle_participants_org_huddle" }),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_huddle_participants_org_membership" }).onDelete("cascade"),
+  ],
+);

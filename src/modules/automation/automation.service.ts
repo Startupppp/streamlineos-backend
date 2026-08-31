@@ -1,8 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import type { AiNodeType } from "./ai-workflow-nodes/ai-node-types";
-import { createHmac } from "node:crypto";
-import { checkWebhookUrl } from "../../common/security/ssrf-guard";
 import { and, eq, inArray, like, sql } from "drizzle-orm";
 import {
   automationRules,
@@ -10,8 +8,6 @@ import {
   AUTOMATION_TRIGGERS,
   organizationMembers,
   tasks,
-  webhookEndpoints,
-  webhookLogs,
   supportTickets,
   supportTicketMessages,
   supportTicketTags,
@@ -24,6 +20,7 @@ import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
+import { AutomationWebhookService } from "./automation-webhook.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { evaluateConditions, type EventPayload } from "./automation.evaluator";
 import type { CreateAutomationRuleInput, UpdateAutomationRuleInput } from "./dto/automation.schemas";
@@ -51,8 +48,6 @@ export interface EvaluationResult {
   actionResults: ActionResult[];
 }
 
-const WEBHOOK_TIMEOUT_MS = 10_000;
-
 function assertNever(x: never): never {
   throw new Error(`Unhandled action type: ${String(x)}`);
 }
@@ -70,6 +65,7 @@ export class AutomationService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: NotificationsService,
     private readonly email: AutomationEmailService,
+    private readonly webhookService: AutomationWebhookService,
     private readonly planLimits: PlanLimitsService,
     private readonly aiNodeExecutor: AiNodeExecutorService,
   ) {}
@@ -98,87 +94,6 @@ export class AutomationService {
         }),
       ),
     );
-  }
-
-  private async dispatchWebhook(
-    orgId: string,
-    eventName: string,
-    payload: EventPayload,
-  ): Promise<void> {
-    const endpoints = await this.db.query.webhookEndpoints.findMany({
-      where: and(eq(webhookEndpoints.orgId, orgId), eq(webhookEndpoints.isActive, true)),
-    });
-
-    const active = endpoints.filter((endpoint) => {
-      const events = endpoint.events;
-      return events.length === 0 || events.includes(eventName) || events.includes("*");
-    });
-    if (active.length === 0) return;
-
-    const results = await Promise.allSettled(
-      active.map((endpoint) => this.deliverWebhook(endpoint, orgId, eventName, payload)),
-    );
-
-    const failed = results.filter((result) => result.status === "rejected").length;
-    if (failed > 0) throw new Error(`Webhook delivery failed for ${failed}/${active.length} endpoint(s)`);
-  }
-
-  private async deliverWebhook(
-    endpoint: { id: number; url: string; secret: string },
-    orgId: string,
-    eventName: string,
-    payload: EventPayload,
-  ): Promise<void> {
-    const urlCheck = await checkWebhookUrl(endpoint.url);
-    if (!urlCheck.allowed) {
-      await this.db.insert(webhookLogs).values({
-        endpointId: endpoint.id,
-        orgId,
-        event: eventName,
-        payload,
-        statusCode: null,
-        responseBody: `SSRF: ${urlCheck.reason}`,
-        success: false,
-      });
-      throw new Error(`SSRF: webhook URL blocked (${urlCheck.reason})`);
-    }
-
-    const body = JSON.stringify({ event: eventName, data: payload, timestamp: new Date().toISOString() });
-    const signature = createHmac("sha256", endpoint.secret).update(body).digest("hex");
-
-    let statusCode: number | null = null;
-    let responseBody: string | null;
-    let success = false;
-
-    try {
-      const response = await fetch(endpoint.url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-StreamlineOS-Signature": `sha256=${signature}`,
-          "X-Webhook-Event": eventName,
-        },
-        body,
-        signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
-      });
-      statusCode = response.status;
-      responseBody = await response.text().catch(() => null);
-      success = response.ok;
-    } catch (error) {
-      responseBody = error instanceof Error ? error.message : "Request failed";
-    }
-
-    await this.db.insert(webhookLogs).values({
-      endpointId: endpoint.id,
-      orgId,
-      event: eventName,
-      payload,
-      statusCode,
-      responseBody: responseBody?.slice(0, 2000) ?? null,
-      success,
-    });
-
-    if (!success) throw new Error(`Webhook delivery failed: ${statusCode ?? "no response"}`);
   }
 
   /** support_* actions only make sense for ticket-lifecycle triggers, which always include ticketId in the payload. */
@@ -253,7 +168,7 @@ export class AutomationService {
           return { type: action.type, ok: true };
         }
         case "webhook": {
-          await this.dispatchWebhook(orgId, action.config.event, payload);
+          await this.webhookService.dispatchWebhook(orgId, action.config.event, payload);
           return { type: action.type, ok: true };
         }
         case "support_assign_ticket": {

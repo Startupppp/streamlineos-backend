@@ -1,5 +1,5 @@
 
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, uniqueIndex, unique, primaryKey, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, date, integer, index, uniqueIndex, unique, primaryKey, uuid } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { genderEnum, onboardingStatusEnum, onboardingDocStatusEnum, membershipStatusEnum, organizationStatusEnum, invitationStatusEnum } from "./enums";
 import { modulesCatalog } from "./modules";
@@ -12,11 +12,6 @@ export const organizations = pgTable("organizations", {
   logo: text("logo"),
   website: text("website"),
   industry: text("industry"),
-  /**
-   * Where this organisation's data physically lives. Nullable because an
-   * unplaced organisation must be representable — resolution then fails closed
-   * rather than guessing a region and writing rows into the wrong database.
-   */
   region: text("region"),
   timezone: text("timezone").default("Asia/Kolkata").notNull(),
   currency: text("currency").default("INR").notNull(),
@@ -201,73 +196,6 @@ export const invitations = pgTable("invitations", {
   uniqueIndex("uniq_invitations_org_email_pending").on(table.orgId, table.email).where(sql`status = 'PENDING'`),
 ]);
 
-export const userSessions = pgTable("user_sessions", {
-  id: text("id").primaryKey(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  userAgent: text("user_agent"),
-  ipAddress: text("ip_address"),
-  isRevoked: boolean("is_revoked").default(false).notNull(),
-  lastActive: timestamp("last_active").defaultNow().notNull(),
-  deviceId: text("device_id"),
-  expiresAt: timestamp("expires_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_user_sessions_user_active").on(table.userId, table.isRevoked, table.createdAt),
-  index("idx_user_sessions_user_revoked_last").on(table.userId, table.isRevoked, table.lastActive),
-]);
-
-export const apiKeys = pgTable("api_keys", {
-  id: text("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
-  keyHash: text("key_hash").notNull(),
-  keyPrefix: text("key_prefix").notNull(),
-  description: text("description"),
-  scopes: text("scopes").array().default([]).notNull(),
-  isRevoked: boolean("is_revoked").default(false).notNull(),
-  lastUsedAt: timestamp("last_used_at"),
-  expiresAt: timestamp("expires_at"),
-  createdBy: text("created_by").references(() => users.id).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_api_keys_org_active").on(table.orgId, table.isRevoked),
-  uniqueIndex("idx_api_keys_key_prefix").on(table.keyPrefix),
-]);
-
-export const mfaBackupCodes = pgTable("mfa_backup_codes", {
-  id: serial("id").primaryKey(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  codeHash: text("code_hash").notNull(),
-  usedAt: timestamp("used_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_mfa_backup_codes_user").on(table.userId),
-]);
-
-export const magicLinkTokens = pgTable("magic_link_tokens", {
-  id: text("id").primaryKey(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  tokenHash: text("token_hash").notNull(),
-  expiresAt: timestamp("expires_at").notNull(),
-  usedAt: timestamp("used_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_magic_link_tokens_user").on(table.userId),
-  uniqueIndex("idx_magic_link_tokens_hash").on(table.tokenHash),
-]);
-
-export const emailOtpCodes = pgTable("email_otp_codes", {
-  id: serial("id").primaryKey(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  codeHash: text("code_hash").notNull(),
-  expiresAt: timestamp("expires_at").notNull(),
-  usedAt: timestamp("used_at"),
-  attempts: integer("attempts").default(0).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_email_otp_codes_user_expires").on(table.userId, table.expiresAt),
-]);
-
 export const roles = pgTable("roles", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -353,7 +281,6 @@ export const accountsRelations = relations(accounts, ({ one }) => ({
   }),
 }));
 
-
 export const rolesRelations = relations(roles, ({ one }) => ({
   organization: one(organizations, {
     fields: [roles.orgId],
@@ -371,169 +298,3 @@ export const onboardingStepsRelations = relations(onboardingSteps, ({ one }) => 
     references: [organizations.id],
   }),
 }));
-
-export const userSessionsRelations = relations(userSessions, ({ one }) => ({
-  user: one(users, { fields: [userSessions.userId], references: [users.id] }),
-}));
-
-export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
-  organization: one(organizations, { fields: [apiKeys.orgId], references: [organizations.id] }),
-  creator: one(users, { fields: [apiKeys.createdBy], references: [users.id] }),
-}));
-
-export const mfaBackupCodesRelations = relations(mfaBackupCodes, ({ one }) => ({
-  user: one(users, { fields: [mfaBackupCodes.userId], references: [users.id] }),
-}));
-
-export const devices = pgTable("devices", {
-  id: text("id").primaryKey(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  fingerprint: text("fingerprint").notNull(),
-  browser: text("browser"),
-  os: text("os"),
-  platform: text("platform"),
-  trusted: boolean("trusted").default(false).notNull(),
-  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex("uniq_devices_user_fingerprint").on(table.userId, table.fingerprint),
-  index("idx_devices_user").on(table.userId),
-]);
-
-export const loginHistory = pgTable("login_history", {
-  id: text("id").primaryKey(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }),
-  event: text("event").notNull(),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  country: text("country"),
-  city: text("city"),
-  success: boolean("success").default(true).notNull(),
-  failureReason: text("failure_reason"),
-  deviceId: text("device_id"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  index("idx_login_history_user_created").on(table.userId, table.createdAt),
-  index("idx_login_history_org_created").on(table.orgId, table.createdAt),
-  index("idx_login_history_user_success").on(table.userId, table.success),
-]);
-
-export const devicesRelations = relations(devices, ({ one }) => ({
-  user: one(users, { fields: [devices.userId], references: [users.id] }),
-}));
-
-export const loginHistoryRelations = relations(loginHistory, ({ one }) => ({
-  user: one(users, { fields: [loginHistory.userId], references: [users.id] }),
-  organization: one(organizations, { fields: [loginHistory.orgId], references: [organizations.id] }),
-}));
-
-export const userApiTokens = pgTable("user_api_tokens", {
-  id: text("id").primaryKey(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
-  tokenHash: text("token_hash").notNull(),
-  hashAlg: text("hash_alg").default("bcrypt").notNull(),
-  prefix: text("prefix").notNull(),
-  scopes: text("scopes").array().default([]).notNull(),
-  expiresAt: timestamp("expires_at"),
-  lastUsedAt: timestamp("last_used_at"),
-  revokedAt: timestamp("revoked_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  uniqueIndex("uniq_user_api_tokens_hash").on(table.tokenHash),
-  index("idx_user_api_tokens_user").on(table.userId),
-  index("idx_user_api_tokens_legacy_lookup").on(table.prefix, table.hashAlg),
-]);
-
-export const userApiTokensRelations = relations(userApiTokens, ({ one }) => ({
-  user: one(users, { fields: [userApiTokens.userId], references: [users.id] }),
-}));
-
-export const userDelegations = pgTable("user_delegations", {
-  id: text("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  delegatorMembershipId: integer("delegator_membership_id").notNull(),
-  delegateeMembershipId: integer("delegatee_membership_id").notNull(),
-  startsAt: timestamp("starts_at").defaultNow().notNull(),
-  endsAt: timestamp("ends_at").notNull(),
-  reason: text("reason"),
-  status: text("status").default("ACTIVE").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  revokedAt: timestamp("revoked_at"),
-  revokedBy: text("revoked_by").references(() => users.id),
-}, (table) => [
-  unique("uniq_user_delegations_org_delegation").on(table.orgId, table.id),
-  index("idx_user_delegations_delegatee_status").on(
-    table.orgId,
-    table.delegateeMembershipId,
-    table.status,
-  ),
-  index("idx_user_delegations_org_ends").on(table.orgId, table.endsAt),
-  foreignKey({
-    name: "fk_user_delegations_delegator_membership",
-    columns: [table.orgId, table.delegatorMembershipId],
-    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
-  }).onDelete("cascade"),
-  foreignKey({
-    name: "fk_user_delegations_delegatee_membership",
-    columns: [table.orgId, table.delegateeMembershipId],
-    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
-  }).onDelete("cascade"),
-]);
-
-export const userDelegationPermissions = pgTable("user_delegation_permissions", {
-  orgId: text("org_id").notNull(),
-  delegationId: text("delegation_id").notNull(),
-  permissionKey: text("permission_key")
-    .references(() => permissions.name, { onDelete: "restrict" })
-    .notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-}, (table) => [
-  primaryKey({
-    name: "pk_user_delegation_permissions",
-    columns: [table.delegationId, table.permissionKey],
-  }),
-  foreignKey({
-    name: "fk_user_delegation_permissions_org_delegation",
-    columns: [table.orgId, table.delegationId],
-    foreignColumns: [userDelegations.orgId, userDelegations.id],
-  }).onDelete("cascade"),
-  index("idx_user_delegation_permissions_org_delegation").on(
-    table.orgId,
-    table.delegationId,
-  ),
-  index("idx_user_delegation_permissions_key").on(table.permissionKey),
-]);
-
-export const userDelegationsRelations = relations(userDelegations, ({ one, many }) => ({
-  org: one(organizations, { fields: [userDelegations.orgId], references: [organizations.id] }),
-  delegatorMembership: one(organizationMembers, {
-    fields: [userDelegations.orgId, userDelegations.delegatorMembershipId],
-    references: [organizationMembers.orgId, organizationMembers.id],
-    relationName: "delegatorMembership",
-  }),
-  delegateeMembership: one(organizationMembers, {
-    fields: [userDelegations.orgId, userDelegations.delegateeMembershipId],
-    references: [organizationMembers.orgId, organizationMembers.id],
-    relationName: "delegateeMembership",
-  }),
-  permissionGrants: many(userDelegationPermissions),
-}));
-
-export const userDelegationPermissionsRelations = relations(
-  userDelegationPermissions,
-  ({ one }) => ({
-    delegation: one(userDelegations, {
-      fields: [
-        userDelegationPermissions.orgId,
-        userDelegationPermissions.delegationId,
-      ],
-      references: [userDelegations.orgId, userDelegations.id],
-    }),
-    permission: one(permissions, {
-      fields: [userDelegationPermissions.permissionKey],
-      references: [permissions.name],
-    }),
-  }),
-);
