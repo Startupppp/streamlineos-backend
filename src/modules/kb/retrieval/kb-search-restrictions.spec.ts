@@ -1,3 +1,4 @@
+import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -57,6 +58,7 @@ describe("KbSearchService — restriction enforcement", () => {
       access as never,
       makeEmbeddings() as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     const user = makeUser();
@@ -75,6 +77,7 @@ describe("KbSearchService — restriction enforcement", () => {
       access as never,
       makeEmbeddings() as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     await svc.retrieveTopArticles(makeUser(), "test query", 5);
@@ -93,6 +96,7 @@ describe("KbSearchService — restriction enforcement", () => {
       access as never,
       makeEmbeddings() as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     const result = await svc.retrieveTopArticles(makeUser(), "  ", 5);
@@ -109,6 +113,7 @@ describe("KbSearchService — restriction enforcement", () => {
       access as never,
       makeEmbeddings() as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     const result = await svc.retrieveTopArticles(makeUser(), "test", 5);

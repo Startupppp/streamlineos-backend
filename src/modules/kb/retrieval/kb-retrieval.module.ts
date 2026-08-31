@@ -16,6 +16,7 @@ import {
   KbAttachmentAdapter,
 } from "./kb-content-adapter";
 import { KbPageBackfillService } from "./kb-page-backfill.service";
+import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbAskService } from "./kb-ask.service";
 import { KbChatHistoryService } from "./kb-chat-history.service";
@@ -41,6 +42,7 @@ import { KbPageIndexingController } from "./kb-page-indexing.controller";
     KbAttachmentAdapter,
     KbIngestionConsumer,
     KbPageBackfillService,
+    KbCandidateService,
     KbSearchService,
     KbAskService,
     KbChatHistoryService,

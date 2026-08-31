@@ -1,3 +1,4 @@
+import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -67,6 +68,7 @@ describe("KB ANN minority-tenant — vectorChunkIds always uses the SECURITY DEF
       makeAccess() as never,
       makeEmbeddings() as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     await svc.retrieveTopArticles(makeUser(), "deployment config", 4);
@@ -90,6 +92,7 @@ describe("KB ANN minority-tenant — vectorChunkIds always uses the SECURITY DEF
       makeAccess() as never,
       makeEmbeddings() as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     await svc.retrieveTopArticles(makeUser(), "password reset", 4);
@@ -109,6 +112,7 @@ describe("KB ANN minority-tenant — vectorChunkIds always uses the SECURITY DEF
       makeAccess() as never,
       makeEmbeddings() as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     await svc.retrieveTopSources(makeUser(), "onboarding", 4);

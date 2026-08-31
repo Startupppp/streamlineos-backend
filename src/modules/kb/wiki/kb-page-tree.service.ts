@@ -3,17 +3,15 @@ import {
   ConflictException,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, inArray, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
-import { kbPages, kbPageLinks } from "../../../db/schema";
+import { kbPages, kbPageLinks, kbArticleChunks } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { extractPageLinkIds } from "./kb-page-content.util";
-import { KbIndexingService } from "../retrieval/kb-indexing.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -46,11 +44,8 @@ export function isDescendant(
 
 @Injectable()
 export class KbPageTreeService {
-  private readonly logger = new Logger(KbPageTreeService.name);
-
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly indexing: KbIndexingService,
     private readonly audit: AuditService,
     private readonly planLimits: PlanLimitsService,
   ) {}
@@ -109,7 +104,7 @@ export class KbPageTreeService {
     const deletedAt = now;
     const deletedById = user.userId;
 
-    const { deleted, subtreeIds } = await this.db.transaction(async (tx) => {
+    const deleted = await this.db.transaction(async (tx) => {
       const ids = await this.collectSubtreeIds(tx, orgId, pageId);
       await tx
         .update(kbPages)
@@ -120,7 +115,11 @@ export class KbPageTreeService {
             sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
           ),
         );
-      return { deleted: ids.length, subtreeIds: ids };
+      if (ids.length > 0)
+        await tx
+          .delete(kbArticleChunks)
+          .where(and(eq(kbArticleChunks.orgId, orgId), inArray(kbArticleChunks.pageId, ids)));
+      return ids.length;
     });
 
     this.audit.log({
@@ -131,12 +130,6 @@ export class KbPageTreeService {
       resourceId: String(pageId),
       metadata: { pageTitle: page.title, subtreeSize: deleted },
     });
-
-    for (const id of subtreeIds) {
-      this.indexing.removePageChunks(orgId, id).catch((err: unknown) => {
-        this.logger.error(`Failed to remove chunks for trashed page ${id}: ${err}`);
-      });
-    }
 
     return { deletedCount: deleted };
   }

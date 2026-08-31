@@ -10,6 +10,8 @@ import { kbSpaces, kbSpaceMembers, kbPages, kbArticles, users } from "../../../d
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
+import { KbIndexingService } from "../retrieval/kb-indexing.service";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import type { AddMemberInput } from "./dto/kb-members.schemas";
 
 type MemberRow = typeof kbSpaceMembers.$inferSelect;
@@ -25,6 +27,7 @@ export class KbMembersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: KbAccessService,
+    private readonly indexing: KbIndexingService,
   ) {}
 
   private async assertSpaceExists(orgId: string, spaceId: number): Promise<void> {
@@ -89,7 +92,17 @@ export class KbMembersService {
       .returning();
     await this.bumpSpaceAclRevision(orgId, spaceId);
     await this.access.invalidateAccessibleSpaceIds(orgId);
+    await this.scheduleAclReindex(orgId, spaceId);
     return member;
+  }
+
+  private async scheduleAclReindex(orgId: string, spaceId: number): Promise<void> {
+    const registered = registerAfterCommit(async () => {
+      await this.indexing.syncAclRevisionForSpace(orgId, spaceId);
+    });
+    if (!registered) {
+      await this.indexing.syncAclRevisionForSpace(orgId, spaceId);
+    }
   }
 
   private async bumpSpaceAclRevision(orgId: string, spaceId: number): Promise<void> {
@@ -138,6 +151,7 @@ export class KbMembersService {
       );
     await this.bumpSpaceAclRevision(orgId, spaceId);
     await this.access.invalidateAccessibleSpaceIds(orgId);
+    await this.scheduleAclReindex(orgId, spaceId);
     return { success: true };
   }
 }

@@ -1,3 +1,4 @@
+import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
@@ -113,6 +114,7 @@ describe("KB ACL revision gate — stale chunks cannot surface in vector search"
       makeAccess() as never,
       makeEmbeddings() as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     await svc.retrieveTopArticles(makeUser(), "deployment guide", 4);
@@ -159,6 +161,7 @@ describe("KB ACL revision gate — stale chunks cannot surface in vector search"
       makeAccess([]),
       makeEmbeddings() as never,
       makeEvents() as never,
+      new KbCandidateService(db as never),
     );
 
     await svc.retrieveTopArticles(makeUser(), "onboarding workflow", 4);
