@@ -8,7 +8,7 @@ import {
 import { and, asc, eq, ilike, isNull, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
-import { orgUnits } from "../../../db/schema/common/organization";
+import { organizationMembers, orgUnits } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -149,6 +149,15 @@ export class OrgHierarchyDepartmentsService {
     });
     if (conflict) throw new ConflictException("Department code already exists");
 
+    const headMembershipId = body.headUserId
+      ? await this.db
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, body.headUserId)))
+          .limit(1)
+          .then((rows) => rows[0]?.id ?? null)
+      : null;
+
     const [row] = await this.db
       .insert(orgUnits)
       .values({
@@ -159,6 +168,7 @@ export class OrgHierarchyDepartmentsService {
         code: body.code.toUpperCase(),
         description: body.description,
         headUserId: body.headUserId ?? undefined,
+        headMembershipId,
         parentId: body.branchId ?? undefined,
       })
       .returning(ORG_DEPT_COLUMNS);
@@ -188,12 +198,27 @@ export class OrgHierarchyDepartmentsService {
     }
 
     const { branchId, headUserId, code, ...rest } = body;
+
+    let deptHeadMembershipId: number | null | undefined = undefined;
+    if (headUserId !== undefined) {
+      if (headUserId) {
+        const [member] = await this.db
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, headUserId)))
+          .limit(1);
+        deptHeadMembershipId = member?.id ?? null;
+      } else {
+        deptHeadMembershipId = null;
+      }
+    }
+
     const [row] = await this.db
       .update(orgUnits)
       .set({
         ...rest,
         ...(code !== undefined && { code: code.toUpperCase() }),
-        ...(headUserId !== undefined && { headUserId }),
+        ...(headUserId !== undefined && { headUserId, headMembershipId: deptHeadMembershipId }),
         ...(branchId !== undefined && { parentId: branchId }),
       })
       .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT")))

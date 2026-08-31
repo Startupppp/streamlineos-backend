@@ -209,6 +209,15 @@ export class OrgHierarchyTeamsService {
     });
     if (conflict) throw new ConflictException("Team code already exists");
 
+    const leadMembershipId = body.leadUserId
+      ? await this.db
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, body.leadUserId)))
+          .limit(1)
+          .then((rows) => rows[0]?.id ?? null)
+      : null;
+
     const [row] = await this.db
       .insert(orgUnits)
       .values({
@@ -219,6 +228,7 @@ export class OrgHierarchyTeamsService {
         code: body.code.toUpperCase(),
         description: body.description,
         headUserId: body.leadUserId ?? undefined,
+        headMembershipId: leadMembershipId,
         parentId: body.departmentId ?? undefined,
         metadata:
           body.capacity !== undefined ? { capacity: body.capacity } : undefined,
@@ -268,12 +278,27 @@ export class OrgHierarchyTeamsService {
 
     const { departmentId, leadUserId, capacity, code, ...rest } = body;
     const existingMeta = existing.metadata ?? {};
+
+    let teamLeadMembershipId: number | null | undefined = undefined;
+    if (leadUserId !== undefined) {
+      if (leadUserId) {
+        const [member] = await this.db
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, leadUserId)))
+          .limit(1);
+        teamLeadMembershipId = member?.id ?? null;
+      } else {
+        teamLeadMembershipId = null;
+      }
+    }
+
     const [row] = await this.db
       .update(orgUnits)
       .set({
         ...rest,
         ...(code !== undefined && { code: code.toUpperCase() }),
-        ...(leadUserId !== undefined && { headUserId: leadUserId }),
+        ...(leadUserId !== undefined && { headUserId: leadUserId, headMembershipId: teamLeadMembershipId }),
         ...(departmentId !== undefined && { parentId: departmentId }),
         ...(capacity !== undefined && {
           metadata: { ...existingMeta, capacity: capacity ?? undefined },

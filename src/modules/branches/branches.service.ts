@@ -182,6 +182,20 @@ export class BranchesService {
     };
 
     const branch = await this.db.transaction(async (tx) => {
+      const managerMembershipId = input.branchManagerId
+        ? await tx
+            .select({ id: organizationMembers.id })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.userId, input.branchManagerId),
+              ),
+            )
+            .limit(1)
+            .then((rows) => rows[0]?.id ?? null)
+        : null;
+
       const [created] = await tx
         .insert(orgUnits)
         .values({
@@ -190,6 +204,7 @@ export class BranchesService {
           name: input.name,
           code: input.code.toUpperCase(),
           headUserId: input.branchManagerId ?? null,
+          headMembershipId: managerMembershipId,
           metadata: meta,
         })
         .returning();
@@ -242,13 +257,32 @@ export class BranchesService {
     };
 
     const updated = await this.db.transaction(async (tx) => {
+      let managerMembershipId: number | null | undefined = undefined;
+      if (input.branchManagerId !== undefined) {
+        if (input.branchManagerId) {
+          const [member] = await tx
+            .select({ id: organizationMembers.id })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.userId, input.branchManagerId),
+              ),
+            )
+            .limit(1);
+          managerMembershipId = member?.id ?? null;
+        } else {
+          managerMembershipId = null;
+        }
+      }
+
       const [updatedBranch] = await tx
         .update(orgUnits)
         .set({
           ...(input.name !== undefined ? { name: input.name } : {}),
           ...(input.code !== undefined ? { code: input.code.toUpperCase() } : {}),
           ...(input.branchManagerId !== undefined
-            ? { headUserId: input.branchManagerId }
+            ? { headUserId: input.branchManagerId, headMembershipId: managerMembershipId }
             : {}),
           ...(input.status !== undefined
             ? { status: input.status === "ACTIVE" ? "ACTIVE" : "DISABLED" }

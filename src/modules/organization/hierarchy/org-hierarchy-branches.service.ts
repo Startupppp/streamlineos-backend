@@ -8,7 +8,7 @@ import {
 import { and, asc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
-import { orgUnits, type OrgUnitMetadata } from "../../../db/schema/common/organization";
+import { organizationMembers, orgUnits, type OrgUnitMetadata } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -173,6 +173,15 @@ export class OrgHierarchyBranchesService {
 
     const { address, city, state, country, postalCode, phone, email, businessUnitId, managerUserId, ...rest } = body;
 
+    const managerMembershipId = managerUserId
+      ? await this.db
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, managerUserId)))
+          .limit(1)
+          .then((rows) => rows[0]?.id ?? null)
+      : null;
+
     const [row] = await this.db
       .insert(orgUnits)
       .values({
@@ -182,6 +191,7 @@ export class OrgHierarchyBranchesService {
         ...rest,
         code: body.code.toUpperCase(),
         headUserId: managerUserId ?? undefined,
+        headMembershipId: managerMembershipId,
         parentId: businessUnitId ?? undefined,
         metadata: {
           ...(address !== undefined ? { address: address ?? undefined } : {}),
@@ -224,13 +234,27 @@ export class OrgHierarchyBranchesService {
 
     const existingMeta: OrgUnitMetadata = { ...(existing.metadata ?? {}) };
 
+    let managerMembershipId: number | null | undefined = undefined;
+    if (managerUserId !== undefined) {
+      if (managerUserId) {
+        const [member] = await this.db
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, managerUserId)))
+          .limit(1);
+        managerMembershipId = member?.id ?? null;
+      } else {
+        managerMembershipId = null;
+      }
+    }
+
     const [row] = await this.db
       .update(orgUnits)
       .set({
         ...(name !== undefined && { name }),
         ...(code !== undefined && { code: code.toUpperCase() }),
         ...(status !== undefined && { status }),
-        ...(managerUserId !== undefined && { headUserId: managerUserId }),
+        ...(managerUserId !== undefined && { headUserId: managerUserId, headMembershipId: managerMembershipId }),
         ...(businessUnitId !== undefined && { parentId: businessUnitId }),
         metadata: {
           ...existingMeta,
