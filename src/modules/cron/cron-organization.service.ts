@@ -10,7 +10,7 @@ interface ExpiredInvitation {
   id: string;
   orgId: string;
   email: string;
-  inviterMembershipId: number | null;
+  inviterUserId: string | null;
 }
 
 @Injectable()
@@ -52,25 +52,31 @@ export class CronOrganizationService {
       );
 
       for (const row of result) {
-        expiredRows.push({ ...row, orgId });
+        let inviterUserId: string | null = null;
+        if (row.inviterMembershipId !== null) {
+          const inviterRows = await tx
+            .select({ userId: organizationMembers.userId })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.id, row.inviterMembershipId),
+                eq(organizationMembers.orgId, orgId),
+              ),
+            )
+            .limit(1);
+          inviterUserId = inviterRows[0]?.userId ?? null;
+        }
+        expiredRows.push({ id: row.id, orgId, email: row.email, inviterUserId });
       }
     });
 
     for (const row of expiredRows) {
-      if (!row.inviterMembershipId) continue;
-      const inviter = await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.id, row.inviterMembershipId),
-          eq(organizationMembers.orgId, row.orgId),
-        ),
-        columns: { userId: true },
-      });
-      if (!inviter) continue;
+      if (!row.inviterUserId) continue;
       void this.dispatch
         .emit({
           eventKey: "organization.invitation.expired",
           orgId: row.orgId,
-          targetUserIds: [inviter.userId],
+          targetUserIds: [row.inviterUserId],
           entityType: "invitation",
           entityId: row.id,
           title: "Invitation expired",

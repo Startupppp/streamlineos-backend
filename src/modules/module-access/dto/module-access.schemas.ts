@@ -91,6 +91,11 @@ export const updateMemberGroupsSchema = z.object({
     .max(50),
 });
 
+export const listGroupsQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
+});
+
 export const auditLogQuerySchema = z.object({
   limit: pageSizeField(20),
   cursor: z.string().optional(),
@@ -110,6 +115,7 @@ export type ListMembersQuery = z.infer<typeof listMembersQuerySchema>;
 export type MemberCandidatesQuery = z.infer<typeof memberCandidatesQuerySchema>;
 export type AddFlatMemberInput = z.infer<typeof addFlatMemberSchema>;
 export type UpdateMemberGroupsInput = z.infer<typeof updateMemberGroupsSchema>;
+export type ListGroupsQuery = z.infer<typeof listGroupsQuerySchema>;
 export type AuditLogQuery = z.infer<typeof auditLogQuerySchema>;
 
 export const standingMemberParamSchema = z.object({

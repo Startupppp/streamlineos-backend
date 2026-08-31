@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
 import { portalMemberships } from "../../../db/schema/portal-access/portal-memberships";
 import { projectClientGrants } from "../../../db/schema/portal-access/project-client-grants";
 import { partyContacts, projects } from "../../../db/schema";
@@ -96,6 +96,7 @@ export class PortalAccessService {
           ),
         )
         .where(conditions)
+        .orderBy(desc(portalMemberships.createdAt), desc(portalMemberships.portalMembershipId))
         .limit(limit)
         .offset(offset),
       this.db.select({ total: count() }).from(portalMemberships).where(conditions),
@@ -243,6 +244,7 @@ export class PortalAccessService {
           ),
         )
         .where(conditions)
+        .orderBy(desc(projectClientGrants.createdAt), desc(projectClientGrants.projectClientGrantId))
         .limit(limit)
         .offset(offset),
       this.db.select({ total: count() }).from(projectClientGrants).where(conditions),

@@ -62,6 +62,7 @@ export class PlatformOperatorAccessService {
       .select({
         grantId: operatorAccessGrants.grantId,
         grantedBy: operatorAccessGrants.grantedBy,
+        approverId: operatorAccessGrants.approverId,
         status: operatorAccessGrants.status,
         orgId: operatorAccessGrants.orgId,
         operatorUserId: operatorAccessGrants.operatorUserId,
@@ -70,6 +71,8 @@ export class PlatformOperatorAccessService {
       .where(eq(operatorAccessGrants.grantId, grantId))
       .limit(1);
     if (!grant) throw new NotFoundException("Grant not found");
+    if (grant.status === "active" && grant.approverId === approverId)
+      return { orgId: grant.orgId, operatorUserId: grant.operatorUserId };
     if (grant.status !== "pending") throw new ConflictException("Grant is not in pending status");
     if (grant.grantedBy === approverId)
       throw new ForbiddenException("Self-approval not permitted: approverId must differ from the requester");
@@ -87,6 +90,7 @@ export class PlatformOperatorAccessService {
       .where(eq(operatorAccessGrants.grantId, grantId))
       .limit(1);
     if (!grant) throw new NotFoundException("Grant not found");
+    if (grant.status === "rejected") return;
     if (grant.status !== "pending") throw new ConflictException("Grant is not in pending status");
     await this.db
       .update(operatorAccessGrants)

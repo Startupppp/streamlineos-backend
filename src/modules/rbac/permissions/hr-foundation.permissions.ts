@@ -82,6 +82,7 @@ export const HR_FOUNDATION_PERMISSIONS: Permission[] = [
     resource: "hr:salary",
     action: "view",
     description: "View salary structures",
+    scopable: true,
   },
   {
     name: "hr:salary:manage",

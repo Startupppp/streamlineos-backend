@@ -16,6 +16,8 @@ export interface CalendarSourceOutput {
   failures: ReadonlyArray<{ key: string; error: unknown }>;
 }
 
+export const CALENDAR_PER_SOURCE_CAP = 400;
+
 @Injectable()
 export class CalendarSourceRegistry {
   private readonly sources = new Set<CalendarEventSource>();
@@ -96,9 +98,14 @@ export class CalendarSourceRegistry {
     for (const [i, result] of settled.entries()) {
       const key = keys[i];
       if (!key) continue;
-      if (result.status === "fulfilled")
-        events.push(...result.value);
-      else
+      if (result.status === "fulfilled") {
+        const sourceEvents = result.value;
+        events.push(
+          ...(sourceEvents.length > CALENDAR_PER_SOURCE_CAP
+            ? sourceEvents.slice(0, CALENDAR_PER_SOURCE_CAP)
+            : sourceEvents),
+        );
+      } else
         failures.push({ key, error: result.reason });
     }
 

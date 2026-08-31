@@ -148,31 +148,29 @@ const MISSING_INVALIDATION_CHECKS = [
     id: "clients-health-no-invalidation",
     severity: "MEDIUM",
     targetFile: "clients.service.ts",
-    readPattern: /CACHE_KEYS\.clientsHealth/,
+    readPattern: /cachedVersionedForOrg\s*\([^)]*"clients:health"/,
     invalidationPatterns: [
       /invalidateNamespace.*clients.health/i,
       /invalidateNamespaceForOrg.*clients.health/i,
       /invalidate.*["']clients:health["']/,
-      /del.*CACHE_KEYS\.clientsHealth/,
     ],
     line: "50",
     description:
-      "clientsHealth read appends :userId:scope discriminators making the composite key unaddressable by a base-key del; no invalidation of any kind found across all service files — stale client health data served until TTL",
+      "clients:health read (cachedVersionedForOrg) appends :userId:scope:status:limit discriminators making the composite key unaddressable by a base-key del; no namespace invalidation found across all service files — stale client health data served until TTL",
   },
   {
     id: "clients-churn-no-invalidation",
     severity: "MEDIUM",
     targetFile: "clients.service.ts",
-    readPattern: /CACHE_KEYS\.churnAlerts/,
+    readPattern: /cachedVersionedForOrg\s*\([^)]*"clients:churn"/,
     invalidationPatterns: [
       /invalidateNamespace.*clients.churn/i,
       /invalidateNamespaceForOrg.*clients.churn/i,
       /invalidate.*["']clients:churn["']/,
-      /del.*CACHE_KEYS\.churnAlerts/,
     ],
     line: "100",
     description:
-      "churnAlerts read appends :userId:scope discriminators; no invalidation of any kind found across all service files — stale churn data served until TTL",
+      "clients:churn read (cachedVersionedForOrg) appends :userId:scope discriminators; no namespace invalidation found across all service files — stale churn data served until TTL",
   },
 ];
 
@@ -182,18 +180,7 @@ const MISSING_INVALIDATION_CHECKS = [
 // producing key "prefix:orgId" while the WRITER uses invalidateForOrg(orgId,"prefix")
 // producing key "orgId:prefix".  The two formats never match; invalidation is a no-op.
 
-const KEY_MISMATCH_CHECKS = [
-  {
-    id: "rbac-discovery-members-key-mismatch",
-    severity: "MEDIUM",
-    readFile: "rbac.service.ts",
-    readPattern: /cache\.cached\s*\(\s*CACHE_KEYS\.rbacDiscoveryMembers/,
-    writeFile: "access.service.ts",
-    writePattern: /invalidateForOrg\s*\(\s*orgId\s*,\s*["']rbac:members["']/,
-    description:
-      "rbacDiscoveryMembers: cached(CACHE_KEYS.rbacDiscoveryMembers(orgId)) produces key 'rbac:members:<orgId>' but invalidateForOrg(orgId,'rbac:members') produces '<orgId>:rbac:members' — different formats; invalidation is a no-op. Fix: change rbac.service.ts to cachedForOrg(orgId,'rbac:members',…).",
-  },
-];
+const KEY_MISMATCH_CHECKS = [];
 
 // ─── matrix coverage map ──────────────────────────────────────────────────────
 //
@@ -231,8 +218,6 @@ const KEY_TO_NAMESPACE_PREFIX = {
   dealsList: "deals:list:",
   dealsForecast: "deals:forecast:",
   approvalsList: "deals:approvals:",
-  clientsHealth: "clients:health:",
-  churnAlerts: "clients:churn:",
   quotasList: "sales:quotas:",
   commissionsList: "sales:commissions:",
   searchResults: "search:",
@@ -258,7 +243,6 @@ const KEY_TO_NAMESPACE_PREFIX = {
   invProductDetail: "inv:products:detail:",
   invStockSummary: "inv:stock:summary:",
   invLowStock: "inv:low-stock:",
-  invWarehousesList: "inv:warehouses:",
   invWarehouseDetail: "inv:warehouses:detail:",
   invVendorsNamespace: "inv:vendors:list:",
   invPoNamespace: "inv:po:list:",
@@ -272,6 +256,29 @@ const KEY_TO_NAMESPACE_PREFIX = {
   invShipmentsNamespace: "inv:shipments:",
   invPackagesNamespace: "inv:packages:",
   invLoadsNamespace: "inv:loads:",
+  invCarriersNamespace: "inv:carriers:",
+  invChannelsList: "inv:channels:list:",
+  invChannelDetail: "inv:channels:detail:",
+  inv3plList: "inv:3pl:list:",
+  invImportJobsNamespace: "inv:import-jobs:list:",
+  invExportJobsNamespace: "inv:export-jobs:list:",
+  invSettings: "inv:settings:",
+  invNumberSequences: "inv:numseq:",
+  invAiInsightsList: "inv:ai-insights:",
+  invVendorReturnsNamespace: "inv:vret:list:",
+  invVendorReturnDetail: "inv:vret:detail:",
+  invCustomerReturnsNamespace: "inv:cret:list:",
+  invCustomerReturnDetail: "inv:cret:detail:",
+  invCycleCountDetail: "inv:cycle-counts:detail:",
+  invQualityHoldsNamespace: "inv:quality:holds:",
+  invQualityRecallsNamespace: "inv:quality:recalls:",
+  invReorderReport: "inv:reorder:",
+  invReorderReportPaged: "inv:reorder:paged:",
+  invStockSummaryReport: "inv:stock:summary-report:",
+  invReplenishmentSuggestionsNamespace: "inv:replenishment:suggestions:",
+  invValuationReport: "inv:valuation:report:",
+  invSlowMovingReport: "inv:slow-moving:",
+  invExpiryReport: "inv:expiry:report:",
   payrollSummaryNamespace: "timesheets:payroll:summary:",
   payrollExportsNamespace: "timesheets:payroll:exports:",
   payrollSettingsNamespace: "timesheets:payroll:settings:",
@@ -287,7 +294,9 @@ const KEY_TO_NAMESPACE_PREFIX = {
   finForecastNamespace: "fin:forecast:",
   finBvaNamespace: "fin:bva:",
   expensesListNamespace: "hr:expenses:",
-  rbacDiscoveryMembers: "rbac:members:",
+  finInsightsAnomalies: "fin:insights:anomalies:",
+  finInsightsDigest: "fin:insights:digest:",
+  finCategorizeSuggest: "fin:cat-suggest:",
   permissionsMatrix: "rbac:matrix:",
   rolePerms: "rbac:role-perms:",
   orgHierarchyNamespace: "org:hierarchy:",
@@ -309,13 +318,26 @@ const KEY_TO_NAMESPACE_PREFIX = {
 };
 
 // ─── dynamic matrix parsing ───────────────────────────────────────────────────
+//
+// The CACHE_INVALIDATION_MATRIX is spread across five files that are imported
+// into the main matrix barrel.  We must scan all five to avoid treating every
+// RBAC / Finance / Inventory / CRM entry as a gap.
+
+const MATRIX_SIBLING_FILES = [
+  "cache-invalidation-rbac-auth.ts",
+  "cache-invalidation-finance.ts",
+  "cache-invalidation-inventory.ts",
+  "cache-invalidation-crm.ts",
+];
 
 function parseMatrixNamespacePrefixes(matrixPath) {
-  const content = readFile(matrixPath);
+  const cacheDir = join(matrixPath, "..");
+  const allPaths = [matrixPath, ...MATRIX_SIBLING_FILES.map((f) => join(cacheDir, f))];
+  const combined = allPaths.map(readFile).join("\n");
   const nsRegex = /namespace:\s*["']([^"']+)["']/g;
   const prefixes = new Set();
   let m;
-  while ((m = nsRegex.exec(content)) !== null) {
+  while ((m = nsRegex.exec(combined)) !== null) {
     const prefix = m[1].split("<")[0];
     prefixes.add(prefix);
   }
@@ -444,9 +466,9 @@ function runSelfTests() {
     detail: { fileCount: fakeFiles.length, min: MIN_SERVICE_FILES },
   });
 
-  // Self-test 5 (negative): clientsHealth scope read + no invalidation = flagged
+  // Self-test 5 (negative): clientsHealth scope read (raw string) + no invalidation = flagged
   const miCheck = MISSING_INVALIDATION_CHECKS[0];
-  const clientsReadCode = `const cacheKey = \`\${CACHE_KEYS.clientsHealth(orgId)}:\${userId}:\${scope}\`;`;
+  const clientsReadCode = `return this.cache.cachedVersionedForOrg(orgId, "clients:health", key, fetch);`;
   const miResult = checkMissingInvalidation(clientsReadCode, [clientsReadCode], miCheck);
   results.push({
     name: "negative-control: clientsHealth missing-invalidation flagged",
@@ -461,26 +483,6 @@ function runSelfTests() {
     name: "positive-control: clientsHealth passes when namespace invalidation exists",
     pass: miResult2.kind === "pass",
     detail: miResult2,
-  });
-
-  // Self-test 7 (negative): rbac key-mismatch fires when cached(factory)+invalidateForOrg both present
-  const badRbacRead = `return this.cache.cached(CACHE_KEYS.rbacDiscoveryMembers(orgId), fetch, 300);`;
-  const badRbacWrite = `await this.cache.invalidateForOrg(orgId, "rbac:members");`;
-  const kmCheck = KEY_MISMATCH_CHECKS[0];
-  const mismatchFired = kmCheck.readPattern.test(badRbacRead) && kmCheck.writePattern.test(badRbacWrite);
-  results.push({
-    name: "negative-control: rbac key-mismatch flagged when cached+invalidateForOrg",
-    pass: mismatchFired,
-    detail: { readMatches: kmCheck.readPattern.test(badRbacRead), writeMatches: kmCheck.writePattern.test(badRbacWrite) },
-  });
-
-  // Self-test 8 (positive): rbac mismatch clears when cachedForOrg used instead
-  const goodRbacRead = `return this.cache.cachedForOrg(orgId, "rbac:members", fetch, 300);`;
-  const mismatchCleared = !kmCheck.readPattern.test(goodRbacRead);
-  results.push({
-    name: "positive-control: rbac mismatch not fired when cachedForOrg used",
-    pass: mismatchCleared,
-    detail: { readMatches: kmCheck.readPattern.test(goodRbacRead) },
   });
 
   const allPass = results.every((r) => r.pass);

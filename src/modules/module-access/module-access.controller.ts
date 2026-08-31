@@ -33,6 +33,7 @@ import {
   createModuleGroupSchema,
   directTransferOwnerSchema,
   initiateOwnershipTransferSchema,
+  listGroupsQuerySchema,
   listMembersQuerySchema,
   memberCandidatesQuerySchema,
   renameModuleGroupSchema,
@@ -45,6 +46,7 @@ import {
   type DirectTransferOwnerInput,
   type FlatMemberParam,
   type InitiateOwnershipTransferInput,
+  type ListGroupsQuery,
   type ListMembersQuery,
   type MemberCandidatesQuery,
   type ModuleGroupMemberParam,
@@ -168,12 +170,13 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/groups")
-  @Validate({ params: moduleKeyParams })
+  @Validate({ params: moduleKeyParams, query: listGroupsQuerySchema })
   listGroups(
     @Param() params: ModuleKeyParam,
+    @Query() query: ListGroupsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.groups.listGroups(u, params.moduleKey);
+    return this.groups.listGroups(u, params.moduleKey, query);
   }
 
   @Post(":moduleKey/groups")

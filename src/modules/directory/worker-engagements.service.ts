@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, gt, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { assertActiveOrgUnit } from "../../common/org/sync-org-unit-placement";
 import { AuditService } from "../../common/audit/audit.service";
 import { getPostgresErrorCode } from "../../common/db/postgres-error";
@@ -32,6 +32,7 @@ import {
 } from "./worker-engagement-errors";
 
 const PG_UNIQUE_VIOLATION = "23505";
+const WORKER_SEARCH_CAP = 500;
 
 type PersonRow = typeof organizationPeople.$inferSelect;
 type WorkerRow = typeof workers.$inferSelect;
@@ -96,16 +97,27 @@ export class WorkerEngagementsService {
     return row;
   }
 
+  private async resolveWorkerSearchCondition(search: string): Promise<SQL<unknown>> {
+    const workerNumberClause = ilike(workers.workerNumber, `%${search}%`);
+    const personFallback = or(
+      ilike(organizationPeople.firstName, `%${search}%`),
+      ilike(organizationPeople.lastName, `%${search}%`),
+      ilike(organizationPeople.displayName, `%${search}%`),
+      ilike(organizationPeople.workEmail, `%${search}%`),
+    )!;
+    const rows = await this.db.execute(
+      sql`SELECT app.search_organization_people_ids(${search}, ${WORKER_SEARCH_CAP + 1}) AS id`,
+    );
+    if (rows.length > WORKER_SEARCH_CAP) return or(personFallback, workerNumberClause)!;
+    if (rows.length === 0) return workerNumberClause;
+    const ids = rows.map((r) => String(r["id"]));
+    return or(inArray(workers.organizationPersonId, ids), workerNumberClause)!;
+  }
+
   async listWorkers(organizationId: string, query: ListWorkersQuery) {
     const { cursor, limit, status, search, organizationPersonId } = query;
     const searchCondition = search
-      ? or(
-          ilike(organizationPeople.firstName, `%${search}%`),
-          ilike(organizationPeople.lastName, `%${search}%`),
-          ilike(organizationPeople.displayName, `%${search}%`),
-          ilike(organizationPeople.workEmail, `%${search}%`),
-          ilike(workers.workerNumber, `%${search}%`),
-        )
+      ? await this.resolveWorkerSearchCondition(search)
       : undefined;
     const conditions = and(
       eq(workers.organizationId, organizationId),

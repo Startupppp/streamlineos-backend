@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
-import { SQL, aliasedTable, and, count, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
+import { SQL, aliasedTable, and, count, desc, eq, ilike, inArray, ne, or, sql } from "drizzle-orm";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
   documentAuditLogs,
@@ -37,13 +37,7 @@ export class OnboardingViewsService {
       eq(users.isActive, true),
       applyScope(scope, orgId, actorUserId, { ownerColumn: users.id }),
     ];
-    if (query.search) {
-      const searchClause = or(
-        ilike(users.name, `%${query.search}%`),
-        ilike(hrEmployments.designation, `%${query.search}%`),
-      );
-      if (searchClause) conditions.push(searchClause);
-    }
+    if (query.search) conditions.push(await this.onboardingSearchCondition(query.search));
 
     const latestDocs = this.db
       .selectDistinctOn([onboardingDocuments.userId, onboardingDocuments.documentTypeId], {
@@ -446,6 +440,20 @@ export class OnboardingViewsService {
 
       return updated;
     });
+  }
+
+  private static readonly ONBOARDING_SEARCH_CAP = 500;
+
+  private async onboardingSearchCondition(search: string): Promise<SQL> {
+    const designationIlike = ilike(hrEmployments.designation, `%${search}%`);
+    const rows = await this.db.execute(
+      sql`SELECT app.search_hr_person_ids(${search}, ${OnboardingViewsService.ONBOARDING_SEARCH_CAP + 1}) AS id`,
+    );
+    if (rows.length === 0) return designationIlike;
+    if (rows.length > OnboardingViewsService.ONBOARDING_SEARCH_CAP)
+      return or(ilike(users.name, `%${search}%`), designationIlike)!;
+    const ids = rows.map((r) => Number(r["id"]));
+    return or(inArray(hrPeople.id, ids), designationIlike)!;
   }
 
   private dispatchDocumentSubmittedEvent(

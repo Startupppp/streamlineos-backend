@@ -7,6 +7,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { getTenantContext, withTenant } from "../../common/tenant";
 import { logger } from "../../common/logger/logger.service";
+import { keysetBefore } from "../../common/pagination/keyset";
+import { buildCursorPage, decodeCursor, type CursorPage } from "../../common/pagination/cursor";
 
 @Injectable()
 export class AuthAnalyticsService {
@@ -92,13 +94,17 @@ export class AuthAnalyticsService {
 
   async listLoginHistory(
     userId: string,
-    params: { skip: number; take: number; success?: boolean },
-  ): Promise<{ id: string; event: string; success: boolean; createdAt: Date; ipAddress: string | null; userAgent: string | null }[]> {
+    limit: number,
+    cursor?: string,
+    successFilter?: boolean,
+  ): Promise<CursorPage<{ id: string; event: string; success: boolean; createdAt: Date; ipAddress: string | null; userAgent: string | null }>> {
+    const cap = Math.min(limit, 100);
+    const pos = decodeCursor(cursor);
     const conditions = [eq(loginHistory.userId, userId)];
-    if (params.success !== undefined)
-      conditions.push(eq(loginHistory.success, params.success));
+    if (successFilter !== undefined) conditions.push(eq(loginHistory.success, successFilter));
+    if (pos) conditions.push(keysetBefore(loginHistory.createdAt, loginHistory.id, pos));
 
-    return this.db
+    const rows = await this.db
       .select({
         id: loginHistory.id,
         event: loginHistory.event,
@@ -109,8 +115,12 @@ export class AuthAnalyticsService {
       })
       .from(loginHistory)
       .where(and(...conditions))
-      .orderBy(desc(loginHistory.createdAt))
-      .limit(params.take)
-      .offset(params.skip);
+      .orderBy(desc(loginHistory.createdAt), desc(loginHistory.id))
+      .limit(cap + 1);
+
+    return buildCursorPage(rows, cap, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: row.id,
+    }));
   }
 }

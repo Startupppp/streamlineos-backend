@@ -44,15 +44,16 @@ export class HrDocumentTypesController {
   ) {}
 
   @Get()
-  @AuthorizedInService("a three-key check in the handler: hr:documents:manage, hr:documents:view or self:onboarding-docs")
+  @AuthorizedInService("a three-key check in the handler: hr:documents:view scope=all, hr:documents:view or self:onboarding-docs")
   @Validate({ query: listDocumentTypesSchema })
   async list(
     @Query() query: ListDocumentTypesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const isAdmin = u.isOrgOwner || perms.has("hr:documents:manage");
-    if (!isAdmin && !perms.has("hr:documents:view") && !perms.has("self:onboarding-docs")) {
+    const docViewScope = u.isOrgOwner ? ("all" as const) : perms.get("hr:documents:view");
+    const isAdmin = docViewScope === "all";
+    if (!docViewScope && !perms.has("self:onboarding-docs")) {
       throw new ForbiddenException("Permission denied");
     }
     return this.documentTypes.list(u.orgId, isAdmin, query);
@@ -71,15 +72,15 @@ export class HrDocumentTypesController {
   }
 
   @Get(":documentTypeId")
-  @AuthorizedInService("a three-key check in the handler: hr:documents:manage, hr:documents:view or self:onboarding-docs")
+  @AuthorizedInService("a three-key check in the handler: hr:documents:view scope=all, hr:documents:view or self:onboarding-docs")
   @Validate({ params: documentTypeIdParams })
   async getOne(
     @Param("documentTypeId", ParseIntPipe) documentTypeId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const isAdmin = u.isOrgOwner || perms.has("hr:documents:manage");
-    if (!isAdmin && !perms.has("hr:documents:view") && !perms.has("self:onboarding-docs")) {
+    const docViewScope = u.isOrgOwner ? ("all" as const) : perms.get("hr:documents:view");
+    if (!docViewScope && !perms.has("self:onboarding-docs")) {
       throw new ForbiddenException("Permission denied");
     }
     const row = await this.documentTypes.getById(u.orgId, documentTypeId);

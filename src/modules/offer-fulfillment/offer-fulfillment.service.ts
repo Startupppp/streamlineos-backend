@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, isNull } from "drizzle-orm";
 import {
   offerFulfillmentComponents,
   crmProducts,
@@ -101,6 +101,7 @@ export class OfferFulfillmentService {
         .select()
         .from(offerFulfillmentComponents)
         .where(conditions)
+        .orderBy(desc(offerFulfillmentComponents.offerFulfillmentComponentId))
         .limit(limit)
         .offset(offset),
       this.db

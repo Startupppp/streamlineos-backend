@@ -208,8 +208,10 @@ describe("OfferFulfillmentService", () => {
           return {
             from: jest.fn().mockReturnValue({
               where: jest.fn().mockReturnValue({
-                limit: jest.fn().mockReturnValue({
-                  offset: jest.fn().mockResolvedValue(rows),
+                orderBy: jest.fn().mockReturnValue({
+                  limit: jest.fn().mockReturnValue({
+                    offset: jest.fn().mockResolvedValue(rows),
+                  }),
                 }),
               }),
             }),

@@ -24,6 +24,7 @@ import { join, extname } from "node:path";
 
 const MIN_FILES = 500;
 const MIN_MODULES = 40;
+const ORDER_BY_LOOKBACK = 25;
 
 const ROOT = new URL("../modules", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
 const BASELINE_FILE = new URL("./baselines/unbounded-reads-baseline.json", import.meta.url).pathname.replace(
@@ -106,6 +107,18 @@ function hasOffsetUsage(src) {
   return violations;
 }
 
+function hasUnorderedPagination(src) {
+  const lines = src.split("\n");
+  const violations = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (!/\.offset\s*\(/.test(lines[i])) continue;
+    const chain = lines.slice(Math.max(0, i - ORDER_BY_LOOKBACK), i + 2).join("\n");
+    if (!/\.orderBy\s*\(/.test(chain))
+      violations.push({ lineNo: i + 1, text: lines[i].trim() });
+  }
+  return violations;
+}
+
 function compareToBaseline(counts, baseline) {
   const regressions = [];
   for (const [file, count] of Object.entries(counts)) {
@@ -159,6 +172,31 @@ function runSelfTests() {
     process.exit(1);
   }
 
+  const unorderedBad = `
+    async badPage() {
+      return this.db.select().from(t).where(conditions).limit(20).offset(offset);
+    }
+  `;
+  const unorderedGood = `
+    async goodPage() {
+      return this.db
+        .select()
+        .from(t)
+        .where(conditions)
+        .orderBy(desc(t.createdAt), desc(t.id))
+        .limit(20)
+        .offset(offset);
+    }
+  `;
+  if (hasUnorderedPagination(unorderedBad).length === 0) {
+    console.error("SELF-TEST FAIL: .offset() with no ORDER BY was not flagged");
+    process.exit(1);
+  }
+  if (hasUnorderedPagination(unorderedGood).length > 0) {
+    console.error("SELF-TEST FAIL: an ordered offset page was incorrectly flagged");
+    process.exit(1);
+  }
+
   const baseline = { "/a/x.service.ts": 2 };
   const unchanged = compareToBaseline({ "/a/x.service.ts": 2 }, baseline);
   if (unchanged.regressions.length !== 0) {
@@ -203,6 +241,7 @@ const territory = discoverTerritory();
 let scannedCount = 0;
 const offsetCounts = {};
 const unboundedCounts = {};
+const unorderedCounts = {};
 const detail = [];
 
 for (const module of territory) {
@@ -226,6 +265,11 @@ for (const module of territory) {
       unboundedCounts[relPath] = unbounded.length;
       for (const v of unbounded) detail.push({ file: relPath, ...v, kind: "unbounded" });
     }
+    const unordered = hasUnorderedPagination(src);
+    if (unordered.length > 0) {
+      unorderedCounts[relPath] = unordered.length;
+      for (const v of unordered) detail.push({ file: relPath, ...v, kind: "unordered" });
+    }
   }
 }
 
@@ -239,11 +283,16 @@ if (scannedCount < MIN_FILES) {
 if (emitBaseline) {
   writeFileSync(
     BASELINE_FILE,
-    `${JSON.stringify({ offset: offsetCounts, unbounded: unboundedCounts }, null, 2)}\n`,
+    `${JSON.stringify(
+      { offset: offsetCounts, unbounded: unboundedCounts, unordered: unorderedCounts },
+      null,
+      2,
+    )}\n`,
   );
-  const offsetTotal = Object.values(offsetCounts).reduce((a, b) => a + b, 0);
-  const unboundedTotal = Object.values(unboundedCounts).reduce((a, b) => a + b, 0);
-  console.log(`Baseline written: ${offsetTotal} offset, ${unboundedTotal} unbounded across ${scannedCount} files.`);
+  const total = (counts) => Object.values(counts).reduce((a, b) => a + b, 0);
+  console.log(
+    `Baseline written: ${total(offsetCounts)} offset, ${total(unboundedCounts)} unbounded, ${total(unorderedCounts)} unordered across ${scannedCount} files.`,
+  );
   process.exit(0);
 }
 
@@ -257,19 +306,21 @@ try {
 
 const offsetResult = compareToBaseline(offsetCounts, baseline.offset ?? {});
 const unboundedResult = compareToBaseline(unboundedCounts, baseline.unbounded ?? {});
+const unorderedResult = compareToBaseline(unorderedCounts, baseline.unordered ?? {});
 
-const offsetTotal = Object.values(offsetCounts).reduce((a, b) => a + b, 0);
-const unboundedTotal = Object.values(unboundedCounts).reduce((a, b) => a + b, 0);
-const offsetAllowed = Object.values(baseline.offset ?? {}).reduce((a, b) => a + b, 0);
-const unboundedAllowed = Object.values(baseline.unbounded ?? {}).reduce((a, b) => a + b, 0);
+const total = (counts) => Object.values(counts).reduce((a, b) => a + b, 0);
 
 console.log(`Scanned ${scannedCount} service files across ${territory.length} modules.`);
-console.log(`  offset pagination : ${offsetTotal} (baseline ${offsetAllowed})`);
-console.log(`  unbounded reads   : ${unboundedTotal} (baseline ${unboundedAllowed})`);
+console.log(`  offset pagination : ${total(offsetCounts)} (baseline ${total(baseline.offset ?? {})})`);
+console.log(`  unbounded reads   : ${total(unboundedCounts)} (baseline ${total(baseline.unbounded ?? {})})`);
+console.log(
+  `  unordered paging  : ${total(unorderedCounts)} (baseline ${total(baseline.unordered ?? {})}) — .offset() with no ORDER BY repeats and drops rows between pages`,
+);
 
 const regressions = [
   ...offsetResult.regressions.map((r) => ({ ...r, kind: "offset" })),
   ...unboundedResult.regressions.map((r) => ({ ...r, kind: "unbounded" })),
+  ...unorderedResult.regressions.map((r) => ({ ...r, kind: "unordered" })),
 ];
 
 if (regressions.length > 0) {
@@ -286,7 +337,11 @@ if (regressions.length > 0) {
   process.exit(1);
 }
 
-const improvements = [...offsetResult.improvements, ...unboundedResult.improvements];
+const improvements = [
+  ...offsetResult.improvements,
+  ...unboundedResult.improvements,
+  ...unorderedResult.improvements,
+];
 if (improvements.length > 0) {
   console.log(`\n${improvements.length} file(s) improved below baseline — run --emit-baseline and commit to lock it in:`);
   for (const i of improvements) console.log(`  ${i.file} — ${i.count} (baseline ${i.allowed})`);

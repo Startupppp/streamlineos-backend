@@ -25,6 +25,9 @@ import type { CreateModuleGroupInput, RenameModuleGroupInput } from "./dto/modul
 import { ModuleAccessGroupPolicyService } from "./module-access-group-policy.service";
 import type { ModuleRoleGroup } from "./module-access-groups.types";
 import { resolveActorRankContext } from "./module-access.helpers";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import type { CursorPage } from "../../common/pagination/cursor";
+import { keysetAfterValue } from "../../common/pagination/keyset";
 
 @Injectable()
 export class ModuleAccessGroupCrudService {
@@ -40,24 +43,54 @@ export class ModuleAccessGroupCrudService {
     orgId: string,
     moduleKey: string,
     permissionsVersion: number,
-  ): Promise<ModuleRoleGroup[]> {
-    return this.cache.cached(
-      CACHE_KEYS.moduleGroupsList(orgId, moduleKey, permissionsVersion),
-      () => this.fetchGroups(orgId, moduleKey),
-      CACHE_TTL.VERY_LONG,
-    );
+    cursor?: string,
+    limit = 100,
+  ): Promise<CursorPage<ModuleRoleGroup>> {
+    if (!cursor) {
+      return this.cache.cached(
+        CACHE_KEYS.moduleGroupsList(orgId, moduleKey, permissionsVersion),
+        () => this.fetchGroups(orgId, moduleKey, undefined, limit),
+        CACHE_TTL.VERY_LONG,
+      );
+    }
+    return this.fetchGroups(orgId, moduleKey, cursor, limit);
   }
 
-  private async fetchGroups(orgId: string, moduleKey: string): Promise<ModuleRoleGroup[]> {
-    const catalog = this.groupPolicy.permissionKeys(moduleKey);
+  private async fetchGroups(
+    orgId: string,
+    moduleKey: string,
+    cursor: string | undefined,
+    limit: number,
+  ): Promise<CursorPage<ModuleRoleGroup>> {
+    const decoded = decodeCursor(cursor);
+    const cursorCond = decoded ? keysetAfterValue(roles.name, roles.id, decoded) : undefined;
+
     const orgRoles = await this.db
       .select({ id: roles.id, name: roles.name, slug: roles.slug, isSystem: roles.isSystem, version: roles.version })
       .from(roles)
-      .where(and(eq(roles.orgId, orgId), eq(roles.moduleKey, moduleKey)))
-      .orderBy(asc(roles.name))
-      .limit(100);
-    if (orgRoles.length === 0) return [];
+      .where(and(eq(roles.orgId, orgId), eq(roles.moduleKey, moduleKey), cursorCond))
+      .orderBy(asc(roles.name), asc(roles.id))
+      .limit(limit + 1);
 
+    if (orgRoles.length === 0)
+      return { data: [], pagination: { limit, hasMore: false, nextCursor: null } };
+
+    const hasMore = orgRoles.length > limit;
+    const pageRoles = hasMore ? orgRoles.slice(0, limit) : orgRoles;
+    const data = await this.hydrateGroups(orgId, moduleKey, pageRoles);
+    return buildCursorPage(data, limit, (group) => ({
+      sortValue: group.name,
+      id: String(group.id),
+    }));
+  }
+
+  private async hydrateGroups(
+    orgId: string,
+    moduleKey: string,
+    orgRoles: Array<{ id: number; name: string; slug: string; isSystem: boolean; version: number }>,
+  ): Promise<ModuleRoleGroup[]> {
+    if (orgRoles.length === 0) return [];
+    const catalog = this.groupPolicy.permissionKeys(moduleKey);
     const roleIds = orgRoles.map((role) => role.id);
     const [memberCountRows, grantRows, rolesWithGrantRows] = await Promise.all([
       this.db.select({ roleId: roleAssignments.roleId, cnt: count() }).from(roleAssignments)
@@ -84,6 +117,17 @@ export class ModuleAccessGroupCrudService {
       }
       return { id: role.id, name: role.name, isSystem: role.isSystem, version: role.version, memberCount: memberCountById.get(role.id) ?? 0, permissions: permissions ?? [] };
     });
+  }
+
+  private async fetchSingleGroup(orgId: string, moduleKey: string, groupId: number): Promise<ModuleRoleGroup | undefined> {
+    const [row] = await this.db
+      .select({ id: roles.id, name: roles.name, slug: roles.slug, isSystem: roles.isSystem, version: roles.version })
+      .from(roles)
+      .where(and(eq(roles.id, groupId), eq(roles.orgId, orgId), eq(roles.moduleKey, moduleKey)))
+      .limit(1);
+    if (!row) return undefined;
+    const [hydrated] = await this.hydrateGroups(orgId, moduleKey, [row]);
+    return hydrated;
   }
 
   async createGroup(actor: CurrentUserContext, moduleKey: string, input: CreateModuleGroupInput): Promise<ModuleRoleGroup> {
@@ -129,7 +173,7 @@ export class ModuleAccessGroupCrudService {
     if (!row) throw new BadRequestException("Failed to rename group");
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
     this.audit.log({ action: "module_access.group_renamed", userId: actor.userId, orgId: actor.orgId, targetId: String(groupId), targetType: "role", metadata: { moduleKey, oldName: existing.name, newName: row.name } });
-    const refreshed = (await this.fetchGroups(actor.orgId, moduleKey)).find((group) => group.id === row.id);
+    const refreshed = await this.fetchSingleGroup(actor.orgId, moduleKey, row.id);
     if (!refreshed) throw new NotFoundException("Group not found");
     return refreshed;
   }

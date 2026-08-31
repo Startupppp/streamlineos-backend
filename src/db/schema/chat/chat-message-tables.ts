@@ -13,7 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { chatMessageTypeEnum } from "../common/enums";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { chatChannels } from "./chat-channel-tables";
 
 export const chatMessages = pgTable(
@@ -25,9 +25,6 @@ export const chatMessages = pgTable(
       .notNull(),
     channelId: integer("channel_id")
       .references(() => chatChannels.id, { onDelete: "cascade" })
-      .notNull(),
-    senderId: text("sender_id")
-      .references(() => users.id)
       .notNull(),
     senderMembershipId: integer("sender_membership_id"),
     content: text("content"),
@@ -50,7 +47,6 @@ export const chatMessages = pgTable(
       foreignColumns: [table.id],
     }).onDelete("set null"),
     index("idx_chat_messages_channel").on(table.channelId, table.createdAt),
-    index("idx_chat_messages_sender").on(table.senderId),
     index("idx_chat_messages_unread")
       .on(table.orgId, table.channelId, table.isDeleted, table.createdAt)
       .where(sql`is_deleted = false`),
@@ -120,9 +116,6 @@ export const chatPinnedMessages = pgTable(
     messageId: bigint("message_id", { mode: "number" })
       .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
-    pinnedBy: text("pinned_by")
-      .references(() => users.id)
-      .notNull(),
     pinnedByMembershipId: integer("pinned_by_membership_id"),
     pinnedAt: timestamp("pinned_at").defaultNow().notNull(),
   },
@@ -172,13 +165,7 @@ export const chatReplyReminders = pgTable(
     messageId: bigint("message_id", { mode: "number" })
       .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
-    recipientUserId: text("recipient_user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
     recipientMembershipId: integer("recipient_membership_id"),
-    senderUserId: text("sender_user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
     senderMembershipId: integer("sender_membership_id"),
     remindAt: timestamp("remind_at").notNull(),
     sentAt: timestamp("sent_at"),
@@ -188,11 +175,11 @@ export const chatReplyReminders = pgTable(
   (table) => [
     uniqueIndex("uniq_chat_reply_reminder").on(
       table.messageId,
-      table.recipientUserId,
+      table.recipientMembershipId,
     ),
     index("idx_chat_reply_reminders_due").on(table.remindAt),
     index("idx_chat_reply_reminders_recipient").on(
-      table.recipientUserId,
+      table.recipientMembershipId,
       table.channelId,
     ),
     unique("uniq_chat_reply_reminders_org_id").on(table.orgId, table.id),

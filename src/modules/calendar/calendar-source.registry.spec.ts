@@ -1,5 +1,5 @@
 import { Test } from "@nestjs/testing";
-import { CalendarSourceRegistry } from "./calendar-source.registry";
+import { CalendarSourceRegistry, CALENDAR_PER_SOURCE_CAP } from "./calendar-source.registry";
 import type { CalendarEventProjection, CalendarEventSource, CalendarSourceContext } from "./calendar-event-source";
 import { AccessService } from "../access/access.service";
 import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
@@ -172,6 +172,45 @@ describe("CalendarSourceRegistry", () => {
 
       expect(b.load).not.toHaveBeenCalled();
       expect(result.toggleList.map((t) => t.key)).not.toContain("b");
+    });
+
+    it("caps a single source at CALENDAR_PER_SOURCE_CAP when it returns more events", async () => {
+      const overflow = Array.from({ length: CALENDAR_PER_SOURCE_CAP + 10 }, (_, i) =>
+        projection(`p${i}`),
+      );
+      const noisy = makeSource("noisy", "hr", overflow);
+      const registry = await buildRegistry([noisy.source], () => true);
+
+      const result = await registry.loadAll(ctx);
+
+      expect(result.events.length).toBe(CALENDAR_PER_SOURCE_CAP);
+    });
+
+    it("does not truncate a source whose event count is at or below the cap", async () => {
+      const atCap = Array.from({ length: CALENDAR_PER_SOURCE_CAP }, (_, i) =>
+        projection(`p${i}`),
+      );
+      const src = makeSource("src", "hr", atCap);
+      const registry = await buildRegistry([src.source], () => true);
+
+      const result = await registry.loadAll(ctx);
+
+      expect(result.events.length).toBe(CALENDAR_PER_SOURCE_CAP);
+    });
+
+    it("caps each source independently so a noisy source cannot exceed its share of the merged list", async () => {
+      const overflow = Array.from({ length: CALENDAR_PER_SOURCE_CAP + 50 }, (_, i) =>
+        projection(`noise-${i}`),
+      );
+      const quiet = [projection("quiet-1")];
+      const noisy = makeSource("noisy", "hr", overflow);
+      const small = makeSource("small", "build", quiet);
+      const registry = await buildRegistry([noisy.source, small.source], () => true);
+
+      const result = await registry.loadAll(ctx);
+
+      expect(result.events.length).toBe(CALENDAR_PER_SOURCE_CAP + 1);
+      expect(result.events.some((e) => e.id === "quiet-1")).toBe(true);
     });
   });
 

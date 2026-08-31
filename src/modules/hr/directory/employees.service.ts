@@ -149,16 +149,7 @@ export class EmployeesService {
       );
     }
 
-    const searchCondition = search
-      ? or(
-          ilike(users.name, `%${search}%`),
-          ilike(users.email, `%${search}%`),
-          ilike(hrEmployments.employeeNumber, `%${search}%`),
-          ilike(hrEmployments.designation, `%${search}%`),
-          ilike(users.firstName, `%${search}%`),
-          ilike(users.lastName, `%${search}%`),
-        )
-      : undefined;
+    const searchCondition = search ? await this.employeeSearchCondition(search) : undefined;
 
     const where = searchCondition ? and(...baseConditions, searchCondition) : and(...baseConditions);
 
@@ -383,6 +374,29 @@ export class EmployeesService {
 
     const factsMap = await this.employment.getFactsBatch(orgId, rows.map((r) => r.id));
     return rows.map((r) => ({ ...r, designation: factsMap.get(r.id)?.designation ?? null }));
+  }
+
+  private static readonly EMPLOYEE_SEARCH_CAP = 500;
+
+  private async employeeSearchCondition(search: string): Promise<SQL> {
+    const employmentIlike = or(
+      ilike(hrEmployments.employeeNumber, `%${search}%`),
+      ilike(hrEmployments.designation, `%${search}%`),
+    )!;
+    const rows = await this.db.execute(
+      sql`SELECT app.search_hr_person_ids(${search}, ${EmployeesService.EMPLOYEE_SEARCH_CAP + 1}) AS id`,
+    );
+    if (rows.length === 0) return employmentIlike;
+    if (rows.length > EmployeesService.EMPLOYEE_SEARCH_CAP)
+      return or(
+        ilike(users.name, `%${search}%`),
+        ilike(users.email, `%${search}%`),
+        ilike(users.firstName, `%${search}%`),
+        ilike(users.lastName, `%${search}%`),
+        employmentIlike,
+      )!;
+    const ids = rows.map((r) => Number(r["id"]));
+    return or(inArray(hrPeople.id, ids), employmentIlike)!;
   }
 
   async getManagerScorecard(orgId: string, employeeId: string) {

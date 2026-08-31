@@ -158,6 +158,12 @@ export const operatorAccessGrants = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
+    index("idx_oag_org_operator").on(
+      table.orgId,
+      table.operatorUserId,
+      table.scope,
+      table.expiresAt,
+    ),
     index("idx_oag_active").on(
       table.operatorUserId,
       table.orgId,

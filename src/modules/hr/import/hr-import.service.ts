@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -268,6 +268,7 @@ export class HrImportService {
         .select()
         .from(attendance)
         .where(eq(attendance.orgId, orgId))
+        .orderBy(desc(attendance.createdAt), desc(attendance.id))
         .limit(limit)
         .offset(offset);
     }
@@ -276,6 +277,7 @@ export class HrImportService {
         .select()
         .from(assets)
         .where(eq(assets.orgId, orgId))
+        .orderBy(desc(assets.createdAt), desc(assets.id))
         .limit(limit)
         .offset(offset);
     }
@@ -284,6 +286,7 @@ export class HrImportService {
         .select()
         .from(leaveBalances)
         .where(eq(leaveBalances.orgId, orgId))
+        .orderBy(asc(leaveBalances.id))
         .limit(limit)
         .offset(offset);
     }
@@ -292,6 +295,7 @@ export class HrImportService {
         .select()
         .from(documents)
         .where(and(eq(documents.orgId, orgId)))
+        .orderBy(desc(documents.createdAt), desc(documents.id))
         .limit(limit)
         .offset(offset);
     }

@@ -45,6 +45,7 @@ import {
   type UpdateReferenceCheckInput,
   type UpdateReferralInput,
 } from "./dto/candidate-records.schemas";
+import { resumeParseRequestSchema } from "./dto/candidate-ai.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -91,7 +92,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Post("resume-parse")
   @RequirePermission("hr:employees:manage")
-  @Validate({ params: candidateIdParams })
+  @Validate({ params: candidateIdParams, body: resumeParseRequestSchema })
   @UseInterceptors(
     FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }),
   )
