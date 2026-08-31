@@ -13,6 +13,7 @@ import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import type { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import type { NotificationsService } from "../../notifications/notifications.service";
 import type { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import type { AccessService } from "../../access/access.service";
 import type { CacheService } from "../../../common/cache/cache.service";
 import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
 import { resolveValidTicketStatuses } from "./ticket-status.util";
@@ -45,10 +46,13 @@ describe("ProjectsTicketsTransferService — cross-tenant isolation", () => {
   function makeTransferSvc(
     read: Partial<ProjectsTicketsReadService>,
     db: Db,
+    scopeFor?: jest.Mock,
   ): ProjectsTicketsTransferService {
+    const access = { scopeFor: scopeFor ?? jest.fn().mockResolvedValue("all") } as unknown as AccessService;
     return new ProjectsTicketsTransferService(
       db,
       read as unknown as ProjectsTicketsReadService,
+      access,
       {} as unknown as NotificationsService,
       {} as unknown as NotificationDispatchService,
     );
@@ -95,7 +99,9 @@ describe("ProjectsTicketsTransferService — cross-tenant isolation", () => {
         assigneeEmail: null,
       };
       const where = jest.fn().mockReturnValue({
-        orderBy: jest.fn().mockResolvedValue([ticketRow]),
+        orderBy: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue([ticketRow]),
+        }),
       });
       const leftJoin = jest.fn().mockReturnValue({ where });
       const from = jest.fn().mockReturnValue({ leftJoin });
@@ -107,8 +113,9 @@ describe("ProjectsTicketsTransferService — cross-tenant isolation", () => {
         { orgId: OWNER_ORG, userId: "u-owner" } as Parameters<typeof svc.exportTickets>[0],
         42,
       );
-      expect(result).toHaveLength(1);
-      expect(result[0]).toMatchObject({ title: "Fix bug" });
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0]).toMatchObject({ title: "Fix bug" });
+      expect(result.truncated).toBe(false);
       expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER_ORG);
     });
   });

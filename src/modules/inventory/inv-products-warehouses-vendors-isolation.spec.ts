@@ -60,6 +60,7 @@ function makeQueryDb(rows: unknown[]) {
 const mockCache = {
   cached: jest.fn().mockImplementation(async (_k: string, fn: () => unknown) => fn()),
   cachedVersioned: jest.fn().mockImplementation(async (_ns: string, _h: string, fn: () => unknown) => fn()),
+  cachedVersionedForOrg: jest.fn().mockImplementation(async (_o: string, _ns: string, _k: string, fn: () => unknown) => fn()),
   invalidate: jest.fn(),
   invalidateNamespace: jest.fn(),
 };
