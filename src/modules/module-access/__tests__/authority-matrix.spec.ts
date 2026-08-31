@@ -1,3 +1,4 @@
+import { ForbiddenException } from "@nestjs/common";
 import {
   canTransferModuleOwnership,
   resolveModuleManagementStanding,
@@ -6,11 +7,14 @@ import {
   assertOwnerOnly,
   OWNER_ONLY_OPERATIONS,
 } from "../../../common/rbac/owner-only-operations";
+import { isStructuralOrgAdminContext } from "../../../common/rbac/is-structural-org-admin";
+import { ROLE_DEFAULT_PERMISSIONS } from "../../rbac/permissions/role-defaults";
+import { ROLE_TEMPLATES } from "../../rbac/role-templates.constants";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { agentTokenPrincipal, humanSessionPrincipal } from "../../../common/auth/principal";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 
 const ORG = "org-matrix";
@@ -224,4 +228,119 @@ describe("assertOwnerOnly — org admin cannot bypass owner-only operations", ()
       expect(() => assertOwnerOnly(orgAdminCtx, op)).toThrow();
     });
   }
+});
+
+describe("Row 1 — transfer org ownership: org owner only", () => {
+  const OP = "organization.ownership.transfer" as const;
+
+  it("allows org owner (isOrgOwner=true)", () => {
+    expect(() => assertOwnerOnly(makeActor("u-owner", true), OP)).not.toThrow();
+  });
+
+  it("denies org admin (role=ORG_ADMIN, isOrgOwner=false)", () => {
+    expect(() =>
+      assertOwnerOnly(makeActor("u-admin", false, ORG_MEMBER_ROLES.ORG_ADMIN), OP),
+    ).toThrow(ForbiddenException);
+  });
+
+  it("denies module owner standing (isOrgOwner=false, role=MEMBER)", () => {
+    expect(() => assertOwnerOnly(makeActor("u-mod-owner", false), OP)).toThrow(ForbiddenException);
+  });
+
+  it("denies plain member", () => {
+    expect(() => assertOwnerOnly(makeActor("u-member", false), OP)).toThrow(ForbiddenException);
+  });
+
+  it("error carries OWNER_ONLY_OPERATION code and names the operation", () => {
+    let err: ForbiddenException | undefined;
+    try {
+      assertOwnerOnly(makeActor("u-admin", false, ORG_MEMBER_ROLES.ORG_ADMIN), OP);
+    } catch (e) {
+      if (e instanceof ForbiddenException) err = e;
+    }
+    expect(err?.getResponse()).toMatchObject({ code: "OWNER_ONLY_OPERATION", operation: OP });
+  });
+});
+
+describe("Row 2 — archive / delete org: org owner only", () => {
+  it.each(["organization.archive", "organization.delete"] as const)(
+    "allows org owner for %s",
+    (op) => {
+      expect(() => assertOwnerOnly(makeActor("u-owner", true), op)).not.toThrow();
+    },
+  );
+
+  it.each(["organization.archive", "organization.delete"] as const)(
+    "denies org admin for %s",
+    (op) => {
+      expect(() =>
+        assertOwnerOnly(makeActor("u-admin", false, ORG_MEMBER_ROLES.ORG_ADMIN), op),
+      ).toThrow(ForbiddenException);
+    },
+  );
+
+  it.each(["organization.archive", "organization.delete"] as const)(
+    "denies plain member for %s",
+    (op) => {
+      expect(() => assertOwnerOnly(makeActor("u-member", false), op)).toThrow(ForbiddenException);
+    },
+  );
+});
+
+describe("Row 3 — manage org membership: owner and active org admin; member and machine are denied", () => {
+  it("allows org owner (isOrgOwner=true)", () => {
+    expect(isStructuralOrgAdminContext(makeActor("u-owner", true))).toBe(true);
+  });
+
+  it("allows active org admin (role=ORG_ADMIN, isOrgOwner=false, human principal)", () => {
+    expect(
+      isStructuralOrgAdminContext(makeActor("u-admin", false, ORG_MEMBER_ROLES.ORG_ADMIN)),
+    ).toBe(true);
+  });
+
+  it("denies plain member (role=MEMBER, isOrgOwner=false)", () => {
+    expect(isStructuralOrgAdminContext(makeActor("u-member", false))).toBe(false);
+  });
+
+  it("denies module owner standing — module ownership never implies org-admin authority", () => {
+    expect(isStructuralOrgAdminContext(makeActor("u-mod-owner", false, "MEMBER"))).toBe(false);
+  });
+
+  it("denies agent-token principal even when role=ORG_ADMIN — machines never hold structural org standing", () => {
+    const agentCtx: CurrentUserContext = {
+      orgId: ORG,
+      userId: "u-agent",
+      role: ORG_MEMBER_ROLES.ORG_ADMIN,
+      isOrgOwner: false,
+      sessionId: "s-agent",
+      tokenScopes: null,
+      principal: agentTokenPrincipal(99, 7, []),
+    };
+    expect(isStructuralOrgAdminContext(agentCtx)).toBe(false);
+  });
+});
+
+describe("Row 4 — enable modules: settings:manage held by owner/admin only, absent from every module role template", () => {
+  const SETTINGS_MANAGE = "settings:manage";
+
+  it("OWNER role default includes settings:manage", () => {
+    expect(ROLE_DEFAULT_PERMISSIONS["OWNER"]).toContain(SETTINGS_MANAGE);
+  });
+
+  it("ORG_ADMIN role default includes settings:manage", () => {
+    expect(ROLE_DEFAULT_PERMISSIONS["ORG_ADMIN"]).toContain(SETTINGS_MANAGE);
+  });
+
+  it("MEMBER role default does not include settings:manage", () => {
+    expect(ROLE_DEFAULT_PERMISSIONS["MEMBER"]).not.toContain(SETTINGS_MANAGE);
+  });
+
+  it("no module role template grants settings:manage", () => {
+    for (const template of ROLE_TEMPLATES) {
+      expect({
+        templateId: template.id,
+        hasSettingsManage: (template.permissions as string[]).includes(SETTINGS_MANAGE),
+      }).toEqual({ templateId: template.id, hasSettingsManage: false });
+    }
+  });
 });

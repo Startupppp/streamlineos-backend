@@ -3214,6 +3214,20 @@
       "when": 1798000083000,
       "tag": "0771_contacts_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 584,
+      "version": "7",
+      "when": 1798000084000,
+      "tag": "0772_audit_logs_org_actor_membership_fk",
+      "breakpoints": true
+    },
+    {
+      "idx": 585,
+      "version": "7",
+      "when": 1798000085000,
+      "tag": "0773_dedupe_notification_audit_log_fks",
+      "breakpoints": true
     }
   ]
 }
