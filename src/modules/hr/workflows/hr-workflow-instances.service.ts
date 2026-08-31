@@ -7,7 +7,7 @@ import {
   hrWorkflowStepActions,
   hrWorkflowDelegations,
 } from "../../../db/schema/hr/workflow-engine";
-import { users } from "../../../db/schema/common/auth";
+import { users, organizationMembers } from "../../../db/schema/common/auth";
 import { hrEmployments, hrPeople } from "../../../db/schema";
 import { orgUnits } from "../../../db/schema/common/organization";
 import type { WorkflowInstanceQueryDto } from "./dto/workflow.schemas";
@@ -314,8 +314,9 @@ export class HrWorkflowInstancesService {
         : Promise.resolve(new Map()),
       deptIds.length > 0
         ? this.db
-            .select({ id: orgUnits.id, managerId: orgUnits.headUserId })
+            .select({ id: orgUnits.id, managerId: organizationMembers.userId })
             .from(orgUnits)
+            .leftJoin(organizationMembers, eq(organizationMembers.id, orgUnits.headMembershipId))
             .where(inArray(orgUnits.id, deptIds))
         : Promise.resolve([]),
       locationIds.length > 0 && hrUserIds.length > 0

@@ -15,6 +15,7 @@ import {
 } from "./dto/travel.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const travelRequestIdParams = z.object({ travelRequestId: z.coerce.number().int().positive() }).strict();
 
@@ -50,6 +51,7 @@ export class TravelController {
   @Patch(":travelRequestId/manager-approve")
   @RequirePermission("hr:travel:manage")
   @Validate({ params: travelRequestIdParams })
+  @BodylessAction()
   managerApprove(
     @CurrentUser() u: CurrentUserContext,
     @Param("travelRequestId", ParseIntPipe) travelRequestId: number,
@@ -60,6 +62,7 @@ export class TravelController {
   @Patch(":travelRequestId/finance-approve")
   @RequirePermission("hr:travel:manage")
   @Validate({ params: travelRequestIdParams })
+  @BodylessAction()
   financeApprove(
     @CurrentUser() u: CurrentUserContext,
     @Param("travelRequestId", ParseIntPipe) travelRequestId: number,

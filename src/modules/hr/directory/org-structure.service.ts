@@ -217,10 +217,17 @@ export class OrgStructureService {
     teamId: string,
     scope: DataScope,
   ) {
-    const [dept, memberships] = await Promise.all([
-      this.db.query.orgUnits.findFirst({
-        where: and(eq(orgUnits.id, teamId), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT")),
-      }),
+    const [[deptRow], memberships] = await Promise.all([
+      this.db
+        .select({
+          id: orgUnits.id,
+          name: orgUnits.name,
+          headUserId: organizationMembers.userId,
+        })
+        .from(orgUnits)
+        .leftJoin(organizationMembers, eq(organizationMembers.id, orgUnits.headMembershipId))
+        .where(and(eq(orgUnits.id, teamId), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT")))
+        .limit(1),
       this.db
         .select({
           id: users.id,
@@ -230,11 +237,10 @@ export class OrgStructureService {
           role: organizationMembers.role,
         })
         .from(users)
-        .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
-        .innerJoin(orgUnitMembers, and(eq(orgUnitMembers.userId, users.id), eq(orgUnitMembers.orgUnitId, teamId)))
+        .innerJoin(organizationMembers, and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)))
+        .innerJoin(orgUnitMembers, and(eq(orgUnitMembers.membershipId, organizationMembers.id), eq(orgUnitMembers.orgUnitId, teamId)))
         .where(
           and(
-            eq(organizationMembers.orgId, orgId),
             eq(orgUnitMembers.orgId, orgId),
             eq(users.isActive, true),
             applyScope(scope, orgId, actorUserId, {
@@ -245,17 +251,17 @@ export class OrgStructureService {
         .limit(500),
     ]);
 
-    if (!dept) throw new NotFoundException("Team not found");
+    if (!deptRow) throw new NotFoundException("Team not found");
 
     const factsMap = await this.employment.getFactsBatch(orgId, memberships.map((m) => m.id));
 
-    const visibleManager = dept.headUserId
-      ? memberships.find((member) => member.id === dept.headUserId)
+    const visibleManager = deptRow.headUserId
+      ? memberships.find((member) => member.id === deptRow.headUserId)
       : undefined;
 
     return {
-      id: dept.id,
-      name: dept.name,
+      id: deptRow.id,
+      name: deptRow.name,
       managerId: visibleManager?.id ?? null,
       managerName: visibleManager?.name ?? null,
       members: memberships.map((m) => ({

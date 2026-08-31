@@ -32,6 +32,7 @@ import {
 } from "./dto/users.schemas";
 import { z } from "zod";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const invitationIdParams = z.object({ invitationId: z.string().min(1) }).strict();
 const userIdParams = z.object({ userId: z.string().min(1) }).strict();
@@ -215,6 +216,7 @@ export class UsersController {
   @Idempotent("users.invitation.resend")
   @HttpCode(200)
   @Validate({ params: invitationIdParams })
+  @BodylessAction()
   resendInvite(@Param("invitationId") invitationId: string, @CurrentUser() u: CurrentUserContext) {
     return this.invitations.resend(u.orgId, invitationId, {
       userId: u.userId,
@@ -389,6 +391,7 @@ export class UsersController {
   @Idempotent("users.signin-link.send")
   @HttpCode(200)
   @Validate({ params: userIdParams })
+  @BodylessAction()
   sendSigninLink(@Param("userId") userId: string, @CurrentUser() u: CurrentUserContext) {
     return this.userOps.sendSigninLink(u.orgId, userId, u.userId);
   }

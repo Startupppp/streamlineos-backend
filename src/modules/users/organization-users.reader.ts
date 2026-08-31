@@ -60,8 +60,9 @@ export class OrganizationUsersReader {
       conditions.push(
         sql`EXISTS (
           SELECT 1 FROM ${orgUnitMembers}
+          INNER JOIN ${organizationMembers} AS _oum_om ON _oum_om.id = ${orgUnitMembers.membershipId}
           INNER JOIN ${orgUnits} ON ${orgUnitMembers.orgUnitId} = ${orgUnits.id}
-          WHERE ${orgUnitMembers.userId} = ${users.id}
+          WHERE _oum_om.user_id = ${users.id}
             AND ${orgUnitMembers.orgId} = ${orgId}
             AND ${orgUnits.id} = ${teamId}
             AND ${orgUnits.kind} = 'TEAM'
@@ -205,8 +206,9 @@ export class OrganizationUsersReader {
         team: sql<string | null>`(
           SELECT ${orgUnitMembers.orgUnitId}
           FROM ${orgUnitMembers}
+          INNER JOIN ${organizationMembers} AS _team_om ON _team_om.id = ${orgUnitMembers.membershipId}
           INNER JOIN ${orgUnits} ON ${orgUnitMembers.orgUnitId} = ${orgUnits.id}
-          WHERE ${orgUnitMembers.userId} = ${users.id}
+          WHERE _team_om.user_id = ${users.id}
             AND ${orgUnitMembers.orgId} = ${orgId}
             AND ${orgUnits.kind} = 'TEAM'
           LIMIT 1

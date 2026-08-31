@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, check, foreignKey, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, foreignKey, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { organizationMembers, organizations } from "../common/auth";
 
 export type ExpenseExportJobStatus = "pending" | "running" | "completed" | "failed" | "expired";
@@ -17,6 +17,7 @@ export interface ExpenseExportFilters {
   startDate?: string;
   endDate?: string;
   userId?: string;
+  scope?: "all" | "own" | "team" | "none";
 }
 
 export const expenseExportJobs = pgTable("expense_export_jobs", {
@@ -33,6 +34,7 @@ export const expenseExportJobs = pgTable("expense_export_jobs", {
   fileSizeBytes: bigint("file_size_bytes", { mode: "number" }),
   processedRows: integer("processed_rows").notNull().default(0),
   rowCount: integer("row_count"),
+  truncated: boolean("truncated").notNull().default(false),
   attempt: integer("attempt").notNull().default(0),
   maxAttempts: integer("max_attempts").notNull().default(3),
   errorCode: text("error_code"),

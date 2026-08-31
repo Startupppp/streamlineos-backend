@@ -9,6 +9,8 @@ import { and, asc, eq, ilike, isNull, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { organizationMembers, orgUnits } from "../../../db/schema";
+
+const headMember = alias(organizationMembers, "head_member");
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -33,15 +35,19 @@ const ORG_DEPT_COLUMNS = {
   description: orgUnits.description,
   status: orgUnits.status,
   parentId: orgUnits.parentId,
-  headUserId: orgUnits.headUserId,
   createdAt: orgUnits.createdAt,
   updatedAt: orgUnits.updatedAt,
   deletedAt: orgUnits.deletedAt,
 };
 
+const ORG_DEPT_READ_COLUMNS = {
+  ...ORG_DEPT_COLUMNS,
+  headUserId: headMember.userId,
+};
+
 const departmentBranches = alias(orgUnits, "department_branches");
 const ORG_DEPT_LIST_COLUMNS = {
-  ...ORG_DEPT_COLUMNS,
+  ...ORG_DEPT_READ_COLUMNS,
   branchName: departmentBranches.name,
 };
 
@@ -54,11 +60,10 @@ type OrgDepartmentRow = Pick<
   | "description"
   | "status"
   | "parentId"
-  | "headUserId"
   | "createdAt"
   | "updatedAt"
   | "deletedAt"
->;
+> & { headUserId: string | null };
 
 export function toOrgDepartment(row: OrgDepartmentRow) {
   return {
@@ -108,6 +113,7 @@ export class OrgHierarchyDepartmentsService {
     const rows = await this.db
       .select(ORG_DEPT_LIST_COLUMNS)
       .from(orgUnits)
+      .leftJoin(headMember, eq(headMember.id, orgUnits.headMembershipId))
       .leftJoin(
         departmentBranches,
         and(
@@ -124,8 +130,9 @@ export class OrgHierarchyDepartmentsService {
 
   async getDepartment(orgId: string, id: string) {
     const [row] = await this.db
-      .select(ORG_DEPT_COLUMNS)
+      .select(ORG_DEPT_READ_COLUMNS)
       .from(orgUnits)
+      .leftJoin(headMember, eq(headMember.id, orgUnits.headMembershipId))
       .where(
         and(
           eq(orgUnits.id, id),
@@ -167,7 +174,6 @@ export class OrgHierarchyDepartmentsService {
         name: body.name,
         code: body.code.toUpperCase(),
         description: body.description,
-        headUserId: body.headUserId ?? undefined,
         headMembershipId,
         parentId: body.branchId ?? undefined,
       })
@@ -178,7 +184,7 @@ export class OrgHierarchyDepartmentsService {
     await this.cache.invalidateForOrg(orgId, "org:units:DEPARTMENT");
     await this.audit.logCritical({ action: "org.department.created", userId, orgId, targetId: row.id, targetType: "org_unit" });
 
-    return toOrgDepartment(row);
+    return toOrgDepartment({ ...row, headUserId: body.headUserId ?? null });
   }
 
   async updateDepartment(orgId: string, userId: string, id: string, body: UpdateOrgDepartmentInput) {
@@ -213,12 +219,14 @@ export class OrgHierarchyDepartmentsService {
       }
     }
 
+    const effectiveHeadUserId = headUserId !== undefined ? (headUserId ?? null) : (existing.headUserId ?? null);
+
     const [row] = await this.db
       .update(orgUnits)
       .set({
         ...rest,
         ...(code !== undefined && { code: code.toUpperCase() }),
-        ...(headUserId !== undefined && { headUserId, headMembershipId: deptHeadMembershipId }),
+        ...(headUserId !== undefined && { headMembershipId: deptHeadMembershipId }),
         ...(branchId !== undefined && { parentId: branchId }),
       })
       .where(and(eq(orgUnits.id, id), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT")))
@@ -229,7 +237,7 @@ export class OrgHierarchyDepartmentsService {
     await this.cache.invalidateForOrg(orgId, "org:units:DEPARTMENT");
     await this.audit.logCritical({ action: "org.department.updated", userId, orgId, targetId: id, targetType: "org_unit" });
 
-    return toOrgDepartment(row);
+    return toOrgDepartment({ ...row, headUserId: effectiveHeadUserId });
   }
 
   async deleteDepartment(orgId: string, userId: string, id: string) {

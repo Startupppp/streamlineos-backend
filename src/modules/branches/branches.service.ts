@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, isNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import {
   hrEmployments,
   hrPeople,
@@ -8,6 +9,8 @@ import {
   users,
   type OrgUnitMetadata,
 } from "../../db/schema";
+
+const branchHeadMember = alias(organizationMembers, "branch_head_member");
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -203,7 +206,6 @@ export class BranchesService {
           kind: "BRANCH",
           name: input.name,
           code: input.code.toUpperCase(),
-          headUserId: input.branchManagerId ?? null,
           headMembershipId: managerMembershipId,
           metadata: meta,
         })
@@ -227,8 +229,9 @@ export class BranchesService {
 
   async update(orgId: string, branchId: string, input: UpdateBranchInput) {
     const current = await this.db
-      .select({ metadata: orgUnits.metadata })
+      .select({ metadata: orgUnits.metadata, currentManagerId: branchHeadMember.userId })
       .from(orgUnits)
+      .leftJoin(branchHeadMember, eq(branchHeadMember.id, orgUnits.headMembershipId))
       .where(
         and(
           eq(orgUnits.id, branchId),
@@ -243,6 +246,7 @@ export class BranchesService {
 
     const existingMeta = readBranchMeta(current.metadata);
     const oldHrId = existingMeta.hrContactUserId;
+    const currentManagerId = input.branchManagerId !== undefined ? (input.branchManagerId ?? null) : (current.currentManagerId ?? null);
 
     const patchedMeta: OrgUnitMetadata = {
       ...existingMeta,
@@ -282,7 +286,7 @@ export class BranchesService {
           ...(input.name !== undefined ? { name: input.name } : {}),
           ...(input.code !== undefined ? { code: input.code.toUpperCase() } : {}),
           ...(input.branchManagerId !== undefined
-            ? { headUserId: input.branchManagerId, headMembershipId: managerMembershipId }
+            ? { headMembershipId: managerMembershipId }
             : {}),
           ...(input.status !== undefined
             ? { status: input.status === "ACTIVE" ? "ACTIVE" : "DISABLED" }
@@ -316,7 +320,7 @@ export class BranchesService {
         if (
           oldHrId &&
           oldHrId !== input.branchHrId &&
-          oldHrId !== updatedBranch.headUserId
+          oldHrId !== currentManagerId
         ) {
           await syncOrgUnitPlacement(tx, orgId, oldHrId, { BRANCH: null });
         }
@@ -336,8 +340,9 @@ export class BranchesService {
 
   async remove(orgId: string, branchId: string) {
     const current = await this.db
-      .select({ headUserId: orgUnits.headUserId, metadata: orgUnits.metadata })
+      .select({ headUserId: branchHeadMember.userId, metadata: orgUnits.metadata })
       .from(orgUnits)
+      .leftJoin(branchHeadMember, eq(branchHeadMember.id, orgUnits.headMembershipId))
       .where(
         and(
           eq(orgUnits.id, branchId),

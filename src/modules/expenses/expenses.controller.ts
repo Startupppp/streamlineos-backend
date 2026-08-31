@@ -13,15 +13,17 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   Res,
   UseGuards,
 } from "@nestjs/common";
-import type { Response } from "express";
+import type { Request, Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import { ExpensesService } from "./expenses.service";
 import { ExpensesWriteService } from "./expenses-write.service";
@@ -47,24 +49,13 @@ import {
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { ExpenseExportService } from "./expense-export.service";
-import { ExpenseExportWorkerService } from "./expense-export-worker.service";
 import { pipeline } from "node:stream/promises";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const expenseIdParams = z.object({ expenseId: z.coerce.number().int().positive() }).strict();
 const jobIdParams = z.object({ jobId: z.string().min(1) }).strict();
-
-const EXPORT_HEADERS = [
-  "Date",
-  "Employee",
-  "Email",
-  "Category",
-  "Amount",
-  "Description",
-  "Status",
-  "Rejection Reason",
-] as const;
 
 @RequireModule("accounting")
 @Controller("hr/expenses")
@@ -76,7 +67,6 @@ export class ExpensesController {
     private readonly lifecycle: ExpenseLifecycleService,
     private readonly access: AccessService,
     private readonly exportJobs: ExpenseExportService,
-    private readonly exportWorker: ExpenseExportWorkerService,
   ) {}
 
   private async canApprove(u: CurrentUserContext): Promise<boolean> {
@@ -148,57 +138,6 @@ export class ExpensesController {
     return this.expenses.getReport(u.orgId, u.userId, await this.canApprove(u), filters);
   }
 
-  @Get("export-data")
-  @RequirePermission("hr:expenses:read")
-  @Validate({ query: exportSchema })
-  async exportData(
-    @Query() filters: ExportInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.expenses.getExportRows(
-      u.orgId,
-      { userId: u.userId, isAdmin: await this.canApprove(u) },
-      filters,
-    );
-  }
-
-  @Get("export")
-  @RequirePermission("hr:expenses:read")
-  @Validate({ query: exportSchema })
-  async export(
-    @Query() filters: ExportInput,
-    @CurrentUser() u: CurrentUserContext,
-    @Res() res: Response,
-  ) {
-    const data = await this.expenses.getExportRows(
-      u.orgId,
-      { userId: u.userId, isAdmin: await this.canApprove(u) },
-      filters,
-    );
-
-    const rows = data.map((r) => [
-      r.expenseDate,
-      r.userName || "",
-      r.userEmail || "",
-      r.category || "",
-      r.amount || "0",
-      r.description || "",
-      r.status || "",
-      r.rejectionReason || "",
-    ]);
-
-    const csv = [[...EXPORT_HEADERS], ...rows]
-      .map((row) => row.map((val) => `"${String(val ?? "").replace(/"/g, '""')}"`).join(","))
-      .join("\n");
-
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="expenses-${new Date().toISOString().split("T")[0]}.csv"`,
-    );
-    res.send(csv);
-  }
-
   @Post("export/jobs")
   @HttpCode(202)
   @Idempotent("expenses.export.create")
@@ -208,10 +147,10 @@ export class ExpensesController {
     @Body() filters: ExportInput,
     @Headers("idempotency-key") idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request & { rbacScope?: DataScope },
   ) {
-    const job = await this.exportJobs.create(u, filters, idempotencyKey, await this.canApprove(u));
-    this.exportWorker.wake();
-    return job;
+    const scope: DataScope = req.rbacScope ?? "none";
+    return this.exportJobs.create(u, filters, idempotencyKey, scope);
   }
 
   @Get("export/jobs/:jobId")
@@ -238,6 +177,7 @@ export class ExpensesController {
   @HttpCode(200)
   @RequirePermission("hr:expenses:create")
   @Validate({ params: expenseIdParams })
+  @BodylessAction()
   async submit(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -250,6 +190,7 @@ export class ExpensesController {
   @HttpCode(200)
   @RequirePermission("hr:expenses:approve")
   @Validate({ params: expenseIdParams })
+  @BodylessAction()
   async approve(
     @Param("expenseId", ParseIntPipe) expenseId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -39,8 +39,12 @@ export class HrWorkflowApproverService {
       case "department_head": {
         const facts = await this.employment.getFacts(orgId, subjectEmployeeId);
         if (!facts.departmentId) return [];
-        const [dept] = await this.db.select({ headUserId: orgUnits.headUserId })
-          .from(orgUnits).where(eq(orgUnits.id, facts.departmentId)).limit(1);
+        const [dept] = await this.db
+          .select({ headUserId: organizationMembers.userId })
+          .from(orgUnits)
+          .leftJoin(organizationMembers, eq(organizationMembers.id, orgUnits.headMembershipId))
+          .where(eq(orgUnits.id, facts.departmentId))
+          .limit(1);
         return dept?.headUserId ? [dept.headUserId] : [];
       }
 

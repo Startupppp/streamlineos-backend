@@ -15,23 +15,20 @@ import { AutomationService } from "../automation/automation.service";
 import { AccessService } from "../access/access.service";
 import {
   EXPENSE_DECIDED_EVENT,
+  EXPENSE_EXPORT_REQUESTED_EVENT,
   EXPENSE_SUBMITTED_EVENT,
   decisionEventKey,
   expenseDecidedPayloadSchema,
   expenseSubmittedPayloadSchema,
   type ExpenseDecidedPayload,
 } from "./dto/expense-outbox.schemas";
+import { ExpenseExportWorkerService } from "./expense-export-worker.service";
 
 const SUBMITTED_CONSUMER = "expenses:submitted";
 const DECIDED_CONSUMER = "expenses:decided";
 
 const EXPENSE_APPROVE_PERMISSION = "hr:expenses:approve";
 
-/**
- * Supplied explicitly because `NotificationDispatchService` falls back to the catalog
- * definition's description, which for these four keys is the display name — so omitting it
- * renders a body identical to the title.
- */
 function decisionMessage(payload: ExpenseDecidedPayload): string {
   if (payload.status === "REJECTED") {
     return `Your ${payload.category} expense was rejected: ${payload.rejectionReason ?? "No reason provided"}`;
@@ -229,5 +226,25 @@ export class ExpenseDecidedConsumer implements OutboxEventConsumer, OnModuleInit
     this.logger.log(
       `${EXPENSE_DECIDED_EVENT} ${event.eventId}: notified submitter of expense ${payload.expenseId} (${payload.status})`,
     );
+  }
+}
+
+@Injectable()
+export class ExpenseExportRequestedConsumer implements OutboxEventConsumer, OnModuleInit {
+  readonly eventType = EXPENSE_EXPORT_REQUESTED_EVENT;
+  private readonly logger = new Logger(ExpenseExportRequestedConsumer.name);
+
+  constructor(
+    private readonly worker: ExpenseExportWorkerService,
+    private readonly registry: OutboxConsumerRegistry,
+  ) {}
+
+  onModuleInit(): void {
+    this.registry.register(this);
+  }
+
+  async handle(event: OutboxEventRow): Promise<void> {
+    this.worker.wake();
+    this.logger.debug(`${EXPENSE_EXPORT_REQUESTED_EVENT} ${event.eventId}: woke export worker for org ${event.organizationId}`);
   }
 }

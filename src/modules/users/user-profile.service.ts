@@ -236,10 +236,11 @@ export class UserProfileService {
           name: orgUnits.name,
         })
         .from(orgUnitMembers)
+        .innerJoin(organizationMembers, eq(organizationMembers.id, orgUnitMembers.membershipId))
         .innerJoin(orgUnits, eq(orgUnitMembers.orgUnitId, orgUnits.id))
         .where(
           and(
-            eq(orgUnitMembers.userId, userId),
+            eq(organizationMembers.userId, userId),
             eq(orgUnitMembers.orgId, orgId),
           ),
         ),

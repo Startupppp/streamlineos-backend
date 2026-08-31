@@ -12,7 +12,7 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { organizationMembers, organizations, users } from "./auth";
+import { organizationMembers, organizations } from "./auth";
 
 type NodeStatus = "ACTIVE" | "DISABLED" | "ARCHIVED";
 
@@ -55,9 +55,6 @@ export const orgUnits = pgTable(
     name: text("name").notNull(),
     code: text("code").notNull(),
     description: text("description"),
-    headUserId: text("head_user_id").references(() => users.id, {
-      onDelete: "set null",
-    }),
     headMembershipId: integer("head_membership_id"),
     status: text("status").$type<NodeStatus>().default("ACTIVE").notNull(),
     metadata: jsonb("metadata").$type<OrgUnitMetadata>(),
@@ -130,19 +127,15 @@ export const orgUnitMembers = pgTable(
     orgUnitId: text("org_unit_id")
       .references(() => orgUnits.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     role: text("role").default("member").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uniq_org_unit_members_unit_user").on(
+    uniqueIndex("uniq_org_unit_members_unit_membership").on(
       table.orgUnitId,
-      table.userId,
+      table.membershipId,
     ),
-    index("idx_org_unit_members_org_user").on(table.orgId, table.userId),
     index("idx_org_unit_members_membership").on(table.orgId, table.membershipId),
     index("idx_org_unit_members_unit").on(table.orgUnitId),
     foreignKey({
@@ -164,9 +157,9 @@ export const orgUnitsRelations = relations(orgUnits, ({ one, many }) => ({
     relationName: "childUnits",
   }),
   children: many(orgUnits, { relationName: "childUnits" }),
-  head: one(users, {
-    fields: [orgUnits.headUserId],
-    references: [users.id],
+  headMember: one(organizationMembers, {
+    fields: [orgUnits.headMembershipId],
+    references: [organizationMembers.id],
   }),
   members: many(orgUnitMembers),
 }));
@@ -176,9 +169,9 @@ export const orgUnitMembersRelations = relations(orgUnitMembers, ({ one }) => ({
     fields: [orgUnitMembers.orgUnitId],
     references: [orgUnits.id],
   }),
-  user: one(users, {
-    fields: [orgUnitMembers.userId],
-    references: [users.id],
+  member: one(organizationMembers, {
+    fields: [orgUnitMembers.membershipId],
+    references: [organizationMembers.id],
   }),
   organization: one(organizations, {
     fields: [orgUnitMembers.orgId],

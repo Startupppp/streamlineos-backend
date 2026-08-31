@@ -3116,6 +3116,20 @@
       "when": 1798000069000,
       "tag": "0757_expense_export_truncated_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 570,
+      "version": "7",
+      "when": 1798000070000,
+      "tag": "0758_org_unit_members_membership_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 571,
+      "version": "7",
+      "when": 1798000071000,
+      "tag": "0759_org_unit_drop_legacy_user_ids",
+      "breakpoints": true
     }
   ]
 }

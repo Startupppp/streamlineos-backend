@@ -41,13 +41,26 @@ export async function syncOrgUnitPlacement(
     if (unitId === undefined) continue;
     if (unitId !== null) await assertActiveOrgUnit(tx, orgId, unitId, kind);
 
+    const [member] = await tx
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+        ),
+      )
+      .limit(1);
+
+    if (!member) continue;
+
     const existing = await tx
       .select({ id: orgUnitMembers.id })
       .from(orgUnitMembers)
       .innerJoin(orgUnits, eq(orgUnitMembers.orgUnitId, orgUnits.id))
       .where(
         and(
-          eq(orgUnitMembers.userId, userId),
+          eq(orgUnitMembers.membershipId, member.id),
           eq(orgUnitMembers.orgId, orgId),
           eq(orgUnits.kind, kind),
         ),
@@ -58,25 +71,13 @@ export async function syncOrgUnitPlacement(
     }
 
     if (unitId !== null) {
-      const [member] = await tx
-        .select({ id: organizationMembers.id })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.userId, userId),
-          ),
-        )
-        .limit(1);
-
       await tx
         .insert(orgUnitMembers)
         .values({
           id: randomUUID(),
           orgId,
           orgUnitId: unitId,
-          userId,
-          membershipId: member?.id ?? null,
+          membershipId: member.id,
           role: "member",
         })
         .onConflictDoNothing();

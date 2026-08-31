@@ -9,6 +9,8 @@ import { and, asc, eq, ilike, isNull, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { organizationMembers, orgUnits } from "../../../db/schema";
+
+const headMember = alias(organizationMembers, "head_member");
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -33,16 +35,20 @@ const ORG_TEAM_COLUMNS = {
   description: orgUnits.description,
   status: orgUnits.status,
   parentId: orgUnits.parentId,
-  headUserId: orgUnits.headUserId,
   metadata: orgUnits.metadata,
   createdAt: orgUnits.createdAt,
   updatedAt: orgUnits.updatedAt,
   deletedAt: orgUnits.deletedAt,
 };
 
+const ORG_TEAM_READ_COLUMNS = {
+  ...ORG_TEAM_COLUMNS,
+  headUserId: headMember.userId,
+};
+
 const teamDepartments = alias(orgUnits, "team_departments");
 const ORG_TEAM_LIST_COLUMNS = {
-  ...ORG_TEAM_COLUMNS,
+  ...ORG_TEAM_READ_COLUMNS,
   departmentName: teamDepartments.name,
 };
 
@@ -55,12 +61,11 @@ type OrgTeamRow = Pick<
   | "description"
   | "status"
   | "parentId"
-  | "headUserId"
   | "metadata"
   | "createdAt"
   | "updatedAt"
   | "deletedAt"
->;
+> & { headUserId: string | null };
 
 export function toOrgTeam(row: OrgTeamRow) {
   return {
@@ -118,6 +123,7 @@ export class OrgHierarchyTeamsService {
     const rows = await this.db
       .select(ORG_TEAM_LIST_COLUMNS)
       .from(orgUnits)
+      .leftJoin(headMember, eq(headMember.id, orgUnits.headMembershipId))
       .leftJoin(
         teamDepartments,
         and(
@@ -137,8 +143,9 @@ export class OrgHierarchyTeamsService {
     id: string,
   ): Promise<OrgTeamRow | null> {
     const [row] = await this.db
-      .select(ORG_TEAM_COLUMNS)
+      .select(ORG_TEAM_READ_COLUMNS)
       .from(orgUnits)
+      .leftJoin(headMember, eq(headMember.id, orgUnits.headMembershipId))
       .where(
         and(
           eq(orgUnits.id, id),
@@ -227,7 +234,6 @@ export class OrgHierarchyTeamsService {
         name: body.name,
         code: body.code.toUpperCase(),
         description: body.description,
-        headUserId: body.leadUserId ?? undefined,
         headMembershipId: leadMembershipId,
         parentId: body.departmentId ?? undefined,
         metadata:
@@ -246,7 +252,7 @@ export class OrgHierarchyTeamsService {
       targetType: "org_unit",
     });
 
-    return toOrgTeam(row);
+    return toOrgTeam({ ...row, headUserId: body.leadUserId ?? null });
   }
 
   async updateTeam(
@@ -293,12 +299,14 @@ export class OrgHierarchyTeamsService {
       }
     }
 
+    const effectiveHeadUserId = leadUserId !== undefined ? (leadUserId ?? null) : (existing?.headUserId ?? null);
+
     const [row] = await this.db
       .update(orgUnits)
       .set({
         ...rest,
         ...(code !== undefined && { code: code.toUpperCase() }),
-        ...(leadUserId !== undefined && { headUserId: leadUserId, headMembershipId: teamLeadMembershipId }),
+        ...(leadUserId !== undefined && { headMembershipId: teamLeadMembershipId }),
         ...(departmentId !== undefined && { parentId: departmentId }),
         ...(capacity !== undefined && {
           metadata: { ...existingMeta, capacity: capacity ?? undefined },
@@ -324,7 +332,7 @@ export class OrgHierarchyTeamsService {
       targetType: "org_unit",
     });
 
-    return toOrgTeam(row);
+    return toOrgTeam({ ...row, headUserId: effectiveHeadUserId });
   }
 
   async deleteTeam(orgId: string, userId: string, id: string) {

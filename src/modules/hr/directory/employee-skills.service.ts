@@ -110,7 +110,7 @@ export class EmployeeSkillsService {
         orgUnitMembers,
         and(
           eq(orgUnitMembers.orgId, organizationMembers.orgId),
-          eq(orgUnitMembers.userId, organizationMembers.userId),
+          eq(orgUnitMembers.membershipId, organizationMembers.id),
         ),
       )
       .leftJoin(

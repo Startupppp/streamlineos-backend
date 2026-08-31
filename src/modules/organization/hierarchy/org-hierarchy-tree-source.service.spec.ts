@@ -48,23 +48,19 @@ function profileFailureQuery(error: unknown) {
   };
 }
 
+function joinChain(result: unknown) {
+  const where = jest.fn().mockResolvedValue(result);
+  const leftJoin: jest.Mock = jest.fn();
+  leftJoin.mockReturnValue({ leftJoin, where });
+  return { leftJoin, where };
+}
+
 function adjacencyQuery(result: unknown) {
-  return {
-    from: jest.fn().mockReturnValue({
-      where: jest.fn().mockResolvedValue(result),
-    }),
-  };
+  return { from: jest.fn().mockReturnValue(joinChain(result)) };
 }
 
 function closureQuery(result: unknown) {
-  const secondJoin = jest.fn().mockReturnValue({
-    where: jest.fn().mockResolvedValue(result),
-  });
-  return {
-    from: jest.fn().mockReturnValue({
-      leftJoin: jest.fn().mockReturnValue({ leftJoin: secondJoin }),
-    }),
-  };
+  return { from: jest.fn().mockReturnValue(joinChain(result)) };
 }
 
 describe("OrgHierarchyTreeSourceService", () => {

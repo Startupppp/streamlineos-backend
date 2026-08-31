@@ -2,8 +2,10 @@ import { z } from "zod";
 
 export const EXPENSE_SUBMITTED_EVENT = "expense.submitted";
 export const EXPENSE_DECIDED_EVENT = "expense.decided";
+export const EXPENSE_EXPORT_REQUESTED_EVENT = "expense.export.requested";
 
 export const EXPENSE_AGGREGATE_TYPE = "expense";
+export const EXPENSE_EXPORT_AGGREGATE_TYPE = "expense_export_job";
 
 export const expenseSubmittedRecipientsSchema = z.discriminatedUnion("mode", [
   z.object({
@@ -52,3 +54,10 @@ export function decisionEventKey(
 ): (typeof DECISION_EVENT_KEYS)[ExpenseDecisionStatus] {
   return DECISION_EVENT_KEYS[status];
 }
+
+export const expenseExportRequestedPayloadSchema = z.object({
+  jobId: z.string().uuid(),
+  orgId: z.string().min(1),
+});
+
+export type ExpenseExportRequestedPayload = z.infer<typeof expenseExportRequestedPayloadSchema>;

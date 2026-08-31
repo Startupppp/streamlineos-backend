@@ -23,7 +23,6 @@ import type {
   ListInput,
   PageDataInput,
   ReportInput,
-  ExportInput,
 } from "./dto/expense.schemas";
 
 const ALL_EXPENSE_STATUSES_SET = new Set<string>([
@@ -453,46 +452,4 @@ export class ExpensesService {
     };
   }
 
-  async getExportRows(orgId: string, ctx: DeleteContext, filters: ExportInput) {
-    const conditions = [eq(expenses.orgId, orgId)];
-
-    if (!ctx.isAdmin) {
-      conditions.push(eq(expenses.userId, ctx.userId));
-    }
-
-    if (filters.status) conditions.push(eq(expenses.status, filters.status));
-    if (filters.startDate) conditions.push(gte(expenses.expenseDate, filters.startDate));
-    if (filters.endDate) conditions.push(lte(expenses.expenseDate, filters.endDate));
-
-    const data = await this.db
-      .select({
-        expenseDate: expenses.expenseDate,
-        category: expenses.category,
-        amount: expenses.amount,
-        description: expenses.description,
-        status: expenses.status,
-        rejectionReason: expenses.rejectionReason,
-        userName: users.name,
-        userEmail: users.email,
-      })
-      .from(expenses)
-      .leftJoin(users, eq(expenses.userId, users.id))
-      .where(and(...conditions))
-      .orderBy(expenses.expenseDate);
-
-    this.audit.log({
-      action: "expense.exported",
-      userId: ctx.userId,
-      orgId,
-      metadata: {
-        format: "csv",
-        recordCount: data.length,
-        status: filters.status,
-        startDate: filters.startDate,
-        endDate: filters.endDate,
-      },
-    });
-
-    return data;
-  }
 }

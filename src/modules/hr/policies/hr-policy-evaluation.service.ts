@@ -178,11 +178,18 @@ export class HrPolicyEvaluationService {
         ),
       this.db
         .select({
-          userId: orgUnitMembers.userId,
+          userId: organizationMembers.userId,
           orgUnitId: orgUnitMembers.orgUnitId,
           kind: orgUnits.kind,
         })
         .from(orgUnitMembers)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.id, orgUnitMembers.membershipId),
+            eq(organizationMembers.orgId, orgId),
+          ),
+        )
         .innerJoin(
           orgUnits,
           and(
@@ -193,7 +200,7 @@ export class HrPolicyEvaluationService {
         .where(
           and(
             eq(orgUnitMembers.orgId, orgId),
-            inArray(orgUnitMembers.userId, employeeIds),
+            inArray(organizationMembers.userId, employeeIds),
             inArray(orgUnits.kind, ["DEPARTMENT", "TEAM"]),
           ),
         ),
@@ -266,23 +273,38 @@ export class HrPolicyEvaluationService {
       this.db
         .select({ orgUnitId: orgUnitMembers.orgUnitId })
         .from(orgUnitMembers)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.id, orgUnitMembers.membershipId),
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.userId, employeeId),
+          ),
+        )
         .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
         .where(
           and(
-            eq(orgUnitMembers.userId, employeeId),
+            eq(orgUnitMembers.orgId, orgId),
             eq(orgUnits.orgId, orgId),
             eq(orgUnits.kind, "DEPARTMENT"),
           ),
         )
         .limit(10),
-      // A policy scoped to a TEAM matched nothing while this was hardcoded to [], so `scopeMatchesEmployee` scored 0 and the policy was silently discarded
       this.db
         .select({ orgUnitId: orgUnitMembers.orgUnitId })
         .from(orgUnitMembers)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.id, orgUnitMembers.membershipId),
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.userId, employeeId),
+          ),
+        )
         .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
         .where(
           and(
-            eq(orgUnitMembers.userId, employeeId),
+            eq(orgUnitMembers.orgId, orgId),
             eq(orgUnits.orgId, orgId),
             eq(orgUnits.kind, "TEAM"),
           ),
