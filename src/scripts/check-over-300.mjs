@@ -16,7 +16,7 @@ import { join, relative, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const LIMIT = 300;
-const BASELINE = 392;
+const BASELINE = 394;
 const MIN_FILES = 50;
 
 function resolvePath(rel) {
