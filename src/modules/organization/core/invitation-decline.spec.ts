@@ -12,13 +12,14 @@ const PENDING_INVITATION = {
   orgId: "org-a",
   email: "invitee@example.com",
   role: "MEMBER",
-  invitedBy: "inviter-1",
+  inviterMembershipId: 42,
   status: "PENDING" as const,
   acceptedAt: null,
 };
 
 describe("InvitationAcceptanceService.decline", () => {
   const invitationFindFirst = jest.fn();
+  const memberFindFirst = jest.fn();
   const updateReturning = jest.fn();
   const eventValues = jest.fn().mockResolvedValue(undefined);
   const adminSelectWhere = jest.fn();
@@ -36,7 +37,10 @@ describe("InvitationAcceptanceService.decline", () => {
   };
 
   const db = {
-    query: { invitations: { findFirst: invitationFindFirst } },
+    query: {
+      invitations: { findFirst: invitationFindFirst },
+      organizationMembers: { findFirst: memberFindFirst },
+    },
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({ where: adminSelectWhere }),
     }),
@@ -48,6 +52,7 @@ describe("InvitationAcceptanceService.decline", () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     invitationFindFirst.mockResolvedValue(PENDING_INVITATION);
+    memberFindFirst.mockResolvedValue({ userId: "inviter-1" });
     updateReturning.mockResolvedValue([{ id: "invite-1" }]);
     adminSelectWhere.mockResolvedValue([{ userId: "owner-1" }]);
     emit.mockResolvedValue(undefined);

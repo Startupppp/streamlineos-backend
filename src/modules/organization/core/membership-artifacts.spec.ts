@@ -39,6 +39,7 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "fin_budgets.created_by_membership_id",
   "fin_cash_flow_scenarios.created_by_membership_id",
   "fin_reconciliation_matches.confirmed_by_membership_id",
+  "finance_report_export_jobs.requested_by_membership_id",
   "hr_audit_logs.actor_membership_id",
   "hr_employments.archived_by_membership_id",
   "hr_employments.updated_by_membership_id",

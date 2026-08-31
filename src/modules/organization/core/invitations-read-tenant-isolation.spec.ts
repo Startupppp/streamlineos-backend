@@ -36,7 +36,7 @@ function makeChain(rows: unknown[], count = 0) {
 describe("InvitationsReadService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
-  const INV = { id: 1, orgId: OWNER, email: "a@b.com", role: "MEMBER", status: "PENDING", invitedBy: "u1", expiresAt: new Date(), acceptedAt: null, createdAt: new Date() };
+  const INV = { id: 1, orgId: OWNER, email: "a@b.com", role: "MEMBER", status: "PENDING", expiresAt: new Date(), acceptedAt: null, createdAt: new Date() };
 
   it("returns empty list for a different org (cross-tenant isolation)", async () => {
     const { builder, countBuilder, where } = makeChain([], 0);
