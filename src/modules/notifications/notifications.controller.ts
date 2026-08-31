@@ -79,10 +79,9 @@ export class NotificationsController {
   @Public()
   @NoTenantTransaction()
   stream(
-    @Query("token") queryToken: string | undefined,
     @Headers("authorization") authorization: string | undefined,
   ): Observable<MessageEvent> {
-    const token = queryToken ?? (authorization?.startsWith("Bearer ") ? authorization.slice(7) : undefined);
+    const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : undefined;
     if (!token) throw new UnauthorizedException("Invalid or expired stream token");
     const user = this.notifEvents.consumeToken(token);
     if (!user) throw new UnauthorizedException("Invalid or expired stream token");
