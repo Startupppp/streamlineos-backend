@@ -35,8 +35,3 @@ CREATE INDEX IF NOT EXISTS "idx_hr_policies_org_created_id"
 CREATE INDEX IF NOT EXISTS "idx_hr_templates_org_updated_id"
   ON "hr_templates" ("org_id", "updated_at" DESC, "id" DESC)
   WHERE "deleted_at" IS NULL;
---> statement-breakpoint
-
-CREATE INDEX IF NOT EXISTS "idx_hr_performance_documents_org_created_id"
-  ON "hr_performance_documents" ("org_id", "created_at" DESC, "id" DESC)
-  WHERE "is_active" = true;

@@ -3356,6 +3356,13 @@
       "breakpoints": true
     },
     {
+      "idx": 606,
+      "version": "7",
+      "when": 1798000106000,
+      "tag": "0794_kb_chat_history_retention",
+      "breakpoints": true
+    },
+    {
       "idx": 607,
       "version": "7",
       "when": 1798000107000,
@@ -3367,6 +3374,20 @@
       "version": "7",
       "when": 1798000108000,
       "tag": "0796_kb_actor_membership_companion",
+      "breakpoints": true
+    },
+    {
+      "idx": 609,
+      "version": "7",
+      "when": 1798000109000,
+      "tag": "0797_huddle_actor_membership_confirm",
+      "breakpoints": true
+    },
+    {
+      "idx": 610,
+      "version": "7",
+      "when": 1798000110000,
+      "tag": "0798_huddle_drop_user_columns",
       "breakpoints": true
     }
   ]

@@ -99,7 +99,6 @@ AS $$
   SELECT id
   FROM public.candidates
   WHERE org_id = app.current_org_id()
-    AND deleted_at IS NULL
     AND (
       first_name      ILIKE '%' || p_q || '%'
       OR last_name    ILIKE '%' || p_q || '%'

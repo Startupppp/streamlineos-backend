@@ -1,20 +1,32 @@
 SET lock_timeout = '5s';
 --> statement-breakpoint
 
-ALTER TABLE "chat_channels"
-  ADD CONSTRAINT "fk_chat_channels_org_created_by_membership"
-  FOREIGN KEY ("org_id", "created_by_membership_id")
-  REFERENCES "organization_members"("org_id", "id")
-  ON DELETE SET NULL ("created_by_membership_id")
-  NOT VALID;
---> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'fk_chat_channels_org_created_by_membership' AND contype = 'f'
+  ) THEN
+    ALTER TABLE "chat_channels"
+      ADD CONSTRAINT "fk_chat_channels_org_created_by_membership"
+      FOREIGN KEY ("org_id", "created_by_membership_id")
+      REFERENCES "organization_members"("org_id", "id")
+      ON DELETE SET NULL ("created_by_membership_id")
+      NOT VALID;
+  END IF;
 
-ALTER TABLE "chat_messages"
-  ADD CONSTRAINT "fk_chat_messages_org_sender_membership"
-  FOREIGN KEY ("org_id", "sender_membership_id")
-  REFERENCES "organization_members"("org_id", "id")
-  ON DELETE SET NULL ("sender_membership_id")
-  NOT VALID;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'fk_chat_messages_org_sender_membership' AND contype = 'f'
+  ) THEN
+    ALTER TABLE "chat_messages"
+      ADD CONSTRAINT "fk_chat_messages_org_sender_membership"
+      FOREIGN KEY ("org_id", "sender_membership_id")
+      REFERENCES "organization_members"("org_id", "id")
+      ON DELETE SET NULL ("sender_membership_id")
+      NOT VALID;
+  END IF;
+END $$;
 --> statement-breakpoint
 
 DO $$
