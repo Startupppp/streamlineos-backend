@@ -30,6 +30,7 @@ export interface BuiltDocument {
   undeclared: number;
   contractsApplied: number;
   unconvertible: string[];
+  errorResponsesApplied: number;
 }
 
 interface MutableOperation {
@@ -150,6 +151,50 @@ function applyPathParams(
   if (added.length > 0) operation.parameters = [...parameters, ...added];
 }
 
+function applyResponseSchema(
+  method: string,
+  operation: MutableOperation,
+  schema: JsonSchema,
+): void {
+  const responses = (operation.responses ?? {}) as Record<string, unknown>;
+  const statusCode = method === "post" ? "201" : "200";
+  responses[statusCode] = {
+    description: statusCode === "201" ? "Created" : "OK",
+    content: { "application/json": { schema } },
+  };
+  operation.responses = responses;
+}
+
+export function applyErrorResponses(
+  method: string,
+  pathTemplate: string,
+  operation: MutableOperation,
+): void {
+  const responses = (operation.responses ?? {}) as Record<string, unknown>;
+  const exposure = String(operation["x-exposure"] ?? "");
+  const hasPathParam = pathTemplate.includes("{");
+  const isMutating = BODY_METHODS.has(method);
+
+  const ref = (name: string): unknown => ({ $ref: `#/components/responses/${name}` });
+
+  const fill = (code: string, value: unknown): void => {
+    if (!Object.hasOwn(responses, code)) responses[code] = value;
+  };
+
+  fill("400", ref("BadRequest"));
+  if (exposure !== "public") fill("401", ref("Unauthorized"));
+  if (exposure === "permissioned") fill("403", ref("Forbidden"));
+  if (hasPathParam) fill("404", ref("NotFound"));
+  if (isMutating) {
+    fill("409", ref("Conflict"));
+    fill("422", ref("UnprocessableEntity"));
+  }
+  fill("429", ref("TooManyRequests"));
+  fill("503", ref("ServiceUnavailable"));
+
+  operation.responses = responses;
+}
+
 function applyIdempotency(operation: MutableOperation, command: string): void {
   const parameters = Array.isArray(operation.parameters)
     ? operation.parameters
@@ -183,6 +228,8 @@ export function applyOperationContract(
   if (contract.params) applyPathParams(operation, contract.params);
   if (contract.idempotencyCommand)
     applyIdempotency(operation, contract.idempotencyCommand);
+  if (contract.response) applyResponseSchema(method, operation, contract.response);
+  if (contract.bodyless) operation["x-bodyless"] = true;
 }
 
 function sortRecord<T>(value: Record<string, T>): Record<string, T> {
@@ -219,14 +266,19 @@ export function buildOpenApiDocument(app: INestApplication): BuiltDocument {
   document.components = components;
 
   let contractsApplied = 0;
-  for (const pathItem of Object.values(document.paths)) {
+  let errorResponsesApplied = 0;
+  for (const [pathTemplate, pathItem] of Object.entries(document.paths)) {
     if (typeof pathItem !== "object" || pathItem === null) continue;
     for (const [method, operation] of Object.entries(pathItem)) {
       if (!isOperation(operation)) continue;
+      const lmethod = method.toLowerCase();
       const contract = contracts.get(normalizeOperationId(String(operation.operationId)));
-      if (!contract) continue;
-      applyOperationContract(method.toLowerCase(), operation, contract);
-      contractsApplied += 1;
+      if (contract) {
+        applyOperationContract(lmethod, operation, contract);
+        contractsApplied += 1;
+      }
+      applyErrorResponses(lmethod, pathTemplate, operation);
+      errorResponsesApplied += 1;
     }
   }
 
@@ -238,5 +290,6 @@ export function buildOpenApiDocument(app: INestApplication): BuiltDocument {
     undeclared: classification.undeclared,
     contractsApplied,
     unconvertible: unconvertible.sort(),
+    errorResponsesApplied,
   };
 }

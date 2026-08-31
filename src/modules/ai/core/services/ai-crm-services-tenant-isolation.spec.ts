@@ -77,7 +77,7 @@ describe("CrmBriefService — tenant isolation", () => {
     };
     const gateway = { invokeText: jest.fn(), invokeStructured: jest.fn() };
 
-    const service = new CrmBriefService(db as never, gateway as never, {} as never);
+    const service = new CrmBriefService(db as never, gateway as never, {} as never, {} as never);
 
     await expect(service.accountSummary(ATTACKER_ORG, { clientId: 1 })).rejects.toThrow(NotFoundException);
 
@@ -123,7 +123,7 @@ describe("CrmBriefService — tenant isolation", () => {
       invokeStructured: jest.fn(),
     };
 
-    const service = new CrmBriefService(db as never, gateway as never, {} as never);
+    const service = new CrmBriefService(db as never, gateway as never, {} as never, {} as never);
     const result = await service.accountSummary(OWNER_ORG, { clientId: 1 });
 
     expect(result).toMatchObject({ summary: "Account summary text", clientName: "Acme Corp" });
