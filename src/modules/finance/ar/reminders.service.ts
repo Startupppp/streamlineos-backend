@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
-import { finReminderPolicies, finReminderLog, invoices, organizationMembers } from "../../../db/schema";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { finReminderPolicies, finReminderLog, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -9,15 +9,10 @@ import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { INVOICE_REMINDER_EVENT, invoiceReminderPayloadSchema } from "./dto/reminder-outbox.schemas";
 import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type { CreateReminderPolicyInput, UpdateReminderPolicyInput, ListReminderPoliciesQuery, ListReminderLogQuery } from "./dto/finance-ar.schemas";
-import { boundedMap } from "../../../common/async/bounded-map";
 import { forEachOrg } from "../../../common/tenant";
 
-const REMINDER_BATCH_SIZE = 100;
+const CANDIDATE_CAP = 1000;
 const RECIPIENT_CAP = 10;
-const POLICY_CAP = 100;
-
-type PolicyRow = { id: number; offsets: number[]; channel: "EMAIL" | "WHATSAPP" };
-type InvoiceRow = { id: number; invoiceNumber: string; dueDate: string | null; collectionOwnerId: string | null };
 
 @Injectable()
 export class RemindersService {
@@ -29,7 +24,7 @@ export class RemindersService {
   async listPolicies(orgId: string, query: ListReminderPoliciesQuery) {
     const pageLimit = Math.min(query.limit, 100);
     const conditions = [eq(finReminderPolicies.orgId, orgId), isNull(finReminderPolicies.archivedAt)];
-    if (query.cursor) conditions.push(gt(finReminderPolicies.id, query.cursor));
+    if (query.cursor) conditions.push(sql`${finReminderPolicies.id} > ${query.cursor}`);
     const projection = {
       id: finReminderPolicies.id,
       orgId: finReminderPolicies.orgId,
@@ -87,7 +82,7 @@ export class RemindersService {
     const pageLimit = Math.min(query.limit, 100);
     const conditions = [eq(finReminderLog.orgId, orgId), isNull(finReminderLog.archivedAt)];
     if (query.invoiceId) conditions.push(eq(finReminderLog.invoiceId, query.invoiceId));
-    if (query.cursor) conditions.push(gt(finReminderLog.id, query.cursor));
+    if (query.cursor) conditions.push(sql`${finReminderLog.id} > ${query.cursor}`);
     const projection = {
       id: finReminderLog.id,
       orgId: finReminderLog.orgId,
@@ -126,68 +121,37 @@ export class RemindersService {
   }
 
   private async sweepOrg(orgId: string): Promise<{ sent: number }> {
-    const today = new Date().toISOString().slice(0, 10);
-    const todayMs = new Date(`${today}T00:00:00Z`).getTime();
+    const rawCandidates = await this.db.execute(sql`
+      SELECT
+        i.id                  AS invoice_id,
+        i.invoice_number,
+        i.collection_owner_id,
+        p.channel,
+        t.offset_day::int     AS offset_days
+      FROM fin_reminder_policies p
+      CROSS JOIN LATERAL unnest(p.offsets::int[]) AS t(offset_day)
+      JOIN invoices i
+        ON  i.org_id   = p.org_id
+        AND i.due_date = (CURRENT_DATE - t.offset_day * INTERVAL '1 day')::date
+        AND i.status   IN ('ISSUED', 'PARTIALLY_PAID', 'OVERDUE')
+        AND i.due_date IS NOT NULL
+      WHERE p.org_id     = ${orgId}
+        AND p.is_active  = true
+        AND p.archived_at IS NULL
+      ORDER BY i.id, p.id, t.offset_day
+      LIMIT ${CANDIDATE_CAP}
+    `);
 
-    const policies = await this.db
-      .select({ id: finReminderPolicies.id, offsets: finReminderPolicies.offsets, channel: finReminderPolicies.channel })
-      .from(finReminderPolicies)
-      .where(and(eq(finReminderPolicies.orgId, orgId), eq(finReminderPolicies.isActive, true), isNull(finReminderPolicies.archivedAt)))
-      .orderBy(asc(finReminderPolicies.id))
-      .limit(POLICY_CAP);
+    if (rawCandidates.length === 0) return { sent: 0 };
 
-    if (policies.length === 0) return { sent: 0 };
-
-    const dueDateSet = new Set<string>();
-    for (const policy of policies) {
-      for (const offsetDays of policy.offsets) {
-        const target = new Date(todayMs - offsetDays * 86400000);
-        dueDateSet.add(target.toISOString().slice(0, 10));
-      }
-    }
-    const dueDates = [...dueDateSet];
-    if (dueDates.length === 0) return { sent: 0 };
-
-    let afterId: number | undefined;
-    let sent = 0;
-
-    for (;;) {
-      const conditions = [
-        eq(invoices.orgId, orgId),
-        inArray(invoices.status, ["ISSUED", "PARTIALLY_PAID", "OVERDUE"]),
-        isNotNull(invoices.dueDate),
-        inArray(invoices.dueDate, dueDates),
-      ];
-      if (afterId !== undefined) conditions.push(gt(invoices.id, afterId));
-
-      const batch = await this.db
-        .select({ id: invoices.id, invoiceNumber: invoices.invoiceNumber, dueDate: invoices.dueDate, collectionOwnerId: invoices.collectionOwnerId })
-        .from(invoices)
-        .where(and(...conditions))
-        .orderBy(asc(invoices.id))
-        .limit(REMINDER_BATCH_SIZE);
-
-      if (batch.length === 0) break;
-
-      sent += await this.processBatch(orgId, batch, policies, todayMs);
-
-      const last = batch[batch.length - 1];
-      if (batch.length < REMINDER_BATCH_SIZE || last === undefined) break;
-      afterId = last.id;
-    }
-
-    return { sent };
-  }
-
-  private async processBatch(
-    orgId: string,
-    batch: InvoiceRow[],
-    policies: PolicyRow[],
-    todayMs: number,
-  ): Promise<number> {
-    const ownerIds = [...new Set(batch.map((inv) => inv.collectionOwnerId).filter((id): id is string => id !== null))];
+    const ownerIds = [
+      ...new Set(
+        rawCandidates
+          .map((r) => r["collection_owner_id"])
+          .filter((id): id is string => typeof id === "string"),
+      ),
+    ];
     const activeOwnerSet = new Set<string>();
-
     if (ownerIds.length > 0) {
       const rows = await this.db
         .select({ userId: organizationMembers.userId })
@@ -196,9 +160,12 @@ export class RemindersService {
       for (const row of rows) activeOwnerSet.add(row.userId);
     }
 
-    const needsFallback = batch.some((inv) => !inv.collectionOwnerId || !activeOwnerSet.has(inv.collectionOwnerId));
+    const hasUnowned = rawCandidates.some((r) => {
+      const ownerId = r["collection_owner_id"];
+      return typeof ownerId !== "string" || !activeOwnerSet.has(ownerId);
+    });
     let fallbackRecipients: string[] = [];
-    if (needsFallback) {
+    if (hasUnowned) {
       const members = await this.db
         .select({ userId: organizationMembers.userId })
         .from(organizationMembers)
@@ -208,45 +175,37 @@ export class RemindersService {
       fallbackRecipients = members.map((m) => m.userId);
     }
 
-    const work: Array<{ inv: InvoiceRow; policy: PolicyRow; offsetDays: number }> = [];
-    for (const inv of batch) {
-      if (!inv.dueDate) continue;
-      const invMs = new Date(`${inv.dueDate}T00:00:00Z`).getTime();
-      for (const policy of policies) {
-        for (const offsetDays of policy.offsets) {
-          const targetMs = invMs + offsetDays * 86400000;
-          if (Math.abs(targetMs - todayMs) < 43200000) work.push({ inv, policy, offsetDays });
-        }
-      }
-    }
+    let sent = 0;
+    await this.db.transaction(async (tx) => {
+      for (const r of rawCandidates) {
+        const ownerId = typeof r["collection_owner_id"] === "string" ? r["collection_owner_id"] : null;
+        const targetUserIds = ownerId && activeOwnerSet.has(ownerId) ? [ownerId] : fallbackRecipients;
+        if (targetUserIds.length === 0) continue;
 
-    if (work.length === 0) return 0;
+        const invoiceId = Number(r["invoice_id"]);
+        const offsetDays = Number(r["offset_days"]);
+        const channel = r["channel"] === "WHATSAPP" ? "WHATSAPP" : "EMAIL";
+        const invoiceNumber = String(r["invoice_number"] ?? "");
 
-    const results = await boundedMap(work, 8, async ({ inv, policy, offsetDays }) => {
-      const targetUserIds = inv.collectionOwnerId && activeOwnerSet.has(inv.collectionOwnerId)
-        ? [inv.collectionOwnerId]
-        : fallbackRecipients;
-      if (targetUserIds.length === 0) return 0;
-
-      const queued = await this.db.transaction(async (tx) => {
-        const now = new Date();
         const insertResult = await tx
           .insert(finReminderLog)
-          .values({ orgId, invoiceId: inv.id, channel: policy.channel, offsetDays, status: "PENDING", scheduledAt: now })
+          .values({ orgId, invoiceId, channel, offsetDays, status: "PENDING", scheduledAt: new Date() })
           .onConflictDoUpdate({
             target: [finReminderLog.orgId, finReminderLog.invoiceId, finReminderLog.offsetDays],
-            set: { status: "PENDING", scheduledAt: now },
+            set: { status: "PENDING", scheduledAt: new Date() },
             where: inArray(finReminderLog.status, ["FAILED", "PENDING"]),
           })
           .returning({ id: finReminderLog.id });
+
         const reminderLogId = insertResult[0]?.id;
-        if (reminderLogId === undefined) return false;
+        if (reminderLogId === undefined) continue;
+
         const payload = invoiceReminderPayloadSchema.parse({
           orgId,
           reminderLogId,
-          invoiceId: inv.id,
-          invoiceNumber: inv.invoiceNumber,
-          channel: policy.channel,
+          invoiceId,
+          invoiceNumber,
+          channel,
           offsetDays,
           targetUserIds,
         });
@@ -260,12 +219,11 @@ export class RemindersService {
           payload,
           occurredAt: new Date(),
         });
-        return true;
-      });
 
-      return queued ? 1 : 0;
+        sent += 1;
+      }
     });
 
-    return results.reduce((t, r) => t + (r.status === "fulfilled" ? r.value : 0), 0);
+    return { sent };
   }
 }
