@@ -3389,6 +3389,55 @@
       "when": 1798000110000,
       "tag": "0798_huddle_drop_user_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 611,
+      "version": "7",
+      "when": 1798000111000,
+      "tag": "0799_chat_actor_backfill_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 612,
+      "version": "7",
+      "when": 1798000112000,
+      "tag": "0800_chat_actor_legacy_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 613,
+      "version": "7",
+      "when": 1798000113000,
+      "tag": "0801_calendar_attendee_cutover",
+      "breakpoints": true
+    },
+    {
+      "idx": 614,
+      "version": "7",
+      "when": 1798000114000,
+      "tag": "0802_calendar_legacy_fk_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 615,
+      "version": "7",
+      "when": 1798000115000,
+      "tag": "0803_directory_people_search",
+      "breakpoints": true
+    },
+    {
+      "idx": 616,
+      "version": "7",
+      "when": 1798000116000,
+      "tag": "0804_operator_access_org_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 617,
+      "version": "7",
+      "when": 1798000117000,
+      "tag": "0805_payroll_batch_and_roles_indexes",
+      "breakpoints": true
     }
   ]
 }

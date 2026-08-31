@@ -136,12 +136,11 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
   },
   {
     namespace: "rbac:members:<orgId>",
-    description: "Discovery-member list for RBAC screens (RbacService.getDiscoveryMembers). Read and invalidation both use the org-scoped namespace form, so membership changes evict it.",
+    description: "Discovery-member list for RBAC screens (RbacService.getDiscoveryMembers). Read uses cachedForOrg(orgId,'rbac:members') → key '<orgId>:rbac:members'. Invalidation uses invalidateForOrg(orgId,'rbac:members') → same key. Both formats match.",
     invalidation: {
       kind: "write",
       events: [
-        "bumpPermissionsVersion (targets wrong key — see description)",
-        "OrgMembershipService, InvitationAcceptanceService, OrgMemberDepartureService (all via invalidateForOrg which also targets wrong key)",
+        "AccessService.subscribeVersionBump → invalidateForOrg(orgId,'rbac:members') on any bumpPermissionsVersion call",
       ],
     },
   },
