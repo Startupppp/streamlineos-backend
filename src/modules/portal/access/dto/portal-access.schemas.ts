@@ -12,7 +12,7 @@ export const listMembershipsQuerySchema = z.object({
 
 export const createMembershipSchema = z.object({
   partyContactId: z.string().min(1),
-  userId: z.string().optional(),
+  userMembershipId: z.number().int().positive().optional(),
 });
 
 export const updateMembershipStatusSchema = z.object({

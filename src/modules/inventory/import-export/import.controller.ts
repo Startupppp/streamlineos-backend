@@ -20,6 +20,7 @@ import {
   type ListJobsQueryInput,
 } from "./dto/import-export.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { MultipartAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
@@ -33,6 +34,7 @@ export class ImportController {
   @Post("preview")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
+  @MultipartAction({ file: "file", fields: { importType: "string" }, requiredFields: ["importType"] })
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
   @Validate({ body: previewImportSchema })
   preview(

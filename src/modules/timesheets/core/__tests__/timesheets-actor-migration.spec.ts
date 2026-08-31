@@ -3,6 +3,7 @@ import {
   assertOrganizationActor,
   OrganizationActorError,
 } from "../../../../common/organization/organization-actor";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { ApprovalsService } from "../approvals.service";
 
 jest.mock("../../../../common/organization/organization-actor", () => {
@@ -16,15 +17,15 @@ const mockAssertActor = assertOrganizationActor as jest.MockedFunction<typeof as
 
 const PERIOD_ID = 10;
 const ORG_ID = "org-a";
-const APPROVER_ID = "approver-user";
-const EMPLOYEE_ID = "employee-user";
+const APPROVER_MEMBERSHIP_ID = 77;
+const EMPLOYEE_MEMBERSHIP_ID = 42;
 
 const SUBMITTED_PERIOD = {
   id: PERIOD_ID,
   orgId: ORG_ID,
-  userId: EMPLOYEE_ID,
+  userMembershipId: EMPLOYEE_MEMBERSHIP_ID,
   status: "SUBMITTED",
-  currentApproverId: null,
+  currentApproverMembershipId: null,
   periodStart: "2025-01-01",
   periodEnd: "2025-01-31",
   totalHours: "80.00",
@@ -42,7 +43,7 @@ const SUBMITTED_PERIOD = {
 const APPROVED_PERIOD = {
   ...SUBMITTED_PERIOD,
   status: "APPROVED",
-  approvedByMembershipId: 77,
+  approvedByMembershipId: APPROVER_MEMBERSHIP_ID,
   userEmail: "emp@test.com",
   userName: "Employee User",
 };
@@ -99,13 +100,13 @@ function makeDb(period: unknown, settings: unknown, postApprovalPeriod: unknown)
 }
 
 const USER_CTX = {
-  userId: APPROVER_ID,
+  userId: "approver-user",
   orgId: ORG_ID,
   role: "MEMBER",
   isOrgOwner: true,
   sessionId: "s1",
   tokenScopes: null,
-  principal: {} as never,
+  principal: humanSessionPrincipal(APPROVER_MEMBERSHIP_ID, true),
 };
 
 const AUDIT_MOCK = { record: jest.fn().mockResolvedValue(undefined) };
@@ -121,7 +122,7 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
   it("rejects a non-member approver: throws NotFoundException and does not open a transaction", async () => {
     const db = makeDb(SUBMITTED_PERIOD, DEFAULT_SETTINGS, null);
     mockAssertActor.mockRejectedValue(
-      new OrganizationActorError(ORG_ID, { kind: "user", userId: APPROVER_ID }, "no-membership"),
+      new OrganizationActorError(ORG_ID, { kind: "user", userId: "approver-user" }, "no-membership"),
     );
     const svc = new ApprovalsService(db as never, {} as never, AUDIT_MOCK as never, RATE_RESOLVER_MOCK as never);
 
@@ -132,7 +133,7 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
   it("rejects a SUSPENDED member: throws ForbiddenException and does not open a transaction", async () => {
     const db = makeDb(SUBMITTED_PERIOD, DEFAULT_SETTINGS, null);
     mockAssertActor.mockRejectedValue(
-      new OrganizationActorError(ORG_ID, { kind: "user", userId: APPROVER_ID }, "membership-inactive"),
+      new OrganizationActorError(ORG_ID, { kind: "user", userId: "approver-user" }, "membership-inactive"),
     );
     const svc = new ApprovalsService(db as never, {} as never, AUDIT_MOCK as never, RATE_RESOLVER_MOCK as never);
 
@@ -144,7 +145,7 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
     const db = makeDb(SUBMITTED_PERIOD, DEFAULT_SETTINGS, null);
     const err = new OrganizationActorError(
       ORG_ID,
-      { kind: "user", userId: APPROVER_ID },
+      { kind: "user", userId: "approver-user" },
       "membership-in-another-organization",
     );
     mockAssertActor.mockRejectedValue(err);
@@ -164,8 +165,8 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
     const db = makeDb(SUBMITTED_PERIOD, DEFAULT_SETTINGS, APPROVED_PERIOD);
     mockAssertActor.mockResolvedValue({
       orgId: ORG_ID,
-      membershipId: 77,
-      userId: APPROVER_ID,
+      membershipId: APPROVER_MEMBERSHIP_ID,
+      userId: "approver-user",
       organizationPersonId: null,
       role: "MEMBER",
       isOwner: true,
@@ -179,12 +180,12 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
     const periodUpdate = db._setCaptures[0];
     expect(periodUpdate).toMatchObject({
       status: "APPROVED",
-      approvedByMembershipId: 77,
+      approvedByMembershipId: APPROVER_MEMBERSHIP_ID,
     });
     const timesheetUpdate = db._setCaptures[1];
     expect(timesheetUpdate).toMatchObject({
       status: "APPROVED",
-      approvedByMembershipId: 77,
+      approvedByMembershipId: APPROVER_MEMBERSHIP_ID,
     });
   });
 });

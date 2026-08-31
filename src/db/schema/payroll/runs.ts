@@ -83,32 +83,37 @@ export const payrollRuns = pgTable("payroll_runs", {
     columns: [table.orgId, table.approvedByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_payroll_runs_approved_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
   foreignKey({
     columns: [table.orgId, table.paidByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_payroll_runs_paid_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
   foreignKey({
     columns: [table.orgId, table.publishedByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_payroll_runs_published_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
   foreignKey({
     columns: [table.orgId, table.closedByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_payroll_runs_closed_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
   foreignKey({
     columns: [table.orgId, table.reopenedByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_payroll_runs_reopened_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
   foreignKey({
     columns: [table.orgId, table.createdByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_payroll_runs_created_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
+  foreignKey({
+    columns: [table.orgId, table.lockedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_payroll_runs_locked_actor",
+  }).onDelete("set null"),
 ]);
 
 export const payrollRunEmployees = pgTable("payroll_run_employees", {
@@ -153,7 +158,7 @@ export const payrollRunEmployees = pgTable("payroll_run_employees", {
     columns: [table.orgId, table.workerId],
     foreignColumns: [workers.organizationId, workers.workerId],
     name: "fk_payroll_run_employees_org_worker",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
 ]);
 
 export const payrollLineItems = pgTable("payroll_line_items", {
@@ -220,7 +225,7 @@ export const payrollApprovals = pgTable("payroll_approvals", {
     columns: [table.orgId, table.actedByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_payroll_approvals_acted_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
 ]);
 
 export const payrollRunsRelations = relations(payrollRuns, ({ one, many }) => ({

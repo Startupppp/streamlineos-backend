@@ -28,6 +28,11 @@ describe("DashboardAvailabilityService — cross-tenant isolation", () => {
 
   function makeDb(wheres: unknown[]) {
     return {
+      query: {
+        organizations: {
+          findFirst: jest.fn().mockResolvedValue({ timezone: "UTC" }),
+        },
+      },
       select: jest.fn().mockImplementation(() => ({
         from: jest.fn().mockImplementation(() => makeFrom(wheres)),
       })),

@@ -27,5 +27,5 @@ export const workflowTransitions = build.table("workflow_transitions", {
     name: "fk_workflow_transitions_created_by_actor",
     columns: [t.orgId, t.createdByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
 ]);

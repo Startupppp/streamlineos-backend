@@ -1,4 +1,4 @@
-import { payrollMappingSchema, type PayrollMapping } from "../dto/payroll.schemas";
+import { payrollMappingSchema, type PayrollMapping, type PayrollExportRow } from "../dto/payroll.schemas";
 
 export function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -66,6 +66,70 @@ export function computeOvertime(
   }
 
   return round2(totalOt);
+}
+
+export interface PayrollEntryRow {
+  date: string;
+  hours: string;
+  isBillable: boolean;
+  userMembershipId: number | null;
+}
+
+export function buildPayrollRows(
+  eligible: PayrollEntryRow[],
+  membIdToUserId: Map<number, string>,
+  userMap: Map<string, { name: string | null; email: string | null }>,
+  holidayDates: Set<string>,
+  leavesByUser: Map<string, number>,
+  periodStart: string,
+  periodEnd: string,
+  dailyThreshold: number,
+  weeklyThreshold: number,
+): PayrollExportRow[] {
+  const byUser = new Map<string, PayrollEntryRow[]>();
+  for (const e of eligible) {
+    const uid = e.userMembershipId !== null ? membIdToUserId.get(e.userMembershipId) : undefined;
+    if (!uid) continue;
+    const arr = byUser.get(uid) ?? [];
+    arr.push(e);
+    byUser.set(uid, arr);
+  }
+
+  const rows: PayrollExportRow[] = [];
+  for (const [uid, userEntries] of byUser) {
+    const user = userMap.get(uid);
+    const otEntries = userEntries.map((e) => ({ date: e.date, hours: parseFloat(e.hours) }));
+    const overtimeHours = computeOvertime(otEntries, dailyThreshold, weeklyThreshold);
+    let totalPayableHours = 0, billableHours = 0, nonBillableHours = 0;
+    let holidayHours = 0, weekendHours = 0;
+    for (const e of userEntries) {
+      const h = parseFloat(e.hours);
+      totalPayableHours += h;
+      if (e.isBillable) billableHours += h;
+      else nonBillableHours += h;
+      if (holidayDates.has(e.date)) holidayHours += h;
+      if (isWeekend(e.date)) weekendHours += h;
+    }
+    rows.push({
+      userId: uid,
+      employeeName: user?.name ?? user?.email ?? "Former user",
+      employeeEmail: user?.email ?? "",
+      periodStart,
+      periodEnd,
+      regularHours: round2(totalPayableHours - overtimeHours),
+      overtimeHours: round2(overtimeHours),
+      holidayHours: round2(holidayHours),
+      weekendHours: round2(weekendHours),
+      breakHours: 0,
+      leaveDays: round2(leavesByUser.get(uid) ?? 0),
+      billableHours: round2(billableHours),
+      nonBillableHours: round2(nonBillableHours),
+      totalPayableHours: round2(totalPayableHours),
+      entryCount: userEntries.length,
+    });
+  }
+  rows.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+  return rows;
 }
 
 export const DEFAULT_PAYROLL_MAPPING: PayrollMapping = {

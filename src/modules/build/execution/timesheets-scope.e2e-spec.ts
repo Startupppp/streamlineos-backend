@@ -66,27 +66,31 @@ describeWithDb(
           .values({ id: ORG_ID, name: "TS Scope E2E", slug: ORG_ID, ownerMembershipId })
           .onConflictDoNothing();
 
-        await tx
+        const memberRows = await tx
           .insert(organizationMembers)
           .values([
             { id: ownerMembershipId, userId: U.admin, orgId: ORG_ID, isOwner: true },
             { userId: U.member, orgId: ORG_ID, isOwner: false },
             { userId: U.other, orgId: ORG_ID, isOwner: false },
           ])
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning({ id: organizationMembers.id, userId: organizationMembers.userId });
+
+        const adminMembId = memberRows.find((m) => m.userId === U.admin)?.id ?? ownerMembershipId;
+        const memberMembId = memberRows.find((m) => m.userId === U.member)?.id ?? 0;
 
         const inserted = await tx
           .insert(timesheets)
           .values([
-            { orgId: ORG_ID, userId: U.admin, date: "2024-01-10", hours: "2" },
-            { orgId: ORG_ID, userId: U.member, date: "2024-01-11", hours: "1" },
+            { orgId: ORG_ID, userMembershipId: adminMembId, date: "2024-01-10", hours: "2" },
+            { orgId: ORG_ID, userMembershipId: memberMembId, date: "2024-01-11", hours: "1" },
           ])
           .onConflictDoNothing()
-          .returning({ id: timesheets.id, userId: timesheets.userId });
+          .returning({ id: timesheets.id, userMembershipId: timesheets.userMembershipId });
 
         for (const row of inserted) {
-          if (row.userId === U.admin) entryIds.admin = row.id;
-          if (row.userId === U.member) entryIds.member = row.id;
+          if (row.userMembershipId === adminMembId) entryIds.admin = row.id;
+          if (row.userMembershipId === memberMembId) entryIds.member = row.id;
         }
       });
     }

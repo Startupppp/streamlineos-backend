@@ -1,6 +1,6 @@
 import { pgTable, serial, text, integer, jsonb, timestamp, index, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { signBulkJobStatusEnum, signBulkRowStatusEnum } from "./enums";
 import { signTemplates } from "./templates";
 import { signEnvelopes } from "./envelopes";
@@ -11,7 +11,6 @@ export const signBulkSendJobs = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     templateId: integer("template_id").references(() => signTemplates.id, { onDelete: "cascade" }).notNull(),
-    senderUserId: text("sender_user_id").references(() => users.id, { onDelete: "set null" }).notNull(),
     senderMembershipId: integer("sender_membership_id"),
     status: signBulkJobStatusEnum("status").default("pending").notNull(),
     columnMappingJson: jsonb("column_mapping_json").$type<Record<string, string>>().default({}).notNull(),
@@ -56,7 +55,6 @@ export const signBulkSendRows = pgTable(
 export const signBulkSendJobsRelations = relations(signBulkSendJobs, ({ one, many }) => ({
   organization: one(organizations, { fields: [signBulkSendJobs.orgId], references: [organizations.id] }),
   template: one(signTemplates, { fields: [signBulkSendJobs.templateId], references: [signTemplates.id] }),
-  sender: one(users, { fields: [signBulkSendJobs.senderUserId], references: [users.id] }),
   rows: many(signBulkSendRows),
 }));
 

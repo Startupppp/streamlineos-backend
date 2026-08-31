@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray, isNull, sum } from "drizzle-orm";
-import { projectMembers, projects, tickets, timesheets } from "../../../db/schema";
+import { organizationMembers, projectMembers, projects, tickets, timesheets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
@@ -84,15 +84,31 @@ export class ProjectsBudgetService {
       columns: { userId: true, hourlyRateMinor: true },
     });
 
+    const memberUserIds = members.map((m) => m.userId);
+    const memberOrgMembers =
+      memberUserIds.length > 0
+        ? await this.db
+            .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                inArray(organizationMembers.userId, memberUserIds),
+              ),
+            )
+            .limit(memberUserIds.length)
+        : [];
+
+    const membershipIdToUserId = new Map(memberOrgMembers.map((m) => [m.id, m.userId]));
     const memberRates = new Map(
       members.map((m): [string, number] => [m.userId, m.hourlyRateMinor ?? 0]),
     );
-    const memberIds = [...memberRates.keys()];
+    const membershipIds = memberOrgMembers.map((m) => m.id);
 
     const [hoursPerMemberRows, totalHoursResult] = await Promise.all([
-      memberIds.length > 0
+      membershipIds.length > 0
         ? this.db
-            .select({ userId: timesheets.userId, hours: sum(timesheets.hours) })
+            .select({ membershipId: timesheets.userMembershipId, hours: sum(timesheets.hours) })
             .from(timesheets)
             .innerJoin(tickets, eq(timesheets.ticketId, tickets.id))
             .where(
@@ -100,11 +116,11 @@ export class ProjectsBudgetService {
                 eq(timesheets.orgId, orgId),
                 eq(tickets.projectId, projectId),
                 eq(timesheets.isBillable, true),
-                inArray(timesheets.userId, memberIds),
+                inArray(timesheets.userMembershipId, membershipIds),
               ),
             )
-            .groupBy(timesheets.userId)
-        : Promise.resolve([] as Array<{ userId: string | null; hours: string | null }>),
+            .groupBy(timesheets.userMembershipId)
+        : Promise.resolve([] as Array<{ membershipId: number | null; hours: string | null }>),
       this.db
         .select({ value: sum(timesheets.hours) })
         .from(timesheets)
@@ -120,8 +136,11 @@ export class ProjectsBudgetService {
 
     const hoursByUser = new Map<string, number>(
       hoursPerMemberRows
-        .filter((r): r is { userId: string; hours: string | null } => r.userId !== null)
-        .map((r) => [r.userId, Number(r.hours ?? 0)]),
+        .filter((r): r is { membershipId: number; hours: string | null } => r.membershipId !== null)
+        .flatMap((r) => {
+          const uid = membershipIdToUserId.get(r.membershipId);
+          return uid ? [[uid, Number(r.hours ?? 0)] as [string, number]] : [];
+        }),
     );
 
     const memberCosts: MemberCost[] = [];

@@ -43,6 +43,7 @@ export class MailService {
   async listMessages(
     orgId: string,
     userId: string,
+    membershipId: number | null,
     folder: MailFolder,
     accountIdParam: string,
     limit: number,
@@ -59,10 +60,10 @@ export class MailService {
     }
 
     const isFirstPage = !cursor;
-    if (isFirstPage && !query && accountIdParam !== "all") {
+    if (isFirstPage && !query && accountIdParam !== "all" && membershipId !== null) {
       const singleAcc = targetAccounts[0];
       if (singleAcc) {
-        const cached = await this.metadata.listCached(userId, orgId, singleAcc.id, folder, limit);
+        const cached = await this.metadata.listCached(membershipId, orgId, singleAcc.id, folder, limit);
         if (cached.isFresh && cached.hasData) {
           return {
             messages: cached.messages.map((m) => ({
@@ -90,7 +91,7 @@ export class MailService {
     const skipCache = Boolean(query);
 
     const settled = await Promise.allSettled(
-      targetAccounts.map((acc) => this.fetchMessagesForAccount(orgId, userId, acc, folder, limit, parsedCursor, query, skipCache)),
+      targetAccounts.map((acc) => this.fetchMessagesForAccount(orgId, userId, membershipId, acc, folder, limit, parsedCursor, query, skipCache)),
     );
 
     const allMessages: ReturnType<typeof mergeMessagesByDate> = [];
@@ -170,6 +171,7 @@ export class MailService {
   private async fetchMessagesForAccount(
     orgId: string,
     userId: string,
+    membershipId: number | null,
     acc: MailAccount,
     folder: MailFolder,
     limit: number,
@@ -201,8 +203,8 @@ export class MailService {
         result = { messages: raw.messages, nextPageToken: undefined, outlookHasMore: raw.nextSkip !== null && raw.nextSkip !== undefined };
       }
 
-      if (!query && result.messages.length > 0) {
-        this.metadata.deferUpsertBatch(acc.id, userId, orgId, folder, result.messages);
+      if (!query && result.messages.length > 0 && membershipId !== null) {
+        this.metadata.deferUpsertBatch(acc.id, membershipId, orgId, folder, result.messages);
         void this.checkpoints.savePosition(orgId, acc.id, folder, result.nextPageToken ?? null);
       }
 
@@ -293,6 +295,7 @@ export class MailService {
   async performAction(
     orgId: string,
     userId: string,
+    membershipId: number | null,
     messageId: string,
     accountId: number,
     action: "markRead" | "markUnread" | "star" | "unstar" | "archive" | "trash",
@@ -359,8 +362,8 @@ export class MailService {
     else if (action === "archive") stateUpdate.folder = "archive";
     else if (action === "trash") stateUpdate.folder = "trash";
 
-    if (Object.keys(stateUpdate).length > 0) {
-      this.metadata.deferUpdateState(acc.id, userId, orgId, messageId, stateUpdate);
+    if (Object.keys(stateUpdate).length > 0 && membershipId !== null) {
+      this.metadata.deferUpdateState(acc.id, membershipId, orgId, messageId, stateUpdate);
     }
   }
 

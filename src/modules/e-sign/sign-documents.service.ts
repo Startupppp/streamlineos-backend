@@ -96,7 +96,7 @@ export class SignDocumentsService {
         sha256Hash,
         conversionStatus: "not_needed",
         orderIndex,
-        createdBy: actor.userId,
+        createdByMembershipId: actor.membershipId,
       })
       .returning();
 

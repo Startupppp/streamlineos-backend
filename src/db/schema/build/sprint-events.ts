@@ -44,6 +44,6 @@ export const sprintScopeEvents = buildEvents.table(
       name: "fk_sprint_scope_events_actor",
       columns: [table.orgId, table.actorMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
   ],
 );

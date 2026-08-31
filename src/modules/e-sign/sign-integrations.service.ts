@@ -1,9 +1,13 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
+import { and, eq } from "drizzle-orm";
 import { AutomationService, type AutomationTrigger } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { appUrl } from "../email/app-url";
+import { organizationMembers } from "../../db/schema";
 import type { signEnvelopes } from "../../db/schema";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
 
 type SignEnvelopeRow = typeof signEnvelopes.$inferSelect;
 
@@ -20,6 +24,7 @@ const EVENT_MESSAGES: Record<SignEnvelopeEventKey, (title: string) => string> = 
 @Injectable()
 export class SignIntegrationsService {
   constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly automation: AutomationService,
     private readonly webhooks: WebhooksDispatchService,
     private readonly notifications: NotificationsService,
@@ -33,21 +38,22 @@ export class SignIntegrationsService {
       sourceModule: envelope.sourceModule,
       sourceEntityType: envelope.sourceEntityType,
       sourceEntityId: envelope.sourceEntityId,
-      senderUserId: envelope.senderUserId,
+      senderMembershipId: envelope.senderMembershipId,
       ...extra,
     };
   }
 
-  /** Fire-and-forget: emits to webhooks, automation rules, and the sender's in-app notifications. */
-  emitEnvelopeEvent(envelope: SignEnvelopeRow, key: SignEnvelopeEventKey, extra?: Record<string, unknown>): void {
+  private async resolveAndNotifySender(envelope: SignEnvelopeRow, key: SignEnvelopeEventKey): Promise<void> {
+    if (envelope.senderMembershipId == null) return;
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, envelope.orgId), eq(organizationMembers.id, envelope.senderMembershipId)),
+      with: { user: { columns: { id: true } } },
+    });
+    if (!member?.user?.id) return;
     const eventName = `sign.envelope.${key}`;
-    const payload = this.basePayload(envelope, extra);
-
-    this.webhooks.dispatch(envelope.orgId, eventName, payload);
-    void this.automation.runAutomationsForEvent(envelope.orgId, eventName as AutomationTrigger, payload);
-    void this.notifications.create({
+    await this.notifications.create({
       orgId: envelope.orgId,
-      userId: envelope.senderUserId,
+      userId: member.user.id,
       category: "SIGN",
       sourceModule: envelope.sourceModule ?? "sign",
       eventKey: eventName,
@@ -59,6 +65,16 @@ export class SignIntegrationsService {
     });
   }
 
+  /** Fire-and-forget: emits to webhooks, automation rules, and the sender's in-app notifications. */
+  emitEnvelopeEvent(envelope: SignEnvelopeRow, key: SignEnvelopeEventKey, extra?: Record<string, unknown>): void {
+    const eventName = `sign.envelope.${key}`;
+    const payload = this.basePayload(envelope, extra);
+
+    this.webhooks.dispatch(envelope.orgId, eventName, payload);
+    void this.automation.runAutomationsForEvent(envelope.orgId, eventName as AutomationTrigger, payload);
+    void this.resolveAndNotifySender(envelope, key);
+  }
+
   emitRecipientCompleted(envelope: SignEnvelopeRow, recipient: { id: number; name: string; email: string | null }): void {
     const eventName = "sign.recipient.completed";
     const payload = this.basePayload(envelope, { recipientId: recipient.id, recipientName: recipient.name, recipientEmail: recipient.email });
@@ -67,23 +83,25 @@ export class SignIntegrationsService {
     void this.automation.runAutomationsForEvent(envelope.orgId, eventName as AutomationTrigger, payload);
   }
 
-  emitBulkSendCompleted(orgId: string, senderUserId: string, jobId: number, stats: { totalCount: number; successCount: number; failedCount: number }): void {
+  emitBulkSendCompleted(orgId: string, senderUserId: string | null, jobId: number, stats: { totalCount: number; successCount: number; failedCount: number }): void {
     const eventName = "sign.bulk_send.completed";
     const payload: Record<string, unknown> = { jobId, senderUserId, ...stats };
 
     this.webhooks.dispatch(orgId, eventName, payload);
     void this.automation.runAutomationsForEvent(orgId, eventName as AutomationTrigger, payload);
-    void this.notifications.create({
-      orgId,
-      userId: senderUserId,
-      category: "SIGN",
-      sourceModule: "sign",
-      eventKey: eventName,
-      entityType: "bulk_send_job",
-      entityId: String(jobId),
-      title: "SignOS",
-      message: `Bulk send job #${jobId} completed: ${stats.successCount}/${stats.totalCount} sent, ${stats.failedCount} failed`,
-      link: `${appUrl()}/sign/bulk-send`,
-    });
+    if (senderUserId) {
+      void this.notifications.create({
+        orgId,
+        userId: senderUserId,
+        category: "SIGN",
+        sourceModule: "sign",
+        eventKey: eventName,
+        entityType: "bulk_send_job",
+        entityId: String(jobId),
+        title: "SignOS",
+        message: `Bulk send job #${jobId} completed: ${stats.successCount}/${stats.totalCount} sent, ${stats.failedCount} failed`,
+        link: `${appUrl()}/sign/bulk-send`,
+      });
+    }
   }
 }

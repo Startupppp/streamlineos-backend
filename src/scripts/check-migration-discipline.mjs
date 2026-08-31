@@ -467,10 +467,14 @@ function checkJournalIntegrity(migrationsDir, sqlFiles) {
       });
   }
 
+  // A trailing letter (0767b) is the deliberate way to slot a repair BETWEEN two
+  // already-applied migrations: renumbering an applied file changes its hash and
+  // orphans its ledger row. So 0767 and 0767b are distinct keys, while two files
+  // sharing an identical prefix are still the accident this check exists to catch.
   const byPrefix = new Map();
   for (const f of sqlFiles) {
-    const prefix = f.slice(0, 4);
-    if (!/^\d{4}$/.test(prefix)) continue;
+    const prefix = (/^(\d{4}[a-z]?)/.exec(f) ?? [])[1];
+    if (!prefix) continue;
     if (!byPrefix.has(prefix)) byPrefix.set(prefix, []);
     byPrefix.get(prefix).push(f);
   }
@@ -481,6 +485,36 @@ function checkJournalIntegrity(migrationsDir, sqlFiles) {
         label: "dup-prefix",
         msg: `migration number ${prefix} is claimed by ${files.length} files (${files.join(", ")}) — two lanes numbered independently`,
       });
+
+  // A letter-suffixed insert only means anything if its journal `when` really lands
+  // between its neighbours. Permitting the name without enforcing the ordering would
+  // let a repair sort after the migration it exists to unblock.
+  const whenByTag = new Map(entries.map((e) => [e.tag, e.when]));
+  for (const f of sqlFiles) {
+    const m = /^(\d{4})([a-z])_/.exec(f);
+    if (!m) continue;
+    const tag = f.replace(/\.sql$/, "");
+    const own = whenByTag.get(tag);
+    if (own === undefined) continue;
+    const base = sqlFiles.find((c) => c.startsWith(`${m[1]}_`));
+    const next = sqlFiles
+      .filter((c) => /^\d{4}_/.test(c) && c.slice(0, 4) > m[1])
+      .sort()[0];
+    const baseWhen = base ? whenByTag.get(base.replace(/\.sql$/, "")) : undefined;
+    const nextWhen = next ? whenByTag.get(next.replace(/\.sql$/, "")) : undefined;
+    if (baseWhen !== undefined && own <= baseWhen)
+      out.push({
+        filename: f,
+        label: "insert-order",
+        msg: `when=${own} does not follow ${base} (when=${baseWhen}) — a letter-suffixed insert must sort after the migration it follows`,
+      });
+    if (nextWhen !== undefined && own >= nextWhen)
+      out.push({
+        filename: f,
+        label: "insert-order",
+        msg: `when=${own} does not precede ${next} (when=${nextWhen}) — the insert would run after the migration it exists to unblock`,
+      });
+  }
 
   return out;
 }

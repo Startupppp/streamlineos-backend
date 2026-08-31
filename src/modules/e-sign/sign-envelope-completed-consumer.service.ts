@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { signEnvelopes } from "../../db/schema";
+import { organizationMembers, signEnvelopes } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { InboxConsumer } from "../../common/outbox/inbox-consumer";
@@ -68,7 +68,7 @@ export class SignEnvelopeCompletedConsumerService
 
     const envelope = await this.db.query.signEnvelopes.findFirst({
       where: eq(signEnvelopes.id, envelopeId),
-      columns: { senderUserId: true, title: true },
+      columns: { senderMembershipId: true, orgId: true, title: true },
     });
 
     if (!envelope) {
@@ -79,11 +79,26 @@ export class SignEnvelopeCompletedConsumerService
       return;
     }
 
+    if (envelope.senderMembershipId == null) {
+      await inbox.markProcessed(CONSUMER_NAME, event.eventId, "SKIPPED", "sender membership not found");
+      return;
+    }
+
+    const senderMember = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.id, envelope.senderMembershipId)),
+      with: { user: { columns: { id: true } } },
+    });
+
+    if (!senderMember?.user?.id) {
+      await inbox.markProcessed(CONSUMER_NAME, event.eventId, "SKIPPED", "sender user not found");
+      return;
+    }
+
     await this.dispatch.emit({
       orgId,
       dedupeKey: outboxEffectIdempotencyKey(event, CONSUMER_NAME),
       eventKey: "sign.document.completed",
-      targetUserIds: [envelope.senderUserId],
+      targetUserIds: [senderMember.user.id],
       entityType: "sign_envelope",
       entityId: String(envelopeId),
       variables: { title: envelope.title },
@@ -91,7 +106,7 @@ export class SignEnvelopeCompletedConsumerService
 
     await inbox.markProcessed(CONSUMER_NAME, event.eventId, "COMPLETED", null);
     this.logger.log(
-      `sign.envelope.completed ${event.eventId}: notified sender ${envelope.senderUserId} for envelope ${envelopeId}`,
+      `sign.envelope.completed ${event.eventId}: notified sender ${senderMember.user.id} for envelope ${envelopeId}`,
     );
   }
 }

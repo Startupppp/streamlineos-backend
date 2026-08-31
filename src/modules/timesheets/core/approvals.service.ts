@@ -25,8 +25,8 @@ import {
   users,
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
-import { applyScope } from "../../access/apply-scope";
-import { resolveApprovalScope } from "./timesheets-core-scope";
+import { actingMembershipId } from "../../../common/auth/principal";
+import { resolveApprovalScope, applyMembershipScope } from "./timesheets-core-scope";
 import {
   buildCursorPage,
   decodeCursor,
@@ -65,36 +65,19 @@ export class ApprovalsService {
     return s;
   }
 
-  /** True when `approverId` has an active, unexpired delegation to the actor. */
   private async hasActiveDelegation(
     orgId: string,
-    approverId: string,
-    actorUserId: string,
+    approverMembershipId: number,
+    actorMembershipId: number,
   ): Promise<boolean> {
-    const delegatorMember = alias(organizationMembers, "delegation_delegator");
-    const delegateeMember = alias(organizationMembers, "delegation_delegatee");
     const [row] = await this.db
       .select({ id: userDelegations.id })
       .from(userDelegations)
-      .innerJoin(
-        delegatorMember,
-        and(
-          eq(delegatorMember.orgId, userDelegations.orgId),
-          eq(delegatorMember.id, userDelegations.delegatorMembershipId),
-        ),
-      )
-      .innerJoin(
-        delegateeMember,
-        and(
-          eq(delegateeMember.orgId, userDelegations.orgId),
-          eq(delegateeMember.id, userDelegations.delegateeMembershipId),
-        ),
-      )
       .where(
         and(
           eq(userDelegations.orgId, orgId),
-          eq(delegatorMember.userId, approverId),
-          eq(delegateeMember.userId, actorUserId),
+          eq(userDelegations.delegatorMembershipId, approverMembershipId),
+          eq(userDelegations.delegateeMembershipId, actorMembershipId),
           eq(userDelegations.status, "ACTIVE"),
           lte(userDelegations.startsAt, new Date()),
           gt(userDelegations.endsAt, new Date()),
@@ -106,23 +89,25 @@ export class ApprovalsService {
 
   async assertCanActOnPeriod(
     u: CurrentUserContext,
-    period: { userId: string; currentApproverId: string | null },
+    period: { userMembershipId: number | null; currentApproverMembershipId: number | null },
   ): Promise<void> {
+    const membershipId = actingMembershipId(u.principal);
     const actor = {
-      userId: u.userId,
+      membershipId,
       isOrgOwner: !!u.isOrgOwner,
     };
 
     let delegateeOfApprover = false;
     if (
-      period.currentApproverId &&
-      period.currentApproverId !== u.userId &&
-      period.userId !== u.userId
+      period.currentApproverMembershipId &&
+      period.currentApproverMembershipId !== membershipId &&
+      period.userMembershipId !== membershipId &&
+      membershipId !== null
     ) {
       delegateeOfApprover = await this.hasActiveDelegation(
         u.orgId,
-        period.currentApproverId,
-        u.userId,
+        period.currentApproverMembershipId,
+        membershipId,
       );
     }
 
@@ -136,16 +121,27 @@ export class ApprovalsService {
     const scope = await resolveApprovalScope(this.access, u);
     const limit = Math.min(query.limit, 100);
     const pos = decodeCursor(query.cursor);
+    const membershipId = actingMembershipId(u.principal);
+
     const conditions = [
       eq(timesheetPeriods.orgId, u.orgId),
       eq(timesheetPeriods.status, query.status),
-      applyScope(scope, u.orgId, u.userId, {
-        ownerColumn: timesheetPeriods.userId,
-      }),
+      applyMembershipScope(scope, membershipId, timesheetPeriods.userMembershipId),
     ];
 
-    if (query.userId && (scope === "all" || u.isOrgOwner))
-      conditions.push(eq(timesheetPeriods.userId, query.userId));
+    if (query.userId && (scope === "all" || u.isOrgOwner)) {
+      const [qMember] = await this.db
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, u.orgId),
+            eq(organizationMembers.userId, query.userId),
+          ),
+        )
+        .limit(1);
+      if (qMember) conditions.push(eq(timesheetPeriods.userMembershipId, qMember.id));
+    }
     if (query.startDate)
       conditions.push(gte(timesheetPeriods.periodStart, query.startDate));
     if (query.endDate)
@@ -156,12 +152,13 @@ export class ApprovalsService {
       );
 
     const approverMember = alias(organizationMembers, "approver_member");
+    const ownerMember = alias(organizationMembers, "owner_member");
 
     const rows = await this.db
       .select({
         id: timesheetPeriods.id,
         orgId: timesheetPeriods.orgId,
-        userId: timesheetPeriods.userId,
+        userMembershipId: timesheetPeriods.userMembershipId,
         periodStart: timesheetPeriods.periodStart,
         periodEnd: timesheetPeriods.periodEnd,
         status: timesheetPeriods.status,
@@ -172,7 +169,7 @@ export class ApprovalsService {
         approvedAt: timesheetPeriods.approvedAt,
         rejectedAt: timesheetPeriods.rejectedAt,
         lockedAt: timesheetPeriods.lockedAt,
-        currentApproverId: timesheetPeriods.currentApproverId,
+        currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
         approvedBy: approverMember.userId,
         rejectionReason: timesheetPeriods.rejectionReason,
         createdAt: timesheetPeriods.createdAt,
@@ -181,7 +178,11 @@ export class ApprovalsService {
         userName: users.name,
       })
       .from(timesheetPeriods)
-      .leftJoin(users, eq(timesheetPeriods.userId, users.id))
+      .leftJoin(ownerMember, and(
+        eq(timesheetPeriods.orgId, ownerMember.orgId),
+        eq(timesheetPeriods.userMembershipId, ownerMember.id),
+      ))
+      .leftJoin(users, eq(ownerMember.userId, users.id))
       .leftJoin(
         approverMember,
         and(
@@ -202,7 +203,7 @@ export class ApprovalsService {
       data: page.data.map((r) => ({
         ...r,
         user: {
-          id: r.userId,
+          membershipId: r.userMembershipId,
           name: r.userName ?? r.userEmail,
           email: r.userEmail,
         },
@@ -298,7 +299,7 @@ export class ApprovalsService {
         u.orgId,
         billableEntries.map((entry) => ({
           projectId: entry.projectId,
-          userId: entry.userId,
+          userMembershipId: entry.userMembershipId,
           ticketId: entry.ticketId,
           date: entry.date,
         })),
@@ -348,7 +349,7 @@ export class ApprovalsService {
 
       await this.audit.record(tx, {
         orgId: u.orgId,
-        actorUserId: u.userId,
+        actorMembershipId: actingMembershipId(u.principal),
         entityType: "period",
         entityId: periodId.toString(),
         action: "period.approved",
@@ -361,12 +362,13 @@ export class ApprovalsService {
     await this.approveSinglePeriod(u, periodId);
 
     const approverMember = alias(organizationMembers, "approver_member");
+    const ownerMember = alias(organizationMembers, "owner_member");
 
     const [updated] = await this.db
       .select({
         id: timesheetPeriods.id,
         orgId: timesheetPeriods.orgId,
-        userId: timesheetPeriods.userId,
+        userMembershipId: timesheetPeriods.userMembershipId,
         periodStart: timesheetPeriods.periodStart,
         periodEnd: timesheetPeriods.periodEnd,
         status: timesheetPeriods.status,
@@ -377,7 +379,7 @@ export class ApprovalsService {
         approvedAt: timesheetPeriods.approvedAt,
         rejectedAt: timesheetPeriods.rejectedAt,
         lockedAt: timesheetPeriods.lockedAt,
-        currentApproverId: timesheetPeriods.currentApproverId,
+        currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
         approvedBy: approverMember.userId,
         rejectionReason: timesheetPeriods.rejectionReason,
         createdAt: timesheetPeriods.createdAt,
@@ -386,7 +388,11 @@ export class ApprovalsService {
         userName: users.name,
       })
       .from(timesheetPeriods)
-      .leftJoin(users, eq(timesheetPeriods.userId, users.id))
+      .leftJoin(ownerMember, and(
+        eq(timesheetPeriods.orgId, ownerMember.orgId),
+        eq(timesheetPeriods.userMembershipId, ownerMember.id),
+      ))
+      .leftJoin(users, eq(ownerMember.userId, users.id))
       .leftJoin(
         approverMember,
         and(

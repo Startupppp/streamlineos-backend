@@ -39,6 +39,14 @@ export class FinanceReportExportController {
     return this.exportJobs.get(u, jobId);
   }
 
+  @Post("jobs/:jobId/cancel")
+  @HttpCode(200)
+  @RequirePermission("accounting:reports:export")
+  @Validate({ params: finReportExportJobIdParams })
+  cancelJob(@Param("jobId") jobId: string, @CurrentUser() u: CurrentUserContext) {
+    return this.exportJobs.cancel(u, jobId);
+  }
+
   @Get("jobs/:jobId/download")
   @RequirePermission("accounting:reports:export")
   @Validate({ params: finReportExportJobIdParams })

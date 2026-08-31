@@ -41,7 +41,13 @@ function makeDb(opts: { hasChunks: boolean }) {
     orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue(chunkRows),
   };
-  const execute = jest.fn().mockResolvedValue([]);
+  const execute = jest.fn().mockImplementation((sqlNode: unknown) => {
+    const text = extractSqlStrings(sqlNode).join(" ");
+    if (text.includes("SET LOCAL")) return Promise.resolve([]);
+    if (text.includes("kb_article_chunks")) return Promise.resolve(opts.hasChunks ? [{ id: 1 }] : []);
+    if (text.includes("search_kb_chunk_ids")) return Promise.resolve(opts.hasChunks ? [{ id: 1 }] : []);
+    return Promise.resolve([]);
+  });
   return { db: { select: jest.fn().mockReturnValue(chain), execute } };
 }
 
@@ -60,8 +66,8 @@ const makeEmbeddings = () => ({
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
-describe("KB ANN minority-tenant — vectorChunkIds always uses the SECURITY DEFINER fence", () => {
-  it("emits no bare global ORDER-BY-embedding execute call", async () => {
+describe("KB ANN minority-tenant — vectorChunkIds uses plain ANN with iterative scan first", () => {
+  it("issues SET LOCAL hnsw.iterative_scan = relaxed_order before any vector query", async () => {
     const { db } = makeDb({ hasChunks: true });
     const svc = new KbSearchService(
       db as never,
@@ -76,16 +82,15 @@ describe("KB ANN minority-tenant — vectorChunkIds always uses the SECURITY DEF
     const calls = (db.execute as jest.Mock).mock.calls as Array<[unknown]>;
     const sqls = calls.map(([arg]) => extractSqlStrings(arg).join(" "));
 
-    const bareGlobalAnn = sqls.filter(
-      (s) =>
-        s.includes("ORDER BY embedding") &&
-        !s.includes("search_kb_chunk_ids") &&
-        !s.includes("search_kb_"),
-    );
-    expect(bareGlobalAnn).toHaveLength(0);
+    const setLocalCall = sqls.find((s) => s.includes("SET LOCAL") && s.includes("relaxed_order"));
+    expect(setLocalCall).toBeDefined();
+
+    const setLocalIdx = sqls.findIndex((s) => s.includes("SET LOCAL"));
+    const vectorIdx = sqls.findIndex((s) => s.includes("::vector"));
+    expect(setLocalIdx).toBeLessThan(vectorIdx);
   });
 
-  it("every vector execute call routes through search_kb_chunk_ids", async () => {
+  it("primary path uses plain ANN (ORDER BY embedding) not the fence directly", async () => {
     const { db } = makeDb({ hasChunks: true });
     const svc = new KbSearchService(
       db as never,
@@ -99,13 +104,14 @@ describe("KB ANN minority-tenant — vectorChunkIds always uses the SECURITY DEF
 
     const calls = (db.execute as jest.Mock).mock.calls as Array<[unknown]>;
     const sqls = calls.map(([arg]) => extractSqlStrings(arg).join(" "));
-    const vectorCalls = sqls.filter((s) => s.includes("::vector"));
+    const vectorCalls = sqls.filter((s) => s.includes("::vector") && !s.includes("SET LOCAL"));
 
     expect(vectorCalls.length).toBeGreaterThan(0);
-    vectorCalls.forEach((s) => expect(s).toContain("search_kb_chunk_ids"));
+    const annCall = vectorCalls.find((s) => s.includes("kb_article_chunks") && s.includes("ORDER BY"));
+    expect(annCall).toBeDefined();
   });
 
-  it("retrieveTopSources vector call also routes through search_kb_chunk_ids", async () => {
+  it("retrieveTopSources also issues SET LOCAL before the vector query", async () => {
     const { db } = makeDb({ hasChunks: true });
     const svc = new KbSearchService(
       db as never,
@@ -119,9 +125,10 @@ describe("KB ANN minority-tenant — vectorChunkIds always uses the SECURITY DEF
 
     const calls = (db.execute as jest.Mock).mock.calls as Array<[unknown]>;
     const sqls = calls.map(([arg]) => extractSqlStrings(arg).join(" "));
-    const vectorCalls = sqls.filter((s) => s.includes("::vector"));
 
-    expect(vectorCalls.length).toBeGreaterThan(0);
-    vectorCalls.forEach((s) => expect(s).toContain("search_kb_chunk_ids"));
+    const setLocalIdx = sqls.findIndex((s) => s.includes("SET LOCAL") && s.includes("relaxed_order"));
+    const vectorIdx = sqls.findIndex((s) => s.includes("::vector") && !s.includes("SET LOCAL"));
+    expect(setLocalIdx).toBeGreaterThanOrEqual(0);
+    expect(setLocalIdx).toBeLessThan(vectorIdx);
   });
 });

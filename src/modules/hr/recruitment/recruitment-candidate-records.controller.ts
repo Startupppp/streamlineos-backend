@@ -50,7 +50,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, MultipartAction } from "../../../common/openapi/zod-operation-contracts";
 
 const candidateIdParams = z.object({ candidateId: z.coerce.number().int().positive() }).strict();
 const candidateAndCheckIdParams = z.object({ candidateId: z.coerce.number().int().positive(), checkId: z.coerce.number().int().positive() }).strict();
@@ -92,6 +92,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Post("resume-parse")
   @RequirePermission("hr:employees:manage")
+  @MultipartAction({ file: "file", fields: { resumeText: "string" } })
   @Validate({ params: candidateIdParams, body: resumeParseRequestSchema })
   @UseInterceptors(
     FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }),

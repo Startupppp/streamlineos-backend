@@ -8,12 +8,11 @@ import {
   index,
   foreignKey,
 } from "drizzle-orm/pg-core";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 
 export const timesheetAuditEvents = pgTable("timesheet_audit_events", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
   actorMembershipId: integer("actor_membership_id"),
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(),

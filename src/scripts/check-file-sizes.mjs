@@ -34,10 +34,24 @@ function loadExceptions() {
     console.error(`check-file-sizes: cannot read exceptions doc at ${EXCEPTIONS_DOC}`);
     process.exit(1);
   }
+  return parseExceptions(doc);
+}
+
+/**
+ * Only the registry table grants an exception. Matching any backticked `src/…` path
+ * in the document would exempt a file merely because the audit trail mentions it —
+ * that silently exempted four files, none of which was ever reviewed for the limit.
+ * An exception must be a table row carrying the owner, interface and reason §7 asks for.
+ */
+function parseExceptions(doc) {
   const exceptions = new Set();
   for (const line of doc.split("\n")) {
-    const match = line.match(/`(src\/[^`]+)`/);
-    if (match) exceptions.add(match[1]);
+    if (!line.startsWith("|")) continue;
+    const cells = line.split("|").map((c) => c.trim());
+    const match = cells[1]?.match(/^`(src\/[^`]+)`$/);
+    if (!match) continue;
+    if (cells.length < 7) continue;
+    exceptions.add(match[1]);
   }
   return exceptions;
 }
@@ -86,20 +100,34 @@ function runSelfTests() {
     }
   }
 
-  const fakeDoc = `
-## Exceptions
-| \`src/scripts/relocate-org-data.ts\` | 767 | CLI | reason |
-| \`src/modules/party/party-mirror-fields.ts\` | 544 | Cohesive catalog | reason |
-`;
-  const parsed = new Set();
-  for (const line of fakeDoc.split("\n")) {
-    const match = line.match(/`(src\/[^`]+)`/);
-    if (match) parsed.add(match[1]);
-  }
+  const fakeDoc = [
+    "## Exceptions",
+    "",
+    "| Path | Lines | Category | Interface | Reason | Owner |",
+    "|---|---|---|---|---|---|",
+    "| `src/scripts/relocate-org-data.ts` | 767 | CLI | main() | cohesive | Platform |",
+    "| `src/modules/party/party-mirror-fields.ts` | 552 | Catalog | CONST | cohesive | Party |",
+    "",
+    "## Audit trail",
+    "- Split `src/modules/chat/chat-message-timeline.service.ts` 239 -> 322 during the cutover.",
+    "- `src/scripts/**` are CLI utilities and out of structural scope.",
+  ].join("\n");
+
+  const parsed = parseExceptions(fakeDoc);
   assert("parses first exception path", parsed.has("src/scripts/relocate-org-data.ts"));
   assert("parses second exception path", parsed.has("src/modules/party/party-mirror-fields.ts"));
   assert("does not include non-path tokens", !parsed.has("767"));
-  assert("countLines counts newlines", countLines === countLines);
+  assert(
+    "a path mentioned only in audit-trail prose is NOT an exception",
+    !parsed.has("src/modules/chat/chat-message-timeline.service.ts"),
+  );
+  assert("a glob in prose is NOT an exception", !parsed.has("src/scripts/**"));
+  assert("grants exactly the two table rows", parsed.size === 2);
+  assert(
+    "rejects a table row missing the owner/interface/reason columns",
+    parseExceptions("| `src/modules/x.ts` | 600 |").size === 0,
+  );
+  assert("counts a trailing-newline file without an off-by-one", countLines(EXCEPTIONS_DOC) > 0);
 
   if (failed > 0) {
     console.error(`check-file-sizes self-tests: ${failed} failed, ${passed} passed`);

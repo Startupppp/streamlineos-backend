@@ -12,7 +12,7 @@ import {
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { projects } from "../build/core";
 import { tickets } from "../build/tasks";
 import { timesheetPeriods } from "./periods";
@@ -30,7 +30,7 @@ import {
 export const timesheets = pgTable("timesheets", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  userMembershipId: integer("user_membership_id"),
   ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "set null" }),
   date: date("date").notNull(),
   hours: decimal("hours", { precision: 6, scale: 2 }).default("0").notNull(),
@@ -62,7 +62,13 @@ export const timesheets = pgTable("timesheets", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_timesheets_org_user_date").on(table.orgId, table.userId, table.date),
+  index("idx_timesheets_org_user_membership_date").on(table.orgId, table.userMembershipId, table.date),
+  index("idx_timesheets_org_user_membership").on(table.orgId, table.userMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_timesheets_user_membership",
+  }).onDelete("set null"),
   index("idx_timesheets_org_status").on(table.orgId, table.status),
   index("idx_timesheets_org_payroll").on(table.orgId, table.payrollStatus, table.date),
   index("idx_timesheets_org_project_date").on(table.orgId, table.projectId, table.date),
@@ -70,14 +76,14 @@ export const timesheets = pgTable("timesheets", {
   index("idx_timesheets_org_billing").on(table.orgId, table.isBillable, table.invoicingStatus),
   index("idx_timesheets_period").on(table.timesheetPeriodId),
   index("idx_timesheets_timer_session").on(table.timerSessionId),
-  uniqueIndex("uniq_timesheets_work_log").on(table.orgId, table.userId, table.date).where(sql`ticket_id IS NULL`),
+  uniqueIndex("uniq_timesheets_work_log").on(table.orgId, table.userMembershipId, table.date).where(sql`ticket_id IS NULL`),
   index("idx_timesheets_org_approved_actor").on(table.orgId, table.approvedByMembershipId),
   index("idx_timesheets_org_locked_by_membership").on(table.orgId, table.lockedByMembershipId),
   foreignKey({
     columns: [table.orgId, table.approvedByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_timesheets_approved_actor",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
   foreignKey({
     columns: [table.orgId, table.lockedByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],

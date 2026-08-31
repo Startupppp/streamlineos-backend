@@ -5,6 +5,7 @@ import {
   hrEmployments,
   hrPeople,
   organizationMembers,
+  organizations,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -15,6 +16,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import { applyScope } from "../access/apply-scope";
+import { formatInTimeZone } from "date-fns-tz";
 import { getTodayString } from "../../common/date";
 import { resolveAttendanceReadScope } from "../hr/time/attendance-scope";
 import { buildScopedDashboardCacheKey } from "./dashboard-cache-key";
@@ -35,13 +37,18 @@ export class DashboardAvailabilityService {
     const { orgId, userId } = u;
     const scope = await resolveAttendanceReadScope(this.access, u);
     if (scope === "none") return [];
-    const today = getTodayString();
+    const org = await this.db.query.organizations.findFirst({
+      where: eq(organizations.id, orgId),
+      columns: { timezone: true },
+    });
+    const orgTz = org?.timezone ?? "UTC";
+    const today = formatInTimeZone(new Date(), orgTz, "yyyy-MM-dd");
     const key = await buildScopedDashboardCacheKey(
       this.access,
       u,
       "availability",
       scope,
-      today,
+      `${orgTz}:${today}`,
     );
     return this.cache.cachedForOrg(
       orgId,

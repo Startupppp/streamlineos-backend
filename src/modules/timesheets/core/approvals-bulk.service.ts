@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
 import { timesheetPeriods, timesheets } from "../../../db/schema";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { ApprovalsService, isExpectedApprovalSkip } from "./approvals.service";
 import type {
@@ -76,7 +77,7 @@ export class ApprovalsBulkService {
 
       await this.audit.record(tx, {
         orgId: u.orgId,
-        actorUserId: u.userId,
+        actorMembershipId: actingMembershipId(u.principal),
         entityType: "period",
         entityId: periodId.toString(),
         action: "period.rejected",
@@ -126,8 +127,8 @@ export class ApprovalsBulkService {
       .select({
         id: timesheetPeriods.id,
         status: timesheetPeriods.status,
-        userId: timesheetPeriods.userId,
-        currentApproverId: timesheetPeriods.currentApproverId,
+        userMembershipId: timesheetPeriods.userMembershipId,
+        currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
       })
       .from(timesheetPeriods)
       .where(
@@ -190,10 +191,11 @@ export class ApprovalsBulkService {
           ),
         );
 
+      const actorMembId = actingMembershipId(u.principal);
       for (const id of ids) {
         await this.audit.record(tx, {
           orgId: u.orgId,
-          actorUserId: u.userId,
+          actorMembershipId: actorMembId,
           entityType: "period",
           entityId: id.toString(),
           action: "period.rejected",

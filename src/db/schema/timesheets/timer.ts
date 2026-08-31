@@ -6,8 +6,9 @@ import {
   boolean,
   integer,
   index,
+  foreignKey,
 } from "drizzle-orm/pg-core";
-import { organizations, users } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { projects } from "../build/core";
 import { tickets } from "../build/tasks";
 import { timerSessionStatusEnum, timerSessionSourceEnum } from "./enums";
@@ -15,7 +16,7 @@ import { timerSessionStatusEnum, timerSessionSourceEnum } from "./enums";
 export const timerSessions = pgTable("timer_sessions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userMembershipId: integer("user_membership_id"),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   ticketId: integer("ticket_id").references(() => tickets.id, { onDelete: "set null" }),
   description: text("description"),
@@ -28,7 +29,13 @@ export const timerSessions = pgTable("timer_sessions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
-  index("idx_timer_sessions_user_status").on(t.orgId, t.userId, t.status),
+  index("idx_timer_sessions_user_membership_status").on(t.orgId, t.userMembershipId, t.status),
   index("idx_timer_sessions_ticket").on(t.ticketId),
   index("idx_timer_sessions_project").on(t.projectId),
+  index("idx_timer_sessions_org_user_membership").on(t.orgId, t.userMembershipId),
+  foreignKey({
+    columns: [t.orgId, t.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_timer_sessions_user_membership",
+  }).onDelete("set null"),
 ]);

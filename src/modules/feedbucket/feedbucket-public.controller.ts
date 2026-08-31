@@ -24,6 +24,7 @@ import {
 import type { Request } from "express";
 import { and, eq } from "drizzle-orm";
 import { Public } from "../../common/auth/public.decorator";
+import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
 import { InsufficientAiCreditsException } from "../../common/http/api-exceptions";
 import { FeedbucketPublicService } from "./feedbucket-public.service";
 import { FeedbucketAiService } from "./feedbucket-ai.service";
@@ -152,6 +153,12 @@ export class FeedbucketPublicController {
 
   @Post(":publicKey")
   @HttpCode(200)
+  @MultipartAction({
+    file: "screenshot",
+    fileRequired: false,
+    additionalFiles: ["recording"],
+    fields: { type: "string", message: "string", pageUrl: "string", reporterName: "string", reporterEmail: "string", metadata: "string", consoleLogs: "string", networkLogs: "string" },
+  })
   @UseInterceptors(
     FileFieldsInterceptor(
       [
@@ -311,6 +318,11 @@ export class FeedbucketPublicController {
 
   @Post(":publicKey/ai-assist")
   @HttpCode(200)
+  @MultipartAction({
+    file: "screenshot",
+    fileRequired: false,
+    fields: { type: "string", message: "string", pageUrl: "string", networkLogs: "string" },
+  })
   @UseInterceptors(
     FileInterceptor("screenshot", {
       limits: { fileSize: MAX_SCREENSHOT_BYTES },

@@ -68,7 +68,7 @@ export class PortalClientController {
     return this.svc.submitChangeRequest(
       ctx.organizationId,
       String(ctx.portalMembershipId),
-      ctx.userId,
+      ctx.userMembershipId,
       projectId,
       body,
     );

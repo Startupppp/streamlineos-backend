@@ -10,9 +10,44 @@ if (!url) {
   process.exit(1);
 }
 
-const ORG = process.env.SEED_ORG_ID ?? "aa5627a2-a7de-4dca-97d2-135f3a5f801b";
 const ssl = process.env.PGSSLMODE === "disable" ? false : "require";
 const sql = postgres(url, { max: 1, prepare: false, ssl, onnotice: () => {} });
+
+async function resolveFixtureOrg() {
+  if (process.env.SEED_ORG_ID) return process.env.SEED_ORG_ID;
+  const ownerUrl = process.env.DATABASE_URL;
+  if (!ownerUrl) {
+    console.error(
+      "Set SEED_ORG_ID, or provide DATABASE_URL so the busiest org can be discovered.\n" +
+        "Discovery has to compare row counts ACROSS orgs, which RLS forbids the app role\n" +
+        "to do — so it runs as the owner. Every measurement below still runs as the app\n" +
+        "role with the tenant GUC set, which is the only role whose plans mean anything.",
+    );
+    process.exit(1);
+  }
+  const owner = postgres(ownerUrl, { max: 1, prepare: false, ssl, onnotice: () => {} });
+  try {
+    const [busiest] = await owner`
+      select org_id, count(*)::int n from build.tickets
+      where deleted_at is null group by org_id order by n desc limit 1`;
+    if (!busiest) {
+      console.error(
+        "No org has any build.tickets rows, so there is nothing to measure.\n" +
+          "An empty table plans differently, so any number taken here would be meaningless.\n" +
+          "Seed first: pnpm seed:build-load, or set SEED_ORG_ID to a populated org.",
+      );
+      process.exit(1);
+    }
+    console.log(`fixture org ${busiest.org_id} resolved by ticket volume (${busiest.n} tickets)`);
+    return busiest.org_id;
+  } finally {
+    await owner.end();
+  }
+}
+
+const ORG = await resolveFixtureOrg();
+
+const UNREALISTIC_SHARE = 0.1;
 
 const CHECKS = [
   {
@@ -58,6 +93,7 @@ function walk(node, out) {
     type: node["Node Type"],
     relation: node["Relation Name"] ?? null,
     index: node["Index Name"] ?? null,
+    executed: (node["Actual Loops"] ?? 0) > 0,
   });
   (node.Plans ?? []).forEach((child) => walk(child, out));
   return out;
@@ -70,14 +106,40 @@ async function main() {
       select project_id, count(*)::int n from build.tickets
       where org_id = ${ORG} and deleted_at is null
       group by project_id order by n desc limit 1`;
-    const [participant] = await tx`
-      select user_id, count(*)::int n from build.ticket_assignees
-      where org_id = ${ORG} group by user_id order by n desc limit 1`;
+    const [collaborator] = await tx`
+      select ta.user_id, count(*)::int n from build.ticket_assignees ta
+      join build.tickets t on t.id = ta.ticket_id and t.org_id = ta.org_id
+      where ta.org_id = ${ORG}
+        and t.assignee_id is distinct from ta.user_id
+        and t.reporter_id is distinct from ta.user_id
+      group by ta.user_id order by n desc limit 1`;
+    const [participant] = collaborator
+      ? [collaborator]
+      : await tx`
+          select user_id, count(*)::int n from build.ticket_assignees
+          where org_id = ${ORG} group by user_id order by n desc limit 1`;
+    if (!project || !participant) {
+      const missing = [!project && "build.tickets", !participant && "build.ticket_assignees"]
+        .filter(Boolean)
+        .join(" and ");
+      throw new Error(
+        `org ${ORG} has no rows in ${missing}, so no fixture can be built.\n` +
+          "Seed first: pnpm seed:build-load, or set SEED_ORG_ID to a populated org.",
+      );
+    }
+    const [spread] = await tx`
+      select count(*)::int total, count(distinct user_id)::int users
+      from build.ticket_assignees where org_id = ${ORG}`;
+    const [held] = await tx`
+      select count(*)::int n from build.ticket_assignees
+      where org_id = ${ORG} and user_id = ${participant.user_id}`;
     return {
       projectId: project.project_id,
       projectTickets: project.n,
       userId: participant.user_id,
       participationOrgWide: participant.n,
+      participantShare: spread.total > 0 ? held.n / spread.total : 0,
+      distinctParticipants: spread.users,
     };
   });
 
@@ -100,18 +162,30 @@ async function main() {
     const blocks = (root["Shared Hit Blocks"] ?? 0) + (root["Shared Read Blocks"] ?? 0);
     const node = walk(root, []).find((n) => n.relation === check.requireIndexOnlyOn);
 
+    const state = !node ? "ABSENT" : node.executed ? `${node.type} using ${node.index}` : `${node.type} (never executed)`;
     console.log(
       `${check.id.padEnd(20)} blocks=${String(blocks).padStart(7)} (ceiling ${check.ceiling})  ` +
-        `${check.requireIndexOnlyOn}: ${node ? `${node.type} using ${node.index}` : "ABSENT"}`,
+        `${check.requireIndexOnlyOn}: ${state}`,
     );
 
     if (blocks > check.ceiling)
       failures.push(`${check.id}: ${blocks} > ${check.ceiling}`);
     if (!node)
       failures.push(`${check.id}: no ${check.requireIndexOnlyOn} node — the query shape changed`);
+    else if (!node.executed)
+      failures.push(
+        `${check.id}: the ${check.requireIndexOnlyOn} branch was planned but NEVER EXECUTED, so its access path is unproven. ` +
+          `The fixture participant reaches every row through tickets.assignee_id/reporter_id, so the OR short-circuits before the semi-join. ` +
+          `Seed a participant who appears ONLY in ${check.requireIndexOnlyOn} (pnpm seed:build-load creates one) or this assertion is vacuous.`,
+      );
     else if (!node.type.startsWith("Index Only Scan"))
       failures.push(
-        `${check.id}: ${check.requireIndexOnlyOn} resolved by ${node.type}, not Index Only Scan — the tenant-led covering index is missing or unusable`,
+        fixtures.participantShare > UNREALISTIC_SHARE
+          ? `${check.id}: ${check.requireIndexOnlyOn} resolved by ${node.type}, but that is the CORRECT plan here and the index is not at fault — ` +
+            `the fixture participant holds ${(fixtures.participantShare * 100).toFixed(0)}% of the table ` +
+            `across only ${fixtures.distinctParticipants} distinct participant(s), and no index beats a sequential scan at that selectivity. ` +
+            `Seed a production-shaped member distribution before reading this as an index defect.`
+          : `${check.id}: ${check.requireIndexOnlyOn} resolved by ${node.type}, not Index Only Scan — the tenant-led covering index is missing or unusable`,
       );
   }
 

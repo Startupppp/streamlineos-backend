@@ -7,6 +7,7 @@ import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-
 const ORG_ID = "org-sign-1";
 const EVENT_ID = "evt-sign-aaa";
 const ENVELOPE_ID = 77;
+const SENDER_MEMBERSHIP_ID = 10;
 const SENDER_USER_ID = "user-sender";
 const TITLE = "NDA Agreement";
 
@@ -41,15 +42,21 @@ function makeEvent(overrides: Partial<OutboxEventRow> = {}): OutboxEventRow {
 interface DbMock {
   insert: jest.Mock;
   update: jest.Mock;
-  query: { signEnvelopes: { findFirst: jest.Mock } };
+  query: {
+    signEnvelopes: { findFirst: jest.Mock };
+    organizationMembers: { findFirst: jest.Mock };
+  };
   execute: jest.Mock;
 }
 
 function buildDbMock(options: {
   claimed?: boolean;
-  envelope?: { senderUserId: string; title: string } | null;
+  envelope?: { senderMembershipId: number | null; orgId: string; title: string } | null;
 }): DbMock {
-  const { claimed = true, envelope = { senderUserId: SENDER_USER_ID, title: TITLE } } = options;
+  const {
+    claimed = true,
+    envelope = { senderMembershipId: SENDER_MEMBERSHIP_ID, orgId: ORG_ID, title: TITLE },
+  } = options;
 
   const claimReturn = claimed ? [{ id: 1 }] : [];
   const claimReturning = jest.fn().mockResolvedValue(claimReturn);
@@ -66,14 +73,17 @@ function buildDbMock(options: {
   return {
     insert: dbInsert,
     update: dbUpdate,
-    query: { signEnvelopes: { findFirst: jest.fn().mockResolvedValue(envelope) } },
+    query: {
+      signEnvelopes: { findFirst: jest.fn().mockResolvedValue(envelope) },
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue({ user: { id: SENDER_USER_ID } }) },
+    },
     execute: dbExecute,
   };
 }
 
 async function buildService(options: {
   claimed?: boolean;
-  envelope?: { senderUserId: string; title: string } | null;
+  envelope?: { senderMembershipId: number | null; orgId: string; title: string } | null;
   emitImpl?: () => Promise<void>;
 }) {
   const { emitImpl = async () => undefined } = options;

@@ -5,7 +5,7 @@ type TestRate = RateCandidate & { billRate: string; currency: string };
 function rate(partial: Partial<TestRate> & { id: number }): TestRate {
   return {
     projectId: null,
-    userId: null,
+    userMembershipId: null,
     taskId: null,
     clientId: null,
     priority: 0,
@@ -27,13 +27,13 @@ describe("pickBestRate", () => {
 
   it("an all-null (org default) rate matches any query", () => {
     const r = rate({ id: 1 });
-    expect(pickBestRate([r], { projectId: 5, userId: "u1" })).toBe(r);
+    expect(pickBestRate([r], { projectId: 5, userMembershipId: 1 })).toBe(r);
   });
 
   it("the more specific match wins over a broader one", () => {
-    const generic = rate({ id: 1, userId: "u1" });
-    const specific = rate({ id: 2, projectId: 5, userId: "u1" });
-    expect(pickBestRate([generic, specific], { projectId: 5, userId: "u1" })).toBe(specific);
+    const generic = rate({ id: 1, userMembershipId: 1 });
+    const specific = rate({ id: 2, projectId: 5, userMembershipId: 1 });
+    expect(pickBestRate([generic, specific], { projectId: 5, userMembershipId: 1 })).toBe(specific);
   });
 
   it("priority breaks ties at equal specificity", () => {

@@ -2,10 +2,10 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheets, timesheetPeriods } from "../../../db/schema";
+import { timesheets, timesheetPeriods, organizationMembers } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
-import { applyScope } from "../../access/apply-scope";
-import { resolveReportsScope } from "./timesheets-core-scope";
+import { actingMembershipId } from "../../../common/auth/principal";
+import { resolveReportsScope, applyMembershipScope } from "./timesheets-core-scope";
 import type { TeamWeekSummaryQuery } from "./dto/team.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -25,13 +25,28 @@ export class TeamService {
     if (ids.length === 0) return { summaries: [] };
 
     const scope = await resolveReportsScope(this.access, u);
+    const actorMembId = actingMembershipId(u.principal);
+
+    const memberRows = await this.db
+      .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, u.orgId), inArray(organizationMembers.userId, ids)))
+      .limit(ids.length);
+
+    const userIdToMembId = new Map(memberRows.map((m) => [m.userId, m.id]));
+    const membIdToUserId = new Map(memberRows.map((m) => [m.id, m.userId]));
+    const membershipIds = memberRows.map((m) => m.id);
+
+    if (membershipIds.length === 0) {
+      return { summaries: ids.map((userId) => ({ userId, period: null, dailyHours: {}, totalHours: 0 })) };
+    }
 
     const [periods, dailyRows] = await Promise.all([
       this.db
         .select({
           id: timesheetPeriods.id,
           orgId: timesheetPeriods.orgId,
-          userId: timesheetPeriods.userId,
+          userMembershipId: timesheetPeriods.userMembershipId,
           periodStart: timesheetPeriods.periodStart,
           periodEnd: timesheetPeriods.periodEnd,
           status: timesheetPeriods.status,
@@ -42,7 +57,7 @@ export class TeamService {
           approvedAt: timesheetPeriods.approvedAt,
           rejectedAt: timesheetPeriods.rejectedAt,
           lockedAt: timesheetPeriods.lockedAt,
-          currentApproverId: timesheetPeriods.currentApproverId,
+          currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
           rejectionReason: timesheetPeriods.rejectionReason,
           createdAt: timesheetPeriods.createdAt,
           updatedAt: timesheetPeriods.updatedAt,
@@ -51,15 +66,15 @@ export class TeamService {
         .where(
           and(
             eq(timesheetPeriods.orgId, u.orgId),
-            inArray(timesheetPeriods.userId, ids),
+            inArray(timesheetPeriods.userMembershipId, membershipIds),
             lte(timesheetPeriods.periodStart, query.endDate),
             gte(timesheetPeriods.periodEnd, query.startDate),
-            applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheetPeriods.userId }),
+            applyMembershipScope(scope, actorMembId, timesheetPeriods.userMembershipId),
           ),
         ),
       this.db
         .select({
-          userId: timesheets.userId,
+          userMembershipId: timesheets.userMembershipId,
           date: timesheets.date,
           hours: sql<string>`COALESCE(SUM(${timesheets.hours}::numeric), 0)::text`,
         })
@@ -67,33 +82,38 @@ export class TeamService {
         .where(
           and(
             eq(timesheets.orgId, u.orgId),
-            inArray(timesheets.userId, ids),
+            inArray(timesheets.userMembershipId, membershipIds),
             isNull(timesheets.voidedAt),
             gte(timesheets.date, query.startDate),
             lte(timesheets.date, query.endDate),
-            applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheets.userId }),
+            applyMembershipScope(scope, actorMembId, timesheets.userMembershipId),
           ),
         )
-        .groupBy(timesheets.userId, timesheets.date),
+        .groupBy(timesheets.userMembershipId, timesheets.date),
     ]);
 
-    const periodByUser = new Map(periods.map((p) => [p.userId, p]));
-    const dailyByUser = new Map<string, Record<string, number>>();
-    const totalByUser = new Map<string, number>();
+    const periodByMembId = new Map(periods.map((p) => [p.userMembershipId, p]));
+    const dailyByMembId = new Map<number, Record<string, number>>();
+    const totalByMembId = new Map<number, number>();
     for (const row of dailyRows) {
+      const membId = row.userMembershipId;
+      if (membId === null) continue;
       const hours = round2(parseFloat(row.hours));
-      const map = dailyByUser.get(row.userId) ?? {};
+      const map = dailyByMembId.get(membId) ?? {};
       map[row.date] = hours;
-      dailyByUser.set(row.userId, map);
-      totalByUser.set(row.userId, round2((totalByUser.get(row.userId) ?? 0) + hours));
+      dailyByMembId.set(membId, map);
+      totalByMembId.set(membId, round2((totalByMembId.get(membId) ?? 0) + hours));
     }
 
-    const summaries = ids.map((userId) => ({
-      userId,
-      period: periodByUser.get(userId) ?? null,
-      dailyHours: dailyByUser.get(userId) ?? {},
-      totalHours: totalByUser.get(userId) ?? 0,
-    }));
+    const summaries = ids.map((userId) => {
+      const membId = userIdToMembId.get(userId);
+      return {
+        userId,
+        period: membId != null ? periodByMembId.get(membId) ?? null : null,
+        dailyHours: membId != null ? dailyByMembId.get(membId) ?? {} : {},
+        totalHours: membId != null ? totalByMembId.get(membId) ?? 0 : 0,
+      };
+    });
 
     return { summaries };
   }

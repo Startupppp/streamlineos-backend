@@ -5,14 +5,15 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheetExceptions, users, organizationMembers } from "../../../db/schema";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { AccessService } from "../../access/access.service";
-import { applyScope } from "../../access/apply-scope";
-import { resolveEntriesScope } from "./timesheets-core-scope";
+import { actingMembershipId } from "../../../common/auth/principal";
+import { resolveEntriesScope, applyMembershipScope } from "./timesheets-core-scope";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import type {
   DismissExceptionInput,
@@ -34,18 +35,33 @@ export class ExceptionsService {
     const limit = Math.min(query.limit, 100);
     const pos = decodeCursor(query.cursor);
 
+    const membershipId = actingMembershipId(u.principal);
+
     const conditions = [
       eq(timesheetExceptions.orgId, u.orgId),
-      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheetExceptions.userId }),
+      applyMembershipScope(scope, membershipId, timesheetExceptions.userMembershipId),
     ];
 
-    if (query.userId && scope === "all")
-      conditions.push(eq(timesheetExceptions.userId, query.userId));
+    if (query.userId && scope === "all") {
+      const [qMember] = await this.db
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, u.orgId),
+            eq(organizationMembers.userId, query.userId),
+          ),
+        )
+        .limit(1);
+      if (qMember) conditions.push(eq(timesheetExceptions.userMembershipId, qMember.id));
+    }
     if (query.status) conditions.push(eq(timesheetExceptions.status, query.status));
     if (query.severity) conditions.push(eq(timesheetExceptions.severity, query.severity));
     if (query.rule) conditions.push(eq(timesheetExceptions.rule, query.rule));
     if (pos)
       conditions.push(keysetBeforeId(timesheetExceptions.createdAt, timesheetExceptions.id, pos));
+
+    const ownerMember = alias(organizationMembers, "owner_member");
 
     const rawRows = await this.db
       .select({
@@ -54,7 +70,11 @@ export class ExceptionsService {
         userEmail: users.email,
       })
       .from(timesheetExceptions)
-      .leftJoin(users, eq(timesheetExceptions.userId, users.id))
+      .leftJoin(ownerMember, and(
+        eq(timesheetExceptions.orgId, ownerMember.orgId),
+        eq(timesheetExceptions.userMembershipId, ownerMember.id),
+      ))
+      .leftJoin(users, eq(ownerMember.userId, users.id))
       .where(and(...conditions))
       .orderBy(desc(timesheetExceptions.createdAt), desc(timesheetExceptions.id))
       .limit(limit + 1);
@@ -67,7 +87,7 @@ export class ExceptionsService {
     return {
       data: page.data.map((r) => ({
         ...r.e,
-        user: { id: r.e.userId, name: r.userName, email: r.userEmail },
+        user: { membershipId: r.e.userMembershipId, name: r.userName, email: r.userEmail },
       })),
       pagination: page.pagination,
     };
@@ -97,12 +117,7 @@ export class ExceptionsService {
       throw new ConflictException(`Only open exceptions can be ${verb}`);
     }
 
-    const [actorMember] = await this.db
-      .select({ id: organizationMembers.id })
-      .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
-      .limit(1);
-    const resolvedByMembershipId = actorMember?.id ?? null;
+    const resolvedByMembershipId = actingMembershipId(u.principal);
 
     const [updated] = await this.db
       .update(timesheetExceptions)
@@ -127,7 +142,7 @@ export class ExceptionsService {
 
     await this.audit.recordWithDb({
       orgId: u.orgId,
-      actorUserId: u.userId,
+      actorMembershipId: resolvedByMembershipId,
       entityType: "exception",
       entityId: exceptionId.toString(),
       action,

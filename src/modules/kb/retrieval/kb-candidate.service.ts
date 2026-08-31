@@ -23,8 +23,17 @@ export class KbCandidateService {
   }
 
   async vectorChunkIds(vector: string, cap: number): Promise<number[]> {
-    const rows = await this.db.execute(sql`SELECT app.search_kb_chunk_ids(${vector}::vector, ${cap}) AS id`);
-    return rows.map(r => Number(r["id"]));
+    if (cap === 0) return [];
+    await this.db.execute(sql`SET LOCAL hnsw.iterative_scan = relaxed_order`);
+    const annRows = await this.db.execute(
+      sql`SELECT id FROM public.kb_article_chunks ORDER BY embedding <=> ${vector}::vector LIMIT ${cap}`,
+    );
+    const annIds = annRows.map((r) => Number(r["id"]));
+    if (annIds.length > 0) return annIds;
+    const fenceRows = await this.db.execute(
+      sql`SELECT app.search_kb_chunk_ids(${vector}::vector, ${cap}) AS id`,
+    );
+    return fenceRows.map((r) => Number(r["id"]));
   }
 
   async articleKeywordCandidates(

@@ -20,7 +20,7 @@ describe("stableStringify", () => {
 describe("computeAuditRowHash", () => {
   const params = {
     orgId: "org-1",
-    actorUserId: "user-1",
+    actorMembershipId: 1,
     entityType: "entry",
     entityId: "42",
     action: "entry.created",

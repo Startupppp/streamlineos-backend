@@ -42,31 +42,31 @@ export class MailMetadataService {
 
   deferUpsertBatch(
     accountId: number,
-    userId: string,
+    membershipId: number,
     orgId: string,
     folder: MailFolder,
     messages: MailMessageSummary[],
   ): void {
     this.defer(orgId, "upsertBatch", () =>
-      this.upsertBatch(accountId, userId, orgId, folder, messages),
+      this.upsertBatch(accountId, membershipId, orgId, folder, messages),
     );
   }
 
   deferUpdateState(
     accountId: number,
-    userId: string,
+    membershipId: number,
     orgId: string,
     messageId: string,
     update: { isRead?: boolean; isStarred?: boolean; folder?: string },
   ): void {
     this.defer(orgId, "updateState", () =>
-      this.updateState(accountId, userId, orgId, messageId, update),
+      this.updateState(accountId, membershipId, orgId, messageId, update),
     );
   }
 
   async upsertBatch(
     accountId: number,
-    userId: string,
+    membershipId: number,
     orgId: string,
     folder: MailFolder,
     messages: MailMessageSummary[],
@@ -75,7 +75,7 @@ export class MailMetadataService {
     const now = new Date();
     const rows = messages.map((m) => ({
       accountId,
-      userId,
+      userMembershipId: membershipId,
       orgId,
       messageId: m.id,
       threadId: m.threadId ?? null,
@@ -110,7 +110,7 @@ export class MailMetadataService {
   }
 
   async listCached(
-    userId: string,
+    membershipId: number,
     orgId: string,
     accountId: number | null,
     folder: MailFolder,
@@ -119,7 +119,7 @@ export class MailMetadataService {
   ): Promise<{ messages: CachedMailMessage[]; hasData: boolean; isFresh: boolean }> {
     const conditions = [
       eq(mailMessageMetadata.orgId, orgId),
-      eq(mailMessageMetadata.userId, userId),
+      eq(mailMessageMetadata.userMembershipId, membershipId),
       eq(mailMessageMetadata.folder, folder),
     ];
     if (accountId !== null) conditions.push(eq(mailMessageMetadata.accountId, accountId));
@@ -201,7 +201,7 @@ export class MailMetadataService {
 
   async updateState(
     accountId: number,
-    userId: string,
+    membershipId: number,
     orgId: string,
     messageId: string,
     update: { isRead?: boolean; isStarred?: boolean; folder?: string },
@@ -213,7 +213,7 @@ export class MailMetadataService {
         and(
           eq(mailMessageMetadata.accountId, accountId),
           eq(mailMessageMetadata.messageId, messageId),
-          eq(mailMessageMetadata.userId, userId),
+          eq(mailMessageMetadata.userMembershipId, membershipId),
           eq(mailMessageMetadata.orgId, orgId),
         ),
       );

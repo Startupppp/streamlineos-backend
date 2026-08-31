@@ -18,6 +18,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { Universal } from "../../common/auth/universal.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { documents, onboardingSteps } from "../../db/schema";
@@ -46,6 +47,7 @@ export class OnboardingDocumentsController {
   @Post("documents")
   @Universal()
   @HttpCode(201)
+  @MultipartAction({ file: "file", fields: { type: "string" }, requiredFields: ["type"] })
   @Validate({ body: uploadBodySchema })
   @UseInterceptors(
     FileInterceptor("file", { limits: { fileSize: 25 * 1024 * 1024 } }),

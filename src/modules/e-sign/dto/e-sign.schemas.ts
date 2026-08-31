@@ -134,7 +134,7 @@ export const createRecipientSchema = z.object({
     .regex(PERSON_NAME_REGEX, "Enter a valid name (letters, spaces, and ' . - only)"),
   email: z.string().trim().email("Valid email is required").optional(),
   phone: z.string().trim().max(30).optional(),
-  userId: z.string().trim().optional(),
+  userMembershipId: z.number().int().optional(),
   routingOrder: z.number().int().min(1).max(50).default(1),
   authMethod: signAuthMethodSchema.default("email_link"),
   accessCode: z.string().trim().min(4).max(50).optional(),

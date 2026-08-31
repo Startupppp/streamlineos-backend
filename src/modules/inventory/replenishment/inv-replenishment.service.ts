@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, sql } from "drizzle-orm";
 import {
   invReorderRules,
   invStockLevels,
@@ -348,6 +348,7 @@ export class InvReplenishmentService {
       .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
       .where(and(eq(invStockLevels.orgId, orgId), variantId != null ? eq(invStockLevels.productVariantId, variantId) : undefined))
       .groupBy(invStockLevels.productVariantId, invProductVariants.id, invProducts.id)
+      .orderBy(asc(invProductVariants.sku), asc(invStockLevels.productVariantId))
       .limit(limit)
       .offset(offset);
 

@@ -1,3 +1,4 @@
+import { DealsForecastService } from "./deals-forecast.service";
 import { DealsAnalyticsService } from "./deals-analytics.service";
 import type { Db } from "../../db/drizzle.module";
 import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
@@ -22,6 +23,9 @@ function makeMockDb(selectResult: unknown[] = []): Db {
         findFirst: jest.fn().mockResolvedValue(
           first ? { ...(first as Record<string, unknown>), activities: [] } : undefined,
         ),
+      },
+      crmForecastSnapshots: {
+        findFirst: jest.fn().mockResolvedValue(undefined),
       },
     },
     insert: jest.fn().mockReturnValue({
@@ -65,13 +69,13 @@ const mockCrmMetadata: jest.Mocked<Pick<CrmMetadataService, "getAggregate">> = {
   }),
 };
 
-describe("DealsAnalyticsService – forecast snapshots", () => {
-  let service: DealsAnalyticsService;
+describe("DealsForecastService – forecast snapshots", () => {
+  let service: DealsForecastService;
   let mockDb: Db;
 
   beforeEach(() => {
     mockDb = makeMockDb();
-    service = new DealsAnalyticsService(
+    service = new DealsForecastService(
       mockDb,
       mockCache as unknown as CacheService,
       mockCrmMetadata as unknown as CrmMetadataService,
@@ -109,10 +113,18 @@ describe("DealsAnalyticsService – deal health", () => {
         createdAt: new Date().toISOString(),
       },
     ]);
+    const mockForecast = {
+      getForecast: jest.fn(),
+      createForecastSnapshot: jest.fn(),
+      getForecastSnapshots: jest.fn(),
+      overrideForecastSnapshot: jest.fn(),
+      compareForecastSnapshots: jest.fn(),
+    } as unknown as DealsForecastService;
     service = new DealsAnalyticsService(
       mockDb,
       mockCache as unknown as CacheService,
       mockCrmMetadata as unknown as CrmMetadataService,
+      mockForecast,
     );
   });
 

@@ -20,14 +20,13 @@ const args = new Set(process.argv.slice(2));
 const RESET = args.has("--reset");
 const num = (name, fallback) => Number(process.env[name] ?? fallback);
 
-const BIG_ORG = process.env.SEED_ORG_ID || "aa5627a2-a7de-4dca-97d2-135f3a5f801b";
-const NEIGHBOUR_ORG = process.env.SEED_NEIGHBOUR_ORG_ID || "762942e0-8c2f-45fd-b57a-da971f4b465b";
+const MEMBERS = num("SEED_MEMBERS", 50);
 const PROJECTS = num("SEED_PROJECTS", 60);
 const TICKETS = num("SEED_TICKETS", 200000);
-const COMMENTS = num("SEED_COMMENTS", 500000);
-const ACTIVITY = num("SEED_ACTIVITY", 400000);
+const COMMENTS = num("SEED_COMMENTS", 0);
+const ACTIVITY = num("SEED_ACTIVITY", 0);
 const RELATIONS = num("SEED_RELATIONS", 60000);
-const TIMESHEETS = num("SEED_TIMESHEETS", 150000);
+const TIMESHEETS = num("SEED_TIMESHEETS", 50000);
 const NEIGHBOUR_PROJECTS = num("SEED_NEIGHBOUR_PROJECTS", 4);
 const NEIGHBOUR_TICKETS = num("SEED_NEIGHBOUR_TICKETS", 4000);
 const CHUNK = num("SEED_CHUNK", 25000);
@@ -40,12 +39,89 @@ const sql = postgres(adminUrl, { max: 1, prepare: false, ssl, onnotice: () => {}
 const started = Date.now();
 const log = (msg) => console.log(`[${((Date.now() - started) / 1000).toFixed(1)}s] ${msg}`);
 
+async function resolveOrgs() {
+  if (process.env.SEED_ORG_ID && process.env.SEED_NEIGHBOUR_ORG_ID) {
+    return {
+      bigOrg: process.env.SEED_ORG_ID,
+      neighbourOrg: process.env.SEED_NEIGHBOUR_ORG_ID,
+    };
+  }
+  const orgs = await sql`
+    select om.org_id, count(*)::int n
+    from organization_members om
+    join organizations o on o.id = om.org_id
+    where om.status = 'ACTIVE' and o.deleted_at is null
+    group by om.org_id order by n desc limit 5`;
+  if (!orgs.length)
+    throw new Error("No organisations with ACTIVE members found. Cannot seed.");
+  const bigOrg = process.env.SEED_ORG_ID || orgs[0].org_id;
+  const neighbourOrg =
+    process.env.SEED_NEIGHBOUR_ORG_ID ||
+    (orgs.find((r) => r.org_id !== bigOrg)?.org_id ?? bigOrg);
+  log(`resolved orgs: big=${bigOrg} (${orgs[0].n} members), neighbour=${neighbourOrg}`);
+  return { bigOrg, neighbourOrg };
+}
+
+function syntheticPrefix(orgId) {
+  return `slm-${orgId.slice(0, 8)}`;
+}
+
 async function chunked(total, label, run) {
   for (let offset = 0; offset < total; offset += CHUNK) {
     const size = Math.min(CHUNK, total - offset);
     await run(offset, size);
     log(`${label}: ${offset + size}/${total}`);
   }
+}
+
+async function provisionSyntheticMembers(orgId, count) {
+  const prefix = syntheticPrefix(orgId);
+
+  await sql`
+    insert into users (id, name, email, is_active, user_status, onboarding_doc_status, created_at, updated_at)
+    select ${prefix} || '-' || lpad(g::text, 4, '0'),
+           'Seed Member ' || g,
+           ${prefix} || '-' || lpad(g::text, 4, '0') || '@seed.test',
+           true, 'active', 'PENDING'::onboarding_doc_status, now(), now()
+    from generate_series(1, ${count}::int) g
+    on conflict do nothing`;
+
+  await sql`
+    insert into organization_members (user_id, org_id, role, is_owner, status, joined_at)
+    select id, ${orgId}, 'MEMBER', false, 'ACTIVE',
+           now() - ((row_number() over (order by id)) * 3 || ' days')::interval
+    from users
+    where id like ${prefix + '-%'}
+    on conflict do nothing`;
+
+  await sql`
+    insert into organization_people (
+      organization_person_id, organization_id, user_id, organization_membership_id,
+      first_name, last_name, work_email, created_at, updated_at)
+    select gen_random_uuid()::text, ${orgId}, m.user_id, m.id,
+           'Seed', 'Member ' || split_part(m.user_id, '-', 4),
+           m.user_id || '@seed.test',
+           now(), now()
+    from organization_members m
+    where m.org_id = ${orgId} and m.user_id like ${prefix + '-%'}
+    on conflict do nothing`;
+
+  const rows = await sql`
+    select user_id from organization_members
+    where org_id = ${orgId} and user_id like ${prefix + '-%'}
+    order by user_id`;
+  log(`provisioned: ${rows.length} synthetic members for ${orgId} (prefix ${prefix})`);
+  return rows.map((r) => r.user_id);
+}
+
+async function resetSyntheticMembers(orgId) {
+  const prefix = syntheticPrefix(orgId);
+  await sql`
+    delete from organization_people
+    where organization_id = ${orgId} and user_id like ${prefix + '-%'}`;
+  await sql`
+    delete from users where id like ${prefix + '-%'}`;
+  log(`resetSyntheticMembers: removed synthetic users for ${orgId}`);
 }
 
 async function resolveUsers(orgId) {
@@ -57,9 +133,70 @@ async function resolveUsers(orgId) {
 }
 
 async function reset(orgId) {
+  const prefix = syntheticPrefix(orgId);
+  const [cnt] = await sql`
+    select count(*)::int n from build.projects
+    where org_id = ${orgId} and key like ${KEY_PREFIX + "%"}`;
+  if (!cnt.n) {
+    log(`reset: no seeded projects found for ${orgId}, nothing to clear`);
+    await sql`delete from build.pm_workspaces where org_id = ${orgId} and slug = 'seed-load'`;
+    return;
+  }
+  log(`reset: clearing ~${cnt.n} seeded projects for ${orgId}`);
+
+  await sql`
+    delete from timesheets ts
+    using build.projects p
+    where p.org_id = ${orgId} and p.key like ${KEY_PREFIX + "%"}
+      and ts.project_id = p.id`;
+  await sql`
+    delete from timesheets
+    where org_id = ${orgId} and ticket_id is null and project_id is null
+      and user_id like ${prefix + '-%'}`;
+
+  await sql`
+    delete from build.ticket_assignees ta
+    using build.tickets t, build.projects p
+    where p.org_id = ${orgId} and p.key like ${KEY_PREFIX + "%"}
+      and t.project_id = p.id and ta.ticket_id = t.id`;
+  await sql`
+    delete from ticket_comments tc
+    using build.tickets t, build.projects p
+    where p.org_id = ${orgId} and p.key like ${KEY_PREFIX + "%"}
+      and t.project_id = p.id and tc.ticket_id = t.id`;
+  await sql`
+    delete from ticket_activity_log al
+    using build.tickets t, build.projects p
+    where p.org_id = ${orgId} and p.key like ${KEY_PREFIX + "%"}
+      and t.project_id = p.id and al.ticket_id = t.id`;
+  await sql`
+    delete from build.work_item_relations wr
+    using build.tickets t, build.projects p
+    where p.org_id = ${orgId} and p.key like ${KEY_PREFIX + "%"}
+      and t.project_id = p.id and wr.work_item_id = t.id`;
+  await sql`
+    delete from build.ticket_label_mappings lm
+    using build.tickets t, build.projects p
+    where p.org_id = ${orgId} and p.key like ${KEY_PREFIX + "%"}
+      and t.project_id = p.id and lm.ticket_id = t.id`;
+  await sql`
+    delete from build.tickets t
+    using build.projects p
+    where p.org_id = ${orgId} and p.key like ${KEY_PREFIX + "%"}
+      and t.project_id = p.id`;
+  await sql`
+    delete from build.sprints where org_id = ${orgId}
+      and project_id in (select id from build.projects where org_id = ${orgId} and key like ${KEY_PREFIX + "%"})`;
+  await sql`
+    delete from build.project_members where org_id = ${orgId}
+      and project_id in (select id from build.projects where org_id = ${orgId} and key like ${KEY_PREFIX + "%"})`;
+  await sql`
+    delete from build.project_statuses where org_id = ${orgId}
+      and project_id in (select id from build.projects where org_id = ${orgId} and key like ${KEY_PREFIX + "%"})`;
   await sql`delete from build.projects where org_id = ${orgId} and key like ${KEY_PREFIX + "%"}`;
   await sql`delete from build.pm_workspaces where org_id = ${orgId} and slug = 'seed-load'`;
-  log(`reset: cleared seeded projects for ${orgId}`);
+  await sql`delete from build.ticket_labels where org_id = ${orgId} and name like 'seed-label-%'`;
+  log(`reset: cleared seeded build data for ${orgId}`);
 }
 
 async function ensureWorkspace(orgId) {
@@ -120,7 +257,10 @@ async function seedProjects(orgId, workspaceId, count, users) {
 }
 
 async function seedTickets(orgId, projectIds, total, users) {
+  const N = users.length;
+  const W = (N * (N + 1)) / 2;
   const perProject = Math.ceil(total / projectIds.length);
+
   await chunked(total, "tickets", async (offset, size) => {
     await sql`
       insert into build.tickets (
@@ -136,7 +276,7 @@ async function seedTickets(orgId, projectIds, total, users) {
              (array['TODO','IN_PROGRESS','IN_REVIEW','DONE'])[1 + (g % 4)],
              (array['LOW','MEDIUM','HIGH','URGENT'])[1 + (g % 4)]::ticket_priority,
              case when g % 7 = 0 then null else u.uid end,
-             u2.uid,
+             rep.uid,
              case when g % 3 = 0 then null else (g % 13) end,
              ((((g - 1) / ${projectIds.length}) + 1) * 1000)::numeric,
              (now() - ((g % 300) || ' days')::interval)::date,
@@ -151,12 +291,14 @@ async function seedTickets(orgId, projectIds, total, users) {
       ) p on true
       join lateral (
         select uid from unnest(${sql.array(users)}::text[]) with ordinality x(uid, rn)
-        where x.rn = (g % ${users.length}) + 1
+        where x.rn = (
+          floor((${N} + 0.5) - sqrt(power(${N} + 0.5, 2.0) - 2.0 * ((g - 1) % ${W})))::int + 1
+        )
       ) u on true
       join lateral (
         select uid from unnest(${sql.array(users)}::text[]) with ordinality y(uid, rn)
-        where y.rn = ((g + 1) % ${users.length}) + 1
-      ) u2 on true`;
+        where y.rn = ((g + 1) % ${N}) + 1
+      ) rep on true`;
   });
 
   await sql`
@@ -181,7 +323,25 @@ async function seedTicketChildren(orgId, range, users, projectCount) {
     select ${orgId}, t.id, t.assignee_id, t.created_at
     from build.tickets t where t.org_id = ${orgId} and t.assignee_id is not null
     on conflict do nothing`;
-  log("ticket_assignees: done");
+
+  const COLLAB_COUNT = Math.min(5, Math.max(1, Math.floor(users.length / 8)));
+  const collaborators = users.slice(users.length - COLLAB_COUNT);
+
+  for (const collaborator of collaborators) {
+    await sql`
+      insert into build.ticket_assignees (org_id, ticket_id, user_id, assigned_at)
+      select ${orgId}, t.id, ${collaborator}, t.created_at
+      from build.tickets t
+      where t.org_id = ${orgId}
+        and t.assignee_id is distinct from ${collaborator}
+        and t.reporter_id is distinct from ${collaborator}
+      limit 4000
+      on conflict do nothing`;
+  }
+  log(
+    `ticket_assignees: done — ${collaborators.length} collaboration-only participant(s) seeded ` +
+      `(${collaborators.join(", ")}), ensuring the OR/semi-join branch is exercisable`,
+  );
 
   const labels = await sql`
     select id from build.ticket_labels where org_id = ${orgId} order by id limit ${LABELS_PER_PROJECT}`;
@@ -217,18 +377,13 @@ async function seedTicketChildren(orgId, range, users, projectCount) {
 
   await chunked(ACTIVITY, "ticket_activity_log", async (offset, size) => {
     await sql`
-      insert into ticket_activity_log (org_id, ticket_id, user_id, action, from_value, to_value, created_at)
+      insert into ticket_activity_log (org_id, ticket_id, action, from_value, to_value, created_at)
       select ${orgId},
              ${range.lo} + (g % ${span}),
-             u.uid,
              (array['created','status_changed','priority_changed','assignee_changed','comment_added'])[1 + (g % 5)]::ticket_activity_action,
              'TODO', 'IN_PROGRESS',
              now() - ((g % 600) || ' days')::interval
-      from generate_series(${offset + 1}::int, ${offset + size}::int) g
-      join lateral (
-        select uid from unnest(${sql.array(users)}::text[]) with ordinality x(uid, rn)
-        where x.rn = (g % ${users.length}) + 1
-      ) u on true`;
+      from generate_series(${offset + 1}::int, ${offset + size}::int) g`;
   });
 
   await sql`
@@ -273,43 +428,53 @@ async function seedTimesheets(orgId, range, users) {
   });
 }
 
-async function analyze() {
+async function vacuumAnalyze() {
   const tables = [
     "projects", "tickets", "ticket_comments", "ticket_activity_log", "ticket_assignees",
     "ticket_label_mappings", "ticket_labels", "work_item_relations", "sprints",
     "project_members", "project_statuses", "timesheets", "pm_workspaces",
+    "users", "organization_members", "organization_people",
   ];
   const wanted = new Set(tables);
   const present = await sql`select schemaname, tablename from pg_tables`;
   const targets = present.filter((row) => wanted.has(row.tablename));
   for (const t of targets)
-    await sql.unsafe(`analyze ${t.schemaname}.${t.tablename}`);
-  log(`analyze: ${targets.length}/${tables.length} tables`);
+    await sql.unsafe(`vacuum analyze ${t.schemaname}.${t.tablename}`);
+  log(`vacuum analyze: ${targets.length}/${tables.length} tables`);
 }
 
 async function main() {
   await sql`set statement_timeout = 0`;
 
+  const { bigOrg: BIG_ORG, neighbourOrg: NEIGHBOUR_ORG } = await resolveOrgs();
+
   if (RESET) {
     await reset(BIG_ORG);
     await reset(NEIGHBOUR_ORG);
+    await resetSyntheticMembers(BIG_ORG);
+    await resetSyntheticMembers(NEIGHBOUR_ORG);
   }
 
+  const syntheticBig = await provisionSyntheticMembers(BIG_ORG, MEMBERS);
+  log(`big org ${BIG_ORG}: provisioned ${syntheticBig.length} synthetic members`);
+
   const bigUsers = await resolveUsers(BIG_ORG);
-  log(`big org ${BIG_ORG}: ${bigUsers.length} active members`);
+  log(`big org ${BIG_ORG}: ${bigUsers.length} active members total`);
   const bigWs = await ensureWorkspace(BIG_ORG);
   const bigProjects = await seedProjects(BIG_ORG, bigWs, PROJECTS, bigUsers);
   const bigRange = await seedTickets(BIG_ORG, bigProjects, TICKETS, bigUsers);
   await seedTicketChildren(BIG_ORG, bigRange, bigUsers, bigProjects.length);
   await seedTimesheets(BIG_ORG, bigRange, bigUsers);
 
+  const NEIGHBOUR_MEMBERS = Math.max(5, Math.floor(MEMBERS / 5));
+  await provisionSyntheticMembers(NEIGHBOUR_ORG, NEIGHBOUR_MEMBERS);
   const nUsers = await resolveUsers(NEIGHBOUR_ORG);
   const nWs = await ensureWorkspace(NEIGHBOUR_ORG);
   const nProjects = await seedProjects(NEIGHBOUR_ORG, nWs, NEIGHBOUR_PROJECTS, nUsers);
   await seedTickets(NEIGHBOUR_ORG, nProjects, NEIGHBOUR_TICKETS, nUsers);
   log(`neighbour org ${NEIGHBOUR_ORG}: seeded for cross-tenant isolation probes`);
 
-  await analyze();
+  await vacuumAnalyze();
 
   const counts = await sql`
     select relname, n_live_tup::int rows, pg_size_pretty(pg_total_relation_size(relid)) size

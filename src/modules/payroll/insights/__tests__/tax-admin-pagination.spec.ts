@@ -3,7 +3,8 @@ import { TaxAdminService } from "../tax-admin.service";
 function makeDb(rows: unknown[] = []) {
   const offset = jest.fn().mockResolvedValue(rows);
   const limit = jest.fn().mockReturnValue({ offset });
-  const where = jest.fn().mockReturnValue({ limit });
+  const orderBy = jest.fn().mockReturnValue({ limit });
+  const where = jest.fn().mockReturnValue({ orderBy });
   const leftJoin = jest.fn().mockReturnValue({ where });
   const from = jest.fn().mockReturnValue({ leftJoin });
   const select = jest.fn().mockReturnValue({ from });

@@ -199,7 +199,7 @@ export class PortalClientService {
   async submitChangeRequest(
     orgId: string,
     membershipId: string,
-    portalUserId: string | null,
+    portalUserMembershipId: number | null,
     projectId: number,
     input: SubmitChangeRequestInput,
   ) {
@@ -237,8 +237,8 @@ export class PortalClientService {
           budgetImpactCents: input.budgetImpactCents,
           timelineImpactDays: input.timelineImpactDays,
           status: "submitted",
-          requestedById: portalUserId ?? null,
-          createdBy: portalUserId ?? null,
+          requestedById: null,
+          createdBy: null,
         })
         .returning({
           id: changeRequests.id,

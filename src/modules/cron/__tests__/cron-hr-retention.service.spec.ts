@@ -243,7 +243,7 @@ describe("CronHrRetentionService", () => {
     expect(insertValues).toHaveBeenCalledWith(
       expect.objectContaining({
         orgId: ORG_ID,
-        actorId: null,
+        actorMembershipId: null,
         entityType: "hr_person_batch",
         action: "retention_sweep.employee",
       }),

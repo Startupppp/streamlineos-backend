@@ -3669,6 +3669,13 @@
       "when": 1798000149000,
       "tag": "0838_chat_channels_creator_set_null",
       "breakpoints": true
+    },
+    {
+      "idx": 651,
+      "version": "7",
+      "when": 1798000150000,
+      "tag": "0839_fix_set_null_on_not_null_actor_columns",
+      "breakpoints": true
     }
   ]
 }

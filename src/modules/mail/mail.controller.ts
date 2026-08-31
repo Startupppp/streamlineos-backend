@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { actingMembershipId } from "../../common/auth/principal";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -74,6 +75,7 @@ export class MailController {
     return this.mail.listMessages(
       u.orgId,
       u.userId,
+      actingMembershipId(u.principal),
       query.folder,
       query.accountId,
       query.limit,
@@ -143,7 +145,7 @@ export class MailController {
     @Body() body: MailActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.mail.performAction(u.orgId, u.userId, messageId, body.accountId, body.action, body.threadId);
+    return this.mail.performAction(u.orgId, u.userId, actingMembershipId(u.principal), messageId, body.accountId, body.action, body.threadId);
   }
 
   @Get("messages/:messageId/attachments/:attachmentId")

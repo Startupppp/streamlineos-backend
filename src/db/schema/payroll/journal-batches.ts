@@ -112,27 +112,27 @@ export const payrollJournalBatches = pgTable(
       columns: [table.orgId, table.postedByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_payroll_jrnl_batches_posted_actor",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
     foreignKey({
       columns: [table.orgId, table.exportedByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_payroll_jrnl_batches_exported_actor",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
     foreignKey({
       columns: [table.orgId, table.reversedByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_payroll_jrnl_batches_reversed_actor",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
     foreignKey({
       columns: [table.orgId, table.reconciledByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_payroll_jrnl_batches_reconciled_actor",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
     foreignKey({
       columns: [table.orgId, table.createdByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_payroll_jrnl_batches_created_actor",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
   ],
 );
 

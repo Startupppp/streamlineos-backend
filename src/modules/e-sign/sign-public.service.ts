@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { signDocuments, signEnvelopes, signFields, signRecipients, signSignatureAssets, users } from "../../db/schema";
+import { organizationMembers, signDocuments, signEnvelopes, signFields, signRecipients, signSignatureAssets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
@@ -133,7 +133,14 @@ export class SignPublicService {
         });
       }
 
-      const sender = await this.db.query.users.findFirst({ where: eq(users.id, envelope.senderUserId) });
+      const senderMember =
+        envelope.senderMembershipId != null
+          ? await this.db.query.organizationMembers.findFirst({
+              where: and(eq(organizationMembers.orgId, envelope.orgId), eq(organizationMembers.id, envelope.senderMembershipId)),
+              with: { user: { columns: { name: true } } },
+            })
+          : null;
+      const senderName = senderMember?.user?.name ?? "Sender";
       const documents = await this.db.query.signDocuments.findMany({
         where: eq(signDocuments.envelopeId, envelope.id),
         orderBy: (d, { asc }) => [asc(d.orderIndex)],
@@ -146,7 +153,7 @@ export class SignPublicService {
       return {
         state,
         envelope: { id: envelope.id, title: envelope.title, subject: envelope.subject, message: envelope.message, expiresAt: envelope.expiresAt },
-        sender: { name: sender?.name ?? "Sender" },
+        sender: { name: senderName },
         recipient: {
           id: recipient.id,
           name: recipient.name,
@@ -464,9 +471,15 @@ export class SignPublicService {
 
       await this.envelopes.applyRecipientOutcome(envelope.orgId, envelope.id);
 
-      const sender = await this.db.query.users.findFirst({ where: eq(users.id, envelope.senderUserId) });
-      if (sender?.email) {
-        await this.notifications.sendDeclinedToSender(sender.email, sender.name ?? "Sender", envelope.id, envelope.title, recipient.name, input.reason);
+      const declineSenderMember =
+        envelope.senderMembershipId != null
+          ? await this.db.query.organizationMembers.findFirst({
+              where: and(eq(organizationMembers.orgId, envelope.orgId), eq(organizationMembers.id, envelope.senderMembershipId)),
+              with: { user: { columns: { name: true, email: true } } },
+            })
+          : null;
+      if (declineSenderMember?.user?.email) {
+        await this.notifications.sendDeclinedToSender(declineSenderMember.user.email, declineSenderMember.user.name ?? "Sender", envelope.id, envelope.title, recipient.name, input.reason);
       }
 
       return { declined: true };

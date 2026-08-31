@@ -164,7 +164,10 @@ describe("SignEnvelopeCompletedConsumerService — tenant isolation", () => {
     const db = {
       query: {
         signEnvelopes: {
-          findFirst: jest.fn().mockResolvedValue({ senderUserId: "user-sender", title: "Contract" }),
+          findFirst: jest.fn().mockResolvedValue({ senderMembershipId: 10, orgId: OWNER_ORG, title: "Contract" }),
+        },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ user: { id: "user-sender" } }),
         },
       },
       insert: jest.fn(),

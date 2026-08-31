@@ -9,6 +9,8 @@ import { EntriesController } from "./entries.controller";
 import { TimerService } from "./timer.service";
 import { TimerController } from "./timer.controller";
 import { PeriodsService } from "./periods.service";
+import { PeriodsReadService } from "./periods-read.service";
+import { PeriodsSubmitService } from "./periods-submit.service";
 import { TimesheetPeriodsController } from "./periods.controller";
 import { ApprovalsService } from "./approvals.service";
 import { ApprovalsBulkService } from "./approvals-bulk.service";
@@ -59,6 +61,8 @@ import { AiModule } from "../../ai/core/ai.module";
     EntriesPeriodService,
     EntriesService,
     TimerService,
+    PeriodsReadService,
+    PeriodsSubmitService,
     PeriodsService,
     ApprovalsService,
     ApprovalsBulkService,

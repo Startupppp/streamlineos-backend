@@ -2,9 +2,10 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheetRates, timesheetRateCards } from "../../../db/schema";
+import { timesheetRates, timesheetRateCards, organizationMembers } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import type { CreateRateInput, UpdateRateInput } from "./dto/rates.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -26,12 +27,27 @@ export class RatesService {
   }
 
   async createRate(u: CurrentUserContext, input: CreateRateInput) {
+    let userMembershipId: number | null = null;
+    if (input.userId) {
+      const [member] = await this.db
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, u.orgId),
+            eq(organizationMembers.userId, input.userId),
+          ),
+        )
+        .limit(1);
+      userMembershipId = member?.id ?? null;
+    }
+
     const [rate] = await this.db
       .insert(timesheetRates)
       .values({
         orgId: u.orgId,
         projectId: input.projectId ?? null,
-        userId: input.userId ?? null,
+        userMembershipId,
         taskId: input.taskId ?? null,
         clientId: input.clientId ?? null,
         billingType: input.billingType ?? "BILLABLE",
@@ -50,7 +66,7 @@ export class RatesService {
     await Promise.all([
       this.audit.recordWithDb({
         orgId: u.orgId,
-        actorUserId: u.userId,
+        actorMembershipId: actingMembershipId(u.principal),
         entityType: "rate",
         entityId: rate.id.toString(),
         action: "rate.created",
@@ -77,7 +93,23 @@ export class RatesService {
     if (input.currency !== undefined) updateData.currency = input.currency;
     if (input.priority !== undefined) updateData.priority = input.priority;
     if (input.projectId !== undefined) updateData.projectId = input.projectId ?? null;
-    if (input.userId !== undefined) updateData.userId = input.userId ?? null;
+    if (input.userId !== undefined) {
+      if (input.userId) {
+        const [member] = await this.db
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.orgId, u.orgId),
+              eq(organizationMembers.userId, input.userId),
+            ),
+          )
+          .limit(1);
+        updateData.userMembershipId = member?.id ?? null;
+      } else {
+        updateData.userMembershipId = null;
+      }
+    }
     if (input.billingType !== undefined) updateData.billingType = input.billingType;
     if (input.rateCardId !== undefined) updateData.rateCardId = input.rateCardId ?? null;
     if (input.effectiveFrom !== undefined) updateData.effectiveFrom = input.effectiveFrom;
@@ -92,7 +124,7 @@ export class RatesService {
 
       await this.audit.record(tx, {
         orgId: u.orgId,
-        actorUserId: u.userId,
+        actorMembershipId: actingMembershipId(u.principal),
         entityType: "rate",
         entityId: rateId.toString(),
         action: "rate.updated",
@@ -123,7 +155,7 @@ export class RatesService {
 
       await this.audit.record(tx, {
         orgId: u.orgId,
-        actorUserId: u.userId,
+        actorMembershipId: actingMembershipId(u.principal),
         entityType: "rate",
         entityId: rateId.toString(),
         action: "rate.deleted",

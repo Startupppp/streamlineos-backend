@@ -12,7 +12,8 @@
     "scripts/**/*.mjs",
     "evals/**/*.ts",
     "drizzle.config.ts",
-    "eslint.config.mjs"
+    "eslint.config.mjs",
+    "src/db/schema/hrms-phase1-sql-managed.ts"
   ],
   "project": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.mjs", "evals/**/*.ts"],
   "ignore": [
@@ -20,11 +21,7 @@
     "dist/**",
     "src/@types/**",
     "src/common/validation/validate.decorator.ts",
-    "src/modules/rbac/permissions/**",
-    "src/db/schema/hrms-phase1-sql-managed.ts",
-    "src/db/schema/directory/worker-engagement-state-events.ts",
-    "src/db/schema/hr/audit-events.ts",
-    "src/db/schema/hr/worker-leave-ledger.ts"
+    "src/modules/rbac/permissions/**"
   ],
   "ignoreDependencies": ["multer", "@types/multer"],
   "ignoreExportsUsedInFile": true

@@ -53,7 +53,7 @@ export class SignPublicFormService {
 
         const envelope = await this.templates.instantiate(
           form.orgId,
-          form.createdBy ?? template.ownerUserId ?? "",
+          form.createdByMembershipId ?? template.ownerMembershipId ?? null,
           form.templateId,
           {
             recipients: [{ roleName: signingRole.roleName, name: input.name, email: input.email, phone: input.phone }],

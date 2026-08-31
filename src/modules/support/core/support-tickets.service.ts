@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { SupportTicketStaleException } from "../../../common/http/api-exceptions";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
@@ -242,7 +242,7 @@ export class SupportTicketsService {
     };
   }
 
-  async getTicket(orgId: string, ticketId: number) {
+  async getTicket(orgId: string, ticketId: number, actor: { userId: string; scope: DataScope }) {
     const ticket = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
       with: {
@@ -256,6 +256,9 @@ export class SupportTicketsService {
       },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
+    if (actor.scope === "none") throw new ForbiddenException("Not authorized to view tickets");
+    if (actor.scope !== "all" && ticket.assigneeId !== actor.userId)
+      throw new ForbiddenException("Not authorized to view this ticket");
     const customFieldValues = await this.customFields.getFieldValues(orgId, ticketId);
     return { ...ticket, customFieldValues };
   }

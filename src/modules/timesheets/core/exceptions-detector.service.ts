@@ -25,12 +25,6 @@ const INSERT_CHUNK_SIZE = 200;
 export class ExceptionsDetectorService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  /**
-   * Scan one org for timesheet data-quality issues and write OPEN exceptions.
-   * Idempotent: the partial unique index on
-   * (org_id, user_id, rule, COALESCE(period_id,-1), COALESCE(entry_id,-1)) WHERE status='OPEN'
-   * plus onConflictDoNothing() means re-runs never duplicate open exceptions.
-   */
   async detectForOrg(orgId: string) {
     const [settings] = await this.db
       .select()
@@ -48,11 +42,10 @@ export class ExceptionsDetectorService {
 
     const candidates: ExceptionCandidate[] = [];
 
-    // Shared lookups for the last complete week.
     const periods = await this.db
       .select({
         id: timesheetPeriods.id,
-        userId: timesheetPeriods.userId,
+        userMembershipId: timesheetPeriods.userMembershipId,
         status: timesheetPeriods.status,
         totalHours: timesheetPeriods.totalHours,
       })
@@ -64,11 +57,11 @@ export class ExceptionsDetectorService {
           eq(timesheetPeriods.periodEnd, week.end),
         ),
       );
-    const periodByUser = new Map(periods.map((p) => [p.userId, p]));
+    const periodByUser = new Map(periods.map((p) => [p.userMembershipId, p]));
 
     const entryCounts = await this.db
       .select({
-        userId: timesheets.userId,
+        userMembershipId: timesheets.userMembershipId,
         count: sql<number>`COUNT(*)::int`,
       })
       .from(timesheets)
@@ -80,12 +73,11 @@ export class ExceptionsDetectorService {
           isNull(timesheets.voidedAt),
         ),
       )
-      .groupBy(timesheets.userId);
-    const entryCountByUser = new Map(entryCounts.map((r) => [r.userId, r.count]));
+      .groupBy(timesheets.userMembershipId);
+    const entryCountByUser = new Map(entryCounts.map((r) => [r.userMembershipId, r.count]));
 
-    // MISSING_TIMESHEET — active members with no submitted period and no entries.
     const members = await this.db
-      .select({ userId: organizationMembers.userId })
+      .select({ id: organizationMembers.id })
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))
       .where(
@@ -97,14 +89,14 @@ export class ExceptionsDetectorService {
       );
 
     for (const member of members) {
-      const period = periodByUser.get(member.userId);
-      const hasEntries = (entryCountByUser.get(member.userId) ?? 0) > 0;
+      const period = periodByUser.get(member.id);
+      const hasEntries = (entryCountByUser.get(member.id) ?? 0) > 0;
       const periodMissingOrUnsubmitted =
         !period || period.status === "OPEN" || period.status === "DRAFT";
       if (periodMissingOrUnsubmitted && !hasEntries) {
         candidates.push({
           orgId,
-          userId: member.userId,
+          userMembershipId: member.id,
           periodId: period?.id ?? null,
           entryId: null,
           rule: "MISSING_TIMESHEET",
@@ -112,20 +104,19 @@ export class ExceptionsDetectorService {
           status: "OPEN",
           message: `No timesheet submitted for the week of ${week.start} to ${week.end}`,
           details: { weekStart: week.start, weekEnd: week.end },
-          ownerUserId: member.userId,
+          ownerMembershipId: member.id,
           dueDate: addDays(week.end, graceDays),
         });
       }
     }
 
-    // UNDER_HOURS — period exists but logged less than the expected weekly hours.
     if (expectedWeeklyHours !== null) {
       for (const period of periods) {
         const actual = parseFloat(period.totalHours);
         if (actual < expectedWeeklyHours) {
           candidates.push({
             orgId,
-            userId: period.userId,
+            userMembershipId: period.userMembershipId,
             periodId: period.id,
             entryId: null,
             rule: "UNDER_HOURS",
@@ -133,16 +124,15 @@ export class ExceptionsDetectorService {
             status: "OPEN",
             message: `Logged ${actual}h of the expected ${expectedWeeklyHours}h for the week of ${week.start}`,
             details: { expected: expectedWeeklyHours, actual },
-            ownerUserId: period.userId,
+            ownerMembershipId: period.userMembershipId,
           });
         }
       }
     }
 
-    // OVER_MAX_DAILY — any day in the last complete week over the daily cap.
     const dailyTotals = await this.db
       .select({
-        userId: timesheets.userId,
+        userMembershipId: timesheets.userMembershipId,
         date: timesheets.date,
         total: sql<string>`SUM(${timesheets.hours}::numeric)::text`,
       })
@@ -155,32 +145,31 @@ export class ExceptionsDetectorService {
           isNull(timesheets.voidedAt),
         ),
       )
-      .groupBy(timesheets.userId, timesheets.date);
+      .groupBy(timesheets.userMembershipId, timesheets.date);
 
     for (const day of dailyTotals) {
       const total = parseFloat(day.total);
       if (total > maxHoursPerDay) {
         candidates.push({
           orgId,
-          userId: day.userId,
-          periodId: periodByUser.get(day.userId)?.id ?? null,
+          userMembershipId: day.userMembershipId,
+          periodId: periodByUser.get(day.userMembershipId)?.id ?? null,
           entryId: null,
           rule: "OVER_MAX_DAILY",
           severity: "ERROR",
           status: "OPEN",
           message: `Logged ${total}h on ${day.date}, over the daily limit of ${maxHoursPerDay}h`,
           details: { date: day.date, total, limit: maxHoursPerDay },
-          ownerUserId: day.userId,
+          ownerMembershipId: day.userMembershipId,
         });
       }
     }
 
-    // UNRESOLVED_TIMER — running/paused timers started more than 24h ago.
     const staleCutoff = new Date(Date.now() - STALE_TIMER_MS);
     const staleTimers = await this.db
       .select({
         id: timerSessions.id,
-        userId: timerSessions.userId,
+        userMembershipId: timerSessions.userMembershipId,
         status: timerSessions.status,
         startedAt: timerSessions.startedAt,
       })
@@ -196,7 +185,7 @@ export class ExceptionsDetectorService {
     for (const timer of staleTimers) {
       candidates.push({
         orgId,
-        userId: timer.userId,
+        userMembershipId: timer.userMembershipId,
         periodId: null,
         entryId: null,
         rule: "UNRESOLVED_TIMER",
@@ -204,16 +193,15 @@ export class ExceptionsDetectorService {
         status: "OPEN",
         message: `Timer #${timer.id} has been ${timer.status.toLowerCase()} since ${timer.startedAt.toISOString()}`,
         details: { timerId: timer.id, startedAt: timer.startedAt.toISOString() },
-        ownerUserId: timer.userId,
+        ownerMembershipId: timer.userMembershipId,
       });
     }
 
-    // MISSING_RATE — approved billable entries in the last 30 days with no bill rate.
     const rateSince = addDays(formatDateOnly(new Date()), -MISSING_RATE_LOOKBACK_DAYS);
     const missingRateEntries = await this.db
       .select({
         id: timesheets.id,
-        userId: timesheets.userId,
+        userMembershipId: timesheets.userMembershipId,
         date: timesheets.date,
         projectId: timesheets.projectId,
         timesheetPeriodId: timesheets.timesheetPeriodId,
@@ -233,7 +221,7 @@ export class ExceptionsDetectorService {
     for (const entry of missingRateEntries) {
       candidates.push({
         orgId,
-        userId: entry.userId,
+        userMembershipId: entry.userMembershipId,
         periodId: entry.timesheetPeriodId,
         entryId: entry.id,
         rule: "MISSING_RATE",
@@ -241,15 +229,13 @@ export class ExceptionsDetectorService {
         status: "OPEN",
         message: `Approved billable entry on ${entry.date} has no bill rate`,
         details: { entryId: entry.id, date: entry.date, projectId: entry.projectId },
-        ownerUserId: entry.userId,
+        ownerMembershipId: entry.userMembershipId,
       });
     }
 
-    // Dedupe within this batch on the same key as the partial unique index, so
-    // a multi-row insert cannot conflict with itself.
     const seen = new Set<string>();
     const rows = candidates.filter((c) => {
-      const key = `${c.userId}|${c.rule}|${c.periodId ?? -1}|${c.entryId ?? -1}`;
+      const key = `${c.userMembershipId ?? ""}|${c.rule}|${c.periodId ?? -1}|${c.entryId ?? -1}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;

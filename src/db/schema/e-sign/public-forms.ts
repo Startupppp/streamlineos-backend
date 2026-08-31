@@ -1,6 +1,6 @@
 import { pgTable, serial, text, integer, boolean, timestamp, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { signPublicFormStatusEnum } from "./enums";
 import { signTemplates } from "./templates";
 
@@ -19,7 +19,6 @@ export const signPublicForms = pgTable(
     completionRedirectUrl: text("completion_redirect_url"),
     webhookUrl: text("webhook_url"),
     embedAllowed: boolean("embed_allowed").default(false).notNull(),
-    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

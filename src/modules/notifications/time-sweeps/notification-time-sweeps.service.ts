@@ -152,17 +152,25 @@ export class NotificationTimeSweepsService {
     orgId: string,
     result: TimeSweepResult,
   ): Promise<void> {
+    const senderMember = aliasedTable(organizationMembers, "notif_sign_sender");
     const rows = await tx
       .select({
         id: signEnvelopes.id,
         title: signEnvelopes.title,
-        senderUserId: signEnvelopes.senderUserId,
+        senderUserId: senderMember.userId,
       })
       .from(signEnvelopes)
+      .innerJoin(
+        senderMember,
+        and(
+          eq(senderMember.orgId, signEnvelopes.orgId),
+          eq(senderMember.id, signEnvelopes.senderMembershipId),
+        ),
+      )
       .where(
         and(
           eq(signEnvelopes.orgId, orgId),
-          isNotNull(signEnvelopes.senderUserId),
+          isNotNull(signEnvelopes.senderMembershipId),
           isNotNull(signEnvelopes.expiresAt),
           inArray(signEnvelopes.status, ["sent", "partially_completed"]),
           sql`${signEnvelopes.expiresAt}::date = current_date + 2`,

@@ -218,6 +218,7 @@ export class ReportsService {
       .leftJoin(orgUnits, and(orgUnitInOrg(orgId, hrEmployments.departmentId), eq(orgUnits.kind, "DEPARTMENT")))
       .where(and(...deptConditions))
       .groupBy(orgUnits.name)
+      .orderBy(asc(orgUnits.name), sql<number>`MIN(${orgUnits.id})`)
       .limit(limit)
       .offset(offset);
 
@@ -255,6 +256,7 @@ export class ReportsService {
       .leftJoin(employeeSalaryProfiles, eq(employeeSalaryProfiles.id, payrollRunEmployees.profileId))
       .where(and(...ccConditions))
       .groupBy(employeeSalaryProfiles.costCenter)
+      .orderBy(asc(employeeSalaryProfiles.costCenter), sql<number>`MIN(${employeeSalaryProfiles.id})`)
       .limit(limit)
       .offset(offset);
 

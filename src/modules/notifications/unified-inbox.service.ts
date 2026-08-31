@@ -4,6 +4,7 @@ import { notifications, projectApprovals, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
+import { actingMembershipId } from "../../common/auth/principal";
 import { MailService } from "../mail/mail.service";
 import { BroadcastsService } from "./broadcasts.service";
 import { BuildApprovalsInboxService } from "../build/approvals/build-approvals-inbox.service";
@@ -158,7 +159,7 @@ export class UnifiedInboxService {
           ? this.fetchBroadcasts(orgId, userId, limit + 1, cursorState.b)
           : ([] as BroadcastInboxItem[]),
         wantsMail && canViewMail
-          ? this.fetchMail(orgId, userId, limit + 1, cursorState.m)
+          ? this.fetchMail(orgId, userId, actingMembershipId(user.principal), limit + 1, cursorState.m)
           : {
               items: [] as MailInboxItem[],
               nextMailCursor: null as string | null,
@@ -307,12 +308,14 @@ export class UnifiedInboxService {
   private async fetchMail(
     orgId: string,
     userId: string,
+    membershipId: number | null,
     fetchLimit: number,
     cursor: string | null,
   ): Promise<{ items: MailInboxItem[]; nextMailCursor: string | null }> {
     const result = await this.mail.listMessages(
       orgId,
       userId,
+      membershipId,
       "inbox",
       "all",
       fetchLimit,
@@ -357,7 +360,7 @@ export class UnifiedInboxService {
     const [notifCount, mailCount, approvalCount] = await Promise.all([
       this.countNotificationUnread(orgId, userId),
       canMail
-        ? this.countMailUnread(orgId, userId)
+        ? this.countMailUnread(orgId, userId, actingMembershipId(user.principal))
         : Promise.resolve({ unread: 0, exact: true }),
       canApproval ? this.countApprovalPending(orgId, userId) : Promise.resolve(0),
     ]);
@@ -390,10 +393,12 @@ export class UnifiedInboxService {
   private async countMailUnread(
     orgId: string,
     userId: string,
+    membershipId: number | null,
   ): Promise<{ unread: number; exact: boolean }> {
     const result = await this.mail.listMessages(
       orgId,
       userId,
+      membershipId,
       "inbox",
       "all",
       MAIL_COUNT_SCAN_LIMIT,

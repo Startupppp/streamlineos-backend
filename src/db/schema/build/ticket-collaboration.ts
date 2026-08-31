@@ -307,6 +307,6 @@ export const ticketRelatedLinks = build.table(
       name: "fk_ticket_related_links_created_by_actor",
       columns: [table.orgId, table.createdByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
   ],
 );

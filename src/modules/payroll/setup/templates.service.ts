@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { SQL, and, eq, getTableColumns, ilike, isNull, or, sql } from "drizzle-orm";
+import { SQL, and, asc, eq, getTableColumns, ilike, isNull, or, sql } from "drizzle-orm";
 import { payrollTemplates } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -116,6 +116,7 @@ export class PayrollTemplatesService {
       .select({ ...getTableColumns(payrollTemplates), total: totalOverWindow })
       .from(payrollTemplates)
       .where(where)
+      .orderBy(asc(payrollTemplates.name), asc(payrollTemplates.id))
       .limit(input.pageSize)
       .offset(offset);
 

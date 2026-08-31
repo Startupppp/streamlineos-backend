@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -176,6 +176,7 @@ export class PayrollJobsService {
           inArray(payrollJobs.status, ["FAILED", "DEAD_LETTER"]),
         ),
       )
+      .orderBy(desc(payrollJobs.createdAt), asc(payrollJobs.id))
       .limit(cap)
       .offset((page - 1) * cap);
   }

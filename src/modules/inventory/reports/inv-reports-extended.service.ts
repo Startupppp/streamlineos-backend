@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import {
   invStockLevels,
   invProducts,
@@ -367,6 +367,7 @@ export class InvReportsExtendedService {
         .innerJoin(invProductVariants, eq(invStockLevels.productVariantId, invProductVariants.id))
         .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
         .where(reorderWhere)
+        .orderBy(asc(invProductVariants.sku), asc(invStockLevels.productVariantId), asc(invStockLevels.locationId))
         .limit(limit)
         .offset(offset),
       this.db

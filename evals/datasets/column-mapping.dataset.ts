@@ -111,7 +111,7 @@ export const COLUMN_MAPPING_DATASET: readonly ColumnCase[] = [
   { product: "salesforce", source: "contacts", header: "Assistant", expected: "custom", identityTrap: true },
   { product: "salesforce", source: "contacts", header: "Contact Owner", expected: "custom", identityTrap: true },
   { product: "salesforce", source: "contacts", header: "Reports To", expected: "custom", identityTrap: true },
-  { product: "salesforce", source: "contacts", header: "Lead Source", expected: "custom" },
+  { product: "salesforce", source: "contacts", header: "Lead Source", expected: "acquisitionSource" },
 
   // Opportunities
   {

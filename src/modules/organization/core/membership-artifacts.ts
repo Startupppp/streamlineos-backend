@@ -1,6 +1,7 @@
 export type ArtifactMechanism =
   | "database-cascade"
   | "database-write"
+  | "pending-migration"
   | "session-store"
   | "realtime"
   | "provider"
@@ -865,6 +866,226 @@ export const MEMBERSHIP_ARTIFACTS = [
     onSuspension: "retain",
     reason:
       "The inspector_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so inspection records are preserved but the membership reference is cleared.",
+  },
+  {
+    id: "timesheets",
+    mechanism: "database-cascade",
+    table: "timesheets",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_timesheets_user_membership is ON DELETE SET NULL, so removing the member clears user_membership_id automatically while preserving the timesheet record for payroll processing and audit. Submitted time must remain payable and auditable after a member leaves. A suspension is reversible and the timesheet record must remain accessible for the current pay period, so it is retained.",
+  },
+  {
+    id: "timer_sessions",
+    mechanism: "database-cascade",
+    table: "timer_sessions",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_timer_sessions_user_membership is ON DELETE SET NULL, so removing the member clears user_membership_id automatically. Timer sessions are ephemeral running state: once membership is removed the session carries no ongoing security implication and no payroll significance, so clearing the link is sufficient. A suspension is reversible and the membership gate already denies new timer operations, so the row is retained.",
+  },
+  {
+    id: "timesheet_rates",
+    mechanism: "database-cascade",
+    table: "timesheet_rates",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_timesheet_rates_user_membership is ON DELETE SET NULL, so removing the member clears user_membership_id automatically while preserving the rate record for historical billing reference. A suspension is reversible so the rate configuration is retained; the membership gate already denies new time entries.",
+  },
+  {
+    id: "portal_memberships",
+    mechanism: "database-write",
+    table: "portal_memberships",
+    keyedBy: "user_membership_id",
+    onRemoval: "revoke",
+    onSuspension: "revoke",
+    reason:
+      "The composite foreign key fk_portal_memberships_user_membership is ON DELETE SET NULL, which clears the membership link but leaves the portal membership status unchanged. An active portal membership is an access grant to the external-facing portal; a removed or suspended org member must not retain that access. The revocation path must explicitly set status to REVOKED in addition to what the FK handles, because status is not part of the FK and the portal authenticates on status rather than on the membership link.",
+  },
+  {
+    id: "calendar_events_creator",
+    mechanism: "database-cascade",
+    table: "calendar_events",
+    keyedBy: "created_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_calendar_events_org_creator_membership is ON DELETE SET NULL (migration 0831). Creator attribution is cleared automatically on membership removal; the calendar event itself survives.",
+  },
+  {
+    id: "chat_channels_creator",
+    mechanism: "database-cascade",
+    table: "chat_channels",
+    keyedBy: "created_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_chat_channels_org_created_by_membership is ON DELETE SET NULL (migration 0831). The channel survives with the creator slot cleared automatically.",
+  },
+  {
+    id: "sprint_scope_events_actor",
+    mechanism: "database-cascade",
+    table: "sprint_scope_events",
+    keyedBy: "actor_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_sprint_scope_events_actor is ON DELETE SET NULL (migration 0832). The event record survives with the actor slot cleared automatically.",
+  },
+  {
+    id: "ticket_related_links_creator",
+    mechanism: "database-cascade",
+    table: "ticket_related_links",
+    keyedBy: "created_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_ticket_related_links_created_by_actor is ON DELETE SET NULL (migration 0832). The link record survives with the creator slot cleared automatically.",
+  },
+  {
+    id: "workflow_transitions_creator",
+    mechanism: "database-cascade",
+    table: "workflow_transitions",
+    keyedBy: "created_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_workflow_transitions_created_by_actor is ON DELETE SET NULL (migration 0832). The transition definition survives with the creator slot cleared automatically.",
+  },
+  {
+    id: "finance_report_export_jobs_requester",
+    mechanism: "database-cascade",
+    table: "finance_report_export_jobs",
+    keyedBy: "requested_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite FK fin_report_export_jobs_org_requester_membership_fk is ON DELETE SET NULL (migration 0833). The export job record survives with the requester slot cleared automatically.",
+  },
+  {
+    id: "payroll_run_export_jobs_requester",
+    mechanism: "database-cascade",
+    table: "payroll_run_export_jobs",
+    keyedBy: "requested_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite FK payroll_run_export_jobs_org_requester_membership_fk is ON DELETE SET NULL (migration 0833). The export job record survives with the requester slot cleared automatically.",
+  },
+  {
+    id: "reimbursements_approver",
+    mechanism: "database-cascade",
+    table: "reimbursements",
+    keyedBy: "approved_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite FK fk_reimbursements_approved_actor is ON DELETE SET NULL (migration 0833). The reimbursement record survives with the approver membership slot cleared; the parallel user column (approved_by) preserves identity for display.",
+  },
+  {
+    id: "payroll_approvals_actor",
+    mechanism: "database-cascade",
+    table: "payroll_approvals",
+    keyedBy: "acted_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite FK fk_payroll_approvals_acted_actor is ON DELETE SET NULL (migration 0834). The approval stage record survives for payroll audit; the membership pointer is cleared automatically.",
+  },
+  {
+    id: "payroll_journal_batches_actors",
+    mechanism: "database-cascade",
+    table: "payroll_journal_batches",
+    keyedBy: "posted_by_membership_id / exported_by_membership_id / reversed_by_membership_id / reconciled_by_membership_id / created_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Five composite FKs (fk_payroll_jrnl_batches_*_actor) are ON DELETE SET NULL (migration 0834). Each batch lifecycle action is an attribution field with a parallel user column; clearing the membership pointer preserves the batch record and its user-level identity.",
+  },
+  {
+    id: "payroll_runs_actors",
+    mechanism: "database-cascade",
+    table: "payroll_runs",
+    keyedBy: "approved_by_membership_id / paid_by_membership_id / published_by_membership_id / closed_by_membership_id / reopened_by_membership_id / created_by_membership_id / locked_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Seven composite FKs (fk_payroll_runs_*_actor) are ON DELETE SET NULL (migration 0835). Each run lifecycle action is an attribution field with a parallel user column (approved_by, paid_by, etc.) that preserves identity for financial audit after the membership pointer is cleared.",
+  },
+  {
+    id: "worker_engagements_creator",
+    mechanism: "database-cascade",
+    table: "worker_engagements",
+    keyedBy: "created_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite FK fk_worker_engagements_created_actor is ON DELETE SET NULL (migration 0836). The engagement record survives with the creator slot cleared automatically. The updated_by and archived_by FKs are pending (hrms-phase1) and will be authored as SET NULL directly.",
+  },
+  {
+    id: "expense_export_jobs_requester",
+    mechanism: "database-cascade",
+    table: "expense_export_jobs",
+    keyedBy: "requested_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite FK expense_export_jobs_org_requester_membership_fk is ON DELETE SET NULL (migration 0837). The export job record survives with the requester slot cleared automatically. Column made nullable in the same migration.",
+  },
+  {
+    id: "hr_people_actors",
+    mechanism: "pending-migration",
+    table: "hr_people",
+    keyedBy: "updated_by_membership_id / archived_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Two composite FKs (fk_hr_people_updated_actor, fk_hr_people_archived_actor) are currently RESTRICT in the Drizzle schema. Both are attribution columns; the hr_people record survives. Pending migration to SET NULL (hrms-phase1 sweep). The hr/core-people.ts file IS in the barrel.",
+  },
+  {
+    id: "hr_employments_actors",
+    mechanism: "pending-migration",
+    table: "hr_employments",
+    keyedBy: "updated_by_membership_id / archived_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Two composite FKs (fk_hr_employments_updated_actor, fk_hr_employments_archived_actor) are currently RESTRICT in the Drizzle schema. Both are attribution columns; the employment record survives. Pending migration to SET NULL (hrms-phase1 sweep). The hr/core-people.ts file IS in the barrel.",
+  },
+  {
+    id: "onboarding_tasks_actors",
+    mechanism: "pending-migration",
+    table: "onboarding_tasks",
+    keyedBy: "created_by_membership_id / updated_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Two composite FKs (fk_onboarding_tasks_created_actor, fk_onboarding_tasks_updated_actor) are currently RESTRICT in the Drizzle schema. Both are attribution columns; the task record survives. Pending migration to SET NULL (hrms-phase1 sweep). The hr/offboarding.ts file IS in the barrel.",
+  },
+  {
+    id: "onboarding_documents_actors",
+    mechanism: "pending-migration",
+    table: "onboarding_documents",
+    keyedBy: "updated_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite FK fk_onboarding_documents_updated_actor is currently RESTRICT in the Drizzle schema. It is an attribution column; the document record survives. Pending migration to SET NULL (hrms-phase1 sweep). The hr/offboarding.ts file IS in the barrel.",
+  },
+  {
+    id: "workers_actors",
+    mechanism: "pending-migration",
+    table: "workers",
+    keyedBy: "created_by_membership_id / updated_by_membership_id / archived_by_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Three composite FKs (fk_workers_created_actor, fk_workers_updated_actor, fk_workers_archived_actor) are currently RESTRICT in the Drizzle schema. All three are attribution columns; the worker record survives. Pending migration to SET NULL (hrms-phase1 sweep). The directory/workers.ts file IS in the barrel.",
   },
 ] as const satisfies readonly MembershipArtifact[];
 

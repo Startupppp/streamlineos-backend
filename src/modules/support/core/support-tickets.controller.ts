@@ -98,11 +98,12 @@ export class SupportTicketsController {
   @Get(":supportTicketId")
   @RequirePermission("support:tickets:view")
   @Validate({ params: supportTicketIdParams })
-  getTicket(
+  async getTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.getTicket(u.orgId, supportTicketId);
+    const scope = await resolveSupportTicketsViewScope(this.access, u);
+    return this.tickets.getTicket(u.orgId, supportTicketId, { userId: u.userId, scope });
   }
 
   @Patch(":supportTicketId")

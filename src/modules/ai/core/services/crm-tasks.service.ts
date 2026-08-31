@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, isNull, sql, sum } from "drizzle-orm";
-import { crmDeals, tasks, tickets, timesheets, users } from "../../../../db/schema";
+import { crmDeals, organizationMembers, tasks, tickets, timesheets, users } from "../../../../db/schema";
 import { businessParties, leadPartyMap } from "../../../../db/schema/party";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
@@ -231,17 +231,24 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
           .limit(200),
         tx
           .select({
-            userId: timesheets.userId,
+            userId: organizationMembers.userId,
             hoursThisWeek: sum(timesheets.hours),
           })
           .from(timesheets)
+          .innerJoin(
+            organizationMembers,
+            and(
+              eq(timesheets.orgId, organizationMembers.orgId),
+              eq(timesheets.userMembershipId, organizationMembers.id),
+            ),
+          )
           .where(
             and(
               eq(timesheets.orgId, orgId),
               sql`${timesheets.date} >= ${formatDateOnly(weekAgo)}`,
             ),
           )
-          .groupBy(timesheets.userId)
+          .groupBy(organizationMembers.userId)
           .limit(200),
       ]);
       return { ticketAgg, hoursAgg };

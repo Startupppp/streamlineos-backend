@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { actingMembershipId } from "../../common/auth/principal";
 import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -159,7 +160,7 @@ export class DirectoryController {
     @Body() body: CreateEngagementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createEngagement(u.orgId, u.userId, { ...body, workerId });
+    return this.svc.createEngagement(u.orgId, u.userId, actingMembershipId(u.principal), { ...body, workerId });
   }
 
   @Patch("engagements/:workerEngagementId")

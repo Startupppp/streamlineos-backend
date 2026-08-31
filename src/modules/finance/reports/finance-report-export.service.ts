@@ -1,5 +1,5 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, lte } from "drizzle-orm";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, eq, inArray, lte } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import { financeReportExportJobs } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -123,6 +123,18 @@ export class FinanceReportExportService {
       .update(financeReportExportJobs)
       .set({ status: retry ? "pending" : "failed", errorCode: "EXPORT_GENERATION_FAILED", errorMessage: error instanceof Error ? error.message.slice(0, 500) : "Export generation failed", lockedAt: null, updatedAt: new Date() })
       .where(and(eq(financeReportExportJobs.id, job.id), eq(financeReportExportJobs.status, "running")));
+  }
+
+  async cancel(user: CurrentUserContext, id: string) {
+    const job = await this.find(user, id);
+    const rows = await this.db
+      .update(financeReportExportJobs)
+      .set({ status: "cancelled", lockedAt: null, updatedAt: new Date() })
+      .where(and(eq(financeReportExportJobs.id, job.id), inArray(financeReportExportJobs.status, ["pending", "running"])))
+      .returning();
+    const updated = rows[0];
+    if (!updated) throw new ConflictException("Export job cannot be cancelled in its current state");
+    return this.view(updated);
   }
 
   async reclaim(orgId: string, staleBefore: Date) {

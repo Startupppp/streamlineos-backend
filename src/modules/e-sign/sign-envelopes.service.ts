@@ -58,7 +58,7 @@ export class SignEnvelopesService {
     private readonly dispatch: SignEnvelopeDispatchService,
   ) {}
 
-  async create(orgId: string, userId: string, input: CreateEnvelopeInput) {
+  async create(orgId: string, senderMembershipId: number | null, input: CreateEnvelopeInput) {
     await this.planLimits.assertWithinLimit(orgId, "signEnvelopes");
 
     const [envelope] = await this.db
@@ -76,7 +76,7 @@ export class SignEnvelopesService {
         sourceEntityId: input.sourceEntityId,
         templateId: input.templateId,
         watermarkPolicyId: input.watermarkPolicyId,
-        senderUserId: userId,
+        senderMembershipId,
         expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
         reminderEnabled: input.reminderEnabled,
         reminderFirstAfterDays: input.reminderFirstAfterDays,
@@ -90,7 +90,6 @@ export class SignEnvelopesService {
       orgId,
       envelopeId: envelope.id,
       actorType: "internal_user",
-      actorUserId: userId,
       eventType: "envelope_created",
       eventMessage: `Created envelope "${envelope.title}"`,
     });
@@ -160,11 +159,12 @@ export class SignEnvelopesService {
   async list(
     orgId: string,
     query: ListEnvelopesInput,
-    scope: { userId: string; viewAll: boolean },
+    scope: { membershipId: number | null; viewAll: boolean },
   ) {
+    if (!scope.viewAll && scope.membershipId == null) return [];
     const conditions = [eq(signEnvelopes.orgId, orgId)];
-    if (!scope.viewAll)
-      conditions.push(eq(signEnvelopes.senderUserId, scope.userId));
+    if (!scope.viewAll && scope.membershipId != null)
+      conditions.push(eq(signEnvelopes.senderMembershipId, scope.membershipId));
     if (query.status) {
       if (
         !(signEnvelopeStatusEnum.enumValues as readonly string[]).includes(
@@ -207,8 +207,11 @@ export class SignEnvelopesService {
     return envelope;
   }
 
-  async getFull(orgId: string, envelopeId: number) {
+  async getFull(orgId: string, envelopeId: number, scope: { membershipId: number | null; viewAll: boolean }) {
     const envelope = await this.mustGet(orgId, envelopeId);
+    if (!scope.viewAll && (scope.membershipId == null || envelope.senderMembershipId !== scope.membershipId)) {
+      throw new ForbiddenException("Not authorized to view this envelope");
+    }
     const [documents, recipientRows, fields] = await Promise.all([
       this.db.query.signDocuments.findMany({
         where: and(
@@ -266,7 +269,7 @@ export class SignEnvelopesService {
         .set({
           status: "voided",
           voidedAt: new Date(),
-          voidedBy: actor.userId,
+          voidedByMembershipId: actor.membershipId,
           voidReason: input.reason,
         })
         .where(eq(signEnvelopes.id, envelopeId))

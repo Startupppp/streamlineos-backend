@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import { and, eq, inArray, lte, notInArray } from "drizzle-orm";
 import { addDays } from "date-fns";
-import { signEnvelopes, signRecipients, users } from "../../db/schema";
+import { organizationMembers, signEnvelopes, signRecipients } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
@@ -37,11 +37,13 @@ export class SignEnvelopeSweepsService {
     return row;
   }
 
-  private async senderName(userId: string): Promise<string> {
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, userId),
+  private async senderName(orgId: string, membershipId: number | null | undefined): Promise<string> {
+    if (membershipId == null) return "A StreamlineOS user";
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.id, membershipId)),
+      with: { user: { columns: { name: true } } },
     });
-    return user?.name ?? "A StreamlineOS user";
+    return member?.user?.name ?? "A StreamlineOS user";
   }
 
   private async remindEnvelopeRecipients(
@@ -54,7 +56,7 @@ export class SignEnvelopeSweepsService {
       envelope.orgId,
       envelope.id,
     );
-    const senderNameStr = await this.senderName(envelope.senderUserId);
+    const senderNameStr = await this.senderName(envelope.orgId, envelope.senderMembershipId);
     let remindedCount = 0;
 
     for (const r of recipientRows) {

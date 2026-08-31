@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { throwOnAiFailure, unwrapAiResult } from "../ai/core/services/gateway-result.util";
+import { actingMembershipId } from "../../common/auth/principal";
 import { MailService } from "./mail.service";
 import {
   MailDraftOutputSchema,
@@ -49,6 +50,7 @@ export class MailAiService {
     const listResult = await this.mail.listMessages(
       actor.orgId,
       actor.userId,
+      actingMembershipId(actor.principal),
       "inbox",
       accountIdParam,
       INBOX_MSG_MAX,

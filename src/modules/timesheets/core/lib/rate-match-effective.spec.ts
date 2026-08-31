@@ -3,7 +3,7 @@ import { pickBestRate, type RateCandidate } from "./rate-match";
 function rate(partial: Partial<RateCandidate> & { id: number }): RateCandidate {
   return {
     projectId: null,
-    userId: null,
+    userMembershipId: null,
     taskId: null,
     clientId: null,
     priority: 0,

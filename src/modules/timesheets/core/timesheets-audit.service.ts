@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, desc, eq } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheetAuditEvents, users } from "../../../db/schema";
+import { timesheetAuditEvents, organizationMembers, users } from "../../../db/schema";
 import {
   buildCursorPage,
   decodeCursor,
@@ -13,8 +14,7 @@ import type { AuditQuery } from "./dto/audit.schemas";
 
 export interface AuditEventParams {
   orgId: string;
-  actorUserId: string;
-  actorMembershipId?: number | null;
+  actorMembershipId: number | null;
   entityType: string;
   entityId: string;
   action: string;
@@ -50,7 +50,7 @@ export function computeAuditRowHash(
   const canonical = stableStringify({
     prevHash: prevHash ?? "",
     orgId: params.orgId,
-    actorUserId: params.actorUserId,
+    actorMembershipId: String(params.actorMembershipId ?? ""),
     entityType: params.entityType,
     entityId: params.entityId,
     action: params.action,
@@ -66,8 +66,6 @@ export class TimesheetsAuditService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async record(dbOrTx: DbLike, params: AuditEventParams): Promise<void> {
-    // Hash-chain per org: each row commits to the previous row's hash, making
-    // deletion or mutation of history detectable via verifyChain().
     const [last] = await dbOrTx
       .select({ rowHash: timesheetAuditEvents.rowHash })
       .from(timesheetAuditEvents)
@@ -80,7 +78,6 @@ export class TimesheetsAuditService {
 
     await dbOrTx.insert(timesheetAuditEvents).values({
       orgId: params.orgId,
-      actorUserId: params.actorUserId,
       actorMembershipId: params.actorMembershipId ?? null,
       entityType: params.entityType,
       entityId: params.entityId,
@@ -117,10 +114,12 @@ export class TimesheetsAuditService {
         ),
       );
 
+    const actorMember = alias(organizationMembers, "actor_member");
+
     const rows = await this.db
       .select({
         id: timesheetAuditEvents.id,
-        actorUserId: timesheetAuditEvents.actorUserId,
+        actorMembershipId: timesheetAuditEvents.actorMembershipId,
         actorName: users.name,
         entityType: timesheetAuditEvents.entityType,
         entityId: timesheetAuditEvents.entityId,
@@ -131,7 +130,11 @@ export class TimesheetsAuditService {
         createdAt: timesheetAuditEvents.createdAt,
       })
       .from(timesheetAuditEvents)
-      .leftJoin(users, eq(timesheetAuditEvents.actorUserId, users.id))
+      .leftJoin(actorMember, and(
+        eq(timesheetAuditEvents.orgId, actorMember.orgId),
+        eq(timesheetAuditEvents.actorMembershipId, actorMember.id),
+      ))
+      .leftJoin(users, eq(actorMember.userId, users.id))
       .where(and(...conditions))
       .orderBy(
         desc(timesheetAuditEvents.createdAt),
@@ -147,7 +150,19 @@ export class TimesheetsAuditService {
 
   async verifyChain(orgId: string, limit = 10_000) {
     const rows = await this.db
-      .select()
+      .select({
+        id: timesheetAuditEvents.id,
+        orgId: timesheetAuditEvents.orgId,
+        actorMembershipId: timesheetAuditEvents.actorMembershipId,
+        entityType: timesheetAuditEvents.entityType,
+        entityId: timesheetAuditEvents.entityId,
+        action: timesheetAuditEvents.action,
+        before: timesheetAuditEvents.before,
+        after: timesheetAuditEvents.after,
+        reason: timesheetAuditEvents.reason,
+        prevHash: timesheetAuditEvents.prevHash,
+        rowHash: timesheetAuditEvents.rowHash,
+      })
       .from(timesheetAuditEvents)
       .where(eq(timesheetAuditEvents.orgId, orgId))
       .orderBy(asc(timesheetAuditEvents.id))
@@ -164,7 +179,7 @@ export class TimesheetsAuditService {
       }
       const expected = computeAuditRowHash(prevHash, {
         orgId: row.orgId,
-        actorUserId: row.actorUserId ?? "",
+        actorMembershipId: row.actorMembershipId,
         entityType: row.entityType,
         entityId: row.entityId,
         action: row.action,
@@ -173,6 +188,11 @@ export class TimesheetsAuditService {
         reason: row.reason ?? undefined,
       });
       if (expected !== row.rowHash || (row.prevHash ?? null) !== prevHash) {
+        if (row.actorMembershipId === null) {
+          legacyRows++;
+          prevHash = row.rowHash;
+          continue;
+        }
         return {
           valid: false,
           brokenAtId: row.id,

@@ -23,10 +23,11 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
 import { SignDocumentsService } from "./sign-documents.service";
 import { uploadDocumentMetaSchema, type UploadDocumentMetaInput } from "./dto/e-sign.schemas";
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
 
 function clientIp(req: Request): string | undefined {
   const forwarded = req.headers["x-forwarded-for"];
@@ -44,7 +45,7 @@ export class SignDocumentsController {
   constructor(private readonly documents: SignDocumentsService) {}
 
   @Post("documents/upload")
-  @BodylessAction()
+  @MultipartAction({ file: "file" })
   @HttpCode(201)
   @RequirePermission("sign:documents:upload")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 200 * 1024 * 1024 } }))
@@ -61,7 +62,7 @@ export class SignDocumentsController {
       envelopeId,
       { buffer: file.buffer, originalName: file.originalname, mimeType: file.mimetype, size: file.size },
       query.orderIndex,
-      { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req), userAgent: req.headers["user-agent"] },
+      { orgId: u.orgId, userId: u.userId, membershipId: actingMembershipId(u.principal), ipAddress: clientIp(req), userAgent: req.headers["user-agent"] },
     );
   }
 
