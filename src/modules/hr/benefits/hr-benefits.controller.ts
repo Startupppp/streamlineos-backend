@@ -106,12 +106,13 @@ export class HrBenefitsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
   @Validate({ params: planIdParams })
-  checkEligibility(
+  async checkEligibility(
     @CurrentUser() u: CurrentUserContext,
     @Param("planId", ParseIntPipe) planId: number,
-    @Query("employeeId") employeeId: string,
+    @Query("employeeId") employeeId: string | undefined,
   ) {
-    const targetId = employeeId ?? u.userId;
+    const admin = await this.isAdmin(u);
+    const targetId = admin && employeeId ? employeeId : u.userId;
     return this.enrollment.checkEligibility(u.orgId, planId, targetId);
   }
 
