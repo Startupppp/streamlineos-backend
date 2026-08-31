@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { payrollJournalBatches, payrollJournalBatchLines } from "../../../db/schema";
+import { payrollJournalBatches, payrollJournalBatchLines, organizationMembers } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { JournalService, type JournalLine } from "./journal.service";
 import { findRunForMonth } from "./lib/report-builders";
@@ -73,6 +73,14 @@ export class JournalOutboxService {
     private readonly journalService: JournalService,
     private readonly audit: AuditService,
   ) {}
+
+  private async resolveMembershipId(orgId: string, userId: string): Promise<number | null> {
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
+      columns: { id: true },
+    });
+    return member?.id ?? null;
+  }
 
   async list(
     orgId: string,
@@ -161,6 +169,7 @@ export class JournalOutboxService {
     }
 
     const sourceHash = hashJournal(run.id, journal.lines);
+    const createdByMembershipId = await this.resolveMembershipId(orgId, userId);
 
     const existing = await this.db
       .select()
@@ -206,6 +215,7 @@ export class JournalOutboxService {
           unmappedCodes: journal.unmappedCodes,
           note: input.note ?? null,
           createdBy: userId,
+          createdByMembershipId,
         })
         .returning({ id: payrollJournalBatches.id });
 
@@ -258,9 +268,10 @@ export class JournalOutboxService {
       );
     }
 
+    const postedByMembershipId = await this.resolveMembershipId(orgId, userId);
     await this.db
       .update(payrollJournalBatches)
-      .set({ status: "POSTED", postedAt: new Date(), postedBy: userId })
+      .set({ status: "POSTED", postedAt: new Date(), postedBy: userId, postedByMembershipId })
       .where(
         and(eq(payrollJournalBatches.orgId, orgId), eq(payrollJournalBatches.id, batchId)),
       );
@@ -283,9 +294,10 @@ export class JournalOutboxService {
       throw new BadRequestException(`Only a posted batch can be exported (batch is ${batch.status}).`);
     }
 
+    const exportedByMembershipId = await this.resolveMembershipId(orgId, userId);
     await this.db
       .update(payrollJournalBatches)
-      .set({ status: "EXPORTED", exportedAt: new Date(), exportedBy: userId })
+      .set({ status: "EXPORTED", exportedAt: new Date(), exportedBy: userId, exportedByMembershipId })
       .where(
         and(eq(payrollJournalBatches.orgId, orgId), eq(payrollJournalBatches.id, batchId)),
       );
@@ -329,6 +341,8 @@ export class JournalOutboxService {
       .where(eq(payrollJournalBatchLines.batchId, batchId))
       .orderBy(payrollJournalBatchLines.lineNo);
 
+    const reversalActorMembershipId = await this.resolveMembershipId(orgId, userId);
+
     const reversalId = await this.db.transaction(async (tx) => {
       const versionRows = await tx
         .select({ maxVersion: sql<number>`coalesce(max(${payrollJournalBatches.version}), 0)::int` })
@@ -361,7 +375,9 @@ export class JournalOutboxService {
           note: `Reversal of batch #${batch.id} (v${batch.version})`,
           postedAt: new Date(),
           postedBy: userId,
+          postedByMembershipId: reversalActorMembershipId,
           createdBy: userId,
+          createdByMembershipId: reversalActorMembershipId,
         })
         .returning({ id: payrollJournalBatches.id });
 
@@ -385,7 +401,7 @@ export class JournalOutboxService {
 
       await tx
         .update(payrollJournalBatches)
-        .set({ status: "REVERSED", reversedAt: new Date(), reversedBy: userId, reversalReason: reason })
+        .set({ status: "REVERSED", reversedAt: new Date(), reversedBy: userId, reversedByMembershipId: reversalActorMembershipId, reversalReason: reason })
         .where(
           and(eq(payrollJournalBatches.orgId, orgId), eq(payrollJournalBatches.id, batchId)),
         );
@@ -417,6 +433,7 @@ export class JournalOutboxService {
     }
 
     const reconciled = input.status === "UNRECONCILED" ? null : new Date();
+    const reconciledByMembershipId = reconciled === null ? null : await this.resolveMembershipId(orgId, userId);
 
     await this.db
       .update(payrollJournalBatches)
@@ -425,6 +442,7 @@ export class JournalOutboxService {
         reconciliationNote: input.note ?? null,
         reconciledAt: reconciled,
         reconciledBy: reconciled === null ? null : userId,
+        reconciledByMembershipId,
       })
       .where(
         and(eq(payrollJournalBatches.orgId, orgId), eq(payrollJournalBatches.id, batchId)),

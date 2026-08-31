@@ -12,6 +12,7 @@ import {
   hrPeople,
   type hrEmploymentLifecycleStatusEnum,
 } from "../../../db/schema/hr/core-people";
+import { organizationMembers } from "../../../db/schema/common/auth";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type {
@@ -315,6 +316,24 @@ export class HrEmploymentsService {
     );
   }
 
+  private async resolveActorMembershipId(
+    tx: Db,
+    orgId: string,
+    actorId: string,
+  ): Promise<number | null> {
+    const [row] = await tx
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, actorId),
+        ),
+      )
+      .limit(1);
+    return row?.id ?? null;
+  }
+
   private async transitionInTransaction(
     tx: Db,
     orgId: string,
@@ -359,6 +378,7 @@ export class HrEmploymentsService {
       extra.probationEndDate = existing.probationEndDate ?? undefined;
     }
 
+    const actorMembershipId = await this.resolveActorMembershipId(tx, orgId, actorId);
     await tx.insert(hrEmploymentHistory).values({
       orgId,
       employmentId,
@@ -367,7 +387,7 @@ export class HrEmploymentsService {
       reason: input.reason ?? null,
       notes: input.notes ?? null,
       effectiveDate: input.effectiveDate ?? null,
-      createdBy: actorId,
+      createdByMembershipId: actorMembershipId,
     });
 
     const [updated] = await tx
@@ -393,6 +413,7 @@ export class HrEmploymentsService {
       {
         orgId,
         actorId,
+        actorMembershipId,
         entityType: "hr_employments",
         entityId: String(employmentId),
         action: `status.transition.${fromStatus}.to.${toStatus}`,

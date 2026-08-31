@@ -42,6 +42,9 @@
  *   - Applied-watermark ahead of journal (needs a live DB connection).
  *   - Comments that contain keywords (e.g., "-- NOT VALID") and trick
  *     the pattern matches — this gate uses text scans, not a SQL parser.
+ *     Check 4 (validate-order) is the exception: it strips SQL comments first,
+ *     because a header comment documenting "ALTER TABLE t VALIDATE CONSTRAINT c"
+ *     was reported as a real violation in 0818.
  *
  * Usage:
  *   node src/scripts/check-migration-discipline.mjs [--self-test] [--migrations=<path>]
@@ -353,8 +356,25 @@ function checkSetNotNullTwoStep(_filename, content) {
   return "SET NOT NULL without a prior CHECK (col IS NOT NULL) NOT VALID — rewrites the entire table under lock; use CHECK NOT VALID → VALIDATE → SET NOT NULL";
 }
 
+/**
+ * Removes SQL comments so a keyword mentioned in a header comment is not read
+ * as a statement. A migration whose header documents "VALIDATE uses ALTER
+ * TABLE t VALIDATE CONSTRAINT c" was reported as validating before its
+ * backfill purely because the comment sits in the first chunk.
+ */
+export function stripSqlComments(sql) {
+  const MARKER = "__BREAKPOINT__";
+  return sql
+    .split("--> statement-breakpoint")
+    .join(MARKER)
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/--[^\n]*/g, " ")
+    .split(MARKER)
+    .join("--> statement-breakpoint");
+}
+
 function checkValidateBeforeBackfill(_filename, content) {
-  const stmts = content.split(/--> statement-breakpoint/);
+  const stmts = stripSqlComments(content).split(/--> statement-breakpoint/);
   let validateIdx = -1;
   let backfillIdx = -1;
   for (let i = 0; i < stmts.length; i++) {
@@ -668,6 +688,26 @@ function selfTest() {
     null,
   );
 
+  const validateOnlyInComment = `-- Pattern: backfill then ALTER TABLE t VALIDATE CONSTRAINT c;\nSET lock_timeout = '5s';\n--> statement-breakpoint\nUPDATE t SET m = 1 WHERE m IS NULL;\n--> statement-breakpoint\nALTER TABLE t VALIDATE CONSTRAINT fk_x;`;
+  assert(
+    "a header comment naming VALIDATE CONSTRAINT does not fake a violation",
+    checkValidateBeforeBackfill("commented.sql", validateOnlyInComment),
+    null,
+  );
+
+  const realValidateFirst = `SET lock_timeout = '5s';\n--> statement-breakpoint\nALTER TABLE t VALIDATE CONSTRAINT fk_x;\n--> statement-breakpoint\nUPDATE t SET m = 1 WHERE m IS NULL;`;
+  assert(
+    "a real VALIDATE before the backfill is still caught once comments are stripped",
+    checkValidateBeforeBackfill("real.sql", realValidateFirst) !== null,
+    true,
+  );
+
+  assert(
+    "stripSqlComments preserves the statement-breakpoint marker it must split on",
+    stripSqlComments(`-- x\n--> statement-breakpoint\nSELECT 1;`).includes("--> statement-breakpoint"),
+    true,
+  );
+
   // ─── Check 5: DO-block breakpoint ─────────────────────────────────────────
   console.log("\nCheck 5: DO-block breakpoint");
 
@@ -803,7 +843,7 @@ if (SELF_TEST) {
     console.log(`  Also enforced: journal monotonicity, duplicate idx, duplicate numeric`);
     console.log(`  prefixes, and journal entries with no file on disk.`);
     console.log(`  Not covered: applied-watermark skipping (needs the DB),`);
-    console.log(`  keywords in SQL comments that trick text patterns.`);
+    console.log(`  keywords in SQL comments that trick text patterns (except check 4).`);
     console.log(`  Companion: check:migration-chain`);
     process.exit(0);
   }

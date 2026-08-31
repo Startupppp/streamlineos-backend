@@ -3445,6 +3445,90 @@
       "when": 1798000118000,
       "tag": "0806_keyset_sort_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 619,
+      "version": "7",
+      "when": 1798000119000,
+      "tag": "0807_hr_core_actor_membership_additive",
+      "breakpoints": true
+    },
+    {
+      "idx": 620,
+      "version": "7",
+      "when": 1798000120000,
+      "tag": "0808_hr_core_actor_legacy_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 621,
+      "version": "7",
+      "when": 1798000121000,
+      "tag": "0809_timesheets_companion_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 622,
+      "version": "7",
+      "when": 1798000122000,
+      "tag": "0810_timesheets_approved_by_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 623,
+      "version": "7",
+      "when": 1798000123000,
+      "tag": "0811_payroll_actor_companion",
+      "breakpoints": true
+    },
+    {
+      "idx": 624,
+      "version": "7",
+      "when": 1798000124000,
+      "tag": "0812_payroll_actor_legacy_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 625,
+      "version": "7",
+      "when": 1798000125000,
+      "tag": "0813_kb_events_credits_actor_membership_companion",
+      "breakpoints": true
+    },
+    {
+      "idx": 626,
+      "version": "7",
+      "when": 1798000126000,
+      "tag": "0814_kb_events_credits_actor_legacy_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 627,
+      "version": "7",
+      "when": 1798000127000,
+      "tag": "0815_common_module_actor_companion",
+      "breakpoints": true
+    },
+    {
+      "idx": 628,
+      "version": "7",
+      "when": 1798000128000,
+      "tag": "0816_common_module_actor_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 629,
+      "version": "7",
+      "when": 1798000129000,
+      "tag": "0817_crm_actor_membership_companion",
+      "breakpoints": true
+    },
+    {
+      "idx": 630,
+      "version": "7",
+      "when": 1798000130000,
+      "tag": "0818_inv_actor_membership_companion",
+      "breakpoints": true
     }
   ]
 }

@@ -35,22 +35,27 @@ export const payrollRuns = pgTable("payroll_runs", {
   exceptionCount: integer("exception_count").default(0).notNull(),
   lockedAt: timestamp("locked_at"),
   lockedBy: text("locked_by").references(() => users.id, { onDelete: "set null" }),
+  lockedByMembershipId: integer("locked_by_membership_id"),
   approvedAt: timestamp("approved_at"),
-  approvedBy: text("approved_by").references(() => users.id, { onDelete: "set null" }),
   approvedByMembershipId: integer("approved_by_membership_id"),
   paidAt: timestamp("paid_at"),
   paidBy: text("paid_by").references(() => users.id, { onDelete: "set null" }),
+  paidByMembershipId: integer("paid_by_membership_id"),
   publishedAt: timestamp("published_at"),
   publishedBy: text("published_by").references(() => users.id, { onDelete: "set null" }),
+  publishedByMembershipId: integer("published_by_membership_id"),
   closedAt: timestamp("closed_at"),
   closedBy: text("closed_by").references(() => users.id, { onDelete: "set null" }),
+  closedByMembershipId: integer("closed_by_membership_id"),
   reopenedAt: timestamp("reopened_at"),
   reopenedBy: text("reopened_by").references(() => users.id, { onDelete: "set null" }),
+  reopenedByMembershipId: integer("reopened_by_membership_id"),
   reopenReason: text("reopen_reason"),
   /** Soft processing lock for generate/recalculate concurrency (token + timestamp). */
   generationLockToken: text("generation_lock_token"),
   generationLockedAt: timestamp("generation_locked_at"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -68,10 +73,41 @@ export const payrollRuns = pgTable("payroll_runs", {
   index("idx_payroll_runs_org_entity").on(table.orgId, table.entityId),
   index("idx_payroll_runs_source_run").on(table.sourceRunId),
   index("idx_payroll_runs_org_approved_actor").on(table.orgId, table.approvedByMembershipId),
+  index("idx_payroll_runs_org_paid_actor").on(table.orgId, table.paidByMembershipId),
+  index("idx_payroll_runs_org_published_actor").on(table.orgId, table.publishedByMembershipId),
+  index("idx_payroll_runs_org_closed_actor").on(table.orgId, table.closedByMembershipId),
+  index("idx_payroll_runs_org_reopened_actor").on(table.orgId, table.reopenedByMembershipId),
+  index("idx_payroll_runs_org_created_actor").on(table.orgId, table.createdByMembershipId),
+  index("idx_payroll_runs_org_locked_actor").on(table.orgId, table.lockedByMembershipId),
   foreignKey({
     columns: [table.orgId, table.approvedByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_payroll_runs_approved_actor",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.paidByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_payroll_runs_paid_actor",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.publishedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_payroll_runs_published_actor",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.closedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_payroll_runs_closed_actor",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.reopenedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_payroll_runs_reopened_actor",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.createdByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_payroll_runs_created_actor",
   }).onDelete("restrict"),
 ]);
 
@@ -170,7 +206,6 @@ export const payrollApprovals = pgTable("payroll_approvals", {
   stageName: text("stage_name").notNull(),
   requiredPermission: text("required_permission").notNull(),
   status: payrollApprovalStatusEnum("status").default("PENDING").notNull(),
-  actedBy: text("acted_by").references(() => users.id, { onDelete: "set null" }),
   actedByMembershipId: integer("acted_by_membership_id"),
   actedAt: timestamp("acted_at"),
   comment: text("comment"),
@@ -218,5 +253,4 @@ export const payrollExceptionsRelations = relations(payrollExceptions, ({ one })
 
 export const payrollApprovalsRelations = relations(payrollApprovals, ({ one }) => ({
   run: one(payrollRuns, { fields: [payrollApprovals.runId], references: [payrollRuns.id] }),
-  actedByUser: one(users, { fields: [payrollApprovals.actedBy], references: [users.id], relationName: "approvalActedBy" }),
 }));

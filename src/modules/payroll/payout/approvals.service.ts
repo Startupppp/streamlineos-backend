@@ -91,7 +91,7 @@ export class ApprovalsService {
       const autoResult = await this.db.transaction(async (tx) => {
         await tx
           .update(payrollRuns)
-          .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId, approvedByMembershipId: approverActor.membershipId })
+          .set({ status: "APPROVED", approvedAt: new Date(), approvedByMembershipId: approverActor.membershipId })
           .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
         await tx.insert(payrollRunEvents).values([

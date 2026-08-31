@@ -7,6 +7,7 @@ import {
   payrollBankBatches,
   payrollBankBatchItems,
   payrollRunEvents,
+  organizationMembers,
 } from "../../../../db/schema";
 import type { AuditService } from "../../../../common/audit/audit.service";
 import type { PayrollPostingService } from "../../payroll-posting.service";
@@ -14,6 +15,7 @@ import { systemActor } from "../../../../common/auth/system-actor";
 import type { JournalOutboxService } from "../../insights/journal-outbox.service";
 import { registerAfterCommit } from "../../../../common/tenant/tenant-context";
 import { logSideEffectFailure } from "../../../../common/logger/side-effect";
+import { runInNewTenantTransaction } from "../../../../common/tenant";
 
 export interface RunCompletionDeps {
   db: Db;
@@ -64,29 +66,33 @@ async function autoSnapshotJournal(
   periodKey: string,
   runId: number,
 ): Promise<void> {
-  if (!deps.journalOutbox) return;
+  const { journalOutbox } = deps;
+  if (!journalOutbox) return;
   try {
-    const batch = await deps.journalOutbox.createBatch(orgId, actorId, {
-      periodKey,
-      note: `Auto-snapshot after run #${runId} marked paid`,
-    });
-    deps.logger.log(
-      `Journal outbox auto-snapshot batch #${batch.id} v${batch.version} for ${periodKey}`,
-    );
-    deps.audit.log({
-      action: "payroll.journal_batch_auto_created",
-      userId: actorId,
-      orgId,
-      targetId: String(batch.id),
-      targetType: "payroll_journal_batch",
-      metadata: { periodKey, runId, version: batch.version, status: batch.status },
+    await runInNewTenantTransaction(deps.db, orgId, async () => {
+      const batch = await journalOutbox.createBatch(orgId, actorId, {
+        periodKey,
+        note: `Auto-snapshot after run #${runId} marked paid`,
+      });
+      deps.logger.log(
+        `Journal outbox auto-snapshot batch #${batch.id} v${batch.version} for ${periodKey}`,
+      );
+      deps.audit.log({
+        action: "payroll.journal_batch_auto_created",
+        userId: actorId,
+        orgId,
+        targetId: String(batch.id),
+        targetType: "payroll_journal_batch",
+        metadata: { periodKey, runId, version: batch.version, status: batch.status },
+      });
     });
   } catch (err) {
-    deps.logger.warn(
-      `Journal auto-snapshot skipped for ${periodKey}: ${
+    deps.logger.error(
+      `Journal auto-snapshot failed for ${periodKey}: ${
         err instanceof Error ? err.message : String(err)
       }`,
     );
+    throw err;
   }
 }
 
@@ -141,6 +147,12 @@ export async function checkRunCompletion(
 
   const paidRunEmployeeIds = paidRunEmployees.map((r) => r.runEmployeeId);
 
+  const paidByMember = await deps.db.query.organizationMembers.findFirst({
+    where: and(eq(organizationMembers.userId, actorId), eq(organizationMembers.orgId, orgId)),
+    columns: { id: true },
+  });
+  const paidByMembershipId = paidByMember?.id ?? null;
+
   const now = new Date();
   let runMarkedPaid = false;
 
@@ -157,7 +169,7 @@ export async function checkRunCompletion(
 
     await tx
       .update(payrollRuns)
-      .set({ status: "PAID", paidAt: now, paidBy: actorId })
+      .set({ status: "PAID", paidAt: now, paidBy: actorId, paidByMembershipId })
       .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
     if (paidRunEmployeeIds.length > 0) {
@@ -209,7 +221,10 @@ export async function checkRunCompletion(
           month,
           netTotal ?? "0",
         );
-      if (!registerAfterCommit(postTask)) void postTask();
+      if (!registerAfterCommit(postTask))
+        void postTask().catch((err: unknown) =>
+          deps.logger.error("payroll paid posting fallback failed", { runId, month, err }),
+        );
       const snapshotTask = () =>
         autoSnapshotJournal(deps, orgId, actorId, month, runId).catch(
           logSideEffectFailure("payroll auto-snapshot journal", { orgId, runId }),

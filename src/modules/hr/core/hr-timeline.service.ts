@@ -169,7 +169,7 @@ export class HrTimelineService {
           reason: hrEmploymentHistory.reason,
           notes: hrEmploymentHistory.notes,
           effectiveDate: hrEmploymentHistory.effectiveDate,
-          createdBy: hrEmploymentHistory.createdBy,
+          createdByMembershipId: hrEmploymentHistory.createdByMembershipId,
           createdAt: hrEmploymentHistory.createdAt,
         })
         .from(hrEmploymentHistory)
@@ -225,7 +225,7 @@ export class HrTimelineService {
           id: hrAuditLogs.id,
           action: hrAuditLogs.action,
           entityType: hrAuditLogs.entityType,
-          actorId: hrAuditLogs.actorId,
+          actorMembershipId: hrAuditLogs.actorMembershipId,
           createdAt: hrAuditLogs.createdAt,
         })
         .from(hrAuditLogs)
@@ -262,7 +262,7 @@ export class HrTimelineService {
           reason: historyEntry.reason,
           notes: historyEntry.notes,
           effectiveDate: historyEntry.effectiveDate,
-          createdBy: historyEntry.createdBy,
+          createdByMembershipId: historyEntry.createdByMembershipId,
         },
       })),
       ...changes.map((effectiveChange) => ({
@@ -292,7 +292,7 @@ export class HrTimelineService {
         sourceId: auditEntry.id,
         sourceRank: 2,
         data: {
-          actorId: auditEntry.actorId,
+          actorMembershipId: auditEntry.actorMembershipId,
         },
       })),
     ];

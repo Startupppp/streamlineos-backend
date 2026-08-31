@@ -1,13 +1,19 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Inject, Logger } from "@nestjs/common";
 import { FinancePostingService } from "../accounting/posting/finance-posting.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import type { Db } from "../../db/drizzle.module";
+import { runInNewTenantTransaction } from "../../common/tenant";
 import { toPaise } from "./runs/lib/money";
 
 @Injectable()
 export class PayrollPostingService {
   private readonly logger = new Logger(PayrollPostingService.name);
 
-  constructor(private readonly posting: FinancePostingService) {}
+  constructor(
+    private readonly posting: FinancePostingService,
+    @Inject(DRIZZLE) private readonly db: Db,
+  ) {}
 
   async postFinalized(
     u: CurrentUserContext,
@@ -73,7 +79,7 @@ export class PayrollPostingService {
 
     const netStr = (netPaise / 100).toFixed(4);
 
-    try {
+    await runInNewTenantTransaction(this.db, u.orgId, async () => {
       await this.posting.postJournal(u, {
         entryDate,
         description: `Payroll payment ${month} — bank disbursement`,
@@ -85,8 +91,6 @@ export class PayrollPostingService {
           { systemPurpose: "BANK_CLEARING", debit: "0", credit: netStr },
         ],
       });
-    } catch (err) {
-      this.logger.error("Payroll paid ledger posting failed", { runId, month, err });
-    }
+    });
   }
 }

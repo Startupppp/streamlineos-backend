@@ -506,6 +506,366 @@ export const MEMBERSHIP_ARTIFACTS = [
     reason:
       "The composite foreign key fk_org_unit_members_membership is ON DELETE SET NULL, so removing the membership clears the membership_id slot while keeping the org-unit membership row. A suspension is reversible so the link is retained.",
   },
+  {
+    id: "timesheet_periods",
+    mechanism: "database-cascade",
+    table: "timesheet_periods",
+    keyedBy: "current_approver_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on current_approver_membership_id is ON DELETE SET NULL, so the period record is preserved with the approver slot cleared automatically on membership removal.",
+  },
+  {
+    id: "timesheet_exceptions",
+    mechanism: "database-cascade",
+    table: "timesheet_exceptions",
+    keyedBy: "owner_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on owner_membership_id is ON DELETE SET NULL, so the exception record is preserved with the owner slot cleared automatically on membership removal.",
+  },
+  {
+    id: "mail_message_metadata",
+    mechanism: "database-cascade",
+    table: "mail_message_metadata",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on user_membership_id is ON DELETE SET NULL, so message metadata is preserved with the membership slot cleared automatically on removal.",
+  },
+  {
+    id: "ai_chat_conversations",
+    mechanism: "database-cascade",
+    table: "ai_chat_conversations",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on user_membership_id is ON DELETE SET NULL, so the conversation record is preserved with the membership slot cleared automatically. A suspension is reversible so the link is retained.",
+  },
+  {
+    id: "ai_chat_messages",
+    mechanism: "database-cascade",
+    table: "ai_chat_messages",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on user_membership_id is ON DELETE SET NULL, so message records are preserved with the membership slot cleared automatically on removal.",
+  },
+  {
+    id: "ai_feedback",
+    mechanism: "database-cascade",
+    table: "ai_feedback",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on user_membership_id is ON DELETE SET NULL, so feedback records are preserved with the membership slot cleared automatically on removal.",
+  },
+  {
+    id: "ai_jobs",
+    mechanism: "database-cascade",
+    table: "ai_jobs",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on user_membership_id is ON DELETE SET NULL, so job records are preserved with the membership slot cleared automatically on removal.",
+  },
+  {
+    id: "ai_action_proposals",
+    mechanism: "database-cascade",
+    table: "ai_action_proposals",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on user_membership_id is ON DELETE SET NULL, so action proposal records are preserved with the membership slot cleared automatically on removal.",
+  },
+  {
+    id: "survey_forms",
+    mechanism: "database-cascade",
+    table: "survey_forms",
+    keyedBy: "owner_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on owner_membership_id is ON DELETE SET NULL, so the survey is preserved with the owner slot cleared automatically. A suspension is reversible so the link is retained.",
+  },
+  {
+    id: "survey_participants",
+    mechanism: "database-cascade",
+    table: "survey_participants",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on user_membership_id is ON DELETE SET NULL, so participation records are preserved with the membership slot cleared automatically on removal.",
+  },
+  {
+    id: "survey_live_sessions",
+    mechanism: "database-cascade",
+    table: "survey_live_sessions",
+    keyedBy: "host_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on host_membership_id is ON DELETE SET NULL, so the session record is preserved with the host slot cleared automatically on removal.",
+  },
+  {
+    id: "sign_templates",
+    mechanism: "database-cascade",
+    table: "sign_templates",
+    keyedBy: "owner_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on owner_membership_id is ON DELETE SET NULL, so the template is preserved with the owner slot cleared automatically. A suspension is reversible so the link is retained.",
+  },
+  {
+    id: "sign_envelopes",
+    mechanism: "database-cascade",
+    table: "sign_envelopes",
+    keyedBy: "sender_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on sender_membership_id is ON DELETE SET NULL, so the envelope record is preserved with the sender slot cleared automatically on removal.",
+  },
+  {
+    id: "sign_recipients",
+    mechanism: "database-cascade",
+    table: "sign_recipients",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on user_membership_id is ON DELETE SET NULL, so recipient records are preserved with the membership slot cleared automatically on removal.",
+  },
+  {
+    id: "sign_bulk_send_jobs",
+    mechanism: "database-cascade",
+    table: "sign_bulk_send_jobs",
+    keyedBy: "sender_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on sender_membership_id is ON DELETE SET NULL, so bulk send job records are preserved with the sender slot cleared automatically on removal.",
+  },
+  {
+    id: "inv_user_warehouses",
+    mechanism: "database-cascade",
+    table: "inv_user_warehouses",
+    keyedBy: "user_membership_id",
+    onRemoval: "cascade",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key on user_membership_id is ON DELETE CASCADE, so the warehouse access grant row is removed with the membership automatically. A suspension is reversible and the membership gate already denies every request while suspended.",
+  },
+  {
+    id: "crm_campaigns",
+    mechanism: "database-write",
+    table: "crm_campaigns",
+    keyedBy: "owner_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The owner_membership_id column is a companion attribution field with no FK enforcement. On removal it must be explicitly set to NULL so the campaign record is preserved but the membership reference is cleared.",
+  },
+  {
+    id: "leads",
+    mechanism: "database-write",
+    table: "leads",
+    keyedBy: "assigned_to_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Assignment companion columns (assigned_to_membership_id) carry no FK. On removal they must be explicitly set to NULL so lead records are preserved but stale membership references are cleared.",
+  },
+  {
+    id: "lead_activities",
+    mechanism: "database-write",
+    table: "lead_activities",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The user_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so activity records are preserved but the membership reference is cleared.",
+  },
+  {
+    id: "lead_notes",
+    mechanism: "database-write",
+    table: "lead_notes",
+    keyedBy: "author_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The author_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so note records are preserved but the membership reference is cleared.",
+  },
+  {
+    id: "lead_tasks",
+    mechanism: "database-write",
+    table: "lead_tasks",
+    keyedBy: "assignee_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The assignee_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so task records are preserved but the membership reference is cleared.",
+  },
+  {
+    id: "lead_assignment_rules",
+    mechanism: "database-write",
+    table: "lead_assignment_rules",
+    keyedBy: "assign_to_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The assign_to_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so rule records are preserved but the membership reference is cleared.",
+  },
+  {
+    id: "clients",
+    mechanism: "database-write",
+    table: "clients",
+    keyedBy: "account_manager_membership_id / sales_rep_membership_id / assigned_crm_membership_id / user_membership_id / assigned_to_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "All membership companion columns are attribution fields with no FK enforcement. On removal they must be explicitly set to NULL so client records are preserved but stale membership references are cleared.",
+  },
+  {
+    id: "client_accounts",
+    mechanism: "database-write",
+    table: "client_accounts",
+    keyedBy: "account_manager_membership_id / assigned_to_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Membership companion columns carry no FK. On removal they must be explicitly set to NULL so account records are preserved but stale membership references are cleared.",
+  },
+  {
+    id: "client_account_activities",
+    mechanism: "database-write",
+    table: "client_account_activities",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The user_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so activity records are preserved but the membership reference is cleared.",
+  },
+  {
+    id: "client_onboarding_items",
+    mechanism: "database-write",
+    table: "client_onboarding_items",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The user_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so onboarding item records are preserved but the membership reference is cleared.",
+  },
+  {
+    id: "deals",
+    mechanism: "database-write",
+    table: "deals",
+    keyedBy: "assigned_to_membership_id / approver_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Assignment and approver companion columns carry no FK. On removal they must be explicitly set to NULL so deal records are preserved but stale membership references are cleared.",
+  },
+  {
+    id: "deal_activities",
+    mechanism: "database-write",
+    table: "deal_activities",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The user_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so activity records are preserved but the membership reference is cleared.",
+  },
+  {
+    id: "deal_approval_rules",
+    mechanism: "database-write",
+    table: "deal_approval_rules",
+    keyedBy: "approver_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The approver_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so rule records are preserved but the membership reference is cleared.",
+  },
+  {
+    id: "sales_quotas",
+    mechanism: "database-write",
+    table: "sales_quotas",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The user_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so quota records are preserved but the membership reference is cleared.",
+  },
+  {
+    id: "commissions",
+    mechanism: "database-write",
+    table: "commissions",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The user_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so commission records are preserved but the membership reference is cleared.",
+  },
+  {
+    id: "incentives",
+    mechanism: "database-write",
+    table: "incentives",
+    keyedBy: "sales_rep_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The sales_rep_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so incentive records are preserved but the membership reference is cleared.",
+  },
+  {
+    id: "tasks",
+    mechanism: "database-write",
+    table: "tasks",
+    keyedBy: "assignee_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The assignee_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so task records are preserved but the membership reference is cleared.",
+  },
+  {
+    id: "invoices",
+    mechanism: "database-write",
+    table: "invoices",
+    keyedBy: "collection_owner_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The collection_owner_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so invoice records are preserved but the membership reference is cleared.",
+  },
+  {
+    id: "inv_warehouses",
+    mechanism: "database-write",
+    table: "inv_warehouses",
+    keyedBy: "manager_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The manager_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so the warehouse record is preserved but the membership reference is cleared.",
+  },
+  {
+    id: "inv_quality_inspections",
+    mechanism: "database-write",
+    table: "inv_quality_inspections",
+    keyedBy: "inspector_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The inspector_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so inspection records are preserved but the membership reference is cleared.",
+  },
 ] as const satisfies readonly MembershipArtifact[];
 
 export const MEMBERSHIP_ARTIFACT_IDS = MEMBERSHIP_ARTIFACTS.map(
