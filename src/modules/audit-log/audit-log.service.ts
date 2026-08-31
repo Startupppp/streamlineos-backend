@@ -5,6 +5,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { toCsv } from "../inventory/import-export/csv.util";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetBeforeId } from "../../common/pagination/keyset";
 import type { ExportInput, ListInput } from "./dto/audit-log.schemas";
 
 const AUDIT_DISTINCT_TTL_SECONDS = 300;
@@ -31,8 +33,8 @@ export class AuditLogService {
   ) {}
 
   async list(orgId: string, filters: ListInput) {
-    const { page, pageSize, action, actions, targetType, dateFrom, dateTo, userSearch } = filters;
-    const offset = (page - 1) * pageSize;
+    const { cursor, limit, action, actions, targetType, dateFrom, dateTo, userSearch } = filters;
+    const position = decodeCursor(cursor);
 
     const conditions = [eq(auditLogs.orgId, orgId)];
     if (action) conditions.push(eq(auditLogs.action, action));
@@ -49,42 +51,36 @@ export class AuditLogService {
       const nameOrEmail = or(ilike(users.name, term), ilike(users.email, term));
       if (nameOrEmail) conditions.push(nameOrEmail);
     }
+    if (position) conditions.push(keysetBeforeId(auditLogs.createdAt, auditLogs.id, position));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select({
+        id: auditLogs.id,
+        action: auditLogs.action,
+        userId: auditLogs.userId,
+        userName: users.name,
+        userEmail: users.email,
+        userImage: users.image,
+        targetId: auditLogs.targetId,
+        targetType: auditLogs.targetType,
+        metadata: auditLogs.metadata,
+        ipAddress: auditLogs.ipAddress,
+        createdAt: auditLogs.createdAt,
+      })
+      .from(auditLogs)
+      .leftJoin(users, eq(auditLogs.userId, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
+      .limit(limit + 1);
 
-    const [rows, [{ count }]] = await Promise.all([
-      this.db
-        .select({
-          id: auditLogs.id,
-          action: auditLogs.action,
-          userId: auditLogs.userId,
-          userName: users.name,
-          userEmail: users.email,
-          userImage: users.image,
-          targetId: auditLogs.targetId,
-          targetType: auditLogs.targetType,
-          metadata: auditLogs.metadata,
-          ipAddress: auditLogs.ipAddress,
-          createdAt: auditLogs.createdAt,
-        })
-        .from(auditLogs)
-        .leftJoin(users, eq(auditLogs.userId, users.id))
-        .where(where)
-        .orderBy(desc(auditLogs.createdAt))
-        .limit(pageSize)
-        .offset(offset),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(auditLogs)
-        .leftJoin(users, eq(auditLogs.userId, users.id))
-        .where(where),
-    ]);
+    const page = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
 
     return {
-      logs: rows,
-      total: count,
-      page,
-      totalPages: Math.ceil(count / pageSize),
+      logs: page.data,
+      pagination: page.pagination,
     };
   }
 

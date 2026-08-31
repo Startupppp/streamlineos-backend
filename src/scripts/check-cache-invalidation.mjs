@@ -304,7 +304,6 @@ const KEY_TO_NAMESPACE_PREFIX = {
   ownershipTransfersList: "ownership:transfers:",
   incomingTransfers: "ownership:incoming:",
   supportReportsOverview: "support:reports:overview:",
-  orgSettings: "org:settings:",
   orgProfileNamespace: "org:profile:",
   usersStats: "users:stats:",
 };

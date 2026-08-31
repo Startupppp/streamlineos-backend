@@ -1,0 +1,209 @@
+import type { CacheNamespaceEntry } from "./cache-invalidation-types";
+
+export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
+  {
+    namespace: "rbac:matrix:<orgId>:v<version>",
+    description: "RBAC permission matrix (versioned, no namespace needed)",
+    invalidation: {
+      kind: "write",
+      events: ["AccessService: bumpPermissionsVersion on any role/grant mutation"],
+    },
+  },
+  {
+    namespace: "module-access:roles:<orgId>",
+    description: "Module role list (version sub-keyed)",
+    invalidation: {
+      kind: "write",
+      events: ["ModuleAccessService (any write)"],
+    },
+  },
+  {
+    namespace: "module-access:members:<orgId>",
+    description: "Module member list (version sub-keyed)",
+    invalidation: {
+      kind: "write",
+      events: ["ModuleAccessService (any write)"],
+    },
+  },
+  {
+    namespace: "user:session:<userId>",
+    description: "User session aggregate (cross-org, not tenant-scoped by design)",
+    invalidation: {
+      kind: "write",
+      events: ["SessionsService (login/logout/revoke)"],
+    },
+  },
+  {
+    namespace: "access:perms:<orgId>:<userId>:v<version>",
+    description: "Resolved permission set per user per access-version",
+    invalidation: {
+      kind: "write",
+      events: ["bumpPermissionsVersion in any role/grant/delegation mutation"],
+    },
+  },
+  {
+    namespace: "feature-flags:all",
+    description: "Feature flags (global, not tenant-scoped by design)",
+    invalidation: { kind: "ttl-only", reason: "Global config; 5-min TTL acceptable" },
+  },
+  {
+    namespace: "membership:account:<userId>",
+    description: "Membership state cache (active/suspended) used by JwtAuthGuard",
+    invalidation: {
+      kind: "write",
+      events: [
+        "bustMembershipStatusCache (common/auth/membership-state.service.ts) on any membership status change",
+        "InvitationAcceptanceService.accept",
+        "OrgMemberDepartureService (leave/remove member)",
+        "OrgMembershipService.updateMember",
+      ],
+    },
+  },
+  {
+    namespace: "mfa:org-policy:<orgId>",
+    description: "Organisation-level MFA enforcement policy (cachedForOrg, actual key: <orgId>:mfa:org-policy)",
+    invalidation: {
+      kind: "write",
+      events: ["MfaPolicyService.invalidateOrg (called by OrganizationSettingsService on MFA policy update)"],
+    },
+  },
+  {
+    namespace: "mfa:user-totp:<userId>",
+    description: "Whether a user has a TOTP secret enrolled",
+    invalidation: {
+      kind: "write",
+      events: ["MfaPolicyService.invalidateUser (called on TOTP enrollment or removal)"],
+    },
+  },
+  {
+    namespace: "access:version:<orgId>",
+    description: "Permission-resolution version counter. Incremented on every role/grant/delegation/ownership mutation; drives per-user permission cache invalidation.",
+    invalidation: {
+      kind: "write",
+      events: [
+        "bumpPermissionsVersion(tx, orgId) in any role/grant/delegation/ownership mutation",
+        "OrgProfileService.switchOrg (clears outgoing-org version)",
+      ],
+    },
+  },
+  {
+    namespace: "access:members-with-perm:<orgId>:<permKey>:v<version>",
+    description: "Paginated members-with-permission list (version embedded in key; old entries go unreachable on bump)",
+    invalidation: {
+      kind: "write",
+      events: ["bumpPermissionsVersion — new version makes all prior generation keys unreachable; TTL reclaims them"],
+    },
+  },
+  {
+    namespace: "org:roles:<orgId>",
+    description: "Flat org roles list shown in the RBAC admin UI",
+    invalidation: {
+      kind: "write",
+      events: [
+        "RoleMemberService (add/remove role assignment)",
+        "RolePermissionService (grant/revoke permission)",
+        "ModuleAccessFlatMembersService (add/remove module member)",
+        "ModuleStandingMutationsService (promote/demote standing)",
+        "ModuleAccessGroupCrudService (create/rename/delete group)",
+        "ModuleAccessGroupMembersService (add/remove group member)",
+        "ModuleRolePermissions (grant/revoke module role permission)",
+      ],
+    },
+  },
+  {
+    namespace: "rbac:role-perms:<orgId>:<roleId>:v<version>",
+    description: "Role permissions list (version-gated; versioned along with org access version)",
+    invalidation: {
+      kind: "write",
+      events: ["bumpPermissionsVersion — new version makes all prior keys unreachable"],
+    },
+  },
+  {
+    namespace: "rbac:members:<orgId>",
+    description: "Discovery-member list for RBAC screens (RbacService.getDiscoveryMembers). Read and invalidation both use the org-scoped namespace form, so membership changes evict it.",
+    invalidation: {
+      kind: "write",
+      events: [
+        "bumpPermissionsVersion (targets wrong key — see description)",
+        "OrgMembershipService, InvitationAcceptanceService, OrgMemberDepartureService (all via invalidateForOrg which also targets wrong key)",
+      ],
+    },
+  },
+  {
+    namespace: "module-access:groups:<orgId>:<moduleKey>:v<version>",
+    description: "Module role-group list (version-gated)",
+    invalidation: {
+      kind: "write",
+      events: ["bumpPermissionsVersion — new version makes all prior keys unreachable"],
+    },
+  },
+  {
+    namespace: "module-access:group-members:<orgId>:<moduleKey>:<groupId>:v<version>",
+    description: "Module group member list (version-gated)",
+    invalidation: {
+      kind: "write",
+      events: ["bumpPermissionsVersion — new version makes all prior keys unreachable"],
+    },
+  },
+  {
+    namespace: "module-access:candidates:<orgId>",
+    description: "Candidate members list for module access assignment (cachedForOrg; actual key: <orgId>:module-access:candidates). Note: CACHE_KEYS.moduleAccessCandidates factory produces module-access:candidates:<orgId> and is dead code — the service uses cachedForOrg with a raw localKey.",
+    invalidation: {
+      kind: "write",
+      events: [
+        "bumpPermissionsVersion (via AccessService.onVersionBump → invalidateForOrg(orgId,'module-access:candidates'))",
+        "UsersService.invalidateMembershipCaches",
+        "InvitationAcceptanceService.accept",
+        "OrgMemberDepartureService",
+        "OrgMembershipService",
+      ],
+    },
+  },
+  {
+    namespace: "module-access:ownership:<orgId>:<moduleKey>",
+    description: "Module ownership detail for the access ownership screen",
+    invalidation: {
+      kind: "write",
+      events: [
+        "ModuleAccessOwnershipService (initiate/cancel/accept transfer)",
+        "ModuleStandingMutationsService.setOwner",
+      ],
+    },
+  },
+  {
+    namespace: "ownership:modules:<orgId>",
+    description: "List of all module ownerships for this org",
+    invalidation: {
+      kind: "write",
+      events: ["ModuleStandingMutationsService.setOwner"],
+    },
+  },
+  {
+    namespace: "ownership:module:<orgId>:<moduleKey>",
+    description: "Detail of a single module ownership",
+    invalidation: {
+      kind: "write",
+      events: ["ModuleStandingMutationsService.setOwner"],
+    },
+  },
+  {
+    namespace: "ownership:transfers:<orgId>",
+    description: "Ownership transfer list/history (namespace-versioned)",
+    invalidation: {
+      kind: "write",
+      events: [
+        "ModuleAccessOwnershipService.initiateTransfer",
+        "ModuleStandingMutationsService.setOwner",
+        "OwnershipTransferResponseService (accept/decline)",
+      ],
+    },
+  },
+  {
+    namespace: "ownership:incoming:<orgId>:<userId>",
+    description: "Incoming ownership transfer requests for a user",
+    invalidation: {
+      kind: "ttl-only",
+      reason: "Short TTL; invalidation at transfer acceptance is handled via ownership:transfers namespace bump which covers the incoming view",
+    },
+  },
+];

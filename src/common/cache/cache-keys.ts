@@ -52,9 +52,7 @@ export const CACHE_KEYS = {
 
 
   quotasList: (orgId: string, filters: string) => `sales:quotas:${orgId}:${filters}`,
-  quotasListPattern: (orgId: string) => `sales:quotas:${orgId}:*`,
   commissionsList: (orgId: string, filters: string) => `sales:commissions:${orgId}:${filters}`,
-  commissionsListPattern: (orgId: string) => `sales:commissions:${orgId}:*`,
 
   searchResults: (orgId: string, userId: string, hash: string) =>
     `search:${orgId}:${userId}:${hash}`,
@@ -157,7 +155,6 @@ export const CACHE_KEYS = {
     cursor: string,
     q: string,
   ) => `mail:messages:${accountId}:${folder}:${cursor}:${q}`,
-  mailMessagesPattern: (accountId: number) => `mail:messages:${accountId}:*`,
 
   featureFlags: () => "feature-flags:all",
 
@@ -213,7 +210,6 @@ export const CACHE_KEYS = {
   finBvaNamespace: (orgId: string, budgetId: number) =>
     `fin:bva:${orgId}:${budgetId}`,
 
-  orgSettings: (orgId: string) => `org:settings:${orgId}`,
   orgProfileNamespace: (orgId: string) => `org:profile:${orgId}`,
   orgMembersListNamespace: (orgId: string) => `org:members:list:${orgId}`,
   usersStats: (orgId: string) => `users:stats:${orgId}`,
@@ -251,10 +247,8 @@ export const CACHE_KEYS = {
     `ownership:module:${orgId}:${moduleKey}`,
   ownershipTransfersList: (orgId: string, hash: string) =>
     `ownership:transfers:${orgId}:${hash}`,
-  ownershipTransfersPattern: (orgId: string) => `ownership:transfers:${orgId}:*`,
   incomingTransfers: (orgId: string, userId: string) =>
     `ownership:incoming:${orgId}:${userId}`,
-  incomingTransfersPattern: (orgId: string) => `ownership:incoming:${orgId}:*`,
 } as const;
 
 export const CACHE_TTL = {

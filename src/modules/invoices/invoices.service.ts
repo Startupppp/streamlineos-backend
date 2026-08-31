@@ -4,9 +4,8 @@ import { invoices, payments } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { ListInvoicesInput } from "./dto/invoice.schemas";
-
-const LIST_TTL = 30;
 
 export interface RecurringInvoiceRow {
   id: number;
@@ -31,10 +30,12 @@ export class InvoicesService {
   async list(orgId: string, filters: ListInvoicesInput) {
     const { status, clientId, page, limit } = filters;
     const offset = (page - 1) * limit;
+    const localKey = `${status ?? ""}:${clientId ?? ""}:${limit}:${offset}`;
 
-    const key = `invoices:list:${orgId}:${status ?? ""}:${clientId ?? ""}:${limit}:${offset}`;
-    return this.cache.cached(
-      key,
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "invoices:list",
+      localKey,
       async () => {
         const conditions = [eq(invoices.orgId, orgId)];
         if (status) conditions.push(eq(invoices.status, status));
@@ -68,7 +69,7 @@ export class InvoicesService {
           totalPages: Math.ceil(total / limit),
         };
       },
-      LIST_TTL,
+      CACHE_TTL.SHORT,
     );
   }
 

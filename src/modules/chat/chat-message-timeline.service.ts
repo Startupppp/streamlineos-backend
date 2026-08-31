@@ -113,11 +113,11 @@ export class ChatMessageTimelineService {
 
     const safeLimit = Math.min(Math.max(1, limit), 100);
     const conditions = [eq(chatMessages.orgId, actor.orgId), eq(chatMessages.channelId, channelId)];
-    if (cursor) conditions.push(lt(chatMessages.id, cursor));
+    if (cursor) conditions.push(lt(chatMessages.channelPosition, cursor));
 
     const rawMessages = await this.db.query.chatMessages.findMany({
       where: and(...conditions),
-      orderBy: [desc(chatMessages.id)],
+      orderBy: [desc(chatMessages.channelPosition)],
       limit: safeLimit + 1,
       with: {
         attachments: true,
@@ -125,7 +125,7 @@ export class ChatMessageTimelineService {
       },
     });
 
-    const page = buildIdCursorPage(rawMessages, safeLimit, (m) => m.id);
+    const page = buildIdCursorPage(rawMessages, safeLimit, (m) => m.channelPosition);
     const senderIds = new Set<string>();
     for (const m of page.data) {
       senderIds.add(m.senderId);
@@ -204,11 +204,11 @@ export class ChatMessageTimelineService {
 
     const safeLimit = Math.min(Math.max(1, limit), 100);
     const conditions = [eq(chatMessages.orgId, actor.orgId), eq(chatMessages.replyToId, parentMessageId)];
-    if (cursor) conditions.push(lt(chatMessages.id, cursor));
+    if (cursor) conditions.push(lt(chatMessages.channelPosition, cursor));
 
     const rawReplies = await this.db.query.chatMessages.findMany({
       where: and(...conditions),
-      orderBy: [desc(chatMessages.id)],
+      orderBy: [desc(chatMessages.channelPosition)],
       limit: safeLimit + 1,
       with: {
         attachments: true,
@@ -219,7 +219,7 @@ export class ChatMessageTimelineService {
     const senderIds = new Set<string>();
     senderIds.add(rawParent.senderId);
     if (rawParent.replyTo?.senderId) senderIds.add(rawParent.replyTo.senderId);
-    const page = buildIdCursorPage(rawReplies, safeLimit, (r) => r.id);
+    const page = buildIdCursorPage(rawReplies, safeLimit, (r) => r.channelPosition);
     for (const r of page.data) {
       senderIds.add(r.senderId);
       if (r.replyTo?.senderId) senderIds.add(r.replyTo.senderId);

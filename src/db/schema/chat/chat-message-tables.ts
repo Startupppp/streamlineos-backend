@@ -37,6 +37,7 @@ export const chatMessages = pgTable(
     messageType: chatMessageTypeEnum("message_type").notNull().default("text"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     actionStatus: text("action_status"),
+    channelPosition: bigint("channel_position", { mode: "number" }).notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -54,6 +55,7 @@ export const chatMessages = pgTable(
       .on(table.orgId, table.channelId, table.isDeleted, table.createdAt)
       .where(sql`is_deleted = false`),
     index("idx_chat_messages_org").on(table.orgId),
+    index("idx_chat_messages_channel_position").on(table.orgId, table.channelId, table.channelPosition),
     unique("uniq_chat_messages_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.channelId], foreignColumns: [chatChannels.orgId, chatChannels.id], name: "fk_chat_messages_org_channel" }),
     foreignKey({ columns: [table.orgId, table.replyToId], foreignColumns: [table.orgId, table.id], name: "fk_chat_messages_org_reply" }),

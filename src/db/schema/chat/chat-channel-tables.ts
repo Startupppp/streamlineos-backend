@@ -4,6 +4,7 @@ import {
   timestamp,
   boolean,
   integer,
+  bigint,
   index,
   uniqueIndex,
   foreignKey,
@@ -35,6 +36,7 @@ export const chatChannels = pgTable(
     linkedDealId: integer("linked_deal_id").references(() => deals.id, {
       onDelete: "set null",
     }),
+    messageCount: bigint("message_count", { mode: "number" }).notNull().default(0),
     lastMessageAt: timestamp("last_message_at").defaultNow().notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")

@@ -6,6 +6,8 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { logger } from "../../../../common/logger/logger.service";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import { registerAfterCommit } from "../../../../common/tenant/tenant-context";
+import { CacheService } from "../../../../common/cache/cache.service";
 import {
   INCLUDE_DELETED,
   LEAD_PARTY_COLUMNS,
@@ -62,6 +64,7 @@ export class CrmScoringService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly gateway: AiGatewayService,
+    private readonly cache: CacheService,
   ) {}
 
   async scoreLead(orgId: string, leadId: number, userId?: string): Promise<LeadScoreResult | null> {
@@ -319,6 +322,12 @@ export class CrmScoringService {
         updatedAt: new Date(),
       });
     }, { orgId });
+
+    const invalidate = () => Promise.all([
+      this.cache.invalidateNamespaceForOrg(orgId, "clients:health"),
+      this.cache.invalidateNamespaceForOrg(orgId, "clients:churn"),
+    ]);
+    if (!registerAfterCommit(invalidate)) await invalidate();
 
     return data;
   }

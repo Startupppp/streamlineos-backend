@@ -1,9 +1,8 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, gte, inArray, like, lte } from "drizzle-orm";
+import { and, eq, inArray, like } from "drizzle-orm";
 import {
   calendarEvents,
   eventAttendees,
-  leaveRequests,
   users,
   userIntegrationConnections,
   organizationMembers,
@@ -17,8 +16,7 @@ import type { CreateEventInput, UpdateEventInput } from "./dto/calendar.schemas"
 import type { UpsertOccurrenceExceptionInput } from "./dto/occurrence-exception.schemas";
 import { CalendarEventsAggregateService } from "./calendar-events-aggregate.service";
 import { CalendarConflictService } from "./calendar-conflict.service";
-import type { CalendarEventItem, CalendarEventsResult, OooConflict } from "./calendar.types";
-import { dateOnly } from "./calendar.types";
+import type { CalendarEventItem, CalendarEventsResult } from "./calendar.types";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
 import { CalendarAttendeesService } from "./calendar-attendees.service";
 import { CalendarRecurrenceService } from "./calendar-recurrence.service";
@@ -47,34 +45,6 @@ export class CalendarService {
     end: Date,
   ): Promise<CalendarEventsResult> {
     return this.eventsAggregate.getEvents(orgId, userId, start, end);
-  }
-
-  private async getOooConflicts(
-    orgId: string,
-    attendeeIds: string[],
-    start: Date,
-    end: Date,
-  ): Promise<OooConflict[]> {
-    if (attendeeIds.length === 0) return [];
-
-    return this.db
-      .select({
-        userId: leaveRequests.userId,
-        userName: users.name,
-        leaveStart: leaveRequests.startDate,
-        leaveEnd: leaveRequests.endDate,
-      })
-      .from(leaveRequests)
-      .innerJoin(users, eq(leaveRequests.userId, users.id))
-      .where(
-        and(
-          eq(leaveRequests.orgId, orgId),
-          eq(leaveRequests.status, "APPROVED"),
-          inArray(leaveRequests.userId, attendeeIds),
-          lte(leaveRequests.startDate, dateOnly(end)),
-          gte(leaveRequests.endDate, dateOnly(start)),
-        ),
-      );
   }
 
   async createEvent(orgId: string, userId: string, input: CreateEventInput) {
@@ -160,7 +130,7 @@ export class CalendarService {
           }).onConflictDoNothing({ target: [notificationOutbox.orgId, notificationOutbox.dedupeKey] });
         return { event, eventConflicts: conflicts, attendeeMemberships: memberships };
       }),
-      this.getOooConflicts(orgId, attendeeIds, startDate, endDate),
+      this.conflict.getOooConflicts(orgId, attendeeIds, startDate, endDate),
     ] as const);
 
     let meetingUrl: string | null = null;

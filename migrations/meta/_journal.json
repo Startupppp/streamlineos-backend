@@ -3228,6 +3228,20 @@
       "when": 1798000085000,
       "tag": "0773_dedupe_notification_audit_log_fks",
       "breakpoints": true
+    },
+    {
+      "idx": 586,
+      "version": "7",
+      "when": 1798000086000,
+      "tag": "0774_chat_channel_position",
+      "breakpoints": true
+    },
+    {
+      "idx": 587,
+      "version": "7",
+      "when": 1798000087000,
+      "tag": "0775_audit_logs_cursor_indexes",
+      "breakpoints": true
     }
   ]
 }
