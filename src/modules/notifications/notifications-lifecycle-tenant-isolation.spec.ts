@@ -73,13 +73,14 @@ describe("NotificationsLifecycleService — cross-tenant isolation", () => {
   it("markRead on own notification advances read state and returns success", async () => {
     const { db } = makeDb([{ id: 42 }]);
     const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as never;
-    const notifEvents = { emit: jest.fn() } as never;
+    const emitMock = jest.fn();
+    const notifEvents = { emit: emitMock } as never;
     const svc = new NotificationsLifecycleService(db, cache, notifEvents);
 
     const result = await svc.markRead("org-owner", "user-owner", 42);
 
     expect(result).toEqual({ success: true });
-    expect(notifEvents.emit).toHaveBeenCalledWith(
+    expect(emitMock).toHaveBeenCalledWith(
       expect.objectContaining({ type: "count_changed" }),
     );
   });

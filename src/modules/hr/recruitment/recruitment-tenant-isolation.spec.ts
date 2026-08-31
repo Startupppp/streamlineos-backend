@@ -248,7 +248,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
         db, cache as never, {} as never, {} as never,
         {} as never, {} as never, {} as never, {} as never,
       );
-      const result = await svc.list(ATTACKER, { page: 1, pageSize: 10 });
+      const result = await svc.list(ATTACKER, { page: 1, pageSize: 10, limit: 10, offset: 0, status: undefined, source: undefined, jobId: undefined, search: undefined });
       expect(result.items).toHaveLength(0);
       expect(findMany).toHaveBeenCalled();
       const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -262,7 +262,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
         db, cache as never, {} as never, {} as never,
         {} as never, {} as never, {} as never, {} as never,
       );
-      const result = await svc.list(OWNER, { page: 1, pageSize: 10 });
+      const result = await svc.list(OWNER, { page: 1, pageSize: 10, limit: 10, offset: 0, status: undefined, source: undefined, jobId: undefined, search: undefined });
       expect(result.items).toHaveLength(1);
     });
   });
@@ -311,7 +311,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
       const { db, findMany } = makeDb([]);
       const cache = makeCacheMock();
       const svc = new RecruitmentJobsService(db, cache as never, {} as never);
-      const result = await svc.list(ATTACKER, { page: 1, pageSize: 10 });
+      const result = await svc.list(ATTACKER, { page: 1, pageSize: 10, limit: 10, offset: 0, status: undefined });
       expect(result.items).toHaveLength(0);
       expect(findMany).toHaveBeenCalled();
       const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -322,7 +322,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
       const cache = makeCacheMock();
       const svc = new RecruitmentJobsService(db, cache as never, {} as never);
-      const result = await svc.list(OWNER, { page: 1, pageSize: 10 });
+      const result = await svc.list(OWNER, { page: 1, pageSize: 10, limit: 10, offset: 0, status: undefined });
       expect(result.items).toHaveLength(1);
     });
   });

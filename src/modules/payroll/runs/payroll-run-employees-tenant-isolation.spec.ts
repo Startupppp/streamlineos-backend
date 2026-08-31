@@ -35,7 +35,7 @@ describe("PayrollRunEmployeesService — cross-tenant isolation", () => {
   }
 
   const audit = { log: jest.fn() } as unknown as AuditService;
-  const scope: DataScope = { kind: "all" } as DataScope;
+  const scope: DataScope = "all";
   const listQuery: ListRunEmployeesQuery = { limit: 25 } as ListRunEmployeesQuery;
 
   it("listRunEmployees scopes run check to the attacker org — cross-tenant isolation", async () => {

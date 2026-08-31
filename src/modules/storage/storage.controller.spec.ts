@@ -84,6 +84,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       buildStorage() as never,
       audit as never,
       access as never,
+      { scan: jest.fn() } as never,
     );
 
     await expect(
@@ -98,6 +99,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       buildStorage() as never,
       audit as never,
       access as never,
+      { scan: jest.fn() } as never,
     );
 
     await expect(
@@ -112,6 +114,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       buildStorage() as never,
       audit as never,
       access as never,
+      { scan: jest.fn() } as never,
     );
 
     await expect(
@@ -126,6 +129,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       buildStorage() as never,
       audit as never,
       access as never,
+      { scan: jest.fn() } as never,
     );
     const res = mockRes();
 
@@ -141,6 +145,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       buildStorage() as never,
       audit as never,
       access as never,
+      { scan: jest.fn() } as never,
     );
 
     await expect(
@@ -155,6 +160,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       buildStorage() as never,
       audit as never,
       access as never,
+      { scan: jest.fn() } as never,
     );
 
     await expect(
@@ -169,6 +175,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       buildStorage() as never,
       audit as never,
       access as never,
+      { scan: jest.fn() } as never,
     );
 
     await expect(
@@ -183,6 +190,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       buildStorage() as never,
       audit as never,
       access as never,
+      { scan: jest.fn() } as never,
     );
 
     await expect(
@@ -208,6 +216,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       buildStorage() as never,
       audit as never,
       access as never,
+      { scan: jest.fn() } as never,
     );
 
     await expect(
@@ -223,6 +232,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       storage as never,
       audit as never,
       access as never,
+      { scan: jest.fn() } as never,
     );
     const res = mockRes();
 
@@ -239,6 +249,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       storage as never,
       audit as never,
       access as never,
+      { scan: jest.fn() } as never,
     );
     const file = {
       size: 4,

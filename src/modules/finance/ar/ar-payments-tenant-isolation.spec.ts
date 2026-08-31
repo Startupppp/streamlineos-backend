@@ -45,7 +45,7 @@ describe("ArPaymentsService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new ArPaymentsService(db);
 
-    const result = await svc.list(ATTACKER_ORG, { page: 1, pageSize: 20 });
+    const result = await svc.list(ATTACKER_ORG, { limit: 20 });
 
     expect(result.data).toHaveLength(0);
     expect(where).toHaveBeenCalledTimes(1);
@@ -64,7 +64,7 @@ describe("ArPaymentsService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new ArPaymentsService(db);
 
-    const result = await svc.list(OWNER_ORG, { page: 1, pageSize: 20 });
+    const result = await svc.list(OWNER_ORG, { limit: 20 });
 
     expect(result.data).toHaveLength(1);
   });

@@ -17,7 +17,7 @@ describe("ReconciliationService — cross-tenant isolation", () => {
     const svc = new ReconciliationService(db, {} as never, {} as never, {} as never, {} as never);
 
     await expect(
-      svc.confirmMatch(makeUser("org-attacker"), 99, { transactionId: 1, matchType: "MANUAL", journalEntryId: null, invoiceIds: null }),
+      svc.confirmMatch(makeUser("org-attacker"), 99, { transactionId: 1, matchType: "MANUAL_JOURNAL" }),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -36,7 +36,7 @@ describe("ReconciliationService — cross-tenant isolation", () => {
     const audit = { log: jest.fn() } as never;
     const svc = new ReconciliationService(db, {} as never, cache, dispatch, audit);
 
-    const err = await svc.confirmMatch(makeUser("org-owner"), 99, { transactionId: 1, matchType: "MANUAL", journalEntryId: null, invoiceIds: null }).catch(e => e);
+    const err = await svc.confirmMatch(makeUser("org-owner"), 99, { transactionId: 1, matchType: "MANUAL_JOURNAL" }).catch(e => e);
 
     expect(err).not.toBeInstanceOf(NotFoundException);
   });

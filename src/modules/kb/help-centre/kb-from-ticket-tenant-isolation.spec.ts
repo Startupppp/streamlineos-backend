@@ -21,9 +21,11 @@ describe("KbFromTicketService — cross-tenant isolation", () => {
     return { orgId, userId: "user-1", principal: ACCOUNT_ONLY_PRINCIPAL } as never;
   }
 
-  const gateway = { invokeStructuredWithUsage: jest.fn() } as never;
+  const invokeStructuredWithUsage = jest.fn();
+  const gateway = { invokeStructuredWithUsage } as never;
   const events = { record: jest.fn() } as never;
-  const articles = { create: jest.fn() } as never;
+  const articleCreate = jest.fn();
+  const articles = { create: articleCreate } as never;
 
   function makeDb(ticketRow: unknown) {
     const wheres: unknown[] = [];
@@ -62,8 +64,8 @@ describe("KbFromTicketService — cross-tenant isolation", () => {
 
   it("does not allow cross-tenant ticket access from owner org either (control guard)", async () => {
     const { db } = makeDb({ id: TICKET_ID, orgId: OWNER, title: "Test", description: null });
-    (gateway.invokeStructuredWithUsage as jest.Mock).mockResolvedValue({ ok: true, data: { title: "T", content: "C" } });
-    (articles.create as jest.Mock).mockResolvedValue({ id: 1, orgId: OWNER });
+    invokeStructuredWithUsage.mockResolvedValue({ ok: true, data: { title: "T", content: "C" } });
+    articleCreate.mockResolvedValue({ id: 1, orgId: OWNER });
     const svc = new KbFromTicketService(db, gateway, events, articles);
 
     const result = await svc.draftFromTicket(makeUser(OWNER), TICKET_ID, { spaceId: 1 } as never);

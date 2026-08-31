@@ -185,9 +185,11 @@ describe("ReservationService — cross-tenant isolation", () => {
 
     await expect(
       svc.createReservationInTx({} as never, ATTACKER, "user-1", {
+        sourceType: "manual",
+        sourceId: "test-1",
         productVariantId: 99,
         locationId: 1,
-        quantity: "10",
+        qty: "10",
       }),
     ).rejects.toThrow();
     expect(settingsMock.get).toHaveBeenCalledWith(ATTACKER);
@@ -204,7 +206,7 @@ describe("ReservationService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(ReservationService));
 
-    await svc.createReservation(OWNER, "user-1", { productVariantId: 99, locationId: 1, quantity: "10" }).catch(() => undefined);
+    await svc.createReservation(OWNER, "user-1", { sourceType: "manual", sourceId: "test-1", productVariantId: 99, locationId: 1, qty: "10" }).catch(() => undefined);
     expect(settingsMock.get).toHaveBeenCalledWith(OWNER);
   });
 });

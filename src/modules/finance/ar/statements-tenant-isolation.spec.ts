@@ -13,7 +13,7 @@ describe("StatementsService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new StatementsService(db);
 
-    await expect(svc.customerStatement("org-attacker", 99, {})).rejects.toThrow(NotFoundException);
+    await expect(svc.customerStatement("org-attacker", 99, { format: "json" })).rejects.toThrow(NotFoundException);
   });
 
   it("proceeds for the owning org when the client exists (same-tenant control)", async () => {
@@ -35,7 +35,7 @@ describe("StatementsService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new StatementsService(db);
 
-    const result = await svc.customerStatement("org-owner", 99, {});
+    const result = await svc.customerStatement("org-owner", 99, { format: "json" });
 
     expect(result).toBeDefined();
   });

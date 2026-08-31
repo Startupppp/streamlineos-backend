@@ -156,7 +156,7 @@ describe("ContactsService bulk import", () => {
       {} as never,
     );
 
-    await service.list("org-1", { limit: 25, offset: 0 });
+    await service.list("org-1", { limit: 25 });
 
     expect(cachedVersioned).toHaveBeenCalledWith(
       CACHE_KEYS.contactsListNamespace("org-1"),

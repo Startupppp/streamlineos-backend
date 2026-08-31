@@ -13,7 +13,6 @@ import { StockEngineService } from "./stock-engine/stock-engine.service";
 import { ReservationService } from "./stock-engine/reservation.service";
 import { JournalPostingService } from "../accounting/posting/journal-posting.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
-import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { SoLifecycleService as _SoLifecycleImport } from "./sales-orders/so-lifecycle.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -188,11 +187,10 @@ describe("SoFulfillmentService — cross-tenant isolation", () => {
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
         { provide: JournalPostingService, useValue: { persistJournalEntry: jest.fn() } },
         { provide: SoCoreService, useValue: { getSo: jest.fn() } },
-        { provide: OutboxWriter, useValue: { emit: jest.fn() } },
       ],
     }).compile().then((m) => m.get(SoFulfillmentService));
 
-    await expect(svc.reserveSo(ATTACKER, 99, "user-1", "key-1", { lineIds: [], strategy: "FIFO" })).rejects.toBeDefined();
+    await expect(svc.reserveSo(ATTACKER, 99, "user-1", "key-1", {})).rejects.toBeDefined();
     expect(findFirst).toHaveBeenCalled();
     const firstCallArg = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
     expect(sqlValues(firstCallArg?.where)).toContain(ATTACKER);
@@ -212,7 +210,6 @@ describe("SoFulfillmentService — cross-tenant isolation", () => {
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
         { provide: JournalPostingService, useValue: { persistJournalEntry: jest.fn() } },
         { provide: SoCoreService, useValue: { getSo: jest.fn() } },
-        { provide: OutboxWriter, useValue: { emit: jest.fn() } },
       ],
     }).compile().then((m) => m.get(SoFulfillmentService));
 

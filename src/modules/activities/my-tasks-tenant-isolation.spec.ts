@@ -55,7 +55,7 @@ describe("MyTasksService.myTasks — cross-tenant isolation", () => {
     const { db, where } = makeDb([]);
     const svc = new MyTasksService(db);
 
-    const result = await svc.myTasks(ATTACKER_ORG, USER_ID, { limit: 20 });
+    const result = await svc.myTasks(ATTACKER_ORG, USER_ID, { includeCompleted: false, limit: 20 });
 
     expect(result.data).toHaveLength(0);
     if (where.mock.calls[0]) {
@@ -68,7 +68,7 @@ describe("MyTasksService.myTasks — cross-tenant isolation", () => {
     const { db } = makeDb([]);
     const svc = new MyTasksService(db);
 
-    const result = await svc.myTasks(OWNER_ORG, USER_ID, { limit: 20 });
+    const result = await svc.myTasks(OWNER_ORG, USER_ID, { includeCompleted: false, limit: 20 });
 
     expect(result.data.length).toBeGreaterThanOrEqual(0);
   });

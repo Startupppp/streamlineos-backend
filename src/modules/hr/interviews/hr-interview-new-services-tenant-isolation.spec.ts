@@ -42,16 +42,17 @@ function makeDb(rows: unknown[]) {
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }), returning: jest.fn().mockResolvedValue(rows) }) }),
     execute: jest.fn().mockResolvedValue(rows),
   } as unknown as Db;
+  const deleteFn = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(rows) });
   const db = {
     select: jest.fn().mockReturnValue(builder),
     query: queryProxy,
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) }),
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }), returning: jest.fn().mockResolvedValue(rows) }) }),
     execute: jest.fn().mockResolvedValue(rows),
-    delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(rows) }),
+    delete: deleteFn,
     transaction: jest.fn().mockImplementation((fn: (tx: Db) => Promise<unknown>) => fn(txDb)),
   } as unknown as Db;
-  return { db, where, findMany, findFirst };
+  return { db, where, findMany, findFirst, deleteFn };
 }
 
 function isolationArg(where: jest.Mock, findMany: jest.Mock, findFirst?: jest.Mock): unknown {
@@ -173,7 +174,7 @@ describe("HrInterviewSchedulingService — cross-tenant isolation", () => {
     const mockEmail = { sendEmail: jest.fn() };
     const mockAutomation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
     const svc = new HrInterviewSchedulingService(db, mockCache as never, mockNotifications as never, mockEmail as never, mockAutomation as never);
-    const input = { candidateId: 1, jobPostingId: 1, scheduledAt: new Date(Date.now() + 86400_000).toISOString(), durationMinutes: 60, format: "VIDEO" as const, interviewers: ["i1"], notifyChannels: { email: false } };
+    const input = { candidateId: 1, jobPostingId: 1, scheduledAt: new Date(Date.now() + 86400_000).toISOString(), durationMinutes: 60, format: "VIDEO" as const, interviewers: ["i1"], createMeet: false, notifyChannels: { email: false, whatsapp: false } };
     await expect(svc.scheduleInterview(ATTACKER, "actor-1", input)).rejects.toThrow();
     const args = findFirst.mock.calls.flatMap((call) =>
       sqlValues((call[0] as Record<string, unknown> | undefined)?.["where"]),
@@ -188,7 +189,7 @@ describe("HrInterviewSchedulingService — cross-tenant isolation", () => {
     const mockEmail = { sendEmail: jest.fn() };
     const mockAutomation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
     const svc = new HrInterviewSchedulingService(db, mockCache as never, mockNotifications as never, mockEmail as never, mockAutomation as never);
-    const input = { candidateId: 1, jobPostingId: 1, scheduledAt: new Date(Date.now() + 86400_000).toISOString(), durationMinutes: 60, format: "VIDEO" as const, interviewers: ["i1"], notifyChannels: { email: false } };
+    const input = { candidateId: 1, jobPostingId: 1, scheduledAt: new Date(Date.now() + 86400_000).toISOString(), durationMinutes: 60, format: "VIDEO" as const, interviewers: ["i1"], createMeet: false, notifyChannels: { email: false, whatsapp: false } };
     await svc.scheduleInterview(OWNER, "actor-1", input);
     const args = findFirst.mock.calls.flatMap((call) =>
       sqlValues((call[0] as Record<string, unknown> | undefined)?.["where"]),
@@ -197,14 +198,14 @@ describe("HrInterviewSchedulingService — cross-tenant isolation", () => {
   });
 
   it("scopes deleteInterview to org (cross-tenant isolation)", async () => {
-    const { db, where } = makeDb([]);
+    const { db, where, deleteFn } = makeDb([]);
     const mockCache = { invalidate: jest.fn() };
     const mockNotifications = { create: jest.fn().mockResolvedValue(undefined) };
     const mockEmail = { sendEmail: jest.fn() };
     const mockAutomation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
     const svc = new HrInterviewSchedulingService(db, mockCache as never, mockNotifications as never, mockEmail as never, mockAutomation as never);
     await svc.deleteInterview(ATTACKER, 999);
-    const dbDeleteWhere = (db as Record<string, jest.Mock>)["delete"]?.mock.results[0]?.value?.where;
+    const dbDeleteWhere = deleteFn.mock.results[0]?.value?.where;
     if (dbDeleteWhere) {
       expect(sqlValues(dbDeleteWhere.mock.calls[0]?.[0])).toContain(ATTACKER);
     } else {

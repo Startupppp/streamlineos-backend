@@ -236,7 +236,7 @@ describe("HR Time services — cross-tenant isolation", () => {
       const mockAccess = makeAccessMock();
       const svc = new CompOffGrantService(db, mockAccess as never, {} as never, null as never, null as never);
       const ctx = { orgId: ATTACKER, userId: "user-1", isOrgOwner: false } as never;
-      await svc.grant(ctx, { userId: "emp-1", date: "2026-01-01", reason: "OT" }).catch(() => {});
+      await svc.grant(ctx, { userId: "emp-1", days: 1, reason: "OT" }).catch(() => {});
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
       expect(allValues).toContain(ATTACKER);
     });
@@ -246,7 +246,7 @@ describe("HR Time services — cross-tenant isolation", () => {
       const mockAccess = makeAccessMock();
       const svc = new CompOffGrantService(db, mockAccess as never, {} as never, null as never, null as never);
       const ctx = { orgId: OWNER, userId: "user-1", isOrgOwner: false } as never;
-      await svc.grant(ctx, { userId: "emp-1", date: "2026-01-01", reason: "OT" }).catch(() => {});
+      await svc.grant(ctx, { userId: "emp-1", days: 1, reason: "OT" }).catch(() => {});
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
       expect(allValues).toContain(OWNER);
     });
@@ -333,7 +333,7 @@ describe("HR Time services — cross-tenant isolation", () => {
       const mockAccess = makeAccessMock("all");
       const svc = new LeavesApprovalService(db, {} as never, mockAccess as never, {} as never, {} as never);
       const ctx = { orgId: ATTACKER, userId: "user-1", isOrgOwner: false } as never;
-      await svc.updateStatus(ctx, 1, {}).catch(() => {});
+      await svc.updateStatus(ctx, 1, { status: "PENDING" }).catch(() => {});
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
       expect(allValues).toContain(ATTACKER);
     });
@@ -343,7 +343,7 @@ describe("HR Time services — cross-tenant isolation", () => {
       const mockAccess = makeAccessMock("all");
       const svc = new LeavesApprovalService(db, {} as never, mockAccess as never, {} as never, {} as never);
       const ctx = { orgId: OWNER, userId: "user-1", isOrgOwner: false } as never;
-      await svc.updateStatus(ctx, 1, {}).catch(() => {});
+      await svc.updateStatus(ctx, 1, { status: "PENDING" }).catch(() => {});
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
       expect(allValues).toContain(OWNER);
     });

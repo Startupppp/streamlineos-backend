@@ -68,7 +68,7 @@ describe("InventoryWebhookEmitter — tenant isolation", () => {
     const { db, getPredicate } = makeSelectChain([]);
     const service = new InventoryWebhookEmitter(db);
 
-    await service.emit(ATTACKER_ORG, "inventory.item.created", { itemId: 1 });
+    await service.emit(ATTACKER_ORG, "inventory.product.created", { itemId: 1 });
 
     expect(sqlValues(getPredicate())).toContain(ATTACKER_ORG);
     expect(db.insert).not.toHaveBeenCalled();
@@ -84,15 +84,15 @@ describe("InventoryWebhookEmitter — tenant isolation", () => {
     const { db, getPredicate } = makeSelectChain([
       { id: 42, url: "https://example.com/hook", secret: "s3cr3t" },
     ]);
-    (db as Record<string, unknown>).insert = jest.fn().mockReturnValue({ values: insertValues });
-    (db as Record<string, unknown>).update = jest.fn().mockReturnValue({ set: updateSet });
+    Reflect.set(db, "insert", jest.fn().mockReturnValue({ values: insertValues }));
+    Reflect.set(db, "update", jest.fn().mockReturnValue({ set: updateSet }));
 
     (checkWebhookUrl as jest.Mock).mockResolvedValue({ allowed: true });
     global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, type: "basic" } as unknown as Response);
 
     const service = new InventoryWebhookEmitter(db);
 
-    await service.emit(OWNER_ORG, "inventory.item.created", { itemId: 2 });
+    await service.emit(OWNER_ORG, "inventory.product.created", { itemId: 2 });
 
     expect(sqlValues(getPredicate())).toContain(OWNER_ORG);
     expect(db.insert).toHaveBeenCalled();

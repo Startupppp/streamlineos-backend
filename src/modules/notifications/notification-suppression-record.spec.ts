@@ -17,7 +17,7 @@ const ORG = "org-a";
 const USER = "user-1";
 
 const DEFINITION = {
-  eventKey: "build.ticket.comment",
+  eventKey: "build.ticket.assigned",
   sourceModule: "build",
   category: "PROJECTS",
   displayName: "New comment",
@@ -115,7 +115,7 @@ describe("NotificationDispatchService — suppression recorded, not silently dro
   });
 
   const input: DispatchEventInput = {
-    eventKey: "build.ticket.comment",
+    eventKey: "build.ticket.assigned",
     orgId: ORG,
     targetUserIds: [USER],
     entityType: "ticket",

@@ -109,7 +109,7 @@ describe("PaymentWebhookReceiverService — cross-tenant isolation", () => {
 
   it("returns early without side effects when no provider exists for the org (DENY)", async () => {
     const { svc, paymentAnalytics } = makeWebhookSvc();
-    const emptyTx = {
+    const emptyTx: unknown = {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
@@ -127,7 +127,7 @@ describe("PaymentWebhookReceiverService — cross-tenant isolation", () => {
 
   it("passes the requesting orgId to runInTenantTransaction (predicate check — DENY)", async () => {
     const { svc } = makeWebhookSvc();
-    const emptyTx = {
+    const emptyTx: unknown = {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
@@ -150,7 +150,7 @@ describe("PaymentWebhookReceiverService — cross-tenant isolation", () => {
   it("records failure and notifies for the owning org (CONTROL)", async () => {
     const { svc, paymentAnalytics } = makeWebhookSvc();
 
-    const tx1 = {
+    const tx1: unknown = {
       select: jest.fn()
         .mockReturnValueOnce({
           from: jest.fn().mockReturnValue({
@@ -165,7 +165,7 @@ describe("PaymentWebhookReceiverService — cross-tenant isolation", () => {
           }),
         }),
     };
-    const tx2 = {
+    const tx2: unknown = {
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockResolvedValue(undefined),

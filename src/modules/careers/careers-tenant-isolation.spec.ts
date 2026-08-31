@@ -38,10 +38,10 @@ describe("CareersService — cross-tenant isolation", () => {
       jobPostingId: 9999,
       name: "Attacker",
       email: "attacker@evil.com",
-      phone: null,
-      linkedinUrl: null,
-      coverLetter: null,
-      resumeUrl: null,
+      phone: undefined,
+      linkedinUrl: undefined,
+      coverLetter: undefined,
+      resumeUrl: undefined,
       answers: {},
     });
     expect(result).toEqual({ error: "job_not_found" });

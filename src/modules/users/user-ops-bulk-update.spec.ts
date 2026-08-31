@@ -47,7 +47,7 @@ function buildService(scopedMembers: Array<{ userId: string }> = [{ userId: "use
   };
 
   const db = {
-    transaction: jest.fn((callback: (tx: typeof tx) => unknown) => callback(tx)),
+    transaction: jest.fn((callback) => callback(tx)),
   };
 
   const service = new UserOpsService(
@@ -64,7 +64,7 @@ function buildService(scopedMembers: Array<{ userId: string }> = [{ userId: "use
   return { db, tx, service, updatedTables, setCalls };
 }
 
-const actor = { userId: "actor-1", orgId: "org-a" };
+const actor = { userId: "actor-1", isOrgOwner: false };
 
 describe("bulkUpdateUsers — removed-column regression", () => {
   it("users table has no orgDepartmentId, branchId, or reportingTo columns", () => {

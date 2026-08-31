@@ -136,9 +136,7 @@ describe("SubjectService — cross-tenant isolation", () => {
     const { db, where } = makeDb([]);
     const svc = buildSubjectSvc(db);
     const result = await svc.listSubjects(ATTACKER, { limit: 20 } as never);
-    const r = result as Record<string, unknown>;
-    const arr = (r.data ?? r.items ?? []) as unknown[];
-    expect(arr).toHaveLength(0);
+    expect(result.data).toHaveLength(0);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
@@ -150,8 +148,6 @@ describe("SubjectService — cross-tenant isolation", () => {
     const result = await svc.listSubjects(OWNER, { limit: 20 } as never);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
-    const r = result as Record<string, unknown>;
-    const arr = (r.data ?? r.items ?? []) as unknown[];
-    expect(arr.length).toBeGreaterThan(0);
+    expect(result.data.length).toBeGreaterThan(0);
   });
 });

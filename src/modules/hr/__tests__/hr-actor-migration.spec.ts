@@ -1,6 +1,8 @@
 process.env.APP_URL ??= "http://localhost:1000";
 
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
+import { DRIZZLE } from "../../../db/drizzle.constants";
 import { WfhService } from "../time/wfh.service";
 
 function makeWfhRequest(overrides: Record<string, unknown> = {}) {
@@ -53,25 +55,33 @@ describe("HR actor migration — organization membership identity enforcement", 
       };
     }
 
+    async function buildService(memberRows: unknown[]) {
+      const db = buildDb(memberRows);
+      const moduleRef = await Test.createTestingModule({
+        providers: [
+          WfhService,
+          { provide: DRIZZLE, useValue: db },
+        ],
+      }).compile();
+      return { service: moduleRef.get(WfhService), db };
+    }
+
     it("rejects a user with no membership in the org — throws NotFoundException, not written", async () => {
-      const db = buildDb([]);
-      const service = new WfhService(db as never, null);
+      const { service } = await buildService([]);
 
       await expect(service.update(ORG, "unknown-user", REQUEST_ID, { status: "APPROVED" }))
         .rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("rejects a SUSPENDED member — throws ForbiddenException", async () => {
-      const db = buildDb([activeMemberRow({ status: "SUSPENDED" })]);
-      const service = new WfhService(db as never, null);
+      const { service } = await buildService([activeMemberRow({ status: "SUSPENDED" })]);
 
       await expect(service.update(ORG, "approver-user", REQUEST_ID, { status: "APPROVED" }))
         .rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it("rejects a member of a different organization with 404, never 403", async () => {
-      const db = buildDb([]);
-      const service = new WfhService(db as never, null);
+      const { service } = await buildService([]);
 
       const error = await service.update(ORG, "org2-user", REQUEST_ID, { status: "APPROVED" })
         .then(() => null)
@@ -82,11 +92,9 @@ describe("HR actor migration — organization membership identity enforcement", 
     });
 
     it("writes both legacy approverId and approverMembershipId for a valid active member", async () => {
-      const db = buildDb([activeMemberRow()]);
+      const { service, db } = await buildService([activeMemberRow()]);
       const setFn = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
       db.update = jest.fn().mockReturnValue({ set: setFn });
-
-      const service = new WfhService(db as never, null);
 
       await service.update(ORG, "approver-user", REQUEST_ID, { status: "APPROVED" });
 

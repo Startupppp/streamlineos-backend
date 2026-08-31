@@ -119,8 +119,8 @@ describe("AiSummariesService — tenant isolation", () => {
         {
           summary: "Done.",
           structured: null as never,
-          citations: null,
-          correlationId: null,
+          citations: undefined,
+          correlationId: undefined,
         },
         "user-1",
       );

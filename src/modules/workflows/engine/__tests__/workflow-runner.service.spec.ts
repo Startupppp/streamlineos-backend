@@ -86,7 +86,7 @@ function setup(definition: unknown, opts?: { claimed?: boolean; context?: unknow
   const dispatcher: NodeDispatchPort = {
     execute: (node, input, now) => Promise.resolve(executeNode(node, input, now)),
   };
-  const service = new WorkflowRunnerService({} as Db, dispatcher);
+  const service = new WorkflowRunnerService({} as Db, dispatcher, {} as never);
   return { service, rec };
 }
 

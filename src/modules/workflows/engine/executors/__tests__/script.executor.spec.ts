@@ -18,6 +18,7 @@ const ctx: NodeExecutionContext = {
   orgId: "org-1",
   executionId: "exec-1",
   userId: null,
+  resolvedPermissions: null,
 };
 
 const now = new Date();

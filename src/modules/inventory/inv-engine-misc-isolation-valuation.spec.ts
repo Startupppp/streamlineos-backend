@@ -200,7 +200,7 @@ describe("InventoryWebhookEmitter — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(InventoryWebhookEmitter));
 
-    await svc.emit(ATTACKER, "product.created", { id: 1 });
+    await svc.emit(ATTACKER, "inventory.product.created", { id: 1 });
     expect(selectWhere).toHaveBeenCalled();
     const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
     expect(sqlValues(whereArg)).toContain(ATTACKER);
@@ -216,7 +216,7 @@ describe("InventoryWebhookEmitter — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(InventoryWebhookEmitter));
 
-    await expect(svc.emit(OWNER, "product.created", { id: 1 })).resolves.not.toThrow();
+    await expect(svc.emit(OWNER, "inventory.product.created", { id: 1 })).resolves.not.toThrow();
   });
 });
 

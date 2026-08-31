@@ -31,7 +31,7 @@ describe("CreditNotesService — cross-tenant isolation", () => {
     const { db, where } = makeDb([]);
     const svc = new CreditNotesService(db, {} as never, {} as never, {} as never);
 
-    await svc.list(ATTACKER_ORG, { page: 1, pageSize: 20 });
+    await svc.list(ATTACKER_ORG, { limit: 20 });
 
     expect(where).toHaveBeenCalledTimes(1);
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
@@ -41,7 +41,7 @@ describe("CreditNotesService — cross-tenant isolation", () => {
     const { db } = makeDb([{ id: 1, orgId: OWNER_ORG }]);
     const svc = new CreditNotesService(db, {} as never, {} as never, {} as never);
 
-    const result = await svc.list(OWNER_ORG, { page: 1, pageSize: 20 });
+    const result = await svc.list(OWNER_ORG, { limit: 20 });
 
     expect(result.data).toHaveLength(1);
   });
@@ -50,7 +50,7 @@ describe("CreditNotesService — cross-tenant isolation", () => {
     const { db, where } = makeDb([]);
     const svc = new CreditNotesService(db, {} as never, {} as never, {} as never);
 
-    await svc.list(OWNER_ORG, { page: 1, pageSize: 20, invoiceId: 42 });
+    await svc.list(OWNER_ORG, { limit: 20, invoiceId: 42 });
 
     expect(where).toHaveBeenCalledTimes(1);
     const predicateValues = sqlValues(where.mock.calls[0]?.[0]);
@@ -62,7 +62,7 @@ describe("CreditNotesService — cross-tenant isolation", () => {
     const { db, where } = makeDb([]);
     const svc = new CreditNotesService(db, {} as never, {} as never, {} as never);
 
-    await svc.list(OWNER_ORG, { page: 1, pageSize: 20 });
+    await svc.list(OWNER_ORG, { limit: 20 });
 
     expect(where).toHaveBeenCalledTimes(1);
     const predicateValues = sqlValues(where.mock.calls[0]?.[0]);
@@ -74,7 +74,7 @@ describe("CreditNotesService — cross-tenant isolation", () => {
     const { db, where } = makeDb([CROSS_TENANT_ROW]);
     const svc = new CreditNotesService(db, {} as never, {} as never, {} as never);
 
-    await svc.list(ATTACKER_ORG, { page: 1, pageSize: 20, invoiceId: 7 });
+    await svc.list(ATTACKER_ORG, { limit: 20, invoiceId: 7 });
 
     expect(where).toHaveBeenCalledTimes(1);
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);

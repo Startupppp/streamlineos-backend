@@ -14,6 +14,7 @@ const CONTEXT: NodeExecutionContext = {
   orgId: "org-1",
   executionId: "exec-1",
   userId: null,
+  resolvedPermissions: null,
 };
 
 function nodeOf(nodeType: WorkflowGraphNode["data"]["nodeType"]): WorkflowGraphNode {

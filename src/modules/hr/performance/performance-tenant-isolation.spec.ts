@@ -10,7 +10,6 @@ import { OneOnOneMeetingsService } from "./one-on-one-meetings.service";
 import { PerformanceGoalsService } from "./performance-goals.service";
 import { PerformancePipsService } from "./performance-pips.service";
 import { RichDocumentsService } from "./rich-documents.service";
-import { EngagementBadgesService } from "./engagement-badges.service";
 import { EngagementCommunitiesCampaignsService } from "./engagement-communities-campaigns.service";
 import { ComplianceService } from "./compliance.service";
 import { DocumentsService } from "./documents.service";
@@ -300,7 +299,7 @@ describe("HR Performance services — cross-tenant isolation", () => {
     it("scopes rich document list to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
       const svc = new RichDocumentsService(db);
-      const result = await svc.list(ATTACKER, { page: 1, limit: 10 });
+      const result = await svc.list(ATTACKER, { page: 1, limit: 10, isPublished: undefined });
       expect(result.data).toHaveLength(0);
       expect(where).toHaveBeenCalled();
       expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -309,7 +308,7 @@ describe("HR Performance services — cross-tenant isolation", () => {
     it("returns rich documents for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
       const svc = new RichDocumentsService(db);
-      const result = await svc.list(OWNER, { page: 1, limit: 10 });
+      const result = await svc.list(OWNER, { page: 1, limit: 10, isPublished: undefined });
       expect(result.data).toHaveLength(1);
     });
   });

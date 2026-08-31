@@ -1,5 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
-import type { Db } from "../../../db/drizzle.module";
+import type { Db } from "../../../../db/drizzle.module";
 import { CrmInboxService } from "../crm-inbox.service";
 import type { CrmInboxQueriesService } from "../crm-inbox-queries.service";
 

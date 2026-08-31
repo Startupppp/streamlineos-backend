@@ -14,6 +14,7 @@ import { TerminationReadService } from "./termination-read.service";
 import { TerminationCommunicationsService } from "./termination-communications.service";
 import { ExperienceLetterService } from "./experience-letter.service";
 import type { CacheService } from "../../../common/cache/cache.service";
+import type { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -389,7 +390,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("scopes employment queries to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
       const svc = new ExperienceLetterService(db, {} as never);
-      await expect(svc.create(ATTACKER, "user-1", {})).rejects.toThrow();
+      await expect(svc.create(ATTACKER, "user-1", { userId: "user-1", relievingDate: "2025-01-01" })).rejects.toThrow();
       expect(where).toHaveBeenCalled();
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
       expect(allValues).toContain(ATTACKER);
@@ -398,7 +399,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("scopes employment queries to the owning org (CONTROL)", async () => {
       const { db, where } = makeDb([]);
       const svc = new ExperienceLetterService(db, {} as never);
-      await expect(svc.create(OWNER, "user-1", {})).rejects.toThrow();
+      await expect(svc.create(OWNER, "user-1", { userId: "user-1", relievingDate: "2025-01-01" })).rejects.toThrow();
       expect(where).toHaveBeenCalled();
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
       expect(allValues).toContain(OWNER);

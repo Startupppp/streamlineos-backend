@@ -119,8 +119,7 @@ describe("CrmSequencesRunnerService — cross-tenant isolation", () => {
   it("flushDueEnrollments: processes enrollments from all orgs; each enrollment carries its orgId (tenant isolation by enrollment ownership)", async () => {
     const { db, where } = makeDb([]);
     const email = { send: jest.fn() };
-    const notifications = { dispatch: jest.fn() };
-    const svc = new CrmSequencesRunnerService(db, email as never, notifications as never);
+    const svc = new CrmSequencesRunnerService(db, email as never);
     const result = await svc.flushDueEnrollments();
     expect(result.processed).toBe(0);
     expect(where).toHaveBeenCalled();

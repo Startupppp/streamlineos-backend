@@ -1,5 +1,5 @@
 import { OrgChartService } from "../org-chart.service";
-import type { Db } from "../../../db/drizzle.module";
+import type { Db } from "../../../../db/drizzle.module";
 import type { EmploymentFactsService } from "../../../directory/employment-facts.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {

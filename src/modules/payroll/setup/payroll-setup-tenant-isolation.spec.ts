@@ -162,14 +162,14 @@ describe("PayrollComponentsService — cross-tenant isolation", () => {
   it("scopes component list to attacker org (cross-tenant isolation)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new PayrollComponentsService(db);
-    await svc.list(ATTACKER, { page: 1, limit: 20 });
+    await svc.list(ATTACKER, { page: 1, pageSize: 20 });
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 
   it("scopes component list to owner org (control — same-tenant returns items)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new PayrollComponentsService(db);
-    await svc.list(OWNER, { page: 1, limit: 20 });
+    await svc.list(OWNER, { page: 1, pageSize: 20 });
     expect(allArgs(where, findFirst, findMany)).toContain(OWNER);
   });
 
@@ -189,14 +189,14 @@ describe("PayrollTemplatesService — cross-tenant isolation", () => {
   it("scopes template list to show only org + system templates (cross-tenant isolation)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new PayrollTemplatesService(db);
-    await svc.list(ATTACKER, { page: 1, limit: 20 });
+    await svc.list(ATTACKER, { page: 1, pageSize: 20 });
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 
   it("scopes template list to owner org (control — same-tenant access works)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new PayrollTemplatesService(db);
-    await svc.list(OWNER, { page: 1, limit: 20 });
+    await svc.list(OWNER, { page: 1, pageSize: 20 });
     expect(allArgs(where, findFirst, findMany)).toContain(OWNER);
   });
 

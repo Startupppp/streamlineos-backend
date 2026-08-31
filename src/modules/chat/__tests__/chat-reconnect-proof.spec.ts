@@ -113,10 +113,6 @@ describe("Chat reconnect — poll (a): replay without duplicating", () => {
     });
     db.query.chatMessages.findMany.mockImplementation(
       ({ where }: { where: unknown }) => {
-        const { params } = require("drizzle-orm/pg-core").PgDialect
-          ? Promise.resolve([])
-          : Promise.resolve([]);
-        void params;
         void where;
         return Promise.resolve([
           {

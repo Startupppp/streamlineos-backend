@@ -56,8 +56,8 @@ describe("SurveyLeadAutomationService — cross-tenant isolation", () => {
 
     await svc.run(ownerSurvey, session, answers, 80, rules);
 
-    if (leadsService.create.mock.calls.length > 0) {
-      const callArgs = leadsService.create.mock.calls[0] as [string, ...unknown[]];
+    if (jest.mocked(leadsService.create).mock.calls.length > 0) {
+      const callArgs = jest.mocked(leadsService.create).mock.calls[0] as [string, ...unknown[]];
       expect(callArgs[0]).toBe(OWNER_ORG);
       expect(callArgs[0]).not.toBe(ATTACKER_ORG);
     }

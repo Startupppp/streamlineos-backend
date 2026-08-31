@@ -363,7 +363,7 @@ describe("CalendarService.updateEvent — series update does NOT delete calendar
           }),
         }),
       })),
-    } as unknown as typeof db;
+    } as unknown as Db;
 
     const svc = makeService(db);
     await svc.updateEvent(ORG, USER, EVENT_ID, { rrule: "FREQ=WEEKLY;BYDAY=TU" });
@@ -405,7 +405,7 @@ describe("CalendarService.updateEvent — series update does NOT delete calendar
           }),
         }),
       })),
-    } as unknown as typeof db;
+    } as unknown as Db;
 
     const svc = makeService(db);
     await svc.updateEvent(ORG, USER, EVENT_ID, { attendeeIds: [] });

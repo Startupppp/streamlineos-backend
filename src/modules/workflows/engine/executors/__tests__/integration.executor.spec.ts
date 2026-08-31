@@ -16,6 +16,7 @@ const ctx: NodeExecutionContext = {
   orgId: "org-1",
   executionId: "exec-1",
   userId: "user-1",
+  resolvedPermissions: null,
 };
 
 const emptyInput: NodeExecutionInput = { triggerData: {}, variables: {} };

@@ -34,10 +34,7 @@ function makeFluentChain(finalResult: unknown[]): FluentChain {
   chain.where = jest.fn().mockReturnValue(chain);
   chain.orderBy = jest.fn().mockReturnValue(chain);
   chain.limit = jest.fn().mockResolvedValue(finalResult);
-  chain.then = (
-    resolve: ((value: unknown[]) => unknown) | null | undefined,
-    reject?: ((reason: unknown) => unknown) | null | undefined,
-  ) => Promise.resolve(finalResult).then(resolve, reject);
+  chain.then = (resolve, reject) => Promise.resolve(finalResult).then(resolve, reject);
   return chain;
 }
 

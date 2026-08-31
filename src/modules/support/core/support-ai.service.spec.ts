@@ -1,6 +1,8 @@
 import { ForbiddenException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { Test, type TestingModule } from "@nestjs/testing";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { SupportAiService } from "./support-ai.service";
 import { SupportAiTriageService } from "./support-ai-triage.service";
 import { SupportAiTranslationService } from "./support-ai-translation.service";
@@ -84,6 +86,16 @@ const mockKbAccess = {
 };
 
 const baseTicket = { id: 42, orgId: "org1", title: "Can't log in", description: "It just spins", category: null, status: "OPEN", priority: "MEDIUM" };
+
+const currentUser: CurrentUserContext = {
+  userId: "user-1",
+  orgId: "org1",
+  role: "EMPLOYEE",
+  isOrgOwner: false,
+  sessionId: "sess-1",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
+};
 
 describe("SupportAiService", () => {
   let service: SupportAiService;
@@ -180,14 +192,14 @@ describe("SupportAiService", () => {
   describe("suggestReply", () => {
     it("returns null when AI is unavailable", async () => {
       mockOrgFeatures.getFlags.mockResolvedValueOnce({ supportAi: false });
-      const result = await service.suggestReply("org1", 42);
+      const result = await service.suggestReply(currentUser, 42);
       expect(result).toBeNull();
     });
 
     it("drafts and persists a reply suggestion with credit charge", async () => {
       mockGateway.invokeText.mockResolvedValueOnce(makeGatewayOk("Thanks for reaching out — try resetting your password."));
 
-      const result = await service.suggestReply("org1", 42);
+      const result = await service.suggestReply(currentUser, 42);
 
       expect(result).not.toBeNull();
       const [call] = mockGateway.invokeText.mock.calls;
@@ -204,7 +216,7 @@ describe("SupportAiService", () => {
         { articleId: 5, title: "Password reset guide", slug: "password-reset", similarity: 0.8 },
       ]);
 
-      await service.suggestReply("org1", 42);
+      await service.suggestReply(currentUser, 42);
 
       const replyCall = mockDb.values.mock.calls.find((c: [Record<string, unknown>]) => c[0].type === "reply");
       expect((replyCall[0].payload as { sources: unknown[] }).sources).toHaveLength(1);
@@ -215,7 +227,7 @@ describe("SupportAiService", () => {
       mockDb.query.supportAiSuggestions.findFirst.mockResolvedValueOnce({ confidence: "0.6" });
       mockGateway.invokeText.mockResolvedValueOnce(makeGatewayOk("Try resetting your password."));
 
-      await service.suggestReply("org1", 42);
+      await service.suggestReply(currentUser, 42);
 
       const replyCall = mockDb.values.mock.calls.find((c: [Record<string, unknown>]) => c[0].type === "reply");
       expect((replyCall[0].payload as { escalated: boolean }).escalated).toBe(true);
@@ -226,7 +238,7 @@ describe("SupportAiService", () => {
       mockDb.query.supportAiSuggestions.findFirst.mockResolvedValueOnce({ confidence: "0.9" });
       mockGateway.invokeText.mockResolvedValueOnce(makeGatewayOk("Try resetting your password."));
 
-      await service.suggestReply("org1", 42);
+      await service.suggestReply(currentUser, 42);
 
       const replyCall = mockDb.values.mock.calls.find((c: [Record<string, unknown>]) => c[0].type === "reply");
       expect((replyCall[0].payload as { escalated: boolean }).escalated).toBe(false);
@@ -234,12 +246,12 @@ describe("SupportAiService", () => {
 
     it("throws 402 on quota_exceeded", async () => {
       mockGateway.invokeText.mockResolvedValueOnce(makeGatewayFail("quota_exceeded", "Insufficient AI credits"));
-      await expect(service.suggestReply("org1", 42)).rejects.toThrow(InsufficientAiCreditsException);
+      await expect(service.suggestReply(currentUser, 42)).rejects.toThrow(InsufficientAiCreditsException);
     });
 
     it("throws ServiceUnavailableException on provider_unavailable", async () => {
       mockGateway.invokeText.mockResolvedValueOnce(makeGatewayFail("provider_unavailable"));
-      await expect(service.suggestReply("org1", 42)).rejects.toThrow(ServiceUnavailableException);
+      await expect(service.suggestReply(currentUser, 42)).rejects.toThrow(ServiceUnavailableException);
     });
   });
 
@@ -284,13 +296,13 @@ describe("SupportAiService", () => {
   describe("suggestKbArticles", () => {
     it("returns null when embeddings aren't configured", async () => {
       mockEmbeddings.isConfigured.mockReturnValueOnce(false);
-      const result = await service.suggestKbArticles("org1", 42);
+      const result = await service.suggestKbArticles(currentUser, 42);
       expect(result).toBeNull();
     });
 
     it("returns null when no article clears the similarity threshold", async () => {
       mockDb.limit.mockResolvedValueOnce([{ articleId: 1, title: "Unrelated", slug: "unrelated", similarity: 0.05 }]);
-      const result = await service.suggestKbArticles("org1", 42);
+      const result = await service.suggestKbArticles(currentUser, 42);
       expect(result).toBeNull();
     });
 
@@ -300,7 +312,7 @@ describe("SupportAiService", () => {
         { articleId: 1, title: "Password reset", slug: "password-reset", similarity: 0.55 },
         { articleId: 2, title: "Login issues", slug: "login-issues", similarity: 0.3 },
       ]);
-      const result = await service.suggestKbArticles("org1", 42);
+      const result = await service.suggestKbArticles(currentUser, 42);
       expect(result).not.toBeNull();
       const call = mockDb.values.mock.calls.find((c: [Record<string, unknown>]) => c[0].type === "kb_article");
       expect((call[0].payload as { articles: unknown[] }).articles).toHaveLength(2);
@@ -370,7 +382,7 @@ describe("SupportAiService", () => {
   describe("generateHandoffSummary", () => {
     it("returns null when AI is unavailable", async () => {
       mockOrgFeatures.getFlags.mockResolvedValueOnce({ supportAi: false });
-      const result = await service.generateHandoffSummary("org1", 42);
+      const result = await service.generateHandoffSummary(currentUser, 42);
       expect(result).toBeNull();
     });
 
@@ -381,7 +393,7 @@ describe("SupportAiService", () => {
         suggestedNextStep: "Manually reset the password and confirm 2FA is still enrolled",
       }));
 
-      const result = await service.generateHandoffSummary("org1", 42);
+      const result = await service.generateHandoffSummary(currentUser, 42);
 
       expect(result).not.toBeNull();
       const [call] = mockGateway.invokeStructured.mock.calls;

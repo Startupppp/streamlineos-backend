@@ -61,14 +61,14 @@ describe("HrInterviewsService — cross-tenant isolation", () => {
   it("scopes interview list to attacker org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
     const svc = new HrInterviewsService(db, mockConfig as never);
-    await svc.list(ATTACKER, { page: 1, limit: 10 });
+    await svc.list(ATTACKER, { page: 1, pageSize: 10, limit: 10, offset: 0, candidateId: undefined, upcoming: undefined, relevant: undefined });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
   it("returns interviews for owning org (control — same-tenant access works)", async () => {
     const { db, where, findMany } = makeDb([ROW]);
     const svc = new HrInterviewsService(db, mockConfig as never);
-    await svc.list(OWNER, { page: 1, limit: 10 });
+    await svc.list(OWNER, { page: 1, pageSize: 10, limit: 10, offset: 0, candidateId: undefined, upcoming: undefined, relevant: undefined });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });

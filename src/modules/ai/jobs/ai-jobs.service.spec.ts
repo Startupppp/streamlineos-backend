@@ -10,6 +10,7 @@ function makeJob(overrides: Partial<AiJob> = {}): AiJob {
     id: 1,
     orgId: "org-1",
     userId: null,
+    userMembershipId: null,
     type: "test.job",
     payload: {},
     status: "QUEUED",

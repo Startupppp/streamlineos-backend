@@ -35,7 +35,7 @@ function makeDb(candidates: unknown[] = []): Db & { execute: jest.Mock; transact
   return {
     execute: jest.fn().mockResolvedValue(candidates),
     select: jest.fn().mockReturnValue(makeSelectChain([])),
-    transaction: jest.fn().mockImplementation(async (fn: (tx: typeof tx) => Promise<unknown>) => fn(tx)),
+    transaction: jest.fn().mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
     query: { finReminderPolicies: { findFirst: jest.fn() } },
   } as unknown as Db & { execute: jest.Mock; transaction: jest.Mock; select: jest.Mock };
 }

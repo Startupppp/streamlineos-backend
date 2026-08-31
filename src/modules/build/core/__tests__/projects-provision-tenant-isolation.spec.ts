@@ -10,7 +10,6 @@
  */
 
 import { NotFoundException } from "@nestjs/common";
-import { DRIZZLE } from "../../../db/drizzle.constants";
 import { ProjectsProvisionService } from "../projects-provision.service";
 
 const OWNER_ORG = "org-owner-projects";

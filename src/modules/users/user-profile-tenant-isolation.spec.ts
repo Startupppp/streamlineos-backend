@@ -1,5 +1,9 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
+import type { AuditService } from "../../common/audit/audit.service";
+import type { SessionsService } from "../sessions/sessions.service";
+import type { EmploymentFactsService } from "../directory/employment-facts.service";
+import type { UserActivityService } from "./user-activity.service";
 import { UserProfileService } from "./user-profile.service";
 
 describe("UserProfileService — cross-tenant isolation", () => {
@@ -22,21 +26,27 @@ describe("UserProfileService — cross-tenant isolation", () => {
     } as unknown as Db;
   }
 
+  function makeService(memberRow: unknown): UserProfileService {
+    const audit: Pick<AuditService, "log"> = { log: jest.fn() };
+    const sessions: Partial<SessionsService> = {};
+    const employment: Partial<EmploymentFactsService> = {};
+    const activity: Partial<UserActivityService> = {};
+    return new UserProfileService(
+      makeDb(memberRow),
+      audit as AuditService,
+      sessions as SessionsService,
+      employment as EmploymentFactsService,
+      activity as UserActivityService,
+    );
+  }
+
   it("throws NotFoundException when user is not a member of the requesting org (cross-tenant isolation)", async () => {
-    const db = makeDb(null);
-    const mockAudit = { log: jest.fn() } as any;
-    const mockSessions = {} as any;
-    const mockEmployment = {} as any;
-    const svc = new UserProfileService(db, mockAudit, mockSessions, mockEmployment);
+    const svc = makeService(null);
     await expect(svc.getUserSessions(ATTACKER_ORG, USER_ID)).rejects.toThrow(NotFoundException);
   });
 
   it("returns sessions for the owning org (control — same-tenant)", async () => {
-    const db = makeDb({ userId: USER_ID });
-    const mockAudit = { log: jest.fn() } as any;
-    const mockSessions = {} as any;
-    const mockEmployment = {} as any;
-    const svc = new UserProfileService(db, mockAudit, mockSessions, mockEmployment);
+    const svc = makeService({ userId: USER_ID });
     await expect(svc.getUserSessions(OWNER_ORG, USER_ID)).resolves.toEqual([]);
   });
 });

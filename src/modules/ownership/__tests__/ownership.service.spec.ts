@@ -340,7 +340,7 @@ describe("OwnershipService — access / business-rule logic", () => {
     it("throws NotFoundException when transfer does not exist for the given org", async () => {
       mockDb.select.mockReturnValue(makeSelectChain([]));
       await expect(
-        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, false),
+        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, makeActor(false)),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
@@ -356,7 +356,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       };
       mockDb.select.mockReturnValue(makeSelectChain([transfer]));
       await expect(
-        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, false),
+        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, makeActor(false)),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -569,7 +569,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       mockDb.update.mockReturnValue(makeUpdateChain([]));
 
       await expect(
-        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, false),
+        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, makeActor(false)),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 

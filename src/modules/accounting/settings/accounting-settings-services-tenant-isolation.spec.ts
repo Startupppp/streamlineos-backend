@@ -122,7 +122,7 @@ describe("accounting settings services — cross-tenant isolation", () => {
 
     it("getOpeningBalance returns the balance for the correct org — CONTROL case", async () => {
       const entry = { id: 1, orgId: "org-owner", entryNumber: "OB-01", status: "POSTED" };
-      const lineBuilder: ChainBuilder = {
+      const lineBuilder = {
         from: jest.fn().mockReturnThis(),
         leftJoin: jest.fn().mockReturnThis(),
         innerJoin: jest.fn().mockReturnThis(),

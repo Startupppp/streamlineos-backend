@@ -57,7 +57,7 @@ const makePlanLimits = () => ({});
 describe("KbPageTreeService.softDelete — chunk purge is inside the transaction", () => {
   it("calls tx.delete on kbArticleChunks inside the transaction for the soft-deleted subtree", async () => {
     const { db, txDelete } = makeDb([42, 43]);
-    const svc = new KbPageTreeService(db as never, makeAudit() as never, makePlanLimits() as never);
+    const svc = new KbPageTreeService(db as never, makeAudit() as never);
 
     await svc.softDelete(makeUser(), 42);
 
@@ -83,7 +83,7 @@ describe("KbPageTreeService.softDelete — chunk purge is inside the transaction
     });
 
     void origTransaction;
-    const svc = new KbPageTreeService(db as never, makeAudit() as never, makePlanLimits() as never);
+    const svc = new KbPageTreeService(db as never, makeAudit() as never);
 
     await svc.softDelete(makeUser(), 42);
 

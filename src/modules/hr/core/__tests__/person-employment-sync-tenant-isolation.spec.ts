@@ -1,5 +1,5 @@
 import { PersonEmploymentSyncService } from "../person-employment-sync.service";
-import type { Db } from "../../../db/drizzle.module";
+import type { Db } from "../../../../db/drizzle.module";
 import type { HrAuditService } from "../hr-audit.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {

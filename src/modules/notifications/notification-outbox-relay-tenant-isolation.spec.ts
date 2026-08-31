@@ -26,14 +26,15 @@ function makeDb(orgRows: { id: string }[], outboxRows: unknown[] = []) {
     select: jest.fn().mockReturnValue(selectChain),
   };
 
+  const selectMock = jest.fn().mockImplementation(() => { selectCount++; return selectChain; });
   const db = {
-    select: jest.fn().mockImplementation(() => { selectCount++; return selectChain; }),
+    select: selectMock,
     update: jest.fn().mockReturnValue(updateChain),
     execute: jest.fn().mockResolvedValue([]),
     transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(innerTx)),
   } as unknown as Db;
 
-  return { db, selectChain, updateChain, innerTx, getSelectCount: () => selectCount };
+  return { db, selectChain, updateChain, innerTx, getSelectCount: () => selectCount, selectMock };
 }
 
 describe("NotificationOutboxRelayService — cross-tenant isolation (background relay)", () => {
@@ -50,13 +51,13 @@ describe("NotificationOutboxRelayService — cross-tenant isolation (background 
   });
 
   it("enumerates all active orgs independently so each org stays isolated (org isolation — control)", async () => {
-    const { db } = makeDb([{ id: "org-owner" }], []);
+    const { db, selectMock } = makeDb([{ id: "org-owner" }], []);
     const dispatch = { emitNow: jest.fn() } as never;
     const svc = new NotificationOutboxRelayService(db, dispatch);
 
     const result = await svc.flush();
 
     expect(result.claimed).toBe(0);
-    expect((db as { select: jest.Mock }).select).toHaveBeenCalled();
+    expect(selectMock).toHaveBeenCalled();
   });
 });

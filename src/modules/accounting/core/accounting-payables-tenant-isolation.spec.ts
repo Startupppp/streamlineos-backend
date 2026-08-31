@@ -118,7 +118,7 @@ describe("AccountingPayablesService — cross-tenant isolation", () => {
         svc.recordBillPayment(ATTACKER_ORG, "user-1", 1, {
           amount: 50,
           paymentDate: "2024-01-15",
-          paymentMethod: "BANK_TRANSFER",
+          paymentMethod: "bank_transfer",
         }),
       ).rejects.toThrow(NotFoundException);
     });
@@ -131,7 +131,7 @@ describe("AccountingPayablesService — cross-tenant isolation", () => {
         svc.recordBillPayment(ATTACKER_ORG, "user-1", 1, {
           amount: 50,
           paymentDate: "2024-01-15",
-          paymentMethod: "BANK_TRANSFER",
+          paymentMethod: "bank_transfer",
         }),
       ).rejects.toThrow(NotFoundException);
       expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
@@ -169,7 +169,7 @@ describe("AccountingPayablesService — cross-tenant isolation", () => {
       const result = await svc.recordBillPayment(OWNER_ORG, "user-1", 1, {
         amount: 50,
         paymentDate: "2024-01-15",
-        paymentMethod: "BANK_TRANSFER",
+        paymentMethod: "bank_transfer",
       });
       expect(result).toMatchObject({ id: 10 });
     });

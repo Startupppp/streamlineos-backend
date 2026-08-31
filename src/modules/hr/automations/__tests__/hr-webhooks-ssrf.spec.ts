@@ -1,5 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 import { HrWebhooksService } from "../hr-webhooks.service";
+import type { HrAutomationEvent } from "../hr-automation-events";
 
 jest.mock("../../../../common/security/ssrf-guard", () => ({
   checkWebhookUrl: jest.fn(),
@@ -10,50 +11,46 @@ import { checkWebhookUrl } from "../../../../common/security/ssrf-guard";
 const mockCheckWebhookUrl = checkWebhookUrl as jest.MockedFunction<typeof checkWebhookUrl>;
 
 const mockInsertReturning = jest.fn();
+const mockInsert = jest.fn();
+const mockUpdate = jest.fn();
+const mockFindMany = jest.fn();
+const mockFindFirst = jest.fn();
+
 const mockDb = {
-  insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: mockInsertReturning }) }),
-  update: jest.fn().mockReturnValue({
-    set: jest.fn().mockReturnValue({
-      where: jest.fn().mockReturnValue({
-        returning: jest.fn().mockResolvedValue([{ id: 1 }]),
-      }),
-    }),
-  }),
+  insert: mockInsert,
+  update: mockUpdate,
   query: {
     hrWebhookSubscriptions: {
-      findMany: jest.fn().mockResolvedValue([]),
-      findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: "org1", url: "https://ok.example.com", name: "w1" }),
+      findMany: mockFindMany,
+      findFirst: mockFindFirst,
     },
   },
-} as never;
+};
 
 function makeSvc() {
-  return new HrWebhooksService(mockDb);
+  return new HrWebhooksService(mockDb as never);
 }
 
+const VALID_EVENTS: HrAutomationEvent[] = ["employee.created"];
 const VALID_INPUT = {
   name: "my-hook",
   url: "https://hooks.example.com/crm",
-  events: ["employee.created"] as string[],
+  events: VALID_EVENTS,
   isActive: true,
 };
 
 describe("HrWebhooksService — SSRF guard (shared checkWebhookUrl)", () => {
   beforeEach(() => {
     jest.resetAllMocks();
-    mockDb.insert = jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: mockInsertReturning }) });
     mockInsertReturning.mockResolvedValue([{ id: 1, orgId: "org1", ...VALID_INPUT, secret: "s", createdBy: "u1", createdAt: new Date(), updatedAt: new Date(), deletedAt: null }]);
-    mockDb.update = jest.fn().mockReturnValue({
+    mockInsert.mockReturnValue({ values: jest.fn().mockReturnValue({ returning: mockInsertReturning }) });
+    mockUpdate.mockReturnValue({
       set: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1 }]) }),
       }),
     });
-    mockDb.query = {
-      hrWebhookSubscriptions: {
-        findMany: jest.fn().mockResolvedValue([]),
-        findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: "org1", url: "https://ok.example.com", name: "w1" }),
-      },
-    } as never;
+    mockFindMany.mockResolvedValue([]);
+    mockFindFirst.mockResolvedValue({ id: 1, orgId: "org1", url: "https://ok.example.com", name: "w1" });
   });
 
   describe("createSubscription", () => {
@@ -66,7 +63,7 @@ describe("HrWebhooksService — SSRF guard (shared checkWebhookUrl)", () => {
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(mockCheckWebhookUrl).toHaveBeenCalledWith("http://192.168.1.1/webhook");
-      expect(mockDb.insert).not.toHaveBeenCalled();
+      expect(mockInsert).not.toHaveBeenCalled();
     });
 
     it("proof — neutering the guard allows insert to proceed for an internal URL", async () => {
@@ -77,7 +74,7 @@ describe("HrWebhooksService — SSRF guard (shared checkWebhookUrl)", () => {
         svc.createSubscription("org1", "u1", { ...VALID_INPUT, url: "http://192.168.1.1/webhook" }),
       ).resolves.toBeDefined();
 
-      expect(mockDb.insert).toHaveBeenCalled();
+      expect(mockInsert).toHaveBeenCalled();
     });
 
     it("allows a legitimate external URL to proceed", async () => {
@@ -88,7 +85,7 @@ describe("HrWebhooksService — SSRF guard (shared checkWebhookUrl)", () => {
         svc.createSubscription("org1", "u1", VALID_INPUT),
       ).resolves.toBeDefined();
 
-      expect(mockDb.insert).toHaveBeenCalled();
+      expect(mockInsert).toHaveBeenCalled();
     });
   });
 
@@ -102,7 +99,7 @@ describe("HrWebhooksService — SSRF guard (shared checkWebhookUrl)", () => {
       ).rejects.toBeInstanceOf(BadRequestException);
 
       expect(mockCheckWebhookUrl).toHaveBeenCalledWith("http://10.0.0.1/hook");
-      expect(mockDb.update).not.toHaveBeenCalled();
+      expect(mockUpdate).not.toHaveBeenCalled();
     });
 
     it("proof — neutering the guard allows DB update for an internal URL", async () => {
@@ -111,7 +108,7 @@ describe("HrWebhooksService — SSRF guard (shared checkWebhookUrl)", () => {
 
       await svc.updateSubscription("org1", 1, { url: "http://10.0.0.1/hook" }).catch(() => {});
 
-      expect(mockDb.update).toHaveBeenCalled();
+      expect(mockUpdate).toHaveBeenCalled();
     });
 
     it("skips the SSRF check when url is absent in the update input", async () => {

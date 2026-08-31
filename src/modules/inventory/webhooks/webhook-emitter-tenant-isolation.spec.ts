@@ -32,7 +32,7 @@ describe("InventoryWebhookEmitter — cross-tenant isolation", () => {
   it("emits nothing when no webhooks match the requesting org (cross-tenant isolation)", async () => {
     const { db, where } = makeDb([]);
     const svc = new InventoryWebhookEmitter(db);
-    await svc.emit(ATTACKER, "product.created", { id: 1 });
+    await svc.emit(ATTACKER, "inventory.product.created", { id: 1 });
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
@@ -41,6 +41,6 @@ describe("InventoryWebhookEmitter — cross-tenant isolation", () => {
     const webhookRow = { id: 1, url: "https://example.com/hook", secret: null };
     const { db } = makeDb([webhookRow]);
     const svc = new InventoryWebhookEmitter(db);
-    await expect(svc.emit(OWNER, "product.created", { id: 1 })).resolves.toBeUndefined();
+    await expect(svc.emit(OWNER, "inventory.product.created", { id: 1 })).resolves.toBeUndefined();
   });
 });

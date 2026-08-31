@@ -189,7 +189,7 @@ describe("Financial record retention — legal hold beats mutation", () => {
         }),
       };
 
-      const svc = new ExpenseExportService(db as never, {} as StorageService);
+      const svc = new ExpenseExportService(db as never, {} as never);
       const job = {
         id: "job-1",
         orgId: "org-a",

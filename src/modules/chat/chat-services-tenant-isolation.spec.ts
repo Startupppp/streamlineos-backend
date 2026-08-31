@@ -230,7 +230,8 @@ describe("ChatChannelMembersService — tenant isolation", () => {
     } as unknown as Db;
     const cache = { invalidateNamespace: jest.fn() } as unknown as CacheService;
     const entities = {} as unknown as EntityReferenceService;
-    const service = new ChatChannelMembersService(db, cache, entities);
+    const ably = {} as unknown as AblyService;
+    const service = new ChatChannelMembersService(db, cache, entities, ably);
     return { service, db };
   }
 

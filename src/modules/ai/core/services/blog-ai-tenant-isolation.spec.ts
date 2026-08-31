@@ -14,6 +14,8 @@
  *   3. runInTenantTransaction is called with the correct orgId for the tenant GUC.
  */
 
+export {};
+
 jest.mock("../../../../common/tenant/run-in-tenant-transaction");
 
 const OWNER_ORG = "org-owner-blog";

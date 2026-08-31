@@ -56,7 +56,7 @@ describe("UnifiedInboxService — cross-tenant isolation", () => {
     return { getInboxPage: jest.fn().mockResolvedValue([]) } as unknown as BuildApprovalsInboxService;
   }
 
-  const query: UnifiedInboxQuery = { kinds: ["notification"], limit: 25 };
+  const query: UnifiedInboxQuery = { kinds: ["notification"], limit: 25, unreadOnly: false };
 
   it("scopes notification query to the requesting org — cross-tenant isolation", async () => {
     const { db, where } = makeNotifDb();

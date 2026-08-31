@@ -282,7 +282,7 @@ describe("ChatHuddlesService — cross-tenant isolation on huddle operations", (
     const result = await service.heartbeat(42, "user-owner", OWNER_ORG);
 
     expect(result).toEqual({ ok: true });
-    expect(whereMock).toHaveBeenCalledOnce?.();
+    expect(whereMock).toHaveBeenCalledTimes(1);
     const [predicate] = whereMock.mock.calls[0] ?? [];
     expect(sqlValues(predicate)).toContain(OWNER_ORG);
   });

@@ -1,10 +1,10 @@
 import { NotFoundException } from "@nestjs/common";
 import { TerminationLifecycleService } from "../termination-lifecycle.service";
-import type { Db } from "../../../db/drizzle.module";
-import type { AuditService } from "../../../common/audit/audit.service";
-import type { CacheService } from "../../../common/cache/cache.service";
-import type { AutomationService } from "../../automation/automation.service";
-import type { HrAutomationEngineService } from "../automations/hr-automation-engine.service";
+import type { Db } from "../../../../db/drizzle.module";
+import type { AuditService } from "../../../../common/audit/audit.service";
+import type { CacheService } from "../../../../common/cache/cache.service";
+import type { AutomationService } from "../../../automation/automation.service";
+import type { HrAutomationEngineService } from "../../automations/hr-automation-engine.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -60,14 +60,14 @@ function makeDb(terminationRow?: Record<string, unknown>): { db: Db; findFirst: 
 
 describe("TerminationLifecycleService — cross-tenant isolation", () => {
   it("submit throws NotFoundException when termination does not exist in the requesting org (cross-tenant probe returns 404)", async () => {
-    const { db } = makeDb(null);
+    const { db } = makeDb();
     const svc = new TerminationLifecycleService(db, audit, cache, automation, hrAutomation);
 
     await expect(svc.submit(ATTACKER_ORG, "actor-1", 999)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("submit scopes the lookup to requesting org — attacker org cannot access victim org termination (BOLA prevention)", async () => {
-    const { db, findFirst } = makeDb(null);
+    const { db, findFirst } = makeDb();
     const svc = new TerminationLifecycleService(db, audit, cache, automation, hrAutomation);
 
     await expect(svc.submit(ATTACKER_ORG, "actor-1", 42)).rejects.toBeInstanceOf(NotFoundException);
@@ -79,7 +79,7 @@ describe("TerminationLifecycleService — cross-tenant isolation", () => {
   });
 
   it("finalReview throws NotFoundException when termination not found for different org (tenant isolation: 404 not 403)", async () => {
-    const { db } = makeDb(null);
+    const { db } = makeDb();
     const svc = new TerminationLifecycleService(db, audit, cache, automation, hrAutomation);
 
     await expect(
@@ -88,7 +88,7 @@ describe("TerminationLifecycleService — cross-tenant isolation", () => {
   });
 
   it("finalReview lookup scopes to the requesting org — WHERE clause includes orgId for cross-tenant isolation", async () => {
-    const { db, findFirst } = makeDb(null);
+    const { db, findFirst } = makeDb();
     const svc = new TerminationLifecycleService(db, audit, cache, automation, hrAutomation);
 
     await expect(

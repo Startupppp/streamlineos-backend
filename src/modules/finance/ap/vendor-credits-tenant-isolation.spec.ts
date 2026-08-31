@@ -33,7 +33,7 @@ describe("VendorCreditsService — cross-tenant isolation", () => {
   it("scopes the query to the requesting org (tenant isolation)", async () => {
     const { svc, where } = makeService([]);
 
-    await svc.listVendorCredits(ATTACKER_ORG, { page: 1, pageSize: 20 });
+    await svc.listVendorCredits(ATTACKER_ORG, { limit: 20 });
 
     expect(where).toHaveBeenCalledTimes(1);
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
@@ -42,7 +42,7 @@ describe("VendorCreditsService — cross-tenant isolation", () => {
   it("returns items for the owning org (same-tenant control)", async () => {
     const { svc } = makeService([{ id: 1, orgId: OWNER_ORG }]);
 
-    const result = await svc.listVendorCredits(OWNER_ORG, { page: 1, pageSize: 20 });
+    const result = await svc.listVendorCredits(OWNER_ORG, { limit: 20 });
 
     expect(result.data).toHaveLength(1);
   });

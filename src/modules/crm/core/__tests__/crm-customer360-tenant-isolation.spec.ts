@@ -1,5 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
-import type { Db } from "../../../db/drizzle.module";
+import type { Db } from "../../../../db/drizzle.module";
 import { CrmCustomer360FinanceService } from "../crm-customer360-finance.service";
 import { CrmCustomer360SectionsService } from "../crm-customer360-sections.service";
 import type { CrmCustomer360FinanceService as FinanceDep } from "../crm-customer360-finance.service";

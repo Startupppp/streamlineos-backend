@@ -18,7 +18,7 @@ const USER = "user-1";
 const FIXED_DEDUPE_KEY = "outbox-row-7";
 
 const DEFINITION = {
-  eventKey: "build.ticket.comment",
+  eventKey: "build.ticket.assigned",
   sourceModule: "build",
   category: "PROJECTS",
   displayName: "New comment",
@@ -49,12 +49,20 @@ const ROUTING = new Map([
   ],
 ]);
 
+interface MockDb {
+  transaction: jest.Mock;
+  execute: jest.Mock;
+  select: jest.Mock;
+  insert: jest.Mock;
+  update: jest.Mock;
+}
+
 describe("NotificationDispatchService — idempotent materialization under relay replay", () => {
   let deliveryInsertCount = 0;
   const notifInsertedValues: Array<Record<string, unknown>> = [];
 
-  const db = {
-    transaction: jest.fn((fn: (t: typeof db) => Promise<unknown>) => fn(db)),
+  const db: MockDb = {
+    transaction: jest.fn((fn: (t: MockDb) => Promise<unknown>) => fn(db)),
     execute: jest.fn().mockResolvedValue([]),
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
@@ -89,7 +97,7 @@ describe("NotificationDispatchService — idempotent materialization under relay
     deliveryInsertCount = 0;
     notifInsertedValues.length = 0;
 
-    db.transaction.mockImplementation((fn: (t: typeof db) => Promise<unknown>) => fn(db));
+    db.transaction.mockImplementation((fn: (t: MockDb) => Promise<unknown>) => fn(db));
     db.execute.mockResolvedValue([]);
 
     const moduleRef = await Test.createTestingModule({
@@ -126,7 +134,7 @@ describe("NotificationDispatchService — idempotent materialization under relay
   });
 
   const input: DispatchEventInput = {
-    eventKey: "build.ticket.comment",
+    eventKey: "build.ticket.assigned",
     orgId: ORG,
     targetUserIds: [USER],
     entityType: "ticket",

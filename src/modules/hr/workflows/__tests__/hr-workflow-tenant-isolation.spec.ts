@@ -1,8 +1,8 @@
 import { NotFoundException } from "@nestjs/common";
 import { HrWorkflowStepRunnerService } from "../hr-workflow-step-runner.service";
 import { HrWorkflowApproverService } from "../hr-workflow-approver.service";
-import type { Db } from "../../../db/drizzle.module";
-import type { AccessService } from "../../access/access.service";
+import type { Db } from "../../../../db/drizzle.module";
+import type { AccessService } from "../../../access/access.service";
 import type { EmploymentFactsService } from "../../../directory/employment-facts.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -118,7 +118,7 @@ describe("HrWorkflowApproverService — cross-tenant isolation", () => {
       "actor-from-attacker-org",
       ["approver-in-victim-org"],
       "wf-obj-1",
-      "leave",
+      "leave_request",
     );
 
     expect(result).toBeNull();
@@ -147,7 +147,7 @@ describe("HrWorkflowApproverService — cross-tenant isolation", () => {
       "attacker-actor",
       ["victim-approver-that-is-not-in-list"],
       "wf-obj-1",
-      "leave",
+      "leave_request",
     );
 
     expect(result).toBeNull();

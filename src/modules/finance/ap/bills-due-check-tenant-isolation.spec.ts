@@ -36,11 +36,12 @@ describe("BillsDueCheckService — cross-tenant isolation", () => {
     const from = jest.fn().mockReturnValue({ leftJoin: jest.fn().mockReturnValue({ where }) });
     const db = { select: jest.fn().mockReturnValue({ from }) } as unknown as Db;
     const cache = { cached: jest.fn() } as never;
-    const dispatch = { emit: jest.fn() } as never;
+    const emitMock = jest.fn();
+    const dispatch = { emit: emitMock } as never;
     const svc = new BillsDueCheckService(db, cache, dispatch);
 
     await svc.checkBillsDue(TARGET_ORG);
 
-    expect(dispatch.emit).not.toHaveBeenCalled();
+    expect(emitMock).not.toHaveBeenCalled();
   });
 });

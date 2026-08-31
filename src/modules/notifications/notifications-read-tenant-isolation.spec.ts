@@ -52,7 +52,7 @@ describe("NotificationsReadService — cross-tenant isolation", () => {
     const cache = { cachedVersioned: jest.fn().mockImplementation((_ns: unknown, _key: unknown, fn: () => unknown) => fn()) } as never;
     const svc = new NotificationsReadService(db, cache);
 
-    await svc.list(ATTACKER_ORG, "user-1", { limit: 20 });
+    await svc.list(ATTACKER_ORG, "user-1", { limit: 20, section: "ALL" as const, unreadOnly: false });
 
     expect(allWhereArgs.length).toBeGreaterThan(0);
     const allVals = allWhereArgs.flatMap(w => sqlValues(w));
@@ -64,7 +64,7 @@ describe("NotificationsReadService — cross-tenant isolation", () => {
     const cache = { cachedVersioned: jest.fn().mockImplementation((_ns: unknown, _key: unknown, fn: () => unknown) => fn()) } as never;
     const svc = new NotificationsReadService(db, cache);
 
-    const result = await svc.list(OWNER_ORG, "user-1", { limit: 20 });
+    const result = await svc.list(OWNER_ORG, "user-1", { limit: 20, section: "ALL" as const, unreadOnly: false });
 
     expect(result).toBeDefined();
   });
