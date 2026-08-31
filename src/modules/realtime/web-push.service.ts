@@ -4,7 +4,7 @@ import { and, eq, inArray, ne } from "drizzle-orm";
 import * as webpush from "web-push";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { chatChannelMembers, pushSubscriptions } from "../../db/schema";
+import { chatChannelMembers, organizationMembers, pushSubscriptions } from "../../db/schema";
 import type { PushPayload } from "./dto/realtime.schemas";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
@@ -106,13 +106,14 @@ export class WebPushService {
     }
 
     const members = await this.db
-      .select({ userId: chatChannelMembers.userId })
+      .select({ userId: organizationMembers.userId })
       .from(chatChannelMembers)
+      .innerJoin(organizationMembers, eq(organizationMembers.id, chatChannelMembers.membershipId))
       .where(
         and(
           eq(chatChannelMembers.orgId, orgId),
           eq(chatChannelMembers.channelId, channelId),
-          ne(chatChannelMembers.userId, senderUserId),
+          ne(organizationMembers.userId, senderUserId),
         ),
       );
 
