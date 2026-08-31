@@ -76,13 +76,15 @@ export class PayrollFilingsService {
     };
   }
 
-  list(orgId: string) {
+  list(orgId: string, page = 1, limit = 50) {
+    const cap = Math.min(limit, 100);
     return this.db
       .select()
       .from(payrollFilings)
       .where(eq(payrollFilings.orgId, orgId))
       .orderBy(desc(payrollFilings.createdAt))
-      .limit(100);
+      .limit(cap)
+      .offset((page - 1) * cap);
   }
 
   async get(orgId: string, filingId: number) {

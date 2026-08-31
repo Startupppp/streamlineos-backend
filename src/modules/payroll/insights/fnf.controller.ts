@@ -6,6 +6,7 @@ import {
   Param,
   ParseIntPipe,
   Post,
+  Query,
   StreamableFile,
   UseGuards,
 } from "@nestjs/common";
@@ -18,7 +19,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { FnfInsightsService } from "./fnf.service";
-import { patchFnfSchema, type PatchFnfInput } from "../hr-payroll/dto/payroll.schemas";
+import { patchFnfSchema, listPageQuerySchema, type PatchFnfInput, type ListPageQueryInput } from "../hr-payroll/dto/payroll.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
@@ -33,8 +34,9 @@ export class FnfController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:fnf:view")
-  list(@CurrentUser() u: CurrentUserContext) {
-    return this.fnfService.list(u.orgId, u.userId, true);
+  @Validate({ query: listPageQuerySchema })
+  list(@CurrentUser() u: CurrentUserContext, @Query() query: ListPageQueryInput) {
+    return this.fnfService.list(u.orgId, u.userId, true, query.page, query.limit);
   }
 
   @Get(":settlementId")

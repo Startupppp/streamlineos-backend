@@ -1,12 +1,11 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import {
   assertOrganizationActor,
   OrganizationActorError,
@@ -20,12 +19,8 @@ import {
   payrollExceptions,
   payrollRunEvents,
   payrollRuns,
-  roleAssignments,
-  roles,
-  rolePermissionGrants,
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
-import { ROLE_DEFAULT_PERMISSIONS } from "../../rbac/permissions";
 import { logger } from "../../../common/logger/logger.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import {
@@ -36,7 +31,8 @@ import {
 } from "../payroll.types";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { GenerateService } from "../runs/generate.service";
+import { PayrollApproverResolverService } from "./payroll-approver-resolver.service";
+import { ApprovalActionsService } from "./approval-actions.service";
 
 @Injectable()
 export class ApprovalsService {
@@ -45,7 +41,8 @@ export class ApprovalsService {
     private readonly access: AccessService,
     private readonly notifications: PayrollNotificationsService,
     private readonly audit: AuditService,
-    private readonly generate: GenerateService,
+    private readonly actions: ApprovalActionsService,
+    private readonly resolver: PayrollApproverResolverService,
   ) {}
 
   async submitApproval(orgId: string, userId: string, runId: number, requestId?: string | null) {
@@ -132,7 +129,7 @@ export class ApprovalsService {
 
     const firstStage = chain[0];
     const firstStageApprovers = firstStage
-      ? await this.resolveApprovers(orgId, firstStage.requiredPermission)
+      ? await this.resolver.resolveApprovers(orgId, firstStage.requiredPermission)
       : [];
 
     const submitResult = await this.db.transaction(async (tx) => {
@@ -235,219 +232,7 @@ export class ApprovalsService {
     comment?: string,
     requestId?: string | null,
   ) {
-    const [approval, run] = await Promise.all([
-      this.db.query.payrollApprovals.findFirst({
-        where: and(
-          eq(payrollApprovals.id, approvalId),
-          eq(payrollApprovals.runId, runId),
-          eq(payrollApprovals.orgId, orgId),
-        ),
-      }),
-      this.db.query.payrollRuns.findFirst({
-        where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
-        with: { policyVersion: true },
-      }),
-    ]);
-
-    if (!approval || !run) throw new NotFoundException("Payroll run or approval not found");
-
-    if (approval.status !== "PENDING") throw new ConflictException("Approval already acted on");
-
-    if (run.status !== "PENDING_APPROVAL") throw new ConflictException("Run is not pending approval");
-
-    const allStages = await this.db
-      .select({
-        id: payrollApprovals.id,
-        status: payrollApprovals.status,
-        requiredPermission: payrollApprovals.requiredPermission,
-        stageName: payrollApprovals.stageName,
-      })
-      .from(payrollApprovals)
-      .where(and(eq(payrollApprovals.runId, runId), eq(payrollApprovals.orgId, orgId)))
-      .orderBy(asc(payrollApprovals.stage));
-
-    const nextPending = allStages.find((s) => s.status === "PENDING");
-
-    if (nextPending?.id !== approvalId) {
-      throw new ConflictException("This is not the next stage to approve");
-    }
-
-    const memberRow = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
-      columns: { isOwner: true },
-    });
-    const isOrgOwner = memberRow?.isOwner === true;
-
-    if (!isOrgOwner) {
-      const perms = await this.access.resolveUserPermissions(orgId, userId);
-      if (!perms.has(approval.requiredPermission)) {
-        throw new ForbiddenException(`Missing required permission: ${approval.requiredPermission}`);
-      }
-    }
-
-    const submittedEvent = await this.db.query.payrollRunEvents.findFirst({
-      where: and(
-        eq(payrollRunEvents.runId, runId),
-        eq(payrollRunEvents.orgId, orgId),
-        eq(payrollRunEvents.type, "APPROVAL_SUBMITTED"),
-      ),
-    });
-
-    if (submittedEvent?.actorId === userId) {
-      throw new ForbiddenException(
-        "Maker-checker violation: the submitter cannot approve their own payroll run",
-      );
-    }
-
-    const stageActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
-      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
-      throw e;
-    });
-
-    const isLastStage = allStages.every((s) => s.id === approvalId || s.status === "APPROVED");
-    const rawRunToggles = run.policyVersion?.toggles;
-    const runToggles: PayrollToggles = rawRunToggles && typeof rawRunToggles === "object"
-      ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawRunToggles as Partial<PayrollToggles>) }
-      : { ...DEFAULT_PAYROLL_TOGGLES };
-    const lockAfterApproval = runToggles.lockAfterApproval !== false;
-
-    const nextStage = !isLastStage
-      ? (allStages.find((s) => s.id !== approvalId && s.status === "PENDING") ?? null)
-      : null;
-
-    const nextStageApprovers = nextStage
-      ? await this.resolveApprovers(orgId, nextStage.requiredPermission)
-      : [];
-
-    const result = await this.db.transaction(async (tx) => {
-      await tx
-        .update(payrollApprovals)
-        .set({ status: "APPROVED", actedBy: userId, actedByMembershipId: stageActor.membershipId, actedAt: new Date(), comment: comment ?? null })
-        .where(and(eq(payrollApprovals.id, approvalId), eq(payrollApprovals.orgId, orgId)));
-
-      if (isLastStage) {
-        if (lockAfterApproval) {
-          await tx
-            .update(payrollRuns)
-            .set({
-              status: "LOCKED",
-              lockedAt: new Date(),
-              lockedBy: userId,
-              approvedAt: new Date(),
-              approvedBy: userId,
-              approvedByMembershipId: stageActor.membershipId,
-            })
-            .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
-
-          await tx.insert(payrollRunEvents).values([
-            { orgId, runId, type: "APPROVED", actorId: userId },
-            { orgId, runId, type: "LOCKED", actorId: userId },
-          ]);
-
-          await this.generate.postPayrollLock(orgId, runId, tx);
-        } else {
-          await tx
-            .update(payrollRuns)
-            .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId, approvedByMembershipId: stageActor.membershipId })
-            .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
-
-          await tx.insert(payrollRunEvents).values({
-            orgId,
-            runId,
-            type: "APPROVED",
-            actorId: userId,
-          });
-        }
-      }
-
-      const runStatus: "LOCKED" | "APPROVED" | "PENDING_APPROVAL" = isLastStage
-        ? lockAfterApproval
-          ? "LOCKED"
-          : "APPROVED"
-        : "PENDING_APPROVAL";
-
-      return { success: true, runStatus };
-    });
-
-    if (nextStage && nextStageApprovers.length > 0) {
-      const { stageName } = nextStage;
-      const notifyNext = () =>
-        Promise.all(
-          nextStageApprovers.map((approverId) =>
-            this.notifications.notifyApprovalPending(orgId, approverId, runId, stageName),
-          ),
-        ).catch((e: unknown) => logger.error("notifyApprovalPending failed", { error: String(e) }));
-      if (!registerAfterCommit(notifyNext)) void notifyNext();
-    }
-
-    this.audit.log({
-      action: "payroll.run_approval_stage_approved",
-      userId,
-      orgId,
-      actorMembershipId: stageActor.membershipId,
-      targetId: String(runId),
-      targetType: "payroll_run",
-      requestId: requestId ?? null,
-      metadata: { approvalId, stageName: approval.stageName, resultingStatus: result.runStatus },
-    });
-
-    return result;
-  }
-
-  private async resolveApprovers(orgId: string, requiredPermission: string): Promise<string[]> {
-    const slugsWithPerm = Object.entries(ROLE_DEFAULT_PERMISSIONS)
-      .filter(([, perms]) => (perms as string[]).includes(requiredPermission))
-      .map(([slug]) => slug);
-
-    const [grantRows, defaultRoleRows, ownerRows] = await Promise.all([
-      this.db
-        .select({ userId: organizationMembers.userId })
-        .from(rolePermissionGrants)
-        .innerJoin(
-          roleAssignments,
-          and(
-            eq(roleAssignments.roleId, rolePermissionGrants.roleId),
-            eq(roleAssignments.orgId, orgId),
-          ),
-        )
-        .innerJoin(
-          organizationMembers,
-          and(
-            eq(organizationMembers.orgId, roleAssignments.orgId),
-            eq(organizationMembers.id, roleAssignments.organizationMembershipId),
-          ),
-        )
-        .where(
-          and(
-            eq(rolePermissionGrants.orgId, orgId),
-            eq(rolePermissionGrants.permissionKey, requiredPermission),
-          ),
-        ),
-      slugsWithPerm.length > 0
-        ? this.db
-            .select({ userId: organizationMembers.userId })
-            .from(roleAssignments)
-            .innerJoin(roles, eq(roleAssignments.roleId, roles.id))
-            .innerJoin(
-              organizationMembers,
-              and(
-                eq(organizationMembers.orgId, roleAssignments.orgId),
-                eq(organizationMembers.id, roleAssignments.organizationMembershipId),
-              ),
-            )
-            .where(and(eq(roleAssignments.orgId, orgId), inArray(roles.slug, slugsWithPerm)))
-        : Promise.resolve<{ userId: string }[]>([]),
-      this.db
-        .select({ userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.isOwner, true))),
-    ]);
-
-    const ids = new Set<string>();
-    for (const row of [...grantRows, ...defaultRoleRows, ...ownerRows]) {
-      if (row.userId) ids.add(row.userId);
-    }
-    return Array.from(ids);
+    return this.actions.approveStage(orgId, userId, runId, approvalId, comment, requestId);
   }
 
   async rejectStage(
@@ -458,103 +243,6 @@ export class ApprovalsService {
     comment: string,
     requestId?: string | null,
   ) {
-    const [approval, run] = await Promise.all([
-      this.db.query.payrollApprovals.findFirst({
-        where: and(
-          eq(payrollApprovals.id, approvalId),
-          eq(payrollApprovals.runId, runId),
-          eq(payrollApprovals.orgId, orgId),
-        ),
-      }),
-      this.db.query.payrollRuns.findFirst({
-        where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
-        columns: { id: true, status: true },
-      }),
-    ]);
-
-    if (!approval || !run) throw new NotFoundException("Payroll run or approval not found");
-
-    if (approval.status !== "PENDING") throw new ConflictException("Approval already acted on");
-
-    const memberRow = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
-      columns: { isOwner: true },
-    });
-    const isOrgOwner = memberRow?.isOwner === true;
-
-    if (!isOrgOwner) {
-      const perms = await this.access.resolveUserPermissions(orgId, userId);
-      if (!perms.has(approval.requiredPermission)) {
-        throw new ForbiddenException(`Missing required permission: ${approval.requiredPermission}`);
-      }
-    }
-
-    const submittedEvent = await this.db.query.payrollRunEvents.findFirst({
-      where: and(
-        eq(payrollRunEvents.runId, runId),
-        eq(payrollRunEvents.orgId, orgId),
-        eq(payrollRunEvents.type, "APPROVAL_SUBMITTED"),
-      ),
-    });
-    if (submittedEvent?.actorId === userId) {
-      throw new ForbiddenException(
-        "Maker-checker violation: the submitter cannot reject their own payroll run",
-      );
-    }
-
-    const rejectActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
-      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
-      throw e;
-    });
-
-    const allStages = await this.db
-      .select({
-        id: payrollApprovals.id,
-        status: payrollApprovals.status,
-      })
-      .from(payrollApprovals)
-      .where(and(eq(payrollApprovals.runId, runId), eq(payrollApprovals.orgId, orgId)))
-      .orderBy(asc(payrollApprovals.stage));
-
-    const nextPending = allStages.find((s) => s.status === "PENDING");
-
-    if (nextPending?.id !== approvalId) {
-      throw new ConflictException("This is not the next stage to reject");
-    }
-
-    const result = await this.db.transaction(async (tx) => {
-      await tx
-        .update(payrollApprovals)
-        .set({ status: "REJECTED", actedBy: userId, actedByMembershipId: rejectActor.membershipId, actedAt: new Date(), comment })
-        .where(and(eq(payrollApprovals.id, approvalId), eq(payrollApprovals.orgId, orgId)));
-
-      await tx
-        .update(payrollRuns)
-        .set({ status: "PREVIEW_READY" })
-        .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
-
-      await tx.insert(payrollRunEvents).values({
-        orgId,
-        runId,
-        type: "REJECTED",
-        actorId: userId,
-        reason: comment,
-      });
-
-      return { success: true, runStatus: "PREVIEW_READY" as const };
-    });
-
-    this.audit.log({
-      action: "payroll.run_approval_stage_rejected",
-      userId,
-      orgId,
-      actorMembershipId: rejectActor.membershipId,
-      targetId: String(runId),
-      targetType: "payroll_run",
-      requestId: requestId ?? null,
-      metadata: { approvalId, stageName: approval.stageName, reason: comment },
-    });
-
-    return result;
+    return this.actions.rejectStage(orgId, userId, runId, approvalId, comment, requestId);
   }
 }

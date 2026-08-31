@@ -11,14 +11,16 @@ import type { CalculationSnapshot } from "../payroll.types";
 export class PayslipTemplatesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async list(orgId: string) {
-    const rows = await this.db
-      .select()
+  async list(orgId: string, page = 1, limit = 50) {
+    const cap = Math.min(limit, 100);
+
+    const existing = await this.db
+      .select({ id: payslipTemplates.id })
       .from(payslipTemplates)
       .where(eq(payslipTemplates.orgId, orgId))
-      .orderBy(payslipTemplates.id);
+      .limit(1);
 
-    if (rows.length === 0) {
+    if (existing.length === 0) {
       const defaults = [
         {
           orgId,
@@ -42,11 +44,16 @@ export class PayslipTemplatesService {
           isDefault: false,
         },
       ];
-      const seeded = await this.db.insert(payslipTemplates).values(defaults).returning();
-      return seeded;
+      return this.db.insert(payslipTemplates).values(defaults).returning();
     }
 
-    return rows;
+    return this.db
+      .select()
+      .from(payslipTemplates)
+      .where(eq(payslipTemplates.orgId, orgId))
+      .orderBy(payslipTemplates.id)
+      .limit(cap)
+      .offset((page - 1) * cap);
   }
 
   async create(orgId: string, data: CreateTemplateInput) {

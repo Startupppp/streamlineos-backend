@@ -27,8 +27,8 @@ export class FnfInsightsService {
     @Inject(DRIZZLE) private readonly db: Db,
   ) {}
 
-  list(orgId: string, callerId: string, isAdmin: boolean) {
-    return this.fnfService.listFnf(orgId, callerId, isAdmin);
+  list(orgId: string, callerId: string, isAdmin: boolean, page = 1, limit = 50) {
+    return this.fnfService.listFnf(orgId, callerId, isAdmin, page, Math.min(limit, 100));
   }
 
   async getOne(orgId: string, settlementId: number) {

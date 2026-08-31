@@ -171,6 +171,8 @@ export type RejectDeclarationInput = z.infer<typeof rejectDeclarationSchema>;
 export const taxDeclarationsQuerySchema = z.object({
   financialYear: z.string().trim().max(20).optional(),
   status: z.string().trim().max(30).optional(),
+  page: optionalPageNumberField(),
+  limit: optionalPageSizeField(),
 });
 export type TaxDeclarationsQuery = z.infer<typeof taxDeclarationsQuerySchema>;
 

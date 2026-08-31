@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -22,9 +23,11 @@ import {
   createTemplateSchema,
   patchTemplateSchema,
   previewTemplateSchema,
+  listPayslipTemplatesQuerySchema,
   type CreateTemplateInput,
   type PatchTemplateInput,
   type PreviewTemplateInput,
+  type ListPayslipTemplatesQuery,
 } from "./dto/payout.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -39,8 +42,9 @@ export class PayslipTemplatesController {
 
   @Get()
   @RequirePermission("payroll:payslips:view")
-  list(@CurrentUser() u: CurrentUserContext) {
-    return this.templates.list(u.orgId);
+  @Validate({ query: listPayslipTemplatesQuerySchema })
+  list(@CurrentUser() u: CurrentUserContext, @Query() query: ListPayslipTemplatesQuery) {
+    return this.templates.list(u.orgId, query.page, query.limit);
   }
 
   @Post("preview")

@@ -12,7 +12,10 @@ export class TaxAdminService {
   listDeclarations(
     orgId: string,
     filters: { financialYear?: string; status?: string },
+    page = 1,
+    limit = 50,
   ) {
+    const cap = Math.min(limit, 100);
     return this.db
       .select({
         id: taxDeclarations.id,
@@ -39,7 +42,8 @@ export class TaxAdminService {
       .from(taxDeclarations)
       .leftJoin(users, eq(taxDeclarations.userId, users.id))
       .where(this.scopeWhere(orgId, filters))
-      .limit(100);
+      .limit(cap)
+      .offset((page - 1) * cap);
   }
 
   async approve(orgId: string, verifierId: string, declarationId: number) {

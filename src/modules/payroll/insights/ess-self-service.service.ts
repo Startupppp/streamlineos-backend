@@ -44,10 +44,10 @@ export class EssSelfServiceService {
     });
   }
 
-  async listReimbursements(orgId: string, userId: string) {
+  async listReimbursements(orgId: string, userId: string, page = 1, limit = 50) {
     const toggles = await this.ess.getActiveToggles(orgId);
     if (!toggles.essAllowReimbursements) throw new ForbiddenException("Reimbursements are disabled");
-    return this.reimbursementsService.listReimbursements(orgId, userId, "own");
+    return this.reimbursementsService.listReimbursements(orgId, userId, "own", page, Math.min(limit, 100));
   }
 
   async listLoans(orgId: string, userId: string) {

@@ -8,6 +8,7 @@ import {
   Body,
   Param,
   ParseIntPipe,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -21,8 +22,10 @@ import { SalaryStructureTemplatesService } from "./salary-structure-templates.se
 import {
   createSalaryStructureTemplateSchema,
   updateSalaryStructureTemplateSchema,
+  listPageQuerySchema,
   type CreateSalaryStructureTemplateInput,
   type UpdateSalaryStructureTemplateInput,
+  type ListPageQueryInput,
 } from "./dto/payroll.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -38,8 +41,9 @@ export class SalaryStructureTemplatesController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:view")
-  list(@CurrentUser() u: CurrentUserContext) {
-    return this.service.list(u.orgId);
+  @Validate({ query: listPageQuerySchema })
+  list(@CurrentUser() u: CurrentUserContext, @Query() query: ListPageQueryInput) {
+    return this.service.list(u.orgId, query.page, query.limit);
   }
 
   @Post()

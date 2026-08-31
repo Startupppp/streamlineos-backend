@@ -141,11 +141,15 @@ export type PatchProfileInput = z.infer<typeof patchProfileSchema>;
 
 export const inputsQuerySchema = z.object({
   userId: z.string().optional(),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type InputsQuery = z.infer<typeof inputsQuerySchema>;
 
 export const exceptionFilterSchema = z.object({
   severity: z.enum(["BLOCKER", "WARNING", "INFO"]).optional(),
   status: z.enum(["OPEN", "RESOLVED", "OVERRIDDEN"]).optional(),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 export type ExceptionFilterInput = z.infer<typeof exceptionFilterSchema>;

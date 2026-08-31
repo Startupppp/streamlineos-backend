@@ -18,7 +18,9 @@ describe("InputsService — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker";
 
   function makeDb(runRows: unknown[], inputRows: unknown[] = []) {
-    const inputOrderBy = jest.fn().mockResolvedValue(inputRows);
+    const inputOffset = jest.fn().mockResolvedValue(inputRows);
+    const inputLimit = jest.fn().mockReturnValue({ offset: inputOffset });
+    const inputOrderBy = jest.fn().mockReturnValue({ limit: inputLimit });
     const inputWhere = jest.fn().mockReturnValue({ orderBy: inputOrderBy });
     const inputInnerJoin = jest.fn().mockReturnValue({ where: inputWhere });
     const inputFrom = jest.fn().mockReturnValue({ innerJoin: inputInnerJoin });
