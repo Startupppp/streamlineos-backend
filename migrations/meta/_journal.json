@@ -3977,6 +3977,13 @@
       "when": 1700000567000,
       "tag": "0579_tenant_fks_build_schemas",
       "breakpoints": true
+    },
+    {
+      "idx": 568,
+      "version": "7",
+      "when": 1700000568000,
+      "tag": "0819_drop_resurrected_sku_uniques_third_time",
+      "breakpoints": true
     }
   ]
 }
