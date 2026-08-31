@@ -36,34 +36,38 @@ export class CronFinanceService {
     const ranSet = new Set<string>();
     const errors: Array<{ task: string; error: string }> = [];
 
-    await forEachOrg(this.db, "finance-recurring-flush", async (_tx, _orgId) => {
-      try {
-        await this.recurringJournals.runDueTemplates();
-        ranSet.add("recurring-journals");
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.logger.error(`Recurring journals flush failed: ${msg}`);
-        errors.push({ task: "recurring-journals", error: msg });
-      }
+    await forEachOrg(
+      this.db,
+      "finance-recurring-flush",
+      async (_tx, _orgId) => {
+        try {
+          await this.recurringJournals.runDueTemplates();
+          ranSet.add("recurring-journals");
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.logger.error(`Recurring journals flush failed: ${msg}`);
+          errors.push({ task: "recurring-journals", error: msg });
+        }
 
-      try {
-        await this.recurringInvoices.runDueRecurringInvoices();
-        ranSet.add("recurring-invoices");
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.logger.error(`Recurring invoices flush failed: ${msg}`);
-        errors.push({ task: "recurring-invoices", error: msg });
-      }
+        try {
+          await this.recurringInvoices.runDueRecurringInvoices();
+          ranSet.add("recurring-invoices");
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.logger.error(`Recurring invoices flush failed: ${msg}`);
+          errors.push({ task: "recurring-invoices", error: msg });
+        }
 
-      try {
-        await this.recurringBills.runDueRecurringBills();
-        ranSet.add("recurring-bills");
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.logger.error(`Recurring bills flush failed: ${msg}`);
-        errors.push({ task: "recurring-bills", error: msg });
-      }
-    });
+        try {
+          await this.recurringBills.runDueRecurringBills();
+          ranSet.add("recurring-bills");
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.logger.error(`Recurring bills flush failed: ${msg}`);
+          errors.push({ task: "recurring-bills", error: msg });
+        }
+      },
+    );
 
     return { ran: [...ranSet], errors };
   }
@@ -72,9 +76,9 @@ export class CronFinanceService {
     const ranSet = new Set<string>();
     const errors: Array<{ task: string; error: string }> = [];
 
-    await forEachOrg(this.db, "finance-due-checks", async (_tx, _orgId) => {
+    await forEachOrg(this.db, "finance-due-checks", async (_tx, orgId) => {
       try {
-        await this.invoicesWrite.markOverdueInvoices();
+        await this.invoicesWrite.markOverdueInvoices(orgId);
         ranSet.add("mark-overdue-invoices");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -83,7 +87,7 @@ export class CronFinanceService {
       }
 
       try {
-        await this.reminders.processDueReminders();
+        await this.reminders.processDueReminders(orgId);
         ranSet.add("invoice-reminders");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -92,7 +96,7 @@ export class CronFinanceService {
       }
 
       try {
-        await this.billsDueCheck.checkBillsDue();
+        await this.billsDueCheck.checkBillsDue(orgId);
         ranSet.add("bills-due-check");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -101,7 +105,7 @@ export class CronFinanceService {
       }
 
       try {
-        await this.taxCompliance.checkTaxDue();
+        await this.taxCompliance.checkTaxDue(orgId);
         ranSet.add("tax-compliance");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -121,7 +125,8 @@ export class CronFinanceService {
 
     await forEachOrg(this.db, "finance-depreciation", async (_tx, _orgId) => {
       try {
-        const results = await this.depreciationRuns.runDepreciationForDuePeriods();
+        const results =
+          await this.depreciationRuns.runDepreciationForDuePeriods();
         const errCount = results.filter((r) => r.error).length;
         totalPosted += results.length - errCount;
         totalFailed += errCount;

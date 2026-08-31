@@ -26,7 +26,7 @@ const mockEffects = {
 
 const baseMessage = {
   id: 1,
-  senderId: "sender1",
+  senderUserId: "sender1" as string | null,
   senderName: "Sender One",
 };
 

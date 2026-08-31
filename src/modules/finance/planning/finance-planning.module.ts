@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { BudgetsController } from "./budgets.controller";
+import { FinanceBudgetsController } from "./budgets.controller";
 import { ScenariosController } from "./scenarios.controller";
 import { BudgetsService } from "./budgets.service";
 import { BvaService } from "./bva.service";
@@ -9,7 +9,7 @@ import { NotificationsModule } from "../../notifications/notifications.module";
 
 @Module({
   imports: [NotificationsModule],
-  controllers: [BudgetsController, ScenariosController],
+  controllers: [FinanceBudgetsController, ScenariosController],
   providers: [BudgetsService, BvaService, ForecastService, ScenariosService],
 })
 export class FinancePlanningModule {}

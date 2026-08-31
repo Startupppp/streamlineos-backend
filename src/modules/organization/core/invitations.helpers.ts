@@ -97,7 +97,7 @@ export async function lockPendingInvitation(
       orgId: invitations.orgId,
       email: invitations.email,
       role: invitations.role,
-      invitedBy: invitations.invitedBy,
+      inviterMembershipId: invitations.inviterMembershipId,
     })
     .from(invitations)
     .where(

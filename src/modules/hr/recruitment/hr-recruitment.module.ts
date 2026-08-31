@@ -19,7 +19,6 @@ import { RecruitmentTalentPoolsController } from "./recruitment-talent-pools.con
 import { RecruitmentCandidatesService } from "./recruitment-candidates.service";
 import { RecruitmentCandidateOpsService } from "./recruitment-candidate-ops.service";
 import { RecruitmentPipelineService } from "./recruitment-pipeline.service";
-import { RecruitmentCandidateRecordsService } from "./recruitment-candidate-records.service";
 import { RecruitmentCalibrationService } from "./recruitment-calibration.service";
 import { RecruitmentReferralChecksService } from "./recruitment-referral-checks.service";
 import { RecruitmentCandidateDocsService } from "./recruitment-candidate-docs.service";
@@ -55,7 +54,6 @@ import { RecruitmentHandoffService } from "./recruitment-handoff.service";
     RecruitmentCandidatesService,
     RecruitmentCandidateOpsService,
     RecruitmentPipelineService,
-    RecruitmentCandidateRecordsService,
     RecruitmentCalibrationService,
     RecruitmentReferralChecksService,
     RecruitmentCandidateDocsService,

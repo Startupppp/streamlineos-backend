@@ -16,6 +16,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { leaveApprovalScope, resolveLeavesViewScope } from "./leaves-scope";
 import { AuditService } from "../../../common/audit/audit.service";
 import {
@@ -76,7 +77,7 @@ export class LeavesApprovalService {
           and(
             eq(leaveRequests.id, leaveRequestId),
             eq(leaveRequests.orgId, currentUser.orgId),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId),
+            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
           ),
         )
         .limit(1)
@@ -107,7 +108,7 @@ export class LeavesApprovalService {
             eq(leaveRequests.orgId, currentUser.orgId),
             eq(leaveRequests.status, current.status),
             eq(leaveRequests.rowVersion, current.rowVersion),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId),
+            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
           ),
         )
         .returning({ id: leaveRequests.id });
@@ -236,7 +237,7 @@ export class LeavesApprovalService {
           and(
             eq(leaveRequests.id, leaveRequestId),
             eq(leaveRequests.orgId, currentUser.orgId),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId),
+            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
           ),
         )
         .limit(1)
@@ -265,7 +266,7 @@ export class LeavesApprovalService {
             eq(leaveRequests.orgId, currentUser.orgId),
             eq(leaveRequests.status, "PENDING"),
             eq(leaveRequests.rowVersion, current.rowVersion),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId),
+            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
           ),
         )
         .returning({ id: leaveRequests.id });
@@ -394,7 +395,7 @@ export class LeavesApprovalService {
           and(
             eq(leaveRequests.id, leaveRequestId),
             eq(leaveRequests.orgId, currentUser.orgId),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId),
+            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
           ),
         )
         .limit(1)
@@ -424,7 +425,7 @@ export class LeavesApprovalService {
             eq(leaveRequests.orgId, currentUser.orgId),
             eq(leaveRequests.status, "PENDING"),
             eq(leaveRequests.rowVersion, current.rowVersion),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId),
+            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
           ),
         )
         .returning({ id: leaveRequests.id });

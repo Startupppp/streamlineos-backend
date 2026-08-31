@@ -201,38 +201,26 @@ describe("ManagedProductsService", () => {
   });
 
   describe("listManagedProducts — pagination envelope", () => {
-    it("returns { data, pagination } with computed totalPages", async () => {
+    it("returns { data, pagination } with cursor-page shape", async () => {
       const rows = [makeProduct(), makeProduct({ managedProductId: 2, key: "B" })];
 
-      let selectCount = 0;
-      (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
-        selectCount++;
-        if (selectCount === 1) {
-          return {
-            from: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({
-                limit: jest.fn().mockReturnValue({
-                  offset: jest.fn().mockResolvedValue(rows),
-                }),
-              }),
+      (mockDb as { select: jest.Mock }).select.mockReturnValueOnce({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue(rows),
             }),
-          };
-        }
-        return {
-          from: jest.fn().mockReturnValue({
-            where: jest.fn().mockResolvedValue([{ total: 2 }]),
           }),
-        };
+        }),
       });
 
-      const result = await svc.listManagedProducts(ORG_ID, { page: 1, limit: 20 });
+      const result = await svc.listManagedProducts(ORG_ID, { limit: 20 } as never);
 
       expect(result.data).toHaveLength(2);
       expect(result.pagination).toEqual({
-        page: 1,
         limit: 20,
-        total: 2,
-        totalPages: 1,
+        hasMore: false,
+        nextCursor: null,
       });
     });
   });

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, gt, ilike, isNull, or } from "drizzle-orm";
+import { and, asc, eq, gt, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { AuditService } from "../../common/audit/audit.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -23,6 +23,7 @@ import { DirectoryIdentityService } from "./directory-identity.service";
 import { WorkerEngagementsService } from "./worker-engagements.service";
 
 const PG_UNIQUE_VIOLATION = "23505";
+const DIRECTORY_SEARCH_CAP = 500;
 type PersonRow = typeof organizationPeople.$inferSelect;
 type PersonPatch = Partial<typeof organizationPeople.$inferInsert>;
 
@@ -54,15 +55,26 @@ export class DirectoryService {
     return row;
   }
 
+  private async resolvePersonSearchCondition(search: string): Promise<SQL<unknown>> {
+    const fallback = or(
+      ilike(organizationPeople.firstName, `%${search}%`),
+      ilike(organizationPeople.lastName, `%${search}%`),
+      ilike(organizationPeople.displayName, `%${search}%`),
+      ilike(organizationPeople.workEmail, `%${search}%`),
+    )!;
+    const rows = await this.db.execute(
+      sql`SELECT app.search_organization_people_ids(${search}, ${DIRECTORY_SEARCH_CAP + 1}) AS id`,
+    );
+    if (rows.length === 0) return sql`false`;
+    if (rows.length > DIRECTORY_SEARCH_CAP) return fallback;
+    const ids = rows.map((r) => String(r["id"]));
+    return inArray(organizationPeople.organizationPersonId, ids);
+  }
+
   async listPeople(organizationId: string, query: ListPeopleQuery) {
     const { cursor, limit, search } = query;
     const searchCondition = search
-      ? or(
-          ilike(organizationPeople.firstName, `%${search}%`),
-          ilike(organizationPeople.lastName, `%${search}%`),
-          ilike(organizationPeople.displayName, `%${search}%`),
-          ilike(organizationPeople.workEmail, `%${search}%`),
-        )
+      ? await this.resolvePersonSearchCondition(search)
       : undefined;
     const conditions = and(
       eq(organizationPeople.organizationId, organizationId),

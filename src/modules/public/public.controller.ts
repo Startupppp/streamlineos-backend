@@ -141,6 +141,8 @@ export class PublicController {
   }
 
   @Get("careers/:orgSlug/jobs")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:careers-list")
   @Header(
     "Cache-Control",
     "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
@@ -150,6 +152,8 @@ export class PublicController {
   }
 
   @Get("careers/:orgSlug/jobs/:jobId")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:careers-job")
   @Validate({ params: orgSlugjobIdParams })
   getOrgJob(
     @Param("orgSlug") orgSlug: string,
@@ -160,6 +164,8 @@ export class PublicController {
 
   @Post("careers/:orgSlug/jobs/:jobId/apply")
   @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:job-apply")
   @Validate({ params: orgSlugjobIdParams, body: applySchema })
   applyToOrgJob(
     @Param("orgSlug") orgSlug: string,
@@ -189,6 +195,8 @@ export class PublicController {
   }
 
   @Get("interview-booking/:token")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:interview-booking")
   @Validate({ params: tokenParams })
   getBookingLink(@Param("token") token: string) {
     return this.offers.getBookingLink(token);
@@ -196,6 +204,8 @@ export class PublicController {
 
   @Post("referrals/register")
   @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:referrer-register")
   @Validate({ body: externalReferrerRegisterSchema })
   registerExternalReferrer(@Body() body: ExternalReferrerRegisterInput) {
     return this.referrers.registerExternalReferrer(body);
@@ -232,6 +242,8 @@ export class PublicController {
 
   @Post("intake/:projectId")
   @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:intake")
   @Validate({ params: projectIdParams, body: intakeSchema })
   submitIntake(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -241,6 +253,8 @@ export class PublicController {
   }
 
   @Get("forms/:token")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:form-view")
   @Validate({ params: tokenParams })
   getPublicForm(@Param("token") token: string) {
     return this.publicForms.getFormByToken(token);
@@ -248,6 +262,8 @@ export class PublicController {
 
   @Post("forms/:token/submit")
   @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:form-submit")
   @Validate({ params: tokenParams, body: publicFormSubmitSchema })
   submitPublicForm(
     @Param("token") token: string,
@@ -257,6 +273,8 @@ export class PublicController {
   }
 
   @Get("lead-form/:token")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:lead-form-view")
   @Validate({ params: tokenParams })
   getLeadForm(@Param("token") token: string) {
     return this.crm.getLeadForm(token);
@@ -264,6 +282,8 @@ export class PublicController {
 
   @Post("lead-form/:token")
   @HttpCode(200)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:lead-form-submit")
   @Validate({ params: tokenParams, body: leadFormBodySchema })
   submitLeadForm(
     @Param("token") token: string,
@@ -273,6 +293,8 @@ export class PublicController {
   }
 
   @Get("nps/:token")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:nps-view")
   @Validate({ params: tokenParams })
   getSurvey(@Param("token") token: string) {
     return this.crm.getSurvey(token);
@@ -280,6 +302,8 @@ export class PublicController {
 
   @Post("nps/:token")
   @HttpCode(200)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:nps-submit")
   @Validate({ params: tokenParams, body: npsSubmitSchema })
   submitSurvey(
     @Param("token") token: string,
@@ -330,6 +354,8 @@ export class PublicController {
   }
 
   @Get("org/:orgId")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:org-info")
   @Header(
     "Cache-Control",
     "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
@@ -361,6 +387,8 @@ export class PublicController {
 
   @Post("kb/:slug/feedback")
   @HttpCode(201)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:kb-feedback")
   @Validate({ params: slugParams, query: orgQuerySchema, body: kbFeedbackSchema })
   submitArticleFeedback(
     @Param("slug") slug: string,

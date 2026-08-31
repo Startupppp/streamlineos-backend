@@ -3,7 +3,7 @@ import {
   ProjectsForbiddenProjectException,
   ProjectsNotFoundException,
 } from "../../../common/http/api-exceptions";
-import { and, asc, count, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import {
   projectMembers,
   projectStatuses,
@@ -38,7 +38,7 @@ export class ProjectsQueryService {
     const scope = await resolveProjectsScope(this.access, u);
     const orgId = u.orgId;
     const userId = u.userId;
-    const key = `${userId}:${scope}:${input.status}:${input.search ?? ""}:${input.page}:${input.limit}:${input.pmWorkspaceId ?? ""}`;
+    const key = `${userId}:${scope}:${input.status}:${input.search ?? ""}:${input.afterId ?? "first"}:${input.limit}:${input.pmWorkspaceId ?? ""}`;
     return this.cache.cachedVersioned(
       `projects:list:${orgId}`,
       key,
@@ -53,8 +53,7 @@ export class ProjectsQueryService {
     scope: DataScope,
     input: ListProjectsInput,
   ) {
-    const { search, status, page, limit, pmWorkspaceId } = input;
-    const offset = (page - 1) * limit;
+    const { search, status, afterId, limit, pmWorkspaceId } = input;
 
     const conditions = [eq(projects.orgId, orgId), isNull(projects.deletedAt)];
 
@@ -109,47 +108,42 @@ export class ProjectsQueryService {
       conditions.push(eq(projects.status, status));
     }
 
+    if (afterId !== undefined) {
+      conditions.push(lt(projects.id, afterId));
+    }
+
     const whereClause = and(...conditions);
 
+    const projectCols = {
+      id: projects.id,
+      name: projects.name,
+      description: projects.description,
+      key: projects.key,
+      status: projects.status,
+      priority: projects.priority,
+      startDate: projects.startDate,
+      endDate: projects.endDate,
+      managerId: projects.managerId,
+      managerFirstName: users.firstName,
+      managerLastName: users.lastName,
+      managerImage: users.image,
+    };
     const projectRows = await this.db
-      .select({
-        total: sql<string>`count(*) OVER ()`,
-        id: projects.id,
-        name: projects.name,
-        description: projects.description,
-        key: projects.key,
-        status: projects.status,
-        priority: projects.priority,
-        startDate: projects.startDate,
-        endDate: projects.endDate,
-        managerId: projects.managerId,
-        managerFirstName: users.firstName,
-        managerLastName: users.lastName,
-        managerImage: users.image,
-      })
+      .select(projectCols)
       .from(projects)
       .leftJoin(users, eq(projects.managerId, users.id))
       .where(whereClause)
       .orderBy(desc(projects.id))
-      .limit(limit)
-      .offset(offset);
+      .limit(limit + 1);
 
-    const first = projectRows[0];
-    let total: number;
-    if (first) {
-      total = Number(first.total);
-    } else if (offset === 0) {
-      total = 0;
-    } else {
-      const [cnt] = await this.db.select({ total: count() }).from(projects).where(whereClause);
-      total = Number(cnt?.total ?? 0);
+    const hasMore = projectRows.length > limit;
+    const trimmedRows = hasMore ? projectRows.slice(0, limit) : projectRows;
+
+    if (trimmedRows.length === 0) {
+      return { data: [], hasMore: false, nextCursor: null };
     }
 
-    if (projectRows.length === 0) {
-      return { data: [], total, page, limit, totalPages: Math.ceil(total / limit) };
-    }
-
-    const projectIds = projectRows.map((p) => p.id);
+    const projectIds = trimmedRows.map((p) => p.id);
 
     const [progressRows, memberRows, teamRows] = await Promise.all([
       this.db
@@ -223,7 +217,7 @@ export class ProjectsQueryService {
 
     const now = new Date();
 
-    const data = projectRows.map((p) => {
+    const data = trimmedRows.map((p) => {
       const progress = progressMap.get(p.id) ?? { total: 0, done: 0 };
       const pct =
         Number(progress.total) > 0
@@ -268,13 +262,8 @@ export class ProjectsQueryService {
       };
     });
 
-    return {
-      data,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
+    const last = data[data.length - 1];
+    return { data, hasMore, nextCursor: hasMore && last ? last.id : null };
   }
 
   async getProject(u: CurrentUserContext, projectId: number) {

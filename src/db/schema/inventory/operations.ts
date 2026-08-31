@@ -26,6 +26,7 @@ export const invVendorReturns = pgTable("inv_vendor_returns", {
   status: invReturnStatusEnum("status").default("DRAFT").notNull(),
   notes: text("notes"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   approvedBy: text("approved_by").references(() => users.id),
   /**
    * B9. When the approval happened, beside who gave it. `approvedBy` was
@@ -40,6 +41,7 @@ export const invVendorReturns = pgTable("inv_vendor_returns", {
    * it.
    */
   creditReference: text("credit_reference"),
+  approvedByMembershipId: integer("approved_by_membership_id"),
   postedAt: timestamp("posted_at"),
   cancelledAt: timestamp("cancelled_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -88,6 +90,7 @@ export const invCustomerReturns = pgTable("inv_customer_returns", {
   status: invReturnStatusEnum("status").default("DRAFT").notNull(),
   notes: text("notes"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   approvedBy: text("approved_by").references(() => users.id),
   /** B9. See `invVendorReturns.approvedAt`. */
   approvedAt: timestamp("approved_at"),
@@ -99,6 +102,7 @@ export const invCustomerReturns = pgTable("inv_customer_returns", {
    * shelf.
    */
   creditReference: text("credit_reference"),
+  approvedByMembershipId: integer("approved_by_membership_id"),
   postedAt: timestamp("posted_at"),
   cancelledAt: timestamp("cancelled_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -182,6 +186,7 @@ export const invPickLists = pgTable("inv_pick_lists", {
    */
   assignedTo: text("assigned_to").references(() => users.id, { onDelete: "set null" }),
   claimedAt: timestamp("claimed_at"),
+  createdByMembershipId: integer("created_by_membership_id"),
   cancelledAt: timestamp("cancelled_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -294,7 +299,9 @@ export const invCycleCounts = pgTable("inv_cycle_counts", {
   categoryId: integer("category_id").references(() => invCategories.id, { onDelete: "set null" }),
   status: invCycleCountStatusEnum("status").default("PLANNED").notNull(),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   approvedBy: text("approved_by").references(() => users.id),
+  approvedByMembershipId: integer("approved_by_membership_id"),
   postedAt: timestamp("posted_at"),
   cancelledAt: timestamp("cancelled_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -343,7 +350,9 @@ export const invPhysicalAudits = pgTable("inv_physical_audits", {
   warehouseId: integer("warehouse_id").references(() => invWarehouses.id, { onDelete: "restrict" }).notNull(),
   status: invCycleCountStatusEnum("status").default("PLANNED").notNull(),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   approvedBy: text("approved_by").references(() => users.id),
+  approvedByMembershipId: integer("approved_by_membership_id"),
   postedAt: timestamp("posted_at"),
   cancelledAt: timestamp("cancelled_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

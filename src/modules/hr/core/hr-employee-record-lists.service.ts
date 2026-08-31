@@ -6,16 +6,15 @@ import {
   eq,
   gt,
   ilike,
+  inArray,
   isNull,
   or,
+  sql,
   type SQL,
 } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import {
-  hrEmployments,
-  hrPeople,
-} from "../../../db/schema/hr/core-people";
+import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
 import { organizationPeople } from "../../../db/schema/directory/organization-people";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
@@ -31,6 +30,7 @@ import {
 } from "./hr-core-list-cursors";
 
 const MAX_PAGE_LIMIT = 100;
+const PERSON_SEARCH_CAP = 500;
 
 const PERSON_JOIN_COND = and(
   eq(organizationPeople.organizationId, hrPeople.orgId),
@@ -76,9 +76,14 @@ const EMPLOYMENT_VIEW_COLUMNS = {
   updatedAt: hrEmployments.updatedAt,
 };
 
-type PersonListRecord =
-  Pick<typeof hrPeople.$inferSelect, "id" | "orgId" | "userId" | "organizationPersonId" | "createdAt" | "updatedAt">
-  & Pick<typeof organizationPeople.$inferSelect, "firstName" | "lastName" | "workEmail" | "phone" | "gender" | "avatarUrl">;
+type PersonListRecord = Pick<
+  typeof hrPeople.$inferSelect,
+  "id" | "orgId" | "userId" | "organizationPersonId" | "createdAt" | "updatedAt"
+> &
+  Pick<
+    typeof organizationPeople.$inferSelect,
+    "firstName" | "lastName" | "workEmail" | "phone" | "gender" | "avatarUrl"
+  >;
 
 type EmploymentListRecord = Pick<
   typeof hrEmployments.$inferSelect,
@@ -119,12 +124,9 @@ export class HrEmployeeRecordListsService {
     scope: DataScope,
   ): Promise<CursorListResponse<PersonListRecord>> {
     const pageLimit = boundPageLimit(query.limit);
-    const conditions = this.peopleConditions(
-      orgId,
-      actorUserId,
-      scope,
-      query.search,
-    );
+    const conditions = this.peopleConditions(orgId, actorUserId, scope);
+    if (query.search)
+      conditions.push(await this.personSearchCondition(query.search));
     if (query.cursor) {
       const cursor = decodePeopleListCursor(query.cursor);
       conditions.push(gt(hrPeople.id, cursor.personId));
@@ -163,12 +165,9 @@ export class HrEmployeeRecordListsService {
     scope: DataScope,
   ): Promise<LegacyPageResponse<PersonListRecord>> {
     const pageLimit = boundPageLimit(query.limit);
-    const conditions = this.peopleConditions(
-      orgId,
-      actorUserId,
-      scope,
-      query.search,
-    );
+    const conditions = this.peopleConditions(orgId, actorUserId, scope);
+    if (query.search)
+      conditions.push(await this.personSearchCondition(query.search));
     const where = and(...conditions);
     const [data, totalRows] = await Promise.all([
       this.db
@@ -288,24 +287,29 @@ export class HrEmployeeRecordListsService {
     orgId: string,
     actorUserId: string,
     scope: DataScope,
-    search: string | undefined,
   ): SQL[] {
-    const conditions: SQL[] = [
+    return [
       eq(hrPeople.orgId, orgId),
       isNull(hrPeople.deletedAt),
       applyScope(scope, orgId, actorUserId, {
         ownerColumn: hrPeople.userId,
       }),
     ];
-    if (search) {
-      const searchCondition = or(
-        ilike(organizationPeople.firstName, `%${search}%`),
-        ilike(organizationPeople.lastName, `%${search}%`),
-        ilike(organizationPeople.workEmail, `%${search}%`),
-      );
-      if (searchCondition) conditions.push(searchCondition);
-    }
-    return conditions;
+  }
+
+  private async personSearchCondition(search: string): Promise<SQL> {
+    const fallback = or(
+      ilike(organizationPeople.firstName, `%${search}%`),
+      ilike(organizationPeople.lastName, `%${search}%`),
+      ilike(organizationPeople.workEmail, `%${search}%`),
+    )!;
+    const rows = await this.db.execute(
+      sql`SELECT app.search_hr_person_ids(${search}, ${PERSON_SEARCH_CAP + 1}) AS id`,
+    );
+    if (rows.length === 0) return sql`false`;
+    if (rows.length > PERSON_SEARCH_CAP) return fallback;
+    const ids = rows.map((r) => Number(r["id"]));
+    return inArray(hrPeople.id, ids);
   }
 
   private employmentConditions(

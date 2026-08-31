@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { z } from "zod";
-import { and, count, eq, lte, sql } from "drizzle-orm";
+import { and, asc, eq, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -18,7 +18,8 @@ import {
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetAfterValue } from "../../../common/pagination/keyset";
 import type {
   CreateRecurringBillInput,
   UpdateRecurringBillInput,
@@ -43,40 +44,41 @@ export class RecurringBillsService {
   ) {}
 
   async listTemplates(orgId: string, query: ListRecurringBillsQuery) {
-    const { page, pageSize, isActive } = query;
+    const { cursor, limit, isActive } = query;
+    const pos = decodeCursor(cursor);
+    const pageLimit = Math.min(limit, 100);
+
     const conds = [eq(finRecurringBillTemplates.orgId, orgId)];
     if (isActive !== undefined) conds.push(eq(finRecurringBillTemplates.isActive, isActive));
+    if (pos) conds.push(keysetAfterValue(finRecurringBillTemplates.name, finRecurringBillTemplates.id, pos));
 
-    const where = and(...conds);
-    const { offset, limit } = paginateOffset({ page, pageSize });
+    const rows = await this.db
+      .select({
+        id: finRecurringBillTemplates.id,
+        orgId: finRecurringBillTemplates.orgId,
+        name: finRecurringBillTemplates.name,
+        vendorId: finRecurringBillTemplates.vendorId,
+        vendorName: clients.name,
+        frequency: finRecurringBillTemplates.frequency,
+        nextRunDate: finRecurringBillTemplates.nextRunDate,
+        lastRunDate: finRecurringBillTemplates.lastRunDate,
+        endDate: finRecurringBillTemplates.endDate,
+        isActive: finRecurringBillTemplates.isActive,
+        payload: finRecurringBillTemplates.payload,
+        createdBy: finRecurringBillTemplates.createdBy,
+        createdAt: finRecurringBillTemplates.createdAt,
+        updatedAt: finRecurringBillTemplates.updatedAt,
+      })
+      .from(finRecurringBillTemplates)
+      .leftJoin(clients, eq(clients.id, finRecurringBillTemplates.vendorId))
+      .where(and(...conds))
+      .orderBy(asc(finRecurringBillTemplates.name), asc(finRecurringBillTemplates.id))
+      .limit(pageLimit + 1);
 
-    const [items, totalRows] = await Promise.all([
-      this.db
-        .select({
-          id: finRecurringBillTemplates.id,
-          orgId: finRecurringBillTemplates.orgId,
-          name: finRecurringBillTemplates.name,
-          vendorId: finRecurringBillTemplates.vendorId,
-          vendorName: clients.name,
-          frequency: finRecurringBillTemplates.frequency,
-          nextRunDate: finRecurringBillTemplates.nextRunDate,
-          lastRunDate: finRecurringBillTemplates.lastRunDate,
-          endDate: finRecurringBillTemplates.endDate,
-          isActive: finRecurringBillTemplates.isActive,
-          payload: finRecurringBillTemplates.payload,
-          createdBy: finRecurringBillTemplates.createdBy,
-          createdAt: finRecurringBillTemplates.createdAt,
-          updatedAt: finRecurringBillTemplates.updatedAt,
-        })
-        .from(finRecurringBillTemplates)
-        .leftJoin(clients, eq(clients.id, finRecurringBillTemplates.vendorId))
-        .where(where)
-        .offset(offset)
-        .limit(limit),
-      this.db.select({ c: count() }).from(finRecurringBillTemplates).where(where),
-    ]);
-
-    return buildListResponse(items, Number(totalRows[0]?.c ?? 0), { page, pageSize });
+    return buildCursorPage(rows, pageLimit, (row) => ({
+      sortValue: row.name,
+      id: String(row.id),
+    }));
   }
 
   async getTemplate(orgId: string, templateId: number) {

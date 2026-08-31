@@ -23,6 +23,7 @@ import {
   type UpdateSupportAiSettingsInput,
 } from "./dto/support.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
 const suggestionIdParams = z.object({ suggestionId: z.coerce.number().int().positive() }).strict();
@@ -79,6 +80,7 @@ export class SupportAiController {
   }
 
   @Post(":ticketId/ai/analyze")
+  @BodylessAction()
   @RequirePermission("support:tickets:view")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
@@ -90,6 +92,7 @@ export class SupportAiController {
   }
 
   @Post(":ticketId/ai/find-duplicates")
+  @BodylessAction()
   @RequirePermission("support:tickets:view")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
@@ -101,6 +104,7 @@ export class SupportAiController {
   }
 
   @Post(":ticketId/ai/suggest-kb-articles")
+  @BodylessAction()
   @RequirePermission("support:tickets:view")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
@@ -112,6 +116,7 @@ export class SupportAiController {
   }
 
   @Post(":ticketId/ai/suggest-reply")
+  @BodylessAction()
   @RequirePermission("support:tickets:reply")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
@@ -123,6 +128,7 @@ export class SupportAiController {
   }
 
   @Post(":ticketId/ai/suggest-macro")
+  @BodylessAction()
   @RequirePermission("support:tickets:reply")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
@@ -149,6 +155,7 @@ export class SupportAiController {
   }
 
   @Post(":ticketId/ai/handoff-summary")
+  @BodylessAction()
   @RequirePermission("support:tickets:view")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
@@ -160,6 +167,7 @@ export class SupportAiController {
   }
 
   @Post(":ticketId/ai/root-cause-cluster")
+  @BodylessAction()
   @RequirePermission("support:tickets:view")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")

@@ -32,7 +32,7 @@ export class KbCandidateService {
     spaceIds: number[],
     query: string,
     pool: number,
-    principal: { userId: string; roleSlugs: string[] },
+    principal: { userId: string; membershipId: number | null; roleSlugs: string[] },
     spaceId?: number,
   ): Promise<number[]> {
     const tsquery = sql`websearch_to_tsquery('english', ${query})`;
@@ -60,7 +60,7 @@ export class KbCandidateService {
     spaceIds: number[],
     vector: string,
     pool: number,
-    principal: { userId: string; roleSlugs: string[] },
+    principal: { userId: string; membershipId: number | null; roleSlugs: string[] },
     spaceId?: number,
   ): Promise<number[]> {
     try {
@@ -182,9 +182,13 @@ export class KbCandidateService {
 
   articleRestrictionFilter(
     orgId: string,
-    principal: { userId: string; roleSlugs: string[] },
+    principal: { userId: string; membershipId: number | null; roleSlugs: string[] },
   ): SQL {
     const kar = kbArticleRestrictions;
+    const membershipMatch =
+      principal.membershipId !== null
+        ? sql`${kar.membershipId} = ${principal.membershipId} OR `
+        : sql``;
     return sql`(
       NOT EXISTS (
         SELECT 1 FROM ${kar}
@@ -197,7 +201,7 @@ export class KbCandidateService {
         WHERE ${kar.articleId} = ${kbArticles.id}
           AND ${kar.orgId} = ${orgId}
           AND ${kar.level} = 'view'
-          AND (${kar.userId} = ${principal.userId} OR ${
+          AND (${membershipMatch}${kar.userId} = ${principal.userId} OR ${
             principal.roleSlugs.length > 0
               ? sql`${kar.role} = ANY(${principal.roleSlugs})`
               : sql`false`

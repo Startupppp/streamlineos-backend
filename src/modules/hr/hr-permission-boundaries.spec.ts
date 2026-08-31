@@ -2,7 +2,7 @@ import { REQUIRE_PERMISSION } from "../access/require-permission.decorator";
 import { HrCustomFieldsController } from "./core/hr-custom-fields.controller";
 import { HrOrgStructureCompatController } from "./core/hr-org-structure-compat.controller";
 import { BackgroundVerificationController } from "./directory/background-verification.controller";
-import { DelegationsController } from "./governance/delegations/delegations.controller";
+import { HrGovernanceDelegationsController } from "./governance/delegations/delegations.controller";
 import { RecruitmentPipelineController } from "./recruitment/recruitment-pipeline.controller";
 import { EmployeesController } from "./directory/employees.controller";
 import { OnboardingController } from "./onboarding/core/onboarding.controller";
@@ -14,19 +14,19 @@ function permissionFor(handler: object): string | undefined {
 
 describe("HR least-privilege controller boundaries", () => {
   it("does not infer proxy delegation access from employee permissions", () => {
-    expect(permissionFor(DelegationsController.prototype.listMy)).toBe(
+    expect(permissionFor(HrGovernanceDelegationsController.prototype.listMy)).toBe(
       "hr:workflows:view",
     );
-    expect(permissionFor(DelegationsController.prototype.listOrg)).toBe(
+    expect(permissionFor(HrGovernanceDelegationsController.prototype.listOrg)).toBe(
       "hr:workflows:manage",
     );
-    expect(permissionFor(DelegationsController.prototype.create)).toBe(
+    expect(permissionFor(HrGovernanceDelegationsController.prototype.create)).toBe(
       "hr:workflows:view",
     );
-    expect(permissionFor(DelegationsController.prototype.update)).toBe(
+    expect(permissionFor(HrGovernanceDelegationsController.prototype.update)).toBe(
       "hr:workflows:view",
     );
-    expect(permissionFor(DelegationsController.prototype.revoke)).toBe(
+    expect(permissionFor(HrGovernanceDelegationsController.prototype.revoke)).toBe(
       "hr:workflows:view",
     );
   });

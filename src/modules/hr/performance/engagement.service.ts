@@ -32,13 +32,14 @@ import type {
   SubmitFeedbackInput,
   UpdateSurveyInput,
 } from "./dto/engagement.schemas";
-import { EngagementExtrasService } from "./engagement-extras.service";
+import { EngagementBadgesService } from "./engagement-badges.service";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 
 @Injectable()
 export class EngagementService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly engagementExtras: EngagementExtrasService,
+    private readonly engagementBadges: EngagementBadgesService,
   ) {}
 
   listFeedback(orgId: string, userId: string) {
@@ -242,9 +243,11 @@ export class EngagementService {
       })
       .returning();
 
+    const actor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId });
+
     await this.db.insert(hrAuditLogs).values({
       orgId,
-      actorId: userId,
+      actorMembershipId: actor.membershipId,
       entityType: "hr_recognition",
       entityId: String(recognition.id),
       action: "kudos_given",
@@ -255,7 +258,7 @@ export class EngagementService {
       },
     });
 
-    this.engagementExtras
+    this.engagementBadges
       .grantKudosPoints(orgId, input.toUserId, String(recognition.id))
       .catch(() => undefined);
 

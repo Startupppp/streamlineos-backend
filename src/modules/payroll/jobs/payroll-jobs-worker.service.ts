@@ -216,12 +216,12 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
         const gen = await this.resolveGenerate();
         if (!gen) throw new Error("GenerateService unavailable");
         if (!Number.isFinite(runId)) throw new Error("runId required");
-        const result = await gen.generateRun(
-          ctx.orgId,
+        const result = await gen.generateRun({
+          orgId: ctx.orgId,
           runId,
-          ctx.actorId,
-          jobType === "RECALCULATE",
-        );
+          actorId: ctx.actorId,
+          isRecalc: jobType === "RECALCULATE",
+        });
         if (!result.ok) throw new Error(result.reason);
         return { ok: true, runId };
       }

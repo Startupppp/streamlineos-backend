@@ -1,5 +1,10 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -48,6 +53,11 @@ export class LockingService {
       throw new ConflictException(`Cannot lock run in status ${run.status}`);
     }
 
+    const lockActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     const now = new Date();
 
     await this.db.transaction(async (tx) => {
@@ -68,7 +78,7 @@ export class LockingService {
 
       await tx
         .update(payrollRuns)
-        .set({ status: "LOCKED", lockedAt: now, lockedBy: userId })
+        .set({ status: "LOCKED", lockedAt: now, lockedBy: userId, lockedByMembershipId: lockActor.membershipId })
         .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
       await tx.insert(payrollRunEvents).values({
@@ -219,12 +229,17 @@ export class LockingService {
       throw new ConflictException(`Cannot reopen run in status ${run.status}`);
     }
 
+    const reopenActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     const now = new Date();
 
     await this.db.transaction(async (tx) => {
       await tx
         .update(payrollRuns)
-        .set({ status: "REOPENED", reopenedAt: now, reopenedBy: userId, reopenReason: reason })
+        .set({ status: "REOPENED", reopenedAt: now, reopenedBy: userId, reopenedByMembershipId: reopenActor.membershipId, reopenReason: reason })
         .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
       await tx.insert(payrollRunEvents).values({
@@ -261,12 +276,17 @@ export class LockingService {
       throw new ConflictException(`Cannot close run in status ${run.status}`);
     }
 
+    const closeActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     const now = new Date();
 
     await this.db.transaction(async (tx) => {
       await tx
         .update(payrollRuns)
-        .set({ status: "CLOSED", closedAt: now, closedBy: userId })
+        .set({ status: "CLOSED", closedAt: now, closedBy: userId, closedByMembershipId: closeActor.membershipId })
         .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
       await tx.insert(payrollRunEvents).values({

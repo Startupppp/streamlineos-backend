@@ -11,6 +11,7 @@ export interface FanoutInput {
   strippedMetadata: Record<string, unknown> | null;
   senderName: string | null;
   senderImage: string | null;
+  senderUserId: string | null;
 }
 
 /**

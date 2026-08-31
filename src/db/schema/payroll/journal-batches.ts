@@ -11,10 +11,11 @@ import {
   index,
   uniqueIndex,
   unique,
+  foreignKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { payrollRuns } from "./runs";
 import { payrollEntities } from "./entities-periods";
 
@@ -73,13 +74,18 @@ export const payrollJournalBatches = pgTable(
     reconciliationNote: text("reconciliation_note"),
     postedAt: timestamp("posted_at"),
     postedBy: text("posted_by").references(() => users.id, { onDelete: "set null" }),
+    postedByMembershipId: integer("posted_by_membership_id"),
     exportedAt: timestamp("exported_at"),
     exportedBy: text("exported_by").references(() => users.id, { onDelete: "set null" }),
+    exportedByMembershipId: integer("exported_by_membership_id"),
     reversedAt: timestamp("reversed_at"),
     reversedBy: text("reversed_by").references(() => users.id, { onDelete: "set null" }),
+    reversedByMembershipId: integer("reversed_by_membership_id"),
     reconciledAt: timestamp("reconciled_at"),
     reconciledBy: text("reconciled_by").references(() => users.id, { onDelete: "set null" }),
+    reconciledByMembershipId: integer("reconciled_by_membership_id"),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -97,6 +103,36 @@ export const payrollJournalBatches = pgTable(
     index("idx_payroll_journal_batches_org_run").on(table.orgId, table.runId),
     index("idx_payroll_journal_batches_org_recon").on(table.orgId, table.reconciliationStatus),
     index("idx_payroll_journal_batches_source_hash").on(table.orgId, table.sourceHash),
+    index("idx_payroll_jrnl_batches_org_posted_actor").on(table.orgId, table.postedByMembershipId),
+    index("idx_payroll_jrnl_batches_org_exported_actor").on(table.orgId, table.exportedByMembershipId),
+    index("idx_payroll_jrnl_batches_org_reversed_actor").on(table.orgId, table.reversedByMembershipId),
+    index("idx_payroll_jrnl_batches_org_reconciled_actor").on(table.orgId, table.reconciledByMembershipId),
+    index("idx_payroll_jrnl_batches_org_created_actor").on(table.orgId, table.createdByMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.postedByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_payroll_jrnl_batches_posted_actor",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.orgId, table.exportedByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_payroll_jrnl_batches_exported_actor",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.orgId, table.reversedByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_payroll_jrnl_batches_reversed_actor",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.orgId, table.reconciledByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_payroll_jrnl_batches_reconciled_actor",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.orgId, table.createdByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_payroll_jrnl_batches_created_actor",
+    }).onDelete("restrict"),
   ],
 );
 

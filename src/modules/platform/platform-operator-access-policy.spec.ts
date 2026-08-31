@@ -1,0 +1,185 @@
+import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+import { Test } from "@nestjs/testing";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { PlatformOperatorAccessService } from "./platform-operator-access.service";
+
+function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
+  if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
+  if (typeof value !== "object" || seen.has(value)) return [];
+  seen.add(value);
+  const record = value as { queryChunks?: unknown[]; value?: unknown };
+  return [
+    ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
+    ...(Object.prototype.hasOwnProperty.call(record, "value") ? sqlValues(record.value, seen) : []),
+  ];
+}
+
+function renderCondition(condition: unknown): string {
+  return new PgDialect().sqlToQuery(condition as SQL).sql;
+}
+
+async function buildService(db: unknown): Promise<PlatformOperatorAccessService> {
+  const module = await Test.createTestingModule({
+    providers: [
+      PlatformOperatorAccessService,
+      { provide: DRIZZLE, useValue: db },
+    ],
+  }).compile();
+  return module.get(PlatformOperatorAccessService);
+}
+
+describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
+  describe("createGrant: max 24-hour duration enforced", () => {
+    it("(bite proof) rejects a grant expiring more than 24 hours from now", async () => {
+      const insertChain = { values: jest.fn().mockReturnThis(), returning: jest.fn().mockResolvedValue([{ grantId: "g1" }]) };
+      const db = { insert: jest.fn().mockReturnValue(insertChain) };
+      const svc = await buildService(db);
+
+      const tooFar = new Date(Date.now() + 25 * 60 * 60 * 1000);
+      await expect(
+        svc.createGrant({
+          operatorUserId: "op-alice",
+          orgId: "org-1",
+          incidentRef: "INC-100",
+          grantedBy: "op-alice",
+          scope: "read_customer_data",
+          expiresAt: tooFar,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(db.insert).not.toHaveBeenCalled();
+    });
+
+    it("accepts a grant expiring within 24 hours", async () => {
+      const insertChain = { values: jest.fn().mockReturnThis(), returning: jest.fn().mockResolvedValue([{ grantId: "g1" }]) };
+      const db = { insert: jest.fn().mockReturnValue(insertChain) };
+      const svc = await buildService(db);
+
+      const within24h = new Date(Date.now() + 23 * 60 * 60 * 1000);
+      const id = await svc.createGrant({
+        operatorUserId: "op-alice",
+        orgId: "org-1",
+        incidentRef: "INC-100",
+        grantedBy: "op-alice",
+        scope: "read_customer_data",
+        expiresAt: within24h,
+      });
+      expect(id).toBe("g1");
+    });
+  });
+
+  describe("assertGrant: expiry predicate is in the SQL WHERE clause", () => {
+    it("(bite proof) WHERE clause contains expiresAt condition — removing it would allow expired grants", async () => {
+      const capturedConditions: unknown[] = [];
+      const where = jest.fn((condition: unknown) => {
+        capturedConditions.push(condition);
+        return { limit: jest.fn().mockResolvedValue([]) };
+      });
+      const from = jest.fn().mockReturnValue({ where });
+      const db = { select: jest.fn().mockReturnValue({ from }) };
+      const svc = await buildService(db);
+
+      await svc.assertGrant("op-alice", "org-1", "read_customer_data").catch(() => null);
+
+      expect(capturedConditions.length).toBeGreaterThan(0);
+      const rendered = renderCondition(capturedConditions[0]);
+      expect(rendered).toContain("expires_at");
+    });
+
+    it("WHERE clause contains status = 'active' — pending grants are rejected", async () => {
+      const capturedConditions: unknown[] = [];
+      const where = jest.fn((condition: unknown) => {
+        capturedConditions.push(condition);
+        return { limit: jest.fn().mockResolvedValue([]) };
+      });
+      const from = jest.fn().mockReturnValue({ where });
+      const db = { select: jest.fn().mockReturnValue({ from }) };
+      const svc = await buildService(db);
+
+      await svc.assertGrant("op-alice", "org-1", "read_customer_data").catch(() => null);
+
+      const values = sqlValues(capturedConditions[0]);
+      expect(values).toContain("active");
+    });
+
+    it("(bite proof) expired grant — DB applies expiry predicate, returns empty, throws ForbiddenException", async () => {
+      const where = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) });
+      const from = jest.fn().mockReturnValue({ where });
+      const db = { select: jest.fn().mockReturnValue({ from }) };
+      const svc = await buildService(db);
+
+      await expect(
+        svc.assertGrant("op-alice", "org-1", "read_customer_data"),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe("revokeGrant: updates status to 'revoked' for query-time enforcement consistency", () => {
+    it("(bite proof) sets status='revoked' and revokedAt — status column stays consistent with revokedAt", async () => {
+      const selectChain = {
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue([{ grantId: "grant-1" }]),
+      };
+      const updateChain = {
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockResolvedValue(undefined),
+      };
+      const db = {
+        select: jest.fn().mockReturnValue(selectChain),
+        update: jest.fn().mockReturnValue(updateChain),
+      };
+      const svc = await buildService(db);
+
+      await svc.revokeGrant("grant-1", "no longer needed");
+
+      const setCall = updateChain.set.mock.calls[0]?.[0] as Record<string, unknown>;
+      expect(setCall.status).toBe("revoked");
+      expect(setCall.revokedAt).toBeInstanceOf(Date);
+      expect(setCall.revocationReason).toBe("no longer needed");
+    });
+  });
+
+  describe("assertAndLog: every privileged action carries both operatorUserId and grantId", () => {
+    it("recordAccess call includes grantId and operatorUserId — actions are doubly attributed", async () => {
+      const capturedLog: Record<string, unknown>[] = [];
+      const grantSelectChain = {
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue([{ grantId: "grant-active" }]),
+      };
+      const logInsertChain = {
+        values: jest.fn((v: unknown) => {
+          capturedLog.push(v as Record<string, unknown>);
+          return Promise.resolve(undefined);
+        }),
+      };
+      const db = {
+        select: jest.fn().mockReturnValue(grantSelectChain),
+        insert: jest.fn().mockReturnValue(logInsertChain),
+      };
+      const svc = await buildService(db);
+
+      await svc.assertAndLog(
+        "op-alice",
+        "org-1",
+        "read_customer_data",
+        "customer_data.viewed",
+        "1.2.3.4",
+        { recordId: "cust-abc" },
+      );
+
+      expect(capturedLog).toHaveLength(1);
+      expect(capturedLog[0]).toMatchObject({
+        grantId: "grant-active",
+        operatorUserId: "op-alice",
+        action: "customer_data.viewed",
+        orgId: "org-1",
+        ipAddress: "1.2.3.4",
+      });
+    });
+  });
+});

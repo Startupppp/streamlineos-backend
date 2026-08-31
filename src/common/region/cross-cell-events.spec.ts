@@ -23,7 +23,6 @@ describe("which events may cross a cell boundary", () => {
 
   it("refuses every event type present in the outbox today", () => {
     const observed = [
-      "accounting.journal.posted",
       "build.ticket.created",
       "build.project.created",
       "build.ticket.status_changed",

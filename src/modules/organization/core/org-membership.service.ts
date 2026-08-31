@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import type { InviteActor } from "./invitations.service";
+import type { InviteActor } from "./invitations.helpers";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
 import { assertTargetNotOwner } from "../../../common/rbac/assert-target-not-owner";
 import { assertNotLastStructuralAdmin } from "../../../common/rbac/assert-not-last-structural-admin";

@@ -26,9 +26,12 @@ import {
   type TaxDeclarationsQuery,
 } from "./dto/insights.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
-const declarationIdParams = z.object({ declarationId: z.coerce.number().int().positive() }).strict();
+const declarationIdParams = z
+  .object({ declarationId: z.coerce.number().int().positive() })
+  .strict();
 
 @RequireModule("payroll")
 @Controller("payroll/tax")
@@ -43,10 +46,16 @@ export class TaxAdminController {
     @CurrentUser() u: CurrentUserContext,
     @Query() query: TaxDeclarationsQuery,
   ) {
-    return this.service.listDeclarations(u.orgId, query, query.page ?? 1, query.limit ?? 50);
+    return this.service.listDeclarations(
+      u.orgId,
+      query,
+      query.page ?? 1,
+      query.limit ?? 50,
+    );
   }
 
   @Patch("declarations/:declarationId/approve")
+  @BodylessAction()
   @Idempotent("payroll.tax-declaration.approve")
   @RequirePermission("payroll:tax:manage")
   @Validate({ params: declarationIdParams })
@@ -79,7 +88,10 @@ export class TaxAdminController {
   ) {
     const file = await this.service.exportCsv(u.orgId, query.financialYear);
     res.setHeader("Content-Type", file.contentType);
-    res.setHeader("Content-Disposition", `attachment; filename="${file.filename}"`);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${file.filename}"`,
+    );
     return file.body;
   }
 }

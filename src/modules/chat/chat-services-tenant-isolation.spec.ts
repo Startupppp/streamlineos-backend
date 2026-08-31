@@ -126,11 +126,10 @@ describe("ChatSearchService — tenant isolation", () => {
     const msgRow = {
       id: 5,
       content: "hello",
-      senderId: "u1",
       channelId: 2,
       createdAt: new Date(),
       isDeleted: false,
-      sender: { id: "u1", name: "Alice", image: null },
+      senderMembership: { user: { id: "u1", name: "Alice", image: null } },
       channel: { id: 2, name: "general", type: "PUBLIC" },
     };
 
@@ -181,11 +180,12 @@ describe("ChatSummarizeService — tenant isolation", () => {
 
   it("CONTROL: summarize returns a summary when caller is a member and AI responds", async () => {
     const limit = jest.fn().mockResolvedValue([
-      { id: 1, content: "hello", createdAt: new Date(), senderId: "u1", senderName: "Alice", senderEmail: "a@test.com" },
+      { id: 1, content: "hello", createdAt: new Date(), senderName: "Alice", senderEmail: "a@test.com" },
     ]);
     const orderBy = jest.fn().mockReturnValue({ limit });
     const where = jest.fn().mockReturnValue({ orderBy });
-    const leftJoin = jest.fn().mockReturnValue({ where });
+    const leftJoin2 = jest.fn().mockReturnValue({ where });
+    const leftJoin = jest.fn().mockReturnValue({ leftJoin: leftJoin2 });
     const from = jest.fn().mockReturnValue({ leftJoin });
 
     const db = {
@@ -287,7 +287,7 @@ describe("ChatNotificationsService — orgId threading", () => {
       { userId: "u2", mutedUntil: null, notificationPreference: "ALL" },
     ]);
 
-    await service.publishNewMessageNotification(ATTACKER_ORG, 10, { id: 1, senderId: "u1", senderName: "Eve" }, "GROUP");
+    await service.publishNewMessageNotification(ATTACKER_ORG, 10, { id: 1, senderUserId: "u1", senderName: "Eve" }, "GROUP");
 
     expect(ably.publishToUser).toHaveBeenCalledWith(
       ATTACKER_ORG,
@@ -303,7 +303,7 @@ describe("ChatNotificationsService — orgId threading", () => {
       { userId: "u3", mutedUntil: null, notificationPreference: "ALL" },
     ]);
 
-    await service.publishNewMessageNotification(OWNER_ORG, 10, { id: 2, senderId: "u1", senderName: "Bob" }, "GROUP");
+    await service.publishNewMessageNotification(OWNER_ORG, 10, { id: 2, senderUserId: "u1", senderName: "Bob" }, "GROUP");
 
     expect(ably.publishToUser).toHaveBeenCalledWith(
       OWNER_ORG,
@@ -355,9 +355,9 @@ describe("ChatReplyRemindersService — tenant isolation", () => {
     await service.scheduleForMessage(OWNER_ORG, 10, 99, "sender-owner");
 
     expect(insert).toHaveBeenCalledTimes(1);
-    const [batch] = values.mock.calls[0] as [{ orgId: string; recipientUserId: string }[]];
+    const [batch] = values.mock.calls[0] as [{ orgId: string; recipientMembershipId: number }[]];
     expect(batch).toHaveLength(1);
-    expect(batch[0]).toMatchObject({ orgId: OWNER_ORG, recipientUserId: "u2", senderUserId: "sender-owner" });
+    expect(batch[0]).toMatchObject({ orgId: OWNER_ORG, recipientMembershipId: 2, senderMembershipId: 1 });
   });
 });
 

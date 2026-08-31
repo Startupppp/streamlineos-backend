@@ -3,6 +3,13 @@ import type { ResolvedComponent, CalcInputPulls } from "./lib/calculation-engine
 import type { PayrollInputSource, CalculationSnapshot, InputsSnapshot } from "../payroll.types";
 import type { DetectedExceptions } from "./lib/exception-engine";
 
+export interface GenerateRunCommand {
+  orgId: string;
+  runId: number;
+  actorId: string;
+  isRecalc: boolean;
+}
+
 export interface ProfileData {
   id: number;
   userId: string | null;

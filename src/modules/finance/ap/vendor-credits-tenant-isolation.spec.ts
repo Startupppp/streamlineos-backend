@@ -20,19 +20,10 @@ describe("VendorCreditsService — cross-tenant isolation", () => {
   function makeService(rows: unknown[]): { svc: VendorCreditsService; where: jest.Mock } {
     const where = jest.fn().mockReturnValue({
       orderBy: jest.fn().mockReturnValue({
-        offset: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) }),
+        limit: jest.fn().mockResolvedValue(rows),
       }),
     });
-    const countWhere = jest.fn().mockResolvedValue([{ c: rows.length }]);
-    let call = 0;
-    const select = jest.fn().mockImplementation(() => {
-      call++;
-      if (call % 2 === 1) {
-        return { from: jest.fn().mockReturnValue({ leftJoin: jest.fn().mockReturnValue({ where }) }) };
-      }
-      return { from: jest.fn().mockReturnValue({ where: countWhere }) };
-    });
-    const db = { select } as unknown as Db;
+    const db = { select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ leftJoin: jest.fn().mockReturnValue({ where }) }) }) } as unknown as Db;
     const audit = { log: jest.fn() } as never;
     const cache = { cachedForOrg: jest.fn().mockImplementation((_o: unknown, _k: unknown, fn: () => unknown) => fn()), invalidateForOrg: jest.fn() } as never;
     const svc = new VendorCreditsService(db, audit, cache, {} as never, {} as never);
@@ -53,6 +44,6 @@ describe("VendorCreditsService — cross-tenant isolation", () => {
 
     const result = await svc.listVendorCredits(OWNER_ORG, { page: 1, pageSize: 20 });
 
-    expect(result.items).toHaveLength(1);
+    expect(result.data).toHaveLength(1);
   });
 });

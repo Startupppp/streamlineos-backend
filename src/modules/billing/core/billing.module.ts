@@ -20,9 +20,10 @@ import { InvoiceSnapshotService } from "./invoice-snapshot.service";
 import { AiCreditsModule } from "./ai-credits.module";
 import { PaymentsModule } from "../payments/payments.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
+import { NotificationsModule } from "../../notifications/notifications.module";
 
 @Module({
-  imports: [AiCreditsModule, PaymentsModule, OutboxModule],
+  imports: [AiCreditsModule, PaymentsModule, OutboxModule, NotificationsModule],
   controllers: [BillingController, BillingMarketplaceController, BillingEnterpriseController, RazorpayWebhookController],
   providers: [BillingService, BillingProfileService, MarketplaceService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, UsageMeteringService, InvoiceSnapshotService],
   exports: [AiCreditsModule, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, UsageMeteringService, InvoiceSnapshotService],

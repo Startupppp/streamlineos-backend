@@ -351,6 +351,7 @@ export class CalendarService {
   }
 
   async deleteEvent(orgId: string, userId: string, id: number) {
+    let removed = 0;
     const [mapping] = await this.db.transaction(async (tx) => {
       const memberRow = await tx.query.organizationMembers.findFirst({
         columns: { id: true },
@@ -374,6 +375,7 @@ export class CalendarService {
           integrationConnectionId: calendarEvents.integrationConnectionId,
           externalEventId: calendarEvents.externalEventId,
         });
+      removed = deleted.length;
       if (deleted.length > 0)
         await tx
           .update(notificationOutbox)
@@ -401,6 +403,7 @@ export class CalendarService {
       }
     }
 
+    if (removed === 0) return null;
     return { deleted: true };
   }
 

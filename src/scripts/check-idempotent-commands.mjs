@@ -53,6 +53,8 @@ const HANDLER_EXCLUSIONS = new Map([
   ["src/modules/finance/controls/approvals.controller.ts::approve", "bespoke-mechanism"],
   ["src/modules/finance/controls/approvals.controller.ts::reject", "bespoke-mechanism"],
   ["src/modules/hr/recruitment/recruitment-candidate-records.controller.ts::updateReferral", "http-put-idempotent"],
+  ["src/modules/platform/platform-operator-access.controller.ts::approveGrant", "internal-api-no-jwt-context; service is idempotent: no-op when already active for the same approver"],
+  ["src/modules/platform/platform-operator-access.controller.ts::rejectGrant", "internal-api-no-jwt-context; service is idempotent: no-op when already rejected"],
 ]);
 
 function isFileExcluded(relPath) {

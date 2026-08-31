@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -18,7 +18,8 @@ import {
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBefore } from "../../../common/pagination/keyset";
 import { checkApprovalPolicy } from "./ap-approval.helper";
 import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -44,40 +45,40 @@ export class PaymentRunsService {
   ) {}
 
   async listRuns(orgId: string, query: ListPaymentRunsQuery) {
-    const { page, pageSize, status } = query;
+    const { cursor, limit, status } = query;
+    const pos = decodeCursor(cursor);
+    const pageLimit = Math.min(limit, 100);
+
     const conds = [eq(finPaymentRuns.orgId, orgId)];
     if (status) conds.push(eq(finPaymentRuns.status, status));
+    if (pos) conds.push(keysetBefore(finPaymentRuns.createdAt, finPaymentRuns.id, pos));
 
-    const where = and(...conds);
-    const { offset, limit } = paginateOffset({ page, pageSize });
+    const rows = await this.db
+      .select({
+        id: finPaymentRuns.id,
+        orgId: finPaymentRuns.orgId,
+        name: finPaymentRuns.name,
+        scheduledDate: finPaymentRuns.scheduledDate,
+        status: finPaymentRuns.status,
+        totalAmount: finPaymentRuns.totalAmount,
+        approvedBy: finPaymentRuns.approvedBy,
+        approvedAt: finPaymentRuns.approvedAt,
+        createdBy: finPaymentRuns.createdBy,
+        createdAt: finPaymentRuns.createdAt,
+        updatedAt: finPaymentRuns.updatedAt,
+        itemCount: sql<number>`count(${finPaymentRunItems.id})::int`,
+      })
+      .from(finPaymentRuns)
+      .leftJoin(finPaymentRunItems, eq(finPaymentRunItems.runId, finPaymentRuns.id))
+      .where(and(...conds))
+      .groupBy(finPaymentRuns.id)
+      .orderBy(desc(finPaymentRuns.createdAt), desc(finPaymentRuns.id))
+      .limit(pageLimit + 1);
 
-    const [items, totalRows] = await Promise.all([
-      this.db
-        .select({
-          id: finPaymentRuns.id,
-          orgId: finPaymentRuns.orgId,
-          name: finPaymentRuns.name,
-          scheduledDate: finPaymentRuns.scheduledDate,
-          status: finPaymentRuns.status,
-          totalAmount: finPaymentRuns.totalAmount,
-          approvedBy: finPaymentRuns.approvedBy,
-          approvedAt: finPaymentRuns.approvedAt,
-          createdBy: finPaymentRuns.createdBy,
-          createdAt: finPaymentRuns.createdAt,
-          updatedAt: finPaymentRuns.updatedAt,
-          itemCount: sql<number>`count(${finPaymentRunItems.id})::int`,
-        })
-        .from(finPaymentRuns)
-        .leftJoin(finPaymentRunItems, eq(finPaymentRunItems.runId, finPaymentRuns.id))
-        .where(where)
-        .groupBy(finPaymentRuns.id)
-        .orderBy(desc(finPaymentRuns.createdAt))
-        .offset(offset)
-        .limit(limit),
-      this.db.select({ c: count() }).from(finPaymentRuns).where(where),
-    ]);
-
-    return buildListResponse(items, Number(totalRows[0]?.c ?? 0), { page, pageSize });
+    return buildCursorPage(rows, pageLimit, (row) => ({
+      sortValue: (row.createdAt ?? new Date(0)).toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async getRun(orgId: string, runId: number) {

@@ -343,7 +343,6 @@ async function main(): Promise<void> {
         tokenHash: createHash("sha256").update(`inv-${TS}`).digest("hex"),
         orgId: ORG_ID,
         role: "MEMBER",
-        invitedBy: DEL_USER_ID,
         expiresAt: new Date(Date.now() + 604_800_000),
         status: "PENDING",
       });

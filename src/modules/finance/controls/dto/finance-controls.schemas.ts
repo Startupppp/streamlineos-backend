@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createApprovalPolicySchema = z.object({
   recordType: z.enum([
@@ -32,8 +32,8 @@ export const listApprovalsSchema = z.object({
       "BANK_ADJUSTMENT",
     ])
     .optional(),
-  page: pageNumberField,
-  pageSize: pageSizeField(20, 100),
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
 });
 
 export const approvalDecisionSchema = z.object({
@@ -46,8 +46,8 @@ export const listAuditSchema = z.object({
   action: z.string().optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
-  page: pageNumberField,
-  pageSize: pageSizeField(20, 100),
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
 });
 
 export const upsertExchangeRateSchema = z.object({
@@ -58,8 +58,8 @@ export const upsertExchangeRateSchema = z.object({
 });
 
 export const listExchangeRatesSchema = z.object({
-  page: pageNumberField,
-  pageSize: pageSizeField(50, 100),
+  cursor: z.string().optional(),
+  limit: pageSizeField(50, 100),
 });
 
 export type CreateApprovalPolicyInput = z.infer<typeof createApprovalPolicySchema>;

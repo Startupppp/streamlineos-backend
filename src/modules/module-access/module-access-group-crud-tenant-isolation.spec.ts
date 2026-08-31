@@ -72,12 +72,13 @@ describe("ModuleAccessGroupCrudService — cross-tenant isolation", () => {
     expect(vals).not.toContain(OWNER);
   });
 
-  it("returns groups for the owning org (same-tenant control)", async () => {
+  it("returns a cursor page with a data array for the owning org (same-tenant control)", async () => {
     const wheres: unknown[] = [];
     const svc = new ModuleAccessGroupCrudService(makeDb(wheres), makeAccess(), makeCache(), makeAudit(), makeGroupPolicy());
 
     const result = await svc.listGroups(OWNER, "build", 1);
 
-    expect(Array.isArray(result)).toBe(true);
+    expect(Array.isArray(result.data)).toBe(true);
+    expect(result.pagination).toBeDefined();
   });
 });

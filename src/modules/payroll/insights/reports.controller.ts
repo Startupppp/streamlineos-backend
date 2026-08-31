@@ -38,7 +38,7 @@ function pagination(q: ReportsQuery): { limit: number; offset: number } {
 @Controller("payroll/reports")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 @RequirePermission("payroll:reports:view")
-export class ReportsController {
+export class PayrollInsightsReportsController {
   constructor(
     private readonly reports: ReportsService,
     private readonly access: AccessService,

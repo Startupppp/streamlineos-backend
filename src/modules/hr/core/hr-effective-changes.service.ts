@@ -13,6 +13,7 @@ import {
   hrPeople,
   OPEN_ENDED_DATE,
 } from "../../../db/schema/hr/core-people";
+import { organizationMembers } from "../../../db/schema/common/auth";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type {
@@ -54,6 +55,24 @@ export class HrEffectiveChangesService {
     );
   }
 
+  private async resolveActorMembershipId(
+    tx: Db,
+    orgId: string,
+    actorId: string,
+  ): Promise<number | null> {
+    const [row] = await tx
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, actorId),
+        ),
+      )
+      .limit(1);
+    return row?.id ?? null;
+  }
+
   private async createInTransaction(
     tx: Db,
     orgId: string,
@@ -86,6 +105,7 @@ export class HrEffectiveChangesService {
         .for("update");
       if (!employment) throw new NotFoundException("Employment not found.");
 
+      const actorMembershipId = await this.resolveActorMembershipId(tx, orgId, actorId);
       const oldValue = await this.snapshotOldValue(tx, orgId, input, employment);
       const [created] = await tx
         .insert(hrEffectiveDatedChanges)
@@ -98,7 +118,7 @@ export class HrEffectiveChangesService {
           effectiveFrom: input.effectiveFrom,
           effectiveTo: input.effectiveTo ?? OPEN_ENDED_DATE,
           notes: input.notes ?? null,
-          createdBy: actorId,
+          createdByMembershipId: actorMembershipId,
           status: "draft",
         })
         .returning();
@@ -108,6 +128,7 @@ export class HrEffectiveChangesService {
         {
           orgId,
           actorId,
+          actorMembershipId,
           entityType: "hr_effective_dated_changes",
           entityId: String(created.id),
           action: "created",
@@ -134,7 +155,7 @@ export class HrEffectiveChangesService {
 
       const [approved] = await tx
         .update(hrEffectiveDatedChanges)
-        .set({ status: "approved", approvedBy: actorId, approvedAt: new Date() })
+        .set({ status: "approved", approvedByMembershipId: actorMembershipId, approvedAt: new Date() })
         .where(
           and(
             eq(hrEffectiveDatedChanges.id, created.id),
@@ -148,6 +169,7 @@ export class HrEffectiveChangesService {
         {
           orgId,
           actorId,
+          actorMembershipId,
           entityType: "hr_effective_dated_changes",
           entityId: String(created.id),
           action: "approved",
@@ -200,9 +222,10 @@ export class HrEffectiveChangesService {
         throw new ConflictException(`Only draft changes can be approved; this change is ${change.status}.`);
       }
 
+      const actorMembershipId = await this.resolveActorMembershipId(tx, orgId, actorId);
       const [updated] = await tx
         .update(hrEffectiveDatedChanges)
-        .set({ status: "approved", approvedBy: actorId, approvedAt: new Date() })
+        .set({ status: "approved", approvedByMembershipId: actorMembershipId, approvedAt: new Date() })
         .where(
           and(
             eq(hrEffectiveDatedChanges.id, changeId),
@@ -217,6 +240,7 @@ export class HrEffectiveChangesService {
         {
           orgId,
           actorId,
+          actorMembershipId,
           entityType: "hr_effective_dated_changes",
           entityId: String(changeId),
           action: "approved",

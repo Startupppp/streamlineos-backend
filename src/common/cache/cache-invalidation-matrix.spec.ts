@@ -116,6 +116,32 @@ describe("CACHE_INVALIDATION_MATRIX — structure", () => {
   );
 });
 
+describe("CACHE_INVALIDATION_MATRIX — dimension enforcement", () => {
+  it("every entry with declared dimensions has each dimension as a <dim> placeholder in its namespace template", () => {
+    for (const entry of CACHE_INVALIDATION_MATRIX) {
+      for (const dim of entry.dimensions ?? []) {
+        expect(entry.namespace).toContain(`<${dim}>`);
+      }
+    }
+  });
+
+  it("at least 8 entries declare required dimensions (field is not silently absent from the registry)", () => {
+    const withDimensions = CACHE_INVALIDATION_MATRIX.filter(
+      (e) => (e.dimensions?.length ?? 0) > 0,
+    );
+    expect(withDimensions.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it("entries with staleToleranceSeconds declare a non-negative finite value", () => {
+    for (const entry of CACHE_INVALIDATION_MATRIX) {
+      if (entry.staleToleranceSeconds !== undefined) {
+        expect(Number.isFinite(entry.staleToleranceSeconds)).toBe(true);
+        expect(entry.staleToleranceSeconds).toBeGreaterThanOrEqual(0);
+      }
+    }
+  });
+});
+
 // Negative control — proves the read-after-write suite bites.
 //
 // With deafToInvalidation=true, incr returns the current value without writing,

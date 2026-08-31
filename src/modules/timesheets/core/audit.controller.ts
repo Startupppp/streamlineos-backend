@@ -13,7 +13,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 @RequireModule("build")
 @Controller("timesheets/audit")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
-export class AuditController {
+export class TimesheetAuditController {
   constructor(private readonly auditService: TimesheetsAuditService) {}
 
   @Get("verify")

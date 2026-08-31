@@ -297,7 +297,7 @@ describe("SupportKbGapService", () => {
         "org1",
         "ticket_deflected",
         expect.objectContaining({
-          actorId: "user1",
+          actorMembershipId: null,
           articleId: 99,
           metadata: expect.objectContaining({ feature: "kb_gap_draft", gapId: 1 }),
         }),

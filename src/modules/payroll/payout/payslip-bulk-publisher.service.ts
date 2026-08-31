@@ -15,6 +15,7 @@ import {
   payslipTemplates,
   payrollRunEvents,
   organizations,
+  organizationMembers,
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
@@ -70,7 +71,7 @@ export class PayslipBulkPublisherService {
   ) {
     const run = await this.db.query.payrollRuns.findFirst({
       where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
-      with: { policyVersion: true },
+      with: { policyVersion: { columns: { toggles: true } } },
     });
     if (!run) throw new NotFoundException("Payroll run not found");
     if (run.status !== "PAID") {
@@ -293,10 +294,15 @@ export class PayslipBulkPublisherService {
 
     if (allPublished) {
       const now = new Date();
+      const publishMember = await this.db.query.organizationMembers.findFirst({
+        where: and(eq(organizationMembers.userId, actorId), eq(organizationMembers.orgId, orgId)),
+        columns: { id: true },
+      });
+      const publishedByMembershipId = publishMember?.id ?? null;
       await this.db.transaction(async (tx) => {
         await tx
           .update(payrollRuns)
-          .set({ status: "PAYSLIPS_PUBLISHED", publishedAt: now, publishedBy: actorId })
+          .set({ status: "PAYSLIPS_PUBLISHED", publishedAt: now, publishedBy: actorId, publishedByMembershipId })
           .where(eq(payrollRuns.id, runId));
         await tx.insert(payrollRunEvents).values({
           orgId,

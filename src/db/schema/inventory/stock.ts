@@ -101,6 +101,7 @@ export const invStockTransactions = pgTable("inv_stock_transactions", {
   referenceId: text("reference_id"),
   notes: text("notes"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_inv_txn_org_variant").on(table.orgId, table.productVariantId),
@@ -171,10 +172,13 @@ export const invStockAdjustments = pgTable("inv_stock_adjustments", {
    */
   writtenOffValue: decimal("written_off_value", { precision: 18, scale: 4 }),
   approvedBy: text("approved_by").references(() => users.id),
+  approvedByMembershipId: integer("approved_by_membership_id"),
   approvedAt: timestamp("approved_at"),
   postedBy: text("posted_by").references(() => users.id),
+  postedByMembershipId: integer("posted_by_membership_id"),
   postedAt: timestamp("posted_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -234,6 +238,7 @@ export const invStockTransfers = pgTable("inv_stock_transfers", {
   reservedAt: timestamp("reserved_at"),
   dispatchedAt: timestamp("dispatched_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

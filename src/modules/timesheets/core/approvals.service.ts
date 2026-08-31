@@ -11,17 +11,7 @@ import {
   OrganizationActorError,
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
-import {
-  and,
-  desc,
-  sql,
-  gt,
-  eq,
-  gte,
-  inArray,
-  isNull,
-  lte,
-} from "drizzle-orm";
+import { and, desc, gt, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { logger } from "../../../common/logger/logger.service";
 import { type Db } from "../../../db/drizzle.module";
@@ -37,6 +27,11 @@ import {
 import { AccessService } from "../../access/access.service";
 import { applyScope } from "../../access/apply-scope";
 import { resolveApprovalScope } from "./timesheets-core-scope";
+import {
+  buildCursorPage,
+  decodeCursor,
+} from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { RateResolverService } from "./rate-resolver.service";
 import { canActOnPeriod } from "./lib/approval-guard";
@@ -140,80 +135,79 @@ export class ApprovalsService {
   async listApprovals(u: CurrentUserContext, query: ApprovalsQuery) {
     const scope = await resolveApprovalScope(this.access, u);
     const limit = Math.min(query.limit, 100);
-    const offset = (query.page - 1) * limit;
+    const pos = decodeCursor(query.cursor);
     const conditions = [
       eq(timesheetPeriods.orgId, u.orgId),
       eq(timesheetPeriods.status, query.status),
-      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheetPeriods.userId }),
+      applyScope(scope, u.orgId, u.userId, {
+        ownerColumn: timesheetPeriods.userId,
+      }),
     ];
 
-    if (
-      query.userId &&
-      (scope === "all" || u.isOrgOwner)
-    ) {
+    if (query.userId && (scope === "all" || u.isOrgOwner))
       conditions.push(eq(timesheetPeriods.userId, query.userId));
-    }
-    if (query.startDate) {
+    if (query.startDate)
       conditions.push(gte(timesheetPeriods.periodStart, query.startDate));
-    }
-    if (query.endDate) {
+    if (query.endDate)
       conditions.push(lte(timesheetPeriods.periodEnd, query.endDate));
-    }
+    if (pos)
+      conditions.push(
+        keysetBeforeId(timesheetPeriods.submittedAt, timesheetPeriods.id, pos),
+      );
 
-    const [rows, [countRow]] = await Promise.all([
-      this.db
-        .select({
-          id: timesheetPeriods.id,
-          orgId: timesheetPeriods.orgId,
-          userId: timesheetPeriods.userId,
-          periodStart: timesheetPeriods.periodStart,
-          periodEnd: timesheetPeriods.periodEnd,
-          status: timesheetPeriods.status,
-          totalHours: timesheetPeriods.totalHours,
-          billableHours: timesheetPeriods.billableHours,
-          nonBillableHours: timesheetPeriods.nonBillableHours,
-          submittedAt: timesheetPeriods.submittedAt,
-          approvedAt: timesheetPeriods.approvedAt,
-          rejectedAt: timesheetPeriods.rejectedAt,
-          lockedAt: timesheetPeriods.lockedAt,
-          currentApproverId: timesheetPeriods.currentApproverId,
-          approvedBy: timesheetPeriods.approvedBy,
-          rejectionReason: timesheetPeriods.rejectionReason,
-          createdAt: timesheetPeriods.createdAt,
-          updatedAt: timesheetPeriods.updatedAt,
-          userEmail: users.email,
-          userName: users.name,
-        })
-        .from(timesheetPeriods)
-        .leftJoin(users, eq(timesheetPeriods.userId, users.id))
-        .where(and(...conditions))
-        .orderBy(desc(timesheetPeriods.submittedAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ n: sql<string>`count(*)` })
-        .from(timesheetPeriods)
-        .where(and(...conditions)),
-    ]);
+    const approverMember = alias(organizationMembers, "approver_member");
 
-    const paginationTotal = Number(countRow?.n ?? 0);
+    const rows = await this.db
+      .select({
+        id: timesheetPeriods.id,
+        orgId: timesheetPeriods.orgId,
+        userId: timesheetPeriods.userId,
+        periodStart: timesheetPeriods.periodStart,
+        periodEnd: timesheetPeriods.periodEnd,
+        status: timesheetPeriods.status,
+        totalHours: timesheetPeriods.totalHours,
+        billableHours: timesheetPeriods.billableHours,
+        nonBillableHours: timesheetPeriods.nonBillableHours,
+        submittedAt: timesheetPeriods.submittedAt,
+        approvedAt: timesheetPeriods.approvedAt,
+        rejectedAt: timesheetPeriods.rejectedAt,
+        lockedAt: timesheetPeriods.lockedAt,
+        currentApproverId: timesheetPeriods.currentApproverId,
+        approvedBy: approverMember.userId,
+        rejectionReason: timesheetPeriods.rejectionReason,
+        createdAt: timesheetPeriods.createdAt,
+        updatedAt: timesheetPeriods.updatedAt,
+        userEmail: users.email,
+        userName: users.name,
+      })
+      .from(timesheetPeriods)
+      .leftJoin(users, eq(timesheetPeriods.userId, users.id))
+      .leftJoin(
+        approverMember,
+        and(
+          eq(timesheetPeriods.orgId, approverMember.orgId),
+          eq(timesheetPeriods.approvedByMembershipId, approverMember.id),
+        ),
+      )
+      .where(and(...conditions))
+      .orderBy(desc(timesheetPeriods.submittedAt), desc(timesheetPeriods.id))
+      .limit(limit + 1);
 
-    const data = rows.map((r) => ({
-      ...r,
-      user: {
-        id: r.userId,
-        name: r.userName ?? r.userEmail,
-        email: r.userEmail,
-      },
+    const page = buildCursorPage(rows, limit, (r) => ({
+      sortValue: (r.submittedAt ?? r.createdAt).toISOString(),
+      id: String(r.id),
     }));
 
     return {
-      data,
-      pagination: {
-        page: query.page,
-        limit,
-        total: paginationTotal,
-      },
+      data: page.data.map((r) => ({
+        ...r,
+        user: {
+          id: r.userId,
+          name: r.userName ?? r.userEmail,
+          email: r.userEmail,
+        },
+      })),
+      pagination: page.pagination,
     };
   }
 
@@ -237,8 +231,12 @@ export class ApprovalsService {
     }
     await this.assertCanActOnPeriod(u, period);
 
-    const approverActor = await assertOrganizationActor(this.db, u.orgId, { kind: "user", userId: u.userId }).catch((e: unknown) => {
-      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+    const approverActor = await assertOrganizationActor(this.db, u.orgId, {
+      kind: "user",
+      userId: u.userId,
+    }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError)
+        throw organizationActorHttpError(e);
       throw e;
     });
 
@@ -252,7 +250,6 @@ export class ApprovalsService {
         .set({
           status: "APPROVED",
           approvedAt: now,
-          approvedBy: u.userId,
           approvedByMembershipId: approverActor.membershipId,
           lockedAt: lockAfterApproval ? now : null,
           updatedAt: now,
@@ -268,11 +265,12 @@ export class ApprovalsService {
         .update(timesheets)
         .set({
           status: "APPROVED",
-          approvedBy: u.userId,
           approvedByMembershipId: approverActor.membershipId,
           approvedAt: now,
           lockedAt: lockAfterApproval ? now : null,
-          lockedByMembershipId: lockAfterApproval ? approverActor.membershipId : null,
+          lockedByMembershipId: lockAfterApproval
+            ? approverActor.membershipId
+            : null,
           updatedAt: now,
         })
         .where(
@@ -306,7 +304,13 @@ export class ApprovalsService {
         })),
       );
 
-      type RateGroup = { billRate: string; costRate: string | null; currency: string; rateSource: typeof resolvedRates[number]["source"]; ids: number[] };
+      type RateGroup = {
+        billRate: string;
+        costRate: string | null;
+        currency: string;
+        rateSource: (typeof resolvedRates)[number]["source"];
+        ids: number[];
+      };
       const rateGroups = new Map<string, RateGroup>();
       for (const [i, entry] of billableEntries.entries()) {
         const resolved = resolvedRates[i];
@@ -314,7 +318,8 @@ export class ApprovalsService {
         const groupKey = `${resolved.billRate}:${resolved.costRate ?? ""}:${resolved.currency}:${resolved.source ?? ""}`;
         const group = rateGroups.get(groupKey) ?? {
           billRate: resolved.billRate.toString(),
-          costRate: resolved.costRate !== null ? resolved.costRate.toString() : null,
+          costRate:
+            resolved.costRate !== null ? resolved.costRate.toString() : null,
           currency: resolved.currency,
           rateSource: resolved.source,
           ids: [],
@@ -355,6 +360,8 @@ export class ApprovalsService {
   async approvePeriod(u: CurrentUserContext, periodId: number) {
     await this.approveSinglePeriod(u, periodId);
 
+    const approverMember = alias(organizationMembers, "approver_member");
+
     const [updated] = await this.db
       .select({
         id: timesheetPeriods.id,
@@ -371,7 +378,7 @@ export class ApprovalsService {
         rejectedAt: timesheetPeriods.rejectedAt,
         lockedAt: timesheetPeriods.lockedAt,
         currentApproverId: timesheetPeriods.currentApproverId,
-        approvedBy: timesheetPeriods.approvedBy,
+        approvedBy: approverMember.userId,
         rejectionReason: timesheetPeriods.rejectionReason,
         createdAt: timesheetPeriods.createdAt,
         updatedAt: timesheetPeriods.updatedAt,
@@ -380,6 +387,13 @@ export class ApprovalsService {
       })
       .from(timesheetPeriods)
       .leftJoin(users, eq(timesheetPeriods.userId, users.id))
+      .leftJoin(
+        approverMember,
+        and(
+          eq(timesheetPeriods.orgId, approverMember.orgId),
+          eq(timesheetPeriods.approvedByMembershipId, approverMember.id),
+        ),
+      )
       .where(
         and(
           eq(timesheetPeriods.id, periodId),
@@ -390,5 +404,4 @@ export class ApprovalsService {
 
     return updated;
   }
-
 }

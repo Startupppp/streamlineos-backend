@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { invoices, invoiceItems, purchaseBills, purchaseBillItems } from "../../../db/schema/crm/invoicing";
@@ -8,7 +8,8 @@ import { journalLines } from "../../../db/schema/accounting/accounting";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId, keysetBeforeValue } from "../../../common/pagination/keyset";
 import type { TaxDateRangeQuery } from "./dto/tax-reports.schemas";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
@@ -57,13 +58,13 @@ export class TaxReportsService {
     private readonly posting: FinancePostingService,
   ) {}
 
-  async getOutputReport(orgId: string, query: TaxDateRangeQuery) {
-    const cacheKey = `output:${query.from}:${query.to}:${query.rate ?? ""}:${query.page}:${query.pageSize}`;
+  async getOutputReport(orgId: string, query: TaxDateRangeQuery): Promise<CursorPage<OutputTaxLine>> {
+    const cacheKey = `output:${query.from}:${query.to}:${query.rate ?? ""}:${query.cursor ?? ""}:${query.limit ?? ""}`;
     return this.cache.cachedVersioned(CACHE_KEYS.finTaxReportsNamespace(orgId), cacheKey, () => this.computeOutputReport(orgId, query), 120);
   }
 
-  async getInputReport(orgId: string, query: TaxDateRangeQuery) {
-    const cacheKey = `input:${query.from}:${query.to}:${query.rate ?? ""}:${query.page}:${query.pageSize}`;
+  async getInputReport(orgId: string, query: TaxDateRangeQuery): Promise<CursorPage<InputTaxLine>> {
+    const cacheKey = `input:${query.from}:${query.to}:${query.rate ?? ""}:${query.cursor ?? ""}:${query.limit ?? ""}`;
     return this.cache.cachedVersioned(CACHE_KEYS.finTaxReportsNamespace(orgId), cacheKey, () => this.computeInputReport(orgId, query), 120);
   }
 
@@ -72,11 +73,11 @@ export class TaxReportsService {
     return this.cache.cachedVersioned(CACHE_KEYS.finTaxReportsNamespace(orgId), cacheKey, () => this.computeLiabilitySummary(orgId, query), 120);
   }
 
-  private async computeOutputReport(orgId: string, query: TaxDateRangeQuery) {
-    const { from, to, page, pageSize } = query;
+  private async computeOutputReport(orgId: string, query: TaxDateRangeQuery): Promise<CursorPage<OutputTaxLine>> {
+    const { from, to, cursor, limit } = query;
     const fromDate = new Date(`${from}T00:00:00.000Z`);
     const toDate = new Date(`${to}T23:59:59.999Z`);
-    const { limit, offset } = paginateOffset({ page, pageSize });
+    const pos = decodeCursor(cursor);
 
     const invConditions = [
       eq(invoices.orgId, orgId),
@@ -84,32 +85,35 @@ export class TaxReportsService {
       gte(invoices.createdAt, fromDate),
       lte(invoices.createdAt, toDate),
     ];
+    if (pos) invConditions.push(keysetBeforeId(invoices.createdAt, invoices.id, pos));
 
-    const [invRows, [{ total: invTotal }]] = await Promise.all([
-      this.db
-        .select({
-          id: invoices.id,
-          invoiceNumber: invoices.invoiceNumber,
-          createdAt: invoices.createdAt,
-          cgstAmount: invoices.cgstAmount,
-          sgstAmount: invoices.sgstAmount,
-          igstAmount: invoices.igstAmount,
-          clientId: invoices.clientId,
-        })
-        .from(invoices)
-        .where(and(...invConditions))
-        .orderBy(sql`${invoices.createdAt} DESC`)
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(invoices).where(and(...invConditions)),
-    ]);
+    const invRows = await this.db
+      .select({
+        id: invoices.id,
+        invoiceNumber: invoices.invoiceNumber,
+        createdAt: invoices.createdAt,
+        cgstAmount: invoices.cgstAmount,
+        sgstAmount: invoices.sgstAmount,
+        igstAmount: invoices.igstAmount,
+        clientId: invoices.clientId,
+      })
+      .from(invoices)
+      .where(and(...invConditions))
+      .orderBy(desc(invoices.createdAt), desc(invoices.id))
+      .limit(limit + 1);
 
-    if (invRows.length === 0) {
-      return buildListResponse<OutputTaxLine>([], Number(invTotal ?? 0), { page, pageSize });
+    const invPage = buildCursorPage(invRows, limit, (r) => ({
+      sortValue: (r.createdAt ?? new Date(0)).toISOString(),
+      id: String(r.id),
+    }));
+
+    if (invPage.data.length === 0) {
+      return { ...invPage, data: [] as OutputTaxLine[] };
     }
 
-    const invoiceIds = invRows.map((r) => r.id);
-    const clientIds = invRows.map((r) => r.clientId).filter((id): id is number => id !== null);
+    const pageInvRows = invPage.data;
+    const invoiceIds = pageInvRows.map((r) => r.id);
+    const clientIds = pageInvRows.map((r) => r.clientId).filter((id): id is number => id !== null);
 
     const [itemRows, clientRows] = await Promise.all([
       this.db
@@ -130,7 +134,7 @@ export class TaxReportsService {
     }
 
     const lines: OutputTaxLine[] = [];
-    for (const inv of invRows) {
+    for (const inv of pageInvRows) {
       const items = itemsByInvoice.get(inv.id) ?? [];
       const rateFilter = query.rate !== undefined ? query.rate.toFixed(2) : null;
 
@@ -156,7 +160,7 @@ export class TaxReportsService {
           sourceType: "invoice",
           sourceId: inv.id,
           docNumber: inv.invoiceNumber,
-          date: inv.createdAt.toISOString().slice(0, 10),
+          date: (inv.createdAt ?? new Date(0)).toISOString().slice(0, 10),
           partyName: inv.clientId ? (clientMap.get(inv.clientId) ?? "Unknown") : "Unknown",
           taxableValue: taxable.toFixed(4),
           gstRate: rate,
@@ -168,12 +172,12 @@ export class TaxReportsService {
       }
     }
 
-    return buildListResponse<OutputTaxLine>(lines, Number(invTotal ?? 0), { page, pageSize });
+    return { ...invPage, data: lines };
   }
 
-  private async computeInputReport(orgId: string, query: TaxDateRangeQuery) {
-    const { from, to, page, pageSize } = query;
-    const { limit, offset } = paginateOffset({ page, pageSize });
+  private async computeInputReport(orgId: string, query: TaxDateRangeQuery): Promise<CursorPage<InputTaxLine>> {
+    const { from, to, cursor, limit } = query;
+    const pos = decodeCursor(cursor);
 
     const billConditions = [
       eq(purchaseBills.orgId, orgId),
@@ -181,32 +185,35 @@ export class TaxReportsService {
       gte(purchaseBills.billDate, from),
       lte(purchaseBills.billDate, to),
     ];
+    if (pos) billConditions.push(keysetBeforeValue(purchaseBills.billDate, purchaseBills.id, pos));
 
-    const [billRows, [{ total: billTotal }]] = await Promise.all([
-      this.db
-        .select({
-          id: purchaseBills.id,
-          billNumber: purchaseBills.billNumber,
-          billDate: purchaseBills.billDate,
-          cgstAmount: purchaseBills.cgstAmount,
-          sgstAmount: purchaseBills.sgstAmount,
-          igstAmount: purchaseBills.igstAmount,
-          vendorId: purchaseBills.vendorId,
-        })
-        .from(purchaseBills)
-        .where(and(...billConditions))
-        .orderBy(sql`${purchaseBills.billDate} DESC`)
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(purchaseBills).where(and(...billConditions)),
-    ]);
+    const billRows = await this.db
+      .select({
+        id: purchaseBills.id,
+        billNumber: purchaseBills.billNumber,
+        billDate: purchaseBills.billDate,
+        cgstAmount: purchaseBills.cgstAmount,
+        sgstAmount: purchaseBills.sgstAmount,
+        igstAmount: purchaseBills.igstAmount,
+        vendorId: purchaseBills.vendorId,
+      })
+      .from(purchaseBills)
+      .where(and(...billConditions))
+      .orderBy(desc(purchaseBills.billDate), desc(purchaseBills.id))
+      .limit(limit + 1);
 
-    if (billRows.length === 0) {
-      return buildListResponse<InputTaxLine>([], Number(billTotal ?? 0), { page, pageSize });
+    const billPage = buildCursorPage(billRows, limit, (r) => ({
+      sortValue: String(r.billDate),
+      id: String(r.id),
+    }));
+
+    if (billPage.data.length === 0) {
+      return { ...billPage, data: [] as InputTaxLine[] };
     }
 
-    const billIds = billRows.map((r) => r.id);
-    const vendorIds = billRows.map((r) => r.vendorId).filter((id): id is number => id !== null);
+    const pageBillRows = billPage.data;
+    const billIds = pageBillRows.map((r) => r.id);
+    const vendorIds = pageBillRows.map((r) => r.vendorId).filter((id): id is number => id !== null);
 
     const [itemRows, vendorRows] = await Promise.all([
       this.db
@@ -227,7 +234,7 @@ export class TaxReportsService {
     }
 
     const lines: InputTaxLine[] = [];
-    for (const bill of billRows) {
+    for (const bill of pageBillRows) {
       const items = itemsByBill.get(bill.id) ?? [];
       const rateFilter = query.rate !== undefined ? query.rate.toFixed(2) : null;
 
@@ -253,7 +260,7 @@ export class TaxReportsService {
           sourceType: "purchase_bill",
           sourceId: bill.id,
           docNumber: bill.billNumber,
-          date: bill.billDate,
+          date: String(bill.billDate),
           partyName: bill.vendorId ? (vendorMap.get(bill.vendorId) ?? "Unknown") : "Unknown",
           taxableValue: taxable.toFixed(4),
           gstRate: rate,
@@ -265,7 +272,7 @@ export class TaxReportsService {
       }
     }
 
-    return buildListResponse<InputTaxLine>(lines, Number(billTotal ?? 0), { page, pageSize });
+    return { ...billPage, data: lines };
   }
 
   private async computeLiabilitySummary(orgId: string, query: TaxDateRangeQuery) {

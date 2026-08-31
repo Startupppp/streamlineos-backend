@@ -38,7 +38,7 @@ const reimbursementIdParams = z.object({ reimbursementId: z.coerce.number().int(
 @RequireModule("payroll")
 @Controller("hr/reimbursements")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
-export class ReimbursementsController {
+export class HrPayrollReimbursementsController {
   constructor(
     private readonly reimbursements: ReimbursementsService,
     private readonly access: AccessService,

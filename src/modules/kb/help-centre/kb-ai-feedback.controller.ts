@@ -25,7 +25,7 @@ export class KbAiFeedbackController {
     @Body() body: KbAiFeedbackInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<{ success: boolean }> {
-    await this.feedback.recordAnswerFeedback(u.orgId, u.userId, body);
+    await this.feedback.recordAnswerFeedback(u, body);
     return { success: true };
   }
 }

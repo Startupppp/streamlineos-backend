@@ -29,6 +29,7 @@ import {
   type IncentivesQueryInput,
 } from "./dto/payroll.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const incentiveIdParams = z.object({ incentiveId: z.coerce.number().int().positive() }).strict();
@@ -87,6 +88,7 @@ export class IncentivesController {
   }
 
   @Patch(":incentiveId/reject")
+  @BodylessAction()
   @Idempotent("payroll.incentive.reject")
   @RequirePermission("hr:payroll:approve")
   @Validate({ params: incentiveIdParams })

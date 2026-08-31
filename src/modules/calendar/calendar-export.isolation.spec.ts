@@ -1,4 +1,5 @@
 import { CalendarExportService } from "./calendar-export.service";
+import { EXPORT_MAX_SPAN_DAYS, exportSchema } from "./dto/calendar.schemas";
 import type { Db } from "../../db/drizzle.module";
 
 const ATTACKER_ORG = "org-attacker";
@@ -36,6 +37,55 @@ function makeDb(memberRow?: { id: number }, whereCalls?: unknown[]): Db {
 }
 
 beforeEach(() => jest.resetAllMocks());
+
+describe("exportSchema — date range enforcement", () => {
+  it(`accepts a range exactly at ${EXPORT_MAX_SPAN_DAYS} days (boundary, must pass)`, () => {
+    const from = new Date("2026-01-01T00:00:00.000Z");
+    const to = new Date(from.getTime() + EXPORT_MAX_SPAN_DAYS * 24 * 60 * 60 * 1000);
+    const result = exportSchema.safeParse({
+      from: from.toISOString(),
+      to: to.toISOString(),
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it(`rejects a range one day past ${EXPORT_MAX_SPAN_DAYS} days (boundary + 1, must fail)`, () => {
+    const from = new Date("2026-01-01T00:00:00.000Z");
+    const to = new Date(from.getTime() + (EXPORT_MAX_SPAN_DAYS + 1) * 24 * 60 * 60 * 1000);
+    const result = exportSchema.safeParse({
+      from: from.toISOString(),
+      to: to.toISOString(),
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.some((i) => i.path.includes("to"))).toBe(true);
+  });
+
+  it("rejects an inverted range (to before from)", () => {
+    const result = exportSchema.safeParse({
+      from: "2026-08-10T00:00:00.000Z",
+      to: "2026-08-01T00:00:00.000Z",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a narrow valid range (30 days)", () => {
+    const result = exportSchema.safeParse({
+      from: "2026-07-01T00:00:00.000Z",
+      to: "2026-07-31T00:00:00.000Z",
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a non-date from value", () => {
+    const result = exportSchema.safeParse({ from: "not-a-date", to: "2026-08-01" });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a non-date to value", () => {
+    const result = exportSchema.safeParse({ from: "2026-08-01", to: "bad" });
+    expect(result.success).toBe(false);
+  });
+});
 
 describe("CalendarExportService — cross-tenant isolation (BOLA)", () => {
   it("exportEvents returns empty array when caller has no membership in the requesting org (DENY)", async () => {

@@ -1,6 +1,6 @@
-﻿import { sql } from "drizzle-orm";
-import { index, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex, varchar } from "drizzle-orm/pg-core";
-import { organizations, users } from "../common/auth";
+import { sql } from "drizzle-orm";
+import { index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex, varchar, foreignKey } from "drizzle-orm/pg-core";
+import { organizations, users, organizationMembers } from "../common/auth";
 
 export const aiProposalStatusEnum = pgEnum("ai_proposal_status", [
   "PROPOSED",
@@ -16,6 +16,7 @@ export const aiActionProposals = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
     userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    userMembershipId: integer("user_membership_id"),
     action: varchar("action", { length: 100 }).notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
     payloadHash: varchar("payload_hash", { length: 64 }).notNull(),
@@ -34,6 +35,10 @@ export const aiActionProposals = pgTable(
       .on(t.orgId, t.idempotencyKey)
       .where(sql`idempotency_key IS NOT NULL`),
     unique("uniq_ai_action_proposals_org_id").on(t.orgId, t.id),
+    foreignKey({
+      columns: [t.orgId, t.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_ai_proposals_org_user_mbr",
+    }).onDelete("set null"),
   ],
 );
-

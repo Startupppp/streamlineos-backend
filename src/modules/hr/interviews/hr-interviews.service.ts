@@ -77,7 +77,7 @@ export class HrInterviewsService {
     const [rows, totalRow] = await Promise.all([
       this.db.query.interviews.findMany({
         where,
-        with: { candidate: true, interviewer: { columns: { id: true, name: true, image: true } }, panelMembers: { columns: { userId: true } } },
+        with: { candidate: { columns: { id: true, firstName: true, lastName: true, status: true, source: true, externalId: true } }, interviewer: { columns: { id: true, name: true, image: true } }, panelMembers: { columns: { userId: true } } },
         orderBy: [desc(interviews.scheduledAt)],
         limit: query.limit,
         offset: query.offset,

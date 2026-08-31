@@ -6,6 +6,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ChatPinsService } from "./chat-pins.service";
+import { actorOf } from "../entity-reference/entity-actor";
 import { pinMessageSchema, type PinMessageInput } from "./dto/chat.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
@@ -28,11 +29,7 @@ export class ChatPinsController {
   @RequirePermission("chat:messages:read")
   @Validate({ params: channelIdParams })
   list(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.pins.listPins(channelId, {
-      orgId: u.orgId,
-      userId: u.userId,
-      isOrgOwner: u.isOrgOwner,
-    });
+    return this.pins.listPins(channelId, actorOf(u));
   }
 
   @ApiOperation({ summary: "Pin a message in a channel" })
@@ -46,11 +43,7 @@ export class ChatPinsController {
     @Body() body: PinMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pins.pin(channelId, body.messageId, {
-      orgId: u.orgId,
-      userId: u.userId,
-      isOrgOwner: u.isOrgOwner,
-    });
+    return this.pins.pin(channelId, body.messageId, actorOf(u));
   }
 
   @ApiOperation({ summary: "Unpin a message from a channel" })
@@ -64,10 +57,6 @@ export class ChatPinsController {
     @Param("messageId", ParseIntPipe) messageId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pins.unpin(channelId, messageId, {
-      orgId: u.orgId,
-      userId: u.userId,
-      isOrgOwner: u.isOrgOwner,
-    });
+    return this.pins.unpin(channelId, messageId, actorOf(u));
   }
 }

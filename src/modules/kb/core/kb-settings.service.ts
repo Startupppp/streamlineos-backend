@@ -5,9 +5,11 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 
 const DEFAULT_TRASH_RETENTION_DAYS = 30;
+const DEFAULT_CHAT_HISTORY_RETENTION_DAYS = 90;
 
 export type KbSettingsRow = {
   trashRetentionDays: number;
+  chatHistoryRetentionDays: number;
 };
 
 @Injectable()
@@ -17,9 +19,12 @@ export class KbSettingsService {
   async getOrgSettings(orgId: string): Promise<KbSettingsRow> {
     const row = await this.db.query.kbSettings.findFirst({
       where: eq(kbSettings.orgId, orgId),
-      columns: { trashRetentionDays: true },
+      columns: { trashRetentionDays: true, chatHistoryRetentionDays: true },
     });
-    return { trashRetentionDays: row?.trashRetentionDays ?? DEFAULT_TRASH_RETENTION_DAYS };
+    return {
+      trashRetentionDays: row?.trashRetentionDays ?? DEFAULT_TRASH_RETENTION_DAYS,
+      chatHistoryRetentionDays: row?.chatHistoryRetentionDays ?? DEFAULT_CHAT_HISTORY_RETENTION_DAYS,
+    };
   }
 
   async upsertOrgSettings(orgId: string, data: Partial<KbSettingsRow>): Promise<KbSettingsRow> {
@@ -30,8 +35,11 @@ export class KbSettingsService {
         target: kbSettings.orgId,
         set: { ...data, updatedAt: new Date() },
       })
-      .returning({ trashRetentionDays: kbSettings.trashRetentionDays });
-    return { trashRetentionDays: row?.trashRetentionDays ?? DEFAULT_TRASH_RETENTION_DAYS };
+      .returning({ trashRetentionDays: kbSettings.trashRetentionDays, chatHistoryRetentionDays: kbSettings.chatHistoryRetentionDays });
+    return {
+      trashRetentionDays: row?.trashRetentionDays ?? DEFAULT_TRASH_RETENTION_DAYS,
+      chatHistoryRetentionDays: row?.chatHistoryRetentionDays ?? DEFAULT_CHAT_HISTORY_RETENTION_DAYS,
+    };
   }
 
   async getOrgsWithTrashedPages(): Promise<{ orgId: string; trashRetentionDays: number }[]> {

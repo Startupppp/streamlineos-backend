@@ -254,6 +254,103 @@ describe("StorageController.download — cross-org file isolation", () => {
   });
 });
 
+describe("StorageController.upload — interceptor fileSize limit matches MAX_UPLOAD_SIZE", () => {
+  it("rejects a file larger than MAX_UPLOAD_SIZE (10 MB) before the AV scan runs", async () => {
+    const db = {
+      query: {
+        documents: { findFirst: jest.fn().mockResolvedValue(null) },
+        onboardingDocuments: { findFirst: jest.fn().mockResolvedValue(null) },
+        expenses: { findFirst: jest.fn().mockResolvedValue(null) },
+        reimbursements: { findFirst: jest.fn().mockResolvedValue(null) },
+        handbookVersions: { findFirst: jest.fn().mockResolvedValue(null) },
+        payslipPublications: { findFirst: jest.fn().mockResolvedValue(null) },
+        candidateDocumentsVault: { findFirst: jest.fn().mockResolvedValue(null) },
+      },
+    };
+    const storage = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      isValidFileKey: jest.fn().mockReturnValue(true),
+      getFileKeyFromUrl: jest.fn((v: string) => v),
+      getFileUrl: jest.fn(),
+    };
+    const audit = { log: jest.fn() };
+    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) };
+    const avScanner = { scan: jest.fn() };
+
+    const controller = new StorageController(
+      db as never,
+      storage as never,
+      audit as never,
+      access as never,
+      avScanner as never,
+    );
+
+    const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+    const oversizedFile = {
+      size: MAX_UPLOAD_SIZE + 1,
+      mimetype: "application/pdf",
+      originalname: "large.pdf",
+      buffer: Buffer.alloc(0),
+    } as Express.Multer.File;
+
+    const { BadRequestException: Bex } = await import("@nestjs/common");
+
+    await expect(
+      controller.upload(oversizedFile, "uploads", ctx("org-A")),
+    ).rejects.toBeInstanceOf(Bex);
+
+    expect(avScanner.scan).not.toHaveBeenCalled();
+    expect(storage.getFileUrl).not.toHaveBeenCalled();
+  });
+
+  it("accepts a file exactly at MAX_UPLOAD_SIZE boundary (10 MB) if type is valid", async () => {
+    const db = {
+      query: {
+        documents: { findFirst: jest.fn().mockResolvedValue(null) },
+        onboardingDocuments: { findFirst: jest.fn().mockResolvedValue(null) },
+        expenses: { findFirst: jest.fn().mockResolvedValue(null) },
+        reimbursements: { findFirst: jest.fn().mockResolvedValue(null) },
+        handbookVersions: { findFirst: jest.fn().mockResolvedValue(null) },
+        payslipPublications: { findFirst: jest.fn().mockResolvedValue(null) },
+        candidateDocumentsVault: { findFirst: jest.fn().mockResolvedValue(null) },
+      },
+    };
+    const storage = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      isValidFileKey: jest.fn().mockReturnValue(true),
+      getFileKeyFromUrl: jest.fn((v: string) => v),
+      uploadCompressed: jest.fn().mockResolvedValue({ url: "https://cdn.example.com/f.pdf", key: "uploads/f.pdf", size: 10 * 1024 * 1024, mimeType: "application/pdf" }),
+    };
+    const audit = { log: jest.fn() };
+    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) };
+    const avScanner = { scan: jest.fn().mockResolvedValue({ status: "clean" }) };
+
+    const controller = new StorageController(
+      db as never,
+      storage as never,
+      audit as never,
+      access as never,
+      avScanner as never,
+    );
+
+    const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+
+    const pdfMagicBytes = Buffer.from("%PDF");
+    const fileBuffer = Buffer.concat([pdfMagicBytes, Buffer.alloc(MAX_UPLOAD_SIZE - pdfMagicBytes.length)]);
+
+    const boundaryFile = {
+      size: MAX_UPLOAD_SIZE,
+      mimetype: "application/pdf",
+      originalname: "boundary.pdf",
+      buffer: fileBuffer,
+    } as Express.Multer.File;
+
+    const result = await controller.upload(boundaryFile, "uploads", ctx("org-A"));
+    expect(result.size).toBe(MAX_UPLOAD_SIZE);
+    expect(avScanner.scan).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("StorageService private file references", () => {
   it("extracts only keys belonging to the configured storage base", () => {
     const storage = new StorageService({} as never, makeStorageConfig("https://files.example.com"));
@@ -270,5 +367,89 @@ describe("StorageService private file references", () => {
     expect(storage.isValidFileKey("onboarding-docs/a.pdf")).toBe(true);
     expect(storage.isValidFileKey("https://attacker.example/a.pdf")).toBe(false);
     expect(storage.isValidFileKey("onboarding-docs/../secret.pdf")).toBe(false);
+  });
+});
+
+describe("StorageController — org-namespaced keys prove their own owner", () => {
+  function buildDb() {
+    const empty = { findFirst: jest.fn().mockResolvedValue(null) };
+    return {
+      query: {
+        documents: empty,
+        onboardingDocuments: empty,
+        expenses: empty,
+        reimbursements: empty,
+        handbookVersions: empty,
+        payslipPublications: empty,
+        candidateDocumentsVault: empty,
+      },
+    };
+  }
+
+  function buildStorage() {
+    return {
+      isConfigured: jest.fn().mockReturnValue(true),
+      isValidFileKey: jest.fn().mockReturnValue(true),
+      getFileKeyFromUrl: jest.fn((v: string) => v),
+      getFileUrl: jest.fn().mockResolvedValue("https://signed.example.com/file"),
+      getMimeType: jest.fn().mockReturnValue("image/webp"),
+      getFileStream: jest.fn().mockResolvedValue({
+        body: { on: jest.fn(), pipe: jest.fn() },
+        contentType: "image/webp",
+        contentLength: 10,
+      }),
+    };
+  }
+
+  const audit = { log: jest.fn() };
+  const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) };
+
+  function build() {
+    const storage = buildStorage();
+    const controller = new StorageController(
+      buildDb() as never,
+      storage as never,
+      audit as never,
+      access as never,
+      { scan: jest.fn() } as never,
+    );
+    return { controller, storage };
+  }
+
+  const KEY_B = "kb-media/org-B/2f1c9d0e-4a7b-4c1e-9f3a-8b6d5e2c1a09-policy.pdf";
+  const KEY_A = "kb-media/org-A/2f1c9d0e-4a7b-4c1e-9f3a-8b6d5e2c1a09-policy.pdf";
+
+  it("404s a cross-org kb-media download even though no table tracks the key", async () => {
+    const { controller } = build();
+    await expect(
+      controller.download({ key: KEY_B, expiresIn: 3600 }, ctx("org-A"), mockRes()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("allows the owning org to download its own kb-media key (control)", async () => {
+    const { controller } = build();
+    const res = mockRes();
+    await controller.download({ key: KEY_A, expiresIn: 3600 }, ctx("org-A"), res);
+    expect(res.json).toHaveBeenCalledWith({ url: "https://signed.example.com/file" });
+  });
+
+  it("404s a cross-org kb-media image render", async () => {
+    const { controller } = build();
+    await expect(
+      controller.image({ key: KEY_B }, ctx("org-A"), mockRes()),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("serves the owning org's kb-media image (control)", async () => {
+    const { controller, storage } = build();
+    await controller.image({ key: KEY_A }, ctx("org-A"), mockRes());
+    expect(storage.getFileStream).toHaveBeenCalledWith("org-A", KEY_A);
+  });
+
+  it("leaves untracked non-namespaced keys on their existing path", async () => {
+    const { controller } = build();
+    const res = mockRes();
+    await controller.download({ key: "uploads/plain.pdf", expiresIn: 3600 }, ctx("org-A"), res);
+    expect(res.json).toHaveBeenCalledWith({ url: "https://signed.example.com/file" });
   });
 });

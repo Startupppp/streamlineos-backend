@@ -35,7 +35,7 @@ export class RecurringJournalsController {
     @Query() query: ListRecurringJournalsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.recurring.listTemplates(u.orgId, query.page, query.pageSize);
+    return this.recurring.listTemplates(u.orgId, query.cursor, query.limit);
   }
 
   @Post()

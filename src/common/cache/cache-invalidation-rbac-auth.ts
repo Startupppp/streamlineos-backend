@@ -8,6 +8,8 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["AccessService: bumpPermissionsVersion on any role/grant mutation"],
     },
+    dimensions: ["orgId", "version"] as const,
+    staleToleranceSeconds: 0,
   },
   {
     namespace: "module-access:roles:<orgId>",
@@ -32,14 +34,18 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["SessionsService (login/logout/revoke)"],
     },
+    dimensions: ["userId"] as const,
+    staleToleranceSeconds: 0,
   },
   {
     namespace: "access:perms:<orgId>:<userId>:v<version>",
-    description: "Resolved permission set per user per access-version",
+    description: "Resolved permission set per user per access-version. In-process only (Map keyed by orgId:userId:version); CACHE_KEYS.accessPerms is the canonical key format. Cross-instance invalidation: bumpPermissionsVersion clears the shared access:version:<orgId> Redis key; other instances re-read the version from DB and compute a new permsKey that is a cache miss.",
     invalidation: {
       kind: "write",
       events: ["bumpPermissionsVersion in any role/grant/delegation mutation"],
     },
+    dimensions: ["orgId", "userId", "version"] as const,
+    staleToleranceSeconds: 1,
   },
   {
     namespace: "feature-flags:all",
@@ -66,6 +72,8 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["MfaPolicyService.invalidateOrg (called by OrganizationSettingsService on MFA policy update)"],
     },
+    dimensions: ["orgId"] as const,
+    staleToleranceSeconds: 0,
   },
   {
     namespace: "mfa:user-totp:<userId>",
@@ -74,10 +82,12 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["MfaPolicyService.invalidateUser (called on TOTP enrollment or removal)"],
     },
+    dimensions: ["userId"] as const,
+    staleToleranceSeconds: 0,
   },
   {
     namespace: "access:version:<orgId>",
-    description: "Permission-resolution version counter. Incremented on every role/grant/delegation/ownership mutation; drives per-user permission cache invalidation.",
+    description: "Permission-resolution version counter. Incremented on every role/grant/delegation/ownership mutation; drives per-user permission cache invalidation. This is the cross-instance invalidation signal: clearing it forces all instances to re-read the durable version from DB.",
     invalidation: {
       kind: "write",
       events: [
@@ -85,6 +95,8 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
         "OrgProfileService.switchOrg (clears outgoing-org version)",
       ],
     },
+    dimensions: ["orgId"] as const,
+    staleToleranceSeconds: 1,
   },
   {
     namespace: "access:members-with-perm:<orgId>:<permKey>:v<version>",
@@ -93,6 +105,8 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["bumpPermissionsVersion — new version makes all prior generation keys unreachable; TTL reclaims them"],
     },
+    dimensions: ["orgId", "permKey", "version"] as const,
+    staleToleranceSeconds: 1,
   },
   {
     namespace: "org:roles:<orgId>",
@@ -117,15 +131,16 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["bumpPermissionsVersion — new version makes all prior keys unreachable"],
     },
+    dimensions: ["orgId", "roleId", "version"] as const,
+    staleToleranceSeconds: 1,
   },
   {
     namespace: "rbac:members:<orgId>",
-    description: "Discovery-member list for RBAC screens (RbacService.getDiscoveryMembers). Read and invalidation both use the org-scoped namespace form, so membership changes evict it.",
+    description: "Discovery-member list for RBAC screens (RbacService.getDiscoveryMembers). Read uses cachedForOrg(orgId,'rbac:members') → key '<orgId>:rbac:members'. Invalidation uses invalidateForOrg(orgId,'rbac:members') → same key. Both formats match.",
     invalidation: {
       kind: "write",
       events: [
-        "bumpPermissionsVersion (targets wrong key — see description)",
-        "OrgMembershipService, InvitationAcceptanceService, OrgMemberDepartureService (all via invalidateForOrg which also targets wrong key)",
+        "AccessService.subscribeVersionBump → invalidateForOrg(orgId,'rbac:members') on any bumpPermissionsVersion call",
       ],
     },
   },

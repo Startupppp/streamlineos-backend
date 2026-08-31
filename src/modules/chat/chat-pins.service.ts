@@ -1,6 +1,15 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
-import { chatChannelMembers, chatMessages, chatPinnedMessages } from "../../db/schema";
+import {
+  chatChannelMembers,
+  chatMessages,
+  chatPinnedMessages,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
@@ -14,7 +23,8 @@ export class ChatPinsService {
   ) {}
 
   private async assertMember(channelId: number, actor: EntityActor) {
-    if (!actor.membershipId) throw new ForbiddenException("You are not a member of this channel");
+    if (!actor.membershipId)
+      throw new ForbiddenException("You are not a member of this channel");
     const member = await this.db.query.chatChannelMembers.findFirst({
       where: and(
         eq(chatChannelMembers.orgId, actor.orgId),
@@ -22,7 +32,8 @@ export class ChatPinsService {
         eq(chatChannelMembers.membershipId, actor.membershipId),
       ),
     });
-    if (!member) throw new ForbiddenException("You are not a member of this channel");
+    if (!member)
+      throw new ForbiddenException("You are not a member of this channel");
     return member;
   }
 
@@ -38,11 +49,19 @@ export class ChatPinsService {
       with: {
         message: {
           with: {
-            sender: { columns: { id: true, name: true, image: true } },
+            senderMembership: {
+              columns: {},
+              with: {
+                user: { columns: { id: true, name: true, image: true } },
+              },
+            },
             attachments: true,
           },
         },
-        pinnedByUser: { columns: { id: true, name: true } },
+        pinnedByMembership: {
+          columns: {},
+          with: { user: { columns: { id: true, name: true } } },
+        },
       },
     });
 
@@ -50,7 +69,14 @@ export class ChatPinsService {
       actor,
       rows.map((row) => row.message),
     );
-    return rows.map((row, index) => ({ ...row, message: resolved[index] }));
+    return rows.map((row, index) => ({
+      ...row,
+      message: {
+        ...resolved[index],
+        sender: resolved[index]?.senderMembership?.user ?? null,
+      },
+      pinnedByUser: row.pinnedByMembership?.user ?? null,
+    }));
   }
 
   async pin(channelId: number, messageId: number, actor: EntityActor) {
@@ -64,23 +90,29 @@ export class ChatPinsService {
       ),
     });
     if (!message) throw new NotFoundException("Message not found");
-    await this.db.insert(chatPinnedMessages).values({
-      orgId: actor.orgId,
-      channelId,
-      messageId,
-      pinnedBy: actor.userId,
-      pinnedByMembershipId: actor.membershipId ?? null,
-    }).onConflictDoNothing();
+    await this.db
+      .insert(chatPinnedMessages)
+      .values({
+        orgId: actor.orgId,
+        channelId,
+        messageId,
+        pinnedByMembershipId: actor.membershipId ?? null,
+      })
+      .onConflictDoNothing();
     return { ok: true };
   }
 
   async unpin(channelId: number, messageId: number, actor: EntityActor) {
     await this.assertMember(channelId, actor);
-    await this.db.delete(chatPinnedMessages).where(and(
-      eq(chatPinnedMessages.orgId, actor.orgId),
-      eq(chatPinnedMessages.channelId, channelId),
-      eq(chatPinnedMessages.messageId, messageId),
-    ));
+    await this.db
+      .delete(chatPinnedMessages)
+      .where(
+        and(
+          eq(chatPinnedMessages.orgId, actor.orgId),
+          eq(chatPinnedMessages.channelId, channelId),
+          eq(chatPinnedMessages.messageId, messageId),
+        ),
+      );
     return { ok: true };
   }
 }

@@ -24,6 +24,7 @@ import {
   type UpdatePageCommentInput,
 } from "./dto/kb-page-comments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
@@ -88,6 +89,7 @@ export class KbPageCommentsController {
   }
 
   @Post("page-comments/:commentId/resolve")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:update")
   @HttpCode(200)

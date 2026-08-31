@@ -10,6 +10,7 @@ import { KbEventsService } from "../core/kb-events.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import {
   ACCOUNT_ONLY_PRINCIPAL,
+  actingMembershipId,
   humanSessionPrincipal,
 } from "../../../common/auth/principal";
 import { buildResearchBriefGraph, runResearchBrief } from "./kb-research-brief.graph";
@@ -58,7 +59,7 @@ export class KbResearchBriefHandler implements AiJobHandler, OnModuleInit {
         .where(eq(kbResearchBriefs.id, briefId));
 
       await this.events.record(job.orgId, "research_brief_requested", {
-        actorId: job.userId,
+        actorMembershipId: actingMembershipId(userCtx.principal) ?? null,
         query: topic,
         metadata: { briefId, sourceCount: citations.length },
       });

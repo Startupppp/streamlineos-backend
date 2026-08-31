@@ -234,7 +234,7 @@ export class OrgMembershipAccessRevocation {
             .where(
               and(
                 eq(chatMessages.orgId, orgId),
-                eq(chatMessages.senderId, memberUserId),
+                eq(chatMessages.senderMembershipId, membershipId),
               ),
             );
           await tx
@@ -242,7 +242,7 @@ export class OrgMembershipAccessRevocation {
             .where(
               and(
                 eq(chatSavedMessages.orgId, orgId),
-                eq(chatSavedMessages.userId, memberUserId),
+                eq(chatSavedMessages.membershipId, membershipId),
               ),
             );
           await tx
@@ -251,8 +251,8 @@ export class OrgMembershipAccessRevocation {
               and(
                 eq(chatReplyReminders.orgId, orgId),
                 or(
-                  eq(chatReplyReminders.recipientUserId, memberUserId),
-                  eq(chatReplyReminders.senderUserId, memberUserId),
+                  eq(chatReplyReminders.recipientMembershipId, membershipId),
+                  eq(chatReplyReminders.senderMembershipId, membershipId),
                 ),
               ),
             );
@@ -261,7 +261,7 @@ export class OrgMembershipAccessRevocation {
             .where(
               and(
                 eq(chatHuddleParticipants.orgId, orgId),
-                eq(chatHuddleParticipants.userId, memberUserId),
+                eq(chatHuddleParticipants.membershipId, membershipId),
               ),
             );
         }

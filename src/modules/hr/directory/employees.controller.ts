@@ -20,6 +20,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 import { EmployeesService } from "./employees.service";
+import { EmployeeAnalyticsService } from "./employee-analytics.service";
 import { EmployeeMutationsService } from "./employee-mutations.service";
 import { EmployeeOnboardingService } from "./employee-onboarding.service";
 import { EmployeeBulkOnboardingService } from "./employee-bulk-onboarding.service";
@@ -62,6 +63,7 @@ const employeeIdParams = z.object({ employeeId: z.string().min(1) }).strict();
 export class EmployeesController {
   constructor(
     private readonly employees: EmployeesService,
+    private readonly analytics: EmployeeAnalyticsService,
     private readonly mutations: EmployeeMutationsService,
     private readonly onboarding: EmployeeOnboardingService,
     private readonly bulkOnboarding: EmployeeBulkOnboardingService,
@@ -136,7 +138,7 @@ export class EmployeesController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const targetId = await this.resolveTargetUserId(currentUser, userId);
-    return this.employees.getStats(currentUser.orgId, targetId);
+    return this.analytics.getStats(currentUser.orgId, targetId);
   }
 
   @Get("anniversary-feed")
@@ -232,7 +234,7 @@ export class EmployeesController {
     @Param("employeeId") employeeId: string,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.employees.getManagerScorecard(
+    return this.analytics.getManagerScorecard(
       currentUser.orgId,
       await this.resolveTargetUserId(currentUser, employeeId),
     );

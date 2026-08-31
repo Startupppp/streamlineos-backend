@@ -10,6 +10,7 @@ export const playbookEntries = pgTable("playbook_entries", {
   content: text("content").default("").notNull(),
   sortOrder: integer("sort_order").default(0).notNull(),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

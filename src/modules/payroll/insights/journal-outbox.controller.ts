@@ -37,6 +37,7 @@ import {
   type PeriodReconQuery,
 } from "./dto/insights.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const batchIdParams = z.object({ batchId: z.coerce.number().int().positive() }).strict();
@@ -133,6 +134,7 @@ export class JournalOutboxController {
   }
 
   @Post(":batchId/post")
+  @BodylessAction()
   @RequirePermission("payroll:accounting:manage")
   @Validate({ params: batchIdParams })
   async post(

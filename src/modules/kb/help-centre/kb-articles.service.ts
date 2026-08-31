@@ -59,7 +59,7 @@ export class KbArticlesService {
       .update(kbArticles)
       .set({ views: sql`${kbArticles.views} + 1` })
       .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, user.orgId)));
-    await this.events.record(user.orgId, "view", { actorId: user.userId, articleId });
+    await this.events.record(user.orgId, "view", { actorMembershipId: actingMembershipId(user.principal) ?? null, articleId });
     return { success: true };
   }
 

@@ -25,6 +25,7 @@ import { ChatPresenceService } from "./chat-presence.service";
 import { ChatTypingService } from "./chat-typing.service";
 import { ChatPinsService } from "./chat-pins.service";
 import { ChatHuddlesService } from "./chat-huddles.service";
+import { ChatHuddleSignalsService } from "./chat-huddle-signals.service";
 import { ChatSearchService } from "./chat-search.service";
 import { ChatNotificationsService } from "./chat-notifications.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
@@ -71,6 +72,7 @@ import { OutboxBackedMessageFanoutProvider } from "./outbox-backed-message-fanou
     ChatTypingService,
     ChatPinsService,
     ChatHuddlesService,
+    ChatHuddleSignalsService,
     ChatSearchService,
     ChatNotificationsService,
     ChatReplyRemindersService,

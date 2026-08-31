@@ -90,6 +90,8 @@ export const CRM_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["CrmScoringService.analyzeChurnRisk (invalidateNamespaceForOrg(orgId,'clients:health'))"],
     },
+    dimensions: ["orgId"] as const,
+    staleToleranceSeconds: 300,
   },
   {
     namespace: "clients:churn:<orgId>",
@@ -98,6 +100,8 @@ export const CRM_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
       kind: "write",
       events: ["CrmScoringService.analyzeChurnRisk (invalidateNamespaceForOrg(orgId,'clients:churn'))"],
     },
+    dimensions: ["orgId"] as const,
+    staleToleranceSeconds: 300,
   },
   {
     namespace: "sales:quotas:<orgId>",

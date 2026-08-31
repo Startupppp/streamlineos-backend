@@ -49,6 +49,7 @@ export class OvertimeController {
   }
 
   @Patch(":overtimeRequestId/approve")
+  @BodylessAction()
   @Idempotent("hr.overtime.approve")
   @RequirePermission("hr:attendance:manage")
   @Validate({ params: overtimeRequestIdParams })

@@ -65,8 +65,9 @@ describe("upload size limit", () => {
     expect(controllerSrc).toMatch(/MAX_UPLOAD_SIZE\s*=\s*10\s*\*\s*1024\s*\*\s*1024/);
   });
 
-  it("F1 FINDING — multer limit is 50 MB while app limit is 10 MB", () => {
-    expect(controllerSrc).toMatch(/fileSize:\s*50\s*\*\s*1024\s*\*\s*1024/);
+  it("F1 FIX VERIFIED — interceptor limit equals MAX_UPLOAD_SIZE, not a 50 MB literal", () => {
+    expect(controllerSrc).toMatch(/fileSize:\s*MAX_UPLOAD_SIZE/);
+    expect(controllerSrc).not.toMatch(/fileSize:\s*50\s*\*\s*1024\s*\*\s*1024/);
     expect(controllerSrc).toMatch(/MAX_UPLOAD_SIZE\s*=\s*10\s*\*\s*1024\s*\*\s*1024/);
   });
 

@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, isNull, lt } from "drizzle-orm";
 import {
   calendarEvents,
   chatChannelMembers,
@@ -22,8 +22,6 @@ import {
   FREE_HUDDLE_UPGRADE_MESSAGE,
   HUDDLE_MESH_MAX_PARTICIPANTS,
 } from "../billing/core/plan-entitlements.constants";
-import type { HuddleSignalInput } from "./dto/huddle.schemas";
-
 export { HUDDLE_MESH_MAX_PARTICIPANTS };
 
 @Injectable()
@@ -39,7 +37,7 @@ export class ChatHuddlesService {
     private readonly planLimits: PlanLimitsService,
   ) {}
 
-  private async assertMember(channelId: number, userId: string, orgId: string) {
+  private async assertMember(channelId: number, userId: string, orgId: string): Promise<number> {
     const activeMembership = await this.db.query.organizationMembers.findFirst({
       where: and(
         eq(organizationMembers.orgId, orgId),
@@ -62,14 +60,14 @@ export class ChatHuddlesService {
       columns: { isArchived: true },
     });
     if (channel?.isArchived) throw new ForbiddenException("Channel is archived");
-    return member;
+    return activeMembership.id;
   }
 
   async getActiveHuddle(channelId: number, userId: string, orgId: string) {
     await this.assertMember(channelId, userId, orgId);
     const huddle = await this.db.query.chatHuddles.findFirst({
       where: and(eq(chatHuddles.channelId, channelId), eq(chatHuddles.status, "active")),
-      columns: { id: true, channelId: true, startedBy: true, status: true, calendarEventId: true, startedAt: true, endedAt: true, hasVideo: true },
+      columns: { id: true, channelId: true, startedByMembershipId: true, status: true, calendarEventId: true, startedAt: true, endedAt: true, hasVideo: true },
     });
     if (!huddle) return null;
 
@@ -94,7 +92,7 @@ export class ChatHuddlesService {
     const twelveHoursAgo = new Date(Date.now() - 12 * 60 * 60 * 1000);
     const remaining = await this.db.query.chatHuddleParticipants.findMany({
       where: and(eq(chatHuddleParticipants.huddleId, huddle.id), isNull(chatHuddleParticipants.leftAt)),
-      columns: { userId: true },
+      columns: { id: true },
     });
 
     if (remaining.length === 0 || huddle.startedAt < twelveHoursAgo) {
@@ -113,10 +111,20 @@ export class ChatHuddlesService {
         participants: {
           where: isNull(chatHuddleParticipants.leftAt),
           with: {
-            user: { columns: { id: true, name: true, image: true } },
+            membership: {
+              columns: {},
+              with: {
+                user: { columns: { id: true, name: true, image: true } },
+              },
+            },
           },
         },
-        startedByUser: { columns: { id: true, name: true } },
+        startedByMembership: {
+          columns: {},
+          with: {
+            user: { columns: { id: true, name: true } },
+          },
+        },
       },
     });
   }
@@ -172,13 +180,12 @@ export class ChatHuddlesService {
         })));
       }
 
-
       const [created] = await tx
         .insert(chatHuddles)
-        .values({ orgId, channelId, startedBy: userId, startedByMembershipId: starterMembershipId, status: "active", calendarEventId: calEvent?.id, hasVideo: false })
+        .values({ orgId, channelId, startedByMembershipId: starterMembershipId, status: "active", calendarEventId: calEvent?.id, hasVideo: false })
         .returning();
 
-      await tx.insert(chatHuddleParticipants).values({ orgId, huddleId: created.id, userId, membershipId: starterMembershipId });
+      await tx.insert(chatHuddleParticipants).values({ orgId, huddleId: created.id, membershipId: starterMembershipId });
 
       return created;
     });
@@ -237,13 +244,13 @@ export class ChatHuddlesService {
     });
     if (!huddle) throw new NotFoundException("Huddle not found or already ended");
 
-    await this.assertMember(huddle.channelId, userId, orgId);
+    const callerMembershipId = await this.assertMember(huddle.channelId, userId, orgId);
 
     const activeParticipants = await this.db.query.chatHuddleParticipants.findMany({
       where: and(eq(chatHuddleParticipants.huddleId, huddleId), isNull(chatHuddleParticipants.leftAt)),
-      columns: { userId: true },
+      columns: { membershipId: true },
     });
-    const alreadyActive = activeParticipants.some((p) => p.userId === userId);
+    const alreadyActive = activeParticipants.some((p) => p.membershipId === callerMembershipId);
     if (!alreadyActive) {
       const { tier } = await this.planLimits.resolveTier(orgId);
       if (!PLAN_FEATURE_FLAGS[tier].chatGroupHuddles && activeParticipants.length >= FREE_HUDDLE_MAX_PARTICIPANTS) {
@@ -258,20 +265,11 @@ export class ChatHuddlesService {
       }
     }
 
-    const joinerMembership = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-      columns: { id: true },
-    });
-
     await this.db
       .insert(chatHuddleParticipants)
-      .values({ orgId, huddleId, userId, membershipId: joinerMembership?.id ?? null })
+      .values({ orgId, huddleId, membershipId: callerMembershipId })
       .onConflictDoUpdate({
-        target: [chatHuddleParticipants.huddleId, chatHuddleParticipants.userId],
+        target: [chatHuddleParticipants.huddleId, chatHuddleParticipants.membershipId],
         set: { leftAt: null, joinedAt: new Date(), isMuted: false, handRaised: false, lastSeenAt: new Date() },
       });
 
@@ -292,13 +290,21 @@ export class ChatHuddlesService {
     });
     if (!huddle) throw new NotFoundException("Huddle not found or already ended");
 
-    await this.db
-      .update(chatHuddleParticipants)
-      .set({ leftAt: new Date() })
-      .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.userId, userId)));
+    const callerMembership = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)),
+      columns: { id: true },
+    });
+
+    if (callerMembership) {
+      await this.db
+        .update(chatHuddleParticipants)
+        .set({ leftAt: new Date() })
+        .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.membershipId, callerMembership.id)));
+    }
 
     const remaining = await this.db.query.chatHuddleParticipants.findMany({
       where: and(eq(chatHuddleParticipants.huddleId, huddleId), isNull(chatHuddleParticipants.leftAt)),
+      columns: { membershipId: true },
     });
 
     if (remaining.length === 0) {
@@ -315,12 +321,14 @@ export class ChatHuddlesService {
       await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:ended", { huddleId, channelId: huddle.channelId });
       this.audit.log({ action: "huddle.ended", userId, orgId, targetId: String(huddleId), targetType: "huddle" });
     } else {
-      if (huddle.startedBy === userId && remaining.length > 0) {
+      if (huddle.startedByMembershipId === callerMembership?.id) {
         const nextHost = remaining[0];
-        await this.db.update(chatHuddles).set({ startedBy: nextHost.userId }).where(eq(chatHuddles.id, huddleId));
-        await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", {
-          huddleId, hostTransferred: true, newHostId: nextHost.userId,
-        });
+        if (nextHost) {
+          await this.db.update(chatHuddles).set({ startedByMembershipId: nextHost.membershipId }).where(eq(chatHuddles.id, huddleId));
+          await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", {
+            huddleId, hostTransferred: true, newHostMembershipId: nextHost.membershipId,
+          });
+        }
       }
       await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:user_left", {
         huddleId,
@@ -333,118 +341,23 @@ export class ChatHuddlesService {
     return { ok: true };
   }
 
-  async setMute(huddleId: number, userId: string, muted: boolean, orgId: string) {
-    const huddle = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId), eq(chatHuddles.status, "active")),
-    });
-    if (!huddle) throw new NotFoundException("Huddle not found");
-    await this.assertMember(huddle.channelId, userId, orgId);
-
-    await this.db
-      .update(chatHuddleParticipants)
-      .set({ isMuted: muted })
-      .where(
-        and(
-          eq(chatHuddleParticipants.huddleId, huddleId),
-          eq(chatHuddleParticipants.userId, userId),
-          isNull(chatHuddleParticipants.leftAt),
-        ),
-      );
-
-    await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", { huddleId, userId, isMuted: muted });
-    return { ok: true };
-  }
-
-  async setDeafen(huddleId: number, userId: string, orgId: string, deafened: boolean) {
-    const huddle = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId), eq(chatHuddles.status, "active")),
-    });
-    if (!huddle) throw new NotFoundException("Huddle not found");
-    await this.assertMember(huddle.channelId, userId, orgId);
-    await this.db.update(chatHuddleParticipants).set({ isDeafened: deafened })
-      .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.userId, userId)));
-    await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", { huddleId, userId, isDeafened: deafened });
-    return { ok: true };
-  }
-
-  async raiseHand(huddleId: number, userId: string, raised: boolean, orgId: string) {
-    const huddle = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId), eq(chatHuddles.status, "active")),
-    });
-    if (!huddle) throw new NotFoundException("Huddle not found");
-    await this.assertMember(huddle.channelId, userId, orgId);
-
-    await this.db
-      .update(chatHuddleParticipants)
-      .set({ handRaised: raised })
-      .where(
-        and(
-          eq(chatHuddleParticipants.huddleId, huddleId),
-          eq(chatHuddleParticipants.userId, userId),
-          isNull(chatHuddleParticipants.leftAt),
-        ),
-      );
-
-    await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", { huddleId, userId, handRaised: raised });
-    return { ok: true };
-  }
-
-  async sendSignal(huddleId: number, fromUserId: string, signal: HuddleSignalInput, orgId: string) {
-    const huddle = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId), eq(chatHuddles.status, "active")),
-    });
-    if (!huddle) throw new NotFoundException("Huddle not found");
-    await this.assertMember(huddle.channelId, fromUserId, orgId);
-
-    await this.ably.publishHuddleSignal(orgId, huddle.channelId, signal.targetUserId, {
-      fromUserId,
-      type: signal.type,
-      payload: signal.payload,
-    });
-
-    return { ok: true };
-  }
-
-  async heartbeat(huddleId: number, userId: string, orgId: string): Promise<{ ok: boolean }> {
-    await this.db
-      .update(chatHuddleParticipants)
-      .set({ lastSeenAt: sql`now()` })
-      .where(
-        and(
-          eq(chatHuddleParticipants.orgId, orgId),
-          eq(chatHuddleParticipants.huddleId, huddleId),
-          eq(chatHuddleParticipants.userId, userId),
-          isNull(chatHuddleParticipants.leftAt),
-        ),
-      );
-    return { ok: true };
-  }
-
-  async setScreenShare(huddleId: number, userId: string, isScreenSharing: boolean, orgId: string) {
-    const huddle = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId), eq(chatHuddles.status, "active")),
-    });
-    if (!huddle) throw new NotFoundException("Huddle not found");
-    await this.assertMember(huddle.channelId, userId, orgId);
-    await this.db
-      .update(chatHuddleParticipants)
-      .set({ isScreenSharing })
-      .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.userId, userId), isNull(chatHuddleParticipants.leftAt)));
-    await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", { huddleId, userId, isScreenSharing });
-    return { ok: true };
-  }
-
   async kickParticipant(huddleId: number, userId: string, targetUserId: string, orgId: string) {
     const huddle = await this.db.query.chatHuddles.findFirst({
       where: and(eq(chatHuddles.id, huddleId), eq(chatHuddles.orgId, orgId), eq(chatHuddles.status, "active")),
     });
     if (!huddle) throw new NotFoundException("Huddle not found");
-    await this.assertMember(huddle.channelId, userId, orgId);
-    if (huddle.startedBy !== userId) throw new ForbiddenException("Only the huddle host can remove participants");
-    await this.db
-      .update(chatHuddleParticipants)
-      .set({ leftAt: new Date() })
-      .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.userId, targetUserId), isNull(chatHuddleParticipants.leftAt)));
+    const callerMembershipId = await this.assertMember(huddle.channelId, userId, orgId);
+    if (huddle.startedByMembershipId !== callerMembershipId) throw new ForbiddenException("Only the huddle host can remove participants");
+    const targetMembership = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, targetUserId)),
+      columns: { id: true },
+    });
+    if (targetMembership) {
+      await this.db
+        .update(chatHuddleParticipants)
+        .set({ leftAt: new Date() })
+        .where(and(eq(chatHuddleParticipants.huddleId, huddleId), eq(chatHuddleParticipants.membershipId, targetMembership.id), isNull(chatHuddleParticipants.leftAt)));
+    }
     await this.ably.publishHuddleEvent(orgId, huddle.channelId, "huddle:state_updated", { huddleId, userId: targetUserId, kicked: true });
     void this.ably.publishToUser(orgId, targetUserId, "huddle:kicked", { huddleId, channelId: huddle.channelId }).catch((error: unknown) => {
       this.logger.warn("ably: failed to notify kicked participant", {
@@ -470,7 +383,7 @@ export class ChatHuddlesService {
     if (!PLAN_FEATURE_FLAGS[tier].chatGroupHuddles) {
       const activeParticipants = await this.db.query.chatHuddleParticipants.findMany({
         where: and(eq(chatHuddleParticipants.huddleId, huddleId), isNull(chatHuddleParticipants.leftAt)),
-        columns: { userId: true },
+        columns: { id: true },
       });
       if (activeParticipants.length >= FREE_HUDDLE_MAX_PARTICIPANTS) {
         throw new ForbiddenException(FREE_HUDDLE_UPGRADE_MESSAGE);

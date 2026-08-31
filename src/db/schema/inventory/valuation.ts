@@ -87,6 +87,7 @@ export const invStandardCosts = pgTable("inv_standard_costs", {
   effectiveTo: date("effective_to"),
   notes: text("notes"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_inv_standard_costs_variant_from").on(table.orgId, table.productVariantId, table.effectiveFrom),

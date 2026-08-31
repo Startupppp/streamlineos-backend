@@ -371,7 +371,6 @@ async function seed(db: Db): Promise<SeedSummary> {
         tokenHash: hashToken("demo-invite-raw-token-alpha-2026"),
         orgId: DEMO_ORG_ID,
         role: "HR",
-        invitedBy: actualDemoUserId,
         expiresAt: invExpiry,
       },
       {
@@ -380,7 +379,6 @@ async function seed(db: Db): Promise<SeedSummary> {
         tokenHash: hashToken("demo-invite-raw-token-beta-2026"),
         orgId: DEMO_ORG_ID,
         role: "ENGINEERING",
-        invitedBy: actualDemoUserId,
         expiresAt: invExpiry,
       },
     ])

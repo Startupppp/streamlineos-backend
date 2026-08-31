@@ -5,11 +5,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, inArray, max } from "drizzle-orm";
+import { and, desc, eq, inArray, max } from "drizzle-orm";
 import { finBudgets, finBudgetLines, finBudgetRevisions, ledgerAccounts, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
@@ -31,37 +32,42 @@ export class BudgetsService {
     private readonly cache: CacheService,
   ) {}
 
+  // The return type is inferred from the projection below. The hand-written one
+  // had drifted from the table it selects -- `dimensionType` as a bare string
+  // where the column is an enum, and the two membership ids as strings where
+  // they are integers.
   async listBudgets(orgId: string, query: ListBudgetsQuery) {
-    const { page, pageSize, status, fiscalYear } = query;
+    const { cursor, limit, status, fiscalYear } = query;
+    const pos = decodeCursor(cursor);
     const conds = [eq(finBudgets.orgId, orgId)];
     if (status) conds.push(eq(finBudgets.status, status));
     if (fiscalYear) conds.push(eq(finBudgets.fiscalYear, fiscalYear));
-    const where = and(...conds);
-    const { offset, limit } = paginateOffset({ page, pageSize });
-    const [items, totalRows] = await Promise.all([
-      this.db
-        .select({
-          id: finBudgets.id,
-          name: finBudgets.name,
-          fiscalYear: finBudgets.fiscalYear,
-          periodType: finBudgets.periodType,
-          dimensionType: finBudgets.dimensionType,
-          status: finBudgets.status,
-          totalAmount: finBudgets.totalAmount,
-          createdByMembershipId: finBudgets.createdByMembershipId,
-          approvedByMembershipId: finBudgets.approvedByMembershipId,
-          approvedAt: finBudgets.approvedAt,
-          createdAt: finBudgets.createdAt,
-          updatedAt: finBudgets.updatedAt,
-        })
-        .from(finBudgets)
-        .where(where)
-        .orderBy(desc(finBudgets.createdAt))
-        .offset(offset)
-        .limit(limit),
-      this.db.select({ c: count() }).from(finBudgets).where(where),
-    ]);
-    return buildListResponse(items, Number(totalRows[0]?.c ?? 0), { page, pageSize });
+    if (pos) conds.push(keysetBeforeId(finBudgets.createdAt, finBudgets.id, pos));
+
+    const items = await this.db
+      .select({
+        id: finBudgets.id,
+        name: finBudgets.name,
+        fiscalYear: finBudgets.fiscalYear,
+        periodType: finBudgets.periodType,
+        dimensionType: finBudgets.dimensionType,
+        status: finBudgets.status,
+        totalAmount: finBudgets.totalAmount,
+        createdByMembershipId: finBudgets.createdByMembershipId,
+        approvedByMembershipId: finBudgets.approvedByMembershipId,
+        approvedAt: finBudgets.approvedAt,
+        createdAt: finBudgets.createdAt,
+        updatedAt: finBudgets.updatedAt,
+      })
+      .from(finBudgets)
+      .where(and(...conds))
+      .orderBy(desc(finBudgets.createdAt), desc(finBudgets.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(items, limit, (r) => ({
+      sortValue: (r.createdAt ?? new Date(0)).toISOString(),
+      id: String(r.id),
+    }));
   }
 
   async createBudget(orgId: string, userId: string, input: CreateBudgetInput) {

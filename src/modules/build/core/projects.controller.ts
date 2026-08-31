@@ -17,7 +17,8 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ProjectsService } from "./projects.service";
+import { ProjectsQueryService } from "./projects-query.service";
+import { ProjectsProvisionService } from "./projects-provision.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import {
   addMemberSchema,
@@ -56,7 +57,8 @@ const projectIdParams_ = z.object({ projectId: z.string().min(1) }).strict();
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsController {
   constructor(
-    private readonly projects: ProjectsService,
+    private readonly projectsQuery: ProjectsQueryService,
+    private readonly projectsProvision: ProjectsProvisionService,
     private readonly members: ProjectsMembersService,
   ) {}
 
@@ -67,7 +69,7 @@ export class ProjectsController {
     @Query() query: ListProjectsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.projects.listProjects(u, query);
+    return this.projectsQuery.listProjects(u, query);
   }
 
   @Post()
@@ -79,7 +81,7 @@ export class ProjectsController {
     @Body() body: CreateProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.projects.createProject(u.orgId, u.userId, body);
+    return this.projectsProvision.createProject(u.orgId, u.userId, body);
   }
 
   @Post("from-deal")
@@ -91,7 +93,7 @@ export class ProjectsController {
     @Body() body: FromDealInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.projects.createFromDeal(u.orgId, u.userId, body);
+    return this.projectsProvision.createFromDeal(u.orgId, u.userId, body);
   }
 
   @Get("labels")

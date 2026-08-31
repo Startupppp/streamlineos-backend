@@ -73,7 +73,7 @@ export class AiJobsService {
         FOR UPDATE SKIP LOCKED
       )
       RETURNING
-        id, org_id, user_id, type, payload, status, priority,
+        id, org_id, user_id, user_membership_id, type, payload, status, priority,
         attempts, max_attempts, idempotency_key, run_at,
         locked_by, locked_at, last_error, result, created_at, updated_at
     `);
@@ -82,6 +82,8 @@ export class AiJobsService {
       id: Number(row["id"]),
       orgId: String(row["org_id"]),
       userId: row["user_id"] != null ? String(row["user_id"]) : null,
+      userMembershipId:
+        row["user_membership_id"] != null ? Number(row["user_membership_id"]) : null,
       type: String(row["type"]),
       payload: (row["payload"] ?? {}) as Record<string, unknown>,
       status: String(row["status"]) as AiJob["status"],

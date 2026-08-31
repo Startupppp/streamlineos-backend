@@ -6,3 +6,4 @@ export * from "./finance-tax";
 export * from "./finance-assets";
 export * from "./finance-planning";
 export * from "./finance-expenses";
+export * from "./finance-report-export-jobs";

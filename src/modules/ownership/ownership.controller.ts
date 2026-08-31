@@ -37,6 +37,7 @@ import {
   type SetModuleOwnerInput,
 } from "./dto/ownership.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const moduleKeyParams = z.object({ moduleKey: z.string().min(1) }).strict();
@@ -138,6 +139,7 @@ export class OwnershipController {
   }
 
   @Post("transfers/:transferId/accept")
+  @BodylessAction()
   @Idempotent("ownership.transfer.accept")
   @HttpCode(HttpStatus.OK)
   @UseGuards(PermissionGuard, RateLimitGuard)

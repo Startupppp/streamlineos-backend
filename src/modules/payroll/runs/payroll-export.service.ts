@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, eq, gt, gte, lte } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { payrollRunExportJobs, payrollRuns } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -116,7 +116,7 @@ export class PayrollRunExportService {
       if (f.runType) conditions.push(eq(payrollRuns.runType, f.runType as "REGULAR" | "BONUS" | "OFF_CYCLE" | "CORRECTION" | "FINAL_SETTLEMENT"));
       if (f.monthFrom) conditions.push(gte(payrollRuns.month, f.monthFrom));
       if (f.monthTo) conditions.push(lte(payrollRuns.month, f.monthTo));
-      if (afterId !== undefined) conditions.push(eq(payrollRuns.id, afterId));
+      if (afterId !== undefined) conditions.push(gt(payrollRuns.id, afterId));
       return tx
         .select({
           id: payrollRuns.id,
@@ -131,7 +131,7 @@ export class PayrollRunExportService {
         })
         .from(payrollRuns)
         .where(and(...conditions))
-        .orderBy(desc(payrollRuns.month), asc(payrollRuns.id))
+        .orderBy(asc(payrollRuns.id))
         .limit(BATCH_SIZE);
     });
   }
@@ -145,7 +145,7 @@ export class PayrollRunExportService {
     });
   }
 
-  async complete(id: string, fileKey: string, fileName: string, size: number, count: number, orgId: string) {
+  async complete(id: string, fileKey: string, fileName: string, size: number, count: number, orgId: string, truncated = false) {
     const now = new Date();
     await runInNewTenantTransaction(this.db, orgId, async (tx) => {
       await tx
@@ -157,6 +157,7 @@ export class PayrollRunExportService {
           fileSizeBytes: size,
           rowCount: count,
           processedRows: count,
+          truncated,
           completedAt: now,
           expiresAt: new Date(now.getTime() + EXPIRY_MS),
           lockedAt: null,
@@ -221,6 +222,7 @@ export class PayrollRunExportService {
       status: job.status,
       processedRows: job.processedRows,
       rowCount: job.rowCount,
+      truncated: job.truncated,
       fileName: job.fileName,
       errorCode: job.errorCode,
       errorMessage: job.errorMessage,

@@ -8,7 +8,11 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
-import { InvProductsService } from "./inv-products.service";
+import { InvProductCrudService } from "./inv-product-crud.service";
+import { InvProductCatalogService } from "./inv-product-catalog.service";
+import { InvPharmacyService } from "./inv-pharmacy.service";
+import { InvQuantityCaptureService } from "./inv-quantity-capture.service";
+import { InvTaxTreatmentService } from "./inv-tax-treatment.service";
 import { resolveInvProductsScope } from "../stock-engine/inventory-scope";
 import {
   listProductsSchema, createProductSchema, updateProductSchema,
@@ -34,7 +38,11 @@ const productIdvariantIdParams = z.object({ productId: z.coerce.number().int().p
 @UseGuards(JwtAuthGuard, ModuleGuard)
 export class InvProductsController {
   constructor(
-    private readonly products: InvProductsService,
+    private readonly crud: InvProductCrudService,
+    private readonly catalog: InvProductCatalogService,
+    private readonly pharmacy: InvPharmacyService,
+    private readonly quantityCaptureService: InvQuantityCaptureService,
+    private readonly tax: InvTaxTreatmentService,
     private readonly access: AccessService,
   ) {}
 
@@ -47,14 +55,14 @@ export class InvProductsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveInvProductsScope(this.access, u);
-    return this.products.listProducts(u.orgId, filters, scope, u.userId);
+    return this.crud.listProducts(u.orgId, filters, scope, u.userId);
   }
 
   @Get("categories")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   listCategories(@CurrentUser() u: CurrentUserContext) {
-    return this.products.listCategories(u.orgId);
+    return this.catalog.listCategories(u.orgId);
   }
 
   @Post("categories")
@@ -65,14 +73,14 @@ export class InvProductsController {
     @Body() body: CreateCategoryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.createCategory(u.orgId, body);
+    return this.catalog.createCategory(u.orgId, body);
   }
 
   @Get("uom")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   listUom(@CurrentUser() u: CurrentUserContext) {
-    return this.products.listUom(u.orgId);
+    return this.catalog.listUom(u.orgId);
   }
 
   @Post("uom")
@@ -83,7 +91,7 @@ export class InvProductsController {
     @Body() body: CreateUomInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.createUom(u.orgId, body);
+    return this.catalog.createUom(u.orgId, body);
   }
 
   @Patch("categories/:categoryId")
@@ -95,7 +103,7 @@ export class InvProductsController {
     @Body() body: UpdateCategoryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.updateCategory(u.orgId, categoryId, body);
+    return this.catalog.updateCategory(u.orgId, categoryId, body);
   }
 
   @Patch("uom/:uomId")
@@ -107,7 +115,7 @@ export class InvProductsController {
     @Body() body: UpdateUomInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.updateUom(u.orgId, uomId, body);
+    return this.catalog.updateUom(u.orgId, uomId, body);
   }
 
   @Get("variants")
@@ -118,7 +126,7 @@ export class InvProductsController {
     @Query() filters: ListVariantsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.listVariants(u.orgId, filters);
+    return this.catalog.listVariants(u.orgId, filters);
   }
 
   /**
@@ -141,7 +149,7 @@ export class InvProductsController {
     @Query(new ZodValidationPipe(resolveLineTaxSchema)) query: ResolveLineTaxQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.resolveLineTax(u.orgId, variantId, query);
+    return this.tax.resolveLineTax(u.orgId, { productVariantId: variantId, ...query });
   }
 
   /**
@@ -165,7 +173,7 @@ export class InvProductsController {
     @Param("variantId", ParseIntPipe) variantId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.pharmacyProfile(u.orgId, variantId);
+    return this.pharmacy.dispensingProfile(u.orgId, variantId);
   }
 
   /**
@@ -182,7 +190,7 @@ export class InvProductsController {
     @Param("variantId", ParseIntPipe) variantId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.receiptRequirements(u.orgId, variantId);
+    return this.pharmacy.receiptRequirements(u.orgId, variantId);
   }
 
   /**
@@ -200,7 +208,7 @@ export class InvProductsController {
     @Query(new ZodValidationPipe(quantityCaptureSchema)) query: QuantityCaptureQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.quantityCapture(u.orgId, variantId, query);
+    return this.quantityCaptureService.captureContract(u.orgId, variantId, query);
   }
 
   /**
@@ -215,7 +223,7 @@ export class InvProductsController {
     @Query(new ZodValidationPipe(h1RegisterSchema)) query: H1RegisterQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.h1Register(u.orgId, query);
+    return this.pharmacy.h1Register(u.orgId, query);
   }
 
   @Post(":productId/archive")
@@ -228,7 +236,7 @@ export class InvProductsController {
     @Param("productId", ParseIntPipe) productId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.archiveProduct(u.orgId, productId, u.userId);
+    return this.crud.archiveProduct(u.orgId, productId, u.userId);
   }
 
   @Post(":productId/restore")
@@ -241,7 +249,7 @@ export class InvProductsController {
     @Param("productId", ParseIntPipe) productId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.restoreProduct(u.orgId, productId, u.userId);
+    return this.crud.restoreProduct(u.orgId, productId, u.userId);
   }
 
   @Get(":productId")
@@ -249,7 +257,7 @@ export class InvProductsController {
   @RequirePermission("inventory:products:read")
   @Validate({ params: productIdParams })
   get(@Param("productId", ParseIntPipe) productId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.products.getProduct(u.orgId, productId, u.userId);
+    return this.crud.getProduct(u.orgId, productId, u.userId);
   }
 
   @Post()
@@ -260,7 +268,7 @@ export class InvProductsController {
     @Body() body: CreateProductInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.createProduct(u.orgId, u.userId, body);
+    return this.crud.createProduct(u.orgId, u.userId, body);
   }
 
   @Patch(":productId")
@@ -272,7 +280,7 @@ export class InvProductsController {
     @Body() body: UpdateProductInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.updateProduct(u.orgId, productId, body);
+    return this.crud.updateProduct(u.orgId, productId, body);
   }
 
   @Delete(":productId")
@@ -281,7 +289,7 @@ export class InvProductsController {
   @RequirePermission("inventory:products:delete")
   @Validate({ params: productIdParams })
   async delete(@Param("productId", ParseIntPipe) productId: number, @CurrentUser() u: CurrentUserContext) {
-    await this.products.deleteProduct(u.orgId, productId, u.userId);
+    await this.crud.deleteProduct(u.orgId, productId, u.userId);
   }
 
   @Post(":productId/variants")
@@ -293,7 +301,7 @@ export class InvProductsController {
     @Body() body: CreateVariantInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.createVariant(u.orgId, productId, body);
+    return this.catalog.createVariant(u.orgId, productId, body);
   }
 
   @Patch(":productId/variants/:variantId")
@@ -306,6 +314,6 @@ export class InvProductsController {
     @Body() body: UpdateVariantInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.products.updateVariant(u.orgId, variantId, body);
+    return this.catalog.updateVariant(u.orgId, variantId, body);
   }
 }

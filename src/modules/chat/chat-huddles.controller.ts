@@ -18,6 +18,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ChatHuddlesService } from "./chat-huddles.service";
+import { ChatHuddleSignalsService } from "./chat-huddle-signals.service";
 import {
   huddleSignalSchema,
   muteSchema,
@@ -48,6 +49,7 @@ const huddleIdParams = z.object({ huddleId: z.coerce.number().int().positive() }
 export class ChatHuddlesController {
   constructor(
     private readonly huddles: ChatHuddlesService,
+    private readonly signals: ChatHuddleSignalsService,
     private readonly rateLimit: RateLimitService,
   ) {}
 
@@ -119,7 +121,7 @@ export class ChatHuddlesController {
     @Body() body: MuteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.huddles.setMute(huddleId, u.userId, body.muted, u.orgId);
+    return this.signals.setMute(huddleId, u.userId, body.muted, u.orgId);
   }
 
   @ApiOperation({ summary: "Raise or lower hand in a huddle" })
@@ -133,7 +135,7 @@ export class ChatHuddlesController {
     @Body() body: RaiseHandInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.huddles.raiseHand(huddleId, u.userId, body.raised, u.orgId);
+    return this.signals.raiseHand(huddleId, u.userId, body.raised, u.orgId);
   }
 
   @ApiOperation({ summary: "Set deafen state for self in a huddle" })
@@ -147,7 +149,7 @@ export class ChatHuddlesController {
     @Body() body: { deafened: boolean },
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.huddles.setDeafen(huddleId, u.userId, u.orgId, body.deafened);
+    return this.signals.setDeafen(huddleId, u.userId, u.orgId, body.deafened);
   }
 
   @ApiOperation({ summary: "Send a WebRTC signalling message to a peer in a huddle" })
@@ -164,7 +166,7 @@ export class ChatHuddlesController {
   ) {
     const rl = await this.rateLimit.check("chat:huddle-signal", u.userId);
     if (!rl.allowed) throw new HttpException(`Rate limited. Retry after ${rl.retryAfterSecs}s`, HttpStatus.TOO_MANY_REQUESTS);
-    return this.huddles.sendSignal(huddleId, u.userId, body, u.orgId);
+    return this.signals.sendSignal(huddleId, u.userId, body, u.orgId);
   }
 
   @ApiOperation({ summary: "Heartbeat to keep a participant active in a huddle" })
@@ -181,7 +183,7 @@ export class ChatHuddlesController {
   ) {
     const rl = await this.rateLimit.check("chat:huddle-heartbeat", u.userId);
     if (!rl.allowed) throw new HttpException(`Rate limited. Retry after ${rl.retryAfterSecs}s`, HttpStatus.TOO_MANY_REQUESTS);
-    return this.huddles.heartbeat(huddleId, u.userId, u.orgId);
+    return this.signals.heartbeat(huddleId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Toggle screen share on/off in a huddle" })
@@ -195,7 +197,7 @@ export class ChatHuddlesController {
     @Body() body: ScreenShareInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.huddles.setScreenShare(huddleId, u.userId, body.isScreenSharing, u.orgId);
+    return this.signals.setScreenShare(huddleId, u.userId, body.isScreenSharing, u.orgId);
   }
 
   @ApiOperation({ summary: "Kick a participant from a huddle" })

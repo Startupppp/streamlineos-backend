@@ -32,7 +32,7 @@ import { NotificationsService } from "../notifications/notifications.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
 import { validateMagicBytes } from "../storage/file-signatures";
-import { publicSubmitSchema, publicAiAssistSchema } from "./feedbucket.schemas";
+import { publicSubmitSchema, publicAiAssistSchema, publicSubmitDeclSchema, publicAiAssistDeclSchema } from "./feedbucket.schemas";
 import {
   feedbucketAttachments,
   feedbucketSubmissions,
@@ -161,7 +161,7 @@ export class FeedbucketPublicController {
       { limits: { fileSize: MAX_RECORDING_BYTES } },
     ),
   )
-  @Validate({ params: publicKeyParams })
+  @Validate({ params: publicKeyParams, body: publicSubmitDeclSchema })
   async submit(
     @Param("publicKey") publicKey: string,
     @Body() rawBody: Record<string, unknown>,
@@ -316,7 +316,7 @@ export class FeedbucketPublicController {
       limits: { fileSize: MAX_SCREENSHOT_BYTES },
     }),
   )
-  @Validate({ params: publicKeyParams })
+  @Validate({ params: publicKeyParams, body: publicAiAssistDeclSchema })
   async aiAssist(
     @Param("publicKey") publicKey: string,
     @Body() rawBody: Record<string, unknown>,

@@ -81,6 +81,8 @@ function build(deps: Deps) {
     ),
   };
   const audit = { log: jest.fn() };
+  const cacheInvalidate = jest.fn().mockResolvedValue(undefined);
+  const cache = { invalidate: cacheInvalidate };
 
   rankContextHolder.value = deps.rankContext ?? {
     bestRank: 40,
@@ -92,9 +94,10 @@ function build(deps: Deps) {
     moduleAccess as never,
     access as never,
     audit as never,
+    cache as never,
   );
 
-  return { service, moduleAccess, access, audit, findFirst };
+  return { service, moduleAccess, access, audit, findFirst, cacheInvalidate };
 }
 
 beforeEach(() => {
@@ -357,5 +360,25 @@ describe("platform billing stays out of reach", () => {
         items: [{ permissionKey: "billing:subscription:manage", scope: "all" }],
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
+
+describe("target user session is invalidated so their next request re-resolves", () => {
+  it("invalidates the target user session after setGrants", async () => {
+    const { service, cacheInvalidate } = build({});
+    await service.setGrants(ACTOR, "hr", 7, {
+      items: [{ permissionKey: "hr:employees:view", scope: "all" }],
+    });
+    expect(cacheInvalidate).toHaveBeenCalledWith(
+      expect.stringContaining("u-target"),
+    );
+  });
+
+  it("invalidates the target user session after removeGrant", async () => {
+    const { service, cacheInvalidate } = build({});
+    await service.removeGrant(ACTOR, "hr", 7, "hr:employees:view");
+    expect(cacheInvalidate).toHaveBeenCalledWith(
+      expect.stringContaining("u-target"),
+    );
   });
 });

@@ -20,7 +20,10 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { RecruitmentCandidateRecordsService } from "./recruitment-candidate-records.service";
+import { RecruitmentCalibrationService } from "./recruitment-calibration.service";
+import { RecruitmentReferralChecksService } from "./recruitment-referral-checks.service";
+import { RecruitmentCandidateDocsService } from "./recruitment-candidate-docs.service";
+import { RecruitmentCandidateVaultService } from "./recruitment-candidate-vault.service";
 import { RecruitmentCandidateAiService } from "./recruitment-candidate-ai.service";
 import {
   addVaultDocumentSchema,
@@ -42,6 +45,7 @@ import {
   type UpdateReferenceCheckInput,
   type UpdateReferralInput,
 } from "./dto/candidate-records.schemas";
+import { resumeParseRequestSchema } from "./dto/candidate-ai.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -57,7 +61,10 @@ const candidateAndDocumentIdParams = z.object({ candidateId: z.coerce.number().i
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class RecruitmentCandidateRecordsController {
   constructor(
-    private readonly records: RecruitmentCandidateRecordsService,
+    private readonly calibration: RecruitmentCalibrationService,
+    private readonly referralChecks: RecruitmentReferralChecksService,
+    private readonly docs: RecruitmentCandidateDocsService,
+    private readonly vault: RecruitmentCandidateVaultService,
     private readonly ai: RecruitmentCandidateAiService,
   ) {}
 
@@ -85,7 +92,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Post("resume-parse")
   @RequirePermission("hr:employees:manage")
-  @Validate({ params: candidateIdParams })
+  @Validate({ params: candidateIdParams, body: resumeParseRequestSchema })
   @UseInterceptors(
     FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }),
   )
@@ -105,7 +112,7 @@ export class RecruitmentCandidateRecordsController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.listRolloutDocuments(u.orgId, candidateId);
+    return this.docs.listRolloutDocuments(u.orgId, candidateId);
   }
 
   @Post("rollout-documents")
@@ -118,7 +125,7 @@ export class RecruitmentCandidateRecordsController {
     body: RolloutDocumentsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.generateRolloutDocuments(
+    return this.docs.generateRolloutDocuments(
       u.orgId,
       u.userId,
       candidateId,
@@ -133,7 +140,7 @@ export class RecruitmentCandidateRecordsController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.listCalibration(u.orgId, candidateId);
+    return this.calibration.listCalibration(u.orgId, candidateId);
   }
 
   @Post("calibration")
@@ -146,7 +153,7 @@ export class RecruitmentCandidateRecordsController {
     body: CreateCalibrationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.createCalibration(u.orgId, u.userId, candidateId, body);
+    return this.calibration.createCalibration(u.orgId, u.userId, candidateId, body);
   }
 
   @Patch("calibration")
@@ -158,7 +165,7 @@ export class RecruitmentCandidateRecordsController {
     body: UpdateCalibrationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.updateCalibration(u.orgId, candidateId, body);
+    return this.calibration.updateCalibration(u.orgId, candidateId, body);
   }
 
   @Get("referral")
@@ -168,7 +175,7 @@ export class RecruitmentCandidateRecordsController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.listReferrals(u.orgId, candidateId);
+    return this.referralChecks.listReferrals(u.orgId, candidateId);
   }
 
   @Post("referral")
@@ -182,7 +189,7 @@ export class RecruitmentCandidateRecordsController {
     body: CreateReferralInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.createReferral(u.orgId, candidateId, body);
+    return this.referralChecks.createReferral(u.orgId, candidateId, body);
   }
 
   @Patch("referral")
@@ -194,7 +201,7 @@ export class RecruitmentCandidateRecordsController {
     body: UpdateReferralInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.updateReferral(u.orgId, candidateId, body);
+    return this.referralChecks.updateReferral(u.orgId, candidateId, body);
   }
 
   @Get("reference-checks")
@@ -204,7 +211,7 @@ export class RecruitmentCandidateRecordsController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.listReferenceChecks(u.orgId, candidateId);
+    return this.referralChecks.listReferenceChecks(u.orgId, candidateId);
   }
 
   @Post("reference-checks")
@@ -217,7 +224,7 @@ export class RecruitmentCandidateRecordsController {
     body: CreateReferenceCheckInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.createReferenceCheck(
+    return this.referralChecks.createReferenceCheck(
       u.orgId,
       u.userId,
       candidateId,
@@ -235,7 +242,7 @@ export class RecruitmentCandidateRecordsController {
     body: UpdateReferenceCheckInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.updateReferenceCheck(
+    return this.referralChecks.updateReferenceCheck(
       u.orgId,
       candidateId,
       checkId,
@@ -252,7 +259,7 @@ export class RecruitmentCandidateRecordsController {
     @Param("checkId", ParseIntPipe) checkId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.records.deleteReferenceCheck(u.orgId, candidateId, checkId);
+    await this.referralChecks.deleteReferenceCheck(u.orgId, candidateId, checkId);
   }
 
   @Get("documents")
@@ -262,7 +269,7 @@ export class RecruitmentCandidateRecordsController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.listDocuments(u.orgId, candidateId);
+    return this.docs.listDocuments(u.orgId, candidateId);
   }
 
   @Post("documents")
@@ -275,7 +282,7 @@ export class RecruitmentCandidateRecordsController {
     body: GenerateDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.generateDocument(u.orgId, u.userId, candidateId, body);
+    return this.docs.generateDocument(u.orgId, u.userId, candidateId, body);
   }
 
   @Get("documents/:documentId/view")
@@ -287,7 +294,7 @@ export class RecruitmentCandidateRecordsController {
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
-    const doc = await this.records.viewDocument(
+    const doc = await this.docs.viewDocument(
       u.orgId,
       candidateId,
       documentId,
@@ -309,7 +316,7 @@ export class RecruitmentCandidateRecordsController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.listVault(u.orgId, candidateId);
+    return this.vault.listVault(u.orgId, candidateId);
   }
 
   @Post("vault")
@@ -322,7 +329,7 @@ export class RecruitmentCandidateRecordsController {
     body: AddVaultDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.addVaultDocument(u.orgId, u.userId, candidateId, body);
+    return this.vault.addVaultDocument(u.orgId, u.userId, candidateId, body);
   }
 
   @Delete("vault/:documentId")
@@ -334,7 +341,7 @@ export class RecruitmentCandidateRecordsController {
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.records.deleteVaultDocument(u.orgId, candidateId, documentId, u.userId);
+    await this.vault.deleteVaultDocument(u.orgId, candidateId, documentId, u.userId);
   }
 
   @Get("vault/access-logs")
@@ -344,7 +351,7 @@ export class RecruitmentCandidateRecordsController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.listVaultAccessLogs(u.orgId, candidateId);
+    return this.vault.listVaultAccessLogs(u.orgId, candidateId);
   }
 
   @Get("activity")
@@ -354,6 +361,6 @@ export class RecruitmentCandidateRecordsController {
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.records.getActivity(u.orgId, candidateId);
+    return this.vault.getActivity(u.orgId, candidateId);
   }
 }

@@ -45,6 +45,7 @@ export const territories = pgTable(
       .notNull(),
     priority: integer("priority").default(0).notNull(),
     createdBy: text("created_by").references(() => users.id),
+    createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()

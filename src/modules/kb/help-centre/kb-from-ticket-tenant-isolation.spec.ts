@@ -1,6 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { KbFromTicketService } from "./kb-from-ticket.service";
+import { ACCOUNT_ONLY_PRINCIPAL } from "../../../common/auth/principal";
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
@@ -17,7 +18,7 @@ describe("KbFromTicketService — cross-tenant isolation", () => {
   const TICKET_ID = 55;
 
   function makeUser(orgId: string) {
-    return { orgId, userId: "user-1" } as never;
+    return { orgId, userId: "user-1", principal: ACCOUNT_ONLY_PRINCIPAL } as never;
   }
 
   const gateway = { invokeStructuredWithUsage: jest.fn() } as never;

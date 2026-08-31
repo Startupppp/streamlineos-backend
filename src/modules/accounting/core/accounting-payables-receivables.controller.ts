@@ -25,6 +25,7 @@ import {
   listCustomerLedgerQuerySchema,
   listCustomersOutstandingQuerySchema,
   listPurchaseBillsQuerySchema,
+  listVendorsQuerySchema,
   recordVendorPaymentSchema,
   updatePurchaseBillStatusSchema,
   type AgedReceivablesQuery,
@@ -32,6 +33,7 @@ import {
   type ListCustomerLedgerQuery,
   type ListCustomersOutstandingQuery,
   type ListPurchaseBillsQuery,
+  type ListVendorsQuery,
   type RecordVendorPaymentInput,
   type UpdatePurchaseBillStatusInput,
 } from "./dto/accounting.schemas";
@@ -127,9 +129,9 @@ export class AccountingPayablesReceivablesController {
   @Get("vendors")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
-  @Validate({ query: listCustomersOutstandingQuerySchema })
+  @Validate({ query: listVendorsQuerySchema })
   listVendors(
-    @Query() query: ListCustomersOutstandingQuery,
+    @Query() query: ListVendorsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.payables.listVendors(u.orgId, query);

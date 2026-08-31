@@ -6,6 +6,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 
 const EXPORT_HEADERS = ["Month", "Run Type", "Status", "Employees", "Gross Total", "Net Total", "Exceptions", "Created At"] as const;
+const EXPORT_ROW_CAP = 50_000;
 
 @Injectable()
 export class PayrollRunExportWorkerService implements OnModuleInit, OnModuleDestroy {
@@ -55,6 +56,7 @@ export class PayrollRunExportWorkerService implements OnModuleInit, OnModuleDest
       const lines = [EXPORT_HEADERS.join(",")];
       let afterId: number | undefined;
       let count = 0;
+      let truncated = false;
       for (;;) {
         const rows = await this.jobs.rows(job, afterId);
         if (!rows.length) break;
@@ -72,9 +74,10 @@ export class PayrollRunExportWorkerService implements OnModuleInit, OnModuleDest
           lines.push(vals.join(","));
           afterId = row.id;
           count++;
+          if (count >= EXPORT_ROW_CAP) { truncated = true; break; }
         }
         await this.jobs.progress(job.id, count, job.orgId);
-        if (rows.length < 500) break;
+        if (truncated || rows.length < 500) break;
       }
       const result = await this.storage.uploadFile(
         job.orgId,
@@ -90,6 +93,7 @@ export class PayrollRunExportWorkerService implements OnModuleInit, OnModuleDest
         result.size,
         count,
         job.orgId,
+        truncated,
       );
     } catch (error) {
       await this.jobs.fail(job, error);

@@ -7,7 +7,6 @@ import {
   chatReplyReminders,
   notificationPreferences,
   organizationMembers,
-  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -52,9 +51,10 @@ export class ChatReplyRemindersService {
   ): Promise<void> {
     const remindAt = new Date(Date.now() + this.replyReminderMs);
 
-    await this.cancelPendingForRecipientInChannel(senderId, channelId);
-
     const senderMembershipId = await this.resolveMembershipId(orgId, senderId);
+
+    if (senderMembershipId !== null)
+      await this.cancelPendingForMemberInChannel(senderMembershipId, channelId);
 
     const members = await this.db.query.chatChannelMembers.findMany({
       where: and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)),
@@ -68,9 +68,7 @@ export class ChatReplyRemindersService {
         orgId,
         channelId,
         messageId,
-        recipientUserId: m.membership!.userId,
         recipientMembershipId: m.membershipId,
-        senderUserId: senderId,
         senderMembershipId,
         remindAt,
       }));
@@ -83,13 +81,13 @@ export class ChatReplyRemindersService {
     }
   }
 
-  async cancelPendingForRecipientInChannel(userId: string, channelId: number): Promise<void> {
+  async cancelPendingForMemberInChannel(membershipId: number, channelId: number): Promise<void> {
     await this.db
       .update(chatReplyReminders)
       .set({ cancelledAt: new Date() })
       .where(
         and(
-          eq(chatReplyReminders.recipientUserId, userId),
+          eq(chatReplyReminders.recipientMembershipId, membershipId),
           eq(chatReplyReminders.channelId, channelId),
           isNull(chatReplyReminders.sentAt),
           isNull(chatReplyReminders.cancelledAt),
@@ -147,22 +145,23 @@ export class ChatReplyRemindersService {
       return "cancelled";
     }
 
-    const reply = await this.db.query.chatMessages.findFirst({
-      where: and(
-        eq(chatMessages.channelId, reminder.channelId),
-        eq(chatMessages.senderId, reminder.recipientUserId),
-        eq(chatMessages.isDeleted, false),
-        gt(chatMessages.createdAt, message.createdAt),
-      ),
-      columns: { id: true },
-    });
-    if (reply) {
-      await this.markCancelled(reminderId);
-      return "cancelled";
+    if (reminder.recipientMembershipId) {
+      const reply = await this.db.query.chatMessages.findFirst({
+        where: and(
+          eq(chatMessages.channelId, reminder.channelId),
+          eq(chatMessages.senderMembershipId, reminder.recipientMembershipId),
+          eq(chatMessages.isDeleted, false),
+          gt(chatMessages.createdAt, message.createdAt),
+        ),
+        columns: { id: true },
+      });
+      if (reply) {
+        await this.markCancelled(reminderId);
+        return "cancelled";
+      }
     }
 
-    const recipientMembershipId = reminder.recipientMembershipId ??
-      await this.resolveMembershipId(reminder.orgId, reminder.recipientUserId);
+    const recipientMembershipId = reminder.recipientMembershipId;
     if (!recipientMembershipId) {
       await this.markCancelled(reminderId);
       return "cancelled";
@@ -187,21 +186,35 @@ export class ChatReplyRemindersService {
       return "cancelled";
     }
 
-    const recipient = await this.db.query.users.findFirst({
-      where: eq(users.id, reminder.recipientUserId),
-      columns: { id: true, name: true, email: true, isActive: true },
+    const recipientMembership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, reminder.orgId),
+        eq(organizationMembers.id, recipientMembershipId),
+      ),
+      columns: { userId: true },
+      with: { user: { columns: { id: true, name: true, email: true, isActive: true } } },
     });
-    const sender = await this.db.query.users.findFirst({
-      where: eq(users.id, reminder.senderUserId),
-      columns: { name: true },
-    });
-    if (!recipient?.email || !recipient.isActive) {
+    const recipient = recipientMembership?.user;
+
+    const senderMembership = reminder.senderMembershipId
+      ? await this.db.query.organizationMembers.findFirst({
+          where: and(
+            eq(organizationMembers.orgId, reminder.orgId),
+            eq(organizationMembers.id, reminder.senderMembershipId),
+          ),
+          columns: {},
+          with: { user: { columns: { name: true } } },
+        })
+      : null;
+    const sender = senderMembership?.user;
+
+    if (!recipient || !recipient.email || !recipient.isActive) {
       await this.markCancelled(reminderId);
       return "cancelled";
     }
 
     const prefs = await this.db.query.notificationPreferences.findFirst({
-      where: eq(notificationPreferences.userId, reminder.recipientUserId),
+      where: eq(notificationPreferences.userId, recipient.id),
       columns: { emailEnabled: true },
     });
     if (prefs && !prefs.emailEnabled) {

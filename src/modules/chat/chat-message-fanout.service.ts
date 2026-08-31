@@ -53,7 +53,7 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
     const send = () => this.ably.publishChatMessage(orgId, channelId, {
       id: message.id,
       channelId: message.channelId,
-      senderId: message.senderId,
+      senderId: input.senderUserId ?? "",
       senderName,
       senderImage,
       content: message.content,
@@ -102,14 +102,14 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
       }, () => runInNewTenantTransaction(this.db, orgId, async () => send())).then(() => undefined);
     const tasks: Promise<void>[] = [
       runEffect("push", () => this.webPush
-        .sendToChannelMembers(orgId, channelId, message.senderId, { category: "CHAT" }, `${idempotencyKey}:push`))
+        .sendToChannelMembers(orgId, channelId, input.senderUserId ?? "", { category: "CHAT" }, `${idempotencyKey}:push`))
         .catch((err: unknown) => {
           logger.error("chat: push fan-out failed", {
             orgId,
             channelId,
             error: err instanceof Error ? err.message : "unknown",
           });
-          this.recordFailure(orgId, channelId, message.senderId, message.id, "push", err);
+          this.recordFailure(orgId, channelId, input.senderUserId ?? "", message.id, "push", err);
           failures.push(err);
         }),
     ];
@@ -120,7 +120,7 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
           .publishNewMessageNotification(
             orgId,
             channelId,
-            { id: message.id, senderId: message.senderId, senderName },
+            { id: message.id, senderUserId: input.senderUserId ?? null, senderName },
             channelType,
             `${idempotencyKey}:dm_notification`,
           ))
@@ -130,7 +130,7 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
               channelId,
               error: err instanceof Error ? err.message : "unknown",
             });
-            this.recordFailure(orgId, channelId, message.senderId, message.id, "dm_notification", err);
+            this.recordFailure(orgId, channelId, input.senderUserId ?? "", message.id, "dm_notification", err);
             failures.push(err);
           }),
       );
@@ -141,7 +141,7 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
           .publishMentionNotification(
             orgId,
             channelId,
-            { id: message.id, senderId: message.senderId, senderName: senderName ?? "" },
+            { id: message.id, senderUserId: input.senderUserId ?? null, senderName: senderName ?? "" },
             mentionedUserIds,
             `${idempotencyKey}:mention_notification`,
           ))
@@ -151,7 +151,7 @@ export class ChatMessageFanoutService implements MessageFanoutProvider {
               channelId,
               error: err instanceof Error ? err.message : "unknown",
             });
-            this.recordFailure(orgId, channelId, message.senderId, message.id, "mention_notification", err);
+            this.recordFailure(orgId, channelId, input.senderUserId ?? "", message.id, "mention_notification", err);
             failures.push(err);
           }),
       );

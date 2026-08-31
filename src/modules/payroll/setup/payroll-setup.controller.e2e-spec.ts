@@ -6,7 +6,8 @@ import { createE2eApp } from "test/helpers/e2e-app";
 import { AccessService } from "../../access/access.service";
 import { EntitlementsService } from "../../access/entitlements.service";
 import { PayrollTemplatesService, seedPayrollTemplates } from "./templates.service";
-import { PayrollPoliciesService } from "./policies.service";
+import { PolicyQueryService } from "./policy-query.service";
+import { PolicyMutationService } from "./policy-mutation.service";
 import { PayrollComponentsService } from "./components.service";
 import { withAccessResolution } from "../../../../test/helpers/access-stub";
 
@@ -44,14 +45,17 @@ const mockTemplatesService = {
   deleteCustomTemplate: jest.fn().mockResolvedValue({ success: true }),
 };
 
-const mockPoliciesService = {
+const mockPolicyQueryService = {
   getCurrent: jest.fn().mockResolvedValue(mockPolicy),
   toggleImpact: jest.fn().mockResolvedValue({ impactedEmployees: 0, components: [] }),
-  create: jest.fn().mockResolvedValue(mockPolicy),
   preview: jest.fn().mockResolvedValue(mockPreview),
+  listVersions: jest.fn().mockResolvedValue([]),
+};
+
+const mockPolicyMutationService = {
+  create: jest.fn().mockResolvedValue(mockPolicy),
   update: jest.fn().mockResolvedValue(mockPolicy),
   activate: jest.fn().mockResolvedValue({ policyId: 1, versionId: 1, checklist: [] }),
-  listVersions: jest.fn().mockResolvedValue([]),
   createVersion: jest.fn().mockResolvedValue({ versionId: 2 }),
 };
 
@@ -95,7 +99,8 @@ async function buildApp(accessMock: typeof permittedAccess): Promise<INestApplic
       { provide: AccessService, useValue: accessMock },
       { provide: EntitlementsService, useValue: alwaysOnEntitlements },
       { provide: PayrollTemplatesService, useValue: mockTemplatesService },
-      { provide: PayrollPoliciesService, useValue: mockPoliciesService },
+      { provide: PolicyQueryService, useValue: mockPolicyQueryService },
+      { provide: PolicyMutationService, useValue: mockPolicyMutationService },
       { provide: PayrollComponentsService, useValue: mockComponentsService },
     ],
   });

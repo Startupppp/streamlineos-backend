@@ -1,5 +1,4 @@
-import { Controller, Get, Query, Res, UseGuards } from "@nestjs/common";
-import type { Response } from "express";
+import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -7,7 +6,6 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AnalyticsReportsService } from "./analytics-reports.service";
-import { buildCsv } from "./finance-reports-csv.util";
 import {
   dateRangeSchema,
   budgetVsActualQuerySchema,
@@ -41,25 +39,6 @@ export class AnalyticsReportsController {
     return this.analyticsService.projectProfitability(u.orgId, query.from, query.to);
   }
 
-  @Get("project-profitability/export")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("accounting:reports:export")
-  @Validate({ query: dateRangeSchema })
-  async exportProjectProfitability(
-    @Query() query: DateRangeQuery,
-    @CurrentUser() u: CurrentUserContext,
-    @Res() res: Response,
-  ) {
-    const data = await this.analyticsService.projectProfitability(u.orgId, query.from, query.to);
-    const csv = buildCsv(
-      ["Project ID", "Project Name", "Revenue", "Cost", "Margin", "Margin %"],
-      data.map((r) => [r.projectId, r.projectName, r.revenue, r.cost, r.margin, r.marginPct]),
-    );
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="project-profitability.csv"`);
-    res.send(csv);
-  }
-
   @Get("department-profitability")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
@@ -71,25 +50,6 @@ export class AnalyticsReportsController {
     return this.analyticsService.departmentProfitability(u.orgId, query.from, query.to);
   }
 
-  @Get("department-profitability/export")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("accounting:reports:export")
-  @Validate({ query: dateRangeSchema })
-  async exportDepartmentProfitability(
-    @Query() query: DateRangeQuery,
-    @CurrentUser() u: CurrentUserContext,
-    @Res() res: Response,
-  ) {
-    const data = await this.analyticsService.departmentProfitability(u.orgId, query.from, query.to);
-    const csv = buildCsv(
-      ["Department ID", "Department Name", "Revenue", "Cost", "Margin", "Margin %"],
-      data.map((r) => [r.departmentId, r.departmentName, r.revenue, r.cost, r.margin, r.marginPct]),
-    );
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="department-profitability.csv"`);
-    res.send(csv);
-  }
-
   @Get("budget-vs-actual")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
@@ -99,25 +59,6 @@ export class AnalyticsReportsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analyticsService.budgetVsActual(u.orgId, query.budgetId, query.from, query.to);
-  }
-
-  @Get("budget-vs-actual/export")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("accounting:reports:export")
-  @Validate({ query: budgetVsActualQuerySchema })
-  async exportBudgetVsActual(
-    @Query() query: BudgetVsActualQuery,
-    @CurrentUser() u: CurrentUserContext,
-    @Res() res: Response,
-  ) {
-    const data = await this.analyticsService.budgetVsActual(u.orgId, query.budgetId, query.from, query.to);
-    const csv = buildCsv(
-      ["Account ID", "Account Name", "Period", "Budget Amount", "Actual Amount", "Variance", "Variance %"],
-      data.lines.map((l) => [l.accountId, l.accountName, l.periodKey, l.budgetAmount, l.actualAmount, l.variance, l.variancePct]),
-    );
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename="budget-vs-actual-${query.budgetId}.csv"`);
-    res.send(csv);
   }
 
   @Get("working-capital")

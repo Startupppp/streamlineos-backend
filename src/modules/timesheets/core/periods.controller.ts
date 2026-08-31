@@ -19,6 +19,7 @@ import { PeriodsService } from "./periods.service";
 import { periodsQuerySchema, type PeriodsQuery } from "./dto/periods.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
@@ -26,7 +27,7 @@ const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }
 @RequireModule("build")
 @Controller("timesheets/periods")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
-export class PeriodsController {
+export class TimesheetPeriodsController {
   constructor(private readonly periods: PeriodsService) {}
 
   @Get()
@@ -56,6 +57,7 @@ export class PeriodsController {
   }
 
   @Post(":periodId/submit")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @Idempotent("timesheets.period.submit")
@@ -68,6 +70,7 @@ export class PeriodsController {
   }
 
   @Post(":periodId/recall")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: periodIdParams })
@@ -79,6 +82,7 @@ export class PeriodsController {
   }
 
   @Post(":periodId/reopen")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Validate({ params: periodIdParams })
@@ -90,6 +94,7 @@ export class PeriodsController {
   }
 
   @Post(":periodId/lock")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Validate({ params: periodIdParams })
@@ -101,6 +106,7 @@ export class PeriodsController {
   }
 
   @Post(":periodId/unlock")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Validate({ params: periodIdParams })

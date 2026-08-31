@@ -6,6 +6,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ChatSavedService } from "./chat-saved.service";
+import { actorOf } from "../entity-reference/entity-actor";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -32,7 +33,7 @@ export class ChatSavedController {
   ) {
     const parsedLimit = limit ? Math.min(Math.max(1, parseInt(limit, 10)), 100) : 30;
     return this.saved.list(
-      { orgId: u.orgId, userId: u.userId, isOrgOwner: u.isOrgOwner },
+      actorOf(u),
       cursor ? parseInt(cursor, 10) : undefined,
       parsedLimit,
     );
@@ -46,10 +47,7 @@ export class ChatSavedController {
   @RequirePermission("chat:messages:write")
   @Validate({ params: messageIdParams })
   save(@Param("messageId", ParseIntPipe) messageId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.saved.save(
-      { orgId: u.orgId, userId: u.userId, isOrgOwner: u.isOrgOwner },
-      messageId,
-    );
+    return this.saved.save(actorOf(u), messageId);
   }
 
   @ApiOperation({ summary: "Remove a message from the current user's saved list" })
@@ -58,9 +56,6 @@ export class ChatSavedController {
   @RequirePermission("chat:messages:write")
   @Validate({ params: messageIdParams })
   unsave(@Param("messageId", ParseIntPipe) messageId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.saved.unsave(
-      { orgId: u.orgId, userId: u.userId, isOrgOwner: u.isOrgOwner },
-      messageId,
-    );
+    return this.saved.unsave(actorOf(u), messageId);
   }
 }

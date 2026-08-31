@@ -2,8 +2,6 @@ import { Inject, Injectable } from "@nestjs/common";
 import {
   and,
   asc,
-  count,
-  countDistinct,
   eq,
   ilike,
   inArray,
@@ -39,8 +37,8 @@ import type {
   FlatModuleMember,
   MembersPage,
   ModuleMemberCandidate,
-  Pagination,
 } from "./module-access-groups.types";
+import { buildIdCursorPage } from "../../common/pagination/cursor";
 
 @Injectable()
 export class ModuleAccessRosterService {
@@ -53,7 +51,7 @@ export class ModuleAccessRosterService {
   async listMembers(
     actor: CurrentUserContext,
     moduleKey: string,
-    { page, pageSize, userId, cursor }: ListMembersQuery,
+    { pageSize, userId, cursor }: ListMembersQuery,
   ): Promise<MembersPage> {
     assertManagedModule(moduleKey);
     await assertModuleAccessPolicy(
@@ -68,13 +66,12 @@ export class ModuleAccessRosterService {
       CACHE_KEYS.moduleAccessMembers(
         actor.orgId,
         moduleKey,
-        page,
         limit,
         version,
         userId,
         cursor,
       ),
-      () => this.fetchMembers(actor.orgId, moduleKey, page, limit, userId, cursor),
+      () => this.fetchMembers(actor.orgId, moduleKey, limit, userId, cursor),
       CACHE_TTL.VERY_LONG,
     );
   }
@@ -82,25 +79,17 @@ export class ModuleAccessRosterService {
   private async fetchMembers(
     orgId: string,
     moduleKey: string,
-    page: number,
     limit: number,
     userId?: string,
     cursor?: number,
   ): Promise<MembersPage> {
-    const offset = cursor !== undefined ? 0 : (page - 1) * limit;
-
     const moduleRoleRows = await this.db
       .select({ id: roles.id })
       .from(roles)
       .where(and(eq(roles.orgId, orgId), eq(roles.moduleKey, moduleKey)));
 
-    if (moduleRoleRows.length === 0) {
-      return {
-        data: [],
-        pagination: { page, pageSize: limit, total: 0, totalPages: 0 },
-        nextCursor: null,
-      };
-    }
+    if (moduleRoleRows.length === 0)
+      return { data: [], hasMore: false, nextCursor: null };
 
     const moduleRoleIds = moduleRoleRows.map((r) => r.id);
 
@@ -113,13 +102,7 @@ export class ModuleAccessRosterService {
         ),
         columns: { id: true },
       });
-      if (!target) {
-        return {
-          data: [],
-          pagination: { page, pageSize: limit, total: 0, totalPages: 0 },
-          nextCursor: null,
-        };
-      }
+      if (!target) return { data: [], hasMore: false, nextCursor: null };
       membershipFilter = eq(
         roleAssignments.organizationMembershipId,
         target.id,
@@ -139,7 +122,7 @@ export class ModuleAccessRosterService {
       cursorFilter,
     );
 
-    const memberQuery = this.db
+    const rawRows = await this.db
       .selectDistinct({
         membershipId: roleAssignments.organizationMembershipId,
         userId: organizationMembers.userId,
@@ -160,51 +143,15 @@ export class ModuleAccessRosterService {
       )
       .innerJoin(users, eq(organizationMembers.userId, users.id))
       .where(baseWhere)
-      .limit(limit);
+      .orderBy(asc(organizationMembers.id))
+      .limit(limit + 1);
 
-    let memberRows: Awaited<typeof memberQuery>;
-    let total = 0;
+    const page = buildIdCursorPage(rawRows, limit, (r) => r.membershipId);
 
-    if (cursor !== undefined) {
-      memberRows = await memberQuery.orderBy(asc(organizationMembers.id));
-    } else {
-      const [totalResult, rows] = await Promise.all([
-        this.db
-          .select({
-            total: countDistinct(roleAssignments.organizationMembershipId),
-          })
-          .from(roleAssignments)
-          .innerJoin(
-            organizationMembers,
-            and(
-              eq(organizationMembers.orgId, roleAssignments.orgId),
-              eq(
-                organizationMembers.id,
-                roleAssignments.organizationMembershipId,
-              ),
-            ),
-          )
-          .where(baseWhere),
-        memberQuery.orderBy(asc(users.name)).offset(offset),
-      ]);
-      total = Number(totalResult[0]?.total ?? 0);
-      memberRows = rows;
-    }
+    if (page.data.length === 0)
+      return { data: [], hasMore: false, nextCursor: null };
 
-    if (memberRows.length === 0) {
-      return {
-        data: [],
-        pagination: {
-          page,
-          pageSize: limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
-        nextCursor: null,
-      };
-    }
-
-    const membershipIds = memberRows.map((r) => r.membershipId);
+    const membershipIds = page.data.map((r) => r.membershipId);
 
     const groupRows = await this.db
       .select({
@@ -235,7 +182,7 @@ export class ModuleAccessRosterService {
       groupsByMembership.set(gr.membershipId, list);
     }
 
-    const data: FlatModuleMember[] = memberRows.map((r) => ({
+    const data: FlatModuleMember[] = page.data.map((r) => ({
       membershipId: r.membershipId,
       userId: r.userId,
       displayName: r.name ?? r.email ?? r.userId,
@@ -244,37 +191,24 @@ export class ModuleAccessRosterService {
       groups: groupsByMembership.get(r.membershipId) ?? [],
     }));
 
-    const lastMembershipId = memberRows.at(-1)?.membershipId ?? null;
-    const nextCursor = memberRows.length === limit ? lastMembershipId : null;
-
-    return {
-      data,
-      pagination: {
-        page,
-        pageSize: limit,
-        total,
-        totalPages: total > 0 ? Math.ceil(total / limit) : 0,
-      },
-      nextCursor,
-    };
+    return { data, hasMore: page.hasMore, nextCursor: page.nextCursor };
   }
 
   async listMemberCandidates(
     actor: CurrentUserContext,
     moduleKey: string,
     {
-      page,
       pageSize,
       search,
       userId,
       excludeAssigned,
+      cursor,
     }: MemberCandidatesQuery = {
-      page: 1,
       pageSize: 20,
       search: "",
       excludeAssigned: true,
     },
-  ): Promise<{ data: ModuleMemberCandidate[]; pagination: Pagination }> {
+  ): Promise<{ data: ModuleMemberCandidate[]; hasMore: boolean; nextCursor: number | null }> {
     assertManagedModule(moduleKey);
     await assertModuleAccessPolicy(
       moduleAccessPolicyDeps(this.db, this.access),
@@ -283,7 +217,6 @@ export class ModuleAccessRosterService {
       "manage",
     );
     const limit = Math.min(pageSize, 100);
-    const offset = (page - 1) * limit;
     const searchPattern = `${search}%`;
     const assignedToModule = this.db
       .select({ value: sql<number>`1` })
@@ -302,6 +235,16 @@ export class ModuleAccessRosterService {
           eq(roleAssignments.organizationMembershipId, organizationMembers.id),
         ),
       );
+    const baseJoin = and(
+      eq(userModuleAccess.orgId, organizationMembers.orgId),
+      eq(userModuleAccess.organizationMembershipId, organizationMembers.id),
+      eq(userModuleAccess.moduleKey, moduleKey),
+      eq(userModuleAccess.enabled, false),
+    );
+    const cursorFilter =
+      cursor !== undefined
+        ? sql`${organizationMembers.id} > ${cursor}`
+        : undefined;
     const where = and(
       eq(organizationMembers.orgId, actor.orgId),
       eq(organizationMembers.status, "ACTIVE"),
@@ -314,49 +257,33 @@ export class ModuleAccessRosterService {
             ilike(users.email, searchPattern),
           )
         : undefined,
+      cursorFilter,
     );
-    const baseJoin = and(
-      eq(userModuleAccess.orgId, organizationMembers.orgId),
-      eq(userModuleAccess.organizationMembershipId, organizationMembers.id),
-      eq(userModuleAccess.moduleKey, moduleKey),
-      eq(userModuleAccess.enabled, false),
-    );
-    const [totalRows, rows] = await Promise.all([
-      this.db
-        .select({ total: count() })
-        .from(organizationMembers)
-        .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(userModuleAccess, baseJoin)
-        .where(where),
-      this.db
-        .select({
-          userId: organizationMembers.userId,
-          name: users.name,
-          email: users.email,
-          image: users.image,
-        })
-        .from(organizationMembers)
-        .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(userModuleAccess, baseJoin)
-        .where(where)
-        .orderBy(asc(users.name), asc(users.email))
-        .limit(limit)
-        .offset(offset),
-    ]);
-    const total = Number(totalRows[0]?.total ?? 0);
+    const rawRows = await this.db
+      .select({
+        membershipId: organizationMembers.id,
+        userId: organizationMembers.userId,
+        name: users.name,
+        email: users.email,
+        image: users.image,
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .leftJoin(userModuleAccess, baseJoin)
+      .where(where)
+      .orderBy(asc(organizationMembers.id))
+      .limit(limit + 1);
+
+    const page = buildIdCursorPage(rawRows, limit, (r) => r.membershipId);
     return {
-      data: rows.map((row) => ({
-        userId: row.userId,
-        displayName: row.name ?? row.email ?? row.userId,
-        email: row.email ?? "",
-        avatarUrl: row.image,
+      data: page.data.map((r) => ({
+        userId: r.userId,
+        displayName: r.name ?? r.email ?? r.userId,
+        email: r.email ?? "",
+        avatarUrl: r.image,
       })),
-      pagination: {
-        page,
-        pageSize: limit,
-        total,
-        totalPages: total > 0 ? Math.ceil(total / limit) : 0,
-      },
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor,
     };
   }
 }

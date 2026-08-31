@@ -73,23 +73,18 @@ describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
 describe("ProjectsWorkspaceMembersService — cross-tenant isolation", () => {
   it("list scopes WHERE to requesting org and returns empty for attacker (cross-tenant isolation)", async () => {
     const where = jest.fn().mockReturnValue({
-      orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue({ offset: jest.fn().mockResolvedValue([]) }) }),
+      orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
     });
-    let call = 0;
     const db = {
-      select: jest.fn().mockImplementation(() => {
-        call++;
-        if (call === 1) {
-          return { from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where }) }) };
-        }
-        return { from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([{ total: 0 }]) }) }) };
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where }) }),
       }),
     } as unknown as Db;
     const audit = {} as unknown as AuditService;
     const pmWorkspaces = { resolveDefaultWorkspaceId: jest.fn().mockResolvedValue(undefined) } as unknown as PmWorkspacesService;
     const svc = new ProjectsWorkspaceMembersService(db, audit, pmWorkspaces);
 
-    const result = await svc.list(ATTACKER_ORG, { page: 1, limit: 10 });
+    const result = await svc.list(ATTACKER_ORG, { cursor: undefined, limit: 10 });
 
     expect(where).toHaveBeenCalled();
     const predicate = where.mock.calls[0]?.[0];
@@ -105,10 +100,7 @@ describe("ProjectsWorkspaceMembersService — cross-tenant isolation", () => {
       select: jest.fn().mockImplementation(() => {
         call++;
         if (call === 1) {
-          return { from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue({ offset: jest.fn().mockResolvedValue([fakeMember]) }) }) }) }) }) };
-        }
-        if (call === 2) {
-          return { from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([{ total: 1 }]) }) }) };
+          return { from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([fakeMember]) }) }) }) }) };
         }
         return { from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }) };
       }),
@@ -117,7 +109,7 @@ describe("ProjectsWorkspaceMembersService — cross-tenant isolation", () => {
     const pmWorkspaces = { resolveDefaultWorkspaceId: jest.fn().mockResolvedValue(undefined) } as unknown as PmWorkspacesService;
     const svc = new ProjectsWorkspaceMembersService(db, audit, pmWorkspaces);
 
-    const result = await svc.list(OWNER_ORG, { page: 1, limit: 10 });
+    const result = await svc.list(OWNER_ORG, { cursor: undefined, limit: 10 });
     expect(result.data).toHaveLength(1);
   });
 });

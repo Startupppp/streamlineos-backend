@@ -8,7 +8,7 @@ import { InsufficientAiCreditsException } from "../../../common/http/api-excepti
 export interface CreditLedgerOptions {
   reason: string;
   feature?: string;
-  actorId?: string;
+  actorMembershipId?: number;
 }
 
 const DEFAULT_AI_CREDITS = 100_000;
@@ -74,7 +74,7 @@ export class KbCreditsService {
         balanceAfter: row.balance,
         reason: options.reason,
         feature: options.feature ?? null,
-        actorId: options.actorId ?? null,
+        actorMembershipId: options.actorMembershipId ?? null,
       });
       return row.balance;
     });
@@ -103,7 +103,7 @@ export class KbCreditsService {
         balanceAfter: balance,
         reason: options.reason,
         feature: options.feature ?? null,
-        actorId: options.actorId ?? null,
+        actorMembershipId: options.actorMembershipId ?? null,
       });
       return balance;
     });

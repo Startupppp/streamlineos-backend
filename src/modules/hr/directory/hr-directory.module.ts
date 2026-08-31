@@ -6,11 +6,12 @@ import { HrCoreModule } from "../core/hr-core.module";
 import { EmployeesController } from "./employees.controller";
 import { OrgStructureController } from "./org-structure.controller";
 import { TeamEventsController } from "./team-events.controller";
-import { AssetsController } from "./assets.controller";
+import { HrAssetsController } from "./assets.controller";
 import { AssetInventoryController } from "./asset-inventory.controller";
 import { BackgroundVerificationController } from "./background-verification.controller";
 import { AccessRequestsController } from "./access-requests.controller";
 import { EmployeesService } from "./employees.service";
+import { EmployeeAnalyticsService } from "./employee-analytics.service";
 import { EmployeeMutationsService } from "./employee-mutations.service";
 import { EmployeeOnboardingService } from "./employee-onboarding.service";
 import { EmployeeBulkOnboardingService } from "./employee-bulk-onboarding.service";
@@ -42,13 +43,14 @@ import { NotificationsModule } from "../../notifications/notifications.module";
     EmployeesController,
     OrgStructureController,
     TeamEventsController,
-    AssetsController,
+    HrAssetsController,
     AssetInventoryController,
     BackgroundVerificationController,
     AccessRequestsController,
   ],
   providers: [
     EmployeesService,
+    EmployeeAnalyticsService,
     EmployeeMutationsService,
     EmployeeOnboardingService,
     EmployeeBulkOnboardingService,

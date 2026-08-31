@@ -240,12 +240,18 @@ export const hrEmploymentHistory = pgTable("hr_employment_history", {
   reason: text("reason"),
   notes: text("notes"),
   effectiveDate: date("effective_date"),
-  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_hr_employment_history_org_id").on(table.orgId, table.id),
   index("idx_hr_emp_history_org_employment").on(table.orgId, table.employmentId),
   index("idx_hr_emp_history_created_at").on(table.createdAt),
+  index("idx_hr_emp_history_created_actor").on(table.orgId, table.createdByMembershipId),
+  foreignKey({
+    name: "fk_hr_emp_history_created_actor",
+    columns: [table.orgId, table.createdByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("set null"),
 ]);
 
 export const OPEN_ENDED_DATE = "infinity";
@@ -262,11 +268,11 @@ export const hrEffectiveDatedChanges = pgTable("hr_effective_dated_changes", {
     .notNull()
     .default(sql`'infinity'::date`),
   status: hrEffectiveDateChangeStatusEnum("status").default("draft").notNull(),
-  approvedBy: text("approved_by").references(() => users.id, { onDelete: "set null" }),
+  approvedByMembershipId: integer("approved_by_membership_id"),
   approvedAt: timestamp("approved_at"),
   appliedAt: timestamp("applied_at"),
   notes: text("notes"),
-  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -275,6 +281,18 @@ export const hrEffectiveDatedChanges = pgTable("hr_effective_dated_changes", {
   index("idx_hr_eff_changes_org_status").on(table.orgId, table.status),
   index("idx_hr_eff_changes_effective_from").on(table.effectiveFrom),
   index("idx_hr_eff_changes_type").on(table.changeType),
+  index("idx_hr_eff_changes_created_actor").on(table.orgId, table.createdByMembershipId),
+  index("idx_hr_eff_changes_approved_actor").on(table.orgId, table.approvedByMembershipId),
+  foreignKey({
+    name: "fk_hr_eff_changes_created_actor",
+    columns: [table.orgId, table.createdByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("set null"),
+  foreignKey({
+    name: "fk_hr_eff_changes_approved_actor",
+    columns: [table.orgId, table.approvedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("set null"),
 ]);
 
 export const hrReportingLines = pgTable("hr_reporting_lines", {

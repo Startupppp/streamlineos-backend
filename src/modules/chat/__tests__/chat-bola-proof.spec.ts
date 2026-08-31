@@ -4,9 +4,18 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { CacheService } from "../../../common/cache/cache.service";
 import { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 import { ChatChannelMembersService } from "../chat-channel-members.service";
+import { ChatMessageTimelineService } from "../chat-message-timeline.service";
 import { ChatReplyRemindersService } from "../chat-reply-reminders.service";
+import { ChatSavedService } from "../chat-saved.service";
+import { ChatSavedController } from "../chat-saved.controller";
+import { ChatPinsController } from "../chat-pins.controller";
+import { ChatSearchController } from "../chat-search.controller";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { APP_CONFIG } from "../../../config/config.module";
+import { AblyService } from "../../realtime/ably.service";
+import type { EntityActor } from "../../entity-reference/entity-reference.types";
 
 function flatValues(where: unknown, seen = new Set<object>()): unknown[] {
   if (where === null || where === undefined || typeof where !== "object") return [where];
@@ -249,5 +258,325 @@ describe("Chat channel existence oracle prevention", () => {
     const service = makeServiceWithNoChannel();
     const err = await call(service).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(NotFoundException);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Private channel non-member gets 404 not 403 (existence oracle prevention)
+// ---------------------------------------------------------------------------
+
+describe("Private channel non-member BOLA", () => {
+  const MEMBERSHIP_ID = 42;
+
+  function makeDb(isPrivate: boolean, isMember: boolean) {
+    return {
+      query: {
+        chatChannels: {
+          findFirst: jest.fn().mockResolvedValue({ id: CHANNEL_ID, isPrivate }),
+        },
+        chatChannelMembers: {
+          findFirst: jest.fn().mockResolvedValue(isMember ? { role: "MEMBER" } : null),
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ id: MEMBERSHIP_ID }),
+        },
+      },
+      update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }) }),
+      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }) }) }),
+    };
+  }
+
+  const stubAbly = { publishToUser: jest.fn() } as unknown as AblyService;
+
+  it("DENY: private channel non-member → 404 (not 403)", async () => {
+    const db = makeDb(true, false);
+    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
+    const err = await service.getChannel(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(NotFoundException);
+    expect(err).not.toBeInstanceOf(ForbiddenException);
+  });
+
+  it("DENY: public channel non-member → 403 (membership enforced, channel existence ok to reveal)", async () => {
+    const db = makeDb(false, false);
+    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
+    const err = await service.getChannel(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ForbiddenException);
+  });
+
+  it("CONTROL: private channel member → resolves without error", async () => {
+    const db = makeDb(true, true);
+    (db.query.chatChannels.findFirst as jest.Mock)
+      .mockResolvedValueOnce({ id: CHANNEL_ID, isPrivate: true })
+      .mockResolvedValueOnce({ id: CHANNEL_ID, isPrivate: true, name: "secret", type: "GROUP", members: [] });
+    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
+    const result = await service.getChannel(CHANNEL_ID, USER_OWNER, ORG_OWNER);
+    expect(result).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ChatSavedService — legacy fallback path is unreachable
+// ---------------------------------------------------------------------------
+
+describe("ChatSavedService — the saved list is keyed on membership, never on user id", () => {
+  const MEMBERSHIP_ID = 9;
+  const MSG_ID = 200;
+  const ACTOR = { orgId: ORG_OWNER, userId: USER_OWNER, membershipId: MEMBERSHIP_ID, isOrgOwner: false };
+  const ACTOR_NO_MEMBERSHIP = { orgId: ORG_OWNER, userId: USER_OWNER, isOrgOwner: false };
+
+  function makeDb() {
+    const findFirstSaved = jest.fn().mockResolvedValue(null);
+    const findManySaved = jest.fn().mockResolvedValue([]);
+    const findFirstMsg = jest.fn().mockResolvedValue({ id: MSG_ID, channelId: CHANNEL_ID, orgId: ORG_OWNER });
+    const findFirstChanMember = jest.fn().mockResolvedValue({ role: "MEMBER" });
+    const deleteWhere = jest.fn().mockResolvedValue(undefined);
+    const deleteFn = jest.fn().mockReturnValue({ where: deleteWhere });
+    const insertValues = jest.fn().mockReturnValue({ onConflictDoNothing: jest.fn().mockResolvedValue(undefined) });
+    const insertFn = jest.fn().mockReturnValue({ values: insertValues });
+    const db = {
+      query: {
+        chatSavedMessages: { findFirst: findFirstSaved, findMany: findManySaved },
+        chatMessages: { findFirst: findFirstMsg },
+        chatChannelMembers: { findFirst: findFirstChanMember },
+      },
+      delete: deleteFn,
+      insert: insertFn,
+    };
+    return { db, findFirstSaved, findManySaved, deleteWhere, insertValues, insertFn };
+  }
+
+  const stubEntityRef = { withResolvedReferences: jest.fn().mockResolvedValue([]) } as unknown as EntityReferenceService;
+
+  it("list() binds the membership the actor carries and never the user id", async () => {
+    const { db, findManySaved } = makeDb();
+    const service = new ChatSavedService(db as never, stubEntityRef);
+    await service.list(ACTOR);
+    const [opts] = findManySaved.mock.calls[0] ?? [];
+    const values = flatValues(opts?.where);
+    expect(values).toContain(MEMBERSHIP_ID);
+    expect(values).not.toContain(USER_OWNER);
+  });
+
+  it("list() reads nothing at all for an actor with no membership", async () => {
+    const { db, findManySaved } = makeDb();
+    const service = new ChatSavedService(db as never, stubEntityRef);
+    await expect(service.list(ACTOR_NO_MEMBERSHIP)).resolves.toEqual({ items: [], nextCursor: undefined });
+    expect(findManySaved).not.toHaveBeenCalled();
+  });
+
+  it("save() stores the membership id, not only the user id", async () => {
+    const { db, insertValues } = makeDb();
+    const service = new ChatSavedService(db as never, stubEntityRef);
+    await expect(service.save(ACTOR, MSG_ID)).resolves.toEqual({ ok: true });
+    expect(insertValues).toHaveBeenCalledWith(expect.objectContaining({ membershipId: MEMBERSHIP_ID }));
+  });
+
+  it("save() refuses an actor with no membership and writes nothing", async () => {
+    const { db, insertFn } = makeDb();
+    const service = new ChatSavedService(db as never, stubEntityRef);
+    await expect(service.save(ACTOR_NO_MEMBERSHIP, MSG_ID)).rejects.toThrow(ForbiddenException);
+    expect(insertFn).not.toHaveBeenCalled();
+  });
+
+  it("unsave() DELETE WHERE binds membershipId, not userId", async () => {
+    const { db, deleteWhere } = makeDb();
+    const service = new ChatSavedService(db as never, stubEntityRef);
+    await service.unsave(ACTOR, MSG_ID);
+    expect(deleteWhere).toHaveBeenCalledTimes(1);
+    const [whereArg] = deleteWhere.mock.calls[0] ?? [];
+    const values = flatValues(whereArg);
+    expect(values).toContain(MEMBERSHIP_ID);
+    expect(values).not.toContain(USER_OWNER);
+  });
+
+  it("isSaved() query binds membershipId, not userId", async () => {
+    const { db, findFirstSaved } = makeDb();
+    const service = new ChatSavedService(db as never, stubEntityRef);
+    await service.isSaved(ACTOR, MSG_ID);
+    const [opts] = findFirstSaved.mock.calls[0] ?? [];
+    const values = flatValues(opts?.where);
+    expect(values).toContain(MEMBERSHIP_ID);
+    expect(values).not.toContain(USER_OWNER);
+  });
+});
+
+describe("Chat controllers hand the service an actor that carries the membership", () => {
+  const MEMBERSHIP_ID = 9;
+
+  function currentUser(): CurrentUserContext {
+    return {
+      userId: USER_OWNER,
+      orgId: ORG_OWNER,
+      role: "MEMBER",
+      isOrgOwner: false,
+      sessionId: "session-1",
+      tokenScopes: null,
+      principal: humanSessionPrincipal(MEMBERSHIP_ID, false),
+    };
+  }
+
+  it("ChatSavedController.save passes membershipId through — without it every save is a 403", () => {
+    const saved = { save: jest.fn().mockResolvedValue({ ok: true }) };
+    const controller = new ChatSavedController(saved as never);
+    controller.save(200, currentUser());
+    expect(saved.save).toHaveBeenCalledWith(
+      expect.objectContaining({ membershipId: MEMBERSHIP_ID }),
+      200,
+    );
+  });
+
+  it("ChatSavedController.list passes membershipId through — without it the list is always empty", () => {
+    const saved = { list: jest.fn().mockResolvedValue({ items: [], nextCursor: undefined }) };
+    const controller = new ChatSavedController(saved as never);
+    controller.list(undefined, undefined, currentUser());
+    expect(saved.list).toHaveBeenCalledWith(
+      expect.objectContaining({ membershipId: MEMBERSHIP_ID }),
+      undefined,
+      30,
+    );
+  });
+
+  it("ChatPinsController.pin passes membershipId through — without it every pin is a 403", () => {
+    const pins = { pin: jest.fn().mockResolvedValue({ ok: true }) };
+    const controller = new ChatPinsController(pins as never);
+    controller.pin(CHANNEL_ID, { messageId: MESSAGE_ID }, currentUser());
+    expect(pins.pin).toHaveBeenCalledWith(
+      CHANNEL_ID,
+      MESSAGE_ID,
+      expect.objectContaining({ membershipId: MEMBERSHIP_ID }),
+    );
+  });
+
+  it("ChatSearchController.searchMessages passes membershipId through — without it search returns nothing", () => {
+    const search = { searchMessages: jest.fn().mockResolvedValue({ results: [], nextCursor: undefined }) };
+    const controller = new ChatSearchController(search as never);
+    controller.searchMessages({ q: "hello" } as never, currentUser());
+    expect(search.searchMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ membershipId: MEMBERSHIP_ID }),
+      "hello",
+      20,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Departed-member display: null senderMembershipId renders gracefully
+// After the actor cutover, senderId is dropped. Identity resolves only via
+// senderMembership.userId; a null senderMembershipId yields a null sender,
+// never a crash.
+// ---------------------------------------------------------------------------
+
+describe("Departed-member display: null senderMembershipId renders gracefully", () => {
+  it("a null senderMembershipId produces a null sender identity without throwing", () => {
+    const rows: Array<{ senderMembership: { userId: string } | null; content: string }> = [
+      { senderMembership: null, content: "hello from the past" },
+    ];
+    const senderIds = new Set<string>();
+    for (const r of rows)
+      if (r.senderMembership?.userId) senderIds.add(r.senderMembership.userId);
+    expect(senderIds.size).toBe(0);
+  });
+
+  it("a populated senderMembership yields a userId for identity resolution", () => {
+    const rows: Array<{ senderMembership: { userId: string } | null; content: string }> = [
+      { senderMembership: { userId: "user-a" }, content: "hi" },
+    ];
+    const senderIds = new Set<string>();
+    for (const r of rows)
+      if (r.senderMembership?.userId) senderIds.add(r.senderMembership.userId);
+    expect([...senderIds]).toEqual(["user-a"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ChatMessageTimelineService — thread (reply-chain) BOLA
+// A non-member of a channel must not be able to read messages (or reply threads)
+// in that channel, regardless of whether the channel is in the same org.
+// ---------------------------------------------------------------------------
+
+describe("ChatMessageTimelineService — thread BOLA", () => {
+  const MEMBERSHIP_ID = 11;
+
+  function makeActor(orgId: string, membershipId?: number): EntityActor {
+    return { orgId, userId: USER_ATTACKER, membershipId, isOrgOwner: false, permissions: [] } as unknown as EntityActor;
+  }
+
+  function makeTimelineDb(channelFound: boolean, channelType: string, isMember: boolean) {
+    return {
+      query: {
+        chatChannels: {
+          findFirst: jest.fn().mockResolvedValue(channelFound ? { id: CHANNEL_ID, type: channelType } : null),
+        },
+        chatChannelMembers: {
+          findFirst: jest.fn().mockResolvedValue(isMember ? { id: MEMBERSHIP_ID } : undefined),
+        },
+        chatMessages: {
+          findMany: jest.fn().mockResolvedValue([]),
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ id: MEMBERSHIP_ID }),
+        },
+      },
+      select: jest.fn().mockReturnThis(),
+      from: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockResolvedValue([]),
+    };
+  }
+
+  function makeStubEntityRef() {
+    return { withResolvedReferences: jest.fn().mockImplementation((_a: unknown, rows: unknown[]) => Promise.resolve(rows)), resolve: jest.fn() } as unknown as EntityReferenceService;
+  }
+
+  async function buildTimeline(db: ReturnType<typeof makeTimelineDb>, entityRef: EntityReferenceService): Promise<ChatMessageTimelineService> {
+    const mod = await Test.createTestingModule({
+      providers: [
+        ChatMessageTimelineService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: EntityReferenceService, useValue: entityRef },
+      ],
+    }).compile();
+    return mod.get(ChatMessageTimelineService);
+  }
+
+  it("DENY: poll returns 404 for a channel that does not exist in the caller's org (cross-org BOLA)", async () => {
+    const db = makeTimelineDb(false, "GROUP", false);
+    const svc = await buildTimeline(db, makeStubEntityRef());
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_ATTACKER, MEMBERSHIP_ID), new Date())).rejects.toThrow(NotFoundException);
+    expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
+  });
+
+  it("DENY: poll returns 403 for a public-channel non-member (thread BOLA — existence known, access denied)", async () => {
+    const db = makeTimelineDb(true, "PUBLIC", false);
+    const svc = await buildTimeline(db, makeStubEntityRef());
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date())).rejects.toThrow(ForbiddenException);
+    expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
+  });
+
+  it("DENY: poll returns 404 for a private-channel non-member (thread BOLA — existence concealed)", async () => {
+    const db = makeTimelineDb(true, "GROUP", false);
+    const svc = await buildTimeline(db, makeStubEntityRef());
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date())).rejects.toThrow(NotFoundException);
+    expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
+  });
+
+  it("DENY: poll returns 403 when caller has no membershipId (not org member, public channel)", async () => {
+    const db = makeTimelineDb(true, "PUBLIC", false);
+    const svc = await buildTimeline(db, makeStubEntityRef());
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, undefined), new Date())).rejects.toThrow(ForbiddenException);
+    expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
+  });
+
+  it("ALLOW: channel member can poll thread messages and receives an array", async () => {
+    const db = makeTimelineDb(true, "GROUP", true);
+    const svc = await buildTimeline(db, makeStubEntityRef());
+    const result = await svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date("2020-01-01"));
+    expect(Array.isArray(result)).toBe(true);
   });
 });

@@ -149,11 +149,13 @@ export class CalendarController {
   @Delete("events/:eventId")
   @Universal()
   @Validate({ params: eventIdParams })
-  removeEvent(
+  async removeEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.calendar.deleteEvent(u.orgId, u.userId, eventId);
+    const result = await this.calendar.deleteEvent(u.orgId, u.userId, eventId);
+    if (!result) throw new NotFoundException("Event not found or not authorized");
+    return result;
   }
 
   @Post("events/:eventId/rsvp")

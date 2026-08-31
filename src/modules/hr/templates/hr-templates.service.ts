@@ -6,7 +6,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { SQL, and, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { SQL, and, count, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { hrTemplates, hrTemplateRenders } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -23,6 +23,8 @@ import { TEMPLATE_VARIABLES } from "./hr-template-variables";
 
 type TemplateRow = typeof hrTemplates.$inferSelect;
 
+const TEMPLATE_SEARCH_CAP = 500;
+
 @Injectable()
 export class HrTemplatesService {
   constructor(
@@ -34,13 +36,7 @@ export class HrTemplatesService {
     const conditions = [eq(hrTemplates.orgId, orgId), isNull(hrTemplates.deletedAt)];
     if (query.kind) conditions.push(eq(hrTemplates.kind, query.kind));
     if (query.status) conditions.push(eq(hrTemplates.status, query.status));
-    if (query.search) {
-      const searchClause: SQL | undefined = or(
-        ilike(hrTemplates.name, `%${query.search}%`),
-        ilike(hrTemplates.description, `%${query.search}%`),
-      );
-      if (searchClause) conditions.push(searchClause);
-    }
+    if (query.search) conditions.push(await this.templateSearchCondition(query.search));
 
     const offset = (query.page - 1) * query.limit;
 
@@ -75,6 +71,20 @@ export class HrTemplatesService {
     ]);
 
     return { data: rows, total, page: query.page, limit: query.limit };
+  }
+
+  private async templateSearchCondition(search: string): Promise<SQL> {
+    const fallback = or(
+      ilike(hrTemplates.name, `%${search}%`),
+      ilike(hrTemplates.description, `%${search}%`),
+    )!;
+    const rows = await this.db.execute(
+      sql`SELECT app.search_hr_template_ids(${search}, ${TEMPLATE_SEARCH_CAP + 1}) AS id`,
+    );
+    if (rows.length === 0) return sql`false`;
+    if (rows.length > TEMPLATE_SEARCH_CAP) return fallback;
+    const ids = rows.map((r) => Number(r["id"]));
+    return inArray(hrTemplates.id, ids);
   }
 
   async getById(orgId: string, templateId: number): Promise<TemplateRow> {

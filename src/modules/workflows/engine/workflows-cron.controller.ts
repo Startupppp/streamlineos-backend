@@ -1,5 +1,6 @@
 import { Controller, Headers, Post } from "@nestjs/common";
 import { Public } from "../../../common/auth/public.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { assertCronSecret } from "../../cron/cron-secret";
 import { CronLeaseService } from "../../cron/cron-lease.service";
 import {
@@ -23,6 +24,7 @@ export class WorkflowsCronController {
   ) {}
 
   @Post("workflow-executions-sweep")
+  @BodylessAction()
   sweep(
     @Headers("authorization") authorization: string | undefined,
   ): Promise<WorkflowSweepResult> {
@@ -31,6 +33,7 @@ export class WorkflowsCronController {
   }
 
   @Post("workflow-schedules-tick")
+  @BodylessAction()
   async schedulesTick(
     @Headers("authorization") authorization: string | undefined,
   ): Promise<SchedulesTickResult | { skipped: true }> {

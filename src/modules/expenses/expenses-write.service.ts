@@ -6,9 +6,9 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, gte, inArray, like, lte, or, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { expenses, organizationMembers, organizations } from "../../db/schema";
+import { expenses } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -20,9 +20,6 @@ import {
   OrganizationActorError,
   organizationActorHttpError,
 } from "../../common/organization/organization-actor";
-import { EmailService } from "../email/email.service";
-import { AccessService } from "../access/access.service";
-import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
 import { emitExpenseOutboxEvent } from "./expense-outbox-emitter";
 import {
   EXPENSE_DECIDED_EVENT,
@@ -34,32 +31,10 @@ import {
   updateExpenseDetailsSchema,
   updateExpenseStatusSchema,
   type CreateExpenseInput,
-  type EmailReportFilters,
-  type EmailReportInput,
-  type AllExpenseStatus,
   type UpdateExpenseDetailsInput,
 } from "./dto/expense.schemas";
 
 const statusProbeSchema = z.object({ status: z.string().min(1) });
-
-const ALL_EXPENSE_STATUS_SET = new Set<string>([
-  "DRAFT", "SUBMITTED", "PENDING", "APPROVED", "REJECTED", "REIMBURSEMENT_PENDING", "REIMBURSED", "PAID",
-]);
-
-const MAX_EMAIL_REPORT_ROWS = 10_000;
-
-function isExpenseStatus(value: string): value is AllExpenseStatus {
-  return ALL_EXPENSE_STATUS_SET.has(value);
-}
-
-function formatReportAmount(value: number | string): string {
-  const num = Number(value);
-  if (Number.isNaN(num)) return "0.00";
-  return new Intl.NumberFormat("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(num);
-}
 
 function formatDateOnly(value: string): string {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -76,8 +51,6 @@ export class ExpensesWriteService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
-    private readonly email: EmailService,
-    private readonly access: AccessService,
   ) {}
 
   async create(orgId: string, userId: string, body: CreateExpenseInput) {
@@ -314,171 +287,5 @@ export class ExpensesWriteService {
 
     await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
     return { success: true };
-  }
-
-  private buildReportConditions(
-    filters: EmailReportFilters,
-    orgId: string,
-    isAdmin: boolean,
-    userId: string,
-  ) {
-    const conditions = [eq(expenses.orgId, orgId)];
-
-    if (!isAdmin) {
-      conditions.push(eq(expenses.userId, userId));
-    } else if (filters.userId) {
-      conditions.push(eq(expenses.userId, filters.userId));
-    }
-
-    if (filters.startDate) conditions.push(gte(expenses.expenseDate, filters.startDate));
-    if (filters.endDate) conditions.push(lte(expenses.expenseDate, filters.endDate));
-    if (filters.month) {
-      const [year, month] = filters.month.split("-");
-      const lastDay = new Date(parseInt(year), parseInt(month), 0).getDate();
-      conditions.push(gte(expenses.expenseDate, `${year}-${month}-01`));
-      conditions.push(lte(expenses.expenseDate, `${year}-${month}-${lastDay.toString().padStart(2, "0")}`));
-    }
-    if (filters.categoryId) conditions.push(eq(expenses.categoryId, filters.categoryId));
-    if (filters.category) conditions.push(eq(expenses.category, filters.category));
-    if (filters.status) {
-      if (Array.isArray(filters.status)) {
-        const valid = filters.status.filter(isExpenseStatus);
-        if (valid.length > 0 && !filters.status.includes("all")) {
-          conditions.push(inArray(expenses.status, valid));
-        }
-      } else if (filters.status !== "all" && isExpenseStatus(filters.status)) {
-        conditions.push(eq(expenses.status, filters.status));
-      }
-    }
-    if (filters.minAmount !== undefined && filters.minAmount > 0) {
-      conditions.push(gte(sql`CAST(${expenses.amount} AS DECIMAL)`, filters.minAmount));
-    }
-    if (filters.maxAmount !== undefined && filters.maxAmount > 0) {
-      conditions.push(lte(sql`CAST(${expenses.amount} AS DECIMAL)`, filters.maxAmount));
-    }
-    if (filters.paymentMethod && filters.paymentMethod !== "all") {
-      conditions.push(eq(expenses.paymentMethod, filters.paymentMethod));
-    }
-    if (filters.search?.trim()) {
-      const term = `%${filters.search.trim().toLowerCase()}%`;
-      conditions.push(
-        or(
-          like(sql`LOWER(${expenses.description})`, term),
-          like(sql`LOWER(${expenses.category})`, term),
-          like(sql`LOWER(${expenses.merchant})`, term),
-        )!,
-      );
-    }
-
-    return conditions;
-  }
-
-  async emailReport(orgId: string, userId: string, isAdmin: boolean, body: EmailReportInput) {
-    const conditions = this.buildReportConditions(body.filters, orgId, isAdmin, userId);
-
-    const [expenseList, statsRow] = await Promise.all([
-      this.db.query.expenses.findMany({
-        where: and(...conditions),
-        with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } } },
-        orderBy: [desc(expenses.expenseDate), desc(expenses.id)],
-        limit: MAX_EMAIL_REPORT_ROWS + 1,
-      }),
-      this.db
-        .select({
-          totalAmount: sql<number>`COALESCE(SUM(CAST(${expenses.amount} AS DECIMAL)), 0)`,
-          totalCount: sql<number>`COUNT(*)`,
-        })
-        .from(expenses)
-        .where(and(...conditions)),
-    ]);
-
-    if (expenseList.length === 0) {
-      throw new BadRequestException("No expenses found for the selected filters");
-    }
-
-    const totalCount = Number(statsRow[0]?.totalCount ?? 0);
-    if (totalCount > MAX_EMAIL_REPORT_ROWS) {
-      throw new BadRequestException(
-        `The selected report contains ${totalCount} expenses. Narrow the filters to ${MAX_EMAIL_REPORT_ROWS} or fewer rows.`,
-      );
-    }
-
-    const [adminEmails, hrEmails] = await Promise.all([
-      body.sendTo !== "APPROVERS" ? this.fetchAdminEmails(orgId) : Promise.resolve<string[]>([]),
-      body.sendTo !== "ADMINS" ? this.fetchExpenseApproverEmails(orgId) : Promise.resolve<string[]>([]),
-    ]);
-
-    const recipientEmails = [...new Set([...adminEmails, ...hrEmails])];
-
-    if (recipientEmails.length === 0) {
-      throw new BadRequestException("No recipient email addresses found");
-    }
-
-    const org = await this.db.query.organizations.findFirst({
-      where: eq(organizations.id, orgId),
-      columns: { name: true },
-    });
-
-    const { startDate, endDate } = body.filters;
-    const periodLabel =
-      startDate && endDate
-        ? `${startDate} to ${endDate}`
-        : startDate
-          ? `From ${startDate}`
-          : "All Time";
-
-    const rows = expenseList.map((e) => ({
-      date: e.expenseDate,
-      employeeName:
-        `${e.user?.firstName ?? ""} ${e.user?.lastName ?? ""}`.trim() || "Unknown",
-      category: e.category,
-      amount: formatReportAmount(e.amount),
-      currency: "INR",
-      status: e.status ?? "PENDING",
-    }));
-
-    const stats = statsRow[0];
-    const summary = {
-      totalAmount: formatReportAmount(stats?.totalAmount ?? 0),
-      totalCount: Number(stats?.totalCount) || 0,
-      pendingCount: expenseList.filter((e) => e.status === "PENDING").length,
-      approvedCount: expenseList.filter((e) => e.status === "APPROVED").length,
-      paidCount: expenseList.filter((e) => e.status === "PAID").length,
-      rejectedCount: expenseList.filter((e) => e.status === "REJECTED").length,
-    };
-
-    await this.email.sendMonthlyExpenseReportEmail(
-      periodLabel,
-      org?.name ?? "StreamlineOS",
-      rows,
-      summary,
-      recipientEmails,
-    );
-
-    return { success: true };
-  }
-
-  private async fetchAdminEmails(orgId: string): Promise<string[]> {
-    const admins = await this.db.query.organizationMembers.findMany({
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        or(
-          eq(organizationMembers.isOwner, true),
-          eq(organizationMembers.role, ORG_MEMBER_ROLES.ORG_ADMIN),
-        ),
-      ),
-      with: { user: { columns: { email: true } } },
-    });
-    return admins.map((m) => m.user?.email).filter((e): e is string => !!e);
-  }
-
-  private async fetchExpenseApproverEmails(orgId: string): Promise<string[]> {
-    const approvers = await this.access.membersWithPermission(orgId, "hr:expenses:approve");
-    if (approvers.length === 0) return [];
-    const hrUsers = await this.db.query.users.findMany({
-      where: (u, { inArray: inArr }) => inArr(u.id, approvers.map((m) => m.userId)),
-      columns: { email: true },
-    });
-    return hrUsers.map((u) => u.email).filter((e): e is string => !!e);
   }
 }

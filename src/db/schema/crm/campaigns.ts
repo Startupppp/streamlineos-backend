@@ -20,6 +20,7 @@ export const crmCampaigns = pgTable("crm_campaigns", {
   budgetSpent: decimal("budget_spent", { precision: 15, scale: 2 }),
   utmCampaignKey: text("utm_campaign_key"),
   ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
+  ownerMembershipId: integer("owner_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),

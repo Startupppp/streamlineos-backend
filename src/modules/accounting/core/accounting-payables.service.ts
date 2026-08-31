@@ -30,6 +30,7 @@ import type {
   ListPurchaseBillsQuery,
   RecordVendorPaymentInput,
   UpdatePurchaseBillStatusInput,
+  ListVendorsQuery,
 } from "./dto/accounting.schemas";
 
 function round2(n: number): number {
@@ -61,7 +62,7 @@ export class AccountingPayablesService {
     return this.query.listBillPayments(orgId, billId);
   }
 
-  listVendors(orgId: string, q: ListCustomersOutstandingQuery) {
+  listVendors(orgId: string, q: ListVendorsQuery) {
     return this.query.listVendors(orgId, q);
   }
 

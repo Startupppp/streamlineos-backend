@@ -24,6 +24,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AuditService } from "../../common/audit/audit.service";
+import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
@@ -71,6 +72,19 @@ function isSensitiveKey(fileKey: string): boolean {
   return SENSITIVE_KEY_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 }
 
+const ORG_NAMESPACED_KEY_FOLDERS = ["kb-media"];
+
+/**
+ * Some folders carry the owning organisation in the key itself, so ownership is
+ * provable without a table. Without this, `resolveFileOwner` returns null for
+ * them and the cross-org check is skipped entirely.
+ */
+function orgFromNamespacedKey(fileKey: string): string | null {
+  const [folder, orgId] = fileKey.replace(/^\/+/, "").split("/");
+  if (!folder || !orgId) return null;
+  return ORG_NAMESPACED_KEY_FOLDERS.includes(folder) ? orgId : null;
+}
+
 type FileOwner = {
   orgId: string;
   access: "GENERIC" | "HR_DOCUMENT" | "ONBOARDING_DOCUMENT" | "PAYSLIP" | "CANDIDATE_VAULT";
@@ -114,8 +128,9 @@ export class StorageController {
   ) {}
 
   @Post("upload")
+  @MultipartAction({ file: "file", fields: { folder: "string" } })
   @AuthorizedInService("assertUploadAllowed")
-  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 50 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_UPLOAD_SIZE } }))
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body("folder") folderField: string | undefined,
@@ -231,7 +246,7 @@ export class StorageController {
       throw new ServiceUnavailableException("Storage not available");
     }
 
-    if (isSensitiveKey(keyParam)) {
+    if (isSensitiveKey(keyParam) || orgFromNamespacedKey(keyParam)) {
       const fileOwner = await this.resolveFileOwner(keyParam);
       if (fileOwner === null || fileOwner.orgId !== u.orgId) {
         throw new NotFoundException("Not found");
@@ -253,6 +268,9 @@ export class StorageController {
    * own file type out rather than exposing it. Returns the owning orgId, or null if untracked.
    */
   private async resolveFileOwner(fileKey: string): Promise<FileOwner | null> {
+    const namespacedOrgId = orgFromNamespacedKey(fileKey);
+    if (namespacedOrgId) return { orgId: namespacedOrgId, access: "GENERIC" };
+
     const like = `%${fileKey}%`;
     const [doc, onboardingDoc, expense, reimbursement, handbookVersion, payslip, vaultDoc] =
       await Promise.all([

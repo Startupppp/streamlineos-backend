@@ -106,3 +106,40 @@ describe("key selection contract", () => {
     expect(aliceKey).not.toBe(bobKey);
   });
 });
+
+describe("locale dimension (ITEM D)", () => {
+  it("BITE: two callers identical except for locale must not share a cache entry", async () => {
+    const access = makeAccess(1) as AccessService;
+    const u = makeUser();
+    const enKey = await buildScopedDashboardCacheKey(access, u, "upcoming-events", "all", undefined, "en-US");
+    const hiKey = await buildScopedDashboardCacheKey(access, u, "upcoming-events", "all", undefined, "hi-IN");
+    expect(enKey).not.toBe(hiKey);
+  });
+
+  it("locale value appears verbatim in the key", async () => {
+    const access = makeAccess(1) as AccessService;
+    const u = makeUser();
+    const key = await buildScopedDashboardCacheKey(access, u, "upcoming-events", "all", undefined, "en-US");
+    expect(key).toContain("en-US");
+  });
+
+  it("omitting locale produces the same key as before the locale parameter was added", async () => {
+    const access = makeAccess(1) as AccessService;
+    const u = makeUser();
+    const withoutLocale = await buildScopedDashboardCacheKey(access, u, "upcoming-events", "all");
+    const withUndefinedLocale = await buildScopedDashboardCacheKey(access, u, "upcoming-events", "all", undefined, undefined);
+    expect(withoutLocale).toBe(withUndefinedLocale);
+    expect(withoutLocale).not.toContain("en-US");
+  });
+
+  it("locale is appended after dimension when both are provided", async () => {
+    const access = makeAccess(1) as AccessService;
+    const u = makeUser();
+    const key = await buildScopedDashboardCacheKey(access, u, "attendance", "all", "2026-08-31", "en-US");
+    expect(key).toContain("2026-08-31");
+    expect(key).toContain("en-US");
+    const dimIdx = key.indexOf("2026-08-31");
+    const locIdx = key.indexOf("en-US");
+    expect(locIdx).toBeGreaterThan(dimIdx);
+  });
+});

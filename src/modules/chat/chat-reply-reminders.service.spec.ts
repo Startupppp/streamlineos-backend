@@ -31,7 +31,7 @@ describe("ChatReplyRemindersService", () => {
     expect(insertedBatches.map((batch) => batch.length)).toEqual([500, 500, 200]);
     expect(onConflictDoNothing).toHaveBeenCalledTimes(3);
     expect(insertedBatches.flat()).not.toContainEqual(
-      expect.objectContaining({ recipientUserId: "sender" }),
+      expect.objectContaining({ recipientMembershipId: 0 }),
     );
     expect(insertedBatches.flat()).toEqual(
       expect.arrayContaining([
@@ -39,8 +39,8 @@ describe("ChatReplyRemindersService", () => {
           orgId: "org-1",
           channelId: 42,
           messageId: 84,
-          recipientUserId: "member-1",
-          senderUserId: "sender",
+          recipientMembershipId: 1,
+          senderMembershipId: 1,
         }),
       ]),
     );

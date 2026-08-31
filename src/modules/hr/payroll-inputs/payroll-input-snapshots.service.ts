@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { users } from "../../../db/schema/common/auth";
@@ -93,6 +93,7 @@ export class PayrollInputSnapshotsService {
         .from(hrPayrollInputSnapshots)
         .innerJoin(users, eq(users.id, hrPayrollInputSnapshots.userId))
         .where(and(...conditions))
+        .orderBy(desc(hrPayrollInputSnapshots.createdAt), desc(hrPayrollInputSnapshots.id))
         .limit(input.limit)
         .offset(offset),
       this.db.select({ total: count() }).from(hrPayrollInputSnapshots).where(and(...conditions)),

@@ -1,13 +1,13 @@
 import { z } from "zod";
 import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listCreditNotesSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(50, 100),
   status: z.enum(["DRAFT", "POSTED", "APPLIED", "VOID"]).optional(),
   clientId: z.coerce.number().int().positive().optional(),
   invoiceId: z.coerce.number().int().positive().optional(),
-  page: pageNumberField,
-  pageSize: pageSizeField(50, 100),
 });
 
 const cnItemSchema = z.object({
@@ -38,12 +38,12 @@ export const applyCreditNoteSchema = z.object({
 });
 
 export const listRecurringTemplatesSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(50, 100),
   isActive: z
     .string()
     .transform((v) => v === "true")
     .optional(),
-  page: pageNumberField,
-  pageSize: pageSizeField(50, 100),
 });
 
 export const createRecurringTemplateSchema = z.object({
@@ -88,9 +88,9 @@ export const customerStatementSchema = z.object({
 });
 
 export const listCollectionActivitiesSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(50, 100),
   clientId: z.coerce.number().int().positive().optional(),
-  page: pageNumberField,
-  pageSize: pageSizeField(50, 100),
 });
 
 export const createCollectionActivitySchema = z.object({
@@ -132,12 +132,12 @@ export type CreateCollectionActivityInput = z.infer<typeof createCollectionActiv
 export type UpdateInvoiceCollectionInput = z.infer<typeof updateInvoiceCollectionSchema>;
 
 export const listArPaymentsSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(50, 100),
   method: z.enum(["bank_transfer", "upi", "cheque", "cash", "card", "other"]).optional(),
   clientId: z.coerce.number().int().positive().optional(),
   from: z.string().optional(),
   to: z.string().optional(),
-  page: pageNumberField,
-  pageSize: pageSizeField(50, 100),
 });
 
 export type ListArPaymentsInput = z.infer<typeof listArPaymentsSchema>;

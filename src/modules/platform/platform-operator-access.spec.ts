@@ -111,6 +111,85 @@ describe("PlatformOperatorAccessService.approveGrant", () => {
     await expect(svc.approveGrant("grant-1", "op-bob")).rejects.toBeInstanceOf(ConflictException);
   });
 
+  it("(idempotent) returns success without writing when already active for the same approver", async () => {
+    const row = {
+      grantId: "grant-1",
+      grantedBy: "op-alice",
+      approverId: "op-charlie",
+      status: "active",
+      orgId: "org-1",
+      operatorUserId: "op-alice",
+    };
+    const selectChain = makeSelectChain([row]);
+    const db = {
+      select: jest.fn().mockReturnValue(selectChain),
+      update: jest.fn(),
+    };
+    const svc = await buildService(db);
+    const result = await svc.approveGrant("grant-1", "op-charlie");
+    expect(result.orgId).toBe("org-1");
+    expect(result.operatorUserId).toBe("op-alice");
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it("(idempotent-bite) repeat approve by a DIFFERENT approver still conflicts", async () => {
+    const row = {
+      grantId: "grant-1",
+      grantedBy: "op-alice",
+      approverId: "op-charlie",
+      status: "active",
+      orgId: "org-1",
+      operatorUserId: "op-alice",
+    };
+    const selectChain = makeSelectChain([row]);
+    const db = {
+      select: jest.fn().mockReturnValue(selectChain),
+      update: jest.fn(),
+    };
+    const svc = await buildService(db);
+    await expect(svc.approveGrant("grant-1", "op-dave")).rejects.toBeInstanceOf(ConflictException);
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it("(idempotent-bite) approve after reject still conflicts", async () => {
+    const row = {
+      grantId: "grant-1",
+      grantedBy: "op-alice",
+      approverId: null,
+      status: "rejected",
+      orgId: "org-1",
+      operatorUserId: "op-alice",
+    };
+    const selectChain = makeSelectChain([row]);
+    const db = {
+      select: jest.fn().mockReturnValue(selectChain),
+      update: jest.fn(),
+    };
+    const svc = await buildService(db);
+    await expect(svc.approveGrant("grant-1", "op-charlie")).rejects.toBeInstanceOf(ConflictException);
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it("(bite proof) self-approval still forbidden on idempotent path", async () => {
+    const row = {
+      grantId: "grant-1",
+      grantedBy: "op-alice",
+      approverId: "op-alice",
+      status: "active",
+      orgId: "org-1",
+      operatorUserId: "op-bob",
+    };
+    const selectChain = makeSelectChain([row]);
+    const db = {
+      select: jest.fn().mockReturnValue(selectChain),
+      update: jest.fn(),
+    };
+    const svc = await buildService(db);
+    const result = await svc.approveGrant("grant-1", "op-alice");
+    expect(result.orgId).toBe("org-1");
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
   it("throws NotFoundException when grant does not exist", async () => {
     const selectChain = makeSelectChain([]);
     const db = { select: jest.fn().mockReturnValue(selectChain) };
@@ -196,6 +275,18 @@ describe("PlatformOperatorAccessService.rejectGrant", () => {
     const db = { select: jest.fn().mockReturnValue(selectChain) };
     const svc = await buildService(db);
     await expect(svc.rejectGrant("grant-1", "too late")).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("(idempotent) returns without error and skips the update when already rejected", async () => {
+    const selectChain = makeSelectChain([{ grantId: "grant-1", status: "rejected" }]);
+    const updateChain = makeUpdateChain();
+    const db = {
+      select: jest.fn().mockReturnValue(selectChain),
+      update: jest.fn().mockReturnValue(updateChain),
+    };
+    const svc = await buildService(db);
+    await svc.rejectGrant("grant-1", "second rejection attempt");
+    expect(db.update).not.toHaveBeenCalled();
   });
 
   it("sets status=rejected on a pending grant", async () => {

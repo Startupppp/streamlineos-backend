@@ -105,9 +105,11 @@ export const invQualityInspections = pgTable("inv_quality_inspections", {
   sourceId: text("source_id").notNull(),
   status: invQualityInspectionStatusEnum("status").default("PENDING").notNull(),
   inspectorUserId: text("inspector_user_id").references(() => users.id),
+  inspectorMembershipId: integer("inspector_membership_id"),
   notes: text("notes"),
   completedAt: timestamp("completed_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   cancelledAt: timestamp("cancelled_at"),
   /**
    * D3. A completed result is evidence and is never edited. Getting it wrong is
@@ -198,8 +200,10 @@ export const invQualityHolds = pgTable("inv_quality_holds", {
   reason: text("reason").notNull(),
   status: invQualityHoldStatusEnum("status").default("ACTIVE").notNull(),
   releasedBy: text("released_by").references(() => users.id),
+  releasedByMembershipId: integer("released_by_membership_id"),
   releasedAt: timestamp("released_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -227,6 +231,7 @@ export const invRecallEvents = pgTable("inv_recall_events", {
   evidenceVersion: text("evidence_version"),
   evidenceSnapshot: jsonb("evidence_snapshot").$type<Record<string, unknown>>(),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   closedAt: timestamp("closed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

@@ -3,7 +3,6 @@ jest.mock("../../email/app-url", () => ({ appUrl: "https://test.example.com" }))
 import { AccessService } from "../../access/access.service";
 import { ForbiddenException, ConflictException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
-import { InvitationsService } from "./invitations.service";
 import { InvitationCreateService } from "./invitation-create.service";
 import { InvitationLifecycleService } from "./invitation-lifecycle.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
@@ -110,8 +109,8 @@ function buildMockDb() {
   };
 }
 
-describe("InvitationsService.invite — plan limit enforcement", () => {
-  let svc: InvitationsService;
+describe("InvitationCreateService.invite — plan limit enforcement", () => {
+  let svc: InvitationCreateService;
   let mockDb: ReturnType<typeof buildMockDb>;
   let mockPlanLimits: { assertWithinLimit: jest.Mock };
 
@@ -124,7 +123,6 @@ describe("InvitationsService.invite — plan limit enforcement", () => {
       providers: [
         InvitationCreateService,
         InvitationLifecycleService,
-        InvitationsService,
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
         { provide: DRIZZLE, useValue: mockDb },
         { provide: PlanLimitsService, useValue: mockPlanLimits },
@@ -140,7 +138,7 @@ describe("InvitationsService.invite — plan limit enforcement", () => {
       ],
     }).compile();
 
-    svc = module.get(InvitationsService);
+    svc = module.get(InvitationCreateService);
   });
 
   it("checks the member limit inside the serialized tenant transaction", async () => {

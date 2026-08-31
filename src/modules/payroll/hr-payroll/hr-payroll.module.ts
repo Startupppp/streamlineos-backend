@@ -3,8 +3,8 @@ import { AutomationModule } from "../../automation/automation.module";
 import { BonusesController } from "./bonuses.controller";
 import { LoansController } from "./loans.controller";
 import { IncentivesController } from "./incentives.controller";
-import { ReimbursementsController } from "./reimbursements.controller";
-import { FnfController } from "./fnf.controller";
+import { HrPayrollReimbursementsController } from "./reimbursements.controller";
+import { HrPayrollFnfController } from "./fnf.controller";
 import { SalaryStructureTemplatesController } from "./salary-structure-templates.controller";
 import { BonusesService } from "./bonuses.service";
 import { LoansService } from "./loans.service";
@@ -20,8 +20,8 @@ import { TaxService } from "./tax.service";
     BonusesController,
     LoansController,
     IncentivesController,
-    ReimbursementsController,
-    FnfController,
+    HrPayrollReimbursementsController,
+    HrPayrollFnfController,
     SalaryStructureTemplatesController,
   ],
   providers: [

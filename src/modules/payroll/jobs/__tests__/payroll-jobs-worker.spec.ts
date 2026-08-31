@@ -109,7 +109,7 @@ describe("PayrollJobsWorkerService", () => {
     expect(result.claimed).toBe(3);
     expect(result.completed).toBe(3);
     expect(result.failed).toBe(0);
-    expect(generate.generateRun).toHaveBeenCalledWith("org-a", 42, "actor-1", false);
+    expect(generate.generateRun).toHaveBeenCalledWith({ orgId: "org-a", runId: 42, actorId: "actor-1", isRecalc: false });
     expect(publishing.publish).toHaveBeenCalled();
     expect(filings.prepareExport).toHaveBeenCalled();
     expect(jobs.succeed).toHaveBeenCalledTimes(3);

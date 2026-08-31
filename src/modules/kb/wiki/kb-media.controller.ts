@@ -14,6 +14,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbMediaService, type KbMediaUploadResult } from "./kb-media.service";
+import { MultipartAction } from "../../../common/openapi/zod-operation-contracts";
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
@@ -23,6 +24,7 @@ export class KbMediaController {
   constructor(private readonly media: KbMediaService) {}
 
   @Post("media")
+  @MultipartAction({ file: "file", fields: { pageId: "string" } })
   @RequirePermission("kb:pages:update")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: MAX_FILE_SIZE } }))
   async upload(

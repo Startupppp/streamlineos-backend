@@ -178,7 +178,7 @@ describe("ChatMessagesService", () => {
     });
 
     it("throws ForbiddenException if user is not the message owner", async () => {
-      mockDb.query.chatMessages.findFirst.mockResolvedValue({ id: 1, senderId: "user2", isDeleted: false });
+      mockDb.query.chatMessages.findFirst.mockResolvedValue({ id: 1, senderMembershipId: 99, isDeleted: false });
       await expect(service.edit(1, "user1", "org1", "new content")).rejects.toThrow(ForbiddenException);
     });
   });
@@ -190,7 +190,7 @@ describe("ChatMessagesService", () => {
     });
 
     it("throws ForbiddenException if user is not the owner and not admin", async () => {
-      mockDb.query.chatMessages.findFirst.mockResolvedValue({ id: 1, senderId: "user2", isDeleted: false, channelId: 1 });
+      mockDb.query.chatMessages.findFirst.mockResolvedValue({ id: 1, senderMembershipId: 99, isDeleted: false, channelId: 1 });
       await expect(service.remove(1, "user1", false, "org1")).rejects.toThrow(ForbiddenException);
     });
   });

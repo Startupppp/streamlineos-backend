@@ -17,7 +17,8 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ParseResourceIdPipe } from "../../../common/pipes/parse-resource-id.pipe";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { ProjectsService } from "./projects.service";
+import { ProjectsQueryService } from "./projects-query.service";
+import { ProjectsWriteService } from "./projects-write.service";
 import {
   linkManagedProductSchema,
   updateProjectSchema,
@@ -30,7 +31,10 @@ import { projectIdParams } from "./dto/build-params.schemas";
 @Controller("build")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsByIdController {
-  constructor(private readonly projects: ProjectsService) {}
+  constructor(
+    private readonly projectsQuery: ProjectsQueryService,
+    private readonly projectsWrite: ProjectsWriteService,
+  ) {}
 
   @Get(":projectId")
   @RequirePermission("build:view")
@@ -39,7 +43,7 @@ export class ProjectsByIdController {
     @Param("projectId", ParseResourceIdPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.projects.getProject(u, projectId);
+    return this.projectsQuery.getProject(u, projectId);
   }
 
   @Patch(":projectId")
@@ -50,7 +54,7 @@ export class ProjectsByIdController {
     @Body() body: UpdateProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.projects.updateProject(u, projectId, body);
+    return this.projectsWrite.updateProject(u, projectId, body);
   }
 
   @Delete(":projectId")
@@ -61,7 +65,7 @@ export class ProjectsByIdController {
     @Param("projectId", ParseResourceIdPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.projects.deleteProject(u, projectId);
+    return this.projectsWrite.deleteProject(u, projectId);
   }
 
   @Patch(":projectId/managed-product")
@@ -72,6 +76,6 @@ export class ProjectsByIdController {
     @Body() body: LinkManagedProductInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.projects.linkProjectToManagedProduct(u, projectId, body);
+    return this.projectsWrite.linkProjectToManagedProduct(u, projectId, body);
   }
 }

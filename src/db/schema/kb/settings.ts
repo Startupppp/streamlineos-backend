@@ -8,6 +8,7 @@ export const kbSettings = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     trashRetentionDays: integer("trash_retention_days").notNull().default(30),
+    chatHistoryRetentionDays: integer("chat_history_retention_days").default(90),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },

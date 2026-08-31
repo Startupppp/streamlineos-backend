@@ -29,6 +29,7 @@ import {
   type CreateSecretDto,
 } from "./dto/workflow.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { z } from "zod";
 
@@ -197,6 +198,7 @@ export class WorkflowsController {
   }
 
   @Post(":workflowId/duplicate")
+  @BodylessAction()
   @RequirePermission("workflows:workflows:create")
   @Validate({ params: workflowIdParams })
   duplicateWorkflow(@Param("workflowId") workflowId: string, @CurrentUser() u: CurrentUserContext) {
@@ -204,6 +206,7 @@ export class WorkflowsController {
   }
 
   @Post(":workflowId/disable")
+  @BodylessAction()
   @RequirePermission("workflows:workflows:update")
   @HttpCode(200)
   @Validate({ params: workflowIdParams })
@@ -212,6 +215,7 @@ export class WorkflowsController {
   }
 
   @Post(":workflowId/archive")
+  @BodylessAction()
   @RequirePermission("workflows:workflows:update")
   @HttpCode(200)
   @Validate({ params: workflowIdParams })
@@ -253,6 +257,7 @@ export class WorkflowsController {
   }
 
   @Post(":workflowId/executions/:executionId/cancel")
+  @BodylessAction()
   @RequirePermission("workflows:executions:manage")
   @HttpCode(200)
   @Validate({ params: workflowIdexecutionIdParams })

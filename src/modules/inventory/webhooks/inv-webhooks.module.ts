@@ -2,7 +2,7 @@ import { Module } from "@nestjs/common";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { InvStockEngineModule } from "../stock-engine/inv-stock-engine.module";
-import { WebhooksController } from "./webhooks.controller";
+import { InvWebhooksController } from "./webhooks.controller";
 import { WebhooksService } from "./webhooks.service";
 import { InventoryWebhookEmitter } from "./webhook-emitter.service";
 import { InventoryOutboxConsumer } from "./inventory-outbox-consumer";
@@ -18,7 +18,7 @@ import { InventoryWebhookDeliveryController } from "./webhook-delivery.controlle
   // module switches a customer's subscription off. `AccessService` — which
   // resolves who that human is — comes from the global `AccessModule`.
   imports: [InvStockEngineModule, OutboxModule, NotificationsModule],
-  controllers: [WebhooksController, InventoryWebhookDeliveryController],
+  controllers: [InvWebhooksController, InventoryWebhookDeliveryController],
   providers: [
     WebhooksService,
     InventoryWebhookEmitter,

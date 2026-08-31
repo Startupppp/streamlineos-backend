@@ -51,6 +51,7 @@ export class RecruitmentRequisitionsController {
   }
 
   @Patch(":requisitionId/submit")
+  @BodylessAction()
   @Idempotent("hr.requisition.submit")
   @RequirePermission("hr:requisitions:manage")
   @Validate({ params: requisitionIdParams })
@@ -80,6 +81,7 @@ export class RecruitmentRequisitionsController {
   }
 
   @Post(":requisitionId/create-job")
+  @BodylessAction()
   @HttpCode(201)
   @RequirePermission("hr:requisitions:manage")
   @Validate({ params: requisitionIdParams })

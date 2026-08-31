@@ -57,7 +57,7 @@ export class LoanAdjustmentsService {
 
     if (!inserted) return { ok: false, reason: "insert_failed" };
 
-    await this.generateService.generateRun(orgId, runId, actorId, true);
+    await this.generateService.generateRun({ orgId, runId, actorId, isRecalc: true });
 
     return { ok: true, id: inserted.id };
   }

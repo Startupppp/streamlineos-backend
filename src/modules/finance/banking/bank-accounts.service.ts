@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -16,7 +16,8 @@ import {
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
-import { paginateOffset, buildListResponse } from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { keysetAfterValue, keysetBeforeValue } from "../../../common/pagination/keyset";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
@@ -35,9 +36,9 @@ export class BankAccountsService {
     private readonly audit: AuditService,
   ) {}
 
-  async list(u: CurrentUserContext, query: BankAccountsQuery) {
+  async list(u: CurrentUserContext, query: BankAccountsQuery): Promise<CursorPage<typeof finBankAccounts.$inferSelect>> {
     const { orgId } = u;
-    const { limit, offset } = paginateOffset(query);
+    const pos = decodeCursor(query.cursor);
 
     const conditions: SQL[] = [eq(finBankAccounts.orgId, orgId)];
     if (query.isActive !== undefined) {
@@ -51,20 +52,16 @@ export class BankAccountsService {
       );
       if (search) conditions.push(search);
     }
+    if (pos) conditions.push(keysetAfterValue(finBankAccounts.name, finBankAccounts.id, pos));
 
-    const where = and(...conditions);
-    const [rows, [totals]] = await Promise.all([
-      this.db
-        .select()
-        .from(finBankAccounts)
-        .where(where)
-        .orderBy(asc(finBankAccounts.name))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(finBankAccounts).where(where),
-    ]);
+    const rows = await this.db
+      .select()
+      .from(finBankAccounts)
+      .where(and(...conditions))
+      .orderBy(asc(finBankAccounts.name), asc(finBankAccounts.id))
+      .limit(query.limit + 1);
 
-    return buildListResponse(rows, totals?.total ?? 0, query);
+    return buildCursorPage(rows, query.limit, (r) => ({ sortValue: r.name, id: String(r.id) }));
   }
 
   async findOne(orgId: string, bankAccountId: number) {
@@ -206,7 +203,7 @@ export class BankAccountsService {
     return updated;
   }
 
-  async listTransactions(u: CurrentUserContext, bankAccountId: number, query: BankTransactionsQuery) {
+  async listTransactions(u: CurrentUserContext, bankAccountId: number, query: BankTransactionsQuery): Promise<CursorPage<typeof finBankTransactions.$inferSelect>> {
     const { orgId } = u;
 
     const account = await this.db.query.finBankAccounts.findFirst({
@@ -215,7 +212,7 @@ export class BankAccountsService {
     });
     if (!account) throw new NotFoundException("Bank account not found");
 
-    const { limit, offset } = paginateOffset(query);
+    const pos = decodeCursor(query.cursor);
     const conditions: SQL[] = [
       eq(finBankTransactions.orgId, orgId),
       eq(finBankTransactions.bankAccountId, bankAccountId),
@@ -236,20 +233,19 @@ export class BankAccountsService {
       );
       if (search) conditions.push(search);
     }
+    if (pos) conditions.push(keysetBeforeValue(finBankTransactions.txnDate, finBankTransactions.id, pos));
 
-    const where = and(...conditions);
-    const [rows, [totals]] = await Promise.all([
-      this.db
-        .select()
-        .from(finBankTransactions)
-        .where(where)
-        .orderBy(desc(finBankTransactions.txnDate), desc(finBankTransactions.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(finBankTransactions).where(where),
-    ]);
+    const rows = await this.db
+      .select()
+      .from(finBankTransactions)
+      .where(and(...conditions))
+      .orderBy(desc(finBankTransactions.txnDate), desc(finBankTransactions.id))
+      .limit(query.limit + 1);
 
-    return buildListResponse(rows, totals?.total ?? 0, query);
+    return buildCursorPage(rows, query.limit, (r) => ({
+      sortValue: String(r.txnDate),
+      id: String(r.id),
+    }));
   }
 
   async recomputeBalance(bankAccountId: number, orgId: string): Promise<string> {

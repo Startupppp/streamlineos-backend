@@ -1,10 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, lte, or } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { auditLogs } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type { ListAuditQuery } from "./dto/finance-controls.schemas";
 
 const FINANCE_RESOURCE_TYPES = [
@@ -29,25 +30,22 @@ export class AuditSurfaceService {
     private readonly audit: AuditService,
   ) {}
 
-  async list(orgId: string, query: ListAuditQuery) {
-    const { limit, offset } = paginateOffset(query);
+  async list(orgId: string, query: ListAuditQuery): Promise<CursorPage<AuditRow>> {
+    const pos = decodeCursor(query.cursor);
     const conditions = this.buildConditions(orgId, query);
+    if (pos) conditions.push(keysetBeforeId(auditLogs.createdAt, auditLogs.id, pos));
 
-    const [rows, [{ count }]] = await Promise.all([
-      this.db
-        .select()
-        .from(auditLogs)
-        .where(and(...conditions))
-        .orderBy(desc(auditLogs.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(auditLogs)
-        .where(and(...conditions)),
-    ]);
+    const rows = await this.db
+      .select()
+      .from(auditLogs)
+      .where(and(...conditions))
+      .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
+      .limit(query.limit + 1);
 
-    return buildListResponse(rows, count, query);
+    return buildCursorPage(rows as AuditRow[], query.limit, (r) => ({
+      sortValue: r.createdAt.toISOString(),
+      id: String(r.id),
+    }));
   }
 
   async timeline(orgId: string, resourceType: string, resourceId: string) {

@@ -16,6 +16,7 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { KbArticleAiService } from "./kb-article-ai.service";
 import { kbAiAskBodySchema } from "../retrieval/dto/kb-ai.schemas";
 
@@ -28,6 +29,7 @@ export class KbArticleAiController {
   constructor(private readonly svc: KbArticleAiService) {}
 
   @Post("summarize")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("kb:articles:view")
   @Validate({ params: articleIdParams })
@@ -51,6 +53,7 @@ export class KbArticleAiController {
   }
 
   @Post("improve")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("kb:articles:view")
   @Validate({ params: articleIdParams })
@@ -62,6 +65,7 @@ export class KbArticleAiController {
   }
 
   @Post("suggest-related")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("kb:articles:view")
   @Validate({ params: articleIdParams })

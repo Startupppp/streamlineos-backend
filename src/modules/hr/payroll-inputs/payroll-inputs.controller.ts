@@ -162,6 +162,7 @@ export class PayrollInputsController {
   }
 
   @Patch("adjustments/:adjustmentId/approve")
+  @BodylessAction()
   @Idempotent("payroll.adjustment.approve")
   @RequirePermission("hr:payroll:approve")
   @Validate({ params: adjustmentIdParams })

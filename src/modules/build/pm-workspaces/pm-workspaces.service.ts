@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import {
   pmWorkspaces,
   pmWorkspaceMemberships,
@@ -14,6 +14,8 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetAfter } from "../../../common/pagination/keyset";
 import type {
   CreateWorkspaceInput,
   ListWorkspacesQuery,
@@ -63,27 +65,26 @@ export class PmWorkspacesService {
   }
 
   async listWorkspaces(orgId: string, query: ListWorkspacesQuery) {
-    const { page, limit, status } = query;
-    const offset = (page - 1) * limit;
-    const conditions = and(
+    const { cursor, limit, status } = query;
+    const pos = decodeCursor(cursor);
+    const conds = [
       eq(pmWorkspaces.orgId, orgId),
       isNull(pmWorkspaces.deletedAt),
       status ? eq(pmWorkspaces.status, status) : undefined,
-    );
-    const [rows, [totalRow]] = await Promise.all([
-      this.db
-        .select()
-        .from(pmWorkspaces)
-        .where(conditions)
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(pmWorkspaces).where(conditions),
-    ]);
-    const total = Number(totalRow?.total ?? 0);
-    return {
-      data: rows,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+    ];
+    if (pos) conds.push(keysetAfter(pmWorkspaces.createdAt, pmWorkspaces.slug, pos));
+
+    const rows = await this.db
+      .select()
+      .from(pmWorkspaces)
+      .where(and(...conds))
+      .orderBy(asc(pmWorkspaces.createdAt), asc(pmWorkspaces.slug))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (r) => ({
+      sortValue: (r.createdAt ?? new Date(0)).toISOString(),
+      id: r.slug,
+    }));
   }
 
   async getWorkspace(orgId: string, pmWorkspaceId: string) {

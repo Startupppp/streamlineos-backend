@@ -51,7 +51,7 @@ export class ApprovalsInboxController {
 @RequireModule("build")
 @Controller("build/:projectId/approvals")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-export class ApprovalsController {
+export class BuildApprovalsController {
   constructor(private readonly svc: ApprovalsService) {}
 
   @Get()

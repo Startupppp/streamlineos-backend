@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { users, organizationMembers } from "../common/auth";
+import { organizationMembers } from "../common/auth";
 import {
   chatChannels,
   chatChannelMembers,
@@ -43,9 +43,9 @@ export const chatChannelsRelations = relations(
     messages: many(chatMessages),
     pins: many(chatPinnedMessages),
     huddles: many(chatHuddles),
-    creator: one(users, {
-      fields: [chatChannels.createdBy],
-      references: [users.id],
+    createdByMembership: one(organizationMembers, {
+      fields: [chatChannels.createdByMembershipId],
+      references: [organizationMembers.id],
     }),
   }),
 );
@@ -71,9 +71,9 @@ export const chatMessagesRelations = relations(
       fields: [chatMessages.channelId],
       references: [chatChannels.id],
     }),
-    sender: one(users, {
-      fields: [chatMessages.senderId],
-      references: [users.id],
+    senderMembership: one(organizationMembers, {
+      fields: [chatMessages.senderMembershipId],
+      references: [organizationMembers.id],
     }),
     attachments: many(chatAttachments),
     pins: many(chatPinnedMessages),
@@ -112,9 +112,9 @@ export const chatPinnedMessagesRelations = relations(
       fields: [chatPinnedMessages.messageId],
       references: [chatMessages.id],
     }),
-    pinnedByUser: one(users, {
-      fields: [chatPinnedMessages.pinnedBy],
-      references: [users.id],
+    pinnedByMembership: one(organizationMembers, {
+      fields: [chatPinnedMessages.pinnedByMembershipId],
+      references: [organizationMembers.id],
     }),
   }),
 );
@@ -122,10 +122,6 @@ export const chatPinnedMessagesRelations = relations(
 export const chatSavedMessagesRelations = relations(
   chatSavedMessages,
   ({ one }) => ({
-    user: one(users, {
-      fields: [chatSavedMessages.userId],
-      references: [users.id],
-    }),
     message: one(chatMessages, {
       fields: [chatSavedMessages.messageId],
       references: [chatMessages.id],
@@ -152,9 +148,9 @@ export const chatHuddlesRelations = relations(chatHuddles, ({ one, many }) => ({
     fields: [chatHuddles.channelId],
     references: [chatChannels.id],
   }),
-  startedByUser: one(users, {
-    fields: [chatHuddles.startedBy],
-    references: [users.id],
+  startedByMembership: one(organizationMembers, {
+    fields: [chatHuddles.startedByMembershipId],
+    references: [organizationMembers.id],
   }),
   participants: many(chatHuddleParticipants),
 }));
@@ -166,9 +162,9 @@ export const chatHuddleParticipantsRelations = relations(
       fields: [chatHuddleParticipants.huddleId],
       references: [chatHuddles.id],
     }),
-    user: one(users, {
-      fields: [chatHuddleParticipants.userId],
-      references: [users.id],
+    membership: one(organizationMembers, {
+      fields: [chatHuddleParticipants.membershipId],
+      references: [organizationMembers.id],
     }),
   }),
 );

@@ -1,9 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { payments, invoices, clients, finPaymentAllocations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeValue } from "../../../common/pagination/keyset";
 import type { ListArPaymentsQuery } from "./dto/finance-ar.schemas";
 
 @Injectable()
@@ -11,48 +12,48 @@ export class ArPaymentsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(orgId: string, query: ListArPaymentsQuery) {
-    const { limit, offset } = paginateOffset(query);
-    const conditions = [eq(payments.orgId, orgId)];
+    const { cursor, limit } = query;
+    const pos = decodeCursor(cursor);
+    const pageLimit = Math.min(limit, 100);
 
+    const conditions = [eq(payments.orgId, orgId)];
     if (query.method) conditions.push(eq(payments.paymentMethod, query.method));
     if (query.from) conditions.push(gte(payments.paymentDate, query.from));
     if (query.to) conditions.push(lte(payments.paymentDate, query.to));
+    if (pos) conditions.push(keysetBeforeValue(payments.paymentDate, payments.id, pos));
 
     const joinedConditions = query.clientId
       ? [...conditions, eq(invoices.clientId, query.clientId)]
       : conditions;
 
-    const [rows, [{ count }]] = await Promise.all([
-      this.db
-        .select({
-          id: payments.id,
-          orgId: payments.orgId,
-          invoiceId: payments.invoiceId,
-          amount: payments.amount,
-          paymentDate: payments.paymentDate,
-          paymentMethod: payments.paymentMethod,
-          referenceNumber: payments.referenceNumber,
-          notes: payments.notes,
-          createdAt: payments.createdAt,
-          invoiceNumber: invoices.invoiceNumber,
-          clientId: invoices.clientId,
-          clientName: clients.name,
-        })
-        .from(payments)
-        .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
-        .leftJoin(clients, eq(invoices.clientId, clients.id))
-        .where(and(...joinedConditions))
-        .orderBy(desc(payments.paymentDate), desc(payments.id))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(payments)
-        .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
-        .where(and(...joinedConditions)),
-    ]);
+    const rawRows = await this.db
+      .select({
+        id: payments.id,
+        orgId: payments.orgId,
+        invoiceId: payments.invoiceId,
+        amount: payments.amount,
+        paymentDate: payments.paymentDate,
+        paymentMethod: payments.paymentMethod,
+        referenceNumber: payments.referenceNumber,
+        notes: payments.notes,
+        createdAt: payments.createdAt,
+        invoiceNumber: invoices.invoiceNumber,
+        clientId: invoices.clientId,
+        clientName: clients.name,
+      })
+      .from(payments)
+      .innerJoin(invoices, eq(payments.invoiceId, invoices.id))
+      .leftJoin(clients, eq(invoices.clientId, clients.id))
+      .where(and(...joinedConditions))
+      .orderBy(desc(payments.paymentDate), desc(payments.id))
+      .limit(pageLimit + 1);
 
-    const paymentIds = rows.map((r) => r.id);
+    const page = buildCursorPage(rawRows, pageLimit, (row) => ({
+      sortValue: row.paymentDate ?? "",
+      id: String(row.id),
+    }));
+
+    const paymentIds = page.data.map((r) => r.id);
     const allocations =
       paymentIds.length > 0
         ? await this.db
@@ -72,7 +73,7 @@ export class ArPaymentsService {
       allocationsByPayment.set(alloc.paymentId, existing);
     }
 
-    const items = rows.map((r) => ({
+    const data = page.data.map((r) => ({
       id: r.id,
       orgId: r.orgId,
       invoiceId: r.invoiceId,
@@ -88,6 +89,6 @@ export class ArPaymentsService {
       allocations: allocationsByPayment.get(r.id) ?? [],
     }));
 
-    return buildListResponse(items, count, query);
+    return { ...page, data };
   }
 }

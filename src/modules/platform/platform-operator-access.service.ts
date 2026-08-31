@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -17,6 +18,8 @@ export type OperatorScope =
   | "read_leads"
   | "manage_subscription";
 
+const MAX_GRANT_DURATION_MS = 24 * 60 * 60 * 1000;
+
 export interface GrantParams {
   operatorUserId: string;
   orgId: string;
@@ -31,6 +34,11 @@ export class PlatformOperatorAccessService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async createGrant(params: GrantParams): Promise<string> {
+    const maxExpiry = new Date(Date.now() + MAX_GRANT_DURATION_MS);
+    if (params.expiresAt > maxExpiry)
+      throw new BadRequestException(
+        "Grant duration cannot exceed 24 hours from now",
+      );
     const [row] = await this.db
       .insert(operatorAccessGrants)
       .values({
@@ -54,6 +62,7 @@ export class PlatformOperatorAccessService {
       .select({
         grantId: operatorAccessGrants.grantId,
         grantedBy: operatorAccessGrants.grantedBy,
+        approverId: operatorAccessGrants.approverId,
         status: operatorAccessGrants.status,
         orgId: operatorAccessGrants.orgId,
         operatorUserId: operatorAccessGrants.operatorUserId,
@@ -62,6 +71,8 @@ export class PlatformOperatorAccessService {
       .where(eq(operatorAccessGrants.grantId, grantId))
       .limit(1);
     if (!grant) throw new NotFoundException("Grant not found");
+    if (grant.status === "active" && grant.approverId === approverId)
+      return { orgId: grant.orgId, operatorUserId: grant.operatorUserId };
     if (grant.status !== "pending") throw new ConflictException("Grant is not in pending status");
     if (grant.grantedBy === approverId)
       throw new ForbiddenException("Self-approval not permitted: approverId must differ from the requester");
@@ -79,6 +90,7 @@ export class PlatformOperatorAccessService {
       .where(eq(operatorAccessGrants.grantId, grantId))
       .limit(1);
     if (!grant) throw new NotFoundException("Grant not found");
+    if (grant.status === "rejected") return;
     if (grant.status !== "pending") throw new ConflictException("Grant is not in pending status");
     await this.db
       .update(operatorAccessGrants)
@@ -152,7 +164,7 @@ export class PlatformOperatorAccessService {
     if (!existing) throw new NotFoundException("Grant not found");
     await this.db
       .update(operatorAccessGrants)
-      .set({ revokedAt: new Date(), revocationReason: reason })
+      .set({ status: "revoked", revokedAt: new Date(), revocationReason: reason })
       .where(eq(operatorAccessGrants.grantId, grantId));
   }
 

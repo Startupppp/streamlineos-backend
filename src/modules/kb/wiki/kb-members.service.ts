@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq, sql, isNull } from "drizzle-orm";
-import { kbSpaces, kbSpaceMembers, kbPages, kbArticles, users } from "../../../db/schema";
+import { kbSpaces, kbSpaceMembers, kbPages, kbArticles, users, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
@@ -50,6 +50,7 @@ export class KbMembersService {
         orgId: kbSpaceMembers.orgId,
         spaceId: kbSpaceMembers.spaceId,
         userId: kbSpaceMembers.userId,
+        membershipId: kbSpaceMembers.membershipId,
         role: kbSpaceMembers.role,
         team: kbSpaceMembers.team,
         spaceRole: kbSpaceMembers.spaceRole,
@@ -80,12 +81,25 @@ export class KbMembersService {
       });
       if (existing) throw new ConflictException("Role already granted");
     }
+    let membershipId: number | null = null;
+    if (input.userId) {
+      const membership = await this.db.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, input.userId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+        columns: { id: true },
+      });
+      membershipId = membership?.id ?? null;
+    }
     const [member] = await this.db
       .insert(kbSpaceMembers)
       .values({
         orgId,
         spaceId,
         userId: input.userId ?? null,
+        membershipId,
         role: input.role ?? null,
         spaceRole: input.spaceRole,
       })

@@ -13,6 +13,7 @@ import {
 } from "../../../db/schema/hr/engagement-extras";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 import type {
   AwardBadgeInput,
   CreateBadgeInput,
@@ -93,9 +94,14 @@ export class EngagementBadgesService {
         note: `Badge: ${badge.name}`,
       });
 
+      const auditActor = await assertOrganizationActor(tx, orgId, {
+        kind: "user",
+        userId: awardedBy,
+      });
+
       await tx.insert(hrAuditLogs).values({
         orgId,
-        actorId: awardedBy,
+        actorMembershipId: auditActor.membershipId,
         entityType: "hr_recognition",
         entityId: String(award.id),
         action: "badge_awarded",

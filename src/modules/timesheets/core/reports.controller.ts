@@ -19,7 +19,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 @RequireModule("build")
 @Controller("timesheets/reports")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
-export class ReportsController {
+export class TimesheetReportsController {
   constructor(
     private readonly reports: ReportsService,
     private readonly analytics: TimesheetAnalyticsService,

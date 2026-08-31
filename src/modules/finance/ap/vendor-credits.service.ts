@@ -6,6 +6,8 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBefore } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -20,7 +22,6 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
 import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import type {
   CreateVendorCreditInput,
   ApplyVendorCreditInput,
@@ -44,13 +45,14 @@ export class VendorCreditsService {
   ) {}
 
   async listVendorCredits(orgId: string, query: ListVendorCreditsQuery) {
-    const { page, pageSize, vendorId, status } = query;
+    const { cursor, limit, vendorId, status } = query;
+    const pos = decodeCursor(cursor);
+    const pageLimit = Math.min(limit, 100);
+
     const conds = [eq(vendorCredits.orgId, orgId)];
     if (vendorId) conds.push(eq(vendorCredits.vendorId, vendorId));
     if (status) conds.push(eq(vendorCredits.status, status));
-
-    const where = and(...conds);
-    const { offset, limit } = paginateOffset({ page, pageSize });
+    if (pos) conds.push(keysetBefore(vendorCredits.createdAt, vendorCredits.id, pos));
 
     const rows = await this.db
       .select({
@@ -67,18 +69,17 @@ export class VendorCreditsService {
         appliedAmount: vendorCredits.appliedAmount,
         currency: vendorCredits.currency,
         createdAt: vendorCredits.createdAt,
-        _rowCount: sql<number>`count(*) OVER ()`,
       })
       .from(vendorCredits)
       .leftJoin(clients, eq(clients.id, vendorCredits.vendorId))
-      .where(where)
-      .orderBy(desc(vendorCredits.createdAt))
-      .offset(offset)
-      .limit(limit);
+      .where(and(...conds))
+      .orderBy(desc(vendorCredits.createdAt), desc(vendorCredits.id))
+      .limit(pageLimit + 1);
 
-    const pageTotal = Number(rows[0]?._rowCount ?? 0);
-    const items = rows.map(({ _rowCount: _rc, ...item }) => item);
-    return buildListResponse(items, pageTotal, { page, pageSize });
+    return buildCursorPage(rows, pageLimit, (row) => ({
+      sortValue: (row.createdAt ?? new Date(0)).toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async getVendorCredit(orgId: string, vendorCreditId: number) {

@@ -1,5 +1,4 @@
 import { Module } from "@nestjs/common";
-import { OnboardingService } from "./onboarding.service";
 import { OnboardingController } from "./onboarding.controller";
 import { AutomationModule } from "../../../automation/automation.module";
 import { NotificationsModule } from "../../../notifications/notifications.module";
@@ -29,7 +28,6 @@ import { OnboardingSubmissionService } from "./onboarding-submission.service";
     NotificationsModule,
   ],
   providers: [
-    OnboardingService,
     OnboardingProbationService,
     OnboardingRequirementsService,
     OnboardingTemplateService,

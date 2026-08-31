@@ -34,14 +34,44 @@ describe("finance and expense versioned cache contracts", () => {
       {} as never,
       cache as never,
     );
-    await service.list("org-1", { page: 1, pageSize: 25 });
+    await service.list("org-1", { limit: 25 });
 
     expect(cachedVersioned).toHaveBeenCalledWith(
       CACHE_KEYS.finAssetsListNamespace("org-1"),
-      "1:25::",
+      ":25::",
       expect.any(Function),
       60,
     );
+  });
+
+  it("keys the asset list on the clamped page size, so an over-cap request shares the capped entry", async () => {
+    const service = new AssetsService(
+      {} as never,
+      {} as never,
+      {} as never,
+      cache as never,
+    );
+    await service.list("org-1", { limit: 5000 });
+
+    expect(cachedVersioned).toHaveBeenCalledWith(
+      CACHE_KEYS.finAssetsListNamespace("org-1"),
+      ":100::",
+      expect.any(Function),
+      60,
+    );
+  });
+
+  it("never writes the string undefined into an asset list cache key", async () => {
+    const service = new AssetsService(
+      {} as never,
+      {} as never,
+      {} as never,
+      cache as never,
+    );
+    await service.list("org-1", {});
+
+    const [, key] = cachedVersioned.mock.calls[0] ?? [];
+    expect(String(key)).not.toContain("undefined");
   });
 
   it("tenant-namespaces tax dashboard reads", async () => {

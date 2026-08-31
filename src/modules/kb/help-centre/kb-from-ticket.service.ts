@@ -8,6 +8,7 @@ import { throwOnAiFailure } from "../../ai/core/services/gateway-result.util";
 import { KbEventsService } from "../core/kb-events.service";
 import { KbArticlesService } from "./kb-articles.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { kbFromTicketDraftSchema } from "./dto/kb-from-ticket.schemas";
 import type { FromTicketInput } from "./dto/kb-from-ticket.schemas";
 
@@ -76,7 +77,7 @@ export class KbFromTicketService {
     });
 
     await this.events.record(orgId, "ticket_deflected", {
-      actorId: user.userId,
+      actorMembershipId: actingMembershipId(user.principal) ?? null,
       articleId: article.id,
       metadata: { feature: "article_from_ticket", ticketId },
     });

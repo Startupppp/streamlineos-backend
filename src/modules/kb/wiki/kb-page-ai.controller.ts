@@ -16,6 +16,7 @@ import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { KbPageAiService } from "./kb-page-ai.service";
 import { kbAiAskBodySchema } from "../retrieval/dto/kb-ai.schemas";
 
@@ -28,6 +29,7 @@ export class KbPageAiController {
   constructor(private readonly svc: KbPageAiService) {}
 
   @Post("summarize")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
@@ -51,6 +53,7 @@ export class KbPageAiController {
   }
 
   @Post("improve")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
@@ -62,6 +65,7 @@ export class KbPageAiController {
   }
 
   @Post("suggest-related")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })

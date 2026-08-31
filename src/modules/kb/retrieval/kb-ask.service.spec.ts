@@ -173,7 +173,7 @@ describe("KbAskService", () => {
     expect(mockEvents.record).toHaveBeenCalledWith(
       "org1",
       "ai_answer",
-      expect.objectContaining({ actorId: "user1" }),
+      expect.objectContaining({ actorMembershipId: 1 }),
     );
   });
 
@@ -190,7 +190,7 @@ describe("KbAskService", () => {
     expect(mockEvents.record).toHaveBeenCalledWith(
       "org1",
       "ai_answer_no_context",
-      expect.objectContaining({ actorId: "user1" }),
+      expect.objectContaining({ actorMembershipId: 1 }),
     );
   });
 
@@ -208,7 +208,7 @@ describe("KbAskService", () => {
     expect(mockEvents.record).toHaveBeenCalledWith(
       "org1",
       "ai_answer_no_context",
-      expect.objectContaining({ actorId: "user1" }),
+      expect.objectContaining({ actorMembershipId: 1 }),
     );
   });
 });

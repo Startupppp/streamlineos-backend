@@ -1,6 +1,6 @@
-import { pgTable, pgEnum, text, serial, integer, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, text, serial, integer, jsonb, timestamp, index, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { contacts, clientAccounts } from "../crm/contacts";
 import { leads } from "../crm/leads";
 import { surveyForms, surveyVersions } from "./forms";
@@ -63,6 +63,7 @@ export const surveyParticipants = pgTable("survey_participants", {
   surveyId: integer("survey_id").references(() => surveyForms.id, { onDelete: "cascade" }).notNull(),
   collectorId: integer("collector_id").references(() => surveyCollectors.id, { onDelete: "set null" }),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  userMembershipId: integer("user_membership_id"),
   contactId: integer("contact_id").references(() => contacts.id, { onDelete: "set null" }),
   leadId: integer("lead_id").references(() => leads.id, { onDelete: "set null" }),
   clientId: integer("client_id").references(() => clientAccounts.id, { onDelete: "set null" }),
@@ -81,6 +82,11 @@ export const surveyParticipants = pgTable("survey_participants", {
   index("idx_survey_participants_org_survey_status").on(table.orgId, table.surveyId, table.status),
   unique("uq_survey_participants_access_token_hash").on(table.accessTokenHash),
   unique("uniq_survey_participants_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_survey_part_org_user_mbr",
+  }).onDelete("set null"),
 ]);
 
 export const surveyCollectorsRelations = relations(surveyCollectors, ({ one, many }) => ({

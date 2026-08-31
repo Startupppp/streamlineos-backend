@@ -15,6 +15,7 @@ import type {
   PostWorkLogInput,
 } from "./dto/work-logs.schemas";
 import { resolveWorkLogsScope, WORKLOGS_PERMISSION } from "./worklogs-scope";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 
 @Injectable()
 export class WorkLogsService {
@@ -166,11 +167,17 @@ export class WorkLogsService {
 
     if (!existing) throw new NotFoundException("Work log not found.");
 
+    // `approved_by` was contracted onto the membership actor.
+    const approver = await assertOrganizationActor(this.db, u.orgId, {
+      kind: "user",
+      userId: u.userId,
+    });
+
     const [updated] = await this.db
       .update(timesheets)
       .set({
         status: body.status,
-        approvedBy: u.userId,
+        approvedByMembershipId: approver.membershipId,
         approvedAt: new Date(),
         rejectionReason: body.status === "REJECTED" ? (body.rejectionReason ?? null) : null,
       })

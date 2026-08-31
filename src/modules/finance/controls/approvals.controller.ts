@@ -30,7 +30,7 @@ const requestIdParams = z.object({ requestId: z.coerce.number().int().positive()
 @RequireModule("accounting")
 @Controller("accounting/approvals")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-export class ApprovalsController {
+export class FinanceApprovalsController {
   constructor(private readonly svc: ApprovalsService) {}
 
   @Get()

@@ -52,6 +52,7 @@ const HTTP_VERB_RE = /^@(Get|Post|Put|Patch|Delete)\b/;
 const BODYLESS_RE = /^@BodylessAction\s*\(\s*\)/;
 const VALIDATE_BODY_RE = /^@Validate\s*\(\s*\{[^}]*\bbody\s*:/;
 const BODY_PARAM_RE = /@Body\s*\(/;
+const REQ_BODY_RE = /\breq\.body\b/;
 
 function* walk(dir) {
   for (const entry of readdirSync(dir)) {
@@ -173,6 +174,17 @@ export function findBodylessConflicts(rawContent, filePath) {
             lineNum: handlerLineNum,
             reason: "@BodylessAction() but method has a @Body( parameter",
           });
+        } else {
+          const bodyLines = collectMethodBodyLines(lines, i);
+          const bodyText = bodyLines.join(" ");
+          if (REQ_BODY_RE.test(bodyText)) {
+            conflicts.push({
+              handler: handlerName,
+              file: filePath,
+              lineNum: handlerLineNum,
+              reason: "@BodylessAction() but method reads req.body directly",
+            });
+          }
         }
       }
     }
@@ -206,6 +218,22 @@ function collectSignatureLines(lines, startIdx) {
       else if (ch === ")") depth--;
     }
     if (depth <= 0) break;
+  }
+  return collected;
+}
+
+function collectMethodBodyLines(lines, startIdx) {
+  const collected = [];
+  let braceDepth = 0;
+  let foundOpen = false;
+  for (let j = startIdx; j < lines.length && j < startIdx + 150; j++) {
+    const l = lines[j];
+    collected.push(l);
+    for (const ch of l) {
+      if (ch === "{") { braceDepth++; foundOpen = true; }
+      else if (ch === "}" && foundOpen) braceDepth--;
+    }
+    if (foundOpen && braceDepth <= 0) break;
   }
   return collected;
 }
@@ -317,6 +345,35 @@ class Ctrl {
   if (r7.length !== 0)
     fail("get-bodyless-no-conflict", `GET with @BodylessAction and no body should be clean, got ${JSON.stringify(r7)}`);
   else pass("no-conflict: @BodylessAction on GET with no body key is clean");
+
+  const reqBodyDirect = `
+class Ctrl {
+  @Post("webhook")
+  @BodylessAction()
+  async webhook(@Req() req: Request) {
+    const data = req.body;
+    return { ok: true };
+  }
+}
+`;
+  const r8 = run(reqBodyDirect);
+  if (r8.length !== 1 || !r8[0].reason.includes("req.body"))
+    fail("req-body-direct", `expected 1 req.body conflict, got ${JSON.stringify(r8)}`);
+  else pass("conflict: @BodylessAction + direct req.body read is flagged");
+
+  const reqBodyNonBodyless = `
+class Ctrl {
+  @Post("track")
+  async track(@Req() req: Request) {
+    const data = req.body;
+    return data;
+  }
+}
+`;
+  const r9 = run(reqBodyNonBodyless);
+  if (r9.length !== 0)
+    fail("req-body-no-bodyless", `no @BodylessAction mark, should not flag, got ${JSON.stringify(r9)}`);
+  else pass("no-conflict: req.body without @BodylessAction() is not flagged");
 
   if (failed) {
     process.stderr.write("\nSELF-TEST FAILED\n");

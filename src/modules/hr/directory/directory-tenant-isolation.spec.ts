@@ -13,6 +13,7 @@ import { CelebrationsService } from "./celebrations.service";
 import { EmployeeMutationsService } from "./employee-mutations.service";
 import { EmployeeSkillsService } from "./employee-skills.service";
 import { EmployeesService } from "./employees.service";
+import { EmployeeAnalyticsService } from "./employee-analytics.service";
 import { OrgStructureService } from "./org-structure.service";
 import { TeamEventsService } from "./team-events.service";
 
@@ -324,7 +325,7 @@ describe("EmployeesService — cross-tenant isolation", () => {
     const { db, where } = makeDb([{ total: "0", approved: "0", pending: "0", rejected: "0" }]);
     const cache = makeCacheMock();
     const employment = makeEmploymentFactsMock();
-    const svc = new EmployeesService(db as never, cache as never, employment as never);
+    const svc = new EmployeeAnalyticsService(db as never, employment as never);
     await svc.getStats(ATTACKER, "user-1");
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -334,7 +335,7 @@ describe("EmployeesService — cross-tenant isolation", () => {
     const { db, where } = makeDb([{ total: "5", approved: "3", pending: "1", rejected: "1", daysPresent: "20", totalHours: "160" }]);
     const cache = makeCacheMock();
     const employment = makeEmploymentFactsMock();
-    const svc = new EmployeesService(db as never, cache as never, employment as never);
+    const svc = new EmployeeAnalyticsService(db as never, employment as never);
     const result = await svc.getStats(OWNER, "user-1");
     expect(result).toBeDefined();
     expect(where).toHaveBeenCalled();

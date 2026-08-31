@@ -38,6 +38,12 @@ export class InboxController {
     return this.notifications.unreadCount(u.orgId, u.userId);
   }
 
+  @Get("unified/count")
+  @Universal()
+  unifiedCount(@CurrentUser() u: CurrentUserContext) {
+    return this.unifiedInbox.unifiedUnreadCount(u.orgId, u.userId, u);
+  }
+
   @Get("unified")
   @Universal()
   @Validate({ query: unifiedInboxQuerySchema })

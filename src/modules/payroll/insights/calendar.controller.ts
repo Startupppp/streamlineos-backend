@@ -26,6 +26,7 @@ import {
 } from "./dto/insights.schemas";
 import { CalendarService } from "./calendar.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
@@ -33,7 +34,7 @@ const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).
 @RequireModule("payroll")
 @Controller("payroll/calendar")
 @UseGuards(JwtAuthGuard, ModuleGuard)
-export class CalendarController {
+export class PayrollInsightsCalendarController {
   constructor(private readonly calendarService: CalendarService) {}
 
   @Get()
@@ -48,6 +49,7 @@ export class CalendarController {
   }
 
   @Post("generate")
+  @BodylessAction()
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("payroll:settings:manage")

@@ -19,17 +19,14 @@ describe("TaxCodesService — cross-tenant isolation", () => {
 
   function makeDb(items: unknown[]): { db: Db; allWhereArgs: unknown[] } {
     const allWhereArgs: unknown[] = [];
-    let selectCall = 0;
     const db = {
       select: jest.fn().mockImplementation(() => {
-        selectCall++;
-        const rows = selectCall === 1 ? items : [{ c: items.length }];
         const where = jest.fn().mockImplementation((arg: unknown) => {
           allWhereArgs.push(arg);
           return {
-            limit: jest.fn().mockReturnValue({ offset: jest.fn().mockResolvedValue(rows) }),
-            offset: jest.fn().mockResolvedValue(rows),
-            then: (resolve: (v: unknown) => void) => Promise.resolve(rows).then(resolve),
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue(items),
+            }),
           };
         });
         return { from: jest.fn().mockReturnValue({ where }) };
@@ -57,6 +54,6 @@ describe("TaxCodesService — cross-tenant isolation", () => {
 
     const result = await svc.list(OWNER_ORG, { page: 1, pageSize: 10 });
 
-    expect(result.items).toHaveLength(1);
+    expect(result.data).toHaveLength(1);
   });
 });

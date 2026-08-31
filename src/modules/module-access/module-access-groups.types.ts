@@ -34,6 +34,6 @@ export interface Pagination {
 
 export interface MembersPage {
   data: FlatModuleMember[];
-  pagination: Pagination;
+  hasMore: boolean;
   nextCursor: number | null;
 }

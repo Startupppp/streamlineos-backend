@@ -12,8 +12,8 @@ import {
   chatChannels,
   chatChannelMembers,
   chatMessages,
-  users,
   organizationMembers,
+  users,
 } from "../../db/schema";
 import type { ChatAttachmentPayload, PersistedMessage } from "./chat-message.types";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -154,7 +154,6 @@ export class ChatMessagesService {
           .values({
             orgId,
             channelId,
-            senderId: userId,
             senderMembershipId,
             content: sanitizedContent?.trim() || null,
             replyToId: body.replyToId,
@@ -205,6 +204,7 @@ export class ChatMessagesService {
             strippedMetadata: strippedReferenceMetadata(created.metadata),
             senderName: senderRow?.name ?? null,
             senderImage: senderRow?.image ?? null,
+            senderUserId: userId,
           },
         });
 
@@ -244,6 +244,7 @@ export class ChatMessagesService {
             strippedMetadata: strippedReferenceMetadata(message.metadata),
             senderName,
             senderImage,
+            senderUserId: userId,
           },
           {
             producerEventId: fanoutEventId,
@@ -278,11 +279,7 @@ export class ChatMessagesService {
     )
       throw new ForbiddenException("You are not a member of this channel");
 
-    if (
-      message.senderMembershipId !== null && message.senderMembershipId !== undefined
-        ? message.senderMembershipId !== membershipId
-        : message.senderId !== userId
-    )
+    if (message.senderMembershipId !== membershipId)
       throw new ForbiddenException("You can only edit your own messages");
 
     const updatedAt = new Date();
@@ -292,9 +289,7 @@ export class ChatMessagesService {
       .where(
         and(
           eq(chatMessages.id, messageId),
-          membershipId !== null && membershipId !== undefined
-            ? eq(chatMessages.senderMembershipId, membershipId)
-            : eq(chatMessages.senderId, userId),
+          eq(chatMessages.senderMembershipId, membershipId),
         ),
       );
 
@@ -322,12 +317,7 @@ export class ChatMessagesService {
     )
       throw new ForbiddenException("You are not a member of this channel");
 
-    if (
-      !isOrgAdmin &&
-      (message.senderMembershipId !== null && message.senderMembershipId !== undefined
-        ? message.senderMembershipId !== membershipId
-        : message.senderId !== userId)
-    )
+    if (!isOrgAdmin && message.senderMembershipId !== membershipId)
       throw new ForbiddenException("You can only delete your own messages");
 
     await this.db
@@ -433,7 +423,6 @@ export class ChatMessagesService {
         .values({
           orgId,
           channelId,
-          senderId,
           senderMembershipId,
           content,
           messageType: "system",
@@ -449,7 +438,7 @@ export class ChatMessagesService {
       .publishChatMessage(orgId, channelId, {
         id: message.id,
         channelId: message.channelId,
-        senderId: message.senderId,
+        senderId,
         senderName,
         senderImage: null,
         content: message.content,

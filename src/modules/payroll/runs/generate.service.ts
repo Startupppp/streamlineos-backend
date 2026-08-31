@@ -18,7 +18,7 @@ import { PayrollRunCalculationGuardsService } from "./payroll-run-calculation-gu
 import { RunDataLoaderService } from "./run-data-loader.service";
 import { RunResultPersisterService } from "./run-result-persister.service";
 import { LoanRecoveryService } from "./loan-recovery.service";
-import type { EmployeeCalcResult } from "./run-types";
+import type { EmployeeCalcResult, GenerateRunCommand } from "./run-types";
 
 @Injectable()
 export class GenerateService {
@@ -38,11 +38,9 @@ export class GenerateService {
   ) {}
 
   async generateRun(
-    orgId: string,
-    runId: number,
-    actorId: string,
-    isRecalc = false,
+    command: GenerateRunCommand,
   ): Promise<{ ok: true } | { ok: false; reason: string }> {
+    const { orgId, runId, actorId, isRecalc } = command;
     const runRows = await this.db
       .select()
       .from(payrollRuns)

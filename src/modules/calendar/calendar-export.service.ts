@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { aliasedTable, and, asc, eq, gte, isNotNull, lte, or, sql } from "drizzle-orm";
 import { calendarEvents, eventAttendees, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -6,6 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import type { DataScope } from "../access/access.types";
 
 const EXPORT_ROW_CAP = 500;
+const EXPORT_RANGE_CAP_MS = 366 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class CalendarExportService {
@@ -13,6 +14,8 @@ export class CalendarExportService {
 
   async exportEvents(orgId: string, userId: string, from: Date, to: Date, scope: DataScope = "all") {
     if (scope === "none") return [];
+    if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from > to) throw new BadRequestException("Invalid calendar export range");
+    if (to.getTime() - from.getTime() > EXPORT_RANGE_CAP_MS) throw new BadRequestException("Calendar export range cannot exceed 366 days");
 
     const membership = await this.db.query.organizationMembers.findFirst({
       columns: { id: true },

@@ -93,6 +93,13 @@ export const listCustomersOutstandingQuerySchema = z.object({
   onlyOutstanding: queryBoolean.optional(),
 });
 
+export const listVendorsQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
+  q: z.string().trim().max(200).optional(),
+  onlyOutstanding: queryBoolean.optional(),
+});
+
 export const gstr1QuerySchema = z.object({ from: isoDate, to: isoDate });
 
 export const gstr3BQuerySchema = z.object({ from: isoDate, to: isoDate });
@@ -173,6 +180,7 @@ export type ProfitLossQuery = z.infer<typeof profitLossQuerySchema>;
 export type AgedReceivablesQuery = z.infer<typeof agedReceivablesQuerySchema>;
 export type ListCustomerLedgerQuery = z.infer<typeof listCustomerLedgerQuerySchema>;
 export type ListCustomersOutstandingQuery = z.infer<typeof listCustomersOutstandingQuerySchema>;
+export type ListVendorsQuery = z.infer<typeof listVendorsQuerySchema>;
 export type Gstr1Query = z.infer<typeof gstr1QuerySchema>;
 export type Gstr3BQuery = z.infer<typeof gstr3BQuerySchema>;
 export type ListPurchaseBillsQuery = z.infer<typeof listPurchaseBillsQuerySchema>;

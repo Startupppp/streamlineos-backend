@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, gte, lt, lte, or } from "drizzle-orm";
 import { hrAuditLogs } from "../../../db/schema/hr/core-audit";
+import { organizationMembers } from "../../../db/schema/common/auth";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { ListAuditLogsInput } from "./dto/hr-core.schemas";
@@ -24,6 +25,24 @@ type AuditLogPage = {
 export class HrAuditService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  private async resolveMembershipId(
+    db: Db,
+    orgId: string,
+    userId: string,
+  ): Promise<number | null> {
+    const [row] = await db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+        ),
+      )
+      .limit(1);
+    return row?.id ?? null;
+  }
+
   async log(params: {
     orgId: string;
     actorId: string | null;
@@ -37,10 +56,13 @@ export class HrAuditService {
     userAgent?: string;
   }, tx?: Db): Promise<void> {
     const db = tx ?? this.db;
+    let membershipId = params.actorMembershipId ?? null;
+    if (membershipId === null && params.actorId !== null) {
+      membershipId = await this.resolveMembershipId(db, params.orgId, params.actorId);
+    }
     await db.insert(hrAuditLogs).values({
       orgId: params.orgId,
-      actorId: params.actorId ?? null,
-      actorMembershipId: params.actorMembershipId ?? null,
+      actorMembershipId: membershipId,
       entityType: params.entityType,
       entityId: params.entityId,
       action: params.action,
@@ -67,13 +89,18 @@ export class HrAuditService {
       : null;
     const asOf = cursor ? new Date(cursor.asOf) : new Date();
 
+    let actorMembershipId: number | null = null;
+    if (actorId) {
+      actorMembershipId = await this.resolveMembershipId(this.db, orgId, actorId);
+    }
+
     const conditions = [
       eq(hrAuditLogs.orgId, orgId),
       lte(hrAuditLogs.createdAt, asOf),
     ];
     if (entityType) conditions.push(eq(hrAuditLogs.entityType, entityType));
     if (entityId) conditions.push(eq(hrAuditLogs.entityId, entityId));
-    if (actorId) conditions.push(eq(hrAuditLogs.actorId, actorId));
+    if (actorMembershipId !== null) conditions.push(eq(hrAuditLogs.actorMembershipId, actorMembershipId));
     if (action) conditions.push(eq(hrAuditLogs.action, action));
     if (fromDate) conditions.push(gte(hrAuditLogs.createdAt, new Date(fromDate)));
     if (toDate) conditions.push(lte(hrAuditLogs.createdAt, new Date(toDate)));

@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Quer
 import { z } from "zod";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -68,6 +69,7 @@ export class SurveysController {
   }
 
   @Post(":surveyId/publish")
+  @BodylessAction()
   @Idempotent("surveys.survey.publish")
   @RequirePermission("surveys:publish")
   @Validate({ params: surveyIdParams })
@@ -76,6 +78,7 @@ export class SurveysController {
   }
 
   @Post(":surveyId/pause")
+  @BodylessAction()
   @RequirePermission("surveys:publish")
   @Validate({ params: surveyIdParams })
   pause(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
@@ -83,6 +86,7 @@ export class SurveysController {
   }
 
   @Post(":surveyId/close")
+  @BodylessAction()
   @RequirePermission("surveys:publish")
   @Validate({ params: surveyIdParams })
   close(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
@@ -90,6 +94,7 @@ export class SurveysController {
   }
 
   @Post(":surveyId/archive")
+  @BodylessAction()
   @RequirePermission("surveys:delete")
   @Validate({ params: surveyIdParams })
   archive(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
@@ -97,6 +102,7 @@ export class SurveysController {
   }
 
   @Post(":surveyId/duplicate")
+  @BodylessAction()
   @RequirePermission("surveys:create")
   @Validate({ params: surveyIdParams })
   duplicate(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {

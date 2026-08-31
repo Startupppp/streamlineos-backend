@@ -11,6 +11,7 @@ import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
 import { ChatHuddlesService } from "./chat-huddles.service";
+import { ChatHuddleSignalsService } from "./chat-huddle-signals.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -233,6 +234,9 @@ describe("ChatHuddlesService — cross-tenant isolation on huddle operations", (
 
   it("DENY: heartbeat binds update to actor orgId — cross-org participant cannot be kept alive", async () => {
     const db = {
+      query: {
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 7 }) },
+      },
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
       }),
@@ -240,16 +244,12 @@ describe("ChatHuddlesService — cross-tenant isolation on huddle operations", (
 
     const module = await Test.createTestingModule({
       providers: [
-        ChatHuddlesService,
+        ChatHuddleSignalsService,
         { provide: DRIZZLE, useValue: db },
         { provide: AblyService, useValue: {} },
-        { provide: WebPushService, useValue: {} },
-        { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: ChatOrgSettingsService, useValue: {} },
-        { provide: PlanLimitsService, useValue: {} },
       ],
     }).compile();
-    const service = module.get(ChatHuddlesService);
+    const service = module.get(ChatHuddleSignalsService);
 
     await service.heartbeat(42, "user-x", ATTACKER_ORG);
 
@@ -262,6 +262,9 @@ describe("ChatHuddlesService — cross-tenant isolation on huddle operations", (
   it("CONTROL: heartbeat with matching orgId updates the participant row", async () => {
     const whereMock = jest.fn().mockResolvedValue(undefined);
     const db = {
+      query: {
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 5 }) },
+      },
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({ where: whereMock }),
       }),
@@ -269,16 +272,12 @@ describe("ChatHuddlesService — cross-tenant isolation on huddle operations", (
 
     const module = await Test.createTestingModule({
       providers: [
-        ChatHuddlesService,
+        ChatHuddleSignalsService,
         { provide: DRIZZLE, useValue: db },
         { provide: AblyService, useValue: {} },
-        { provide: WebPushService, useValue: {} },
-        { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: ChatOrgSettingsService, useValue: {} },
-        { provide: PlanLimitsService, useValue: {} },
       ],
     }).compile();
-    const service = module.get(ChatHuddlesService);
+    const service = module.get(ChatHuddleSignalsService);
 
     const result = await service.heartbeat(42, "user-owner", OWNER_ORG);
 

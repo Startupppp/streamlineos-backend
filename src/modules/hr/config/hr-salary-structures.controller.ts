@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Get,
   HttpCode,
   Post,
@@ -41,11 +40,10 @@ export class HrSalaryStructuresController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const isAdmin = u.isOrgOwner || perms.has("hr:salary:manage");
-    if (query.userId && query.userId !== u.userId && !isAdmin) {
-      throw new ForbiddenException("Not authorized.");
-    }
-    return this.salaryStructures.list(u.orgId, query.userId, u.userId, isAdmin);
+    const scope = u.isOrgOwner ? "all" : (perms.get("hr:salary:view") ?? "none");
+    const isAdmin = scope === "all";
+    const effectiveUserId = isAdmin ? query.userId : u.userId;
+    return this.salaryStructures.list(u.orgId, effectiveUserId, u.userId, isAdmin);
   }
 
   @Post()

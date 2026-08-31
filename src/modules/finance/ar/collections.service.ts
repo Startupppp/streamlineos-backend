@@ -1,10 +1,11 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { invoices, finCollectionActivities, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBefore } from "../../../common/pagination/keyset";
 import type { ListCollectionActivitiesQuery, CreateCollectionActivityInput, UpdateInvoiceCollectionInput } from "./dto/finance-ar.schemas";
 import { computeRiskScore } from "./collections-risk.util";
 
@@ -96,24 +97,34 @@ export class CollectionsService {
   }
 
   async listActivities(orgId: string, query: ListCollectionActivitiesQuery) {
-    const { limit, offset } = paginateOffset(query);
+    const { cursor, limit } = query;
+    const pos = decodeCursor(cursor);
+    const pageLimit = Math.min(limit, 100);
+
     const conditions = [eq(finCollectionActivities.orgId, orgId)];
     if (query.clientId) conditions.push(eq(finCollectionActivities.clientId, query.clientId));
-    const projection = {
-      id: finCollectionActivities.id,
-      clientId: finCollectionActivities.clientId,
-      invoiceId: finCollectionActivities.invoiceId,
-      type: finCollectionActivities.type,
-      note: finCollectionActivities.note,
-      promisedDate: finCollectionActivities.promisedDate,
-      createdBy: finCollectionActivities.createdBy,
-      createdAt: finCollectionActivities.createdAt,
-    };
-    const [rows, [{ count }]] = await Promise.all([
-      this.db.select(projection).from(finCollectionActivities).where(and(...conditions)).orderBy(desc(finCollectionActivities.createdAt)).limit(limit).offset(offset),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(finCollectionActivities).where(and(...conditions)),
-    ]);
-    return buildListResponse(rows, count, query);
+    if (pos) conditions.push(keysetBefore(finCollectionActivities.createdAt, finCollectionActivities.id, pos));
+
+    const rows = await this.db
+      .select({
+        id: finCollectionActivities.id,
+        clientId: finCollectionActivities.clientId,
+        invoiceId: finCollectionActivities.invoiceId,
+        type: finCollectionActivities.type,
+        note: finCollectionActivities.note,
+        promisedDate: finCollectionActivities.promisedDate,
+        createdBy: finCollectionActivities.createdBy,
+        createdAt: finCollectionActivities.createdAt,
+      })
+      .from(finCollectionActivities)
+      .where(and(...conditions))
+      .orderBy(desc(finCollectionActivities.createdAt), desc(finCollectionActivities.id))
+      .limit(pageLimit + 1);
+
+    return buildCursorPage(rows, pageLimit, (row) => ({
+      sortValue: (row.createdAt ?? new Date(0)).toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async createActivity(orgId: string, userId: string, input: CreateCollectionActivityInput) {

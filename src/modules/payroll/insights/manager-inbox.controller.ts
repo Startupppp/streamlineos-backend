@@ -20,6 +20,7 @@ import { ManagerInboxService } from "./manager-inbox.service";
 import { TeamRewardsService } from "./team-rewards.service";
 import { managerRejectSchema, type ManagerReject } from "./dto/insights.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const userIdParams = z.object({ userId: z.string().min(1) }).strict();
@@ -63,6 +64,7 @@ export class ManagerInboxController {
   }
 
   @Post("reimbursements/:reimbursementId/approve")
+  @BodylessAction()
   @Idempotent("payroll.reimbursement.approve")
   @HttpCode(200)
   @RequirePermission("self:payroll")
@@ -93,6 +95,7 @@ export class ManagerInboxController {
   }
 
   @Post("loans/:loanId/approve")
+  @BodylessAction()
   @Idempotent("payroll.loan.approve")
   @HttpCode(200)
   @RequirePermission("self:payroll")
@@ -105,6 +108,7 @@ export class ManagerInboxController {
   }
 
   @Post("loans/:loanId/reject")
+  @BodylessAction()
   @Idempotent("payroll.loan.reject")
   @HttpCode(200)
   @RequirePermission("self:payroll")

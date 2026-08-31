@@ -29,6 +29,7 @@ import { SupportKnowledgeGapStatus } from "../../../db/schema/support/support-kb
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ACCOUNT_ONLY_PRINCIPAL } from "../../../common/auth/principal";
 import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 
 type GapRow = typeof supportKnowledgeGaps.$inferSelect;
 
@@ -153,8 +154,13 @@ export class SupportKbGapService {
       visibility: "internal" as const,
     });
 
+    const eventActor = await assertOrganizationActor(this.db, orgId, {
+      kind: "user",
+      userId: actorUserId,
+    }).catch(() => null);
+
     await this.kbEvents.record(orgId, "ticket_deflected", {
-      actorId: actorUserId,
+      actorMembershipId: eventActor?.membershipId ?? null,
       articleId: article.id,
       metadata: { feature: "kb_gap_draft", gapId },
     });

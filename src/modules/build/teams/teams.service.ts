@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, eq, ilike, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, sql } from "drizzle-orm";
 import {
   projectTeamMembers,
   projectTeams,
@@ -14,6 +14,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type {
   CreateTeamInput,
   ListTeamsQuery,
@@ -50,43 +52,40 @@ export class TeamsService {
   }
 
   async listTeams(orgId: string, query: ListTeamsQuery) {
-    const offset = (query.page - 1) * query.pageSize;
-    const baseWhere = and(
+    const { cursor, pageSize } = query;
+    const pos = decodeCursor(cursor);
+    const conds = [
       eq(projectTeams.orgId, orgId),
       isNull(projectTeams.deletedAt),
       query.search ? ilike(projectTeams.name, `%${query.search}%`) : undefined,
-    );
+    ];
+    if (pos) conds.push(keysetBeforeId(projectTeams.createdAt, projectTeams.id, pos));
 
-    const [rows, [countRow]] = await Promise.all([
-      this.db
-        .select({
-          id: projectTeams.id,
-          orgId: projectTeams.orgId,
-          name: projectTeams.name,
-          key: projectTeams.key,
-          icon: projectTeams.icon,
-          color: projectTeams.color,
-          isPrivate: projectTeams.isPrivate,
-          createdAt: projectTeams.createdAt,
-          updatedAt: projectTeams.updatedAt,
-          memberCount: sql<number>`(
-            SELECT CAST(COUNT(*) AS INT) FROM ${projectTeamMembers}
-            WHERE ${projectTeamMembers.teamId} = ${projectTeams.id}
-          )`,
-        })
-        .from(projectTeams)
-        .where(baseWhere)
-        .limit(query.pageSize)
-        .offset(offset),
-      this.db.select({ total: count() }).from(projectTeams).where(baseWhere),
-    ]);
+    const rows = await this.db
+      .select({
+        id: projectTeams.id,
+        orgId: projectTeams.orgId,
+        name: projectTeams.name,
+        key: projectTeams.key,
+        icon: projectTeams.icon,
+        color: projectTeams.color,
+        isPrivate: projectTeams.isPrivate,
+        createdAt: projectTeams.createdAt,
+        updatedAt: projectTeams.updatedAt,
+        memberCount: sql<number>`(
+          SELECT CAST(COUNT(*) AS INT) FROM ${projectTeamMembers}
+          WHERE ${projectTeamMembers.teamId} = ${projectTeams.id}
+        )`,
+      })
+      .from(projectTeams)
+      .where(and(...conds))
+      .orderBy(desc(projectTeams.createdAt), desc(projectTeams.id))
+      .limit(pageSize + 1);
 
-    return {
-      data: rows,
-      total: Number(countRow?.total ?? 0),
-      page: query.page,
-      pageSize: query.pageSize,
-    };
+    return buildCursorPage(rows, pageSize, (r) => ({
+      sortValue: (r.createdAt ?? new Date(0)).toISOString(),
+      id: String(r.id),
+    }));
   }
 
   async getTeam(orgId: string, teamId: number) {

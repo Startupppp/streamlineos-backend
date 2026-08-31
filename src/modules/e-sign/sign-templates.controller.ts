@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
@@ -13,10 +13,12 @@ import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import {
   createTemplateSchema,
   updateTemplateSchema,
+  saveAsTemplateSchema,
   createEnvelopeFromTemplateSchema,
   publishPublicFormSchema,
   type CreateTemplateInput,
   type UpdateTemplateInput,
+  type SaveAsTemplateInput,
   type CreateEnvelopeFromTemplateInput,
   type PublishPublicFormInput,
 } from "./dto/e-sign.schemas";
@@ -41,15 +43,13 @@ export class SignTemplatesController {
   @Post("envelopes/:envelopeId/save-as-template")
   @HttpCode(201)
   @RequirePermission("sign:template:manage")
-  @Validate({ params: envelopeIdParams })
+  @Validate({ params: envelopeIdParams, body: saveAsTemplateSchema })
   createFromEnvelope(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
-    @Body() body: unknown,
+    @Body() body: SaveAsTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const parsed = z.object({ name: z.string().min(1).max(200) }).safeParse(body);
-    if (!parsed.success) throw new BadRequestException("Invalid request: name is required");
-    return this.templates.createFromEnvelope(u.orgId, u.userId, envelopeId, parsed.data.name);
+    return this.templates.createFromEnvelope(u.orgId, u.userId, envelopeId, body.name);
   }
 
   @Get("templates")

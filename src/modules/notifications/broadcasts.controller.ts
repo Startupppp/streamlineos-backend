@@ -30,6 +30,7 @@ import {
   type ListBroadcastInboxInput,
 } from "./dto/broadcast.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const broadcastIdParams = z.object({ broadcastId: z.coerce.number().int().positive() }).strict();
@@ -96,6 +97,7 @@ export class BroadcastsController {
   }
 
   @Post(":broadcastId/publish")
+  @BodylessAction()
   @Idempotent("notifications.broadcast.publish")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
@@ -114,6 +116,7 @@ export class BroadcastsController {
    * No permission gate — every authenticated member dismisses their own inbox.
    */
   @Post(":broadcastId/dismiss")
+  @BodylessAction()
   @Universal()
   @HttpCode(200)
   @Validate({ params: broadcastIdParams })
@@ -125,6 +128,7 @@ export class BroadcastsController {
   }
 
   @Post(":broadcastId/cancel")
+  @BodylessAction()
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")

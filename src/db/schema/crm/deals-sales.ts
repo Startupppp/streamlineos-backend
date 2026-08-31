@@ -28,6 +28,7 @@ export const salesQuotas = pgTable(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    userMembershipId: integer("user_membership_id"),
     period: text("period").default("monthly").notNull(),
     startDate: date("start_date").notNull(),
     endDate: date("end_date").notNull(),
@@ -41,6 +42,7 @@ export const salesQuotas = pgTable(
     setById: text("set_by_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    setByMembershipId: integer("set_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -88,6 +90,7 @@ export const commissions = pgTable(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    userMembershipId: integer("user_membership_id"),
     dealId: integer("deal_id")
       .references(() => deals.id, { onDelete: "cascade" })
       .notNull(),
@@ -132,6 +135,7 @@ export const incentiveConfig = pgTable(
     createdBy: text("created_by")
       .notNull()
       .references(() => users.id),
+    createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [unique("uniq_incentive_config_org_id").on(t.orgId, t.id)],
@@ -151,6 +155,7 @@ export const incentives = pgTable(
     salesRepId: text("sales_rep_id")
       .notNull()
       .references(() => users.id),
+    salesRepMembershipId: integer("sales_rep_membership_id"),
     investmentAmount: decimal("investment_amount", {
       precision: 15,
       scale: 2,
@@ -166,6 +171,7 @@ export const incentives = pgTable(
     approvedAmount: decimal("approved_amount", { precision: 15, scale: 2 }),
     status: incentiveStatusEnum("status").notNull().default("PENDING"),
     approvedBy: text("approved_by").references(() => users.id),
+    approvedByMembershipId: integer("approved_by_membership_id"),
     approvedAt: timestamp("approved_at"),
     notes: text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),

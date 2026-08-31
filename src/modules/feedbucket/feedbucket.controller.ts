@@ -181,6 +181,7 @@ export class FeedbucketController {
   }
 
   @Post("submissions/:submissionId/ai-create-ticket")
+  @BodylessAction()
   @RequirePermission("feedbucket:submissions:manage")
   @HttpCode(201)
   @Validate({ params: submissionIdParams })

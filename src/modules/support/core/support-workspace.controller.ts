@@ -32,6 +32,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const queueIdParams = z.object({ queueId: z.coerce.number().int().positive() }).strict();
 const viewIdParams = z.object({ viewId: z.coerce.number().int().positive() }).strict();
@@ -142,6 +143,7 @@ export class SupportWorkspaceController {
   }
 
   @Post(":supportTicketId/tags/:tagId")
+  @BodylessAction()
   @RequirePermission("support:tickets:manage")
   @HttpCode(200)
   @Validate({ params: ticketAndTagIdParams })
@@ -175,6 +177,7 @@ export class SupportWorkspaceController {
   }
 
   @Post(":supportTicketId/follow")
+  @BodylessAction()
   @RequirePermission("support:tickets:view")
   @HttpCode(200)
   @Validate({ params: ticketIdParams })

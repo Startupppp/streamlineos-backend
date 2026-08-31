@@ -5,12 +5,13 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { finApprovalPolicies, organizationMembers } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type {
   CreateApprovalPolicyInput,
   UpdateApprovalPolicyInput,
@@ -23,24 +24,22 @@ export class ApprovalPoliciesService {
     private readonly audit: AuditService,
   ) {}
 
-  async list(orgId: string, page: number, pageSize: number) {
-    const { limit, offset } = paginateOffset({ page, pageSize });
-    const condition = eq(finApprovalPolicies.orgId, orgId);
+  async list(orgId: string, cursor?: string, limit = 20): Promise<CursorPage<typeof finApprovalPolicies.$inferSelect>> {
+    const pos = decodeCursor(cursor);
+    const conditions = [eq(finApprovalPolicies.orgId, orgId)];
+    if (pos) conditions.push(keysetBeforeId(finApprovalPolicies.createdAt, finApprovalPolicies.id, pos));
 
-    const [rows, [{ count }]] = await Promise.all([
-      this.db
-        .select()
-        .from(finApprovalPolicies)
-        .where(condition)
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(finApprovalPolicies)
-        .where(condition),
-    ]);
+    const rows = await this.db
+      .select()
+      .from(finApprovalPolicies)
+      .where(and(...conditions))
+      .orderBy(desc(finApprovalPolicies.createdAt), desc(finApprovalPolicies.id))
+      .limit(limit + 1);
 
-    return buildListResponse(rows, count, { page, pageSize });
+    return buildCursorPage(rows, limit, (r) => ({
+      sortValue: (r.createdAt ?? new Date(0)).toISOString(),
+      id: String(r.id),
+    }));
   }
 
   async create(orgId: string, userId: string, input: CreateApprovalPolicyInput) {

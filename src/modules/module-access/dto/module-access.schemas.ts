@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
+import { idCursorSchema } from "../../../common/pagination/cursor.schema";
 
 /** "team" resolves teammates from org_unit_members (kind = TEAM) inside applyScope. */
 const dataScopeSchema = z.enum(["all", "team", "own", "none"]);
@@ -59,14 +60,12 @@ export const initiateOwnershipTransferSchema = z.object({
 });
 
 export const listMembersQuerySchema = z.object({
-  page: pageNumberField,
   pageSize: pageSizeField(20),
   userId: z.string().min(1).max(64).optional(),
-  cursor: z.coerce.number().int().nonnegative().optional(),
+  cursor: idCursorSchema,
 });
 
 export const memberCandidatesQuerySchema = z.object({
-  page: pageNumberField,
   pageSize: pageSizeField(20),
   search: z.string().trim().max(100).default(""),
   userId: z.string().min(1).max(64).optional(),
@@ -74,6 +73,7 @@ export const memberCandidatesQuerySchema = z.object({
     .enum(["true", "false"])
     .optional()
     .transform((value) => value !== "false"),
+  cursor: idCursorSchema,
 });
 
 export const addFlatMemberSchema = z.object({
@@ -91,9 +91,14 @@ export const updateMemberGroupsSchema = z.object({
     .max(50),
 });
 
+export const listGroupsQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
+});
+
 export const auditLogQuerySchema = z.object({
-  page: pageNumberField,
-  pageSize: pageSizeField(20),
+  limit: pageSizeField(20),
+  cursor: z.string().optional(),
 });
 
 export type ModuleKeyParam = z.infer<typeof moduleKeyParamSchema>;
@@ -110,6 +115,7 @@ export type ListMembersQuery = z.infer<typeof listMembersQuerySchema>;
 export type MemberCandidatesQuery = z.infer<typeof memberCandidatesQuerySchema>;
 export type AddFlatMemberInput = z.infer<typeof addFlatMemberSchema>;
 export type UpdateMemberGroupsInput = z.infer<typeof updateMemberGroupsSchema>;
+export type ListGroupsQuery = z.infer<typeof listGroupsQuerySchema>;
 export type AuditLogQuery = z.infer<typeof auditLogQuerySchema>;
 
 export const standingMemberParamSchema = z.object({

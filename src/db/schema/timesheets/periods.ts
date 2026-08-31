@@ -28,7 +28,7 @@ export const timesheetPeriods = pgTable("timesheet_periods", {
   rejectedAt: timestamp("rejected_at"),
   lockedAt: timestamp("locked_at"),
   currentApproverId: text("current_approver_id").references(() => users.id, { onDelete: "set null" }),
-  approvedBy: text("approved_by").references(() => users.id, { onDelete: "set null" }),
+  currentApproverMembershipId: integer("current_approver_membership_id"),
   approvedByMembershipId: integer("approved_by_membership_id"),
   rejectionReason: text("rejection_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -38,10 +38,16 @@ export const timesheetPeriods = pgTable("timesheet_periods", {
   index("idx_timesheet_periods_user_start").on(t.orgId, t.userId, t.periodStart),
   index("idx_timesheet_periods_org_status").on(t.orgId, t.status, t.submittedAt),
   index("idx_timesheet_periods_current_approver").on(t.orgId, t.currentApproverId),
+  index("idx_timesheet_periods_current_approver_membership").on(t.orgId, t.currentApproverMembershipId),
   index("idx_timesheet_periods_org_approved_actor").on(t.orgId, t.approvedByMembershipId),
   foreignKey({
     columns: [t.orgId, t.approvedByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_timesheet_periods_approved_actor",
   }).onDelete("restrict"),
+  foreignKey({
+    columns: [t.orgId, t.currentApproverMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_timesheet_periods_current_approver_membership",
+  }).onDelete("set null"),
 ]);

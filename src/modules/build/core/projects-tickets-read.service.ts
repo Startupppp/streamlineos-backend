@@ -219,7 +219,9 @@ export class ProjectsTicketsReadService {
       assigneeId,
       labelIds,
       sprintId,
+      sprintIds,
       cycleId,
+      moduleIds,
       epicId,
       dueDateFrom,
       dueDateTo,
@@ -306,8 +308,12 @@ export class ProjectsTicketsReadService {
 
     if (sprintId !== undefined)
       filterConditions.push(eq(tickets.sprintId, sprintId));
+    if (sprintIds && sprintIds.length > 0)
+      filterConditions.push(inArray(tickets.sprintId, sprintIds));
     if (cycleId && cycleId.length > 0)
       filterConditions.push(inArray(tickets.cycleId, cycleId));
+    if (moduleIds && moduleIds.length > 0)
+      filterConditions.push(inArray(tickets.moduleId, moduleIds));
     if (epicId !== undefined) filterConditions.push(eq(tickets.epicId, epicId));
     if (dueDateFrom) filterConditions.push(gte(tickets.dueDate, dueDateFrom));
     if (dueDateTo) filterConditions.push(lte(tickets.dueDate, dueDateTo));

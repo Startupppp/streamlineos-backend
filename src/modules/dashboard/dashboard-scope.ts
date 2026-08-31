@@ -3,15 +3,15 @@ import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import { isScopable } from "../rbac/permissions";
 import { resolveAttendanceReadScope } from "../hr/time/attendance-scope";
+import {
+  DASHBOARD_HOME_SECTIONS,
+  isModuleSection,
+  permissionOf,
+  type ModuleSection,
+} from "./dashboard-section-registry";
 
-export const DASHBOARD_EMPLOYEES_PERMISSION = "hr:employees:manage";
-export const DASHBOARD_LEAVES_PERMISSION = "hr:leaves:approve";
-export const DASHBOARD_BUILD_PERMISSION = "build:manage";
-
-export async function resolveEmployeesDashboardScope(access: AccessService, u: CurrentUserContext): Promise<DataScope> {
-  if (!isScopable(DASHBOARD_EMPLOYEES_PERMISSION)) return "all";
-  return access.scopeFor(u, DASHBOARD_EMPLOYEES_PERMISSION);
-}
+export const DASHBOARD_LEAVES_PERMISSION = permissionOf("leaves-today");
+export const DASHBOARD_BUILD_PERMISSION = permissionOf("recent-projects");
 
 export async function resolveBuildDashboardScope(access: AccessService, u: CurrentUserContext): Promise<DataScope> {
   if (!isScopable(DASHBOARD_BUILD_PERMISSION)) return "all";
@@ -33,15 +33,15 @@ export async function resolvePersonalDashboardModules(
   access: AccessService,
   u: CurrentUserContext,
 ): Promise<PersonalDashboardModules> {
-  const [build, timesheets, hr] = await Promise.all([
-    access.moduleAvailability(u, "build"),
-    access.moduleAvailability(u, "timesheets"),
-    access.moduleAvailability(u, "hr"),
-  ]);
+  const moduleSections = DASHBOARD_HOME_SECTIONS.filter(isModuleSection) as ModuleSection[];
+  const results = await Promise.all(
+    moduleSections.map((s) => access.moduleAvailability(u, s.module)),
+  );
+  const available = new Map(moduleSections.map((s, i) => [s.module, results[i].available]));
   return {
-    build: build.available,
-    timesheets: timesheets.available,
-    hr: hr.available,
+    build: available.get("build") ?? false,
+    timesheets: available.get("timesheets") ?? false,
+    hr: available.get("hr") ?? false,
   };
 }
 
@@ -57,9 +57,9 @@ export async function resolveDashboardStatsFlags(
 ): Promise<DashboardStatsFlags> {
   const granted = (key: string) => access.scopeFor(u, key).then((scope) => scope !== "none");
   const [employees, attendanceScope, projects] = await Promise.all([
-    granted("hr:employees:view"),
+    granted(permissionOf("stats-employees")),
     resolveAttendanceReadScope(access, u),
-    granted("build:tickets:view"),
+    granted(permissionOf("stats-projects")),
   ]);
   return {
     employees,

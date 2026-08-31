@@ -15,6 +15,7 @@ import type { Db } from "../../db/drizzle.module";
 import type {
   AddModuleGroupMemberInput,
   CreateModuleGroupInput,
+  ListGroupsQuery,
   RenameModuleGroupInput,
 } from "./dto/module-access.schemas";
 import { ModuleAccessGroupPolicyService } from "./module-access-group-policy.service";
@@ -24,6 +25,7 @@ import {
 } from "./module-access-group-members.service";
 import { ModuleAccessGroupCrudService } from "./module-access-group-crud.service";
 import type { ModuleRoleGroup } from "./module-access-groups.types";
+import type { CursorPage } from "../../common/pagination/cursor";
 
 export type { ModuleGroupMember } from "./module-access-group-members.service";
 export type {
@@ -69,12 +71,15 @@ export class ModuleAccessGroupsService {
   async listGroups(
     actor: CurrentUserContext,
     moduleKey: string,
-  ): Promise<ModuleRoleGroup[]> {
+    query: ListGroupsQuery,
+  ): Promise<CursorPage<ModuleRoleGroup>> {
     await this.assertAccess(actor, moduleKey, "view");
     return this.groupCrud.listGroups(
       actor.orgId,
       moduleKey,
       await this.access.getPermissionsVersion(actor.orgId),
+      query.cursor,
+      query.limit,
     );
   }
 

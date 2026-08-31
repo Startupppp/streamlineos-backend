@@ -60,7 +60,7 @@ export class ApprovalActionsService {
       }),
       this.db.query.payrollRuns.findFirst({
         where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
-        with: { policyVersion: true },
+        with: { policyVersion: { columns: { toggles: true } } },
       }),
     ]);
 
@@ -137,7 +137,7 @@ export class ApprovalActionsService {
     const result = await this.db.transaction(async (tx) => {
       await tx
         .update(payrollApprovals)
-        .set({ status: "APPROVED", actedBy: userId, actedByMembershipId: stageActor.membershipId, actedAt: new Date(), comment: comment ?? null })
+        .set({ status: "APPROVED", actedByMembershipId: stageActor.membershipId, actedAt: new Date(), comment: comment ?? null })
         .where(and(eq(payrollApprovals.id, approvalId), eq(payrollApprovals.orgId, orgId)));
 
       if (isLastStage) {
@@ -148,8 +148,8 @@ export class ApprovalActionsService {
               status: "LOCKED",
               lockedAt: new Date(),
               lockedBy: userId,
+              lockedByMembershipId: stageActor.membershipId,
               approvedAt: new Date(),
-              approvedBy: userId,
               approvedByMembershipId: stageActor.membershipId,
             })
             .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
@@ -163,7 +163,7 @@ export class ApprovalActionsService {
         } else {
           await tx
             .update(payrollRuns)
-            .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId, approvedByMembershipId: stageActor.membershipId })
+            .set({ status: "APPROVED", approvedAt: new Date(), approvedByMembershipId: stageActor.membershipId })
             .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
           await tx.insert(payrollRunEvents).values({
@@ -284,7 +284,7 @@ export class ApprovalActionsService {
     const result = await this.db.transaction(async (tx) => {
       await tx
         .update(payrollApprovals)
-        .set({ status: "REJECTED", actedBy: userId, actedByMembershipId: rejectActor.membershipId, actedAt: new Date(), comment })
+        .set({ status: "REJECTED", actedByMembershipId: rejectActor.membershipId, actedAt: new Date(), comment })
         .where(and(eq(payrollApprovals.id, approvalId), eq(payrollApprovals.orgId, orgId)));
 
       await tx

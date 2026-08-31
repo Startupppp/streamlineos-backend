@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, or, sql } from "drizzle-orm";
 import {
   intakeItems,
   projectMilestones,
@@ -10,6 +10,8 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type {
   CreateIntakeInput,
   CreateMilestoneInput,
@@ -84,51 +86,42 @@ export class IntakeService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listIntake(orgId: string, projectId: number, query: IntakeListQuery) {
-    const limit = query.limit;
-    const offset = query.offset;
+    const { limit, cursor } = query;
+    const pos = decodeCursor(cursor);
 
-    const conditions = [eq(intakeItems.projectId, projectId), eq(intakeItems.orgId, orgId)];
-    if (query.status) conditions.push(eq(intakeItems.status, query.status));
-    const where = and(...conditions);
+    const conds = [eq(intakeItems.projectId, projectId), eq(intakeItems.orgId, orgId)];
+    if (query.status) conds.push(eq(intakeItems.status, query.status));
+    if (pos) conds.push(keysetBeforeId(intakeItems.createdAt, intakeItems.id, pos));
 
+    const intakeCols = {
+      id: intakeItems.id,
+      projectId: intakeItems.projectId,
+      orgId: intakeItems.orgId,
+      title: intakeItems.title,
+      description: intakeItems.description,
+      source: intakeItems.source,
+      status: intakeItems.status,
+      submitterEmail: intakeItems.submitterEmail,
+      submitterName: intakeItems.submitterName,
+      priority: intakeItems.priority,
+      requestType: intakeItems.requestType,
+      linkedWorkItemId: intakeItems.linkedWorkItemId,
+      declineReason: intakeItems.declineReason,
+      createdAt: intakeItems.createdAt,
+      updatedAt: intakeItems.updatedAt,
+    };
     const rows = await this.db
-      .select({
-        total: sql<string>`count(*) OVER ()`,
-        id: intakeItems.id,
-        projectId: intakeItems.projectId,
-        orgId: intakeItems.orgId,
-        title: intakeItems.title,
-        description: intakeItems.description,
-        source: intakeItems.source,
-        status: intakeItems.status,
-        submitterEmail: intakeItems.submitterEmail,
-        submitterName: intakeItems.submitterName,
-        priority: intakeItems.priority,
-        requestType: intakeItems.requestType,
-        linkedWorkItemId: intakeItems.linkedWorkItemId,
-        declineReason: intakeItems.declineReason,
-        createdAt: intakeItems.createdAt,
-        updatedAt: intakeItems.updatedAt,
-      })
+      .select(intakeCols)
       .from(intakeItems)
-      .where(where)
-      .orderBy(desc(intakeItems.createdAt))
-      .limit(limit)
-      .offset(offset);
+      .where(and(...conds))
+      .orderBy(desc(intakeItems.createdAt), desc(intakeItems.id))
+      .limit(limit + 1);
 
-    const first = rows[0];
-    let total: number;
-    if (first) {
-      total = Number(first.total);
-    } else if (offset === 0) {
-      total = 0;
-    } else {
-      const [cnt] = await this.db.select({ total: count() }).from(intakeItems).where(where);
-      total = Number(cnt?.total ?? 0);
-    }
-
-    const items = rows.map(({ total: _t, ...item }) => item);
-    return { items, total };
+    const page = buildCursorPage(rows, limit, (r) => ({
+      sortValue: (r.createdAt ?? new Date(0)).toISOString(),
+      id: String(r.id),
+    }));
+    return { items: page.data, pagination: page.pagination };
   }
 
   async createIntake(orgId: string, projectId: number, input: CreateIntakeInput) {

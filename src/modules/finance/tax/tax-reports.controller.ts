@@ -6,8 +6,15 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { TaxReportsService, type OutputTaxLine, type InputTaxLine } from "./tax-reports.service";
-import { taxDateRangeQuerySchema, type TaxDateRangeQuery } from "./dto/tax-reports.schemas";
+import {
+  TaxReportsService,
+  type OutputTaxLine,
+  type InputTaxLine,
+} from "./tax-reports.service";
+import {
+  taxDateRangeQuerySchema,
+  type TaxDateRangeQuery,
+} from "./dto/tax-reports.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 
 function toCsvRow(line: OutputTaxLine | InputTaxLine): string {
@@ -26,7 +33,8 @@ function toCsvRow(line: OutputTaxLine | InputTaxLine): string {
   ].join(",");
 }
 
-const CSV_HEADER = "Doc Number,Date,Party Name,Taxable Value,GST Rate,CGST,SGST,IGST,Total,Source Type,Source ID\n";
+const CSV_HEADER =
+  "Doc Number,Date,Party Name,Taxable Value,GST Rate,CGST,SGST,IGST,Total,Source Type,Source ID\n";
 
 @RequireModule("accounting")
 @Controller("accounting/taxes/reports")
@@ -46,8 +54,11 @@ export class TaxReportsController {
     const result = await this.reports.getOutputReport(u.orgId, query);
     if (query.format === "csv") {
       res.setHeader("Content-Type", "text/csv");
-      res.setHeader("Content-Disposition", `attachment; filename="output-tax-${query.from}-${query.to}.csv"`);
-      const rows = (result.items as OutputTaxLine[]).map(toCsvRow).join("\n");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="output-tax-${query.from}-${query.to}.csv"`,
+      );
+      const rows = (result.data as OutputTaxLine[]).map(toCsvRow).join("\n");
       return res.send(CSV_HEADER + rows);
     }
     return result;
@@ -65,8 +76,11 @@ export class TaxReportsController {
     const result = await this.reports.getInputReport(u.orgId, query);
     if (query.format === "csv") {
       res.setHeader("Content-Type", "text/csv");
-      res.setHeader("Content-Disposition", `attachment; filename="input-tax-${query.from}-${query.to}.csv"`);
-      const rows = (result.items as InputTaxLine[]).map(toCsvRow).join("\n");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="input-tax-${query.from}-${query.to}.csv"`,
+      );
+      const rows = (result.data as InputTaxLine[]).map(toCsvRow).join("\n");
       return res.send(CSV_HEADER + rows);
     }
     return result;

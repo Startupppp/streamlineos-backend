@@ -124,7 +124,10 @@ export class ChatPresenceService {
       orderBy: [desc(chatMessages.createdAt)],
       limit: Math.min(limit, 50),
       with: {
-        sender: { columns: { id: true, name: true, image: true } },
+        senderMembership: {
+          columns: {},
+          with: { user: { columns: { id: true, name: true, image: true } } },
+        },
         channel: { columns: { id: true, name: true, type: true } },
       },
     });

@@ -5,7 +5,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../billing/core/seat-ledger.service";
-import { InvitationsService } from "../organization/core/invitations.service";
+import { InvitationCreateService } from "../organization/core/invitation-create.service";
 import { OrgMembershipService } from "../organization/core/org-membership.service";
 import { UsersService } from "./users.service";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
@@ -32,7 +32,7 @@ describe("UsersService direct member creation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
-        { provide: InvitationsService, useValue: { invite: jest.fn() } },
+        { provide: InvitationCreateService, useValue: { invite: jest.fn() } },
         { provide: AccessService, useValue: {} },
         { provide: OrgMembershipService, useValue: {} },
         { provide: PlanLimitsService, useValue: { assertWithinLimit } },
@@ -121,7 +121,7 @@ describe("UsersService direct member creation", () => {
             set: jest.fn(),
           },
         },
-        { provide: InvitationsService, useValue: { invite: jest.fn() } },
+        { provide: InvitationCreateService, useValue: { invite: jest.fn() } },
         { provide: AccessService, useValue: {} },
         { provide: OrgMembershipService, useValue: {} },
         { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },

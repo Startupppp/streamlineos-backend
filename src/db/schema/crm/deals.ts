@@ -52,6 +52,7 @@ export const deals = pgTable(
     assignedToId: text("assigned_to_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    assignedToMembershipId: integer("assigned_to_membership_id"),
     lastContactDate: timestamp("last_contact_date"),
     expectedCloseDate: date("expected_close_date"),
     actualCloseDate: date("actual_close_date"),
@@ -120,6 +121,7 @@ export const dealActivities = pgTable(
     userId: text("user_id")
       .references(() => users.id)
       .notNull(),
+    userMembershipId: integer("user_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -150,6 +152,7 @@ export const dealMeetings = pgTable(
     createdBy: text("created_by")
       .references(() => users.id)
       .notNull(),
+    createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -200,6 +203,7 @@ export const dealApprovalRules = pgTable(
     approverUserId: text("approver_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    approverMembershipId: integer("approver_membership_id"),
     isActive: boolean("is_active").default(true).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -219,9 +223,11 @@ export const dealApprovals = pgTable(
     requestedBy: text("requested_by")
       .references(() => users.id)
       .notNull(),
+    requestedByMembershipId: integer("requested_by_membership_id"),
     requestedStage: text("requested_stage").notNull(),
     status: text("status").default("pending").notNull(),
     approvedBy: text("approved_by").references(() => users.id),
+    approvedByMembershipId: integer("approved_by_membership_id"),
     rejectionReason: text("rejection_reason"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     resolvedAt: timestamp("resolved_at"),
@@ -300,12 +306,14 @@ export const crmForecastSnapshots = pgTable(
     createdById: text("created_by_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    createdByMembershipId: integer("created_by_membership_id"),
     data: jsonb("data").$type<ForecastSnapshotData>().notNull(),
     overrideAmount: decimal("override_amount", { precision: 15, scale: 4 }),
     overrideNote: text("override_note"),
     overriddenBy: text("overridden_by").references(() => users.id, {
       onDelete: "set null",
     }),
+    overriddenByMembershipId: integer("overridden_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [

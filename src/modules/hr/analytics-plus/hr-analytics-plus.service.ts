@@ -383,7 +383,7 @@ export class HrAnalyticsPlusService {
       FROM hr_role_skill_requirements r
       JOIN hr_employments e ON e.org_id = r.org_id AND e.lifecycle_status = 'ACTIVE' AND e.job_role_id = r.job_role_id AND e.deleted_at IS NULL
       JOIN hr_people hp ON hp.id = e.person_id AND hp.deleted_at IS NULL AND hp.user_id IS NOT NULL
-      LEFT JOIN employee_skills es ON es.org_id = r.org_id AND es.user_id = hp.user_id AND es.skill_name ILIKE r.skill_name
+      LEFT JOIN employee_skills es ON es.org_id = r.org_id AND es.user_id = hp.user_id AND lower(es.skill_name) = lower(r.skill_name)
       WHERE r.org_id = ${orgId}
       GROUP BY r.skill_name
       ORDER BY (COUNT(DISTINCT r.id) - COUNT(DISTINCT CASE WHEN es.id IS NOT NULL THEN e.id END)) DESC

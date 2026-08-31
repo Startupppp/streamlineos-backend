@@ -210,11 +210,18 @@ export class TimesheetsService {
     if (entry.status !== "PENDING")
       throw new BadRequestException("Only pending entries can be approved");
 
+    // `approved_by` was contracted onto the membership actor; the user id is no
+    // longer a column on this table.
+    const approver = await assertOrganizationActor(this.db, user.orgId, {
+      kind: "user",
+      userId: user.userId,
+    });
+
     await this.db
       .update(timesheets)
       .set({
         status: "APPROVED",
-        approvedBy: user.userId,
+        approvedByMembershipId: approver.membershipId,
         approvedAt: new Date(),
         updatedAt: new Date(),
       })
@@ -432,3 +439,4 @@ export class TimesheetsService {
   }
 }
 import { canActOnPeriod } from "../../timesheets/core/lib/approval-guard";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";

@@ -10,7 +10,7 @@ import {
   foreignKey,
   unique,
 } from "drizzle-orm/pg-core";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { deals } from "../crm";
 
 export const chatChannels = pgTable(
@@ -24,9 +24,6 @@ export const chatChannels = pgTable(
     type: text("type").notNull().default("GROUP"),
     description: text("description"),
     avatarUrl: text("avatar_url"),
-    createdBy: text("created_by")
-      .references(() => users.id)
-      .notNull(),
     createdByMembershipId: integer("created_by_membership_id"),
     isArchived: boolean("is_archived").default(false).notNull(),
     entityType: text("entity_type"),
@@ -53,6 +50,7 @@ export const chatChannels = pgTable(
       table.entityId,
     ),
     unique("uniq_chat_channels_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_channels_org_created_by_membership" }).onDelete("set null"),
   ],
 );
 

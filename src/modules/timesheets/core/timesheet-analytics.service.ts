@@ -1,8 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheets, timesheetPeriods, timesheetSettings, projects, users } from "../../../db/schema";
+import { timesheets, timesheetPeriods, timesheetSettings, projects, users, organizationMembers } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { applyScope } from "../../access/apply-scope";
 import { resolveReportsScope } from "./timesheets-core-scope";
@@ -197,6 +198,8 @@ export class TimesheetAnalyticsService {
     const scope = await resolveReportsScope(this.access, u);
     const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
 
+    const approverMember = alias(organizationMembers, "approver_member");
+
     const rows = await this.db
       .select({
         id: timesheetPeriods.id,
@@ -206,9 +209,10 @@ export class TimesheetAnalyticsService {
         approvedAt: timesheetPeriods.approvedAt,
         rejectedAt: timesheetPeriods.rejectedAt,
         currentApproverId: timesheetPeriods.currentApproverId,
-        approvedBy: timesheetPeriods.approvedBy,
+        approvedByUserId: approverMember.userId,
       })
       .from(timesheetPeriods)
+      .leftJoin(approverMember, and(eq(timesheetPeriods.orgId, approverMember.orgId), eq(timesheetPeriods.approvedByMembershipId, approverMember.id)))
       .where(
         and(
           eq(timesheetPeriods.orgId, u.orgId),
@@ -231,7 +235,7 @@ export class TimesheetAnalyticsService {
       if (!r.submittedAt) continue;
 
       const decidedAt = r.approvedAt ?? r.rejectedAt;
-      const approverId = r.currentApproverId ?? r.approvedBy;
+      const approverId = r.currentApproverId ?? r.approvedByUserId;
       const approver = approverId
         ? perApprover.get(approverId) ?? { pendingCount: 0, decisionHours: [] }
         : null;

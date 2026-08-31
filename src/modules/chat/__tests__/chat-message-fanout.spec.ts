@@ -10,7 +10,7 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 const persisted: PersistedMessage = {
   id: 1,
   channelId: 1,
-  senderId: "sender",
+  senderMembershipId: null,
   content: "hello @alex",
   createdAt: new Date(),
   replyToId: null,
@@ -30,9 +30,9 @@ function makeDb() {
       // The roster is read through the membership relation now, not a user_id
       // column on chat_channel_members.
       findMany: jest.fn().mockResolvedValue([
-        { membership: { userId: "sender" } },
-        { membership: { userId: "user-alex" } },
-        { membership: { userId: "user-alexander" } },
+        { membershipId: 1, membership: { userId: "sender" } },
+        { membershipId: 2, membership: { userId: "user-alex" } },
+        { membershipId: 3, membership: { userId: "user-alexander" } },
       ]),
     },
     chatChannels: { findFirst: jest.fn().mockResolvedValue({ type: "PUBLIC" }) },
@@ -176,6 +176,7 @@ describe("ChatMessageFanoutService", () => {
     attachments: [],
     senderName: "Sender",
     senderImage: null,
+    senderUserId: "sender",
   };
 
   it("publishes the message to realtime", async () => {
@@ -210,7 +211,7 @@ describe("ChatMessageFanoutService", () => {
     expect(notifications.publishNewMessageNotification).toHaveBeenCalledWith(
       "org-1",
       1,
-      { id: 1, senderId: "sender", senderName: "Sender" },
+      { id: 1, senderUserId: "sender", senderName: "Sender" },
       "DIRECT",
       "chat-message:org-1:1:dm_notification",
     );

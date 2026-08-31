@@ -44,6 +44,7 @@ import {
   type VerifyPageInput,
 } from "./dto/kb-pages.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
@@ -148,6 +149,7 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/duplicate")
+  @BodylessAction()
   @RequirePermission("kb:pages:create")
   @HttpCode(201)
   @Validate({ params: pageIdParams })
@@ -169,6 +171,7 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/restore")
+  @BodylessAction()
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
   @Validate({ params: pageIdParams })
@@ -198,6 +201,7 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/favorite")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
@@ -219,6 +223,7 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/visit")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("kb:pages:view")
   @Validate({ params: pageIdParams })
@@ -261,6 +266,7 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/versions/:versionNumber/restore")
+  @BodylessAction()
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
   @Validate({ params: pageIdversionNumberParams })
@@ -297,6 +303,7 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/publish")
+  @BodylessAction()
   @Idempotent("kb.page.publish")
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
@@ -309,6 +316,7 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/archive")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
   @Validate({ params: pageIdParams })
@@ -320,6 +328,7 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/unarchive")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
   @Validate({ params: pageIdParams })
@@ -343,6 +352,7 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/mark-stale")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("kb:pages:manage")
   @Validate({ params: pageIdParams })

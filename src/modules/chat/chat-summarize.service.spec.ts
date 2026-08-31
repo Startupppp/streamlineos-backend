@@ -14,12 +14,22 @@ const makeMessages = (count: number) =>
     id: i + 1,
     content: `message ${i + 1}`,
     createdAt: new Date(Date.now() + i * 1000),
-    senderId: "user-1",
     senderName: "Alice",
     senderEmail: "alice@example.com",
   }));
 
 function buildDb(memberResult: unknown, messagesResult: unknown[]) {
+  const chain: {
+    leftJoin: jest.Mock;
+    where: jest.Mock;
+    orderBy: jest.Mock;
+    limit: jest.Mock;
+  } = {
+    leftJoin: jest.fn(() => chain),
+    where: jest.fn(() => chain),
+    orderBy: jest.fn(() => chain),
+    limit: jest.fn().mockResolvedValue(messagesResult),
+  };
   return {
     query: {
       organizationMembers: {
@@ -30,15 +40,7 @@ function buildDb(memberResult: unknown, messagesResult: unknown[]) {
       },
     },
     select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        leftJoin: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            orderBy: jest.fn().mockReturnValue({
-              limit: jest.fn().mockResolvedValue(messagesResult),
-            }),
-          }),
-        }),
-      }),
+      from: jest.fn().mockReturnValue(chain),
     }),
   };
 }

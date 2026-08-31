@@ -93,11 +93,11 @@ export class CalendarEventSourceLoader {
         rsvpStatus: callerAtt.status,
       })
       .from(calendarEvents)
-      .innerJoin(
+      .leftJoin(
         creatorMember,
         and(eq(creatorMember.orgId, calendarEvents.orgId), eq(creatorMember.id, calendarEvents.createdByMembershipId)),
       )
-      .innerJoin(users, eq(users.id, creatorMember.userId))
+      .leftJoin(users, eq(users.id, creatorMember.userId))
       .leftJoin(
         callerAtt,
         and(

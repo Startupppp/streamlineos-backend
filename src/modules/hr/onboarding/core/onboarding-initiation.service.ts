@@ -170,13 +170,23 @@ export class OnboardingInitiationService {
     if (!employment || employment.status === "ONBOARDING") return;
     if (employment.status !== "CANDIDATE" && employment.status !== "PRE_JOINING") return;
 
+    const [actorRow] = await tx
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, actorId),
+        ),
+      )
+      .limit(1);
     await tx.insert(hrEmploymentHistory).values({
       orgId,
       employmentId,
       fromStatus: employment.status,
       toStatus: "ONBOARDING",
       reason: "Onboarding checklist initiated",
-      createdBy: actorId,
+      createdByMembershipId: actorRow?.id ?? null,
     });
     await tx
       .update(hrEmployments)

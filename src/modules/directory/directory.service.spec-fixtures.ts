@@ -130,6 +130,7 @@ export async function createDirectoryTestHarness(): Promise<{
     insert: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
+    execute: jest.fn().mockResolvedValue([]),
     query: {},
   };
 

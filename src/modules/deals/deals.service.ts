@@ -26,6 +26,7 @@ import {
   type StageTransitionRow,
 } from "./deal-stage-ledger";
 import type { DataScope } from "../access/access.types";
+import { assertOrganizationActor } from "../../common/organization/organization-actor";
 import type {
   BulkImportDealsInput,
   CreateDealInput,
@@ -147,6 +148,11 @@ export class DealsService {
 
     const channelName = dealRow ? `Deal: ${dealRow.name}` : `Deal #${dealId}`;
 
+    const creator = await assertOrganizationActor(this.db, orgId, {
+      kind: "user",
+      userId,
+    });
+
     const [newChannel] = await this.db
       .insert(chatChannels)
       .values({
@@ -154,7 +160,7 @@ export class DealsService {
         name: channelName,
         type: "GROUP",
         description: `Auto-created deal channel for deal #${dealId}`,
-        createdBy: userId,
+        createdByMembershipId: creator.membershipId,
         entityType: "deal",
         entityId: String(dealId),
       })

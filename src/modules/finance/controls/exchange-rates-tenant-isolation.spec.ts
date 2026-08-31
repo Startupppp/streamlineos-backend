@@ -18,15 +18,12 @@ describe("ExchangeRatesService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
 
   function makeService(rows: unknown[]): { svc: ExchangeRatesService; where: jest.Mock } {
-    const where = jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue({ offset: jest.fn().mockResolvedValue(rows) }) });
-    const countWhere = jest.fn().mockResolvedValue([{ count: rows.length }]);
-    let call = 0;
-    const select = jest.fn().mockImplementation(() => {
-      call++;
-      if (call % 2 === 1) return { from: jest.fn().mockReturnValue({ where }) };
-      return { from: jest.fn().mockReturnValue({ where: countWhere }) };
+    const where = jest.fn().mockReturnValue({
+      orderBy: jest.fn().mockReturnValue({
+        limit: jest.fn().mockResolvedValue(rows),
+      }),
     });
-    const db = { select } as unknown as Db;
+    const db = { select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }) } as unknown as Db;
     const svc = new ExchangeRatesService(db, {} as never);
     return { svc, where };
   }
@@ -45,6 +42,6 @@ describe("ExchangeRatesService — cross-tenant isolation", () => {
 
     const result = await svc.list(OWNER_ORG, { page: 1, pageSize: 20 });
 
-    expect(result.items).toHaveLength(1);
+    expect(result.data).toHaveLength(1);
   });
 });

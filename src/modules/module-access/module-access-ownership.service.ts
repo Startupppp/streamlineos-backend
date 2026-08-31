@@ -17,6 +17,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { AuditService } from "../../common/audit/audit.service";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
   assertManagedModule,
@@ -48,6 +49,7 @@ export class ModuleAccessOwnershipService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly access: AccessService,
+    private readonly audit: AuditService,
   ) {}
 
   private async assertOwnershipRights(
@@ -165,6 +167,15 @@ export class ModuleAccessOwnershipService {
       this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
     ]);
 
+    this.audit.log({
+      action: "module_access.ownership_transfer_initiated",
+      userId: actorUserId,
+      orgId,
+      targetId: String(toMembership.id),
+      targetType: "membership",
+      metadata: { moduleKey, toUserId },
+    });
+
     return { success: true };
   }
 
@@ -235,6 +246,15 @@ export class ModuleAccessOwnershipService {
       ),
       this.cache.invalidateNamespace(`ownership:transfers:${actor.orgId}`),
     ]);
+
+    this.audit.log({
+      action: "module_access.ownership_transfer_cancelled",
+      userId: actor.userId,
+      orgId: actor.orgId,
+      targetId: transfer.id,
+      targetType: "ownership_transfer",
+      metadata: { moduleKey },
+    });
 
     return { success: true };
   }

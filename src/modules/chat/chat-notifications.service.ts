@@ -55,7 +55,7 @@ export class ChatNotificationsService {
   async publishNewMessageNotification(
     orgId: string,
     channelId: number,
-    message: { id: number; senderId: string; senderName: string | null },
+    message: { id: number; senderUserId: string | null; senderName: string | null },
     channelType: string,
     idempotencyKey?: string,
   ) {
@@ -74,7 +74,7 @@ export class ChatNotificationsService {
 
     const now = new Date();
     const recipients = members.filter(({ userId, mutedUntil, notificationPreference }) => {
-      if (userId === message.senderId) return false;
+      if (message.senderUserId && userId === message.senderUserId) return false;
       if (mutedUntil && mutedUntil > now) return false;
       const effectivePreference =
         notificationPreference !== "DEFAULT" ? notificationPreference : defaultPreference;
@@ -85,7 +85,7 @@ export class ChatNotificationsService {
       const payload = {
         channelId,
         messageId: message.id,
-        senderId: message.senderId,
+        senderId: message.senderUserId ?? "",
         senderName: message.senderName,
         channelType,
         ...(idempotencyKey ? { idempotencyKey: `${idempotencyKey}:${userId}` } : {}),
@@ -109,7 +109,7 @@ export class ChatNotificationsService {
   async publishMentionNotification(
     orgId: string,
     channelId: number,
-    message: { id: number; senderId: string; senderName: string },
+    message: { id: number; senderUserId: string | null; senderName: string },
     mentionedUserIds: string[],
     idempotencyKey?: string,
   ) {
@@ -143,7 +143,7 @@ export class ChatNotificationsService {
       const payload = {
         channelId,
         messageId: message.id,
-        senderId: message.senderId,
+        senderId: message.senderUserId ?? "",
         senderName: message.senderName,
         ...(idempotencyKey ? { idempotencyKey: `${idempotencyKey}:${userId}` } : {}),
       };

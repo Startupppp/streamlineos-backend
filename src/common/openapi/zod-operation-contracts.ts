@@ -9,15 +9,48 @@ import {
 } from "../validation/validate.decorator";
 import { ZodValidationPipe } from "../pipes/zod-validation.pipe";
 import { IDEMPOTENCY_COMMAND } from "../idempotency/idempotency.constants";
+import { DEPRECATION_KEY } from "../deprecation/deprecated.decorator";
 
 export const RESPONSE_SCHEMA = "openapi:response-schema";
 export const BODYLESS_ACTION = "openapi:bodyless";
+export const MULTIPART_ACTION = "openapi:multipart";
 
 export const ResponseSchema = (schema: ZodType): MethodDecorator =>
   SetMetadata(RESPONSE_SCHEMA, schema);
 
 export const BodylessAction = (): MethodDecorator =>
   SetMetadata(BODYLESS_ACTION, true);
+
+export interface MultipartSpec {
+  file: string;
+  fileRequired?: boolean;
+  fields?: Record<string, "string" | "integer" | "number" | "boolean">;
+  requiredFields?: string[];
+}
+
+export const MultipartAction = (spec: MultipartSpec): MethodDecorator =>
+  SetMetadata(MULTIPART_ACTION, spec);
+
+export function isMultipartSpec(value: unknown): value is MultipartSpec {
+  if (typeof value !== "object" || value === null) return false;
+  const file: unknown = (value as { file?: unknown }).file;
+  return typeof file === "string" && file.length > 0;
+}
+
+export function multipartSchema(spec: MultipartSpec): JsonSchema {
+  const properties: Record<string, JsonSchema> = {
+    [spec.file]: { type: "string", format: "binary" },
+  };
+  for (const [name, type] of Object.entries(spec.fields ?? {}))
+    properties[name] = { type };
+  const required = [
+    ...(spec.fileRequired === false ? [] : [spec.file]),
+    ...(spec.requiredFields ?? []),
+  ];
+  return required.length > 0
+    ? { type: "object", properties, required }
+    : { type: "object", properties };
+}
 
 export interface OperationContract {
   body?: JsonSchema;
@@ -26,6 +59,8 @@ export interface OperationContract {
   idempotencyCommand?: string;
   response?: JsonSchema;
   bodyless?: true;
+  multipart?: JsonSchema;
+  deprecated?: true;
 }
 
 export type JsonSchema = Record<string, unknown>;
@@ -168,6 +203,12 @@ export function scanOperationContracts(
 
       const isBodyless: unknown = Reflect.getMetadata(BODYLESS_ACTION, handler);
       if (isBodyless === true) contract.bodyless = true;
+
+      const multipart: unknown = Reflect.getMetadata(MULTIPART_ACTION, handler);
+      if (isMultipartSpec(multipart)) contract.multipart = multipartSchema(multipart);
+
+      const isDeprecated: unknown = Reflect.getMetadata(DEPRECATION_KEY, handler);
+      if (isDeprecated !== undefined && isDeprecated !== null) contract.deprecated = true;
 
       if (Object.keys(contract).length > 0)
         contracts.set(operationId, contract);

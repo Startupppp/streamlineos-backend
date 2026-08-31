@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const recurringLineSchema = z.object({
   accountId: z.number().int().positive(),
@@ -26,7 +26,7 @@ export type RecurringLine = z.infer<typeof recurringLineSchema>;
 export const recurringLineArraySchema = z.array(recurringLineSchema);
 
 export const listRecurringJournalsQuerySchema = z.object({
-  page: pageNumberField,
-  pageSize: pageSizeField(50),
+  cursor: z.string().optional(),
+  limit: pageSizeField(50),
 });
 export type ListRecurringJournalsQuery = z.infer<typeof listRecurringJournalsQuerySchema>;

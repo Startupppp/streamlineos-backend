@@ -9,6 +9,8 @@ import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { organizationMembers, userPermissionGrants } from "../../db/schema";
+import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import {
@@ -45,6 +47,7 @@ export class UserPermissionGrantsService {
     private readonly moduleAccess: ModuleAccessService,
     private readonly access: AccessService,
     private readonly audit: AuditService,
+    private readonly cache: CacheService,
   ) {}
 
   private moduleKeys(moduleKey: string): Set<string> {
@@ -203,6 +206,8 @@ export class UserPermissionGrantsService {
       },
     });
 
+    await this.cache.invalidate(CACHE_KEYS.userSession(target.userId));
+
     return { success: true, granted: rows.length };
   }
 
@@ -242,6 +247,8 @@ export class UserPermissionGrantsService {
       resourceId: String(membershipId),
       metadata: { moduleKey, targetUserId: target.userId, permissionKey },
     });
+
+    await this.cache.invalidate(CACHE_KEYS.userSession(target.userId));
 
     return { success: true };
   }

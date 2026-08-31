@@ -1,9 +1,10 @@
 process.env.APP_URL ??= "http://localhost:1000";
 
 import { EmployeesService } from "./employees.service";
+import { EmployeeAnalyticsService } from "./employee-analytics.service";
 import * as applyScopeMod from "../../access/apply-scope";
 
-describe("EmployeesService.getStats — SQL aggregates, no row fetch", () => {
+describe("EmployeeAnalyticsService.getStats — SQL aggregates, no row fetch", () => {
   function buildService() {
     const leaveAgg = [{ total: "5", approved: "3", pending: "1", rejected: "1" }];
     const byType = [
@@ -34,7 +35,7 @@ describe("EmployeesService.getStats — SQL aggregates, no row fetch", () => {
         attendance: { findMany: attFindMany },
       },
     };
-    const service = new EmployeesService(db as never, undefined as never, undefined as never);
+    const service = new EmployeeAnalyticsService(db as never, undefined as never);
     return { service, leaveFindMany, attFindMany };
   }
 

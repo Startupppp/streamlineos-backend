@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, isNull, lt } from "drizzle-orm";
-import { notifications, users } from "../../db/schema";
+import { and, count, desc, eq, inArray, isNull, lt } from "drizzle-orm";
+import { notifications, projectApprovals, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
@@ -23,8 +23,47 @@ import {
   type UnifiedInboxResponse,
 } from "./dto/unified-inbox.schemas";
 
+export type UnifiedUnreadCount = {
+  notification: number;
+  mail: number;
+  approval: number;
+  total: number;
+  mailExact: boolean;
+};
+
+const MAIL_COUNT_SCAN_LIMIT = 100;
+
 function assertNever(x: never): never {
   throw new Error(`Unhandled union member: ${String(x)}`);
+}
+
+const KIND_ORDER: Record<InboxKind, number> = {
+  notification: 0,
+  broadcast: 1,
+  mail: 2,
+  build_approval: 3,
+};
+
+function stableSortItems(items: UnifiedInboxItem[]): UnifiedInboxItem[] {
+  return [...items].sort((a, b) => {
+    const tDiff = b.timestamp.localeCompare(a.timestamp);
+    if (tDiff !== 0) return tDiff;
+    const kDiff = (KIND_ORDER[a.kind] ?? 99) - (KIND_ORDER[b.kind] ?? 99);
+    if (kDiff !== 0) return kDiff;
+    return String(b.id).localeCompare(String(a.id));
+  });
+}
+
+function deduplicate(items: UnifiedInboxItem[]): UnifiedInboxItem[] {
+  const seen = new Set<string>();
+  const out: UnifiedInboxItem[] = [];
+  for (const item of items) {
+    if (!seen.has(item.dedupKey)) {
+      seen.add(item.dedupKey);
+      out.push(item);
+    }
+  }
+  return out;
 }
 
 const NOTIF_COLUMNS = {
@@ -129,15 +168,16 @@ export class UnifiedInboxService {
           : ([] as BuildApprovalInboxItem[]),
       ]);
 
-    const all: UnifiedInboxItem[] = [
+    const merged = stableSortItems([
       ...notifItems,
       ...broadcastItems,
       ...mailResult.items,
       ...approvalItems,
-    ].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    ]);
 
-    const hasMore = all.length > limit;
-    const page = hasMore ? all.slice(0, limit) : all;
+    const deduped = deduplicate(merged);
+    const hasMore = deduped.length > limit;
+    const page = hasMore ? deduped.slice(0, limit) : deduped;
 
     const lastNotif = [...page]
       .reverse()
@@ -163,7 +203,7 @@ export class UnifiedInboxService {
 
     const nextCursor = hasMore ? encodeInboxCursor(nextState) : null;
 
-    return { items: page, nextCursor, sources };
+    return { items: page, hasMore, nextCursor, sources };
   }
 
   inboxItemKind(item: UnifiedInboxItem): string {
@@ -220,6 +260,7 @@ export class UnifiedInboxService {
         isRead: row.isRead,
         pinned: row.pinned,
         timestamp: row.createdAt.toISOString(),
+        dedupKey: `notification:${String(row.id)}`,
         actor: row.actorId
           ? {
               id: row.actorId,
@@ -256,6 +297,7 @@ export class UnifiedInboxService {
         body: row.message,
         deepLink: null,
         isRead: false,
+        dedupKey: `broadcast:${String(row.id)}`,
         timestamp: (row.sentAt ?? row.createdAt).toISOString(),
         actor: null,
       }),
@@ -289,6 +331,7 @@ export class UnifiedInboxService {
         hasAttachments: msg.hasAttachments,
         deepLink: null,
         isRead: msg.isRead,
+        dedupKey: `mail:${msg.accountId}:${msg.id}`,
         timestamp: msg.date,
         actor: {
           id: msg.from.email,
@@ -299,6 +342,82 @@ export class UnifiedInboxService {
     );
 
     return { items, nextMailCursor: result.nextCursor };
+  }
+
+  async unifiedUnreadCount(
+    orgId: string,
+    userId: string,
+    user: CurrentUserContext,
+  ): Promise<UnifiedUnreadCount> {
+    const [canMail, canApproval] = await Promise.all([
+      this.access.holds(user, "mail:inbox:view"),
+      this.access.holds(user, "build:approvals:view"),
+    ]);
+
+    const [notifCount, mailCount, approvalCount] = await Promise.all([
+      this.countNotificationUnread(orgId, userId),
+      canMail
+        ? this.countMailUnread(orgId, userId)
+        : Promise.resolve({ unread: 0, exact: true }),
+      canApproval ? this.countApprovalPending(orgId, userId) : Promise.resolve(0),
+    ]);
+
+    return {
+      notification: notifCount,
+      mail: mailCount.unread,
+      approval: approvalCount,
+      total: notifCount + mailCount.unread + approvalCount,
+      mailExact: mailCount.exact,
+    };
+  }
+
+  private async countNotificationUnread(orgId: string, userId: string): Promise<number> {
+    const rows = await this.db
+      .select({ cnt: count() })
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.orgId, orgId),
+          eq(notifications.userId, userId),
+          eq(notifications.isRead, false),
+          isNull(notifications.deletedAt),
+          isNull(notifications.archivedAt),
+        ),
+      );
+    return Number(rows[0]?.cnt ?? 0);
+  }
+
+  private async countMailUnread(
+    orgId: string,
+    userId: string,
+  ): Promise<{ unread: number; exact: boolean }> {
+    const result = await this.mail.listMessages(
+      orgId,
+      userId,
+      "inbox",
+      "all",
+      MAIL_COUNT_SCAN_LIMIT,
+      undefined,
+    );
+    return {
+      unread: result.messages.filter((m) => !m.isRead).length,
+      exact: result.messages.length < MAIL_COUNT_SCAN_LIMIT,
+    };
+  }
+
+  private async countApprovalPending(orgId: string, userId: string): Promise<number> {
+    const rows = await this.db
+      .select({ cnt: count() })
+      .from(projectApprovals)
+      .where(
+        and(
+          eq(projectApprovals.orgId, orgId),
+          eq(projectApprovals.approverId, userId),
+          inArray(projectApprovals.status, ["pending", "escalated"]),
+          isNull(projectApprovals.deletedAt),
+        ),
+      );
+    return Number(rows[0]?.cnt ?? 0);
   }
 
   private async fetchBuildApprovals(
@@ -326,6 +445,7 @@ export class UnifiedInboxService {
         actor: null,
         deepLink: null,
         isRead: false,
+        dedupKey: `approval:${String(row.id)}`,
         timestamp: row.createdAt.toISOString(),
         dueAt: row.dueAt ? row.dueAt.toISOString() : null,
       }),

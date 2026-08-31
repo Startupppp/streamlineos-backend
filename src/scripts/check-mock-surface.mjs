@@ -355,6 +355,11 @@ function extractClassPublicMethods(classSrc, className) {
       methods.add(methodMatch[1]);
     }
 
+    const propertyMatch = /^(?:readonly\s+)?([a-zA-Z_$][a-zA-Z0-9_$]*)\s*[?!]?\s*[:=]/.exec(rest);
+    if (propertyMatch && !SKIP_KEYWORDS.has(propertyMatch[1])) {
+      methods.add(propertyMatch[1]);
+    }
+
     const opens = (line.match(/\{/g) || []).length;
     const closes = (line.match(/\}/g) || []).length;
     bodyDepth += opens - closes;
@@ -639,6 +644,33 @@ export class CacheService {
   async invalidate(key: string): Promise<void> {}
 }
 `;
+
+  const propertyClass = `
+export class KbPageAdapter {
+  readonly contentType = "page";
+  declaredLimit: number = 10;
+  private readonly hidden = "x";
+  async handle(orgId: string, contentId: number): Promise<void> {}
+}
+`;
+  const propertyMembers = extractClassPublicMethods(propertyClass, "KbPageAdapter");
+  if (!propertyMembers || !propertyMembers.has("contentType")) {
+    console.error(
+      "SELF-TEST FAILED: a public readonly property was not recognised as a class member, so any mock declaring it reads as a phantom",
+    );
+    failed = true;
+  } else if (!propertyMembers.has("declaredLimit")) {
+    console.error("SELF-TEST FAILED: a public typed field was not recognised as a class member");
+    failed = true;
+  } else if (!propertyMembers.has("handle")) {
+    console.error("SELF-TEST FAILED: property matching swallowed a real method");
+    failed = true;
+  } else if (propertyMembers.has("hidden")) {
+    console.error("SELF-TEST FAILED: a private property was exposed as a public member");
+    failed = true;
+  } else {
+    console.log("  [pass] extractClassPublicMethods — public properties count as members, private ones do not");
+  }
 
   const pairs = extractMockPairs(syntheticSpec, "synthetic.spec.ts");
   const csPair = pairs.find((p) => p.className === "CacheService");

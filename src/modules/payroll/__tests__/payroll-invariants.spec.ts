@@ -192,3 +192,142 @@ describe("payroll retry safety — idempotency", () => {
     expect(r2).toEqual({ ok: false, reason: "not_found" });
   });
 });
+
+/**
+ * Inline simulation of the BatchCreatorService double-pay guards.
+ *
+ * Guard 1 — pre-filter: employees whose runEmployeeId is in `alreadyPaidIds`
+ * are excluded from a new batch, so a retry can never include them again.
+ *
+ * Guard 2 — markItemPaid status check: an item already in PAID status throws
+ * ConflictException, so marking the same item paid twice is impossible.
+ *
+ * Guard 3 — idempotency-key replay: if a batch already exists for the key the
+ * result is returned with `replayed: true` and no new batch row is inserted.
+ *
+ * Each describe block has a DENY case AND a same-condition CONTROL.
+ */
+
+type EmployeeRow = { id: number; status: string | null; holdReason: string | null; net: string };
+type BatchItemStatus = "PENDING" | "SENT" | "PAID" | "FAILED";
+type BatchItemRow = { id: number; status: BatchItemStatus };
+
+function filterEligibleEmployees(
+  employees: EmployeeRow[],
+  alreadyPaidIds: Set<number>,
+): EmployeeRow[] {
+  return employees.filter((e) => {
+    if (alreadyPaidIds.has(e.id)) return false;
+    if (e.status === "HELD" || e.holdReason) return false;
+    return parseFloat(e.net) > 0;
+  });
+}
+
+function simulateMarkItemPaid(
+  item: BatchItemRow | undefined,
+): { ok: true } | { conflict: string } {
+  if (!item) return { conflict: "not_found" };
+  if (item.status === "PAID") return { conflict: "Item already marked paid" };
+  return { ok: true };
+}
+
+type BatchReplayResult = { replayed: true; batchId: number } | { replayed: false };
+
+function simulateBatchCreate(
+  idempotencyKey: string | undefined,
+  existingBatchId: number | undefined,
+): BatchReplayResult {
+  if (idempotencyKey && existingBatchId != null) {
+    return { replayed: true, batchId: existingBatchId };
+  }
+  return { replayed: false };
+}
+
+describe("payout retry — double-pay prevention", () => {
+  describe("guard 1: already-paid employee pre-filter", () => {
+    const employees: EmployeeRow[] = [
+      { id: 1, status: null, holdReason: null, net: "50000.00" },
+      { id: 2, status: null, holdReason: null, net: "60000.00" },
+    ];
+
+    it("employee with PAID batch item is excluded from a new batch (DENY)", () => {
+      const alreadyPaid = new Set([1]);
+      const eligible = filterEligibleEmployees(employees, alreadyPaid);
+      expect(eligible.map((e) => e.id)).not.toContain(1);
+    });
+
+    it("employee NOT in paid set is included in the new batch (CONTROL — proves filter can pass)", () => {
+      const alreadyPaid = new Set([1]);
+      const eligible = filterEligibleEmployees(employees, alreadyPaid);
+      expect(eligible.map((e) => e.id)).toContain(2);
+    });
+
+    it("calling batch creation twice with same paid set excludes the same employees both times (idempotent DENY)", () => {
+      const alreadyPaid = new Set([1]);
+      const first = filterEligibleEmployees(employees, alreadyPaid);
+      const second = filterEligibleEmployees(employees, alreadyPaid);
+      expect(first.map((e) => e.id)).toEqual(second.map((e) => e.id));
+      expect(first.every((e) => e.id !== 1)).toBe(true);
+      expect(second.every((e) => e.id !== 1)).toBe(true);
+    });
+
+    it("an empty alreadyPaid set includes all eligible employees (CONTROL)", () => {
+      const eligible = filterEligibleEmployees(employees, new Set());
+      expect(eligible).toHaveLength(2);
+    });
+
+    it("HELD employees are excluded even when not in alreadyPaid (CONTROL — proves multiple guards compose)", () => {
+      const held: EmployeeRow[] = [
+        { id: 3, status: "HELD", holdReason: "salary on hold", net: "40000.00" },
+      ];
+      const eligible = filterEligibleEmployees(held, new Set());
+      expect(eligible).toHaveLength(0);
+    });
+  });
+
+  describe("guard 2: markItemPaid status check", () => {
+    it("marking a PAID item paid again returns conflict (DENY — guard must bite)", () => {
+      const item: BatchItemRow = { id: 10, status: "PAID" };
+      const result = simulateMarkItemPaid(item);
+      expect(result).toEqual({ conflict: "Item already marked paid" });
+    });
+
+    it("marking a PENDING item paid returns ok (CONTROL — proves the check can pass)", () => {
+      const item: BatchItemRow = { id: 11, status: "PENDING" };
+      const result = simulateMarkItemPaid(item);
+      expect(result).toEqual({ ok: true });
+    });
+
+    it("marking a PAID item paid twice returns conflict on both calls (idempotent DENY)", () => {
+      const item: BatchItemRow = { id: 12, status: "PAID" };
+      const r1 = simulateMarkItemPaid(item);
+      const r2 = simulateMarkItemPaid(item);
+      expect(r1).toEqual({ conflict: "Item already marked paid" });
+      expect(r2).toEqual({ conflict: "Item already marked paid" });
+    });
+
+    it("missing item returns not_found (DENY — proves item must be in the correct org and batch)", () => {
+      const result = simulateMarkItemPaid(undefined);
+      expect(result).toEqual({ conflict: "not_found" });
+    });
+  });
+
+  describe("guard 3: idempotency-key batch replay", () => {
+    it("a second createBatch call with the same key replays without inserting a new row (DENY for double-create)", () => {
+      const result = simulateBatchCreate("key-abc", 42);
+      expect(result).toEqual({ replayed: true, batchId: 42 });
+    });
+
+    it("createBatch without a key always creates a new batch (CONTROL — no key = no replay)", () => {
+      const result = simulateBatchCreate(undefined, undefined);
+      expect(result).toEqual({ replayed: false });
+    });
+
+    it("replay returns the same batchId on every retry (idempotent DENY)", () => {
+      const r1 = simulateBatchCreate("key-abc", 42);
+      const r2 = simulateBatchCreate("key-abc", 42);
+      expect(r1).toEqual(r2);
+      if (r1.replayed) expect(r1.batchId).toBe(42);
+    });
+  });
+});

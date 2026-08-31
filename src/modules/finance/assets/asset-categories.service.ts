@@ -1,10 +1,11 @@
 import { ConflictException, Inject, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
-import { and, count, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetAfterValue } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { paginateOffset, buildListResponse } from "../../../common/pagination/pagination";
 import { accAssetCategories } from "../../../db/schema/accounting/finance-assets";
 import { ledgerAccounts } from "../../../db/schema/accounting/accounting";
 import type { CreateCategoryInput, ListCategoriesQuery, UpdateCategoryInput } from "./dto/assets.schemas";
@@ -17,20 +18,26 @@ export class AssetCategoriesService {
   ) {}
 
   async list(orgId: string, query: ListCategoriesQuery) {
-    const cacheKey = `${query.page}:${query.pageSize}`;
+    const { cursor, limit } = query;
+    const pos = decodeCursor(cursor);
+    const pageLimit = Math.min(limit, 100);
+    const cacheKey = `${cursor ?? ""}:${pageLimit}`;
+
     return this.cache.cachedVersioned(CACHE_KEYS.finAssetCategoriesNamespace(orgId), cacheKey, async () => {
-      const { limit, offset } = paginateOffset(query);
-      const where = eq(accAssetCategories.orgId, orgId);
-      const [items, totals] = await Promise.all([
-        this.db
-          .select()
-          .from(accAssetCategories)
-          .where(where)
-          .limit(limit)
-          .offset(offset),
-        this.db.select({ c: count() }).from(accAssetCategories).where(where),
-      ]);
-      return buildListResponse(items, Number(totals[0]?.c ?? 0), query);
+      const conds = [eq(accAssetCategories.orgId, orgId)];
+      if (pos) conds.push(keysetAfterValue(accAssetCategories.name, accAssetCategories.id, pos));
+
+      const rows = await this.db
+        .select()
+        .from(accAssetCategories)
+        .where(and(...conds))
+        .orderBy(asc(accAssetCategories.name), asc(accAssetCategories.id))
+        .limit(pageLimit + 1);
+
+      return buildCursorPage(rows, pageLimit, (row) => ({
+        sortValue: row.name,
+        id: String(row.id),
+      }));
     }, 300);
   }
 

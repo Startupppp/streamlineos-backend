@@ -6,7 +6,8 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Public } from "../../common/auth/public.decorator";
 import { AgentTokenGuard } from "./agent-token.guard";
 import { AgentAccessService } from "./agent-access.service";
-import { ProjectsService } from "../build/core/projects.service";
+import { ProjectsQueryService } from "../build/core/projects-query.service";
+import { ProjectsProvisionService } from "../build/core/projects-provision.service";
 import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
 import { ProjectsWorkQueryService } from "../build/core/projects-work-query.service";
 import { ProjectsTicketSubresourcesService } from "../build/core/projects-ticket-subresources.service";
@@ -35,7 +36,8 @@ const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }
 export class AgentController {
   constructor(
     private readonly agentSvc: AgentAccessService,
-    private readonly projectsSvc: ProjectsService,
+    private readonly projectsQuery: ProjectsQueryService,
+    private readonly projectsProvision: ProjectsProvisionService,
     private readonly ticketsSvc: ProjectsTicketsService,
     private readonly workQuerySvc: ProjectsWorkQueryService,
     private readonly subresourcesSvc: ProjectsTicketSubresourcesService,
@@ -54,7 +56,7 @@ export class AgentController {
     @Query() query: ListProjectsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.projectsSvc.listProjects(u, query);
+    return this.projectsQuery.listProjects(u, query);
   }
 
   @Post("projects")
@@ -65,7 +67,7 @@ export class AgentController {
     @Body() body: CreateProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.projectsSvc.createProject(u.orgId, u.userId, body);
+    return this.projectsProvision.createProject(u.orgId, u.userId, body);
   }
 
   @Post("projects/:projectId/tickets")

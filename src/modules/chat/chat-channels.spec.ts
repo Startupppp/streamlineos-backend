@@ -46,6 +46,12 @@ function buildMocks() {
 
   const membershipWhere = jest.fn().mockResolvedValue([{ channelId: 1 }]);
 
+  const distinctChain: { leftJoin: jest.Mock; where: jest.Mock; orderBy: jest.Mock } = {
+    leftJoin: jest.fn(() => distinctChain),
+    where: jest.fn(() => distinctChain),
+    orderBy: jest.fn().mockResolvedValue([]),
+  };
+
   const mockDb = {
     query: {
       chatChannels: { findMany: findManyMock, findFirst: jest.fn() },
@@ -57,11 +63,7 @@ function buildMocks() {
       from: jest.fn().mockReturnValue({ where: membershipWhere }),
     }),
     selectDistinctOn: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          orderBy: jest.fn().mockResolvedValue([]),
-        }),
-      }),
+      from: jest.fn().mockReturnValue(distinctChain),
     }),
   };
 

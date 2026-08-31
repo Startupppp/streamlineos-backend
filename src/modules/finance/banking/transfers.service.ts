@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -17,7 +17,8 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
-import { paginateOffset, buildListResponse } from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeValue } from "../../../common/pagination/keyset";
 import { createHash } from "crypto";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { CreateBankTransferInput, TransfersQuery } from "./dto/transfers.schemas";
@@ -38,9 +39,9 @@ export class TransfersService {
     private readonly audit: AuditService,
   ) {}
 
-  async list(u: CurrentUserContext, query: TransfersQuery) {
+  async list(u: CurrentUserContext, query: TransfersQuery): Promise<CursorPage<typeof finBankTransfers.$inferSelect>> {
     const { orgId } = u;
-    const { limit, offset } = paginateOffset(query);
+    const pos = decodeCursor(query.cursor);
 
     const conditions = [eq(finBankTransfers.orgId, orgId)];
     if (query.bankAccountId !== undefined) {
@@ -57,20 +58,19 @@ export class TransfersService {
     if (query.to) {
       conditions.push(sql`${finBankTransfers.transferDate} <= ${query.to}` as ReturnType<typeof eq>);
     }
+    if (pos) conditions.push(keysetBeforeValue(finBankTransfers.transferDate, finBankTransfers.id, pos));
 
-    const where = and(...conditions);
-    const [rows, [totals]] = await Promise.all([
-      this.db
-        .select()
-        .from(finBankTransfers)
-        .where(where)
-        .orderBy(desc(finBankTransfers.transferDate), desc(finBankTransfers.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(finBankTransfers).where(where),
-    ]);
+    const rows = await this.db
+      .select()
+      .from(finBankTransfers)
+      .where(and(...conditions))
+      .orderBy(desc(finBankTransfers.transferDate), desc(finBankTransfers.id))
+      .limit(query.limit + 1);
 
-    return buildListResponse(rows, totals?.total ?? 0, query);
+    return buildCursorPage(rows, query.limit, (r) => ({
+      sortValue: String(r.transferDate),
+      id: String(r.id),
+    }));
   }
 
   async create(u: CurrentUserContext, input: CreateBankTransferInput) {

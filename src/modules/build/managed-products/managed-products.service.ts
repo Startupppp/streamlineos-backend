@@ -1,10 +1,12 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { managedProducts } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type {
   CreateManagedProductInput,
   ListManagedProductsQuery,
@@ -41,35 +43,26 @@ export class ManagedProductsService {
   }
 
   async listManagedProducts(orgId: string, query: ListManagedProductsQuery) {
-    const { page, limit, status } = query;
-    const offset = (page - 1) * limit;
-
-    const conditions = and(
+    const { cursor, limit, status } = query;
+    const pos = decodeCursor(cursor);
+    const conds = [
       eq(managedProducts.orgId, orgId),
       isNull(managedProducts.deletedAt),
       status ? eq(managedProducts.status, status) : undefined,
-    );
+    ];
+    if (pos) conds.push(keysetBeforeId(managedProducts.createdAt, managedProducts.id, pos));
 
-    const [rows, [totalRow]] = await Promise.all([
-      this.db
-        .select()
-        .from(managedProducts)
-        .where(conditions)
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(managedProducts).where(conditions),
-    ]);
+    const rows = await this.db
+      .select()
+      .from(managedProducts)
+      .where(and(...conds))
+      .orderBy(desc(managedProducts.createdAt), desc(managedProducts.id))
+      .limit(limit + 1);
 
-    const total = Number(totalRow?.total ?? 0);
-    return {
-      data: rows,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    return buildCursorPage(rows, limit, (r) => ({
+      sortValue: (r.createdAt ?? new Date(0)).toISOString(),
+      id: String(r.id),
+    }));
   }
 
   async getManagedProduct(orgId: string, managedProductId: number) {

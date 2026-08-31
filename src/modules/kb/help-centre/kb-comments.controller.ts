@@ -23,6 +23,7 @@ import {
   type UpdateCommentInput,
 } from "./dto/kb-comments.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { z } from "zod";
 
@@ -80,6 +81,7 @@ export class KbCommentsController {
   }
 
   @Post("comments/:commentId/resolve")
+  @BodylessAction()
   @RequirePermission("kb:articles:update")
   @HttpCode(200)
   @Validate({ params: commentIdParams })

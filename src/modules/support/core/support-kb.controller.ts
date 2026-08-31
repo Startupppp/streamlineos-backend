@@ -40,6 +40,7 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
@@ -259,6 +260,7 @@ export class SupportKbController {
   }
 
   @Post("articles/:articleId/reindex")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
   @HttpCode(200)
@@ -271,6 +273,7 @@ export class SupportKbController {
   }
 
   @Post("reindex-all")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("support:kb:manage")
   @HttpCode(200)

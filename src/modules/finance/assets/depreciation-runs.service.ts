@@ -2,7 +2,9 @@ import {
   BadRequestException, Inject, Injectable, NotFoundException,
   UnprocessableEntityException,
 } from "@nestjs/common";
-import { and, count, desc, eq, inArray, lt } from "drizzle-orm";
+import { and, desc, eq, inArray, lt } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBefore } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -10,7 +12,6 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { JournalPostingService, type DraftLine } from "../../accounting/posting/journal-posting.service";
-import { paginateOffset, buildListResponse } from "../../../common/pagination/pagination";
 import {
   accFixedAssets, accAssetCategories, accDepreciationRuns, accDepreciationSchedules,
 } from "../../../db/schema/accounting/finance-assets";
@@ -30,19 +31,24 @@ export class DepreciationRunsService {
   ) {}
 
   async list(orgId: string, query: ListRunsQuery) {
-    const { limit, offset } = paginateOffset(query);
-    const where = eq(accDepreciationRuns.orgId, orgId);
-    const [items, totals] = await Promise.all([
-      this.db
-        .select()
-        .from(accDepreciationRuns)
-        .where(where)
-        .orderBy(desc(accDepreciationRuns.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ c: count() }).from(accDepreciationRuns).where(where),
-    ]);
-    return buildListResponse(items, Number(totals[0]?.c ?? 0), query);
+    const { cursor, limit } = query;
+    const pos = decodeCursor(cursor);
+    const pageLimit = Math.min(limit, 100);
+
+    const conds = [eq(accDepreciationRuns.orgId, orgId)];
+    if (pos) conds.push(keysetBefore(accDepreciationRuns.createdAt, accDepreciationRuns.id, pos));
+
+    const rows = await this.db
+      .select()
+      .from(accDepreciationRuns)
+      .where(and(...conds))
+      .orderBy(desc(accDepreciationRuns.createdAt), desc(accDepreciationRuns.id))
+      .limit(pageLimit + 1);
+
+    return buildCursorPage(rows, pageLimit, (row) => ({
+      sortValue: (row.createdAt ?? new Date(0)).toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async runDepreciation(u: CurrentUserContext, periodKey: string) {

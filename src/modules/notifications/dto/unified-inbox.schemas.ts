@@ -48,6 +48,7 @@ type InboxItemBase = {
   timestamp: string;
   isRead: boolean;
   deepLink: string | null;
+  dedupKey: string;
 };
 
 export type NotificationInboxItem = InboxItemBase & {
@@ -102,6 +103,7 @@ export type SourceStatus = {
 
 export type UnifiedInboxResponse = {
   items: UnifiedInboxItem[];
+  hasMore: boolean;
   nextCursor: string | null;
   sources: SourceStatus[];
 };

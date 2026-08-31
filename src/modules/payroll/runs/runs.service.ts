@@ -7,6 +7,7 @@ import {
   payrollRuns,
   payrollPolicies,
   payrollPolicyVersions,
+  organizationMembers,
 } from "../../../db/schema";
 import type { DataScope } from "../../access/access.types";
 import { buildRunChecklist } from "./lib/checklist";
@@ -144,6 +145,12 @@ export class RunsService {
 
     const policyVersionId = policyVersion[0]?.id ?? null;
 
+    const creatorMember = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.userId, userId), eq(organizationMembers.orgId, orgId)),
+      columns: { id: true },
+    });
+    const createdByMembershipId = creatorMember?.id ?? null;
+
     const inserted = await this.db
       .insert(payrollRuns)
       .values({
@@ -159,6 +166,7 @@ export class RunsService {
         status: "PREPARING",
         policyVersionId,
         createdBy: userId,
+        createdByMembershipId,
       })
       .returning({ id: payrollRuns.id });
 

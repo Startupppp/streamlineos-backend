@@ -1,12 +1,13 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lte, or } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBefore } from "../../../common/pagination/keyset";
 import { finRecurringInvoiceTemplates } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { InvoicesWriteService } from "../../invoices/invoices-write.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import { logger } from "../../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import type { CreateRecurringTemplateInput, UpdateRecurringTemplateInput, ListRecurringTemplatesQuery } from "./dto/finance-ar.schemas";
@@ -36,28 +37,37 @@ export class RecurringInvoicesService {
   ) {}
 
   async list(orgId: string, query: ListRecurringTemplatesQuery) {
-    const { limit, offset } = paginateOffset(query);
+    const { cursor, limit } = query;
+    const pos = decodeCursor(cursor);
+    const pageLimit = Math.min(limit, 100);
+
     const conditions = [eq(finRecurringInvoiceTemplates.orgId, orgId)];
     if (query.isActive !== undefined) conditions.push(eq(finRecurringInvoiceTemplates.isActive, query.isActive));
+    if (pos) conditions.push(keysetBefore(finRecurringInvoiceTemplates.createdAt, finRecurringInvoiceTemplates.id, pos));
 
-    const projection = {
-      id: finRecurringInvoiceTemplates.id,
-      name: finRecurringInvoiceTemplates.name,
-      clientId: finRecurringInvoiceTemplates.clientId,
-      frequency: finRecurringInvoiceTemplates.frequency,
-      nextRunDate: finRecurringInvoiceTemplates.nextRunDate,
-      lastRunDate: finRecurringInvoiceTemplates.lastRunDate,
-      endDate: finRecurringInvoiceTemplates.endDate,
-      isActive: finRecurringInvoiceTemplates.isActive,
-      createdBy: finRecurringInvoiceTemplates.createdBy,
-      createdAt: finRecurringInvoiceTemplates.createdAt,
-      updatedAt: finRecurringInvoiceTemplates.updatedAt,
-    };
-    const [rows, [{ count }]] = await Promise.all([
-      this.db.select(projection).from(finRecurringInvoiceTemplates).where(and(...conditions)).orderBy(desc(finRecurringInvoiceTemplates.createdAt)).limit(limit).offset(offset),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(finRecurringInvoiceTemplates).where(and(...conditions)),
-    ]);
-    return buildListResponse(rows, count, query);
+    const rows = await this.db
+      .select({
+        id: finRecurringInvoiceTemplates.id,
+        name: finRecurringInvoiceTemplates.name,
+        clientId: finRecurringInvoiceTemplates.clientId,
+        frequency: finRecurringInvoiceTemplates.frequency,
+        nextRunDate: finRecurringInvoiceTemplates.nextRunDate,
+        lastRunDate: finRecurringInvoiceTemplates.lastRunDate,
+        endDate: finRecurringInvoiceTemplates.endDate,
+        isActive: finRecurringInvoiceTemplates.isActive,
+        createdBy: finRecurringInvoiceTemplates.createdBy,
+        createdAt: finRecurringInvoiceTemplates.createdAt,
+        updatedAt: finRecurringInvoiceTemplates.updatedAt,
+      })
+      .from(finRecurringInvoiceTemplates)
+      .where(and(...conditions))
+      .orderBy(desc(finRecurringInvoiceTemplates.createdAt), desc(finRecurringInvoiceTemplates.id))
+      .limit(pageLimit + 1);
+
+    return buildCursorPage(rows, pageLimit, (row) => ({
+      sortValue: (row.createdAt ?? new Date(0)).toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async get(orgId: string, id: number) {

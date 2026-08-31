@@ -34,7 +34,9 @@ export const invShipments = pgTable("inv_shipments", {
   status: invShipmentStatusEnum("status").default("DRAFT").notNull(),
   shippedAt: timestamp("shipped_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   approvedBy: text("approved_by").references(() => users.id),
+  approvedByMembershipId: integer("approved_by_membership_id"),
   cancelledAt: timestamp("cancelled_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -168,6 +170,7 @@ export const invPackages = pgTable("inv_packages", {
   /** INV-206. Which carton was chosen, so a closed package can be re-checked. */
   cartonTypeId: integer("carton_type_id"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -213,6 +216,7 @@ export const invLoads = pgTable("inv_loads", {
   dispatchDate: date("dispatch_date"),
   arrivalDate: date("arrival_date"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   cancelledAt: timestamp("cancelled_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

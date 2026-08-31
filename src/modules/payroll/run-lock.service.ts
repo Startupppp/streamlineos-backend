@@ -7,10 +7,6 @@ import { payrollRuns } from "../../db/schema";
 
 const LOCK_TTL_MS = 15 * 60 * 1000;
 
-/**
- * Per-run generation/recalculation lock.
- * Prevents concurrent generate/recalculate for the same run (and same org+month via run uniqueness).
- */
 @Injectable()
 export class PayrollRunLockService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -62,7 +58,6 @@ export class PayrollRunLockService {
       );
   }
 
-  /** Best-effort entity/period advisory: ensure only one active generate per org+month via unique month. */
   async assertNoOtherActiveGeneration(orgId: string, month: string, runId: number): Promise<void> {
     const staleBefore = new Date(Date.now() - LOCK_TTL_MS);
     const others = await this.db

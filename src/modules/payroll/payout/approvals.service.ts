@@ -48,7 +48,7 @@ export class ApprovalsService {
   async submitApproval(orgId: string, userId: string, runId: number, requestId?: string | null) {
     const run = await this.db.query.payrollRuns.findFirst({
       where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
-      with: { policyVersion: true },
+      with: { policyVersion: { columns: { toggles: true, config: true } } },
     });
 
     if (!run) throw new NotFoundException(`Payroll run ${runId} not found`);
@@ -91,7 +91,7 @@ export class ApprovalsService {
       const autoResult = await this.db.transaction(async (tx) => {
         await tx
           .update(payrollRuns)
-          .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId, approvedByMembershipId: approverActor.membershipId })
+          .set({ status: "APPROVED", approvedAt: new Date(), approvedByMembershipId: approverActor.membershipId })
           .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
         await tx.insert(payrollRunEvents).values([

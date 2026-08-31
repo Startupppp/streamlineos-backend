@@ -2,7 +2,7 @@ import { Module } from "@nestjs/common";
 import { HrCoreModule } from "../core/hr-core.module";
 import { LegalHoldsController } from "./legal-holds/legal-holds.controller";
 import { RetentionController } from "./retention/retention.controller";
-import { DelegationsController } from "./delegations/delegations.controller";
+import { HrGovernanceDelegationsController } from "./delegations/delegations.controller";
 import { PositionsController } from "./positions/positions.controller";
 import { PositionsTaxonomyController } from "./positions/positions-taxonomy.controller";
 import { LaborController } from "./labor/labor.controller";
@@ -18,7 +18,7 @@ import { LaborService } from "./labor/labor.service";
   controllers: [
     LegalHoldsController,
     RetentionController,
-    DelegationsController,
+    HrGovernanceDelegationsController,
     PositionsController,
     PositionsTaxonomyController,
     LaborController,

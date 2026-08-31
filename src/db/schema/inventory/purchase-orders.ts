@@ -24,6 +24,7 @@ export const invVendors = pgTable("inv_vendors", {
   isActive: boolean("is_active").default(true).notNull(),
   notes: text("notes"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -55,8 +56,10 @@ export const invPurchaseOrders = pgTable("inv_purchase_orders", {
   notes: text("notes"),
   sentAt: timestamp("sent_at"),
   approvedBy: text("approved_by").references(() => users.id),
+  approvedByMembershipId: integer("approved_by_membership_id"),
   approvedAt: timestamp("approved_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -142,6 +145,7 @@ export const invGrns = pgTable("inv_grns", {
   postedBy: text("posted_by").references(() => users.id),
   postedAt: timestamp("posted_at"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

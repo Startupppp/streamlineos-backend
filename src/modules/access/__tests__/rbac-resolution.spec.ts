@@ -163,18 +163,7 @@ describe("AccessService.resolveUserPermissions — org owner receives every cata
       select: jest.fn().mockReturnValue(makeSelectChain([])),
     };
 
-    const result = new Map(
-      Object.entries(
-        (await (buildService(db) as unknown as {
-          computeUserPermissions: (
-            orgId: string,
-            userId: string,
-          ) => Promise<{
-            perms: Record<string, "all" | "team" | "own" | "none">;
-          }>;
-        }).computeUserPermissions(ORG_A, USER)).perms,
-      ),
-    );
+    const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
 
     expect(result.size).toBeGreaterThan(0);
     for (const name of ALL_PERMISSION_NAMES) {
@@ -253,18 +242,7 @@ describe("AccessService.resolveUserPermissions — ORG_ADMIN role grants every c
         .mockReturnValueOnce(makeSelectChain([])),
     };
 
-    const result = new Map(
-      Object.entries(
-        (await (buildService(db) as unknown as {
-          computeUserPermissions: (
-            orgId: string,
-            userId: string,
-          ) => Promise<{
-            perms: Record<string, "all" | "team" | "own" | "none">;
-          }>;
-        }).computeUserPermissions(ORG_A, USER)).perms,
-      ),
-    );
+    const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
 
     expect(result.size).toBeGreaterThan(0);
     for (const name of ALL_PERMISSION_NAMES) {

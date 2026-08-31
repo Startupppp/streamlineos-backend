@@ -1,8 +1,12 @@
 import { BadRequestException } from "@nestjs/common";
 import { OrganizationController } from "./organization.controller";
-import type { OrganizationService } from "./organization.service";
+import type { OrgProfileService } from "./org-profile.service";
+import type { OrgMembershipService } from "./org-membership.service";
+import type { OrgMembershipStatusService } from "./org-membership-status.service";
+import type { OrgMemberDepartureService } from "./org-member-departure.service";
+import type { OrgLifecycleService } from "./org-lifecycle.service";
+import type { OrgPurgeService } from "./org-purge.service";
 import type { OrganizationSettingsService } from "./organization-settings.service";
-import type { InvitationsService } from "./invitations.service";
 import type { InvitationsReadService } from "./invitations-read.service";
 import type { InvitationAcceptanceService } from "./invitation-acceptance.service";
 import type { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
@@ -31,12 +35,16 @@ function buildController(switchOrgImpl?: () => Promise<unknown>) {
     ? jest.fn().mockImplementation(switchOrgImpl)
     : jest.fn().mockResolvedValue({ orgId: "org-b" });
 
-  const organization = { createOrganization, switchOrg } as unknown as OrganizationService;
+  const orgProfile = { createOrganization, switchOrg } as unknown as OrgProfileService;
 
   const controller = new OrganizationController(
-    organization,
+    orgProfile,
+    {} as unknown as OrgMembershipService,
+    {} as unknown as OrgMembershipStatusService,
+    {} as unknown as OrgMemberDepartureService,
+    {} as unknown as OrgLifecycleService,
+    {} as unknown as OrgPurgeService,
     {} as unknown as OrganizationSettingsService,
-    {} as unknown as InvitationsService,
     {} as unknown as InvitationsReadService,
     {} as unknown as InvitationAcceptanceService,
     {} as unknown as RateLimitService,
