@@ -1,5 +1,5 @@
-import { pgTable, serial, text, varchar, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
-import { organizations, users } from "../common/auth";
+import { pgTable, serial, text, varchar, integer, jsonb, timestamp, index, unique, foreignKey } from "drizzle-orm/pg-core";
+import { organizations, users, organizationMembers } from "../common/auth";
 
 interface SummaryStructured {
   highlights: string[];
@@ -27,6 +27,7 @@ export const aiSummarySnapshots = pgTable(
     citations: jsonb("citations").$type<SummaryCitation[]>(),
     correlationId: varchar("correlation_id", { length: 64 }),
     generatedBy: text("generated_by").references(() => users.id, { onDelete: "set null" }),
+    generatedByMembershipId: integer("generated_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -37,6 +38,11 @@ export const aiSummarySnapshots = pgTable(
       table.createdAt,
     ),
     unique("uniq_ai_summary_snapshots_org_id").on(table.orgId, table.id),
+    foreignKey({
+      columns: [table.orgId, table.generatedByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_ai_summary_org_gen_mbr",
+    }).onDelete("set null"),
   ],
 );
 

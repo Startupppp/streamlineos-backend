@@ -38,7 +38,6 @@ export const timesheets = pgTable("timesheets", {
   imageUrl: text("image_url"),
   workLink: text("work_link"),
   status: timesheetEntryStatusEnum("status").default("PENDING").notNull(),
-  approvedBy: text("approved_by").references(() => users.id, { onDelete: "set null" }),
   approvedByMembershipId: integer("approved_by_membership_id"),
   approvedAt: timestamp("approved_at"),
   rejectionReason: text("rejection_reason"),

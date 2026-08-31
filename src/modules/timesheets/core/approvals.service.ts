@@ -155,6 +155,8 @@ export class ApprovalsService {
         keysetBeforeId(timesheetPeriods.submittedAt, timesheetPeriods.id, pos),
       );
 
+    const approverMember = alias(organizationMembers, "approver_member");
+
     const rows = await this.db
       .select({
         id: timesheetPeriods.id,
@@ -171,7 +173,7 @@ export class ApprovalsService {
         rejectedAt: timesheetPeriods.rejectedAt,
         lockedAt: timesheetPeriods.lockedAt,
         currentApproverId: timesheetPeriods.currentApproverId,
-        approvedBy: timesheetPeriods.approvedBy,
+        approvedBy: approverMember.userId,
         rejectionReason: timesheetPeriods.rejectionReason,
         createdAt: timesheetPeriods.createdAt,
         updatedAt: timesheetPeriods.updatedAt,
@@ -180,6 +182,13 @@ export class ApprovalsService {
       })
       .from(timesheetPeriods)
       .leftJoin(users, eq(timesheetPeriods.userId, users.id))
+      .leftJoin(
+        approverMember,
+        and(
+          eq(timesheetPeriods.orgId, approverMember.orgId),
+          eq(timesheetPeriods.approvedByMembershipId, approverMember.id),
+        ),
+      )
       .where(and(...conditions))
       .orderBy(desc(timesheetPeriods.submittedAt), desc(timesheetPeriods.id))
       .limit(limit + 1);
@@ -241,7 +250,6 @@ export class ApprovalsService {
         .set({
           status: "APPROVED",
           approvedAt: now,
-          approvedBy: u.userId,
           approvedByMembershipId: approverActor.membershipId,
           lockedAt: lockAfterApproval ? now : null,
           updatedAt: now,
@@ -257,7 +265,6 @@ export class ApprovalsService {
         .update(timesheets)
         .set({
           status: "APPROVED",
-          approvedBy: u.userId,
           approvedByMembershipId: approverActor.membershipId,
           approvedAt: now,
           lockedAt: lockAfterApproval ? now : null,
@@ -353,6 +360,8 @@ export class ApprovalsService {
   async approvePeriod(u: CurrentUserContext, periodId: number) {
     await this.approveSinglePeriod(u, periodId);
 
+    const approverMember = alias(organizationMembers, "approver_member");
+
     const [updated] = await this.db
       .select({
         id: timesheetPeriods.id,
@@ -369,7 +378,7 @@ export class ApprovalsService {
         rejectedAt: timesheetPeriods.rejectedAt,
         lockedAt: timesheetPeriods.lockedAt,
         currentApproverId: timesheetPeriods.currentApproverId,
-        approvedBy: timesheetPeriods.approvedBy,
+        approvedBy: approverMember.userId,
         rejectionReason: timesheetPeriods.rejectionReason,
         createdAt: timesheetPeriods.createdAt,
         updatedAt: timesheetPeriods.updatedAt,
@@ -378,6 +387,13 @@ export class ApprovalsService {
       })
       .from(timesheetPeriods)
       .leftJoin(users, eq(timesheetPeriods.userId, users.id))
+      .leftJoin(
+        approverMember,
+        and(
+          eq(timesheetPeriods.orgId, approverMember.orgId),
+          eq(timesheetPeriods.approvedByMembershipId, approverMember.id),
+        ),
+      )
       .where(
         and(
           eq(timesheetPeriods.id, periodId),

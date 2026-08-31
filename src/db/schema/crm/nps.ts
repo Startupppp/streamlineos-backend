@@ -14,6 +14,7 @@ export const npsSurveys = pgTable("nps_surveys", {
   status: npsSurveyStatusEnum("status").default("draft").notNull(),
   publicToken: text("public_token").notNull().unique(),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

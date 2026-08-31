@@ -1,6 +1,6 @@
-import { pgTable, serial, text, integer, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, jsonb, timestamp, index, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { signBulkJobStatusEnum, signBulkRowStatusEnum } from "./enums";
 import { signTemplates } from "./templates";
 import { signEnvelopes } from "./envelopes";
@@ -12,6 +12,7 @@ export const signBulkSendJobs = pgTable(
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     templateId: integer("template_id").references(() => signTemplates.id, { onDelete: "cascade" }).notNull(),
     senderUserId: text("sender_user_id").references(() => users.id, { onDelete: "set null" }).notNull(),
+    senderMembershipId: integer("sender_membership_id"),
     status: signBulkJobStatusEnum("status").default("pending").notNull(),
     columnMappingJson: jsonb("column_mapping_json").$type<Record<string, string>>().default({}).notNull(),
     totalCount: integer("total_count").default(0).notNull(),
@@ -25,6 +26,11 @@ export const signBulkSendJobs = pgTable(
   (table) => [
     index("idx_sign_bulk_send_jobs_org_status").on(table.orgId, table.status),
     unique("uniq_sign_bulk_send_jobs_org_id").on(table.orgId, table.id),
+    foreignKey({
+      columns: [table.orgId, table.senderMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_sign_bulk_org_sender_mbr",
+    }).onDelete("set null"),
   ],
 );
 
@@ -50,6 +56,7 @@ export const signBulkSendRows = pgTable(
 export const signBulkSendJobsRelations = relations(signBulkSendJobs, ({ one, many }) => ({
   organization: one(organizations, { fields: [signBulkSendJobs.orgId], references: [organizations.id] }),
   template: one(signTemplates, { fields: [signBulkSendJobs.templateId], references: [signTemplates.id] }),
+  sender: one(users, { fields: [signBulkSendJobs.senderUserId], references: [users.id] }),
   rows: many(signBulkSendRows),
 }));
 

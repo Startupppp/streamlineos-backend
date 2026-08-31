@@ -21,6 +21,7 @@ export const crmContactChannelConsent = pgTable("crm_contact_channel_consent", {
   capturedAt: timestamp("captured_at", { withTimezone: true }).defaultNow().notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
   recordedByUserId: text("recorded_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  recordedByMembershipId: integer("recorded_by_membership_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -46,6 +47,7 @@ export const crmContactConsentEvents = pgTable("crm_contact_consent_events", {
   source: crmConsentSourceEnum("source").notNull(),
   sourceDetail: text("source_detail"),
   recordedByUserId: text("recorded_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  recordedByMembershipId: integer("recorded_by_membership_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_crm_consent_events_org_contact").on(table.orgId, table.contactId, table.createdAt),

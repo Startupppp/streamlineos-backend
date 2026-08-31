@@ -1,6 +1,6 @@
-import { pgTable, pgEnum, serial, text, varchar, integer, jsonb, timestamp, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, serial, text, varchar, integer, jsonb, timestamp, index, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 
 export const aiJobStatusEnum = pgEnum("ai_job_status", [
   "QUEUED", "RUNNING", "COMPLETED", "FAILED", "DEAD", "CANCELLED",
@@ -10,6 +10,7 @@ export const aiJobs = pgTable("ai_jobs", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  userMembershipId: integer("user_membership_id"),
   type: varchar("type", { length: 100 }).notNull(),
   payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
   status: aiJobStatusEnum("status").default("QUEUED").notNull(),
@@ -30,6 +31,11 @@ export const aiJobs = pgTable("ai_jobs", {
   index("idx_ai_jobs_org_created_at").on(table.orgId, table.createdAt),
   index("idx_ai_jobs_org_type_status").on(table.orgId, table.type, table.status),
   unique("uniq_ai_jobs_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_ai_jobs_org_user_mbr",
+  }).onDelete("set null"),
 ]);
 
 export type AiJob = typeof aiJobs.$inferSelect;

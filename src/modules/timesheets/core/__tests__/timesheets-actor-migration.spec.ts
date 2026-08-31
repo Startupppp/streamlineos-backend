@@ -34,7 +34,6 @@ const SUBMITTED_PERIOD = {
   approvedAt: null,
   rejectedAt: null,
   lockedAt: null,
-  approvedBy: null,
   rejectionReason: null,
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -43,7 +42,6 @@ const SUBMITTED_PERIOD = {
 const APPROVED_PERIOD = {
   ...SUBMITTED_PERIOD,
   status: "APPROVED",
-  approvedBy: APPROVER_ID,
   approvedByMembershipId: 77,
   userEmail: "emp@test.com",
   userName: "Employee User",
@@ -65,8 +63,9 @@ function makeDb(period: unknown, settings: unknown, postApprovalPeriod: unknown)
     return Promise.resolve(result);
   });
   const dbWhere = jest.fn().mockReturnValue({ limit: dbLimit });
-  const dbLeftJoinWhere = jest.fn().mockReturnValue({ limit: dbLimit });
-  const dbLeftJoin = jest.fn().mockReturnValue({ where: dbLeftJoinWhere });
+  const dbLeftJoinWhere = jest.fn().mockReturnValue({ limit: dbLimit, orderBy: jest.fn().mockReturnValue({ limit: dbLimit }) });
+  const dbLeftJoin: jest.Mock = jest.fn();
+  dbLeftJoin.mockReturnValue({ where: dbLeftJoinWhere, leftJoin: dbLeftJoin });
   const dbFrom = jest.fn().mockReturnValue({ where: dbWhere, leftJoin: dbLeftJoin });
   const dbSelect = jest.fn().mockReturnValue({ from: dbFrom });
 
@@ -160,7 +159,7 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
     expect(caught).not.toBeInstanceOf(ForbiddenException);
   });
 
-  it("writes both approved_by and approved_by_membership_id for a valid org member", async () => {
+  it("writes approved_by_membership_id for a valid org member", async () => {
     const db = makeDb(SUBMITTED_PERIOD, DEFAULT_SETTINGS, APPROVED_PERIOD);
     mockAssertActor.mockResolvedValue({
       orgId: ORG_ID,
@@ -179,13 +178,11 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
     const periodUpdate = db._setCaptures[0];
     expect(periodUpdate).toMatchObject({
       status: "APPROVED",
-      approvedBy: APPROVER_ID,
       approvedByMembershipId: 77,
     });
     const timesheetUpdate = db._setCaptures[1];
     expect(timesheetUpdate).toMatchObject({
       status: "APPROVED",
-      approvedBy: APPROVER_ID,
       approvedByMembershipId: 77,
     });
   });

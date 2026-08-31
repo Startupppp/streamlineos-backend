@@ -24,6 +24,7 @@ export const timesheetExceptions = pgTable("timesheet_exceptions", {
   message: text("message").notNull(),
   details: jsonb("details"),
   ownerUserId: text("owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  ownerMembershipId: integer("owner_membership_id"),
   dueDate: date("due_date"),
   resolutionReason: text("resolution_reason"),
   resolvedByMembershipId: integer("resolved_by_membership_id"),
@@ -34,9 +35,15 @@ export const timesheetExceptions = pgTable("timesheet_exceptions", {
   index("idx_ts_exceptions_org_status").on(t.orgId, t.status, t.severity),
   index("idx_ts_exceptions_user").on(t.orgId, t.userId),
   index("idx_ts_exceptions_period").on(t.periodId),
+  index("idx_timesheet_exceptions_org_owner_membership").on(t.orgId, t.ownerMembershipId),
   foreignKey({
     columns: [t.orgId, t.resolvedByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_timesheet_exceptions_resolved_by_membership",
+  }).onDelete("set null"),
+  foreignKey({
+    columns: [t.orgId, t.ownerMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_timesheet_exceptions_owner_membership",
   }).onDelete("set null"),
 ]);

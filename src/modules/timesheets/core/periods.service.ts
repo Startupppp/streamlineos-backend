@@ -61,7 +61,6 @@ export class PeriodsService {
         rejectedAt: timesheetPeriods.rejectedAt,
         lockedAt: timesheetPeriods.lockedAt,
         currentApproverId: timesheetPeriods.currentApproverId,
-        approvedBy: timesheetPeriods.approvedBy,
         rejectionReason: timesheetPeriods.rejectionReason,
         createdAt: timesheetPeriods.createdAt,
         updatedAt: timesheetPeriods.updatedAt,
@@ -90,7 +89,6 @@ export class PeriodsService {
     rejectedAt: Date | null;
     lockedAt: Date | null;
     currentApproverId: string | null;
-    approvedBy: string | null;
     rejectionReason: string | null;
     createdAt: Date;
     updatedAt: Date;
@@ -151,7 +149,6 @@ export class PeriodsService {
         rejectedAt: timesheetPeriods.rejectedAt,
         lockedAt: timesheetPeriods.lockedAt,
         currentApproverId: timesheetPeriods.currentApproverId,
-        approvedBy: timesheetPeriods.approvedBy,
         rejectionReason: timesheetPeriods.rejectionReason,
         createdAt: timesheetPeriods.createdAt,
         updatedAt: timesheetPeriods.updatedAt,
@@ -389,7 +386,7 @@ export class PeriodsService {
           status: "DRAFT",
           lockedAt: null,
           approvedAt: null,
-          approvedBy: null,
+          approvedByMembershipId: null,
           updatedAt: new Date(),
         })
         .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));

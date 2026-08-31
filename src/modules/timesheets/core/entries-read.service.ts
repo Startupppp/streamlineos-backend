@@ -3,7 +3,7 @@ import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheets, projects, tickets } from "../../../db/schema";
+import { timesheets, projects, tickets, organizationMembers } from "../../../db/schema";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { AccessService } from "../../access/access.service";
@@ -50,6 +50,7 @@ export class EntriesReadService {
 
     const dp = alias(projects, "dp");
     const tp = alias(projects, "tp");
+    const approverMember = alias(organizationMembers, "approver_member");
 
     const rawRows = await this.db
       .select({
@@ -65,7 +66,7 @@ export class EntriesReadService {
         billingType: timesheets.billingType,
         status: timesheets.status,
         submittedAt: timesheets.submittedAt,
-        approvedBy: timesheets.approvedBy,
+        approvedBy: approverMember.userId,
         approvedAt: timesheets.approvedAt,
         rejectionReason: timesheets.rejectionReason,
         lockedAt: timesheets.lockedAt,
@@ -88,6 +89,7 @@ export class EntriesReadService {
         ticketProjectName: tp.name,
       })
       .from(timesheets)
+      .leftJoin(approverMember, and(eq(timesheets.orgId, approverMember.orgId), eq(timesheets.approvedByMembershipId, approverMember.id)))
       .leftJoin(dp, eq(timesheets.projectId, dp.id))
       .leftJoin(tickets, and(eq(timesheets.ticketId, tickets.id), isNull(tickets.deletedAt)))
       .leftJoin(tp, eq(tickets.projectId, tp.id))
@@ -106,6 +108,7 @@ export class EntriesReadService {
   async getEntryById(orgId: string, entryId: number) {
     const dp = alias(projects, "dp");
     const tp = alias(projects, "tp");
+    const approverMember = alias(organizationMembers, "approver_member");
 
     const [row] = await this.db
       .select({
@@ -121,7 +124,7 @@ export class EntriesReadService {
         billingType: timesheets.billingType,
         status: timesheets.status,
         submittedAt: timesheets.submittedAt,
-        approvedBy: timesheets.approvedBy,
+        approvedBy: approverMember.userId,
         approvedAt: timesheets.approvedAt,
         rejectionReason: timesheets.rejectionReason,
         lockedAt: timesheets.lockedAt,
@@ -144,6 +147,7 @@ export class EntriesReadService {
         ticketProjectName: tp.name,
       })
       .from(timesheets)
+      .leftJoin(approverMember, and(eq(timesheets.orgId, approverMember.orgId), eq(timesheets.approvedByMembershipId, approverMember.id)))
       .leftJoin(dp, eq(timesheets.projectId, dp.id))
       .leftJoin(tickets, and(eq(timesheets.ticketId, tickets.id), isNull(tickets.deletedAt)))
       .leftJoin(tp, eq(tickets.projectId, tp.id))

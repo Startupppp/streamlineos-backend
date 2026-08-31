@@ -9,8 +9,9 @@ import {
   index,
   uniqueIndex,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 
 export const mailMessageMetadata = pgTable(
   "mail_message_metadata",
@@ -18,6 +19,7 @@ export const mailMessageMetadata = pgTable(
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     accountId: integer("account_id").notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    userMembershipId: integer("user_membership_id"),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     messageId: text("message_id").notNull(),
     threadId: text("thread_id"),
@@ -44,5 +46,10 @@ export const mailMessageMetadata = pgTable(
     index("idx_mail_metadata_thread").on(table.orgId, table.userId, table.threadId),
     index("idx_mail_metadata_account_sync").on(table.accountId, table.syncedAt.desc()),
     index("idx_mail_metadata_search").on(table.orgId, table.userId, table.syncedAt.desc()),
+    foreignKey({
+      columns: [table.orgId, table.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_mail_meta_org_user_mbr",
+    }).onDelete("set null"),
   ],
 );

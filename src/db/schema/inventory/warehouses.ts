@@ -15,9 +15,11 @@ export const invWarehouses = pgTable("inv_warehouses", {
   state: text("state"),
   country: text("country"),
   managerUserId: text("manager_user_id").references(() => users.id, { onDelete: "set null" }),
+  managerMembershipId: integer("manager_membership_id"),
   isDefault: boolean("is_default").default(false).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -55,8 +57,10 @@ export const invUserWarehouses = pgTable("inv_user_warehouses", {
   id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  userMembershipId: integer("user_membership_id"),
   warehouseId: integer("warehouse_id").notNull(),
   grantedBy: text("granted_by").references(() => users.id).notNull(),
+  grantedByMembershipId: integer("granted_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_inv_user_warehouses_key").on(table.orgId, table.userId, table.warehouseId),

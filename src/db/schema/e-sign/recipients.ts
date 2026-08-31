@@ -1,6 +1,6 @@
-import { pgTable, serial, text, integer, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, timestamp, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { signRecipientStatusEnum, signRecipientTypeEnum, signAuthMethodEnum } from "./enums";
 import { signEnvelopes } from "./envelopes";
 
@@ -16,6 +16,7 @@ export const signRecipients = pgTable(
     email: text("email"),
     phone: text("phone"),
     userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    userMembershipId: integer("user_membership_id"),
     routingOrder: integer("routing_order").default(1).notNull(),
     status: signRecipientStatusEnum("status").default("pending").notNull(),
 
@@ -27,7 +28,6 @@ export const signRecipients = pgTable(
     failedAuthAttempts: integer("failed_auth_attempts").default(0).notNull(),
     authLockedUntil: timestamp("auth_locked_until"),
 
-    // The raw token is only ever shown once in the signing URL; we persist a hash to validate it later.
     signingTokenHash: text("signing_token_hash"),
     tokenExpiresAt: timestamp("token_expires_at"),
     tokenRevokedAt: timestamp("token_revoked_at"),
@@ -53,6 +53,11 @@ export const signRecipients = pgTable(
     index("idx_sign_recipients_envelope_order").on(table.envelopeId, table.routingOrder),
     uniqueIndex("uniq_sign_recipients_token_hash").on(table.signingTokenHash),
     unique("uniq_sign_recipients_org_id").on(table.orgId, table.id),
+    foreignKey({
+      columns: [table.orgId, table.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_sign_rcpt_org_user_mbr",
+    }).onDelete("set null"),
   ],
 );
 

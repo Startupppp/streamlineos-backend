@@ -1,6 +1,6 @@
-import { pgTable, serial, text, timestamp, index, integer, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, index, integer, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 
 export const AI_CHAT_ROLES = ["user", "assistant"] as const;
 export type AiChatRole = (typeof AI_CHAT_ROLES)[number];
@@ -15,6 +15,7 @@ export const aiChatConversations = pgTable(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    userMembershipId: integer("user_membership_id"),
     title: text("title"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -22,6 +23,11 @@ export const aiChatConversations = pgTable(
   (table) => [
     index("idx_ai_chat_conversations_org_user_updated").on(table.orgId, table.userId, table.updatedAt),
     unique("uniq_ai_chat_conversations_org_id").on(table.orgId, table.id),
+    foreignKey({
+      columns: [table.orgId, table.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_ai_chat_conv_org_user_mbr",
+    }).onDelete("set null"),
   ],
 );
 
@@ -35,6 +41,7 @@ export const aiChatMessages = pgTable(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    userMembershipId: integer("user_membership_id"),
     role: text("role").$type<AiChatRole>().notNull(),
     content: text("content").notNull(),
     conversationId: integer("conversation_id").references(() => aiChatConversations.id, { onDelete: "cascade" }),
@@ -44,6 +51,11 @@ export const aiChatMessages = pgTable(
     index("idx_ai_chat_messages_org_user_id").on(table.orgId, table.userId, table.id),
     index("idx_ai_chat_messages_conversation_id").on(table.conversationId),
     unique("uniq_ai_chat_messages_org_id").on(table.orgId, table.id),
+    foreignKey({
+      columns: [table.orgId, table.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_ai_chat_msg_org_user_mbr",
+    }).onDelete("set null"),
   ],
 );
 

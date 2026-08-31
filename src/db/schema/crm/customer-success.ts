@@ -32,6 +32,7 @@ export const healthScoreConfig = pgTable("health_score_config", {
   weights: jsonb("weights").$type<HealthScoreWeights>().notNull(),
   thresholds: jsonb("thresholds").$type<HealthScoreThresholds>().notNull(),
   updatedBy: text("updated_by").references(() => users.id, { onDelete: "set null" }),
+  updatedByMembershipId: integer("updated_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

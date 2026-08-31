@@ -66,6 +66,7 @@ export const invProducts = pgTable("inv_products", {
   imageUrl: text("image_url"),
   customFields: jsonb("custom_fields").$type<Record<string, unknown>>(),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

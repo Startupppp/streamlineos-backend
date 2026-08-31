@@ -95,6 +95,7 @@ export const invImportJobs = pgTable("inv_import_jobs", {
   errors: jsonb("errors"),
   resultUrl: text("result_url"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -114,6 +115,7 @@ export const invExportJobs = pgTable("inv_export_jobs", {
   errors: jsonb("errors"),
   resultUrl: text("result_url"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -156,6 +158,7 @@ export const invAuditEvents = pgTable("inv_audit_events", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   actorUserId: text("actor_user_id").references(() => users.id),
+  actorMembershipId: integer("actor_membership_id"),
   action: text("action").notNull(),
   resourceType: text("resource_type").notNull(),
   resourceId: text("resource_id").notNull(),
