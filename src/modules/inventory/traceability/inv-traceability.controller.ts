@@ -7,6 +7,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { InvTraceabilityService } from "./inv-traceability.service";
 import { TraceabilityChainService } from "./traceability-chain.service";
 import { LotGenealogyService } from "./lot-genealogy.service";

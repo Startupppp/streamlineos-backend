@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   organizationMembers,
+  organizationPlacement,
   organizations,
   pmWorkspaces,
   projectMembers,
@@ -15,6 +16,11 @@ import type { Db } from "src/db/drizzle.module";
 import { bumpPermissionsVersion } from "src/common/rbac/access-invalidate";
 import { ORG_MEMBER_ROLES, type OrgMemberRole } from "src/common/rbac/org-roles";
 import { DEFAULT_REGION } from "src/common/region/region-registry";
+import {
+  DEFAULT_DATABASE_SHARD,
+  DEFAULT_SEARCH_CLUSTER,
+  LEGACY_CELL_ID,
+} from "src/common/region/placement";
 
 /**
  * `users` rows are inserted through raw SQL naming only the two columns a
@@ -163,6 +169,18 @@ export class SeedBuilder {
         slug: orgId,
         ownerMembershipId,
         region: DEFAULT_REGION,
+      });
+      await tx.insert(organizationPlacement).values({
+        organizationId: orgId,
+        region: DEFAULT_REGION,
+        cellId: LEGACY_CELL_ID,
+        databaseShard: DEFAULT_DATABASE_SHARD,
+        objectStorageRegion: DEFAULT_REGION,
+        searchCluster: DEFAULT_SEARCH_CLUSTER,
+        placementVersion: 1,
+        writeFenceToken: crypto.randomUUID(),
+        leaseExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        status: "ACTIVE",
       });
 
       if (ownerAliasEntry) {

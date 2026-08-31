@@ -8,6 +8,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ImportService } from "./import.service";
 import { StagedImportService } from "./staged-import.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";

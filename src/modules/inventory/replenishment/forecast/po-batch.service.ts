@@ -24,6 +24,7 @@ import {
 import { assertMayCreatePurchaseOrder } from "./purchase-order-authority";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+type QueryExecutor = Pick<Db, "execute">;
 
 export interface BatchableProposal {
   proposalId: number;
@@ -224,35 +225,11 @@ export class PoBatchService {
     await assertMayCreatePurchaseOrder(this.access, orgId, userId);
 
     const overrides = input.overrides ?? [];
+    validateBatchOverrides(input.proposalIds, overrides);
     const settings = await this.settings.get(orgId);
-    const resolution = await this.resolveForBatching(
-      orgId,
-      userId,
-      input.proposalIds,
-      overrides,
-    );
 
-    if (resolution.lines.length === 0) {
-      throw new BadRequestException(
-        resolution.skipped[0]?.reason ??
-          "None of these proposals still need ordering — the shortfall has already been met.",
-      );
-    }
-
-    const batches = batchProposals(resolution.lines, {
-      requireApproval: settings.requirePoApproval,
-      approvalThreshold: null,
-    });
-    assertSingleSupplierSite(batches, input.vendorId);
-    const batch = batches[0];
-    if (!batch) {
-      throw new BadRequestException("This set of proposals produces no purchase order.");
-    }
-
-    const overridden = resolution.lines.filter((line) => line.override !== null);
-
-    const result = await this.db.transaction((tx) =>
-      runIdempotent<StoredBatch>(
+    return this.db.transaction((tx) =>
+      runIdempotent<CreatedPoBatch>(
         tx,
         orgId,
         idempotencyKey,
@@ -268,25 +245,52 @@ export class PoBatchService {
             .sort((a, b) => a.proposalId - b.proposalId)
             .map((o) => [o.proposalId, o.quantity, o.reason]),
         },
-        () => this.insertDraftPo(tx, orgId, userId, batch, overridden),
+        async () => {
+          const resolution = await this.resolveForBatching(
+            orgId,
+            userId,
+            input.proposalIds,
+            overrides,
+            tx,
+          );
+
+          if (resolution.lines.length === 0) {
+            throw new BadRequestException(
+              resolution.skipped[0]?.reason ??
+                "None of these proposals still need ordering — the shortfall has already been met.",
+            );
+          }
+
+          const batches = batchProposals(resolution.lines, {
+            requireApproval: settings.requirePoApproval,
+            approvalThreshold: null,
+          });
+          assertSingleSupplierSite(batches, input.vendorId);
+          const batch = batches[0];
+          if (!batch) {
+            throw new BadRequestException("This set of proposals produces no purchase order.");
+          }
+
+          const overridden = resolution.lines.filter((line) => line.override !== null);
+          const stored = await this.insertDraftPo(tx, orgId, userId, batch, overridden);
+          return {
+            poId: stored.poId,
+            poNumber: stored.poNumber,
+            vendorId: batch.vendorId,
+            warehouseId: batch.warehouseId,
+            currency: batch.currency,
+            lineCount: batch.lines.length,
+            total: batch.totalValue,
+            requiresApproval: batch.requiresApproval,
+            nextStep: batch.requiresApproval
+              ? "This organisation requires approval, so the draft has to be approved before it can be sent."
+              : "The draft can be sent to the supplier without a separate approval.",
+            created: true,
+          };
+        },
         reviveBatch,
       ),
     );
-
-    return {
-      poId: result.poId,
-      poNumber: result.poNumber,
-      vendorId: batch.vendorId,
-      warehouseId: batch.warehouseId,
-      currency: batch.currency,
-      lineCount: batch.lines.length,
-      total: batch.totalValue,
-      requiresApproval: batch.requiresApproval,
-      nextStep: batch.requiresApproval
-        ? "This organisation requires approval, so the draft has to be approved before it can be sent."
-        : "The draft can be sent to the supplier without a separate approval.",
-      created: result.created,
-    };
   }
 
   private async insertDraftPo(
@@ -368,29 +372,12 @@ export class PoBatchService {
     userId: string,
     proposalIds: readonly number[],
     overrides: readonly ProposalOverride[],
+    executor: QueryExecutor = this.db,
   ): Promise<ProposalResolution> {
     const unique = [...new Set(proposalIds)];
-    // An override naming a proposal that is not in the batch would be accepted
-    // and silently do nothing, which is the shape of bug that makes a buyer
-    // believe they changed a quantity they did not. Refused instead.
-    const selected = new Set(unique);
-    const stray = overrides.find((o) => !selected.has(o.proposalId));
-    if (stray) {
-      throw new BadRequestException(
-        `An override was given for proposal ${stray.proposalId}, which is not in this batch.`,
-      );
-    }
-    const seen = new Set<number>();
-    for (const override of overrides) {
-      if (seen.has(override.proposalId)) {
-        throw new BadRequestException(
-          `Proposal ${override.proposalId} was overridden twice, and the two do not agree on a quantity.`,
-        );
-      }
-      seen.add(override.proposalId);
-    }
+    validateBatchOverrides(unique, overrides);
 
-    const rows = await this.resolve(orgId, unique);
+    const rows = await this.resolve(orgId, unique, executor);
     if (rows.length !== unique.length) {
       // A missing id is a 404 rather than a 403 even when it belongs to another
       // tenant: a 403 would confirm the row exists (§4).
@@ -413,9 +400,10 @@ export class PoBatchService {
   private async resolve(
     orgId: string,
     proposalIds: readonly number[],
+    executor: QueryExecutor = this.db,
   ): Promise<ResolvedProposalRow[]> {
     if (proposalIds.length === 0) return [];
-    const rows = await this.db.execute<{
+    const rows = await executor.execute<{
       proposal_id: number;
       product_variant_id: number;
       warehouse_id: number | null;
@@ -544,7 +532,7 @@ interface StoredBatch {
 }
 
 /** The stored response is JSON that has been through Postgres; rebuild it. */
-function reviveBatch(stored: unknown): StoredBatch {
+function reviveBatch(stored: unknown): CreatedPoBatch {
   const row =
     typeof stored === "object" && stored !== null
       ? (stored as Record<string, unknown>)
@@ -552,8 +540,40 @@ function reviveBatch(stored: unknown): StoredBatch {
   return {
     poId: Number(row.poId ?? 0),
     poNumber: String(row.poNumber ?? ""),
+    vendorId: Number(row.vendorId ?? 0),
+    warehouseId:
+      row.warehouseId === null || row.warehouseId === undefined
+        ? null
+        : Number(row.warehouseId),
+    currency: String(row.currency ?? "USD"),
+    lineCount: Number(row.lineCount ?? 0),
+    total: String(row.total ?? "0"),
+    requiresApproval: Boolean(row.requiresApproval),
+    nextStep: String(row.nextStep ?? ""),
     created: false,
   };
+}
+
+function validateBatchOverrides(
+  proposalIds: readonly number[],
+  overrides: readonly ProposalOverride[],
+): void {
+  const selected = new Set(proposalIds);
+  const stray = overrides.find((o) => !selected.has(o.proposalId));
+  if (stray) {
+    throw new BadRequestException(
+      `An override was given for proposal ${stray.proposalId}, which is not in this batch.`,
+    );
+  }
+  const seen = new Set<number>();
+  for (const override of overrides) {
+    if (seen.has(override.proposalId)) {
+      throw new BadRequestException(
+        `Proposal ${override.proposalId} was overridden twice, and the two do not agree on a quantity.`,
+      );
+    }
+    seen.add(override.proposalId);
+  }
 }
 
 function toBatchableProposal(row: ResolvedProposalRow): BatchableProposal {
