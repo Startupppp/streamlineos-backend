@@ -14,7 +14,7 @@ the missing production choices as complete.
 |---|---|---|
 | X1 Call intelligence UI | Complete before this pass | CRM call-intelligence routes/hooks/components are present on the frontend branch and backed by `src/modules/calls/`. |
 | X2 Commissions UI | Complete before this pass | CRM commission plan/accrual routes/hooks/components are present on the frontend branch and backed by `src/modules/commission/`. |
-| X3 Renewals / health UI | Complete before this pass | `/crm/renewals` and `/crm/health` are present with lifecycle/customer-health hooks and permission states. |
+| X3 Renewals / health UI | Complete in this pass | Added `/crm/renewals` and `/crm/health` with lifecycle/customer-health hooks, sidebar/hub navigation, loading/error/empty/denied states, and health recompute action guarded by `crm:customer-health:manage`. |
 | X4 MCP token/settings UI | Complete in this pass | Added `/crm/settings/mcp`, token create/revoke UI, CRM scoped token presets, MCP tools display, and query keys/hooks for `/crm/mcp/tools` and `/agent-tokens`. Backend MCP tool permissions now use the canonical `crm:deals:read` key. |
 | X5 Golden path e2e | Present with explicit caveats | `test/crm/crm-golden-path.seeded-e2e-spec.ts` drives signed WhatsApp ingress, party/activity creation, workflow tick, rep-created deal, outbound hold/cancel/release behavior, duplicate merge reversal, denied-list behavior, and legacy contact-id resolution after `public.contacts` is gone. |
 | X6 Signup + first value | Complete in this pass | Added public `/signup`, passwordless workspace creation via `/auth/register`, country-derived region placement in backend registration, and mounted activation checklist on the CRM hub. |
