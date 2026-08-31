@@ -25,6 +25,7 @@ import {
   type DismissExceptionInput,
 } from "./dto/exceptions.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const exceptionIdParams = z.object({ exceptionId: z.coerce.number().int().positive() }).strict();
@@ -78,6 +79,7 @@ export class TimesheetExceptionsController {
   }
 
   @Post("run-detection")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("timesheets:exceptions:manage")
   runDetection(@CurrentUser() u: CurrentUserContext) {

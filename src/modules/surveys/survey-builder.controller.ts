@@ -6,6 +6,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { SurveyBuilderService } from "./survey-builder.service";
 import { SurveyLogicService } from "./survey-logic.service";
 import {
@@ -116,6 +117,7 @@ export class SurveyBuilderController {
   }
 
   @Post("questions/:questionId/duplicate")
+  @BodylessAction()
   @RequirePermission("surveys:update")
   @Validate({ params: surveyAndQuestionIdParams })
   duplicateQuestion(

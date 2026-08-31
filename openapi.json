@@ -1203,7 +1203,8 @@
         "x-permission": "timesheets:approvals:manage",
         "description": "Exposure: permission — timesheets:approvals:manage",
         "x-idempotency-command": "timesheets.approval.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/accounting/approvals/{requestId}/reject": {
@@ -1777,7 +1778,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:assets:update",
-        "description": "Exposure: permission — accounting:assets:update"
+        "description": "Exposure: permission — accounting:assets:update",
+        "x-bodyless": true
       }
     },
     "/accounting/assets/{assetId}/dispose": {
@@ -2267,7 +2269,8 @@
         "x-permission": "accounting:assets:manage",
         "description": "Exposure: permission — accounting:assets:manage",
         "x-idempotency-command": "accounting.depreciation-run.reverse",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/accounting/audit": {
@@ -3331,7 +3334,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:accounts:manage",
-        "description": "Exposure: permission — accounting:accounts:manage"
+        "description": "Exposure: permission — accounting:accounts:manage",
+        "x-bodyless": true
       }
     },
     "/accounting/coa/{accountId}/deactivate": {
@@ -3383,7 +3387,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:accounts:manage",
-        "description": "Exposure: permission — accounting:accounts:manage"
+        "description": "Exposure: permission — accounting:accounts:manage",
+        "x-bodyless": true
       }
     },
     "/accounting/coa/templates": {
@@ -4141,7 +4146,8 @@
         "x-permission": "accounting:credit-notes:manage",
         "description": "Exposure: permission — accounting:credit-notes:manage",
         "x-idempotency-command": "accounting.credit-note.post",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/accounting/customer-statements/{clientId}": {
@@ -6051,7 +6057,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:journal:manage",
-        "description": "Exposure: permission — accounting:journal:manage"
+        "description": "Exposure: permission — accounting:journal:manage",
+        "x-bodyless": true
       }
     },
     "/accounting/journal/{entryId}/reject": {
@@ -6176,7 +6183,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:journal:manage",
-        "description": "Exposure: permission — accounting:journal:manage"
+        "description": "Exposure: permission — accounting:journal:manage",
+        "x-bodyless": true
       }
     },
     "/accounting/journal/{entryId}/submit-approval": {
@@ -6233,7 +6241,8 @@
         "x-permission": "accounting:journal:create",
         "description": "Exposure: permission — accounting:journal:create",
         "x-idempotency-command": "accounting.journal.submit-approval",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/accounting/opening-balances": {
@@ -6660,7 +6669,8 @@
         "x-permission": "accounting:payment-runs:approve",
         "description": "Exposure: permission — accounting:payment-runs:approve",
         "x-idempotency-command": "accounting.payment-run.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/accounting/payment-runs/{runId}/cancel": {
@@ -6712,7 +6722,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:payment-runs:manage",
-        "description": "Exposure: permission — accounting:payment-runs:manage"
+        "description": "Exposure: permission — accounting:payment-runs:manage",
+        "x-bodyless": true
       }
     },
     "/accounting/payment-runs/{runId}/execute": {
@@ -6769,7 +6780,8 @@
         "x-permission": "accounting:payment-runs:manage",
         "description": "Exposure: permission — accounting:payment-runs:manage",
         "x-idempotency-command": "accounting.payment-run.execute",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/accounting/payment-runs/{runId}/items/{itemId}": {
@@ -6996,7 +7008,8 @@
         "x-permission": "accounting:periods:manage",
         "description": "Exposure: permission — accounting:periods:manage",
         "x-idempotency-command": "accounting.period.close",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/accounting/periods/{periodId}/close-checklist": {
@@ -7099,7 +7112,8 @@
         "x-permission": "accounting:periods:manage",
         "description": "Exposure: permission — accounting:periods:manage",
         "x-idempotency-command": "accounting.period.lock",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/accounting/periods/{periodId}/reopen": {
@@ -7156,7 +7170,8 @@
         "x-permission": "accounting:periods:reopen",
         "description": "Exposure: permission — accounting:periods:reopen",
         "x-idempotency-command": "accounting.period.reopen",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/accounting/purchase-bills": {
@@ -7596,7 +7611,8 @@
         "x-permission": "accounting:payables:approve",
         "description": "Exposure: permission — accounting:payables:approve",
         "x-idempotency-command": "accounting.bill.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/accounting/purchase-bills/{billId}/cancel": {
@@ -8462,7 +8478,8 @@
         "x-permission": "accounting:recurring:manage",
         "description": "Exposure: permission — accounting:recurring:manage",
         "x-idempotency-command": "finance.recurring-bill.run-now",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/accounting/recurring-invoices": {
@@ -8860,7 +8877,8 @@
         "x-permission": "accounting:recurring:manage",
         "description": "Exposure: permission — accounting:recurring:manage",
         "x-idempotency-command": "finance.recurring-invoice.run-now",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/accounting/recurring-journals": {
@@ -9258,7 +9276,8 @@
         "x-permission": "accounting:recurring:manage",
         "description": "Exposure: permission — accounting:recurring:manage",
         "x-idempotency-command": "accounting.recurring-journal.run-now",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/accounting/reimbursements": {
@@ -9497,7 +9516,8 @@
         "x-permission": "accounting:reimbursements:approve",
         "description": "Exposure: permission — accounting:reimbursements:approve",
         "x-idempotency-command": "finance.reimbursement.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/accounting/reimbursements/{batchId}/pay": {
@@ -11843,7 +11863,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:forecast:manage",
-        "description": "Exposure: permission — accounting:forecast:manage"
+        "description": "Exposure: permission — accounting:forecast:manage",
+        "x-bodyless": true
       }
     },
     "/accounting/settings": {
@@ -12633,7 +12654,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:taxes:manage",
-        "description": "Exposure: permission — accounting:taxes:manage"
+        "description": "Exposure: permission — accounting:taxes:manage",
+        "x-bodyless": true
       }
     },
     "/accounting/taxes/adjustments": {
@@ -13671,7 +13693,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:vendor-credits:manage",
-        "description": "Exposure: permission — accounting:vendor-credits:manage"
+        "description": "Exposure: permission — accounting:vendor-credits:manage",
+        "x-bodyless": true
       }
     },
     "/accounting/vendor-payments": {
@@ -19782,7 +19805,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:settings:manage",
-        "description": "Exposure: permission — crm:settings:manage"
+        "description": "Exposure: permission — crm:settings:manage",
+        "x-bodyless": true
       }
     },
     "/audit-log": {
@@ -19790,18 +19814,15 @@
         "operationId": "AuditLogController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -20303,7 +20324,8 @@
           "Auth"
         ],
         "x-exposure": "universal",
-        "description": "Exposure: universal — any authenticated member, subject from the token"
+        "description": "Exposure: universal — any authenticated member, subject from the token",
+        "x-bodyless": true
       }
     },
     "/auth/magic-link": {
@@ -20553,7 +20575,8 @@
           "Mfa"
         ],
         "x-exposure": "universal",
-        "description": "Exposure: universal — any authenticated member, subject from the token"
+        "description": "Exposure: universal — any authenticated member, subject from the token",
+        "x-bodyless": true
       }
     },
     "/auth/mfa/status": {
@@ -21080,7 +21103,8 @@
         "x-permission": "billing:affiliate:manage",
         "description": "Exposure: permission — billing:affiliate:manage",
         "x-idempotency-command": "billing.affiliate.payout-request",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/billing/affiliate/register": {
@@ -21124,7 +21148,8 @@
         "x-permission": "billing:affiliate:manage",
         "description": "Exposure: permission — billing:affiliate:manage",
         "x-idempotency-command": "billing.affiliate.register",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/billing/ai-credits": {
@@ -22127,7 +22152,8 @@
         "x-permission": "billing:enterprise-quotes:view",
         "description": "Exposure: permission — billing:enterprise-quotes:view",
         "x-idempotency-command": "billing.enterprise-quote.accept",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/billing/enterprise-quotes/{quoteId}/approve": {
@@ -22332,7 +22358,8 @@
         "x-permission": "billing:enterprise-quotes:approve",
         "description": "Exposure: permission — billing:enterprise-quotes:approve",
         "x-idempotency-command": "billing.enterprise-quote.send",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/billing/enterprise-quotes/{quoteId}/submit": {
@@ -22389,7 +22416,8 @@
         "x-permission": "billing:enterprise-quotes:create",
         "description": "Exposure: permission — billing:enterprise-quotes:create",
         "x-idempotency-command": "billing.enterprise-quote.submit",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/billing/entitlements": {
@@ -22502,7 +22530,8 @@
         "x-permission": "billing:marketplace:install",
         "description": "Exposure: permission — billing:marketplace:install",
         "x-idempotency-command": "billing.marketplace.install",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       },
       "delete": {
         "operationId": "BillingMarketplaceController_uninstallApp",
@@ -22609,7 +22638,8 @@
         "x-permission": "billing:marketplace:install",
         "description": "Exposure: permission — billing:marketplace:install",
         "x-idempotency-command": "billing.marketplace.trial",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/billing/marketplace/apps": {
@@ -31638,7 +31668,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:meetings:manage",
-        "description": "Exposure: permission — build:meetings:manage"
+        "description": "Exposure: permission — build:meetings:manage",
+        "x-bodyless": true
       }
     },
     "/build/{projectId}/meetings/{meetingId}/attendees": {
@@ -33537,7 +33568,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:manage",
-        "description": "Exposure: permission — build:manage"
+        "description": "Exposure: permission — build:manage",
+        "x-bodyless": true
       }
     },
     "/build/{projectId}/reports/velocity": {
@@ -40182,7 +40214,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:manage",
-        "description": "Exposure: permission — build:manage"
+        "description": "Exposure: permission — build:manage",
+        "x-bodyless": true
       }
     },
     "/build/{projectId}/whiteboards": {
@@ -40875,7 +40908,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:whiteboards:manage",
-        "description": "Exposure: permission — build:whiteboards:manage"
+        "description": "Exposure: permission — build:whiteboards:manage",
+        "x-bodyless": true
       }
     },
     "/build/{projectId}/workflow/allowed/{fromStatusId}": {
@@ -46472,7 +46506,8 @@
         "x-permission": "build:timesheets:manage",
         "description": "Exposure: permission — build:timesheets:manage",
         "x-idempotency-command": "build.timesheet.approve-entry",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/build/time-entries/{entryId}/reject": {
@@ -48598,7 +48633,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:channels:write",
-        "description": "Exposure: permission — chat:channels:write"
+        "description": "Exposure: permission — chat:channels:write",
+        "x-bodyless": true
       }
     },
     "/chat/channels/{channelId}/favorite": {
@@ -48656,7 +48692,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:channels:write",
-        "description": "Exposure: permission — chat:channels:write"
+        "description": "Exposure: permission — chat:channels:write",
+        "x-bodyless": true
       }
     },
     "/chat/channels/{channelId}/files": {
@@ -48818,7 +48855,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:huddles:start",
-        "description": "Exposure: permission — chat:huddles:start"
+        "description": "Exposure: permission — chat:huddles:start",
+        "x-bodyless": true
       }
     },
     "/chat/channels/{channelId}/invite-link": {
@@ -48876,7 +48914,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:invite-links:manage",
-        "description": "Exposure: permission — chat:invite-links:manage"
+        "description": "Exposure: permission — chat:invite-links:manage",
+        "x-bodyless": true
       }
     },
     "/chat/channels/{channelId}/invite-link/regenerate": {
@@ -48934,7 +48973,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:invite-links:manage",
-        "description": "Exposure: permission — chat:invite-links:manage"
+        "description": "Exposure: permission — chat:invite-links:manage",
+        "x-bodyless": true
       }
     },
     "/chat/channels/{channelId}/join": {
@@ -48992,7 +49032,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:channels:write",
-        "description": "Exposure: permission — chat:channels:write"
+        "description": "Exposure: permission — chat:channels:write",
+        "x-bodyless": true
       }
     },
     "/chat/channels/{channelId}/leave": {
@@ -49050,7 +49091,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:channels:write",
-        "description": "Exposure: permission — chat:channels:write"
+        "description": "Exposure: permission — chat:channels:write",
+        "x-bodyless": true
       }
     },
     "/chat/channels/{channelId}/mark-unread": {
@@ -49108,7 +49150,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:messages:write",
-        "description": "Exposure: permission — chat:messages:write"
+        "description": "Exposure: permission — chat:messages:write",
+        "x-bodyless": true
       }
     },
     "/chat/channels/{channelId}/members": {
@@ -50751,7 +50794,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:messages:read",
-        "description": "Exposure: permission — chat:messages:read"
+        "description": "Exposure: permission — chat:messages:read",
+        "x-bodyless": true
       }
     },
     "/chat/channels/{channelId}/refresh-name": {
@@ -50809,7 +50853,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:channels:write",
-        "description": "Exposure: permission — chat:channels:write"
+        "description": "Exposure: permission — chat:channels:write",
+        "x-bodyless": true
       }
     },
     "/chat/channels/{channelId}/summarize": {
@@ -50861,7 +50906,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:messages:read",
-        "description": "Exposure: permission — chat:messages:read"
+        "description": "Exposure: permission — chat:messages:read",
+        "x-bodyless": true
       }
     },
     "/chat/channels/{channelId}/typing": {
@@ -50919,7 +50965,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:messages:write",
-        "description": "Exposure: permission — chat:messages:write"
+        "description": "Exposure: permission — chat:messages:write",
+        "x-bodyless": true
       },
       "get": {
         "operationId": "ChatChannelsController_getTyping",
@@ -51027,7 +51074,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:channels:write",
-        "description": "Exposure: permission — chat:channels:write"
+        "description": "Exposure: permission — chat:channels:write",
+        "x-bodyless": true
       }
     },
     "/chat/channels/{channelId}/unfavorite": {
@@ -51085,7 +51133,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:channels:write",
-        "description": "Exposure: permission — chat:channels:write"
+        "description": "Exposure: permission — chat:channels:write",
+        "x-bodyless": true
       }
     },
     "/chat/channels/{channelId}/unmute": {
@@ -51143,7 +51192,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:channels:write",
-        "description": "Exposure: permission — chat:channels:write"
+        "description": "Exposure: permission — chat:channels:write",
+        "x-bodyless": true
       }
     },
     "/chat/channels/archived": {
@@ -52114,7 +52164,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:channels:read",
-        "description": "Exposure: permission — chat:channels:read"
+        "description": "Exposure: permission — chat:channels:read",
+        "x-bodyless": true
       }
     },
     "/chat/huddles/{huddleId}/invite": {
@@ -52258,7 +52309,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:channels:write",
-        "description": "Exposure: permission — chat:channels:write"
+        "description": "Exposure: permission — chat:channels:write",
+        "x-bodyless": true
       }
     },
     "/chat/huddles/{huddleId}/kick": {
@@ -52393,7 +52445,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:channels:write",
-        "description": "Exposure: permission — chat:channels:write"
+        "description": "Exposure: permission — chat:channels:write",
+        "x-bodyless": true
       }
     },
     "/chat/huddles/{huddleId}/mute": {
@@ -52690,7 +52743,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:channels:write",
-        "description": "Exposure: permission — chat:channels:write"
+        "description": "Exposure: permission — chat:channels:write",
+        "x-bodyless": true
       }
     },
     "/chat/link-preview": {
@@ -52783,7 +52837,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:messages:read",
-        "description": "Exposure: permission — chat:messages:read"
+        "description": "Exposure: permission — chat:messages:read",
+        "x-bodyless": true
       }
     },
     "/chat/presence/online": {
@@ -52917,7 +52972,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "chat:messages:write",
-        "description": "Exposure: permission — chat:messages:write"
+        "description": "Exposure: permission — chat:messages:write",
+        "x-bodyless": true
       },
       "delete": {
         "operationId": "ChatSavedController_unsave",
@@ -53941,7 +53997,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:clients:manage",
-        "description": "Exposure: permission — crm:clients:manage"
+        "description": "Exposure: permission — crm:clients:manage",
+        "x-bodyless": true
       }
     },
     "/clients/churn-alerts": {
@@ -55053,6 +55110,16 @@
                   "websiteUrl": {
                     "type": "string"
                   },
+                  "notes": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "leadId": {
                     "type": "number"
                   },
@@ -55278,6 +55345,16 @@
                     ]
                   },
                   "avatarUrl": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "notes": {
                     "anyOf": [
                       {
                         "type": "string"
@@ -56292,7 +56369,8 @@
         "x-permission": "crm:activities:manage",
         "description": "Exposure: permission — crm:activities:manage",
         "x-idempotency-command": "crm.activity.complete",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/crm/activities/{activityId}/participants": {
@@ -57616,7 +57694,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:automations:manage",
-        "description": "Exposure: permission — crm:automations:manage"
+        "description": "Exposure: permission — crm:automations:manage",
+        "x-bodyless": true
       }
     },
     "/crm/automations/{ruleId}/enable": {
@@ -57668,7 +57747,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:automations:manage",
-        "description": "Exposure: permission — crm:automations:manage"
+        "description": "Exposure: permission — crm:automations:manage",
+        "x-bodyless": true
       }
     },
     "/crm/automations/{ruleId}/runs": {
@@ -58262,7 +58342,8 @@
         "x-permission": "crm:autonomy:view",
         "description": "Exposure: permission — crm:autonomy:view",
         "x-idempotency-command": "crm.autonomy.reviewed",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/crm/autonomy/scoreboard": {
@@ -61610,7 +61691,8 @@
         "x-permission": "crm:imports:manage",
         "description": "Exposure: permission — crm:imports:manage",
         "x-idempotency-command": "crm.import.commit",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/crm/imports/{crmImportId}/progress": {
@@ -61711,7 +61793,8 @@
         "x-permission": "crm:imports:manage",
         "description": "Exposure: permission — crm:imports:manage",
         "x-idempotency-command": "crm.import.revert",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/crm/imports/preview": {
@@ -61957,7 +62040,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:tasks:update",
-        "description": "Exposure: permission — crm:tasks:update"
+        "description": "Exposure: permission — crm:tasks:update",
+        "x-bodyless": true
       }
     },
     "/crm/inbox/tasks/{taskId}/snooze": {
@@ -63115,7 +63199,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:ingress:submit",
-        "description": "Exposure: permission — crm:ingress:submit"
+        "description": "Exposure: permission — crm:ingress:submit",
+        "x-bodyless": true
       }
     },
     "/crm/mailboxes/push": {
@@ -63146,7 +63231,8 @@
           "CrmMailbox"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/crm/mailboxes/sync": {
@@ -63184,7 +63270,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:ingress:submit",
-        "description": "Exposure: permission — crm:ingress:submit"
+        "description": "Exposure: permission — crm:ingress:submit",
+        "x-bodyless": true
       }
     },
     "/crm/metadata": {
@@ -66862,7 +66949,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:sequences:manage",
-        "description": "Exposure: permission — crm:sequences:manage"
+        "description": "Exposure: permission — crm:sequences:manage",
+        "x-bodyless": true
       }
     },
     "/crm/sequences/{sequenceId}/steps": {
@@ -69126,7 +69214,8 @@
           "CronPlatform"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/ai-jobs-flush": {
@@ -69198,7 +69287,8 @@
           "CronBilling"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/ai-reservations-sweep": {
@@ -69270,7 +69360,8 @@
           "CronBilling"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/auto-checkout": {
@@ -69342,7 +69433,8 @@
           "CronHr"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/auto-topup-flush": {
@@ -69414,7 +69506,8 @@
           "CronBilling"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/build-daily-snapshots": {
@@ -69486,7 +69579,8 @@
           "CronBuild"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/build-due-sweep": {
@@ -69558,7 +69652,8 @@
           "CronPlatform"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/build-retention-prune": {
@@ -69630,7 +69725,8 @@
           "CronBuild"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/calendar-reminder-sweep": {
@@ -69702,7 +69798,8 @@
           "CronPlatform"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/certification-expiry": {
@@ -69774,7 +69871,8 @@
           "CronHr"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/chat-reply-reminders": {
@@ -69846,7 +69944,8 @@
           "CronNotifications"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/crm-sequences-flush": {
@@ -69918,7 +70017,8 @@
           "CronBuild"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/crm-tasks-overdue-flush": {
@@ -69990,7 +70090,8 @@
           "CronBuild"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/daily-notifications": {
@@ -70062,7 +70163,8 @@
           "CronHr"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/document-expiry": {
@@ -70134,7 +70236,8 @@
           "CronHr"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/email-outbox-flush": {
@@ -70206,7 +70309,8 @@
           "CronPlatform"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/finance-depreciation": {
@@ -70278,7 +70382,8 @@
           "CronBuild"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/finance-due-checks": {
@@ -70350,7 +70455,8 @@
           "CronBuild"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/finance-recurring-flush": {
@@ -70422,7 +70528,8 @@
           "CronBuild"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/holiday-notifications": {
@@ -70494,7 +70601,8 @@
           "CronHr"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/hr-engines-sweep": {
@@ -70534,7 +70642,8 @@
           "CronHr"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       },
       "get": {
         "operationId": "CronHrController_getHrEnginesSweep",
@@ -70618,7 +70727,8 @@
           "CronHr"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       },
       "get": {
         "operationId": "CronHrController_getHrEnginesSweepByName",
@@ -70734,7 +70844,8 @@
           "CronHr"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/idempotency-fence-sweep": {
@@ -70806,7 +70917,8 @@
           "CronPlatform"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/interview-no-shows": {
@@ -70878,7 +70990,8 @@
           "CronHr"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/invitation-expiry": {
@@ -70950,7 +71063,8 @@
           "CronPlatform"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/invitation-expiry-sweep": {
@@ -71022,7 +71136,8 @@
           "CronInvitationExpiry"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/kb-chunk-retention-sweep": {
@@ -71094,7 +71209,8 @@
           "CronSupport"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/kb-trash-purge": {
@@ -71166,7 +71282,8 @@
           "CronSupport"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/monthly-leave-reset": {
@@ -71238,7 +71355,8 @@
           "CronHr"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/monthly-plan-grants": {
@@ -71310,7 +71428,8 @@
           "CronBilling"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/notification-delivery-flush": {
@@ -71382,7 +71501,8 @@
           "CronNotifications"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/notification-digest-flush": {
@@ -71454,7 +71574,8 @@
           "CronNotifications"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/notification-outbox-flush": {
@@ -71526,7 +71647,8 @@
           "CronNotifications"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/notification-time-sweeps": {
@@ -71598,7 +71720,8 @@
           "CronNotifications"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/notifications-retention-detach": {
@@ -71670,7 +71793,8 @@
           "CronNotifications"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/notifications-retention-sweep": {
@@ -71742,7 +71866,8 @@
           "CronNotifications"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/offer-deadline-reminders": {
@@ -71814,7 +71939,8 @@
           "CronHr"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/onboarding-sweep": {
@@ -71886,7 +72012,8 @@
           "CronHr"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/org-purge-worker": {
@@ -71958,7 +72085,8 @@
           "CronPlatform"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/outbox-events-metrics": {
@@ -72098,7 +72226,8 @@
           "CronOutbox"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/ownership-transfer-expiry": {
@@ -72170,7 +72299,8 @@
           "CronPlatform"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/projects-recurring-flush": {
@@ -72242,7 +72372,8 @@
           "CronBuild"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/retention-delete-sweep": {
@@ -72282,7 +72413,8 @@
           "CronHr"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       },
       "get": {
         "operationId": "CronHrController_getRetentionDeleteSweep",
@@ -72386,7 +72518,8 @@
           "CronSupport"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/support-kb-gap-detect": {
@@ -72458,7 +72591,8 @@
           "CronSupport"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/support-sla-escalations": {
@@ -72530,7 +72664,8 @@
           "CronSupport"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/support-unsnooze": {
@@ -72602,7 +72737,8 @@
           "CronSupport"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/timesheets-exception-detection": {
@@ -72674,7 +72810,8 @@
           "CronPlatform"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/trial-expiry": {
@@ -72746,7 +72883,8 @@
           "CronBilling"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/weekly-exec-recap": {
@@ -72818,7 +72956,8 @@
           "CronHr"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/cron/workflow-executions-sweep": {
@@ -72952,7 +73091,8 @@
           "CronPlatform"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/csat": {
@@ -73577,7 +73717,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:clients:update",
-        "description": "Exposure: permission — crm:clients:update"
+        "description": "Exposure: permission — crm:clients:update",
+        "x-bodyless": true
       }
     },
     "/customer-executive/nps": {
@@ -75127,7 +75268,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:deals:create",
-        "description": "Exposure: permission — crm:deals:create"
+        "description": "Exposure: permission — crm:deals:create",
+        "x-bodyless": true
       }
     },
     "/deals/{dealId}/competitors": {
@@ -77499,7 +77641,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "directory:workers:manage",
-        "description": "Exposure: permission — directory:workers:manage"
+        "description": "Exposure: permission — directory:workers:manage",
+        "x-bodyless": true
       }
     },
     "/directory/engagements/{workerEngagementId}/terminate": {
@@ -78869,7 +79012,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "feedbucket:submissions:manage",
-        "description": "Exposure: permission — feedbucket:submissions:manage"
+        "description": "Exposure: permission — feedbucket:submissions:manage",
+        "x-bodyless": true
       }
     },
     "/feedbucket/submissions/{submissionId}/convert-to-ticket": {
@@ -78921,7 +79065,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "feedbucket:submissions:manage",
-        "description": "Exposure: permission — feedbucket:submissions:manage"
+        "description": "Exposure: permission — feedbucket:submissions:manage",
+        "x-bodyless": true
       }
     },
     "/feedbucket/widgets": {
@@ -79317,7 +79462,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "feedbucket:widgets:manage",
-        "description": "Exposure: permission — feedbucket:widgets:manage"
+        "description": "Exposure: permission — feedbucket:widgets:manage",
+        "x-bodyless": true
       }
     },
     "/finance/ai/extract-document": {
@@ -83080,7 +83226,128 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:engagement:view",
-        "description": "Exposure: permission — hr:engagement:view"
+        "description": "Exposure: permission — hr:engagement:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "assessmentId": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "answers": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "questionId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "selectedIndex": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "questionId",
+                            "selectedIndex"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "assessmentId",
+                      "answers"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 200
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      "skillName": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "category": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "durationMinutes": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 480
+                      },
+                      "questions": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "question": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "options": {
+                              "minItems": 2,
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            },
+                            "correctIndex": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "question",
+                            "options",
+                            "correctIndex"
+                          ]
+                        }
+                      },
+                      "passingScore": {
+                        "default": 70,
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "timeLimit": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      }
+                    },
+                    "required": [
+                      "title"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/hr/asset-returns": {
@@ -83671,7 +83938,8 @@
         "x-permission": "hr:attendance:view",
         "description": "Exposure: permission — hr:attendance:view",
         "x-idempotency-command": "hr.attendance.toggle-break",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/attendance/check-in": {
@@ -84520,7 +84788,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:attendance:manage",
-        "description": "Exposure: permission — hr:attendance:manage"
+        "description": "Exposure: permission — hr:attendance:manage",
+        "x-bodyless": true
       }
     },
     "/hr/attendance/regularizations/{regularizationId}/reject": {
@@ -86271,7 +86540,26 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:automations:manage",
-        "description": "Exposure: permission — hr:automations:manage"
+        "description": "Exposure: permission — hr:automations:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "isEnabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "isEnabled"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/hr/automations/events": {
@@ -87629,14 +87917,6 @@
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
-            }
-          },
-          {
-            "name": "employeeId",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "string"
             }
           }
         ],
@@ -89046,7 +89326,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:cases:manage",
-        "description": "Exposure: permission — hr:cases:manage"
+        "description": "Exposure: permission — hr:cases:manage",
+        "x-bodyless": true
       }
     },
     "/hr/cases/{caseId}/notes": {
@@ -93252,7 +93533,8 @@
         "x-permission": "hr:employees:manage",
         "description": "Exposure: permission — hr:employees:manage",
         "x-idempotency-command": "hr.effective-change.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/effective-changes/apply-due": {
@@ -96364,7 +96646,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:engagement:view",
-        "description": "Exposure: permission — hr:engagement:view"
+        "description": "Exposure: permission — hr:engagement:view",
+        "x-bodyless": true
       }
     },
     "/hr/engagement/communities/{communityId}/leave": {
@@ -96416,7 +96699,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:engagement:view",
-        "description": "Exposure: permission — hr:engagement:view"
+        "description": "Exposure: permission — hr:engagement:view",
+        "x-bodyless": true
       }
     },
     "/hr/engagement/communities/{communityId}/members": {
@@ -98651,7 +98935,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:payroll:manage",
-        "description": "Exposure: permission — hr:payroll:manage"
+        "description": "Exposure: permission — hr:payroll:manage",
+        "x-bodyless": true
       }
     },
     "/hr/enterprise/comp/payroll-compliance/tasks": {
@@ -100052,7 +100337,8 @@
         "x-permission": "hr:compensation:manage",
         "description": "Exposure: permission — hr:compensation:manage",
         "x-idempotency-command": "hr.comp-recommendation.submit",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/enterprise/ops/accommodations": {
@@ -103336,7 +103622,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:exit:view",
-        "description": "Exposure: permission — hr:exit:view"
+        "description": "Exposure: permission — hr:exit:view",
+        "x-bodyless": true
       }
     },
     "/hr/exit/analytics": {
@@ -106470,7 +106757,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:forms:manage",
-        "description": "Exposure: permission — hr:forms:manage"
+        "description": "Exposure: permission — hr:forms:manage",
+        "x-bodyless": true
       }
     },
     "/hr/forms/{formId}/archive": {
@@ -106522,7 +106810,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:forms:manage",
-        "description": "Exposure: permission — hr:forms:manage"
+        "description": "Exposure: permission — hr:forms:manage",
+        "x-bodyless": true
       }
     },
     "/hr/forms/{formId}/submissions": {
@@ -107306,7 +107595,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:compliance:manage",
-        "description": "Exposure: permission — hr:compliance:manage"
+        "description": "Exposure: permission — hr:compliance:manage",
+        "x-bodyless": true
       }
     },
     "/hr/global/compliance/requirements": {
@@ -110740,7 +111030,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:legalhold:manage",
-        "description": "Exposure: permission — hr:legalhold:manage"
+        "description": "Exposure: permission — hr:legalhold:manage",
+        "x-bodyless": true
       }
     },
     "/hr/governance/position-taxonomy/statuses": {
@@ -112331,7 +112622,8 @@
         "x-permission": "hr:retention:manage",
         "description": "Exposure: permission — hr:retention:manage",
         "x-idempotency-command": "hr.retention.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/governance/retention/requests/{requestId}/process": {
@@ -112383,7 +112675,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:retention:manage",
-        "description": "Exposure: permission — hr:retention:manage"
+        "description": "Exposure: permission — hr:retention:manage",
+        "x-bodyless": true
       }
     },
     "/hr/governance/scenarios": {
@@ -114190,7 +114483,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:import:manage",
-        "description": "Exposure: permission — hr:import:manage"
+        "description": "Exposure: permission — hr:import:manage",
+        "x-bodyless": true
       }
     },
     "/hr/import/jobs/{jobId}/rollback": {
@@ -114241,7 +114535,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:import:manage",
-        "description": "Exposure: permission — hr:import:manage"
+        "description": "Exposure: permission — hr:import:manage",
+        "x-bodyless": true
       }
     },
     "/hr/incentives": {
@@ -116301,7 +116596,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:leaves:create",
-        "description": "Exposure: permission — hr:leaves:create"
+        "description": "Exposure: permission — hr:leaves:create",
+        "x-bodyless": true
       }
     },
     "/hr/leaves/{leaveId}/reject": {
@@ -117170,7 +117466,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:leaves:manage",
-        "description": "Exposure: permission — hr:leaves:manage"
+        "description": "Exposure: permission — hr:leaves:manage",
+        "x-bodyless": true
       }
     },
     "/hr/loans": {
@@ -119407,7 +119704,8 @@
         "x-permission": "hr:attendance:manage",
         "description": "Exposure: permission — hr:attendance:manage",
         "x-idempotency-command": "hr.overtime.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/overtime/{overtimeRequestId}/reject": {
@@ -119464,7 +119762,8 @@
         "x-permission": "hr:attendance:manage",
         "description": "Exposure: permission — hr:attendance:manage",
         "x-idempotency-command": "hr.overtime.reject",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/overtime/comp-off": {
@@ -119665,7 +119964,8 @@
         "x-permission": "hr:payroll:approve",
         "description": "Exposure: permission — hr:payroll:approve",
         "x-idempotency-command": "payroll.adjustment.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/payroll-inputs/adjustments/{adjustmentId}/reject": {
@@ -120120,7 +120420,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:payroll:generate",
-        "description": "Exposure: permission — hr:payroll:generate"
+        "description": "Exposure: permission — hr:payroll:generate",
+        "x-bodyless": true
       }
     },
     "/hr/payroll-inputs/periods/{periodId}/leaves": {
@@ -120248,7 +120549,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:payroll:lock",
-        "description": "Exposure: permission — hr:payroll:lock"
+        "description": "Exposure: permission — hr:payroll:lock",
+        "x-bodyless": true
       }
     },
     "/hr/payroll-inputs/periods/{periodId}/overtime": {
@@ -120452,7 +120754,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:payroll:reopen",
-        "description": "Exposure: permission — hr:payroll:reopen"
+        "description": "Exposure: permission — hr:payroll:reopen",
+        "x-bodyless": true
       }
     },
     "/hr/payroll/salary-structures": {
@@ -121325,7 +121628,8 @@
         "x-permission": "hr:employees:manage",
         "description": "Exposure: permission — hr:employees:manage",
         "x-idempotency-command": "hr.people.backfill-from-members",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/performance/calibration/cycles/{cycleId}/entries": {
@@ -123844,7 +124148,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:policies:manage",
-        "description": "Exposure: permission — hr:policies:manage"
+        "description": "Exposure: permission — hr:policies:manage",
+        "x-bodyless": true
       }
     },
     "/hr/policies/{policyId}/conflicts": {
@@ -124006,7 +124311,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:policies:manage",
-        "description": "Exposure: permission — hr:policies:manage"
+        "description": "Exposure: permission — hr:policies:manage",
+        "x-bodyless": true
       }
     },
     "/hr/policies/conflicts": {
@@ -124132,7 +124438,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:policies:manage",
-        "description": "Exposure: permission — hr:policies:manage"
+        "description": "Exposure: permission — hr:policies:manage",
+        "x-bodyless": true
       }
     },
     "/hr/policies/simulate": {
@@ -125034,7 +125341,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:interviews:manage",
-        "description": "Exposure: permission — hr:interviews:manage"
+        "description": "Exposure: permission — hr:interviews:manage",
+        "x-bodyless": true
       }
     },
     "/hr/recruitment/candidates": {
@@ -125658,7 +125966,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:employees:manage",
-        "description": "Exposure: permission — hr:employees:manage"
+        "description": "Exposure: permission — hr:employees:manage",
+        "x-bodyless": true
       }
     },
     "/hr/recruitment/candidates/{candidateId}/applications": {
@@ -126121,7 +126430,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:employees:manage",
-        "description": "Exposure: permission — hr:employees:manage"
+        "description": "Exposure: permission — hr:employees:manage",
+        "x-bodyless": true
       }
     },
     "/hr/recruitment/candidates/{candidateId}/documents": {
@@ -127065,7 +127375,8 @@
         "x-permission": "hr:offers:manage",
         "description": "Exposure: permission — hr:offers:manage",
         "x-idempotency-command": "hr.offer.submit-approval",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/recruitment/candidates/{candidateId}/offers/{offerId}/versions": {
@@ -128163,7 +128474,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:employees:manage",
-        "description": "Exposure: permission — hr:employees:manage"
+        "description": "Exposure: permission — hr:employees:manage",
+        "x-bodyless": true
       }
     },
     "/hr/recruitment/candidates/{candidateId}/vault": {
@@ -128431,7 +128743,8 @@
         ],
         "x-exposure": "in-service",
         "x-authorized-in-service": "resolveUserPermissions(hr:documents:manage) + org-scoped lookup",
-        "description": "Exposure: authorized in service — resolveUserPermissions(hr:documents:manage) + org-scoped lookup"
+        "description": "Exposure: authorized in service — resolveUserPermissions(hr:documents:manage) + org-scoped lookup",
+        "x-bodyless": true
       }
     },
     "/hr/recruitment/candidates/{candidateId}/vault/access-logs": {
@@ -129938,7 +130251,8 @@
         "x-permission": "hr:employees:manage",
         "description": "Exposure: permission — hr:employees:manage",
         "x-idempotency-command": "hr.headcount.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/recruitment/headcount/{requestId}/create-job": {
@@ -129990,7 +130304,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:employees:manage",
-        "description": "Exposure: permission — hr:employees:manage"
+        "description": "Exposure: permission — hr:employees:manage",
+        "x-bodyless": true
       }
     },
     "/hr/recruitment/headcount/{requestId}/reject": {
@@ -132927,7 +133242,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:employees:manage",
-        "description": "Exposure: permission — hr:employees:manage"
+        "description": "Exposure: permission — hr:employees:manage",
+        "x-bodyless": true
       }
     },
     "/hr/recruitment/jobs/{jobId}/publish": {
@@ -133422,7 +133738,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:employees:view",
-        "description": "Exposure: permission — hr:employees:view"
+        "description": "Exposure: permission — hr:employees:view",
+        "x-bodyless": true
       }
     },
     "/hr/recruitment/messages/threads": {
@@ -134102,7 +134419,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:employees:manage",
-        "description": "Exposure: permission — hr:employees:manage"
+        "description": "Exposure: permission — hr:employees:manage",
+        "x-bodyless": true
       }
     },
     "/hr/recruitment/recruiters": {
@@ -135093,7 +135411,8 @@
         "x-permission": "hr:requisitions:manage",
         "description": "Exposure: permission — hr:requisitions:manage",
         "x-idempotency-command": "hr.requisition.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/recruitment/requisitions/{requisitionId}/create-job": {
@@ -135145,7 +135464,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:requisitions:manage",
-        "description": "Exposure: permission — hr:requisitions:manage"
+        "description": "Exposure: permission — hr:requisitions:manage",
+        "x-bodyless": true
       }
     },
     "/hr/recruitment/requisitions/{requisitionId}/reject": {
@@ -135279,7 +135599,8 @@
         "x-permission": "hr:requisitions:manage",
         "description": "Exposure: permission — hr:requisitions:manage",
         "x-idempotency-command": "hr.requisition.submit",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/recruitment/scorecard-analytics": {
@@ -136425,7 +136746,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:employees:manage",
-        "description": "Exposure: permission — hr:employees:manage"
+        "description": "Exposure: permission — hr:employees:manage",
+        "x-bodyless": true
       }
     },
     "/hr/recruitment/vendors/{vendorId}/submissions": {
@@ -137232,7 +137554,8 @@
         "x-permission": "hr:documents:manage",
         "description": "Exposure: permission — hr:documents:manage",
         "x-idempotency-command": "hr.performance-document.publish",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/rosters": {
@@ -137519,7 +137842,8 @@
         "x-permission": "hr:attendance:manage",
         "description": "Exposure: permission — hr:attendance:manage",
         "x-idempotency-command": "hr.roster.publish",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/safety/incidents": {
@@ -139392,7 +139716,115 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:engagement:view",
-        "description": "Exposure: permission — hr:engagement:view"
+        "description": "Exposure: permission — hr:engagement:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "surveyId": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "answers": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "questionId": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "value": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "questionId",
+                            "value"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "surveyId",
+                      "answers"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 100
+                      },
+                      "questions": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "text": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "type": {
+                              "type": "string",
+                              "enum": [
+                                "rating",
+                                "text",
+                                "choice"
+                              ]
+                            },
+                            "options": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "text",
+                            "type"
+                          ]
+                        }
+                      },
+                      "isAnonymous": {
+                        "default": true,
+                        "type": "boolean"
+                      },
+                      "closesAt": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "title",
+                      "questions"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/hr/surveys/{surveyId}": {
@@ -139643,7 +140075,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:employees:view",
-        "description": "Exposure: permission — hr:employees:view"
+        "description": "Exposure: permission — hr:employees:view",
+        "x-bodyless": true
       }
     },
     "/hr/teams/{teamId}": {
@@ -140300,7 +140733,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:templates:manage",
-        "description": "Exposure: permission — hr:templates:manage"
+        "description": "Exposure: permission — hr:templates:manage",
+        "x-bodyless": true
       }
     },
     "/hr/templates/seed-defaults": {
@@ -140338,7 +140772,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:templates:manage",
-        "description": "Exposure: permission — hr:templates:manage"
+        "description": "Exposure: permission — hr:templates:manage",
+        "x-bodyless": true
       }
     },
     "/hr/templates/variables": {
@@ -140627,7 +141062,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:exit:manage",
-        "description": "Exposure: permission — hr:exit:manage"
+        "description": "Exposure: permission — hr:exit:manage",
+        "x-bodyless": true
       }
     },
     "/hr/termination/{terminationId}/final-review": {
@@ -140802,7 +141238,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:exit:manage",
-        "description": "Exposure: permission — hr:exit:manage"
+        "description": "Exposure: permission — hr:exit:manage",
+        "x-bodyless": true
       }
     },
     "/hr/termination/{terminationId}/submit": {
@@ -140859,7 +141296,8 @@
         "x-permission": "hr:exit:manage",
         "description": "Exposure: permission — hr:exit:manage",
         "x-idempotency-command": "hr.termination.submit",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/hr/travel": {
@@ -141839,7 +142277,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:integrations:manage",
-        "description": "Exposure: permission — hr:integrations:manage"
+        "description": "Exposure: permission — hr:integrations:manage",
+        "x-bodyless": true
       }
     },
     "/hr/webhooks/{subscriptionId}/test": {
@@ -141891,7 +142330,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:integrations:manage",
-        "description": "Exposure: permission — hr:integrations:manage"
+        "description": "Exposure: permission — hr:integrations:manage",
+        "x-bodyless": true
       }
     },
     "/hr/webhooks/events": {
@@ -143039,7 +143479,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:workflows:manage",
-        "description": "Exposure: permission — hr:workflows:manage"
+        "description": "Exposure: permission — hr:workflows:manage",
+        "x-bodyless": true
       }
     },
     "/hr/workflows/{workflowId}/archive": {
@@ -143091,7 +143532,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:workflows:manage",
-        "description": "Exposure: permission — hr:workflows:manage"
+        "description": "Exposure: permission — hr:workflows:manage",
+        "x-bodyless": true
       }
     },
     "/hr/workflows/{workflowId}/duplicate": {
@@ -143143,7 +143585,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:workflows:manage",
-        "description": "Exposure: permission — hr:workflows:manage"
+        "description": "Exposure: permission — hr:workflows:manage",
+        "x-bodyless": true
       }
     },
     "/hr/workflows/{workflowId}/instances": {
@@ -144451,7 +144894,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "integrations:connections:manage",
-        "description": "Exposure: permission — integrations:connections:manage"
+        "description": "Exposure: permission — integrations:connections:manage",
+        "x-bodyless": true
       }
     },
     "/integrations/connections/finalize": {
@@ -144618,7 +145062,8 @@
           "IntegrationsGit"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/internal/audit": {
@@ -145079,7 +145524,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:3pl:manage",
-        "description": "Exposure: permission — inventory:3pl:manage"
+        "description": "Exposure: permission — inventory:3pl:manage",
+        "x-bodyless": true
       }
     },
     "/inventory/ai/digest": {
@@ -145326,7 +145772,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:reports:read",
-        "description": "Exposure: permission — inventory:reports:read"
+        "description": "Exposure: permission — inventory:reports:read",
+        "x-bodyless": true
       }
     },
     "/inventory/ai/insights/generate": {
@@ -145364,7 +145811,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:ai:manage",
-        "description": "Exposure: permission — inventory:ai:manage"
+        "description": "Exposure: permission — inventory:ai:manage",
+        "x-bodyless": true
       }
     },
     "/inventory/ai/reorder-proposal": {
@@ -146176,7 +146624,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:channels:manage",
-        "description": "Exposure: permission — inventory:channels:manage"
+        "description": "Exposure: permission — inventory:channels:manage",
+        "x-bodyless": true
       }
     },
     "/inventory/customer-returns": {
@@ -146463,7 +146912,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:customer-returns:manage",
-        "description": "Exposure: permission — inventory:customer-returns:manage"
+        "description": "Exposure: permission — inventory:customer-returns:manage",
+        "x-bodyless": true
       }
     },
     "/inventory/customer-returns/{returnId}/post": {
@@ -146779,7 +147229,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:stock:reconcile",
-        "description": "Exposure: permission — inventory:stock:reconcile"
+        "description": "Exposure: permission — inventory:stock:reconcile",
+        "x-bodyless": true
       }
     },
     "/inventory/cycle-counts/{countId}/lines": {
@@ -146928,7 +147379,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:stock:reconcile",
-        "description": "Exposure: permission — inventory:stock:reconcile"
+        "description": "Exposure: permission — inventory:stock:reconcile",
+        "x-bodyless": true
       }
     },
     "/inventory/cycle-counts/{countId}/review": {
@@ -146980,7 +147432,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:stock:reconcile",
-        "description": "Exposure: permission — inventory:stock:reconcile"
+        "description": "Exposure: permission — inventory:stock:reconcile",
+        "x-bodyless": true
       }
     },
     "/inventory/cycle-counts/{countId}/start": {
@@ -147032,7 +147485,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:stock:reconcile",
-        "description": "Exposure: permission — inventory:stock:reconcile"
+        "description": "Exposure: permission — inventory:stock:reconcile",
+        "x-bodyless": true
       }
     },
     "/inventory/expiry": {
@@ -148072,7 +148526,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:loads:manage",
-        "description": "Exposure: permission — inventory:loads:manage"
+        "description": "Exposure: permission — inventory:loads:manage",
+        "x-bodyless": true
       }
     },
     "/inventory/loads/{loadId}/close": {
@@ -148707,7 +149162,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:packages:manage",
-        "description": "Exposure: permission — inventory:packages:manage"
+        "description": "Exposure: permission — inventory:packages:manage",
+        "x-bodyless": true
       }
     },
     "/inventory/packages/{packageId}/lines": {
@@ -148858,7 +149314,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:packages:manage",
-        "description": "Exposure: permission — inventory:packages:manage"
+        "description": "Exposure: permission — inventory:packages:manage",
+        "x-bodyless": true
       }
     },
     "/inventory/physical-audits": {
@@ -149096,7 +149553,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:stock:reconcile",
-        "description": "Exposure: permission — inventory:stock:reconcile"
+        "description": "Exposure: permission — inventory:stock:reconcile",
+        "x-bodyless": true
       }
     },
     "/inventory/physical-audits/{auditId}/lines": {
@@ -149245,7 +149703,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:stock:reconcile",
-        "description": "Exposure: permission — inventory:stock:reconcile"
+        "description": "Exposure: permission — inventory:stock:reconcile",
+        "x-bodyless": true
       }
     },
     "/inventory/physical-audits/{auditId}/review": {
@@ -149297,7 +149756,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:stock:reconcile",
-        "description": "Exposure: permission — inventory:stock:reconcile"
+        "description": "Exposure: permission — inventory:stock:reconcile",
+        "x-bodyless": true
       }
     },
     "/inventory/physical-audits/{auditId}/start": {
@@ -149349,7 +149809,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:stock:reconcile",
-        "description": "Exposure: permission — inventory:stock:reconcile"
+        "description": "Exposure: permission — inventory:stock:reconcile",
+        "x-bodyless": true
       }
     },
     "/inventory/products": {
@@ -149956,7 +150417,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:products:update",
-        "description": "Exposure: permission — inventory:products:update"
+        "description": "Exposure: permission — inventory:products:update",
+        "x-bodyless": true
       }
     },
     "/inventory/products/{productId}/restore": {
@@ -150008,7 +150470,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:products:update",
-        "description": "Exposure: permission — inventory:products:update"
+        "description": "Exposure: permission — inventory:products:update",
+        "x-bodyless": true
       }
     },
     "/inventory/products/{productId}/variants": {
@@ -151123,7 +151586,8 @@
         "x-permission": "inventory:purchase-orders:approve",
         "description": "Exposure: permission — inventory:purchase-orders:approve",
         "x-idempotency-command": "inventory.purchase-order.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/inventory/purchase-orders/{poId}/cancel": {
@@ -151175,7 +151639,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:purchase-orders:approve",
-        "description": "Exposure: permission — inventory:purchase-orders:approve"
+        "description": "Exposure: permission — inventory:purchase-orders:approve",
+        "x-bodyless": true
       }
     },
     "/inventory/purchase-orders/{poId}/close": {
@@ -151227,7 +151692,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:purchase-orders:approve",
-        "description": "Exposure: permission — inventory:purchase-orders:approve"
+        "description": "Exposure: permission — inventory:purchase-orders:approve",
+        "x-bodyless": true
       }
     },
     "/inventory/purchase-orders/{poId}/receive": {
@@ -151418,7 +151884,8 @@
         "x-permission": "inventory:purchase-orders:approve",
         "description": "Exposure: permission — inventory:purchase-orders:approve",
         "x-idempotency-command": "inventory.purchase-order.send",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/inventory/quality/holds": {
@@ -151675,7 +152142,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:quality:release",
-        "description": "Exposure: permission — inventory:quality:release"
+        "description": "Exposure: permission — inventory:quality:release",
+        "x-bodyless": true
       }
     },
     "/inventory/quality/inspections": {
@@ -151961,7 +152429,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:quality:inspect",
-        "description": "Exposure: permission — inventory:quality:inspect"
+        "description": "Exposure: permission — inventory:quality:inspect",
+        "x-bodyless": true
       }
     },
     "/inventory/quality/inspections/{inspectionId}/dispose": {
@@ -152214,7 +152683,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:quality:release",
-        "description": "Exposure: permission — inventory:quality:release"
+        "description": "Exposure: permission — inventory:quality:release",
+        "x-bodyless": true
       }
     },
     "/inventory/quality/inspections/{inspectionId}/start": {
@@ -152266,7 +152736,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:quality:inspect",
-        "description": "Exposure: permission — inventory:quality:inspect"
+        "description": "Exposure: permission — inventory:quality:inspect",
+        "x-bodyless": true
       }
     },
     "/inventory/quality/recalls": {
@@ -154007,7 +154478,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:sales-orders:confirm",
-        "description": "Exposure: permission — inventory:sales-orders:confirm"
+        "description": "Exposure: permission — inventory:sales-orders:confirm",
+        "x-bodyless": true
       }
     },
     "/inventory/sales-orders/{soId}/invoice": {
@@ -154059,7 +154531,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:sales-orders:invoice",
-        "description": "Exposure: permission — inventory:sales-orders:invoice"
+        "description": "Exposure: permission — inventory:sales-orders:invoice",
+        "x-bodyless": true
       }
     },
     "/inventory/sales-orders/{soId}/pack": {
@@ -154791,7 +155264,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:settings:manage",
-        "description": "Exposure: permission — inventory:settings:manage"
+        "description": "Exposure: permission — inventory:settings:manage",
+        "x-bodyless": true
       }
     },
     "/inventory/settings/number-sequences": {
@@ -155284,7 +155758,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:shipments:manage",
-        "description": "Exposure: permission — inventory:shipments:manage"
+        "description": "Exposure: permission — inventory:shipments:manage",
+        "x-bodyless": true
       }
     },
     "/inventory/shipments/{shipmentId}/ship": {
@@ -155794,7 +156269,8 @@
         "x-permission": "inventory:adjustments:approve",
         "description": "Exposure: permission — inventory:adjustments:approve",
         "x-idempotency-command": "inventory.stock-adjustment.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/inventory/stock/adjustments/{adjustmentId}/cancel": {
@@ -155846,7 +156322,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:stock:adjust",
-        "description": "Exposure: permission — inventory:stock:adjust"
+        "description": "Exposure: permission — inventory:stock:adjust",
+        "x-bodyless": true
       }
     },
     "/inventory/stock/adjustments/{adjustmentId}/post": {
@@ -155906,7 +156383,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:adjustments:post",
-        "description": "Exposure: permission — inventory:adjustments:post"
+        "description": "Exposure: permission — inventory:adjustments:post",
+        "x-bodyless": true
       }
     },
     "/inventory/stock/availability": {
@@ -156823,7 +157301,8 @@
         "x-permission": "inventory:stock:transfer",
         "description": "Exposure: permission — inventory:stock:transfer",
         "x-idempotency-command": "inventory.stock-transfer.cancel",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/inventory/stock/transfers/{transferId}/complete": {
@@ -156980,7 +157459,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:stock:transfer",
-        "description": "Exposure: permission — inventory:stock:transfer"
+        "description": "Exposure: permission — inventory:stock:transfer",
+        "x-bodyless": true
       }
     },
     "/inventory/stock/transfers/{transferId}/reserve": {
@@ -157040,7 +157520,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:stock:transfer",
-        "description": "Exposure: permission — inventory:stock:transfer"
+        "description": "Exposure: permission — inventory:stock:transfer",
+        "x-bodyless": true
       }
     },
     "/inventory/traceability": {
@@ -157507,7 +157988,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:vendor-returns:manage",
-        "description": "Exposure: permission — inventory:vendor-returns:manage"
+        "description": "Exposure: permission — inventory:vendor-returns:manage",
+        "x-bodyless": true
       }
     },
     "/inventory/vendor-returns/{returnId}/post": {
@@ -159148,7 +159630,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "inventory:webhooks:manage",
-        "description": "Exposure: permission — inventory:webhooks:manage"
+        "description": "Exposure: permission — inventory:webhooks:manage",
+        "x-bodyless": true
       }
     },
     "/invoices": {
@@ -159803,7 +160286,8 @@
         "x-permission": "accounting:manage",
         "description": "Exposure: permission — accounting:manage",
         "x-idempotency-command": "accounting.invoice.void",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/invoices/recurring": {
@@ -159873,7 +160357,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:manage",
-        "description": "Exposure: permission — accounting:manage"
+        "description": "Exposure: permission — accounting:manage",
+        "x-bodyless": true
       }
     },
     "/invoices/stats": {
@@ -161105,7 +161590,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:articles:view",
-        "description": "Exposure: permission — kb:articles:view"
+        "description": "Exposure: permission — kb:articles:view",
+        "x-bodyless": true
       }
     },
     "/kb/articles/{articleId}/ai/suggest-related": {
@@ -161157,7 +161643,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:articles:view",
-        "description": "Exposure: permission — kb:articles:view"
+        "description": "Exposure: permission — kb:articles:view",
+        "x-bodyless": true
       }
     },
     "/kb/articles/{articleId}/ai/summarize": {
@@ -161209,7 +161696,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:articles:view",
-        "description": "Exposure: permission — kb:articles:view"
+        "description": "Exposure: permission — kb:articles:view",
+        "x-bodyless": true
       }
     },
     "/kb/articles/{articleId}/comments": {
@@ -161394,7 +161882,8 @@
         "x-permission": "kb:articles:manage",
         "description": "Exposure: permission — kb:articles:manage",
         "x-idempotency-command": "kb.article.publish",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/kb/articles/{articleId}/tags": {
@@ -161833,7 +162322,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:articles:manage",
-        "description": "Exposure: permission — kb:articles:manage"
+        "description": "Exposure: permission — kb:articles:manage",
+        "x-bodyless": true
       }
     },
     "/kb/articles/{articleId}/verify": {
@@ -162017,7 +162507,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:articles:update",
-        "description": "Exposure: permission — kb:articles:update"
+        "description": "Exposure: permission — kb:articles:update",
+        "x-bodyless": true
       }
     },
     "/kb/articles/{articleId}/view": {
@@ -162069,7 +162560,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:articles:view",
-        "description": "Exposure: permission — kb:articles:view"
+        "description": "Exposure: permission — kb:articles:view",
+        "x-bodyless": true
       }
     },
     "/kb/articles/{articleId}/vote": {
@@ -162253,7 +162745,37 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 1000
+                  },
+                  "spaceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "conversationId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "question"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/kb/ask/conversations": {
@@ -162321,7 +162843,24 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/kb/ask/conversations/{conversationId}": {
@@ -162373,7 +162912,27 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "title"
+                ]
+              }
+            }
+          }
+        }
       },
       "delete": {
         "operationId": "KbAskController_deleteConversation",
@@ -162855,7 +163414,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:articles:update",
-        "description": "Exposure: permission — kb:articles:update"
+        "description": "Exposure: permission — kb:articles:update",
+        "x-bodyless": true
       }
     },
     "/kb/export-jobs": {
@@ -163131,7 +163691,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:update",
-        "description": "Exposure: permission — kb:pages:update"
+        "description": "Exposure: permission — kb:pages:update",
+        "x-bodyless": true
       }
     },
     "/kb/page-reviews": {
@@ -163980,7 +164541,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "x-bodyless": true
       }
     },
     "/kb/pages/{pageId}/ai/suggest-related": {
@@ -164032,7 +164594,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "x-bodyless": true
       }
     },
     "/kb/pages/{pageId}/ai/summarize": {
@@ -164084,7 +164647,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "x-bodyless": true
       }
     },
     "/kb/pages/{pageId}/archive": {
@@ -164136,7 +164700,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:update",
-        "description": "Exposure: permission — kb:pages:update"
+        "description": "Exposure: permission — kb:pages:update",
+        "x-bodyless": true
       }
     },
     "/kb/pages/{pageId}/backlinks": {
@@ -164362,7 +164927,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:create",
-        "description": "Exposure: permission — kb:pages:create"
+        "description": "Exposure: permission — kb:pages:create",
+        "x-bodyless": true
       }
     },
     "/kb/pages/{pageId}/export": {
@@ -164488,7 +165054,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "x-bodyless": true
       },
       "delete": {
         "operationId": "KbPagesController_removeFavorite",
@@ -164660,7 +165227,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:manage",
-        "description": "Exposure: permission — kb:pages:manage"
+        "description": "Exposure: permission — kb:pages:manage",
+        "x-bodyless": true
       }
     },
     "/kb/pages/{pageId}/move": {
@@ -164854,7 +165422,8 @@
         "x-permission": "kb:pages:update",
         "description": "Exposure: permission — kb:pages:update",
         "x-idempotency-command": "kb.page.publish",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/kb/pages/{pageId}/record-links": {
@@ -165041,7 +165610,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:manage",
-        "description": "Exposure: permission — kb:pages:manage"
+        "description": "Exposure: permission — kb:pages:manage",
+        "x-bodyless": true
       }
     },
     "/kb/pages/{pageId}/restore": {
@@ -165093,7 +165663,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:update",
-        "description": "Exposure: permission — kb:pages:update"
+        "description": "Exposure: permission — kb:pages:update",
+        "x-bodyless": true
       }
     },
     "/kb/pages/{pageId}/reviews": {
@@ -165231,7 +165802,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:update",
-        "description": "Exposure: permission — kb:pages:update"
+        "description": "Exposure: permission — kb:pages:update",
+        "x-bodyless": true
       }
     },
     "/kb/pages/{pageId}/verify": {
@@ -165464,7 +166036,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:update",
-        "description": "Exposure: permission — kb:pages:update"
+        "description": "Exposure: permission — kb:pages:update",
+        "x-bodyless": true
       }
     },
     "/kb/pages/{pageId}/visibility": {
@@ -165591,7 +166164,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "x-bodyless": true
       }
     },
     "/kb/pages/favorites": {
@@ -165788,7 +166362,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:settings:manage",
-        "description": "Exposure: permission — kb:settings:manage"
+        "description": "Exposure: permission — kb:settings:manage",
+        "x-bodyless": true
       }
     },
     "/kb/pages/search": {
@@ -166094,7 +166669,32 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "topic": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 300
+                  },
+                  "spaceId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "topic"
+                ]
+              }
+            }
+          }
+        }
       },
       "get": {
         "operationId": "KbResearchBriefController_list",
@@ -166222,7 +166822,29 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "kb:pages:view",
-        "description": "Exposure: permission — kb:pages:view"
+        "description": "Exposure: permission — kb:pages:view",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rating": {
+                    "type": "string",
+                    "enum": [
+                      "helpful",
+                      "not_helpful"
+                    ]
+                  }
+                },
+                "required": [
+                  "rating"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/kb/search": {
@@ -168400,7 +169022,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "crm:leads:update",
-        "description": "Exposure: permission — crm:leads:update"
+        "description": "Exposure: permission — crm:leads:update",
+        "x-bodyless": true
       }
     },
     "/leads/{leadId}/status": {
@@ -170776,7 +171399,8 @@
         "x-permission": "self:attendance",
         "description": "Exposure: permission — self:attendance",
         "x-idempotency-command": "hr.attendance.toggle-break",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/me/attendance/check-in": {
@@ -172375,7 +172999,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "self:leaves",
-        "description": "Exposure: permission — self:leaves"
+        "description": "Exposure: permission — self:leaves",
+        "x-bodyless": true
       }
     },
     "/me/time-off/requests": {
@@ -172566,18 +173191,7 @@
         "operationId": "ModuleAccessController_getAuditLog",
         "parameters": [
           {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          },
-          {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -172585,6 +173199,14 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
             }
           },
           {
@@ -173250,17 +173872,6 @@
         "operationId": "ModuleAccessController_listMemberCandidates",
         "parameters": [
           {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          },
-          {
             "name": "pageSize",
             "in": "query",
             "required": false,
@@ -173301,6 +173912,16 @@
                 "true",
                 "false"
               ]
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -173346,17 +173967,6 @@
         "operationId": "ModuleAccessController_listMembers",
         "parameters": [
           {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          },
-          {
             "name": "pageSize",
             "in": "query",
             "required": false,
@@ -173383,7 +173993,7 @@
             "required": false,
             "schema": {
               "type": "integer",
-              "minimum": 0,
+              "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
           },
@@ -177651,7 +178261,8 @@
           "Unsubscribe"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/offer-fulfillment": {
@@ -178520,7 +179131,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "onboarding:module-checklists:manage",
-        "description": "Exposure: permission — onboarding:module-checklists:manage"
+        "description": "Exposure: permission — onboarding:module-checklists:manage",
+        "x-bodyless": true
       }
     },
     "/onboarding/module-checklists/{moduleKey}/items/{itemKey}/complete": {
@@ -178580,7 +179192,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "onboarding:module-checklists:manage",
-        "description": "Exposure: permission — onboarding:module-checklists:manage"
+        "description": "Exposure: permission — onboarding:module-checklists:manage",
+        "x-bodyless": true
       }
     },
     "/onboarding/module-checklists/{moduleKey}/items/{itemKey}/skip": {
@@ -178707,7 +179320,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "onboarding:module-checklists:manage",
-        "description": "Exposure: permission — onboarding:module-checklists:manage"
+        "description": "Exposure: permission — onboarding:module-checklists:manage",
+        "x-bodyless": true
       }
     },
     "/onboarding/personal-details": {
@@ -178880,7 +179494,8 @@
         "x-permission": "hr:onboarding:manage",
         "description": "Exposure: permission — hr:onboarding:manage",
         "x-idempotency-command": "hr.onboarding.send-reminders",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/onboarding/requirements": {
@@ -179145,7 +179760,8 @@
         "x-exposure": "universal",
         "description": "Exposure: universal — any authenticated member, subject from the token",
         "x-idempotency-command": "hr.onboarding.submit",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/onboarding/tasks/{taskId}": {
@@ -179471,7 +180087,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "onboarding:tours:view",
-        "description": "Exposure: permission — onboarding:tours:view"
+        "description": "Exposure: permission — onboarding:tours:view",
+        "x-bodyless": true
       }
     },
     "/onboarding/tours/{tourKey}/dismiss": {
@@ -179522,7 +180139,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "onboarding:tours:view",
-        "description": "Exposure: permission — onboarding:tours:view"
+        "description": "Exposure: permission — onboarding:tours:view",
+        "x-bodyless": true
       }
     },
     "/onboarding/tours/{tourKey}/progress": {
@@ -180065,7 +180683,35 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:organization:manage",
-        "description": "Exposure: permission — settings:organization:manage"
+        "description": "Exposure: permission — settings:organization:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "businessUnitId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "businessUnitId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/org-hierarchy/business-units": {
@@ -180399,7 +181045,35 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:organization:manage",
-        "description": "Exposure: permission — settings:organization:manage"
+        "description": "Exposure: permission — settings:organization:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "parentId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "parentId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/org-hierarchy/cost-centers": {
@@ -181046,7 +181720,35 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:organization:manage",
-        "description": "Exposure: permission — settings:organization:manage"
+        "description": "Exposure: permission — settings:organization:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "branchId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "branchId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/org-hierarchy/dependencies/{unitKind}/{unitId}": {
@@ -182294,7 +182996,8 @@
           "Announcements"
         ],
         "x-exposure": "universal",
-        "description": "Exposure: universal — any authenticated member, subject from the token"
+        "description": "Exposure: universal — any authenticated member, subject from the token",
+        "x-bodyless": true
       }
     },
     "/org/announcements/all": {
@@ -182874,7 +183577,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:manage",
-        "description": "Exposure: permission — settings:manage"
+        "description": "Exposure: permission — settings:manage",
+        "x-bodyless": true
       }
     },
     "/organization/archived": {
@@ -183092,7 +183796,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:manage",
-        "description": "Exposure: permission — settings:manage"
+        "description": "Exposure: permission — settings:manage",
+        "x-bodyless": true
       }
     },
     "/organization/holidays": {
@@ -183416,7 +184121,8 @@
           "Organization"
         ],
         "x-exposure": "universal",
-        "description": "Exposure: universal — any authenticated member, subject from the token"
+        "description": "Exposure: universal — any authenticated member, subject from the token",
+        "x-bodyless": true
       }
     },
     "/organization/legal-holds": {
@@ -183813,7 +184519,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:organization:manage",
-        "description": "Exposure: permission — settings:organization:manage"
+        "description": "Exposure: permission — settings:organization:manage",
+        "x-bodyless": true
       }
     },
     "/organization/members/{memberId}/suspend": {
@@ -183864,7 +184571,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:organization:manage",
-        "description": "Exposure: permission — settings:organization:manage"
+        "description": "Exposure: permission — settings:organization:manage",
+        "x-bodyless": true
       }
     },
     "/organization/restore": {
@@ -184906,7 +185614,8 @@
         "x-permission": "ownership:transfer:respond",
         "description": "Exposure: permission — ownership:transfer:respond",
         "x-idempotency-command": "ownership.transfer.accept",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/ownership/transfers/{transferId}/decline": {
@@ -185402,7 +186111,8 @@
         "x-permission": "party:merges:manage",
         "description": "Exposure: permission — party:merges:manage",
         "x-idempotency-command": "party.merge.revert",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/party/mirror/divergence": {
@@ -186175,7 +186885,8 @@
         "x-permission": "party:merges:manage",
         "description": "Exposure: permission — party:merges:manage",
         "x-idempotency-command": "party.duplicates.detect",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/party/parties/{partyId}/roles": {
@@ -187588,7 +188299,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payments:manual-methods:manage",
-        "description": "Exposure: permission — payments:manual-methods:manage"
+        "description": "Exposure: permission — payments:manual-methods:manage",
+        "x-bodyless": true
       }
     },
     "/payments/providers": {
@@ -187847,7 +188559,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payments:live:activate",
-        "description": "Exposure: permission — payments:live:activate"
+        "description": "Exposure: permission — payments:live:activate",
+        "x-bodyless": true
       }
     },
     "/payments/providers/{providerKey}/audit": {
@@ -188113,7 +188826,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payments:providers:manage",
-        "description": "Exposure: permission — payments:providers:manage"
+        "description": "Exposure: permission — payments:providers:manage",
+        "x-bodyless": true
       }
     },
     "/payments/providers/{providerKey}/disconnect": {
@@ -188541,7 +189255,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "payments:webhooks:manage",
-        "description": "Exposure: permission — payments:webhooks:manage"
+        "description": "Exposure: permission — payments:webhooks:manage",
+        "x-bodyless": true
       }
     },
     "/payments/providers/{providerKey}/webhooks/generate": {
@@ -200313,7 +201028,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "build:clientvisibility:manage",
-        "description": "Exposure: permission — build:clientvisibility:manage"
+        "description": "Exposure: permission — build:clientvisibility:manage",
+        "x-bodyless": true
       }
     },
     "/portal-access/memberships": {
@@ -203989,7 +204705,8 @@
           "SignPublic"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/public/sign/{token}/consent": {
@@ -204292,7 +205009,8 @@
           "SignPublic"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/public/sign/{token}/session": {
@@ -205862,7 +206580,8 @@
         "x-permission": "crm:quotes:approve",
         "description": "Exposure: permission — crm:quotes:approve",
         "x-idempotency-command": "quotes.quote.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/quotes/{quoteId}/convert-to-invoice": {
@@ -205919,7 +206638,8 @@
         "x-permission": "crm:quotes:create",
         "description": "Exposure: permission — crm:quotes:create",
         "x-idempotency-command": "crm.quote.convertToInvoice",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/quotes/{quoteId}/mark-signed": {
@@ -206115,7 +206835,8 @@
         "x-permission": "crm:quotes:update",
         "description": "Exposure: permission — crm:quotes:update",
         "x-idempotency-command": "crm.quote.send",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/quotes/export": {
@@ -207534,7 +208255,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:rbac:manage",
-        "description": "Exposure: permission — settings:rbac:manage"
+        "description": "Exposure: permission — settings:rbac:manage",
+        "x-bodyless": true
       }
     },
     "/roles/simulate/{targetUserId}": {
@@ -211330,7 +212052,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "sign:admin:manage",
-        "description": "Exposure: permission — sign:admin:manage"
+        "description": "Exposure: permission — sign:admin:manage",
+        "x-bodyless": true
       }
     },
     "/sign/admin/run-reminder-sweep": {
@@ -211368,7 +212091,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "sign:admin:manage",
-        "description": "Exposure: permission — sign:admin:manage"
+        "description": "Exposure: permission — sign:admin:manage",
+        "x-bodyless": true
       }
     },
     "/sign/admin/settings": {
@@ -212210,7 +212934,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "sign:bulk_send:run",
-        "description": "Exposure: permission — sign:bulk_send:run"
+        "description": "Exposure: permission — sign:bulk_send:run",
+        "x-bodyless": true
       }
     },
     "/sign/bulk-send/jobs/{jobId}/error-report": {
@@ -212412,7 +213137,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "sign:documents:upload",
-        "description": "Exposure: permission — sign:documents:upload"
+        "description": "Exposure: permission — sign:documents:upload",
+        "x-bodyless": true
       }
     },
     "/sign/envelopes": {
@@ -212940,7 +213666,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "sign:envelope:view",
-        "description": "Exposure: permission — sign:envelope:view"
+        "description": "Exposure: permission — sign:envelope:view",
+        "x-bodyless": true
       }
     },
     "/sign/envelopes/{envelopeId}/audit": {
@@ -213751,7 +214478,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "sign:admin:manage",
-        "description": "Exposure: permission — sign:admin:manage"
+        "description": "Exposure: permission — sign:admin:manage",
+        "x-bodyless": true
       }
     },
     "/sign/envelopes/{envelopeId}/resend": {
@@ -213808,7 +214536,8 @@
         "x-permission": "sign:envelope:send",
         "description": "Exposure: permission — sign:envelope:send",
         "x-idempotency-command": "sign:envelope.resend",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/sign/envelopes/{envelopeId}/save-as-template": {
@@ -213860,7 +214589,28 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "sign:template:manage",
-        "description": "Exposure: permission — sign:template:manage"
+        "description": "Exposure: permission — sign:template:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
       }
     },
     "/sign/envelopes/{envelopeId}/send": {
@@ -213917,7 +214667,8 @@
         "x-permission": "sign:envelope:send",
         "description": "Exposure: permission — sign:envelope:send",
         "x-idempotency-command": "sign:envelope.send",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/sign/envelopes/{envelopeId}/send-reminder": {
@@ -213974,7 +214725,8 @@
         "x-permission": "sign:envelope:send",
         "description": "Exposure: permission — sign:envelope:send",
         "x-idempotency-command": "sign:envelope.send_reminder",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/sign/envelopes/{envelopeId}/validate": {
@@ -214026,7 +214778,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "sign:envelope:create",
-        "description": "Exposure: permission — sign:envelope:create"
+        "description": "Exposure: permission — sign:envelope:create",
+        "x-bodyless": true
       }
     },
     "/sign/envelopes/{envelopeId}/void": {
@@ -214998,7 +215751,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "sign:template:manage",
-        "description": "Exposure: permission — sign:template:manage"
+        "description": "Exposure: permission — sign:template:manage",
+        "x-bodyless": true
       }
     },
     "/sign/templates/{templateId}/publish-public-form": {
@@ -216110,7 +216864,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:tickets:view",
-        "description": "Exposure: permission — support:tickets:view"
+        "description": "Exposure: permission — support:tickets:view",
+        "x-bodyless": true
       },
       "delete": {
         "operationId": "SupportWorkspaceController_unfollow",
@@ -216880,7 +217635,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:tickets:manage",
-        "description": "Exposure: permission — support:tickets:manage"
+        "description": "Exposure: permission — support:tickets:manage",
+        "x-bodyless": true
       },
       "delete": {
         "operationId": "SupportWorkspaceController_detachTag",
@@ -217038,7 +217794,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:tickets:view",
-        "description": "Exposure: permission — support:tickets:view"
+        "description": "Exposure: permission — support:tickets:view",
+        "x-bodyless": true
       }
     },
     "/support/{ticketId}/ai/find-duplicates": {
@@ -217090,7 +217847,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:tickets:view",
-        "description": "Exposure: permission — support:tickets:view"
+        "description": "Exposure: permission — support:tickets:view",
+        "x-bodyless": true
       }
     },
     "/support/{ticketId}/ai/handoff-summary": {
@@ -217142,7 +217900,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:tickets:view",
-        "description": "Exposure: permission — support:tickets:view"
+        "description": "Exposure: permission — support:tickets:view",
+        "x-bodyless": true
       }
     },
     "/support/{ticketId}/ai/root-cause-cluster": {
@@ -217194,7 +217953,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:tickets:view",
-        "description": "Exposure: permission — support:tickets:view"
+        "description": "Exposure: permission — support:tickets:view",
+        "x-bodyless": true
       }
     },
     "/support/{ticketId}/ai/suggest-kb-articles": {
@@ -217246,7 +218006,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:tickets:view",
-        "description": "Exposure: permission — support:tickets:view"
+        "description": "Exposure: permission — support:tickets:view",
+        "x-bodyless": true
       }
     },
     "/support/{ticketId}/ai/suggest-macro": {
@@ -217298,7 +218059,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:tickets:reply",
-        "description": "Exposure: permission — support:tickets:reply"
+        "description": "Exposure: permission — support:tickets:reply",
+        "x-bodyless": true
       }
     },
     "/support/{ticketId}/ai/suggest-reply": {
@@ -217350,7 +218112,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:tickets:reply",
-        "description": "Exposure: permission — support:tickets:reply"
+        "description": "Exposure: permission — support:tickets:reply",
+        "x-bodyless": true
       }
     },
     "/support/{ticketId}/ai/suggestions": {
@@ -218344,6 +219107,11 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "triggerEvent": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
                   },
                   "conditions": {
                     "type": "array",
@@ -221074,7 +221842,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:kb:manage",
-        "description": "Exposure: permission — support:kb:manage"
+        "description": "Exposure: permission — support:kb:manage",
+        "x-bodyless": true
       }
     },
     "/support/kb/ask": {
@@ -221424,7 +222193,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:kb:manage",
-        "description": "Exposure: permission — support:kb:manage"
+        "description": "Exposure: permission — support:kb:manage",
+        "x-bodyless": true
       }
     },
     "/support/knowledge-gaps": {
@@ -221596,7 +222366,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:knowledge-gaps:manage",
-        "description": "Exposure: permission — support:knowledge-gaps:manage"
+        "description": "Exposure: permission — support:knowledge-gaps:manage",
+        "x-bodyless": true
       }
     },
     "/support/knowledge-gaps/detect": {
@@ -221634,7 +222405,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:knowledge-gaps:manage",
-        "description": "Exposure: permission — support:knowledge-gaps:manage"
+        "description": "Exposure: permission — support:knowledge-gaps:manage",
+        "x-bodyless": true
       }
     },
     "/support/macros": {
@@ -224047,7 +224819,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "support:settings:manage",
-        "description": "Exposure: permission — support:settings:manage"
+        "description": "Exposure: permission — support:settings:manage",
+        "x-bodyless": true
       }
     },
     "/support/stats": {
@@ -225034,7 +225807,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "surveys:delete",
-        "description": "Exposure: permission — surveys:delete"
+        "description": "Exposure: permission — surveys:delete",
+        "x-bodyless": true
       }
     },
     "/surveys/{surveyId}/assessment/attempts": {
@@ -225663,7 +226437,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "surveys:publish",
-        "description": "Exposure: permission — surveys:publish"
+        "description": "Exposure: permission — surveys:publish",
+        "x-bodyless": true
       }
     },
     "/surveys/{surveyId}/collectors": {
@@ -225969,7 +226744,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "surveys:create",
-        "description": "Exposure: permission — surveys:create"
+        "description": "Exposure: permission — surveys:create",
+        "x-bodyless": true
       }
     },
     "/surveys/{surveyId}/export": {
@@ -226947,7 +227723,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "surveys:publish",
-        "description": "Exposure: permission — surveys:publish"
+        "description": "Exposure: permission — surveys:publish",
+        "x-bodyless": true
       }
     },
     "/surveys/{surveyId}/publish": {
@@ -227004,7 +227781,8 @@
         "x-permission": "surveys:publish",
         "description": "Exposure: permission — surveys:publish",
         "x-idempotency-command": "surveys.survey.publish",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/surveys/{surveyId}/questions": {
@@ -227504,7 +228282,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "surveys:update",
-        "description": "Exposure: permission — surveys:update"
+        "description": "Exposure: permission — surveys:update",
+        "x-bodyless": true
       }
     },
     "/surveys/{surveyId}/reorder": {
@@ -228108,7 +228887,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "surveys:live:host",
-        "description": "Exposure: permission — surveys:live:host"
+        "description": "Exposure: permission — surveys:live:host",
+        "x-bodyless": true
       }
     },
     "/surveys/live-sessions/{sessionId}/next": {
@@ -228160,7 +228940,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "surveys:live:host",
-        "description": "Exposure: permission — surveys:live:host"
+        "description": "Exposure: permission — surveys:live:host",
+        "x-bodyless": true
       }
     },
     "/surveys/live-sessions/{sessionId}/results": {
@@ -228258,7 +229039,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "surveys:live:host",
-        "description": "Exposure: permission — surveys:live:host"
+        "description": "Exposure: permission — surveys:live:host",
+        "x-bodyless": true
       }
     },
     "/surveys/live-sessions/{sessionId}/start": {
@@ -228310,7 +229092,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "surveys:live:host",
-        "description": "Exposure: permission — surveys:live:host"
+        "description": "Exposure: permission — surveys:live:host",
+        "x-bodyless": true
       }
     },
     "/surveys/templates": {
@@ -229466,7 +230249,8 @@
         "x-permission": "timesheets:approvals:manage",
         "description": "Exposure: permission — timesheets:approvals:manage",
         "x-idempotency-command": "timesheets.approval.approve",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/timesheets/approvals/{periodId}/reject": {
@@ -231049,7 +231833,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:exceptions:manage",
-        "description": "Exposure: permission — timesheets:exceptions:manage"
+        "description": "Exposure: permission — timesheets:exceptions:manage",
+        "x-bodyless": true
       }
     },
     "/timesheets/exceptions/summary": {
@@ -231804,7 +232589,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:entries:view",
-        "description": "Exposure: permission — timesheets:entries:view"
+        "description": "Exposure: permission — timesheets:entries:view",
+        "x-bodyless": true
       }
     },
     "/timesheets/periods/{periodId}/lock": {
@@ -231856,7 +232642,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:approvals:manage",
-        "description": "Exposure: permission — timesheets:approvals:manage"
+        "description": "Exposure: permission — timesheets:approvals:manage",
+        "x-bodyless": true
       }
     },
     "/timesheets/periods/{periodId}/recall": {
@@ -231908,7 +232695,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:entries:create",
-        "description": "Exposure: permission — timesheets:entries:create"
+        "description": "Exposure: permission — timesheets:entries:create",
+        "x-bodyless": true
       }
     },
     "/timesheets/periods/{periodId}/reopen": {
@@ -231960,7 +232748,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:approvals:manage",
-        "description": "Exposure: permission — timesheets:approvals:manage"
+        "description": "Exposure: permission — timesheets:approvals:manage",
+        "x-bodyless": true
       }
     },
     "/timesheets/periods/{periodId}/submit": {
@@ -232017,7 +232806,8 @@
         "x-permission": "timesheets:entries:create",
         "description": "Exposure: permission — timesheets:entries:create",
         "x-idempotency-command": "timesheets.period.submit",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/timesheets/periods/{periodId}/unlock": {
@@ -232069,7 +232859,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:approvals:manage",
-        "description": "Exposure: permission — timesheets:approvals:manage"
+        "description": "Exposure: permission — timesheets:approvals:manage",
+        "x-bodyless": true
       }
     },
     "/timesheets/periods/current": {
@@ -233161,7 +233952,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:entries:create",
-        "description": "Exposure: permission — timesheets:entries:create"
+        "description": "Exposure: permission — timesheets:entries:create",
+        "x-bodyless": true
       }
     },
     "/timesheets/timer/{timerId}/pause": {
@@ -233213,7 +234005,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:entries:create",
-        "description": "Exposure: permission — timesheets:entries:create"
+        "description": "Exposure: permission — timesheets:entries:create",
+        "x-bodyless": true
       }
     },
     "/timesheets/timer/{timerId}/resume": {
@@ -233265,7 +234058,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:entries:create",
-        "description": "Exposure: permission — timesheets:entries:create"
+        "description": "Exposure: permission — timesheets:entries:create",
+        "x-bodyless": true
       }
     },
     "/timesheets/timer/{timerId}/stop": {
@@ -233317,7 +234111,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "timesheets:entries:create",
-        "description": "Exposure: permission — timesheets:entries:create"
+        "description": "Exposure: permission — timesheets:entries:create",
+        "x-bodyless": true
       }
     },
     "/timesheets/timer/active": {
@@ -233983,14 +234778,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -234798,14 +235590,11 @@
         "operationId": "UsersController_getOrgAuditLog",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -236217,7 +237006,8 @@
         "x-permission": "settings:webhooks:manage",
         "description": "Exposure: permission — settings:webhooks:manage",
         "x-idempotency-command": "webhook.delivery.retry",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/webhooks/{webhookId}/rotate-secret": {
@@ -236269,7 +237059,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:webhooks:manage",
-        "description": "Exposure: permission — settings:webhooks:manage"
+        "description": "Exposure: permission — settings:webhooks:manage",
+        "x-bodyless": true
       }
     },
     "/webhooks/email/{provider}": {
@@ -236313,7 +237104,8 @@
           "EmailWebhook"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/webhooks/payments/{providerKey}/{environment}/{orgId}": {
@@ -236375,7 +237167,8 @@
           "PaymentWebhooksPublic"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/webhooks/razorpay/{orgId}": {
@@ -236419,7 +237212,8 @@
           "RazorpayWebhook"
         ],
         "x-exposure": "public",
-        "description": "Exposure: public — unauthenticated"
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
       }
     },
     "/whiteboards": {
@@ -238290,7 +239084,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "settings:organization:manage",
-        "description": "Exposure: permission — settings:organization:manage"
+        "description": "Exposure: permission — settings:organization:manage",
+        "x-bodyless": true
       }
     },
     "/workspace-onboarding/generate": {

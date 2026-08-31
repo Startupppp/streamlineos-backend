@@ -5,6 +5,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { WorkspaceOnboardingService } from "./workspace-onboarding.service";
 import { generateSchema, type GenerateInput } from "./dto/workspace-onboarding.schemas";
 
@@ -26,6 +27,7 @@ export class WorkspaceOnboardingController {
   }
 
   @Post("complete")
+  @BodylessAction()
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")

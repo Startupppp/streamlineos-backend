@@ -14,6 +14,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { AllowWithoutMfa } from "../../common/auth/allow-without-mfa.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { MfaService } from "./mfa.service";
 import {
   verifyMfaSchema,
@@ -31,6 +32,7 @@ export class MfaController {
   constructor(private readonly mfa: MfaService) {}
 
   @Post("setup")
+  @BodylessAction()
   @Universal()
   @HttpCode(200)
   setup(@CurrentUser() u: CurrentUserContext) {

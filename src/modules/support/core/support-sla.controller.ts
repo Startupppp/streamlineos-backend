@@ -33,6 +33,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { z } from "zod";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const businessHoursIdParams = z.object({ businessHoursId: z.coerce.number().int().positive() }).strict();
 const slaPolicyIdParams = z.object({ slaPolicyId: z.coerce.number().int().positive() }).strict();
@@ -130,6 +131,7 @@ export class SupportSlaController {
   }
 
   @Post("sla/run-escalations")
+  @BodylessAction()
   @RequirePermission("support:settings:manage")
   @HttpCode(200)
   runEscalations(@CurrentUser() u: CurrentUserContext) {

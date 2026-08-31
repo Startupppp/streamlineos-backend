@@ -10,6 +10,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RostersService } from "./rosters.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
 const rosterIdParams = z.object({ rosterId: z.coerce.number().int().positive() }).strict();
 
@@ -77,6 +78,7 @@ export class RostersController {
   }
 
   @Patch(":rosterId/publish")
+  @BodylessAction()
   @Idempotent("hr.roster.publish")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")

@@ -20,6 +20,7 @@ import { candidateDocumentsVault, vaultAccessLogs } from "../../db/schema";
 import { AccessService } from "../access/access.service";
 import { StorageService } from "./storage.service";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const candidateAndDocumentIdParams = z.object({ candidateId: z.coerce.number().int().positive(), documentId: z.coerce.number().int().positive() }).strict();
@@ -36,6 +37,7 @@ export class StorageVaultController {
   ) {}
 
   @Post(":documentId/url")
+  @BodylessAction()
   @AuthorizedInService("resolveUserPermissions(hr:documents:manage) + org-scoped lookup")
   @HttpCode(200)
   @Validate({ params: candidateAndDocumentIdParams })

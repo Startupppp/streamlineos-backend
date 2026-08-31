@@ -69,6 +69,7 @@ import {
   type UpdateOrgSettingsInput,
   type ValidateInvitationTokenQuery,
 } from "./dto/organization.schemas";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const memberIdParams = z.object({ memberId: z.string().min(1) }).strict();
@@ -203,6 +204,7 @@ export class OrganizationController {
   }
 
   @Patch("members/:memberId/suspend")
+  @BodylessAction()
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
@@ -215,6 +217,7 @@ export class OrganizationController {
   }
 
   @Patch("members/:memberId/reactivate")
+  @BodylessAction()
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
@@ -297,6 +300,7 @@ export class OrganizationController {
   }
 
   @Post("custom-domains/:domainId/verify")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   @Validate({ params: domainIdParams })
@@ -347,6 +351,7 @@ export class OrganizationController {
   }
 
   @Post("archive")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:manage")
   archiveOrg(@CurrentUser() u: CurrentUserContext) {
@@ -368,6 +373,7 @@ export class OrganizationController {
   }
 
   @Post("leave")
+  @BodylessAction()
   @Universal()
   @HttpCode(200)
   leaveOrg(@CurrentUser() u: CurrentUserContext) {

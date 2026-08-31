@@ -30,6 +30,7 @@ import {
   type RejectPeriodInput,
 } from "./dto/approvals.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
@@ -78,6 +79,7 @@ export class ApprovalsController {
   }
 
   @Post(":periodId/approve")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Idempotent("timesheets.approval.approve")

@@ -35,6 +35,7 @@ import {
   type VoteArticleInput,
 } from "../core/dto/kb.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { z } from "zod";
 
@@ -105,6 +106,7 @@ export class KbArticlesController {
   }
 
   @Post("articles/:articleId/publish")
+  @BodylessAction()
   @Idempotent("kb.article.publish")
   @RequirePermission("kb:articles:manage")
   @HttpCode(200)
@@ -117,6 +119,7 @@ export class KbArticlesController {
   }
 
   @Post("articles/:articleId/unpublish")
+  @BodylessAction()
   @RequirePermission("kb:articles:manage")
   @HttpCode(200)
   @Validate({ params: articleIdParams })
@@ -152,6 +155,7 @@ export class KbArticlesController {
   }
 
   @Post("articles/:articleId/view")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("kb:articles:view")
   @Validate({ params: articleIdParams })
@@ -173,6 +177,7 @@ export class KbArticlesController {
   }
 
   @Post("articles/:articleId/versions/:versionNumber/restore")
+  @BodylessAction()
   @RequirePermission("kb:articles:update")
   @HttpCode(200)
   @Validate({ params: articleIdversionNumberParams })

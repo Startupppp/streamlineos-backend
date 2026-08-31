@@ -32,6 +32,7 @@ import {
   type UpdateGrantInput,
 } from "./dto/portal-access.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const portalMembershipIdParams = z.object({ portalMembershipId: z.string().min(1) }).strict();
@@ -115,6 +116,7 @@ export class PortalAccessController {
   }
 
   @Post("grants/:projectClientGrantId/revoke")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("build:clientvisibility:manage")
   @Validate({ params: projectClientGrantIdParams })

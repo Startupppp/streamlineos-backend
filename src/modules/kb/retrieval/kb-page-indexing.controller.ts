@@ -14,6 +14,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbIndexingService } from "./kb-indexing.service";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
@@ -24,6 +25,7 @@ export class KbPageIndexingController {
   constructor(private readonly indexing: KbIndexingService) {}
 
   @Post(":pageId/reindex")
+  @BodylessAction()
   @RequirePermission("kb:pages:manage")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: pageIdParams })
@@ -36,6 +38,7 @@ export class KbPageIndexingController {
   }
 
   @Post("reindex-all")
+  @BodylessAction()
   @RequirePermission("kb:settings:manage")
   @HttpCode(HttpStatus.OK)
   async reindexAllPages(

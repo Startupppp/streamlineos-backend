@@ -23,6 +23,7 @@ import {
   type ConvertTimerInput,
 } from "./dto/timer.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const timerIdParams = z.object({ timerId: z.coerce.number().int().positive() }).strict();
@@ -51,6 +52,7 @@ export class TimerController {
   }
 
   @Post(":timerId/pause")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: timerIdParams })
@@ -62,6 +64,7 @@ export class TimerController {
   }
 
   @Post(":timerId/resume")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: timerIdParams })
@@ -73,6 +76,7 @@ export class TimerController {
   }
 
   @Post(":timerId/stop")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: timerIdParams })
@@ -84,6 +88,7 @@ export class TimerController {
   }
 
   @Post(":timerId/discard")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")
   @Validate({ params: timerIdParams })

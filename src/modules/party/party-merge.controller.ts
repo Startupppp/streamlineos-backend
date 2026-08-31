@@ -9,6 +9,7 @@ import { PartyMergeService } from "./party-merge.service";
 import { PartyRevertService } from "./party-revert.service";
 import { PartyRolesService } from "./party-roles.service";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { partyMergeBodySchema, partyRoleBodySchema } from "./dto/party-merge.schemas";
 import { z } from "zod";
 
@@ -67,6 +68,7 @@ export class PartyMergeController {
   }
 
   @Post("parties/:partyId/detect-duplicates")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("party:merges:manage")
   @Idempotent("party.duplicates.detect")
@@ -115,6 +117,7 @@ export class PartyMergeController {
   }
 
   @Post("merges/:partyMergeId/revert")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("party:merges:manage")
   @Idempotent("party.merge.revert")

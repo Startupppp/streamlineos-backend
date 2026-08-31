@@ -6,6 +6,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { SurveyLiveSessionService } from "./survey-live-session.service";
 import { SurveyLiveParticipantService } from "./survey-live-participant.service";
 import { createLiveSessionSchema, type CreateLiveSessionInput } from "./dto/survey-live-session.schemas";
@@ -41,6 +42,7 @@ export class SurveyLiveSessionController {
   }
 
   @Post("live-sessions/:sessionId/start")
+  @BodylessAction()
   @RequirePermission("surveys:live:host")
   @Validate({ params: sessionIdParams })
   start(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
@@ -48,6 +50,7 @@ export class SurveyLiveSessionController {
   }
 
   @Post("live-sessions/:sessionId/next")
+  @BodylessAction()
   @RequirePermission("surveys:live:host")
   @Validate({ params: sessionIdParams })
   next(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
@@ -55,6 +58,7 @@ export class SurveyLiveSessionController {
   }
 
   @Post("live-sessions/:sessionId/reveal")
+  @BodylessAction()
   @RequirePermission("surveys:live:host")
   @Validate({ params: sessionIdParams })
   reveal(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {
@@ -62,6 +66,7 @@ export class SurveyLiveSessionController {
   }
 
   @Post("live-sessions/:sessionId/end")
+  @BodylessAction()
   @RequirePermission("surveys:live:host")
   @Validate({ params: sessionIdParams })
   end(@Param("sessionId", ParseIntPipe) sessionId: number, @CurrentUser() u: CurrentUserContext) {

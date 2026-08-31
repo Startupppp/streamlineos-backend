@@ -23,6 +23,7 @@ import {
   type UpdateHrAnnouncementInput,
 } from "./dto/announcements.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const announcementIdParams = z.object({ announcementId: z.coerce.number().int().positive() }).strict();
@@ -94,6 +95,7 @@ export class AnnouncementsController {
   }
 
   @Post(":announcementId/read")
+  @BodylessAction()
   @Universal()
   @Validate({ params: announcementIdParams })
   markRead(

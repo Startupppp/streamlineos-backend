@@ -188,6 +188,9 @@ export const updateTemplateSchema = createTemplateSchema.partial().extend({
 });
 export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>;
 
+export const saveAsTemplateSchema = z.object({ name: z.string().trim().min(1).max(200) }).strict();
+export type SaveAsTemplateInput = z.infer<typeof saveAsTemplateSchema>;
+
 export const createEnvelopeFromTemplateSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   recipients: z
