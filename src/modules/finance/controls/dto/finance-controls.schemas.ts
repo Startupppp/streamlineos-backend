@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createApprovalPolicySchema = z.object({
   recordType: z.enum([
@@ -31,8 +32,8 @@ export const listApprovalsSchema = z.object({
       "BANK_ADJUSTMENT",
     ])
     .optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20, 100),
 });
 
 export const approvalDecisionSchema = z.object({
@@ -45,8 +46,8 @@ export const listAuditSchema = z.object({
   action: z.string().optional(),
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20, 100),
 });
 
 export const upsertExchangeRateSchema = z.object({
@@ -57,8 +58,8 @@ export const upsertExchangeRateSchema = z.object({
 });
 
 export const listExchangeRatesSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  pageSize: pageSizeField(50, 100),
 });
 
 export type CreateApprovalPolicyInput = z.infer<typeof createApprovalPolicySchema>;

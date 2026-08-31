@@ -30,7 +30,7 @@ export class PaymentAnalyticsService {
 
   async notifyOwner(
     orgId: string,
-    input: { title: string; message: string; type?: "INFO" | "SUCCESS" | "WARNING" | "ERROR"; priority?: "LOW" | "NORMAL" | "HIGH" | "CRITICAL" },
+    input: { title: string; message: string; type?: "INFO" | "SUCCESS" | "WARNING" | "ERROR"; priority?: "LOW" | "NORMAL" | "HIGH" | "CRITICAL"; link?: string },
   ) {
     const ownerUserId = await this.resolveOwnerUserId(orgId);
     if (!ownerUserId) return;
@@ -43,7 +43,7 @@ export class PaymentAnalyticsService {
       priority: input.priority ?? "NORMAL",
       title: input.title,
       message: input.message,
-      link: "/accounting/settings/payment-providers",
+      link: input.link ?? "/accounting/settings/payment-providers",
     });
   }
 }

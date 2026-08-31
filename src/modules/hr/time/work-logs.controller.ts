@@ -5,7 +5,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { WorkLogsService } from "./work-logs.service";
 import {
   exportWorkLogsQuerySchema,
@@ -18,6 +17,7 @@ import {
   type PostWorkLogInput,
 } from "./dto/work-logs.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("hr")
 @Controller("hr/work-logs")
@@ -27,8 +27,9 @@ export class WorkLogsController {
 
   @Get()
   @RequirePermission("hr:attendance:view")
+  @Validate({ query: listWorkLogsQuerySchema })
   async list(
-    @Query(new ZodValidationPipe(listWorkLogsQuerySchema)) query: ListWorkLogsQuery,
+    @Query() query: ListWorkLogsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return await this.workLogs.list(u, query);
@@ -37,8 +38,9 @@ export class WorkLogsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:attendance:view")
+  @Validate({ body: postWorkLogSchema })
   create(
-    @Body(new ZodValidationPipe(postWorkLogSchema)) body: PostWorkLogInput,
+    @Body() body: PostWorkLogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workLogs.create(u.orgId, u.userId, body, u);
@@ -46,8 +48,9 @@ export class WorkLogsController {
 
   @Patch("status")
   @RequirePermission("hr:attendance:manage")
+  @Validate({ body: patchWorkLogStatusSchema })
   updateStatus(
-    @Body(new ZodValidationPipe(patchWorkLogStatusSchema)) body: PatchWorkLogStatusInput,
+    @Body() body: PatchWorkLogStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workLogs.updateStatus(u, body);
@@ -55,8 +58,9 @@ export class WorkLogsController {
 
   @Get("export")
   @RequirePermission("hr:attendance:view")
+  @Validate({ query: exportWorkLogsQuerySchema })
   async exportCsv(
-    @Query(new ZodValidationPipe(exportWorkLogsQuerySchema)) query: ExportWorkLogsQuery,
+    @Query() query: ExportWorkLogsQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {

@@ -25,7 +25,6 @@ function makeCache() {
   return {
     cached: jest.fn().mockImplementation((_k: string, fn: () => Promise<unknown>) => fn()),
     invalidate: jest.fn().mockResolvedValue(undefined),
-    invalidatePattern: jest.fn().mockResolvedValue(undefined),
   };
 }
 

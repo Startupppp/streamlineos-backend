@@ -1,3 +1,4 @@
+import { describeWithDb, RBAC_E2E_DATABASE_URL } from "test/helpers/db-describe";
 import { Test } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
@@ -61,9 +62,6 @@ describe("Leads PermissionGuard wiring (e2e, no DB required)", () => {
     expect(res.body).toMatchObject({ code: "MODULE_NOT_ENABLED", details: { moduleKey: "crm" } });
   });
 });
-
-const RBAC_E2E_DATABASE_URL = process.env.RBAC_E2E_DATABASE_URL;
-const describeWithDb = RBAC_E2E_DATABASE_URL ? describe : describe.skip;
 
 describeWithDb(
   "Leads RBAC data-row scope and parity (requires migration 0119 applied and seeded in RBAC_E2E_DATABASE_URL)",

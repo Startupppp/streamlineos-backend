@@ -1,24 +1,15 @@
-import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { createHash } from "node:crypto";
-import { Readable } from "stream";
-import { and, count, eq, isNull, ne, sql } from "drizzle-orm";
+import { Inject, Injectable, Logger } from "@nestjs/common";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import {
-  kbArticles,
-  kbArticleAttachments,
   kbArticleChunks,
+  kbArticles,
   kbPages,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import {
-  EmbeddingsService,
-  EMBEDDING_MODEL,
-} from "../../ai/core/providers/embeddings.service";
-import { StorageService } from "../../storage/storage.service";
-import {
-  extractAttachmentText,
-  isExtractableMime,
-} from "./kb-attachment-extract.util";
+import { EmbeddingsService, EMBEDDING_MODEL } from "../../ai/core/providers/embeddings.service";
+import { sha256, chunkText } from "./kb-chunk-utils";
+import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
 
 export function isPageIndexable(page: {
   status: string;
@@ -34,39 +25,8 @@ export class KbIndexingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly embeddings: EmbeddingsService,
-    private readonly storage: StorageService,
+    private readonly checkpoint: KbIngestionCheckpointService,
   ) {}
-
-  private sha256(text: string): string {
-    return createHash("sha256").update(text).digest("hex");
-  }
-
-  private async isContentUnchanged(
-    orgId: string,
-    filter: { articleId: number } | { pageId: number },
-    source: "article_body" | "page_body",
-    newText: string,
-  ): Promise<boolean> {
-    const idCondition =
-      "articleId" in filter
-        ? eq(kbArticleChunks.articleId, filter.articleId)
-        : eq(kbArticleChunks.pageId, filter.pageId);
-
-    const [existing] = await this.db
-      .select({ contentHash: kbArticleChunks.contentHash })
-      .from(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.orgId, orgId),
-          idCondition,
-          eq(kbArticleChunks.source, source),
-        ),
-      )
-      .limit(1);
-
-    if (!existing?.contentHash) return false;
-    return existing.contentHash === this.sha256(newText);
-  }
 
   private async getPageChunkState(
     orgId: string,
@@ -76,6 +36,7 @@ export class KbIndexingService {
     pageVisibility: string | null;
     pageProjectId: number | null;
     pageCreatedById: string | null;
+    pageCreatedByMembershipId: number | null;
     aclRevision: number | null;
   } | null> {
     const [existing] = await this.db
@@ -84,6 +45,7 @@ export class KbIndexingService {
         pageVisibility: kbArticleChunks.pageVisibility,
         pageProjectId: kbArticleChunks.pageProjectId,
         pageCreatedById: kbArticleChunks.pageCreatedById,
+        pageCreatedByMembershipId: kbArticleChunks.pageCreatedByMembershipId,
         aclRevision: kbArticleChunks.aclRevision,
       })
       .from(kbArticleChunks)
@@ -99,37 +61,59 @@ export class KbIndexingService {
     return existing ?? null;
   }
 
-  private chunkText(text: string): string[] {
-    const chunkSize = 1500;
-    const overlapSize = 200;
-    const maxChunks = 400;
-    const chunks: string[] = [];
+  private async embedWithResumption(
+    orgId: string,
+    contentType: string,
+    contentId: number,
+    contentHash: string,
+    chunks: string[],
+  ): Promise<number[][]> {
+    const cached = await this.checkpoint.loadCheckpoints(
+      orgId,
+      contentType,
+      contentId,
+      contentHash,
+    );
 
-    if (!text || text.trim().length === 0) return chunks;
+    const resumedFrom = cached.size > 0 ? Math.min(...cached.keys()) : chunks.length;
+    if (cached.size > 0)
+      this.logger.log("KB ingestion resuming from checkpoint", {
+        orgId,
+        contentType,
+        contentId,
+        cachedChunks: cached.size,
+        totalChunks: chunks.length,
+        resumedFrom,
+      });
 
-    let pos = 0;
-    while (pos < text.length && chunks.length < maxChunks) {
-      const end = Math.min(pos + chunkSize, text.length);
-      let chunkEnd = end;
-
-      if (end < text.length) {
-        const lastSpace = text.lastIndexOf(" ", end);
-        if (lastSpace > pos && lastSpace > pos + chunkSize - 200) {
-          chunkEnd = lastSpace;
-        }
+    const embeddings: number[][] = [];
+    for (let i = 0; i < chunks.length; i++) {
+      const hit = cached.get(i);
+      if (hit !== undefined) {
+        embeddings.push(hit);
+        continue;
       }
-
-      const chunk = text.slice(pos, chunkEnd).trim();
-      if (chunk.length > 0) {
-        chunks.push(chunk);
-      }
-
-      if (end >= text.length) break;
-
-      pos = Math.max(pos + 1, chunkEnd - overlapSize);
+      const emb = await this.embeddings.embedQuery(chunks[i]);
+      await this.checkpoint.saveCheckpoint(
+        orgId,
+        contentType,
+        contentId,
+        contentHash,
+        i,
+        chunks[i],
+        emb,
+      );
+      embeddings.push(emb);
+      if ((i + 1) % 10 === 0 || i === chunks.length - 1)
+        this.logger.log("KB ingestion chunk progress", {
+          orgId,
+          contentType,
+          contentId,
+          embedded: i + 1,
+          total: chunks.length,
+        });
     }
-
-    return chunks;
+    return embeddings;
   }
 
   async indexArticle(orgId: string, articleId: number): Promise<void> {
@@ -153,27 +137,44 @@ export class KbIndexingService {
       return;
     }
 
-    const unchanged = await this.isContentUnchanged(
-      orgId,
-      { articleId: articleId },
-      "article_body",
-      article.contentText,
-    );
-    if (unchanged) return;
-
-    const chunks = this.chunkText(article.contentText);
-    const contentHash = this.sha256(article.contentText);
-    const contentRevision = article.contentRevision;
-    const aclRevision = article.aclRevision;
+    const chunks = chunkText(article.contentText);
+    const contentHash = sha256(article.contentText);
 
     if (chunks.length === 0) {
       await this.removeArticleChunks(orgId, articleId);
       return;
     }
 
-    const embeddings = await Promise.all(
-      chunks.map((chunk) => this.embeddings.embedQuery(chunk)),
+    const [firstExisting] = await this.db
+      .select({ contentHash: kbArticleChunks.contentHash })
+      .from(kbArticleChunks)
+      .where(
+        and(
+          eq(kbArticleChunks.orgId, orgId),
+          eq(kbArticleChunks.articleId, articleId),
+          eq(kbArticleChunks.source, "article_body"),
+        ),
+      )
+      .limit(1);
+
+    if (firstExisting?.contentHash === contentHash) return;
+
+    this.logger.log("KB article indexing started", {
+      orgId,
+      articleId,
+      chunks: chunks.length,
+    });
+
+    const embeddings = await this.embedWithResumption(
+      orgId,
+      "article",
+      articleId,
+      contentHash,
+      chunks,
     );
+
+    const contentRevision = article.contentRevision;
+    const aclRevision = article.aclRevision;
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -186,23 +187,31 @@ export class KbIndexingService {
           ),
         );
 
-      const valuesToInsert = chunks.map((chunk, index) => ({
-        orgId,
-        articleId,
-        pageId: null,
-        attachmentId: null,
-        source: "article_body" as const,
-        chunkIndex: index,
-        content: chunk,
-        contentHash,
-        tokens: Math.ceil(chunk.length / 4),
-        embedding: embeddings[index],
-        embeddingModel: EMBEDDING_MODEL,
-        contentRevision,
-        aclRevision,
-      }));
+      await tx.insert(kbArticleChunks).values(
+        chunks.map((chunk, index) => ({
+          orgId,
+          articleId,
+          pageId: null,
+          attachmentId: null,
+          source: "article_body" as const,
+          chunkIndex: index,
+          content: chunk,
+          contentHash,
+          tokens: Math.ceil(chunk.length / 4),
+          embedding: embeddings[index],
+          embeddingModel: EMBEDDING_MODEL,
+          contentRevision,
+          aclRevision,
+        })),
+      );
 
-      await tx.insert(kbArticleChunks).values(valuesToInsert);
+      await this.checkpoint.clearCheckpoints(tx, orgId, "article", articleId);
+    });
+
+    this.logger.log("KB article indexing committed", {
+      orgId,
+      articleId,
+      chunks: chunks.length,
     });
   }
 
@@ -216,6 +225,7 @@ export class KbIndexingService {
         contentText: true,
         projectId: true,
         createdById: true,
+        createdByMembershipId: true,
         aclRevision: true,
         contentRevision: true,
       },
@@ -232,7 +242,7 @@ export class KbIndexingService {
     }
 
     const stored = await this.getPageChunkState(orgId, pageId);
-    const contentHash = this.sha256(page.contentText);
+    const contentHash = sha256(page.contentText);
     const aclRevision = page.aclRevision;
     const contentRevision = page.contentRevision;
 
@@ -241,16 +251,19 @@ export class KbIndexingService {
         stored.pageVisibility !== page.visibility ||
         stored.pageProjectId !== page.projectId ||
         stored.pageCreatedById !== page.createdById ||
+        stored.pageCreatedByMembershipId !== page.createdByMembershipId ||
         stored.aclRevision !== aclRevision;
 
       if (!aclChanged) return 0;
 
+      this.logger.log("KB page ACL updated (content unchanged)", { orgId, pageId });
       await this.db
         .update(kbArticleChunks)
         .set({
           pageVisibility: page.visibility,
           pageProjectId: page.projectId,
           pageCreatedById: page.createdById,
+          pageCreatedByMembershipId: page.createdByMembershipId,
           aclRevision,
         })
         .where(
@@ -263,15 +276,25 @@ export class KbIndexingService {
       return 0;
     }
 
-    const chunks = this.chunkText(page.contentText);
+    const chunks = chunkText(page.contentText);
 
     if (chunks.length === 0) {
       await this.removePageChunks(orgId, pageId);
       return 0;
     }
 
-    const embeddings = await Promise.all(
-      chunks.map((chunk) => this.embeddings.embedQuery(chunk)),
+    this.logger.log("KB page indexing started", {
+      orgId,
+      pageId,
+      chunks: chunks.length,
+    });
+
+    const embeddings = await this.embedWithResumption(
+      orgId,
+      "page",
+      pageId,
+      contentHash,
+      chunks,
     );
 
     await this.db.transaction(async (tx) => {
@@ -285,26 +308,35 @@ export class KbIndexingService {
           ),
         );
 
-      const valuesToInsert = chunks.map((chunk, index) => ({
-        orgId,
-        articleId: null,
-        pageId,
-        attachmentId: null,
-        source: "page_body" as const,
-        chunkIndex: index,
-        content: chunk,
-        contentHash,
-        tokens: Math.ceil(chunk.length / 4),
-        embedding: embeddings[index],
-        embeddingModel: EMBEDDING_MODEL,
-        pageVisibility: page.visibility,
-        pageProjectId: page.projectId,
-        pageCreatedById: page.createdById,
-        aclRevision,
-        contentRevision,
-      }));
+      await tx.insert(kbArticleChunks).values(
+        chunks.map((chunk, index) => ({
+          orgId,
+          articleId: null,
+          pageId,
+          attachmentId: null,
+          source: "page_body" as const,
+          chunkIndex: index,
+          content: chunk,
+          contentHash,
+          tokens: Math.ceil(chunk.length / 4),
+          embedding: embeddings[index],
+          embeddingModel: EMBEDDING_MODEL,
+          pageVisibility: page.visibility,
+          pageProjectId: page.projectId,
+          pageCreatedById: page.createdById,
+          pageCreatedByMembershipId: page.createdByMembershipId,
+          aclRevision,
+          contentRevision,
+        })),
+      );
 
-      await tx.insert(kbArticleChunks).values(valuesToInsert);
+      await this.checkpoint.clearCheckpoints(tx, orgId, "page", pageId);
+    });
+
+    this.logger.log("KB page indexing committed", {
+      orgId,
+      pageId,
+      chunks: chunks.length,
     });
 
     return chunks.length;
@@ -332,275 +364,6 @@ export class KbIndexingService {
       );
   }
 
-  async indexSource(
-    orgId: string,
-    sourceId: number,
-    text: string,
-  ): Promise<number> {
-    if (!this.embeddings.isConfigured()) return 0;
-    const chunks = this.chunkText(text);
-
-    if (chunks.length === 0) {
-      await this.removeSourceChunks(orgId, sourceId);
-      return 0;
-    }
-
-    const embeddings = await Promise.all(
-      chunks.map((c) => this.embeddings.embedQuery(c)),
-    );
-
-    await this.db.transaction(async (tx) => {
-      await tx
-        .delete(kbArticleChunks)
-        .where(
-          and(
-            eq(kbArticleChunks.sourceId, sourceId),
-            eq(kbArticleChunks.orgId, orgId),
-            eq(kbArticleChunks.source, "source"),
-          ),
-        );
-
-      const valuesToInsert = chunks.map((chunk, index) => ({
-        orgId,
-        articleId: null,
-        pageId: null,
-        attachmentId: null,
-        sourceId,
-        source: "source" as const,
-        chunkIndex: index,
-        content: chunk,
-        tokens: Math.ceil(chunk.length / 4),
-        embedding: embeddings[index],
-        embeddingModel: EMBEDDING_MODEL,
-      }));
-
-      await tx.insert(kbArticleChunks).values(valuesToInsert);
-    });
-
-    return chunks.length;
-  }
-
-  async removeSourceChunks(orgId: string, sourceId: number): Promise<void> {
-    await this.db
-      .delete(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.sourceId, sourceId),
-          eq(kbArticleChunks.orgId, orgId),
-        ),
-      );
-  }
-
-  private async streamToBuffer(stream: Readable): Promise<Buffer> {
-    const chunks: Buffer[] = [];
-    for await (const chunk of stream) {
-      chunks.push(
-        typeof chunk === "string" ? Buffer.from(chunk) : (chunk as Buffer),
-      );
-    }
-    return Buffer.concat(chunks);
-  }
-
-  async indexAttachment(
-    orgId: string,
-    attachmentId: number,
-  ): Promise<{ chunks: number; warning: string | null }> {
-    const attachment = await this.db.query.kbArticleAttachments.findFirst({
-      where: and(
-        eq(kbArticleAttachments.id, attachmentId),
-        eq(kbArticleAttachments.orgId, orgId),
-      ),
-      columns: {
-        id: true,
-        articleId: true,
-        fileKey: true,
-        mimeType: true,
-        fileName: true,
-      },
-    });
-
-    if (!attachment || !this.embeddings.isConfigured()) {
-      await this.removeAttachmentChunks(orgId, attachmentId);
-      return { chunks: 0, warning: null };
-    }
-
-    if (!isExtractableMime(attachment.mimeType)) {
-      await this.removeAttachmentChunks(orgId, attachmentId);
-      return {
-        chunks: 0,
-        warning: `${attachment.fileName}: unsupported file type`,
-      };
-    }
-
-    let text: string;
-    try {
-      const { body } = await this.storage.getFileStream(orgId, attachment.fileKey);
-      const buffer = await this.streamToBuffer(body);
-      text = await extractAttachmentText(buffer, attachment.mimeType);
-    } catch (err) {
-      this.logger.error(`Attachment extract failed (${attachmentId}): ${err}`);
-      return {
-        chunks: 0,
-        warning: `${attachment.fileName}: could not read file`,
-      };
-    }
-
-    const chunks = this.chunkText(text);
-
-    if (chunks.length === 0) {
-      await this.removeAttachmentChunks(orgId, attachmentId);
-      return { chunks: 0, warning: `${attachment.fileName}: no extractable text` };
-    }
-
-    const embeddings = await Promise.all(
-      chunks.map((c) => this.embeddings.embedQuery(c)),
-    );
-
-    await this.db.transaction(async (tx) => {
-      await tx
-        .delete(kbArticleChunks)
-        .where(
-          and(
-            eq(kbArticleChunks.attachmentId, attachmentId),
-            eq(kbArticleChunks.orgId, orgId),
-            eq(kbArticleChunks.source, "attachment"),
-          ),
-        );
-
-      const valuesToInsert = chunks.map((chunk, index) => ({
-        orgId,
-        articleId: attachment.articleId,
-        pageId: null,
-        attachmentId,
-        source: "attachment" as const,
-        chunkIndex: index,
-        content: chunk,
-        tokens: Math.ceil(chunk.length / 4),
-        embedding: embeddings[index],
-        embeddingModel: EMBEDDING_MODEL,
-      }));
-
-      await tx.insert(kbArticleChunks).values(valuesToInsert);
-    });
-
-    return { chunks: chunks.length, warning: null };
-  }
-
-  async removeAttachmentChunks(
-    orgId: string,
-    attachmentId: number,
-  ): Promise<void> {
-    await this.db
-      .delete(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.attachmentId, attachmentId),
-          eq(kbArticleChunks.orgId, orgId),
-        ),
-      );
-  }
-
-  async indexPageDocument(
-    orgId: string,
-    pageId: number,
-    buffer: Buffer,
-    mimeType: string,
-    fileName: string,
-  ): Promise<{ chunks: number; warning: string | null }> {
-    if (!this.embeddings.isConfigured() || !isExtractableMime(mimeType)) {
-      return { chunks: 0, warning: null };
-    }
-
-    let text: string;
-    try {
-      text = await extractAttachmentText(buffer, mimeType);
-    } catch (err) {
-      this.logger.error(
-        `Page document extract failed (page ${pageId}, ${fileName}): ${err}`,
-      );
-      return { chunks: 0, warning: `${fileName}: could not read file` };
-    }
-
-    const chunks = this.chunkText(text);
-    if (chunks.length === 0) {
-      return { chunks: 0, warning: `${fileName}: no extractable text` };
-    }
-
-    const embeddings = await Promise.all(
-      chunks.map((c) => this.embeddings.embedQuery(c)),
-    );
-
-    const valuesToInsert = chunks.map((chunk, index) => ({
-      orgId,
-      articleId: null,
-      pageId,
-      attachmentId: null,
-      source: "attachment" as const,
-      chunkIndex: index,
-      content: chunk,
-      tokens: Math.ceil(chunk.length / 4),
-      embedding: embeddings[index],
-      embeddingModel: EMBEDDING_MODEL,
-    }));
-
-    await this.db.insert(kbArticleChunks).values(valuesToInsert);
-
-    return { chunks: chunks.length, warning: null };
-  }
-
-  async reindexAll(orgId: string): Promise<{
-    total: number;
-    indexed: number;
-    totalChunks: number;
-    failures: { articleId: number; error: string }[];
-  }> {
-    const articles = await this.db.query.kbArticles.findMany({
-      where: and(
-        eq(kbArticles.orgId, orgId),
-        eq(kbArticles.status, "published"),
-      ),
-      columns: { id: true },
-    });
-
-    const REINDEX_CONCURRENCY = 4;
-    const failures: { articleId: number; error: string }[] = [];
-    let indexed = 0;
-    for (let i = 0; i < articles.length; i += REINDEX_CONCURRENCY) {
-      const batch = articles.slice(i, i + REINDEX_CONCURRENCY);
-      const results = await Promise.all(
-        batch.map(async (article) => {
-          try {
-            await this.reindexArticle(orgId, article.id);
-            return { ok: true as const };
-          } catch (err) {
-            return {
-              ok: false as const,
-              articleId: article.id,
-              error: err instanceof Error ? err.message : "unknown error",
-            };
-          }
-        }),
-      );
-      for (const result of results) {
-        if (result.ok) indexed += 1;
-        else
-          failures.push({ articleId: result.articleId, error: result.error });
-      }
-    }
-
-    const [row] = await this.db
-      .select({ chunks: count() })
-      .from(kbArticleChunks)
-      .where(eq(kbArticleChunks.orgId, orgId));
-
-    return {
-      total: articles.length,
-      indexed,
-      totalChunks: row?.chunks ?? 0,
-      failures,
-    };
-  }
-
   async reindexAllPages(orgId?: string): Promise<{ reindexed: number }> {
     const where = orgId
       ? and(eq(kbPages.orgId, orgId), ne(kbPages.status, "archived"), isNull(kbPages.deletedAt))
@@ -611,80 +374,9 @@ export class KbIndexingService {
       .from(kbPages)
       .where(where);
 
-    for (const page of pages) {
+    for (const page of pages)
       await this.indexPage(page.orgId, page.id);
-    }
 
     return { reindexed: pages.length };
-  }
-
-  async getArticleIndexStatus(
-    orgId: string,
-    articleId: number,
-  ): Promise<{ chunks: number; lastIndexedAt: string | null }> {
-    const article = await this.db.query.kbArticles.findFirst({
-      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!article) throw new NotFoundException("Article not found");
-
-    const [row] = await this.db
-      .select({
-        chunks: count(),
-        lastIndexedAt: sql<
-          string | null
-        >`max(${kbArticleChunks.createdAt})::text`,
-      })
-      .from(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.articleId, articleId),
-          eq(kbArticleChunks.orgId, orgId),
-        ),
-      );
-
-    return {
-      chunks: row?.chunks ?? 0,
-      lastIndexedAt: row?.lastIndexedAt ?? null,
-    };
-  }
-
-  async reindexArticle(
-    orgId: string,
-    articleId: number,
-  ): Promise<{ chunks: number; warnings: string[] }> {
-    const article = await this.db.query.kbArticles.findFirst({
-      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!article) throw new NotFoundException("Article not found");
-
-    await this.indexArticle(orgId, articleId);
-
-    const attachments = await this.db.query.kbArticleAttachments.findMany({
-      where: and(
-        eq(kbArticleAttachments.articleId, articleId),
-        eq(kbArticleAttachments.orgId, orgId),
-      ),
-      columns: { id: true },
-    });
-
-    const warnings: string[] = [];
-    for (const attachment of attachments) {
-      const result = await this.indexAttachment(orgId, attachment.id);
-      if (result.warning) warnings.push(result.warning);
-    }
-
-    const [row] = await this.db
-      .select({ chunks: count() })
-      .from(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.articleId, articleId),
-          eq(kbArticleChunks.orgId, orgId),
-        ),
-      );
-
-    return { chunks: row?.chunks ?? 0, warnings };
   }
 }

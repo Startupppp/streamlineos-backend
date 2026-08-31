@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import { DECISION_KINDS, DECISION_OUTCOMES } from "../../../db/schema/crm/autonomous-decisions";
 import { queryBoolean } from "../../../common/validation/query-boolean";
 
@@ -13,7 +14,7 @@ export const ROUTINE_KINDS = ["activity.logged"] as const;
 
 export const listDecisionsQuerySchema = z
   .object({
-    limit: z.coerce.number().int().min(1).max(100).default(25),
+    limit: pageSizeField(25),
     cursor: z.string().min(1).max(512).optional(),
 
     kind: z.enum(DECISION_KINDS).optional(),
@@ -71,7 +72,7 @@ export const scoreboardQuerySchema = z
 export type ScoreboardQuery = z.infer<typeof scoreboardQuerySchema>;
 
 export const reviewQueueQuerySchema = z
-  .object({ limit: z.coerce.number().int().min(1).max(100).default(25) })
+  .object({ limit: pageSizeField(25) })
   .strict();
 
 export type ReviewQueueQuery = z.infer<typeof reviewQueueQuerySchema>;

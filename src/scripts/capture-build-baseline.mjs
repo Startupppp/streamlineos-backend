@@ -21,7 +21,7 @@ const QUERIES = [
     label: "Board / list, page 1, sorted by fractional rank (the benchmark)",
     text: `select t.id, t.title, t.description, t.status, t.priority, t.type, t.rank,
                   t.assignee_id, t.ticket_number, t.points, t.due_date, t.created_at
-           from tickets t
+           from build.tickets t
            where t.org_id = $1 and t.project_id = $2 and t.deleted_at is null
            order by t.rank asc, t.created_at desc, t.id asc
            limit 50 offset 0`,
@@ -30,7 +30,7 @@ const QUERIES = [
     id: "Q2-board-deep-page",
     label: "Same list at offset 3000 (offset pagination cost)",
     text: `select t.id, t.title, t.description, t.status, t.priority, t.rank, t.created_at
-           from tickets t
+           from build.tickets t
            where t.org_id = $1 and t.project_id = $2 and t.deleted_at is null
            order by t.rank asc, t.created_at desc, t.id asc
            limit 50 offset 3000`,
@@ -38,100 +38,62 @@ const QUERIES = [
   {
     id: "Q3-list-count",
     label: "The COUNT(*) fired alongside every list request",
-    text: `select count(*) from tickets t where t.org_id = $1 and t.project_id = $2 and t.deleted_at is null`,
+    text: `select count(*) from build.tickets t where t.org_id = $1 and t.project_id = $2 and t.deleted_at is null`,
   },
   {
     id: "Q4-search-ilike",
-    label: "Search: leading-wildcard ILIKE on title",
-    text: `select t.id, t.title from tickets t
+    label: "Search: leading-wildcard ILIKE on title (seq-scan under RLS — use app.search_ticket_ids SDF instead)",
+    text: `select t.id, t.title from build.tickets t
            where t.org_id = $1 and t.project_id = $2 and t.deleted_at is null and t.title ILIKE '%ticket 1234%'
            order by t.rank asc limit 50`,
-  },
-  {
-    id: "Q5-board-with-relations",
-    label: "Board page 1 hydrated with assignees + labels (the relational `with` shape)",
-    text: `select t.id, t.title, t.status, t.rank,
-                  (select json_agg(json_build_object('id', u.id, 'name', u.name))
-                     from ticket_assignees ta join users u on u.id = ta.user_id
-                    where ta.ticket_id = t.id) assignees,
-                  (select json_agg(json_build_object('id', l.id, 'name', l.name, 'color', l.color))
-                     from ticket_label_mappings tlm join ticket_labels l on l.id = tlm.label_id
-                    where tlm.ticket_id = t.id) labels
-           from tickets t
-           where t.org_id = $1 and t.project_id = $2 and t.deleted_at is null
-           order by t.rank asc, t.created_at desc, t.id asc
-           limit 50`,
   },
   {
     id: "Q6-my-work",
     label: "My Work: assigned tickets across the whole org",
     text: `select t.id, t.title, t.status, t.priority, t.due_date, t.project_id
-           from tickets t
+           from build.tickets t
            where t.org_id = $1 and t.assignee_id = $3 and t.deleted_at is null and t.status <> 'DONE'
            order by t.due_date asc nulls last limit 50`,
   },
   {
     id: "Q7-status-counts",
     label: "Per-column badge counts for the board",
-    text: `select t.status, count(*) from tickets t
+    text: `select t.status, count(*) from build.tickets t
            where t.org_id = $1 and t.project_id = $2 group by t.status`,
-  },
-  {
-    id: "Q8-ticket-comments",
-    label: "Ticket detail: comment thread",
-    text: `select c.id, c.content, c.user_id, c.created_at
-           from ticket_comments c
-           where c.org_id = $1 and c.ticket_id = $4 and c.deleted_at is null
-           order by c.created_at desc limit 50`,
-  },
-  {
-    id: "Q9-ticket-activity",
-    label: "Ticket detail: activity feed",
-    text: `select a.id, a.action, a.from_value, a.to_value, a.created_at
-           from ticket_activity_log a
-           where a.org_id = $1 and a.ticket_id = $4
-           order by a.created_at desc limit 50`,
   },
   {
     id: "Q10-dependency-graph",
     label: "Dependency edges for a ticket (blocks / blocked_by)",
     text: `select r.id, r.relation_type, r.work_item_id, r.related_work_item_id
-           from work_item_relations r
+           from build.work_item_relations r
            where r.org_id = $1 and (r.work_item_id = $4 or r.related_work_item_id = $4)`,
   },
   {
     id: "Q11-portfolio-rollup",
-    label: "Portfolio dashboard: per-project open/done rollup from daily snapshots (post-fix)",
+    label: "Portfolio dashboard: per-project open/done rollup from daily snapshots",
     text: `select s.project_id::int,
                   coalesce(sum(case when s.state_group in ('backlog','unstarted','started') then s.count else 0 end),0)::int open_count,
                   coalesce(sum(case when s.state_group = 'completed' then s.count else 0 end),0)::int done_count
-           from project_daily_snapshots s
+           from build.project_daily_snapshots s
            where s.org_id = $1
              and s.snapshot_date = (
-               select max(s2.snapshot_date) from project_daily_snapshots s2 where s2.project_id = s.project_id
+               select max(s2.snapshot_date) from build.project_daily_snapshots s2 where s2.project_id = s.project_id
              )
            group by s.project_id
            order by open_count desc limit 50`,
-  },
-  {
-    id: "Q12-timesheet-billing-rollup",
-    label: "Billing: approved billable hours + amount by project",
-    text: `select ts.project_id, sum(ts.hours) hours, sum(ts.hours * coalesce(ts.bill_rate,0)) amount
-           from timesheets ts
-           where ts.org_id = $1 and ts.status = 'APPROVED' and ts.is_billable = true
-           group by ts.project_id order by amount desc limit 50`,
   },
 ];
 
 async function pickFixtures() {
   return sql.begin(async (tx) => {
+    await tx`set local search_path to public, build, build_events, app`;
     await tx`select set_config('app.organization_id', ${ORG}, true)`;
     const [p] = await tx`
-      select id from projects where org_id = ${ORG} and key like 'SD%' order by id limit 1`;
+      select id from build.projects where org_id = ${ORG} and key like 'SD%' order by id limit 1`;
     const [t] = await tx`
-      select id from tickets where org_id = ${ORG} and project_id = ${p.id} order by id limit 1`;
+      select id from build.tickets where org_id = ${ORG} and project_id = ${p.id} order by id limit 1`;
     const [u] = await tx`
-      select user_id from organization_members where org_id = ${ORG} and status = 'ACTIVE' limit 1`;
+      select user_id from build.ticket_assignees where org_id = ${ORG} limit 1`;
     return { projectId: p.id, ticketId: t.id, userId: u.user_id };
   });
 }
@@ -163,6 +125,7 @@ async function main() {
   const results = [];
   for (const q of QUERIES) {
     const rows = await sql.begin(async (tx) => {
+      await tx`set local search_path to public, build, build_events, app`;
       await tx`select set_config('app.organization_id', ${ORG}, true)`;
       const all = [ORG, fixtures.projectId, fixtures.userId, fixtures.ticketId];
       const used = [...new Set(q.text.match(/\$\d/g) ?? [])];

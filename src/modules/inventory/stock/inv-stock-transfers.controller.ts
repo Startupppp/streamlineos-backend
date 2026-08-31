@@ -1,5 +1,4 @@
-import { Controller, Get, Param, ParseIntPipe, Post, Body, Query, UseGuards } from "@nestjs/common";
-import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Controller, Get, Param, ParseIntPipe, Post, Body, Query, UseGuards, Headers } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -7,8 +6,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { resolveInvStockScope } from "../stock-engine/inventory-scope";
 import { InvStockTransfersService } from "./inv-stock-transfers.service";
@@ -16,6 +13,10 @@ import {
   listTransfersSchema, createTransferSchema, completeTransferSchema,
   type ListTransfersInput, type CreateTransferInput, type CompleteTransferInput,
 } from "./dto/inv-stock.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const transferIdParams = z.object({ transferId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/stock/transfers")
@@ -29,8 +30,9 @@ export class InvStockTransfersController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ query: listTransfersSchema })
   async listTransfers(
-    @Query(new ZodValidationPipe(listTransfersSchema)) filters: ListTransfersInput,
+    @Query() filters: ListTransfersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveInvStockScope(this.access, u);
@@ -40,6 +42,7 @@ export class InvStockTransfersController {
   @Get(":transferId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ params: transferIdParams })
   getTransfer(
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -50,19 +53,21 @@ export class InvStockTransfersController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
-  @Idempotent("inventory.stock.transfer.create")
+  @Validate({ body: createTransferSchema })
   createTransfer(
-    @Body(new ZodValidationPipe(createTransferSchema)) body: CreateTransferInput,
+    @Headers("idempotency-key") idempotencyKey: string,
+    @Body() body: CreateTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.transfers.createTransfer(u.orgId, u.userId, body);
+    return this.transfers.createTransfer(u.orgId, u.userId, body, idempotencyKey);
   }
 
   @Post(":transferId/reserve")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
+  @Validate({ params: transferIdParams })
   reserveTransfer(
-    @IdempotencyKey() idempotencyKey: string,
+    @Headers("idempotency-key") idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -72,8 +77,9 @@ export class InvStockTransfersController {
   @Post(":transferId/dispatch")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
+  @Validate({ params: transferIdParams })
   dispatchTransfer(
-    @IdempotencyKey() idempotencyKey: string,
+    @Headers("idempotency-key") idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -83,10 +89,11 @@ export class InvStockTransfersController {
   @Post(":transferId/complete")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
+  @Validate({ params: transferIdParams, body: completeTransferSchema })
   completeTransfer(
-    @IdempotencyKey() idempotencyKey: string,
+    @Headers("idempotency-key") idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
-    @Body(new ZodValidationPipe(completeTransferSchema)) body: CompleteTransferInput,
+    @Body() body: CompleteTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.transfers.completeTransfer(u.orgId, u.userId, transferId, body, idempotencyKey);
@@ -95,8 +102,9 @@ export class InvStockTransfersController {
   @Post(":transferId/cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
+  @Validate({ params: transferIdParams })
   cancelTransfer(
-    @IdempotencyKey() idempotencyKey: string,
+    @Headers("idempotency-key") idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {

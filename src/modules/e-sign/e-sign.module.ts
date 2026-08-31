@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { StorageModule } from "../storage/storage.module";
 import { EmailModule } from "../email/email.module";
+import { OutboxModule } from "../../common/outbox/outbox.module";
 import { AccessModule } from "../access/access.module";
 import { AutomationModule } from "../automation/automation.module";
 import { WebhooksModule } from "../webhooks/webhooks.module";
@@ -28,6 +29,7 @@ import { SignEnvelopeSweepsService } from "./sign-envelope-sweeps.service";
 import { SignEnvelopesController } from "./sign-envelopes.controller";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { SignPublicService } from "./sign-public.service";
+import { SignPublicFormService } from "./sign-public-form.service";
 import { SignPublicController } from "./sign-public.controller";
 import { SignCertificatesController } from "./sign-certificates.controller";
 import { SignTemplatesService } from "./sign-templates.service";
@@ -38,9 +40,10 @@ import { SignWatermarkService } from "./sign-watermark.service";
 import { SignAdminController } from "./sign-admin.controller";
 import { SignReportsService } from "./sign-reports.service";
 import { SignReportsController } from "./sign-reports.controller";
+import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-consumer.service";
 
 @Module({
-  imports: [StorageModule, EmailModule, AccessModule, AutomationModule, WebhooksModule, NotificationsModule, BillingModule, AiModule],
+  imports: [StorageModule, EmailModule, AccessModule, AutomationModule, WebhooksModule, NotificationsModule, BillingModule, AiModule, OutboxModule],
   controllers: [
     SignDocumentsController,
     SignRecipientsController,
@@ -72,9 +75,11 @@ import { SignReportsController } from "./sign-reports.controller";
     SignFinalizationService,
     SignTemplatesService,
     SignPublicService,
+    SignPublicFormService,
     SignBulkSendService,
     SignWatermarkService,
     SignReportsService,
+    SignEnvelopeCompletedConsumerService,
   ],
   exports: [SignAuditService, SignSettingsService, SignEnvelopesService, SignFinalizationService, SignTemplatesService],
 })

@@ -1,11 +1,19 @@
-import { Body, Controller, Get, HttpCode, Post, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { AllowWithoutMfa } from "../../common/auth/allow-without-mfa.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import { MfaService } from "./mfa.service";
 import {
   verifyMfaSchema,
@@ -23,30 +31,36 @@ export class MfaController {
   constructor(private readonly mfa: MfaService) {}
 
   @Post("setup")
+  @Universal()
   @HttpCode(200)
   setup(@CurrentUser() u: CurrentUserContext) {
     return this.mfa.setup(u.userId);
   }
 
   @Post("verify")
+  @Universal()
   @HttpCode(200)
+  @Validate({ body: verifyMfaSchema })
   verify(
-    @Body(new ZodValidationPipe(verifyMfaSchema)) body: VerifyMfaInput,
+    @Body() body: VerifyMfaInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.mfa.verify(u.userId, body);
   }
 
   @Post("disable")
+  @Universal()
   @HttpCode(200)
+  @Validate({ body: disableMfaSchema })
   disable(
-    @Body(new ZodValidationPipe(disableMfaSchema)) body: DisableMfaInput,
+    @Body() body: DisableMfaInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.mfa.disable(u.userId, u.orgId, body);
   }
 
   @Get("status")
+  @Universal()
   status(@CurrentUser() u: CurrentUserContext) {
     return this.mfa.status(u.userId);
   }
@@ -55,9 +69,8 @@ export class MfaController {
   @HttpCode(200)
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequirePermission("settings:mfa")
-  reset(
-    @Body(new ZodValidationPipe(resetMfaSchema)) body: ResetMfaInput,
-  ) {
+  @Validate({ body: resetMfaSchema })
+  reset(@Body() body: ResetMfaInput) {
     return this.mfa.reset(body.userId);
   }
 }

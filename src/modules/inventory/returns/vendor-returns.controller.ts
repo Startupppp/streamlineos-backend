@@ -1,11 +1,9 @@
-import { Controller, Get, Post, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus } from "@nestjs/common";
+import { Controller, Get, Post, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus, Headers } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
-import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { VendorReturnsService } from "./vendor-returns.service";
@@ -14,6 +12,10 @@ import {
   type ListReturnsInput, type CreateVendorReturnInput, type PostVendorReturnInput,
   approveReturnSchema, type ApproveReturnInput,
 } from "./dto/inv-returns.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const returnIdParams = z.object({ returnId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/vendor-returns")
@@ -24,8 +26,9 @@ export class VendorReturnsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
+  @Validate({ query: listReturnsSchema })
   list(
-    @Query(new ZodValidationPipe(listReturnsSchema)) filters: ListReturnsInput,
+    @Query() filters: ListReturnsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.list(u.orgId, u.userId, filters);
@@ -34,6 +37,7 @@ export class VendorReturnsController {
   @Get(":returnId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
+  @Validate({ params: returnIdParams })
   get(
     @Param("returnId", ParseIntPipe) returnId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -44,8 +48,9 @@ export class VendorReturnsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
+  @Validate({ body: createVendorReturnSchema })
   create(
-    @Body(new ZodValidationPipe(createVendorReturnSchema)) body: CreateVendorReturnInput,
+    @Body() body: CreateVendorReturnInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.create(u.orgId, u.userId, body);
@@ -56,9 +61,10 @@ export class VendorReturnsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: returnIdParams, body: approveReturnSchema })
   approve(
     @Param("returnId", ParseIntPipe) returnId: number,
-    @Body(new ZodValidationPipe(approveReturnSchema)) body: ApproveReturnInput,
+    @Body() body: ApproveReturnInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.approve(u.orgId, returnId, u.userId, body);
@@ -68,10 +74,11 @@ export class VendorReturnsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: returnIdParams, body: postVendorReturnSchema })
   post(
     @Param("returnId", ParseIntPipe) returnId: number,
-    @Body(new ZodValidationPipe(postVendorReturnSchema)) body: PostVendorReturnInput,
-    @IdempotencyKey() idempotencyKeyHeader: string,
+    @Body() body: PostVendorReturnInput,
+    @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {return this.service.post(u.orgId, returnId, u.userId, idempotencyKeyHeader, body);
   }
@@ -80,6 +87,7 @@ export class VendorReturnsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: returnIdParams })
   cancel(
     @Param("returnId", ParseIntPipe) returnId: number,
     @CurrentUser() u: CurrentUserContext,

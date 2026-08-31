@@ -9,9 +9,10 @@ import {
   integer,
   index,
   uniqueIndex,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { projects } from "../build/core";
 import { tickets } from "../build/tasks";
 import { timesheetPeriods } from "./periods";
@@ -38,6 +39,7 @@ export const timesheets = pgTable("timesheets", {
   workLink: text("work_link"),
   status: timesheetEntryStatusEnum("status").default("PENDING").notNull(),
   approvedBy: text("approved_by").references(() => users.id, { onDelete: "set null" }),
+  approvedByMembershipId: integer("approved_by_membership_id"),
   approvedAt: timestamp("approved_at"),
   rejectionReason: text("rejection_reason"),
   isBillable: boolean("is_billable").default(false).notNull(),
@@ -54,7 +56,7 @@ export const timesheets = pgTable("timesheets", {
   invoicingStatus: timesheetInvoicingStatusEnum("invoicing_status").notNull().default("UNINVOICED"),
   submittedAt: timestamp("submitted_at"),
   lockedAt: timestamp("locked_at"),
-  lockedBy: text("locked_by").references(() => users.id, { onDelete: "set null" }),
+  lockedByMembershipId: integer("locked_by_membership_id"),
   voidedAt: timestamp("voided_at"),
   voidReason: text("void_reason"),
   source: timesheetEntrySourceEnum("source").notNull().default("MANUAL"),
@@ -70,4 +72,16 @@ export const timesheets = pgTable("timesheets", {
   index("idx_timesheets_period").on(table.timesheetPeriodId),
   index("idx_timesheets_timer_session").on(table.timerSessionId),
   uniqueIndex("uniq_timesheets_work_log").on(table.orgId, table.userId, table.date).where(sql`ticket_id IS NULL`),
+  index("idx_timesheets_org_approved_actor").on(table.orgId, table.approvedByMembershipId),
+  index("idx_timesheets_org_locked_by_membership").on(table.orgId, table.lockedByMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.approvedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_timesheets_approved_actor",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.lockedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_timesheets_locked_by_membership",
+  }).onDelete("set null"),
 ]);

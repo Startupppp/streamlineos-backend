@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const DOCUMENT_TYPES = [
   "CONTRACT",
@@ -53,15 +54,15 @@ export const listDocumentsSchema = z
     userId: z.string().optional(),
     type: z.enum(DOCUMENT_TYPES).optional(),
     cursor: z.string().min(1).max(2048).optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    limit: pageSizeField(20),
     search: z.string().trim().max(200).optional(),
     category: z.string().trim().min(1).max(100).optional(),
   })
   .strict();
 
 export const listRichDocumentsSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   isPublished: z
     .enum(["true", "false"])
     .optional()

@@ -14,7 +14,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { HrSalaryStructuresService } from "./hr-salary-structures.service";
 import {
   createSalaryStructureSchema,
@@ -35,8 +35,9 @@ export class HrSalaryStructuresController {
 
   @Get()
   @RequirePermission("hr:salary:view")
+  @Validate({ query: salaryStructureListQuerySchema })
   async list(
-    @Query(new ZodValidationPipe(salaryStructureListQuerySchema)) query: SalaryStructureListQuery,
+    @Query() query: SalaryStructureListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
@@ -51,8 +52,9 @@ export class HrSalaryStructuresController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
   @HttpCode(201)
+  @Validate({ body: createSalaryStructureSchema })
   create(
-    @Body(new ZodValidationPipe(createSalaryStructureSchema)) body: CreateSalaryStructureInput,
+    @Body() body: CreateSalaryStructureInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.salaryStructures.create(u.orgId, u.userId, body);

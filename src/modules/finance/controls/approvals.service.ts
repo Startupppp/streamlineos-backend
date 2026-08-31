@@ -180,7 +180,7 @@ export class ApprovalsService {
       result: "SUCCESS",
     });
 
-    void this.dispatchDecisionNotification(orgId, userId, request.requestedBy, requestId, decision);
+    await this.dispatchDecisionNotification(orgId, userId, request.requestedBy, requestId, decision);
 
     return updated;
   }

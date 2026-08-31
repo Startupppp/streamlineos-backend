@@ -5,14 +5,19 @@ import {
   ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
+import type { CallHandler, ExecutionContext } from "@nestjs/common";
 import request from "supertest";
 import { signToken } from "test/helpers/sign-token";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ModuleAccessService } from "../module-access.service";
 import { ModuleAccessGroupsService } from "../module-access-groups.service";
+import { ModuleAccessRosterService } from "../module-access-roster.service";
+import { ModuleAccessOwnershipService } from "../module-access-ownership.service";
 import { ModuleStandingMutationsService } from "../module-standing-mutations.service";
 import { ModuleStandingRosterService } from "../module-standing-roster.service";
 import { ACCESS_MANAGED_MODULES } from "src/modules/rbac/permissions/module-access";
+import { IdempotencyInterceptor } from "src/common/idempotency/idempotency.interceptor";
+import { RateLimitService } from "src/common/ratelimit/rate-limit.service";
 
 const ROLE_ID = 7;
 const GROUP_ID = 9;
@@ -81,10 +86,16 @@ const mockModuleAccessGroupsService = {
   listGroupMembers: jest.fn(),
   addGroupMember: jest.fn(),
   removeGroupMember: jest.fn(),
+};
+
+const mockModuleAccessRosterService = {
   listMemberCandidates: jest.fn(),
+};
+
+const mockModuleAccessOwnershipService = {
   getOwnership: jest.fn(),
-  initiateOwnershipTransfer: jest.fn(),
-  cancelOwnershipTransfer: jest.fn(),
+  initiateTransfer: jest.fn(),
+  cancelTransfer: jest.fn(),
 };
 
 const mockModuleStandingMutationsService = {
@@ -98,6 +109,18 @@ const mockModuleStandingRosterService = {
   describeGrantable: jest.fn(),
 };
 
+/**
+ * `@Idempotent` persists the key before the handler runs, which needs tenant
+ * rows this fixture does not create. Passing through keeps the spec about
+ * authorization; idempotency has its own unit spec at
+ * common/idempotency/idempotency.interceptor.spec.ts.
+ */
+const idempotencyPassThrough = {
+  intercept: (_ctx: ExecutionContext, next: CallHandler) => next.handle(),
+};
+
+const rateLimitAllowAll = { check: async () => ({ allowed: true }) };
+
 describe("ModuleAccessController auth / RBAC (e2e)", () => {
   let app: INestApplication;
 
@@ -106,8 +129,12 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       overrides: [
         { provide: ModuleAccessService, useValue: mockModuleAccessService },
         { provide: ModuleAccessGroupsService, useValue: mockModuleAccessGroupsService },
+        { provide: ModuleAccessRosterService, useValue: mockModuleAccessRosterService },
+        { provide: ModuleAccessOwnershipService, useValue: mockModuleAccessOwnershipService },
         { provide: ModuleStandingMutationsService, useValue: mockModuleStandingMutationsService },
         { provide: ModuleStandingRosterService, useValue: mockModuleStandingRosterService },
+        { provide: IdempotencyInterceptor, useValue: idempotencyPassThrough },
+        { provide: RateLimitService, useValue: rateLimitAllowAll },
       ],
     });
   });
@@ -115,7 +142,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
   afterAll(async () => app.close());
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     mockModuleAccessService.listCatalog.mockResolvedValue(stubCatalog);
     mockModuleAccessService.listRoles.mockResolvedValue([stubRole]);
     mockModuleAccessService.setRolePermissions.mockResolvedValue({ success: true });
@@ -126,10 +153,10 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
     mockModuleAccessGroupsService.listGroupMembers.mockResolvedValue([]);
     mockModuleAccessGroupsService.addGroupMember.mockResolvedValue({ success: true });
     mockModuleAccessGroupsService.removeGroupMember.mockResolvedValue({ success: true });
-    mockModuleAccessGroupsService.listMemberCandidates.mockResolvedValue([]);
-    mockModuleAccessGroupsService.getOwnership.mockResolvedValue(stubOwnership);
-    mockModuleAccessGroupsService.initiateOwnershipTransfer.mockResolvedValue({ success: true });
-    mockModuleAccessGroupsService.cancelOwnershipTransfer.mockResolvedValue({ success: true });
+    mockModuleAccessRosterService.listMemberCandidates.mockResolvedValue([]);
+    mockModuleAccessOwnershipService.getOwnership.mockResolvedValue(stubOwnership);
+    mockModuleAccessOwnershipService.initiateTransfer.mockResolvedValue({ success: true });
+    mockModuleAccessOwnershipService.cancelTransfer.mockResolvedValue({ success: true });
     mockModuleStandingMutationsService.grantAdminStanding.mockResolvedValue({ success: true });
     mockModuleStandingMutationsService.revokeStanding.mockResolvedValue({ success: true });
     mockModuleStandingMutationsService.directTransferOwnership.mockResolvedValue({ success: true });
@@ -463,19 +490,21 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post("/module-access/hr/ownership/transfer")
         .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", "it-hr-transfer-initiate")
         .send({ toUserId: "u-recipient" });
       expect(res.status).toBe(201);
       expect(res.body).toMatchObject({ success: true });
     });
 
     it("DELETE /module-access/hr/ownership/transfer → 404 when no pending transfer exists", async () => {
-      mockModuleAccessGroupsService.cancelOwnershipTransfer.mockRejectedValue(
+      mockModuleAccessOwnershipService.cancelTransfer.mockRejectedValue(
         new NotFoundException("No pending transfer found for this module"),
       );
       const token = await signToken({ sub: "owner_ma_1" });
       const res = await request(app.getHttpServer())
         .delete("/module-access/hr/ownership/transfer")
-        .set("Authorization", `Bearer ${token}`);
+        .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", "it-hr-transfer-cancel");
       expect(res.status).toBe(404);
     });
   });
@@ -506,6 +535,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       const res = await request(app.getHttpServer())
         .post("/module-access/hr/ownership/transfer")
         .set("Authorization", `Bearer ${token}`)
+        .set("Idempotency-Key", "it-hr-transfer-missing-user")
         .send({});
       expect(res.status).toBe(400);
       expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
@@ -792,16 +822,17 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
       });
 
       it("module admin: service denies ownership transfer → 403", async () => {
-        mockModuleAccessGroupsService.initiateOwnershipTransfer.mockRejectedValueOnce(
+        mockModuleAccessOwnershipService.initiateTransfer.mockRejectedValueOnce(
           new ForbiddenException("Only the module owner may initiate a transfer"),
         );
         const token = await signToken({
-          sub: "modadmin_1",
+          sub: `modadmin_${moduleKey}`,
           permissions: [`${moduleKey}:access:manage`],
         });
         const res = await request(app.getHttpServer())
           .post(`/module-access/${moduleKey}/ownership/transfer`)
           .set("Authorization", `Bearer ${token}`)
+          .set("Idempotency-Key", `it-${moduleKey}-transfer-initiate`)
           .send({ toUserId: "u-new-owner" });
         expect(res.status).toBe(403);
         expect(res.body).toMatchObject({ code: "FORBIDDEN" });

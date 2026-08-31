@@ -15,10 +15,14 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PublishingService } from "./publishing.service";
 import { publishSchema, type PublishInput } from "./dto/payout.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
+const publicationIdParams = z.object({ publicationId: z.coerce.number().int().positive() }).strict();
 
 @Controller("payroll")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
@@ -30,9 +34,10 @@ export class PublishingController {
   @RequireModule("payroll")
   @RequirePermission("payroll:payslips:manage")
   @Idempotent("payroll.payslips.publish")
+  @Validate({ params: runIdParams, body: publishSchema })
   publish(
     @Param("runId", ParseIntPipe) runId: number,
-    @Body(new ZodValidationPipe(publishSchema)) body: PublishInput,
+    @Body() body: PublishInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.publishing.publish(u.orgId, runId, u.userId, body.userIds, body.runEmployeeIds);
@@ -42,6 +47,7 @@ export class PublishingController {
   @HttpCode(200)
   @RequireModule("payroll")
   @RequirePermission("payroll:payslips:manage")
+  @Validate({ params: runIdParams })
   retryFailed(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -53,6 +59,7 @@ export class PublishingController {
   @HttpCode(200)
   @RequireModule("payroll")
   @RequirePermission("payroll:payslips:manage")
+  @Validate({ params: publicationIdParams })
   retryOne(
     @Param("publicationId", ParseIntPipe) publicationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -63,6 +70,7 @@ export class PublishingController {
   @Get("runs/:runId/payslips")
   @RequireModule("payroll")
   @RequirePermission("payroll:payslips:view")
+  @Validate({ params: runIdParams })
   listPublications(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -72,6 +80,7 @@ export class PublishingController {
 
   @Get("payslips/:publicationId/download")
   @RequirePermission("self:payslips")
+  @Validate({ params: publicationIdParams })
   downloadPdf(
     @Param("publicationId", ParseIntPipe) publicationId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -53,6 +53,7 @@ export const leaveRequests = pgTable("leave_requests", {
   halfDayPeriod: text("half_day_period").$type<LeaveHalfDayPeriod>(),
   coveringEmployeeId: text("covering_employee_id").references(() => users.id, { onDelete: "set null" }),
   lopDays: decimal("lop_days", { precision: 5, scale: 1 }).default("0").notNull(),
+  approverMembershipId: integer("approver_membership_id"),
   rowVersion: integer("row_version").default(1).notNull(),
   createdByMembershipId: integer("created_by_membership_id"),
   updatedByMembershipId: integer("updated_by_membership_id"),
@@ -66,6 +67,7 @@ export const leaveRequests = pgTable("leave_requests", {
   index("idx_leave_requests_org_user_status").on(table.orgId, table.userId, table.status),
   index("idx_leave_requests_org_created").on(table.orgId, table.createdAt),
   index("idx_leave_requests_org_approver").on(table.orgId, table.approverId),
+  index("idx_leave_requests_org_approver_membership").on(table.orgId, table.approverMembershipId),
   index("idx_leave_requests_org_worker").on(table.orgId, table.workerId),
   index("idx_leave_requests_org_engagement").on(
     table.orgId,
@@ -84,6 +86,11 @@ export const leaveRequests = pgTable("leave_requests", {
       workerEngagements.workerEngagementId,
     ],
     name: "fk_leave_requests_worker_engagement",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.approverMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_leave_requests_approver_actor",
   }).onDelete("restrict"),
   foreignKey({
     columns: [table.orgId, table.createdByMembershipId],

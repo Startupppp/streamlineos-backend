@@ -9,9 +9,10 @@ import {
   index,
   uniqueIndex,
   jsonb,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import {
   timesheetExportTypeEnum,
   timesheetExportStatusEnum,
@@ -36,8 +37,8 @@ export const timesheetExports = pgTable("timesheet_exports", {
   ackStatus: text("ack_status"),
   ackNote: text("ack_note"),
   ackAt: timestamp("ack_at"),
-  ackBy: text("ack_by").references(() => users.id, { onDelete: "set null" }),
-  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  ackByMembershipId: integer("ack_by_membership_id"),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_timesheet_exports_org_type_created").on(
@@ -45,8 +46,17 @@ export const timesheetExports = pgTable("timesheet_exports", {
     table.exportType,
     table.createdAt,
   ),
-  index("idx_timesheet_exports_created_by").on(table.createdBy),
   uniqueIndex("uniq_timesheet_exports_idem")
     .on(table.orgId, table.idempotencyKey)
     .where(sql`idempotency_key IS NOT NULL`),
+  foreignKey({
+    columns: [table.orgId, table.createdByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_timesheet_exports_created_by_membership",
+  }).onDelete("set null"),
+  foreignKey({
+    columns: [table.orgId, table.ackByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_timesheet_exports_ack_by_membership",
+  }).onDelete("set null"),
 ]);

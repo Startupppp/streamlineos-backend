@@ -18,7 +18,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { OrgHierarchyService } from "./org-hierarchy.service";
 import {
   createBusinessUnitSchema,
@@ -54,6 +53,15 @@ import {
   type DependencyPreviewParamsInput,
   type DependencyPreviewQueryInput,
 } from "./dto/org-hierarchy.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const businessUnitIdParams = z.object({ businessUnitId: z.string().min(1) }).strict();
+const branchIdParams = z.object({ branchId: z.string().min(1) }).strict();
+const departmentIdParams = z.object({ departmentId: z.string().min(1) }).strict();
+const teamIdParams = z.object({ teamId: z.string().min(1) }).strict();
+const locationIdParams = z.object({ locationId: z.string().min(1) }).strict();
+const costCenterIdParams = z.object({ costCenterId: z.string().min(1) }).strict();
 
 @Controller("org-hierarchy")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -86,11 +94,10 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("dependencies/:unitKind/:unitId")
+  @Validate({ params: dependencyPreviewParamsSchema, query: dependencyPreviewQuerySchema })
   getDependencyPreview(
-    @Param(new ZodValidationPipe(dependencyPreviewParamsSchema))
-    params: DependencyPreviewParamsInput,
-    @Query(new ZodValidationPipe(dependencyPreviewQuerySchema))
-    query: DependencyPreviewQueryInput,
+    @Param() params: DependencyPreviewParamsInput,
+    @Query() query: DependencyPreviewQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.getDependencyPreview(
@@ -105,8 +112,9 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("business-units")
+  @Validate({ query: listQuerySchema })
   listBusinessUnits(
-    @Query(new ZodValidationPipe(listQuerySchema)) query: ListQueryInput,
+    @Query() query: ListQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listBusinessUnits(u.orgId, query);
@@ -115,9 +123,9 @@ export class OrgHierarchyController {
   @Post("business-units")
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
+  @Validate({ body: createBusinessUnitSchema })
   createBusinessUnit(
-    @Body(new ZodValidationPipe(createBusinessUnitSchema))
-    body: CreateBusinessUnitInput,
+    @Body() body: CreateBusinessUnitInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createBusinessUnit(u.orgId, u.userId, body);
@@ -125,10 +133,10 @@ export class OrgHierarchyController {
 
   @Patch("business-units/:businessUnitId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: businessUnitIdParams, body: updateBusinessUnitSchema })
   updateBusinessUnit(
     @Param("businessUnitId") businessUnitId: string,
-    @Body(new ZodValidationPipe(updateBusinessUnitSchema))
-    body: UpdateBusinessUnitInput,
+    @Body() body: UpdateBusinessUnitInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateBusinessUnit(
@@ -141,6 +149,7 @@ export class OrgHierarchyController {
 
   @Delete("business-units/:businessUnitId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: businessUnitIdParams })
   async deleteBusinessUnit(
     @Param("businessUnitId") businessUnitId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -153,8 +162,9 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("branches")
+  @Validate({ query: listQuerySchema })
   listOrgBranches(
-    @Query(new ZodValidationPipe(listQuerySchema)) query: ListQueryInput,
+    @Query() query: ListQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listOrgBranches(u.orgId, query);
@@ -163,9 +173,9 @@ export class OrgHierarchyController {
   @Post("branches")
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
+  @Validate({ body: createOrgBranchSchema })
   createOrgBranch(
-    @Body(new ZodValidationPipe(createOrgBranchSchema))
-    body: CreateOrgBranchInput,
+    @Body() body: CreateOrgBranchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createOrgBranch(u.orgId, u.userId, body);
@@ -173,10 +183,10 @@ export class OrgHierarchyController {
 
   @Patch("branches/:branchId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: branchIdParams, body: updateOrgBranchSchema })
   updateOrgBranch(
     @Param("branchId") branchId: string,
-    @Body(new ZodValidationPipe(updateOrgBranchSchema))
-    body: UpdateOrgBranchInput,
+    @Body() body: UpdateOrgBranchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateOrgBranch(u.orgId, u.userId, branchId, body);
@@ -184,6 +194,7 @@ export class OrgHierarchyController {
 
   @Delete("branches/:branchId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: branchIdParams })
   async deleteOrgBranch(
     @Param("branchId") branchId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -196,8 +207,9 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("departments")
+  @Validate({ query: listQuerySchema })
   listDepartments(
-    @Query(new ZodValidationPipe(listQuerySchema)) query: ListQueryInput,
+    @Query() query: ListQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listDepartments(u.orgId, query);
@@ -206,9 +218,9 @@ export class OrgHierarchyController {
   @Post("departments")
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
+  @Validate({ body: createOrgDepartmentSchema })
   createDepartment(
-    @Body(new ZodValidationPipe(createOrgDepartmentSchema))
-    body: CreateOrgDepartmentInput,
+    @Body() body: CreateOrgDepartmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createDepartment(u.orgId, u.userId, body);
@@ -216,10 +228,10 @@ export class OrgHierarchyController {
 
   @Patch("departments/:departmentId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: departmentIdParams, body: updateOrgDepartmentSchema })
   updateDepartment(
     @Param("departmentId") departmentId: string,
-    @Body(new ZodValidationPipe(updateOrgDepartmentSchema))
-    body: UpdateOrgDepartmentInput,
+    @Body() body: UpdateOrgDepartmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateDepartment(u.orgId, u.userId, departmentId, body);
@@ -227,6 +239,7 @@ export class OrgHierarchyController {
 
   @Delete("departments/:departmentId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: departmentIdParams })
   async deleteDepartment(
     @Param("departmentId") departmentId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -239,8 +252,9 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("teams")
+  @Validate({ query: listQuerySchema })
   listTeams(
-    @Query(new ZodValidationPipe(listQuerySchema)) query: ListQueryInput,
+    @Query() query: ListQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listTeams(u.orgId, query);
@@ -249,8 +263,9 @@ export class OrgHierarchyController {
   @Post("teams")
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
+  @Validate({ body: createOrgTeamSchema })
   createTeam(
-    @Body(new ZodValidationPipe(createOrgTeamSchema)) body: CreateOrgTeamInput,
+    @Body() body: CreateOrgTeamInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createTeam(u.orgId, u.userId, body);
@@ -258,9 +273,10 @@ export class OrgHierarchyController {
 
   @Patch("teams/:teamId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: teamIdParams, body: updateOrgTeamSchema })
   updateTeam(
     @Param("teamId") teamId: string,
-    @Body(new ZodValidationPipe(updateOrgTeamSchema)) body: UpdateOrgTeamInput,
+    @Body() body: UpdateOrgTeamInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateTeam(u.orgId, u.userId, teamId, body);
@@ -268,6 +284,7 @@ export class OrgHierarchyController {
 
   @Delete("teams/:teamId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: teamIdParams })
   async deleteTeam(
     @Param("teamId") teamId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -280,8 +297,9 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("locations")
+  @Validate({ query: listQuerySchema })
   listLocations(
-    @Query(new ZodValidationPipe(listQuerySchema)) query: ListQueryInput,
+    @Query() query: ListQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listLocations(u.orgId, query);
@@ -290,9 +308,9 @@ export class OrgHierarchyController {
   @Post("locations")
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
+  @Validate({ body: createOrgLocationSchema })
   createLocation(
-    @Body(new ZodValidationPipe(createOrgLocationSchema))
-    body: CreateOrgLocationInput,
+    @Body() body: CreateOrgLocationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createLocation(u.orgId, u.userId, body);
@@ -300,10 +318,10 @@ export class OrgHierarchyController {
 
   @Patch("locations/:locationId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: locationIdParams, body: updateOrgLocationSchema })
   updateLocation(
     @Param("locationId") locationId: string,
-    @Body(new ZodValidationPipe(updateOrgLocationSchema))
-    body: UpdateOrgLocationInput,
+    @Body() body: UpdateOrgLocationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateLocation(u.orgId, u.userId, locationId, body);
@@ -311,6 +329,7 @@ export class OrgHierarchyController {
 
   @Delete("locations/:locationId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: locationIdParams })
   async deleteLocation(
     @Param("locationId") locationId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -323,8 +342,9 @@ export class OrgHierarchyController {
 
   @RequirePermission("settings:view")
   @Get("cost-centers")
+  @Validate({ query: listQuerySchema })
   listCostCenters(
-    @Query(new ZodValidationPipe(listQuerySchema)) query: ListQueryInput,
+    @Query() query: ListQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listCostCenters(u.orgId, query);
@@ -333,9 +353,9 @@ export class OrgHierarchyController {
   @Post("cost-centers")
   @HttpCode(201)
   @RequirePermission("settings:organization:manage")
+  @Validate({ body: createCostCenterSchema })
   createCostCenter(
-    @Body(new ZodValidationPipe(createCostCenterSchema))
-    body: CreateCostCenterInput,
+    @Body() body: CreateCostCenterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createCostCenter(u.orgId, u.userId, body);
@@ -343,10 +363,10 @@ export class OrgHierarchyController {
 
   @Patch("cost-centers/:costCenterId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: costCenterIdParams, body: updateCostCenterSchema })
   updateCostCenter(
     @Param("costCenterId") costCenterId: string,
-    @Body(new ZodValidationPipe(updateCostCenterSchema))
-    body: UpdateCostCenterInput,
+    @Body() body: UpdateCostCenterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateCostCenter(u.orgId, u.userId, costCenterId, body);
@@ -354,6 +374,7 @@ export class OrgHierarchyController {
 
   @Delete("cost-centers/:costCenterId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: costCenterIdParams })
   async deleteCostCenter(
     @Param("costCenterId") costCenterId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -364,6 +385,7 @@ export class OrgHierarchyController {
 
   @Patch("business-units/:businessUnitId/move")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: businessUnitIdParams })
   moveBusinessUnit(
     @Param("businessUnitId") businessUnitId: string,
     @Body() body: { parentId: string | null },
@@ -378,6 +400,7 @@ export class OrgHierarchyController {
 
   @Patch("branches/:branchId/move")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: branchIdParams })
   moveBranch(
     @Param("branchId") branchId: string,
     @Body() body: { businessUnitId: string | null },
@@ -392,6 +415,7 @@ export class OrgHierarchyController {
 
   @Patch("departments/:departmentId/move")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: departmentIdParams })
   moveDepartment(
     @Param("departmentId") departmentId: string,
     @Body() body: { branchId: string | null },
@@ -406,9 +430,10 @@ export class OrgHierarchyController {
 
   @Patch("teams/:teamId/move")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: teamIdParams, body: moveOrgTeamSchema })
   moveTeam(
     @Param("teamId") teamId: string,
-    @Body(new ZodValidationPipe(moveOrgTeamSchema)) body: MoveOrgTeamInput,
+    @Body() body: MoveOrgTeamInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.moveTeam(u.orgId, teamId, body.departmentId);

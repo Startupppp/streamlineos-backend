@@ -29,10 +29,9 @@ describe("the team scope fast path", () => {
     expect(callers.length).toBeGreaterThan(20);
   });
 
-  // Fails the day a caller supplies teamColumn - make that deliberate, not accidental.
-  it("is still unreachable, so team scope still costs a subquery per row", () => {
+  it("no caller supplies teamIds yet — team scope falls back to own, not a subquery", () => {
     const supplying = callers
-      .filter((file) => readFileSync(file, "utf8").includes("teamColumn"))
+      .filter((file) => readFileSync(file, "utf8").includes("teamIds"))
       .map((file) => file.split("modules")[1] ?? file);
 
     expect(supplying).toEqual([]);

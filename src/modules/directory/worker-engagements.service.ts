@@ -24,7 +24,7 @@ import type {
   TerminateEngagementInput,
   UpdateEngagementInput,
 } from "./dto/directory.schemas";
-import { DirectoryIdentityService } from "./directory-identity.service";
+import { DirectoryPersonEnsureService } from "./directory-person-ensure.service";
 import {
   assertValidEngagementPeriod,
   ENGAGEMENT_ERROR,
@@ -43,7 +43,7 @@ export class WorkerEngagementsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
-    private readonly identities: DirectoryIdentityService,
+    private readonly identities: DirectoryPersonEnsureService,
   ) {}
 
   private async loadPerson(organizationId: string, organizationPersonId: string): Promise<PersonRow> {

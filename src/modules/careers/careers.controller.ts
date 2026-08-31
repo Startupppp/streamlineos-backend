@@ -7,7 +7,7 @@ import {
   Post,
 } from "@nestjs/common";
 import { Public } from "../../common/auth/public.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import { CareersService, isApplyJobNotFound } from "./careers.service";
 import { applySchema, type ApplyInput } from "./dto/careers.schemas";
 
@@ -24,7 +24,8 @@ export class CareersController {
   @Public()
   @Post("apply")
   @HttpCode(201)
-  async apply(@Body(new ZodValidationPipe(applySchema)) body: ApplyInput) {
+  @Validate({ body: applySchema })
+  async apply(@Body() body: ApplyInput) {
     const result = await this.careers.apply(body);
     if (isApplyJobNotFound(result)) {
       throw new NotFoundException(

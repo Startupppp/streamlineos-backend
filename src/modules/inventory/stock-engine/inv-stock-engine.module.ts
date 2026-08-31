@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { AccountingGlModule } from "../../accounting/gl/accounting-gl.module";
 import { AccountingPostingModule } from "../../accounting/posting/accounting-posting.module";
 import { StockEngineService } from "./stock-engine.service";
+import { StockEngineBatchService } from "./stock-engine-batch.service";
 import { ReservationService } from "./reservation.service";
 import { NumberSequenceService } from "./number-sequence.service";
 import { InventorySettingsService } from "./inventory-settings.service";
@@ -21,6 +22,7 @@ import { ChannelPoolService } from "./channel-pool.service";
   imports: [AccountingGlModule, AccountingPostingModule],
   providers: [StockProjectionService, 
     StockEngineService,
+    StockEngineBatchService,
     ReservationService,
     NumberSequenceService,
     InventorySettingsService,
@@ -37,6 +39,7 @@ import { ChannelPoolService } from "./channel-pool.service";
   ],
   exports: [StockProjectionService, 
     StockEngineService,
+    StockEngineBatchService,
     ReservationService,
     NumberSequenceService,
     InventorySettingsService,

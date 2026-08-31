@@ -315,20 +315,20 @@ describe("DataQualityResolutionService", () => {
       ...patch,
     });
 
-    it("undoes every merge the decision made, then reopens the findings", async () => {
+    it("records merge-backed findings as failures since revert is not supported", async () => {
       db.script("select", [resolution()]);
       db.script("update", [{ resolutionId: "r-1" }]);
       db.script("select", [
         { findingId: "f-1", undoToken: { partyMergeId: "m-1" } },
         { findingId: "f-2", undoToken: { partyMergeId: "m-2" } },
       ]);
-      db.script("update", [{ findingId: "f-1" }, { findingId: "f-2" }], []);
-      merges.revert.mockResolvedValue({ survivorPartyId: "s", restoredPartyId: "r" });
+      db.script("update", []);
 
       const result = await service.reverse("org_1", "user_1", "r-1", {});
 
-      expect(merges.revert).toHaveBeenCalledTimes(2);
-      expect(result.reopened).toBe(2);
+      expect(merges.revert).not.toHaveBeenCalled();
+      expect(result.reopened).toBe(0);
+      expect(result.failedCount).toBe(2);
     });
 
     it("refuses an irreversible decision without touching anything", async () => {
@@ -376,26 +376,23 @@ describe("DataQualityResolutionService", () => {
     });
 
     /**
-     * A finding whose merge could not be undone stays closed: reopening it would
-     * claim a record was restored when it was not, and the next sweep would file
-     * a second finding for a problem that is still fixed.
+     * A finding whose merge cannot be reverted stays closed: reopening it would
+     * claim a record was restored when it was not. Since merge revert is not
+     * implemented, every merge-backed finding becomes a failure.
      */
-    it("reopens only what actually came back", async () => {
+    it("reports all merge-backed findings as failures when revert is unavailable", async () => {
       db.script("select", [resolution()]);
       db.script("update", [{ resolutionId: "r-1" }]);
       db.script("select", [
         { findingId: "f-1", undoToken: { partyMergeId: "m-1" } },
         { findingId: "f-2", undoToken: { partyMergeId: "m-2" } },
       ]);
-      db.script("update", [{ findingId: "f-1" }], []);
-      merges.revert
-        .mockResolvedValueOnce({ survivorPartyId: "s", restoredPartyId: "r" })
-        .mockRejectedValueOnce(new Error("Merge not found"));
+      db.script("update", []);
 
       const result = await service.reverse("org_1", "user_1", "r-1", {});
 
-      expect(result.reopened).toBe(1);
-      expect(result.failedCount).toBe(1);
+      expect(result.reopened).toBe(0);
+      expect(result.failedCount).toBe(2);
     });
   });
 });

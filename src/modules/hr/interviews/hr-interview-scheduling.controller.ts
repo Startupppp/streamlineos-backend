@@ -15,7 +15,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrInterviewSchedulingService } from "./hr-interview-scheduling.service";
 import { HrInterviewResultsService } from "./hr-interview-results.service";
 import {
@@ -31,6 +31,10 @@ import {
   type UpdateInterviewInput,
 } from "./dto/interview-scheduling.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const interviewIdParams = z.object({ interviewId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment/interviews")
@@ -44,29 +48,33 @@ export class HrInterviewSchedulingController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:interviews:manage")
-  create(@Body(new ZodValidationPipe(createInterviewSchema)) body: CreateInterviewInput, @CurrentUser() u: CurrentUserContext) {
+  @Validate({ body: createInterviewSchema })
+  create(@Body() body: CreateInterviewInput, @CurrentUser() u: CurrentUserContext) {
     return this.scheduling.createInterview(u.orgId, body);
   }
 
   @Post("schedule")
   @HttpCode(201)
   @RequirePermission("hr:interviews:manage")
-  schedule(@Body(new ZodValidationPipe(scheduleInterviewSchema)) body: ScheduleInterviewInput, @CurrentUser() u: CurrentUserContext) {
+  @Validate({ body: scheduleInterviewSchema })
+  schedule(@Body() body: ScheduleInterviewInput, @CurrentUser() u: CurrentUserContext) {
     return this.scheduling.scheduleInterview(u.orgId, u.userId, body);
   }
 
   @Post("self-schedule")
   @HttpCode(201)
   @RequirePermission("hr:interviews:manage")
-  selfSchedule(@Body(new ZodValidationPipe(selfScheduleSchema)) body: SelfScheduleInput, @CurrentUser() u: CurrentUserContext) {
+  @Validate({ body: selfScheduleSchema })
+  selfSchedule(@Body() body: SelfScheduleInput, @CurrentUser() u: CurrentUserContext) {
     return this.scheduling.selfSchedule(u.orgId, u.userId, body);
   }
 
   @Patch(":interviewId")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: interviewIdParams, body: updateInterviewSchema })
   update(
     @Param("interviewId", ParseIntPipe) interviewId: number,
-    @Body(new ZodValidationPipe(updateInterviewSchema)) body: UpdateInterviewInput,
+    @Body() body: UpdateInterviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.results.updateInterview(u.orgId, interviewId, body);
@@ -74,21 +82,24 @@ export class HrInterviewSchedulingController {
 
   @Delete(":interviewId")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: interviewIdParams })
   remove(@Param("interviewId", ParseIntPipe) interviewId: number, @CurrentUser() u: CurrentUserContext) {
     return this.scheduling.deleteInterview(u.orgId, interviewId);
   }
 
   @Get(":interviewId/scorecard")
   @RequirePermission("hr:interviews:view")
+  @Validate({ params: interviewIdParams })
   getScorecard(@Param("interviewId", ParseIntPipe) interviewId: number, @CurrentUser() u: CurrentUserContext) {
     return this.results.getScorecard(u.orgId, u.userId, interviewId);
   }
 
   @Post(":interviewId/scorecard")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: interviewIdParams, body: submitScorecardSchema })
   submitScorecard(
     @Param("interviewId", ParseIntPipe) interviewId: number,
-    @Body(new ZodValidationPipe(submitScorecardSchema)) body: SubmitScorecardInput,
+    @Body() body: SubmitScorecardInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.results.submitScorecard(u.orgId, u.userId, interviewId, body);

@@ -15,7 +15,7 @@ describe("autonomy review schemas", () => {
     });
 
     it("holds the platform page cap", () => {
-      expect(() => listDecisionsQuerySchema.parse({ limit: 500 })).toThrow();
+      expect(listDecisionsQuerySchema.parse({ limit: 500 }).limit).toBe(100);
       expect(listDecisionsQuerySchema.parse({ limit: 100 }).limit).toBe(100);
       expect(() => listDecisionsQuerySchema.parse({ limit: 0 })).toThrow();
     });

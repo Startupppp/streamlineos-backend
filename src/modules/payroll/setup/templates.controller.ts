@@ -17,7 +17,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PayrollTemplatesService } from "./templates.service";
 import {
   listTemplatesSchema,
@@ -27,6 +26,10 @@ import {
   type TemplatePreviewInput,
   type DuplicateTemplateInput,
 } from "./dto/setup.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/templates")
@@ -36,8 +39,9 @@ export class PayrollTemplatesController {
 
   @Get()
   @RequirePermission("payroll:templates:view")
+  @Validate({ query: listTemplatesSchema })
   async list(
-    @Query(new ZodValidationPipe(listTemplatesSchema)) query: ListTemplatesInput,
+    @Query() query: ListTemplatesInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.list(u.orgId, query);
@@ -45,6 +49,7 @@ export class PayrollTemplatesController {
 
   @Get(":templateId")
   @RequirePermission("payroll:templates:view")
+  @Validate({ params: templateIdParams })
   async getById(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -55,9 +60,10 @@ export class PayrollTemplatesController {
   @Post(":templateId/duplicate")
   @HttpCode(201)
   @RequirePermission("payroll:templates:manage")
+  @Validate({ params: templateIdParams, body: duplicateTemplateSchema })
   async duplicate(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(duplicateTemplateSchema)) body: DuplicateTemplateInput,
+    @Body() body: DuplicateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.duplicate(u.orgId, templateId, body);
@@ -65,9 +71,10 @@ export class PayrollTemplatesController {
 
   @Post(":templateId/preview")
   @RequirePermission("payroll:templates:view")
+  @Validate({ params: templateIdParams, body: templatePreviewSchema })
   async preview(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(templatePreviewSchema)) body: TemplatePreviewInput,
+    @Body() body: TemplatePreviewInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.preview(u.orgId, templateId, body);
@@ -76,6 +83,7 @@ export class PayrollTemplatesController {
   @Delete(":templateId")
   @HttpCode(204)
   @RequirePermission("payroll:templates:manage")
+  @Validate({ params: templateIdParams })
   async deleteTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -14,7 +14,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { BillingService } from "./billing.service";
 import {
   uninvoicedQuerySchema,
@@ -26,6 +25,7 @@ import {
   type CreateInvoiceDraftInput,
   type RatePreviewQuery,
 } from "./dto/billing.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("build")
 @Controller("timesheets/billing")
@@ -35,8 +35,9 @@ export class BillingController {
 
   @Get("uninvoiced")
   @RequirePermission("timesheets:billing:view")
+  @Validate({ query: uninvoicedQuerySchema })
   getUninvoiced(
-    @Query(new ZodValidationPipe(uninvoicedQuerySchema)) query: UninvoicedQuery,
+    @Query() query: UninvoicedQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.getUninvoiced(u, query);
@@ -45,8 +46,9 @@ export class BillingController {
   @Post("export")
   @HttpCode(201)
   @RequirePermission("timesheets:billing:export")
+  @Validate({ body: exportBillingSchema })
   export(
-    @Body(new ZodValidationPipe(exportBillingSchema)) body: ExportBillingInput,
+    @Body() body: ExportBillingInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.exportBilling(u, body);
@@ -55,8 +57,9 @@ export class BillingController {
   @Post("create-invoice-draft")
   @HttpCode(201)
   @RequirePermission("timesheets:billing:invoice")
+  @Validate({ body: createInvoiceDraftSchema })
   createInvoiceDraft(
-    @Body(new ZodValidationPipe(createInvoiceDraftSchema)) body: CreateInvoiceDraftInput,
+    @Body() body: CreateInvoiceDraftInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.createInvoiceDraft(u, body);
@@ -64,8 +67,9 @@ export class BillingController {
 
   @Get("rate-preview")
   @RequirePermission("timesheets:billing:view")
+  @Validate({ query: ratePreviewQuerySchema })
   ratePreview(
-    @Query(new ZodValidationPipe(ratePreviewQuerySchema)) query: RatePreviewQuery,
+    @Query() query: RatePreviewQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.getRatePreview(u, query);

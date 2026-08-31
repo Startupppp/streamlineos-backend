@@ -12,8 +12,7 @@ import { ALL_MODULES } from "test/helpers/sign-token";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 
-const RBAC_E2E_DATABASE_URL = process.env.RBAC_E2E_DATABASE_URL;
-const describeWithDb = RBAC_E2E_DATABASE_URL ? describe : describe.skip;
+import { describeWithDb, RBAC_E2E_DATABASE_URL } from "test/helpers/db-describe";
 
 const planLimitsStub = {
   assertFeature: async (_orgId: string, feature: string): Promise<void> => {

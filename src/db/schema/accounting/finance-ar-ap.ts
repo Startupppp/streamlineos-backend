@@ -44,6 +44,7 @@ export const creditNotes = pgTable("credit_notes", {
 
 export const creditNoteItems = pgTable("credit_note_items", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   creditNoteId: integer("credit_note_id").references(() => creditNotes.id, { onDelete: "cascade" }).notNull(),
   description: text("description").notNull(),
   hsnSacCode: text("hsn_sac_code"),
@@ -53,7 +54,7 @@ export const creditNoteItems = pgTable("credit_note_items", {
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   lineOrder: integer("line_order").notNull(),
 }, (table) => [
-  index("idx_credit_note_items_cn").on(table.creditNoteId),
+  index("idx_credit_note_items_org_cn").on(table.orgId, table.creditNoteId),
 ]);
 
 export const finPaymentAllocations = pgTable("fin_payment_allocations", {
@@ -96,6 +97,7 @@ export const vendorCredits = pgTable("vendor_credits", {
 
 export const vendorCreditItems = pgTable("vendor_credit_items", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   vendorCreditId: integer("vendor_credit_id").references(() => vendorCredits.id, { onDelete: "cascade" }).notNull(),
   description: text("description").notNull(),
   hsnSacCode: text("hsn_sac_code"),
@@ -105,7 +107,7 @@ export const vendorCreditItems = pgTable("vendor_credit_items", {
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   lineOrder: integer("line_order").notNull(),
 }, (table) => [
-  index("idx_vendor_credit_items_vc").on(table.vendorCreditId),
+  index("idx_vendor_credit_items_org_vc").on(table.orgId, table.vendorCreditId),
 ]);
 
 export const finVendorPaymentAllocations = pgTable("fin_vendor_payment_allocations", {
@@ -132,6 +134,7 @@ export const finRecurringInvoiceTemplates = pgTable("fin_recurring_invoice_templ
   lastRunDate: date("last_run_date"),
   endDate: date("end_date"),
   isActive: boolean("is_active").default(true).notNull(),
+  archivedAt: timestamp("archived_at"),
   payload: jsonb("payload").notNull(),
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -168,6 +171,7 @@ export const finReminderPolicies = pgTable("fin_reminder_policies", {
   channel: finReminderChannelEnum("channel").default("EMAIL").notNull(),
   template: text("template"),
   isActive: boolean("is_active").default(true).notNull(),
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -183,10 +187,12 @@ export const finReminderLog = pgTable("fin_reminder_log", {
   channel: finReminderChannelEnum("channel").notNull(),
   offsetDays: integer("offset_days").notNull(),
   status: text("status").notNull(),
+  archivedAt: timestamp("archived_at"),
 }, (table) => [
   unique("uniq_fin_reminder_log_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_reminder_log_org_inv_offset").on(table.orgId, table.invoiceId, table.offsetDays),
   index("idx_fin_reminder_log_org_invoice").on(table.orgId, table.invoiceId),
+  index("idx_fin_reminder_log_org_sent_id").on(table.orgId, table.sentAt, table.id),
 ]);
 
 export const finCollectionActivities = pgTable("fin_collection_activities", {
@@ -224,6 +230,7 @@ export const finPaymentRuns = pgTable("fin_payment_runs", {
 
 export const finPaymentRunItems = pgTable("fin_payment_run_items", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   runId: integer("run_id").references(() => finPaymentRuns.id, { onDelete: "cascade" }).notNull(),
   billId: integer("bill_id").references(() => purchaseBills.id).notNull(),
   vendorId: integer("vendor_id").references(() => clients.id),
@@ -232,7 +239,7 @@ export const finPaymentRunItems = pgTable("fin_payment_run_items", {
   vendorPaymentId: integer("vendor_payment_id").references(() => vendorPayments.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
-  index("idx_fin_payment_run_items_run").on(table.runId),
+  index("idx_fin_payment_run_items_org_run").on(table.orgId, table.runId, table.status),
   index("idx_fin_payment_run_items_bill").on(table.billId),
 ]);
 

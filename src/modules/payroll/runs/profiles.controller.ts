@@ -19,7 +19,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { resolvePayrollRunsViewScope } from "../payroll-scope";
 import { ProfilesService } from "./profiles.service";
@@ -31,6 +30,11 @@ import {
   type CreateProfileInput,
   type PatchProfileInput,
 } from "./dto/runs.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const employeeUserIdParams = z.object({ employeeUserId: z.string().min(1) }).strict();
+const employeeUserIdprofileIdParams = z.object({ employeeUserId: z.string().min(1), profileId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/employees")
@@ -43,8 +47,9 @@ export class ProfilesController {
 
   @Get()
   @RequirePermission("payroll:salaries:view")
+  @Validate({ query: listProfilesQuerySchema })
   async list(
-    @Query(new ZodValidationPipe(listProfilesQuerySchema)) query: ListProfilesQuery,
+    @Query() query: ListProfilesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolvePayrollRunsViewScope(this.access, u);
@@ -53,6 +58,7 @@ export class ProfilesController {
 
   @Get(":employeeUserId")
   @RequirePermission("payroll:salaries:view")
+  @Validate({ params: employeeUserIdParams })
   async getOne(
     @Param("employeeUserId") employeeUserId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -65,9 +71,10 @@ export class ProfilesController {
   @Post(":employeeUserId/profiles")
   @HttpCode(201)
   @RequirePermission("payroll:salaries:update")
+  @Validate({ params: employeeUserIdParams, body: createProfileSchema })
   async createProfile(
     @Param("employeeUserId") employeeUserId: string,
-    @Body(new ZodValidationPipe(createProfileSchema)) body: CreateProfileInput,
+    @Body() body: CreateProfileInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.profilesService.createProfile(u.orgId, employeeUserId, u.userId, body);
@@ -75,10 +82,11 @@ export class ProfilesController {
 
   @Patch(":employeeUserId/profiles/:profileId")
   @RequirePermission("payroll:salaries:update")
+  @Validate({ params: employeeUserIdprofileIdParams, body: patchProfileSchema })
   async patchProfile(
     @Param("employeeUserId") employeeUserId: string,
     @Param("profileId", ParseIntPipe) profileId: number,
-    @Body(new ZodValidationPipe(patchProfileSchema)) body: PatchProfileInput,
+    @Body() body: PatchProfileInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.profilesService.patchProfile(u.orgId, employeeUserId, profileId, body, u.userId);
@@ -89,6 +97,7 @@ export class ProfilesController {
 
   @Get(":employeeUserId/history")
   @RequirePermission("payroll:salaries:view")
+  @Validate({ params: employeeUserIdParams })
   async getHistory(
     @Param("employeeUserId") employeeUserId: string,
     @CurrentUser() u: CurrentUserContext,

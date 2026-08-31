@@ -1,42 +1,55 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull } from "drizzle-orm";
 import { finReminderPolicies, finReminderLog, invoices, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { randomUUID } from "node:crypto";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { INVOICE_REMINDER_EVENT, invoiceReminderPayloadSchema } from "./dto/reminder-outbox.schemas";
+import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type { CreateReminderPolicyInput, UpdateReminderPolicyInput, ListReminderPoliciesQuery, ListReminderLogQuery } from "./dto/finance-ar.schemas";
-import { logSideEffectFailure } from "../../../common/logger/side-effect";
+import { boundedMap } from "../../../common/async/bounded-map";
+import { forEachOrg } from "../../../common/tenant";
+
+const REMINDER_BATCH_SIZE = 100;
+const RECIPIENT_CAP = 10;
+const POLICY_CAP = 100;
+
+type PolicyRow = { id: number; offsets: number[]; channel: "EMAIL" | "WHATSAPP" };
+type InvoiceRow = { id: number; invoiceNumber: string; dueDate: string | null; collectionOwnerId: string | null };
 
 @Injectable()
 export class RemindersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly dispatch: NotificationDispatchService,
     private readonly audit: AuditService,
   ) {}
 
   async listPolicies(orgId: string, query: ListReminderPoliciesQuery) {
-    const { limit, offset } = paginateOffset(query);
-    const where = eq(finReminderPolicies.orgId, orgId);
-    const [rows, [{ count }]] = await Promise.all([
-      this.db.select().from(finReminderPolicies).where(where).orderBy(desc(finReminderPolicies.createdAt)).limit(limit).offset(offset),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(finReminderPolicies).where(where),
-    ]);
-    return buildListResponse(rows, count, query);
+    const pageLimit = Math.min(query.limit, 100);
+    const conditions = [eq(finReminderPolicies.orgId, orgId), isNull(finReminderPolicies.archivedAt)];
+    if (query.cursor) conditions.push(gt(finReminderPolicies.id, query.cursor));
+    const projection = {
+      id: finReminderPolicies.id,
+      orgId: finReminderPolicies.orgId,
+      name: finReminderPolicies.name,
+      offsets: finReminderPolicies.offsets,
+      channel: finReminderPolicies.channel,
+      template: finReminderPolicies.template,
+      isActive: finReminderPolicies.isActive,
+      createdAt: finReminderPolicies.createdAt,
+      updatedAt: finReminderPolicies.updatedAt,
+    };
+    const rows = await this.db.select(projection).from(finReminderPolicies).where(and(...conditions)).orderBy(asc(finReminderPolicies.id)).limit(pageLimit + 1);
+    const result = buildIdCursorPage(rows, pageLimit, (row) => row.id);
+    return { items: result.data, pagination: { limit: pageLimit, hasMore: result.hasMore, nextCursor: result.nextCursor } };
   }
 
   async createPolicy(orgId: string, input: CreateReminderPolicyInput) {
     const [policy] = await this.db
       .insert(finReminderPolicies)
-      .values({
-        orgId,
-        name: input.name,
-        offsets: input.offsets,
-        channel: input.channel,
-        template: input.template ?? null,
-      })
+      .values({ orgId, name: input.name, offsets: input.offsets, channel: input.channel, template: input.template ?? null })
       .returning();
     if (!policy) throw new Error("Policy insert returned no rows");
     this.audit.log({ action: "accounting.reminder_policy.created", userId: "system", orgId, resourceType: "fin_reminder_policy", resourceId: String(policy.id), result: "SUCCESS" });
@@ -44,7 +57,7 @@ export class RemindersService {
   }
 
   async updatePolicy(orgId: string, id: number, input: UpdateReminderPolicyInput) {
-    const existing = await this.db.query.finReminderPolicies.findFirst({ where: and(eq(finReminderPolicies.id, id), eq(finReminderPolicies.orgId, orgId)) });
+    const existing = await this.db.query.finReminderPolicies.findFirst({ where: and(eq(finReminderPolicies.id, id), eq(finReminderPolicies.orgId, orgId), isNull(finReminderPolicies.archivedAt)) });
     if (!existing) throw new NotFoundException("Reminder policy not found");
     const [updated] = await this.db
       .update(finReminderPolicies)
@@ -56,7 +69,7 @@ export class RemindersService {
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
         updatedAt: new Date(),
       })
-      .where(and(eq(finReminderPolicies.id, id), eq(finReminderPolicies.orgId, orgId)))
+      .where(and(eq(finReminderPolicies.id, id), eq(finReminderPolicies.orgId, orgId), isNull(finReminderPolicies.archivedAt)))
       .returning();
     this.audit.log({ action: "accounting.reminder_policy.updated", userId: "system", orgId, resourceType: "fin_reminder_policy", resourceId: String(id), result: "SUCCESS" });
     return updated;
@@ -65,87 +78,180 @@ export class RemindersService {
   async deletePolicy(orgId: string, id: number) {
     const existing = await this.db.query.finReminderPolicies.findFirst({ where: and(eq(finReminderPolicies.id, id), eq(finReminderPolicies.orgId, orgId)) });
     if (!existing) throw new NotFoundException("Reminder policy not found");
-    await this.db.delete(finReminderPolicies).where(and(eq(finReminderPolicies.id, id), eq(finReminderPolicies.orgId, orgId)));
+    await this.db.update(finReminderPolicies).set({ isActive: false, archivedAt: new Date(), updatedAt: new Date() }).where(and(eq(finReminderPolicies.id, id), eq(finReminderPolicies.orgId, orgId), isNull(finReminderPolicies.archivedAt)));
     this.audit.log({ action: "accounting.reminder_policy.deleted", userId: "system", orgId, resourceType: "fin_reminder_policy", resourceId: String(id), result: "SUCCESS" });
     return { success: true };
   }
 
   async listLog(orgId: string, query: ListReminderLogQuery) {
-    const { limit, offset } = paginateOffset(query);
-    const conditions = [eq(finReminderLog.orgId, orgId)];
+    const pageLimit = Math.min(query.limit, 100);
+    const conditions = [eq(finReminderLog.orgId, orgId), isNull(finReminderLog.archivedAt)];
     if (query.invoiceId) conditions.push(eq(finReminderLog.invoiceId, query.invoiceId));
-    const [rows, [{ count }]] = await Promise.all([
-      this.db.select().from(finReminderLog).where(and(...conditions)).orderBy(desc(finReminderLog.sentAt)).limit(limit).offset(offset),
-      this.db.select({ count: sql<number>`count(*)::int` }).from(finReminderLog).where(and(...conditions)),
-    ]);
-    return buildListResponse(rows, count, query);
+    if (query.cursor) conditions.push(gt(finReminderLog.id, query.cursor));
+    const projection = {
+      id: finReminderLog.id,
+      orgId: finReminderLog.orgId,
+      invoiceId: finReminderLog.invoiceId,
+      sentAt: finReminderLog.sentAt,
+      channel: finReminderLog.channel,
+      offsetDays: finReminderLog.offsetDays,
+      status: finReminderLog.status,
+    };
+    const rows = await this.db.select(projection).from(finReminderLog).where(and(...conditions)).orderBy(asc(finReminderLog.id)).limit(pageLimit + 1);
+    const result = buildIdCursorPage(rows, pageLimit, (row) => row.id);
+    return { items: result.data, pagination: { limit: pageLimit, hasMore: result.hasMore, nextCursor: result.nextCursor } };
   }
 
-  async processDueReminders(orgId?: string) {
+  async processDueReminders(orgId?: string): Promise<{ sent: number }> {
+    let sent = 0;
+    await forEachOrg(this.db, "finance:invoice-reminders", async (_tx, oid) => {
+      if (orgId !== undefined && orgId !== oid) return;
+      const result = await this.sweepOrg(oid);
+      sent += result.sent;
+    });
+    return { sent };
+  }
+
+  private async sweepOrg(orgId: string): Promise<{ sent: number }> {
     const today = new Date().toISOString().slice(0, 10);
     const todayMs = new Date(`${today}T00:00:00Z`).getTime();
 
-    const policyWhere = orgId ? and(eq(finReminderPolicies.isActive, true), eq(finReminderPolicies.orgId, orgId)) : eq(finReminderPolicies.isActive, true);
-    const policies = await this.db.select().from(finReminderPolicies).where(policyWhere).limit(1000).orderBy(asc(finReminderPolicies.id));
+    const policies = await this.db
+      .select({ id: finReminderPolicies.id, offsets: finReminderPolicies.offsets, channel: finReminderPolicies.channel })
+      .from(finReminderPolicies)
+      .where(and(eq(finReminderPolicies.orgId, orgId), eq(finReminderPolicies.isActive, true), isNull(finReminderPolicies.archivedAt)))
+      .orderBy(asc(finReminderPolicies.id))
+      .limit(POLICY_CAP);
+
     if (policies.length === 0) return { sent: 0 };
 
-    const invWhere = and(
-      inArray(invoices.status, ["ISSUED", "PARTIALLY_PAID", "OVERDUE"]),
-      isNotNull(invoices.dueDate),
-      ...(orgId ? [eq(invoices.orgId, orgId)] : []),
-    );
-    const openInvoices = await this.db
-      .select({ id: invoices.id, orgId: invoices.orgId, invoiceNumber: invoices.invoiceNumber, dueDate: invoices.dueDate, collectionOwnerId: invoices.collectionOwnerId })
-      .from(invoices)
-      .where(invWhere)
-      .limit(2000)
-      .orderBy(asc(invoices.id));
-
-    let sent = 0;
+    const dueDateSet = new Set<string>();
     for (const policy of policies) {
-      for (const inv of openInvoices) {
-        if (!inv.dueDate) continue;
+      for (const offsetDays of policy.offsets) {
+        const target = new Date(todayMs - offsetDays * 86400000);
+        dueDateSet.add(target.toISOString().slice(0, 10));
+      }
+    }
+    const dueDates = [...dueDateSet];
+    if (dueDates.length === 0) return { sent: 0 };
+
+    let afterId: number | undefined;
+    let sent = 0;
+
+    for (;;) {
+      const conditions = [
+        eq(invoices.orgId, orgId),
+        inArray(invoices.status, ["ISSUED", "PARTIALLY_PAID", "OVERDUE"]),
+        isNotNull(invoices.dueDate),
+        inArray(invoices.dueDate, dueDates),
+      ];
+      if (afterId !== undefined) conditions.push(gt(invoices.id, afterId));
+
+      const batch = await this.db
+        .select({ id: invoices.id, invoiceNumber: invoices.invoiceNumber, dueDate: invoices.dueDate, collectionOwnerId: invoices.collectionOwnerId })
+        .from(invoices)
+        .where(and(...conditions))
+        .orderBy(asc(invoices.id))
+        .limit(REMINDER_BATCH_SIZE);
+
+      if (batch.length === 0) break;
+
+      sent += await this.processBatch(orgId, batch, policies, todayMs);
+
+      const last = batch[batch.length - 1];
+      if (batch.length < REMINDER_BATCH_SIZE || last === undefined) break;
+      afterId = last.id;
+    }
+
+    return { sent };
+  }
+
+  private async processBatch(
+    orgId: string,
+    batch: InvoiceRow[],
+    policies: PolicyRow[],
+    todayMs: number,
+  ): Promise<number> {
+    const ownerIds = [...new Set(batch.map((inv) => inv.collectionOwnerId).filter((id): id is string => id !== null))];
+    const activeOwnerSet = new Set<string>();
+
+    if (ownerIds.length > 0) {
+      const rows = await this.db
+        .select({ userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE"), inArray(organizationMembers.userId, ownerIds)));
+      for (const row of rows) activeOwnerSet.add(row.userId);
+    }
+
+    const needsFallback = batch.some((inv) => !inv.collectionOwnerId || !activeOwnerSet.has(inv.collectionOwnerId));
+    let fallbackRecipients: string[] = [];
+    if (needsFallback) {
+      const members = await this.db
+        .select({ userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")))
+        .orderBy(asc(organizationMembers.userId))
+        .limit(RECIPIENT_CAP);
+      fallbackRecipients = members.map((m) => m.userId);
+    }
+
+    const work: Array<{ inv: InvoiceRow; policy: PolicyRow; offsetDays: number }> = [];
+    for (const inv of batch) {
+      if (!inv.dueDate) continue;
+      const invMs = new Date(`${inv.dueDate}T00:00:00Z`).getTime();
+      for (const policy of policies) {
         for (const offsetDays of policy.offsets) {
-          const dueMs = new Date(`${inv.dueDate}T00:00:00Z`).getTime();
-          const targetMs = dueMs + offsetDays * 86400000;
-          if (Math.abs(targetMs - todayMs) >= 43200000) continue;
-
-          const insertResult = await this.db
-            .insert(finReminderLog)
-            .values({
-              orgId: inv.orgId,
-              invoiceId: inv.id,
-              channel: policy.channel,
-              offsetDays,
-              status: "sent",
-            })
-            .onConflictDoNothing()
-            .returning({ id: finReminderLog.id });
-          if (insertResult.length === 0) continue;
-
-          let targetUserIds: string[];
-          if (inv.collectionOwnerId) {
-            targetUserIds = [inv.collectionOwnerId];
-          } else {
-            const members = await this.db.select({ userId: organizationMembers.userId }).from(organizationMembers).where(eq(organizationMembers.orgId, inv.orgId)).limit(5);
-            targetUserIds = members.map((m) => m.userId);
-          }
-
-          if (targetUserIds.length > 0) {
-            await this.dispatch.emit({
-              eventKey: "accounting.invoice.overdue",
-              orgId: inv.orgId,
-              targetUserIds,
-              entityType: "invoice",
-              entityId: String(inv.id),
-              title: "Invoice payment reminder",
-              message: `Reminder: Invoice ${inv.invoiceNumber} ${offsetDays >= 0 ? `is due in ${offsetDays} days` : `was due ${Math.abs(offsetDays)} days ago`}`,
-            }).catch(logSideEffectFailure("invoice reminder notification dispatch", { orgId: inv.orgId, invoiceId: inv.id }));
-          }
-          sent++;
+          const targetMs = invMs + offsetDays * 86400000;
+          if (Math.abs(targetMs - todayMs) < 43200000) work.push({ inv, policy, offsetDays });
         }
       }
     }
-    return { sent };
+
+    if (work.length === 0) return 0;
+
+    const results = await boundedMap(work, 8, async ({ inv, policy, offsetDays }) => {
+      const targetUserIds = inv.collectionOwnerId && activeOwnerSet.has(inv.collectionOwnerId)
+        ? [inv.collectionOwnerId]
+        : fallbackRecipients;
+      if (targetUserIds.length === 0) return 0;
+
+      const queued = await this.db.transaction(async (tx) => {
+        const insertResult = await tx
+          .insert(finReminderLog)
+          .values({ orgId, invoiceId: inv.id, channel: policy.channel, offsetDays, status: "PENDING" })
+          .onConflictDoUpdate({
+            target: [finReminderLog.orgId, finReminderLog.invoiceId, finReminderLog.offsetDays],
+            set: { status: "PENDING" },
+            where: inArray(finReminderLog.status, ["FAILED", "PENDING"]),
+          })
+          .returning({ id: finReminderLog.id });
+        const reminderLogId = insertResult[0]?.id;
+        if (reminderLogId === undefined) return false;
+        const payload = invoiceReminderPayloadSchema.parse({
+          orgId,
+          reminderLogId,
+          invoiceId: inv.id,
+          invoiceNumber: inv.invoiceNumber,
+          channel: policy.channel,
+          offsetDays,
+          targetUserIds,
+        });
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "fin_reminder_log",
+          aggregateId: String(reminderLogId),
+          aggregateVersion: 1,
+          eventType: INVOICE_REMINDER_EVENT,
+          payload,
+          occurredAt: new Date(),
+        });
+        return true;
+      });
+
+      return queued ? 1 : 0;
+    });
+
+    return results.reduce((t, r) => t + (r.status === "fulfilled" ? r.value : 0), 0);
   }
 }

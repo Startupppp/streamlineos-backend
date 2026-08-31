@@ -18,7 +18,6 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { RequireModule } from "../../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../../access/access.service";
 import { AccommodationsService } from "./accommodations.service";
 import {
@@ -35,6 +34,12 @@ import {
   type CreateAccommodationTaskInput,
   type UpdateAccommodationTaskInput,
 } from "../dto/accommodations.schemas";
+import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const accommodationIdParams = z.object({ accommodationId: z.string().min(1) }).strict();
+const accommodationIdtaskIdParams = z.object({ accommodationId: z.string().min(1), taskId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/enterprise/ops/accommodations")
@@ -52,9 +57,10 @@ export class AccommodationsController {
 
   @Get()
   @RequirePermission("hr:accommodations:view")
+  @Validate({ query: listAccommodationsSchema })
   async list(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listAccommodationsSchema)) query: ListAccommodationsInput,
+    @Query() query: ListAccommodationsInput,
   ) {
     const sensitive = await this.hasSensitive(user);
     return this.svc.list(user.orgId, query, sensitive);
@@ -62,6 +68,7 @@ export class AccommodationsController {
 
   @Get(":accommodationId")
   @RequirePermission("hr:accommodations:view")
+  @Validate({ params: accommodationIdParams })
   async getById(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,
@@ -73,9 +80,10 @@ export class AccommodationsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:accommodations:manage")
+  @Validate({ body: createAccommodationSchema })
   async create(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createAccommodationSchema)) body: CreateAccommodationInput,
+    @Body() body: CreateAccommodationInput,
     @Req() req: Request,
   ) {
     return this.svc.create(user.orgId, user.userId, body, req.ip, req.headers["user-agent"]);
@@ -83,10 +91,11 @@ export class AccommodationsController {
 
   @Patch(":accommodationId")
   @RequirePermission("hr:accommodations:manage")
+  @Validate({ params: accommodationIdParams, body: updateAccommodationSchema })
   async update(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,
-    @Body(new ZodValidationPipe(updateAccommodationSchema)) body: UpdateAccommodationInput,
+    @Body() body: UpdateAccommodationInput,
     @Req() req: Request,
   ) {
     return this.svc.update(user.orgId, accommodationId, user.userId, body, req.ip, req.headers["user-agent"]);
@@ -95,6 +104,7 @@ export class AccommodationsController {
   @Delete(":accommodationId")
   @HttpCode(204)
   @RequirePermission("hr:accommodations:manage")
+  @Validate({ params: accommodationIdParams })
   async remove(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,
@@ -104,11 +114,13 @@ export class AccommodationsController {
   }
 
   @Post(":accommodationId/approve")
+  @Idempotent("hr.accommodation.approve")
   @RequirePermission("hr:accommodations:manage")
+  @Validate({ params: accommodationIdParams, body: approveAccommodationSchema })
   async approve(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,
-    @Body(new ZodValidationPipe(approveAccommodationSchema)) body: ApproveAccommodationInput,
+    @Body() body: ApproveAccommodationInput,
     @Req() req: Request,
   ) {
     return this.svc.approve(user.orgId, accommodationId, user.userId, body, req.ip, req.headers["user-agent"]);
@@ -116,6 +128,7 @@ export class AccommodationsController {
 
   @Get(":accommodationId/tasks")
   @RequirePermission("hr:accommodations:view")
+  @Validate({ params: accommodationIdParams })
   async listTasks(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,
@@ -126,21 +139,23 @@ export class AccommodationsController {
   @Post(":accommodationId/tasks")
   @HttpCode(201)
   @RequirePermission("hr:accommodations:manage")
+  @Validate({ params: accommodationIdParams, body: createAccommodationTaskSchema })
   async createTask(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,
-    @Body(new ZodValidationPipe(createAccommodationTaskSchema)) body: CreateAccommodationTaskInput,
+    @Body() body: CreateAccommodationTaskInput,
   ) {
     return this.svc.createTask(user.orgId, accommodationId, body);
   }
 
   @Patch(":accommodationId/tasks/:taskId")
   @RequirePermission("hr:accommodations:manage")
+  @Validate({ params: accommodationIdtaskIdParams, body: updateAccommodationTaskSchema })
   async updateTask(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,
     @Param("taskId") taskId: string,
-    @Body(new ZodValidationPipe(updateAccommodationTaskSchema)) body: UpdateAccommodationTaskInput,
+    @Body() body: UpdateAccommodationTaskInput,
   ) {
     return this.svc.updateTask(user.orgId, accommodationId, taskId, body);
   }
@@ -148,6 +163,7 @@ export class AccommodationsController {
   @Delete(":accommodationId/tasks/:taskId")
   @HttpCode(204)
   @RequirePermission("hr:accommodations:manage")
+  @Validate({ params: accommodationIdtaskIdParams })
   async deleteTask(
     @CurrentUser() user: CurrentUserContext,
     @Param("accommodationId") accommodationId: string,

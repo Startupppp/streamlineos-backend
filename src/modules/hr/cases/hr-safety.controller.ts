@@ -19,7 +19,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrSafetyService } from "./hr-safety.service";
 import { AccessService } from "../../access/access.service";
 import {
@@ -34,6 +34,10 @@ import {
   type CheckinInput,
   type WellnessTrendInput,
 } from "./dto/hr-safety.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const incidentIdParams = z.object({ incidentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/safety")
@@ -46,15 +50,17 @@ export class HrSafetyController {
 
   @Get("incidents")
   @RequirePermission("hr:safety:view")
+  @Validate({ query: listIncidentsSchema })
   listIncidents(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listIncidentsSchema)) query: ListIncidentsInput,
+    @Query() query: ListIncidentsInput,
   ) {
     return this.safety.listIncidents(user.orgId, query);
   }
 
   @Get("incidents/:incidentId")
   @RequirePermission("hr:safety:view")
+  @Validate({ params: incidentIdParams })
   async getIncident(
     @CurrentUser() user: CurrentUserContext,
     @Param("incidentId", ParseIntPipe) incidentId: number,
@@ -66,9 +72,10 @@ export class HrSafetyController {
   @Post("incidents")
   @HttpCode(201)
   @RequirePermission("hr:safety:manage")
+  @Validate({ body: createIncidentSchema })
   createIncident(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createIncidentSchema)) body: CreateIncidentInput,
+    @Body() body: CreateIncidentInput,
     @Req() req: Request,
   ) {
     return this.safety.createIncident(user.orgId, user.userId, body, req.ip);
@@ -76,10 +83,11 @@ export class HrSafetyController {
 
   @Patch("incidents/:incidentId")
   @RequirePermission("hr:safety:manage")
+  @Validate({ params: incidentIdParams, body: updateIncidentSchema })
   async updateIncident(
     @CurrentUser() user: CurrentUserContext,
     @Param("incidentId", ParseIntPipe) incidentId: number,
-    @Body(new ZodValidationPipe(updateIncidentSchema)) body: UpdateIncidentInput,
+    @Body() body: UpdateIncidentInput,
     @Req() req: Request,
   ) {
     const hasSensitive = await this.canSensitive(user);
@@ -89,6 +97,7 @@ export class HrSafetyController {
   @Delete("incidents/:incidentId")
   @RequirePermission("hr:safety:manage")
   @HttpCode(204)
+  @Validate({ params: incidentIdParams })
   async deleteIncident(
     @CurrentUser() user: CurrentUserContext,
     @Param("incidentId", ParseIntPipe) incidentId: number,
@@ -98,9 +107,10 @@ export class HrSafetyController {
 
   @Post("wellness/checkin")
   @RequirePermission("hr:safety:view")
+  @Validate({ body: checkinSchema })
   checkin(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(checkinSchema)) body: CheckinInput,
+    @Body() body: CheckinInput,
   ) {
     return this.safety.upsertCheckin(user.orgId, user.userId, body);
   }
@@ -117,9 +127,10 @@ export class HrSafetyController {
 
   @Get("wellness/trend")
   @RequirePermission("hr:safety:manage")
+  @Validate({ query: wellnessTrendSchema })
   orgTrend(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(wellnessTrendSchema)) query: WellnessTrendInput,
+    @Query() query: WellnessTrendInput,
   ) {
     return this.safety.orgWellnessTrend(user.orgId, query);
   }

@@ -2,6 +2,8 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   employeeSkills,
+  hrEmployments,
+  hrPeople,
   orgUnitMembers,
   orgUnits,
   organizationMembers,
@@ -20,6 +22,10 @@ import {
   decodeEmployeeListCursor,
   encodeEmployeeListCursor,
 } from "./employee-list-cursor";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../../directory/employment-query";
 import { listBoundedEmployeeSkills } from "./employee-skills-page-query";
 
 export interface ExpertResult {
@@ -75,7 +81,7 @@ export class EmployeeSkillsService {
         userId: users.id,
         name: users.name,
         image: users.image,
-        designation: users.designation,
+        designation: hrEmployments.designation,
         role: organizationMembers.role,
         department,
         matchedSkill,
@@ -83,6 +89,8 @@ export class EmployeeSkillsService {
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .innerJoin(
         employeeSkills,
         and(
@@ -119,7 +127,7 @@ export class EmployeeSkillsService {
         users.id,
         users.name,
         users.image,
-        users.designation,
+        hrEmployments.designation,
         organizationMembers.role,
       )
       .orderBy(desc(matchedLevel), asc(sql`lower(${users.name})`), asc(users.id))

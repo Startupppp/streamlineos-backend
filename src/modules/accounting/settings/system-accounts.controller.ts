@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { SystemAccountsService } from "./system-accounts.service";
 import {
   systemAccountPurposeSchema,
@@ -13,6 +12,10 @@ import {
   type SystemAccountPurpose,
   type UpsertSystemAccountInput,
 } from "./dto/settings.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const purposeParams = z.object({ purpose: systemAccountPurposeSchema }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/settings/system-accounts")
@@ -28,9 +31,10 @@ export class SystemAccountsController {
 
   @Put(":purpose")
   @RequirePermission("accounting:settings:manage")
+  @Validate({ params: purposeParams, body: upsertSystemAccountSchema })
   upsertSystemAccount(
-    @Param("purpose", new ZodValidationPipe(systemAccountPurposeSchema)) purpose: SystemAccountPurpose,
-    @Body(new ZodValidationPipe(upsertSystemAccountSchema)) body: UpsertSystemAccountInput,
+    @Param("purpose") purpose: SystemAccountPurpose,
+    @Body() body: UpsertSystemAccountInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.upsertSystemAccount(u, purpose, body);

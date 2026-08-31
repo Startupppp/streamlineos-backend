@@ -14,7 +14,8 @@ function makeService(adj: unknown) {
   const audit = { log: jest.fn().mockResolvedValue(undefined) };
   const hrAutomation = {} as never;
   const buildService = {} as never;
-  const service = new PayrollInputsService(db as never, audit as never, hrAutomation, buildService);
+  const snapshots = {} as never;
+  const service = new PayrollInputsService(db as never, audit as never, hrAutomation, buildService, snapshots);
   return { service, update, audit, findFirst };
 }
 

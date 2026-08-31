@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TaxCodesService } from "./tax-codes.service";
 import {
   createTaxCodeSchema,
@@ -15,6 +14,10 @@ import {
   type ListTaxCodesQuery,
   type UpdateTaxCodeInput,
 } from "./dto/tax-codes.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const taxCodeIdParams = z.object({ taxCodeId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/tax-codes")
@@ -25,8 +28,9 @@ export class TaxCodesController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:read")
+  @Validate({ query: listTaxCodesQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listTaxCodesQuerySchema)) query: ListTaxCodesQuery,
+    @Query() query: ListTaxCodesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.taxCodes.list(u.orgId, query);
@@ -36,8 +40,9 @@ export class TaxCodesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:manage")
   @HttpCode(201)
+  @Validate({ body: createTaxCodeSchema })
   create(
-    @Body(new ZodValidationPipe(createTaxCodeSchema)) body: CreateTaxCodeInput,
+    @Body() body: CreateTaxCodeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.taxCodes.create(u.orgId, u.userId, body);
@@ -54,9 +59,10 @@ export class TaxCodesController {
   @Patch(":taxCodeId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:manage")
+  @Validate({ params: taxCodeIdParams, body: updateTaxCodeSchema })
   update(
     @Param("taxCodeId", ParseIntPipe) taxCodeId: number,
-    @Body(new ZodValidationPipe(updateTaxCodeSchema)) body: UpdateTaxCodeInput,
+    @Body() body: UpdateTaxCodeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.taxCodes.update(u.orgId, taxCodeId, u.userId, body);

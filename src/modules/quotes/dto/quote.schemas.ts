@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
 const lineItemSchema = z.object({
   description: z.string().min(1),
@@ -11,8 +12,8 @@ export const listSchema = z.object({
   status: z.enum(["DRAFT", "SENT", "ACCEPTED", "REJECTED", "EXPIRED"]).optional(),
   dealId: z.coerce.number().int().positive().optional(),
   search: z.string().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  page: pageNumberField,
+  pageSize: pageSizeField(25),
 });
 
 export const exportSchema = z.object({

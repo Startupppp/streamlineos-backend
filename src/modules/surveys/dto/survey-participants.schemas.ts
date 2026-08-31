@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const participantInputSchema = z.object({
   name: z.string().max(200).optional(),
@@ -26,8 +27,8 @@ export const remindParticipantsSchema = z.object({
 
 export const listParticipantsSchema = z.object({
   status: z.enum(["invited", "delivered", "opened", "started", "partial", "completed", "disqualified", "bounced", "unsubscribed", "expired"]).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  page: pageNumberField,
+  pageSize: pageSizeField(25, 100),
 });
 
 export type ImportParticipantsInput = z.infer<typeof importParticipantsSchema>;

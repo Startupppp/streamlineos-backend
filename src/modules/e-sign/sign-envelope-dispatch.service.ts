@@ -133,18 +133,6 @@ export class SignEnvelopeDispatchService {
         .set({ status: "sent", sentAt: new Date(), expiresAt, finalizationKey })
         .where(eq(signEnvelopes.id, envelopeId))
         .returning();
-      if (row) {
-        await OutboxWriter.emit(tx, {
-          eventId: randomUUID(),
-          organizationId: orgId,
-          aggregateType: "sign_envelope",
-          aggregateId: String(envelopeId),
-          aggregateVersion: Date.now(),
-          eventType: "sign.envelope.sent",
-          payload: { envelopeId, orgId, invitedCount, actorUserId: actor.userId },
-          occurredAt: new Date(),
-        });
-      }
       return row;
     });
 

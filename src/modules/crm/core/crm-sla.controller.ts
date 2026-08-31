@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CrmSlaService } from "./crm-sla.service";
 import {
   slaPolicyCreateSchema,
@@ -25,6 +24,10 @@ import {
   type SlaPolicyUpdateInput,
 } from "./dto/sla.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("crm/sla")
@@ -41,8 +44,9 @@ export class CrmSlaController {
   @Post("policies")
   @RequirePermission("crm:sla:manage")
   @HttpCode(201)
+  @Validate({ body: slaPolicyCreateSchema })
   createPolicy(
-    @Body(new ZodValidationPipe(slaPolicyCreateSchema)) body: SlaPolicyCreateInput,
+    @Body() body: SlaPolicyCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.sla.createPolicy(u.orgId, body);
@@ -50,9 +54,10 @@ export class CrmSlaController {
 
   @Patch("policies/:policyId")
   @RequirePermission("crm:sla:manage")
+  @Validate({ params: policyIdParams, body: slaPolicyUpdateSchema })
   async updatePolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
-    @Body(new ZodValidationPipe(slaPolicyUpdateSchema)) body: SlaPolicyUpdateInput,
+    @Body() body: SlaPolicyUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.sla.updatePolicy(u.orgId, policyId, body);
@@ -63,6 +68,7 @@ export class CrmSlaController {
   @Delete("policies/:policyId")
   @HttpCode(204)
   @RequirePermission("crm:sla:manage")
+  @Validate({ params: policyIdParams })
   async deletePolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,

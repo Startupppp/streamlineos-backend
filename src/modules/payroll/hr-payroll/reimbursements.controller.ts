@@ -19,7 +19,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ReimbursementsService } from "./reimbursements.service";
 import { resolveReimbursementsScope } from "./reimbursements-scope";
 import { AccessService } from "../../access/access.service";
@@ -31,6 +30,10 @@ import {
   listPageQuerySchema,
   type ListPageQueryInput,
 } from "./dto/payroll.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const reimbursementIdParams = z.object({ reimbursementId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("hr/reimbursements")
@@ -43,9 +46,10 @@ export class ReimbursementsController {
 
   @Get()
   @RequirePermission("hr:payroll:view")
+  @Validate({ query: listPageQuerySchema })
   async list(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(listPageQuerySchema)) query: ListPageQueryInput,
+    @Query() query: ListPageQueryInput,
   ) {
     const scope = await resolveReimbursementsScope(this.access, u);
     return this.reimbursements.listReimbursements(u.orgId, u.userId, scope, query.page ?? 1, query.limit ?? 100);
@@ -54,8 +58,9 @@ export class ReimbursementsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:payroll:view")
+  @Validate({ body: createReimbursementSchema })
   create(
-    @Body(new ZodValidationPipe(createReimbursementSchema)) body: CreateReimbursementInput,
+    @Body() body: CreateReimbursementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reimbursements.createReimbursement(u.orgId, u.userId, body);
@@ -63,9 +68,10 @@ export class ReimbursementsController {
 
   @Patch(":reimbursementId")
   @RequirePermission("hr:payroll:view")
+  @Validate({ params: reimbursementIdParams, body: patchReimbursementSchema })
   async update(
     @Param("reimbursementId", ParseIntPipe) reimbursementId: number,
-    @Body(new ZodValidationPipe(patchReimbursementSchema)) body: PatchReimbursementInput,
+    @Body() body: PatchReimbursementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!u.isOrgOwner) {

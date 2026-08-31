@@ -18,9 +18,9 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { CrmOrganizationsService } from "./crm-organizations.service";
+import { CrmOrganizationsMergeService } from "./crm-organizations-merge.service";
 import { CrmOrganizationsInsightsService } from "./crm-organizations-insights.service";
 import {
   organizationCreateSchema,
@@ -37,6 +37,10 @@ import {
   type OrgDuplicateCheckInput,
 } from "./dto/organizations.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const organizationIdParams = z.object({ organizationId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("crm/organizations")
@@ -44,13 +48,15 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 export class CrmOrganizationsController {
   constructor(
     private readonly orgs: CrmOrganizationsService,
+    private readonly orgMerges: CrmOrganizationsMergeService,
     private readonly insights: CrmOrganizationsInsightsService,
   ) {}
 
   @Get()
   @RequirePermission("crm:organizations:view")
+  @Validate({ query: organizationListSchema })
   list(
-    @Query(new ZodValidationPipe(organizationListSchema)) query: OrganizationListInput,
+    @Query() query: OrganizationListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.orgs.list(u.orgId, query);
@@ -60,8 +66,9 @@ export class CrmOrganizationsController {
   @RequirePermission("crm:organizations:manage")
   @HttpCode(201)
   @Idempotent("crm.org.create")
+  @Validate({ body: organizationCreateSchema })
   create(
-    @Body(new ZodValidationPipe(organizationCreateSchema)) body: OrganizationCreateInput,
+    @Body() body: OrganizationCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.orgs.create(u.orgId, body);
@@ -69,8 +76,9 @@ export class CrmOrganizationsController {
 
   @Get("duplicates")
   @RequirePermission("crm:organizations:view")
+  @Validate({ query: orgDuplicatesQuerySchema })
   getDuplicates(
-    @Query(new ZodValidationPipe(orgDuplicatesQuerySchema)) query: OrgDuplicatesQueryInput,
+    @Query() query: OrgDuplicatesQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.orgs.getDuplicateOrgs(u.orgId, query);
@@ -83,8 +91,9 @@ export class CrmOrganizationsController {
    */
   @Get("duplicate-check")
   @RequirePermission("crm:organizations:view")
+  @Validate({ query: orgDuplicateCheckSchema })
   checkDuplicate(
-    @Query(new ZodValidationPipe(orgDuplicateCheckSchema)) query: OrgDuplicateCheckInput,
+    @Query() query: OrgDuplicateCheckInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.orgs.findPotentialDuplicates(u.orgId, query);
@@ -93,15 +102,17 @@ export class CrmOrganizationsController {
   @Post("merge")
   @HttpCode(200)
   @RequirePermission("crm:organizations:merge")
+  @Validate({ body: mergeOrgsSchema })
   mergeOrganizations(
-    @Body(new ZodValidationPipe(mergeOrgsSchema)) body: MergeOrgsInput,
+    @Body() body: MergeOrgsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.orgs.mergeOrganizations(u.orgId, body, u.userId);
+    return this.orgMerges.mergeOrganizations(u.orgId, body, u.userId);
   }
 
   @Get(":organizationId")
   @RequirePermission("crm:organizations:view")
+  @Validate({ params: organizationIdParams })
   async getOne(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -113,9 +124,10 @@ export class CrmOrganizationsController {
 
   @Patch(":organizationId")
   @RequirePermission("crm:organizations:manage")
+  @Validate({ params: organizationIdParams, body: organizationUpdateSchema })
   async update(
     @Param("organizationId", ParseIntPipe) organizationId: number,
-    @Body(new ZodValidationPipe(organizationUpdateSchema)) body: OrganizationUpdateInput,
+    @Body() body: OrganizationUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const exists = await this.orgs.exists(u.orgId, organizationId);
@@ -136,6 +148,7 @@ export class CrmOrganizationsController {
   @Delete(":organizationId")
   @HttpCode(204)
   @RequirePermission("crm:organizations:manage")
+  @Validate({ params: organizationIdParams })
   async remove(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -146,6 +159,7 @@ export class CrmOrganizationsController {
 
   @Get(":organizationId/hierarchy")
   @RequirePermission("crm:organizations:view")
+  @Validate({ params: organizationIdParams })
   async hierarchy(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -157,6 +171,7 @@ export class CrmOrganizationsController {
 
   @Get(":organizationId/related-leads")
   @RequirePermission("crm:organizations:view")
+  @Validate({ params: organizationIdParams })
   async relatedLeads(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -168,6 +183,7 @@ export class CrmOrganizationsController {
 
   @Get(":organizationId/roll-up")
   @RequirePermission("crm:organizations:view")
+  @Validate({ params: organizationIdParams })
   rollUp(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -177,6 +193,7 @@ export class CrmOrganizationsController {
 
   @Get(":organizationId/timeline")
   @RequirePermission("crm:organizations:view")
+  @Validate({ params: organizationIdParams })
   timeline(
     @Param("organizationId", ParseIntPipe) organizationId: number,
     @CurrentUser() u: CurrentUserContext,

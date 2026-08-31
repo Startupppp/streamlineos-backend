@@ -19,8 +19,9 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { TasksService, isSequenceNotFound, isSequenceNoSteps } from "./tasks.service";
+import { TasksService } from "./tasks.service";
+import { TaskSequencesService, isSequenceNotFound, isSequenceNoSteps } from "./task-sequences.service";
+import { TaskAnalyticsService } from "./task-analytics.service";
 import {
   analyticsSchema,
   completeSchema,
@@ -39,15 +40,26 @@ import {
   type SequenceListInput,
   type UpdateInput,
 } from "./dto/task.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const sequenceIdParams = z.object({ sequenceId: z.coerce.number().int().positive() }).strict();
+const taskIdParams = z.object({ taskId: z.coerce.number().int().positive() }).strict();
+
 @Controller("tasks")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class TasksController {
-  constructor(private readonly tasks: TasksService) {}
+  constructor(
+    private readonly tasks: TasksService,
+    private readonly sequences: TaskSequencesService,
+    private readonly analytics: TaskAnalyticsService,
+  ) {}
 
   @Get()
   @RequirePermission("tasks:read")
+  @Validate({ query: listSchema })
   list(
-    @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
+    @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.tasks.list(u, filters);
@@ -56,8 +68,9 @@ export class TasksController {
   @Post()
   @HttpCode(201)
   @RequirePermission("tasks:write")
+  @Validate({ body: createSchema })
   async create(
-    @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
+    @Body() body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const created = await this.tasks.create(u.orgId, u.userId, body);
@@ -67,39 +80,43 @@ export class TasksController {
 
   @Get("analytics")
   @RequirePermission("tasks:read")
-  analytics(
-    @Query(new ZodValidationPipe(analyticsSchema)) query: AnalyticsInput,
+  @Validate({ query: analyticsSchema })
+  getAnalytics(
+    @Query() query: AnalyticsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tasks.analytics(u.orgId, query);
+    return this.analytics.analytics(u.orgId, query);
   }
 
   @Get("sequences")
   @RequirePermission("tasks:read")
+  @Validate({ query: sequenceListSchema })
   listSequences(
-    @Query(new ZodValidationPipe(sequenceListSchema)) query: SequenceListInput,
+    @Query() query: SequenceListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tasks.listSequences(u.orgId, query);
+    return this.sequences.listSequences(u.orgId, query);
   }
 
   @Post("sequences")
   @HttpCode(201)
   @RequirePermission("tasks:write")
+  @Validate({ body: sequenceCreateSchema })
   createSequence(
-    @Body(new ZodValidationPipe(sequenceCreateSchema)) body: SequenceCreateInput,
+    @Body() body: SequenceCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tasks.createSequence(u.orgId, u.userId, body);
+    return this.sequences.createSequence(u.orgId, u.userId, body);
   }
 
   @Delete("sequences/:sequenceId")
   @RequirePermission("tasks:write")
+  @Validate({ params: sequenceIdParams })
   async removeSequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.tasks.removeSequence(u.orgId, sequenceId);
+    const result = await this.sequences.removeSequence(u.orgId, sequenceId);
     if (!result) throw new NotFoundException("Sequence not found");
     return result;
   }
@@ -107,12 +124,13 @@ export class TasksController {
   @Post("sequences/:sequenceId/apply")
   @HttpCode(201)
   @RequirePermission("tasks:write")
+  @Validate({ params: sequenceIdParams, body: sequenceApplySchema })
   async applySequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
-    @Body(new ZodValidationPipe(sequenceApplySchema)) body: SequenceApplyInput,
+    @Body() body: SequenceApplyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.tasks.applySequence(u.orgId, u.userId, sequenceId, body);
+    const result = await this.sequences.applySequence(u.orgId, u.userId, sequenceId, body);
     if (isSequenceNotFound(result)) throw new NotFoundException("Sequence not found");
     if (isSequenceNoSteps(result)) throw new BadRequestException("Sequence has no steps");
     return result;
@@ -120,9 +138,10 @@ export class TasksController {
 
   @Patch(":taskId")
   @RequirePermission("tasks:write")
+  @Validate({ params: taskIdParams, body: updateSchema })
   async update(
     @Param("taskId", ParseIntPipe) taskId: number,
-    @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
+    @Body() body: UpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.tasks.update(u.orgId, taskId, u.userId, body);
@@ -132,6 +151,7 @@ export class TasksController {
 
   @Delete(":taskId")
   @RequirePermission("tasks:write")
+  @Validate({ params: taskIdParams })
   async remove(
     @Param("taskId", ParseIntPipe) taskId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -143,9 +163,10 @@ export class TasksController {
 
   @Post(":taskId/complete")
   @RequirePermission("tasks:write")
+  @Validate({ params: taskIdParams, body: completeSchema })
   async complete(
     @Param("taskId", ParseIntPipe) taskId: number,
-    @Body(new ZodValidationPipe(completeSchema)) body: CompleteInput,
+    @Body() body: CompleteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.tasks.complete(u.orgId, taskId, body);

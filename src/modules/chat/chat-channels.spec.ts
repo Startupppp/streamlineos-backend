@@ -58,10 +58,8 @@ function buildMocks() {
     }),
     selectDistinctOn: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
-        leftJoin: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            orderBy: jest.fn().mockResolvedValue([]),
-          }),
+        where: jest.fn().mockReturnValue({
+          orderBy: jest.fn().mockResolvedValue([]),
         }),
       }),
     }),
@@ -72,7 +70,6 @@ function buildMocks() {
     cached: jest.fn(),
     invalidate: jest.fn(),
     invalidateNamespace: jest.fn(),
-    invalidatePattern: jest.fn(),
   };
 
   return { mockDb, mockCache, updateSpy, resolveSpy, findManyMock };

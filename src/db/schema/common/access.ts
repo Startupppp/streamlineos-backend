@@ -66,6 +66,11 @@ export const roleAssignments = pgTable(
       columns: [table.orgId, table.roleId],
       foreignColumns: [roles.orgId, roles.id],
     }).onDelete("cascade"),
+    foreignKey({
+      name: "fk_role_assignments_assigner_membership",
+      columns: [table.orgId, table.assignedByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }),
   ],
 );
 
@@ -138,6 +143,21 @@ export const userPermissionGrants = pgTable(
       columns: [table.orgId, table.organizationMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     }).onDelete("cascade"),
+    foreignKey({
+      name: "fk_user_permission_grants_granter_membership",
+      columns: [table.orgId, table.grantedByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }),
+    foreignKey({
+      name: "fk_user_permission_grants_module",
+      columns: [table.moduleKey],
+      foreignColumns: [modulesCatalog.moduleKey],
+    }),
+    foreignKey({
+      name: "fk_user_permission_grants_permission_module",
+      columns: [table.permissionKey, table.moduleKey],
+      foreignColumns: [permissions.name, permissions.administeringModuleKey],
+    }),
   ],
 );
 
@@ -159,12 +179,15 @@ export const userModuleAccess = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
+<<<<<<< HEAD
     /**
      * A deny-override hangs off the membership, not the login. Keyed on the
      * user id it survived the person leaving and rejoining the organisation,
      * and it could not carry the composite tenant FK the rest of the RBAC
      * tables use.
      */
+=======
+>>>>>>> origin/main
     organizationMembershipId: integer("organization_membership_id").notNull(),
     moduleKey: text("module_key").notNull(),
     enabled: boolean("enabled").default(true).notNull(),
@@ -177,7 +200,10 @@ export const userModuleAccess = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+<<<<<<< HEAD
     unique("uniq_user_module_access_org_id").on(table.orgId, table.id),
+=======
+>>>>>>> origin/main
     uniqueIndex("uniq_user_module_access_org_membership_module").on(
       table.orgId,
       table.organizationMembershipId,
@@ -192,6 +218,14 @@ export const userModuleAccess = pgTable(
       columns: [table.orgId, table.organizationMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     }).onDelete("cascade"),
+<<<<<<< HEAD
+=======
+    foreignKey({
+      name: "fk_user_module_access_module",
+      columns: [table.moduleKey],
+      foreignColumns: [modulesCatalog.moduleKey],
+    }),
+>>>>>>> origin/main
   ],
 );
 

@@ -1,12 +1,9 @@
 import { Inject, Injectable, BadRequestException } from "@nestjs/common";
-import { randomUUID } from "crypto";
-import { inArray, eq, and } from "drizzle-orm";
-import { notifications, notificationDeliveries, notificationQueue, notificationOutbox, notificationPreferences, notificationTemplates, userPreferences, users } from "../../db/schema";
+import { inArray, eq, and, sql } from "drizzle-orm";
+import { notifications, notificationDeliveries, notificationQueue, notificationOutbox, notificationPreferences, userPreferences, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_TTL } from "../../common/cache/cache-keys";
-import { NOTIF_CACHE } from "./notification-cache-keys";
+import { buildNotifOutboxDedupeKey, buildNotifIdempotencyKey } from "./notification-dispatch-keys";
 import { NotificationEventRegistryService } from "./notification-event-registry.service";
 import { NotificationRoutingService } from "./notification-routing.service";
 import { NotificationsService, type AnnounceInput } from "./notifications.service";
@@ -58,7 +55,6 @@ export class NotificationDispatchService {
     private readonly registry: NotificationEventRegistryService,
     private readonly routing: NotificationRoutingService,
     private readonly notificationsService: NotificationsService,
-    private readonly cache: CacheService,
     private readonly visibility: NotificationVisibilityRegistry,
     private readonly templates: NotificationTemplateRenderer,
     private readonly digest: NotificationDigestService,
@@ -85,8 +81,6 @@ export class NotificationDispatchService {
 
     const dedupeKey = await this.writeIntent(ambient.tx, input);
     registerAfterCommit(async () => {
-      // Carries the computed key so that if the mark below fails and the relay replays
-      // this same row, the delivery keys match and the second attempt dedupes.
       await this.emitNow({ ...input, dedupeKey });
       await this.markIntentProcessed(input.orgId, dedupeKey);
     });
@@ -102,7 +96,7 @@ export class NotificationDispatchService {
   }
 
   private async writeIntent(tx: DbOrTx, input: DispatchEventInput): Promise<string> {
-    const dedupeKey = this.buildOutboxDedupeKey(input);
+    const dedupeKey = buildNotifOutboxDedupeKey(input);
     await tx
       .insert(notificationOutbox)
       .values({
@@ -118,10 +112,12 @@ export class NotificationDispatchService {
         message: input.message ?? null,
         link: input.link ?? null,
         variables: (input.variables ?? {}) as Record<string, unknown>,
-        metadata: input.metadata ?? null,
+        metadata: {
+          ...(input.metadata ?? {}),
+          ...(input.emailHtml ? { emailHtml: input.emailHtml } : {}),
+          ...(input.attachments ? { attachments: input.attachments } : {}),
+        },
       })
-      // A replayed intent carrying an explicit dedupe key is a no-op, not a second
-      // notification. Without one the key is unique, so this never fires.
       .onConflictDoNothing({
         target: [notificationOutbox.orgId, notificationOutbox.dedupeKey],
       });
@@ -144,18 +140,6 @@ export class NotificationDispatchService {
           and(eq(notificationOutbox.orgId, orgId), eq(notificationOutbox.dedupeKey, dedupeKey)),
         );
     });
-  }
-
-  /**
-   * The unique index is `(org_id, dedupe_key)` and rows are never deleted, so a key
-   * built only from (event, entity, targets) would collapse every later emission into
-   * the first one — permanently, and invisibly through `onConflictDoNothing`. Callers
-   * that genuinely need replay collapsing say so; everyone else gets a unique row.
-   */
-  private buildOutboxDedupeKey(input: DispatchEventInput): string {
-    const targets = [...input.targetUserIds].sort().join(",");
-    const discriminator = input.dedupeKey ?? randomUUID();
-    return `${input.eventKey}:${input.entityType ?? ""}:${input.entityId ?? ""}:${targets}:${discriminator}`;
   }
 
   /** Cannot borrow the caller's transaction: by the time this runs it has often committed, and the released handle carries no tenant GUC. */
@@ -212,7 +196,7 @@ export class NotificationDispatchService {
       );
     }
 
-    const routingResults = await this.routing.routeMany(input.orgId, targets, definition, priority);
+    const routingResults = await this.routing.routeMany(input.orgId, targets, definition, priority, input.channels);
     const announcements: Array<{ input: AnnounceInput; pushToDevices: boolean }> = [];
 
     // PIPE-006: this used to be a strictly sequential loop, one transaction per
@@ -312,7 +296,7 @@ export class NotificationDispatchService {
         status: "SUPPRESSED",
         priority,
         suppressionReason: "NO_ACCESS",
-        idempotencyKey: this.buildIdempotencyKey(input, userId, "IN_APP", definition.dedupeWindowSeconds),
+        idempotencyKey: buildNotifIdempotencyKey(input, userId, "IN_APP", definition.dedupeWindowSeconds),
         metadata: {
           resourceKind: definition.visibilityResourceKind ?? null,
           entityType: input.entityType ?? null,
@@ -322,21 +306,6 @@ export class NotificationDispatchService {
       .onConflictDoNothing({ target: notificationDeliveries.idempotencyKey })
       .returning({ id: notificationDeliveries.id });
     return row ? 1 : 0;
-  }
-
-  /**
-   * `dedupeKey` identifies one emission, so a redelivery of that same emission lands on
-   * the same key and is refused by the unique index. Without it, an event that opts out
-   * of the time window (`dedupeWindowSeconds: 0` — mentions, DMs, chat, where repeats are
-   * legitimate) falls back to a fresh uuid and has no dedupe at all, so a relay replay
-   * after a half-finished drain would deliver a second copy.
-   */
-  private buildIdempotencyKey(input: DispatchEventInput, userId: string, channel: NotificationChannel, dedupeWindowSeconds: number): string {
-    const entity = `${input.entityType ?? ""}:${input.entityId ?? ""}`;
-    const windowBucket =
-      dedupeWindowSeconds > 0 ? Math.floor(Date.now() / (dedupeWindowSeconds * 1000)).toString() : randomUUID();
-    const bucket = input.dedupeKey ?? windowBucket;
-    return `org:${input.orgId}:event:${input.eventKey}:user:${userId}:entity:${entity}:channel:${channel}:dedupe:${bucket}`;
   }
 
   private async persistForUser(
@@ -357,7 +326,7 @@ export class NotificationDispatchService {
     const pushHandledByEngine = routingResult.channels.some((c) => c.channel === "PUSH" && c.action === "SEND");
 
     return this.db.transaction(async (tx) => {
-      const inAppKey = this.buildIdempotencyKey(input, userId, "IN_APP", definition.dedupeWindowSeconds);
+      const inAppKey = buildNotifIdempotencyKey(input, userId, "IN_APP", definition.dedupeWindowSeconds);
       const [inAppDelivery] = await tx
         .insert(notificationDeliveries)
         .values({
@@ -381,6 +350,7 @@ export class NotificationDispatchService {
       }
 
       let notificationId: number | null = null;
+      let notificationCreatedAt: Date | null = null;
       if (createInApp) {
         const [notification] = await tx
           .insert(notifications)
@@ -402,10 +372,19 @@ export class NotificationDispatchService {
             channel: "IN_APP",
             metadata: input.metadata,
           })
-          .returning({ id: notifications.id });
+          .returning({ id: notifications.id, createdAt: notifications.createdAt });
         notificationId = notification?.id ?? null;
+        notificationCreatedAt = notification?.createdAt ?? null;
         if (notificationId) {
-          await tx.update(notificationDeliveries).set({ notificationId }).where(eq(notificationDeliveries.id, inAppDelivery.id));
+          await tx
+            .update(notificationDeliveries)
+            .set({
+              notificationId,
+              notificationCreatedAt: sql`(
+                select created_at from notifications where id = ${notificationId}
+              )`,
+            })
+            .where(eq(notificationDeliveries.id, inAppDelivery.id));
         }
       }
 
@@ -413,7 +392,7 @@ export class NotificationDispatchService {
       let suppressed = createInApp ? 0 : 1;
       for (const decision of routingResult.channels) {
         if (decision.channel === "IN_APP") continue;
-        const key = this.buildIdempotencyKey(input, userId, decision.channel, definition.dedupeWindowSeconds);
+        const key = buildNotifIdempotencyKey(input, userId, decision.channel, definition.dedupeWindowSeconds);
         const isSend = decision.action === "SEND";
         const recipientAddress = decision.channel === "EMAIL" ? email : null;
         const channelTemplate = templateMap.get(decision.channel);
@@ -423,6 +402,9 @@ export class NotificationDispatchService {
           .insert(notificationDeliveries)
           .values({
             notificationId,
+            notificationCreatedAt: notificationId
+              ? sql`(select created_at from notifications where id = ${notificationId})`
+              : null,
             orgId: input.orgId,
             userId,
             eventKey: input.eventKey,
@@ -434,7 +416,14 @@ export class NotificationDispatchService {
             suppressionReason: isSend ? null : decision.reason ?? null,
             nextAttemptAt: isSend ? (routingResult.deferredUntil ?? now) : null,
             idempotencyKey: key,
-            metadata: { title: deliveryTitle, message: deliveryMessage, link: input.link ?? null },
+            metadata: {
+              ...(input.metadata ?? {}),
+              ...(input.emailHtml ? { emailHtml: input.emailHtml } : {}),
+              ...(input.attachments ? { attachments: input.attachments } : {}),
+              title: deliveryTitle,
+              message: deliveryMessage,
+              link: input.link ?? null,
+            },
             // REG-008: the snapshot of what was actually sent. metadata above is the
             // display payload; these two are the audit record, and survive a later
             // edit to the template they came from.

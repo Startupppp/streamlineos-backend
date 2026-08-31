@@ -83,11 +83,11 @@ export class MailAccountsService {
     };
   }
 
-  async markNeedsReauth(accountId: number): Promise<void> {
+  async markNeedsReauth(accountId: number, orgId: string): Promise<void> {
     await this.db
       .update(userIntegrationConnections)
       .set({ status: "needs_reauth" })
-      .where(eq(userIntegrationConnections.id, accountId))
+      .where(and(eq(userIntegrationConnections.id, accountId), eq(userIntegrationConnections.orgId, orgId)))
       .catch(() => undefined);
   }
 }

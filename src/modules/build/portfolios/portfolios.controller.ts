@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PortfoliosService } from "./portfolios.service";
 import {
   createPortfolioSchema,
@@ -29,6 +28,11 @@ import {
   type ListPortfoliosQuery,
   type UpdatePortfolioInput,
 } from "./dto/portfolios.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const portfolioIdParams = z.object({ portfolioId: z.coerce.number().int().positive() }).strict();
+const portfolioIdprojectIdParams = z.object({ portfolioId: z.coerce.number().int().positive(), projectId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -38,8 +42,9 @@ export class PortfoliosController {
 
   @Get("portfolios")
   @RequirePermission("build:portfolios:view")
+  @Validate({ query: listPortfoliosQuerySchema })
   listPortfolios(
-    @Query(new ZodValidationPipe(listPortfoliosQuerySchema)) query: ListPortfoliosQuery,
+    @Query() query: ListPortfoliosQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listPortfolios(u.orgId, query);
@@ -47,6 +52,7 @@ export class PortfoliosController {
 
   @Get("portfolios/:portfolioId")
   @RequirePermission("build:portfolios:view")
+  @Validate({ params: portfolioIdParams })
   getPortfolio(
     @Param("portfolioId", ParseIntPipe) portfolioId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -57,8 +63,9 @@ export class PortfoliosController {
   @Post("portfolios")
   @HttpCode(201)
   @RequirePermission("build:portfolios:manage")
+  @Validate({ body: createPortfolioSchema })
   createPortfolio(
-    @Body(new ZodValidationPipe(createPortfolioSchema)) body: CreatePortfolioInput,
+    @Body() body: CreatePortfolioInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createPortfolio(u.orgId, u.userId, body);
@@ -66,9 +73,10 @@ export class PortfoliosController {
 
   @Patch("portfolios/:portfolioId")
   @RequirePermission("build:portfolios:manage")
+  @Validate({ params: portfolioIdParams, body: updatePortfolioSchema })
   updatePortfolio(
     @Param("portfolioId", ParseIntPipe) portfolioId: number,
-    @Body(new ZodValidationPipe(updatePortfolioSchema)) body: UpdatePortfolioInput,
+    @Body() body: UpdatePortfolioInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updatePortfolio(u.orgId, u.userId, portfolioId, body);
@@ -77,6 +85,7 @@ export class PortfoliosController {
   @Delete("portfolios/:portfolioId")
   @HttpCode(204)
   @RequirePermission("build:portfolios:manage")
+  @Validate({ params: portfolioIdParams })
   deletePortfolio(
     @Param("portfolioId", ParseIntPipe) portfolioId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -87,9 +96,10 @@ export class PortfoliosController {
   @Post("portfolios/:portfolioId/projects")
   @HttpCode(200)
   @RequirePermission("build:portfolios:manage")
+  @Validate({ params: portfolioIdParams, body: linkProjectSchema })
   linkProject(
     @Param("portfolioId", ParseIntPipe) portfolioId: number,
-    @Body(new ZodValidationPipe(linkProjectSchema)) body: LinkProjectInput,
+    @Body() body: LinkProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.linkProject(u.orgId, u.userId, portfolioId, body);
@@ -98,6 +108,7 @@ export class PortfoliosController {
   @Delete("portfolios/:portfolioId/projects/:projectId")
   @HttpCode(204)
   @RequirePermission("build:portfolios:manage")
+  @Validate({ params: portfolioIdprojectIdParams })
   unlinkProject(
     @Param("portfolioId", ParseIntPipe) portfolioId: number,
     @Param("projectId", ParseIntPipe) projectId: number,

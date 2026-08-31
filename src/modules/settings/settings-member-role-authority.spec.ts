@@ -8,6 +8,7 @@ jest.mock("../../common/auth/membership-state.service", () => ({
 import { ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import { CacheService } from "../../common/cache/cache.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AccessService } from "../access/access.service";
@@ -21,6 +22,7 @@ const actor: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 async function buildService(canManage: boolean): Promise<{

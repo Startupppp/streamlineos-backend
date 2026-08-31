@@ -19,7 +19,7 @@ import {
   ticketPriorityEnum,
   workItemRelationTypeEnum,
 } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { projects, sprints, projectStatuses, modules, cycles } from "./core";
 import { clients } from "../crm/contacts";
 
@@ -46,9 +46,11 @@ export const tickets = build.table(
     assigneeId: text("assignee_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    assigneeMembershipId: integer("assignee_membership_id"),
     reporterId: text("reporter_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    reporterMembershipId: integer("reporter_membership_id"),
     points: integer("points"),
     storyPoints: integer("story_points"),
     link: text("link"),
@@ -117,11 +119,28 @@ export const tickets = build.table(
     index("idx_tickets_org_assignee_due_open")
       .on(t.orgId, t.assigneeId, t.dueDate)
       .where(sql`status <> 'DONE'`),
+    index("idx_tickets_org_assignee_membership").on(t.orgId, t.assigneeMembershipId),
+    index("idx_tickets_org_reporter_membership").on(t.orgId, t.reporterMembershipId),
     index("idx_tickets_sprint").on(t.sprintId),
     index("idx_tickets_org_status_priority").on(t.orgId, t.status, t.priority),
     index("idx_tickets_org_project_status").on(t.orgId, t.projectId, t.status),
     index("idx_tickets_org_project_rank")
       .on(t.orgId, t.projectId, t.rank)
+      .where(sql`deleted_at IS NULL`),
+    index("idx_tickets_org_project_rank_sort")
+      .on(t.orgId, t.projectId, t.rank.asc(), t.createdAt.desc(), t.id.asc())
+      .where(sql`deleted_at IS NULL`),
+    index("idx_tickets_org_project_created")
+      .on(t.orgId, t.projectId, t.createdAt.desc(), t.id.asc())
+      .where(sql`deleted_at IS NULL`),
+    index("idx_tickets_org_project_updated")
+      .on(t.orgId, t.projectId, t.updatedAt.desc(), t.createdAt.desc(), t.id.asc())
+      .where(sql`deleted_at IS NULL`),
+    index("idx_tickets_org_project_priority")
+      .on(t.orgId, t.projectId, t.priority.asc(), t.createdAt.desc(), t.id.asc())
+      .where(sql`deleted_at IS NULL`),
+    index("idx_tickets_org_project_due_date")
+      .on(t.orgId, t.projectId, t.dueDate.asc(), t.createdAt.desc(), t.id.asc())
       .where(sql`deleted_at IS NULL`),
     index("idx_tickets_cycle").on(t.cycleId),
     index("idx_tickets_parent").on(t.parentTicketId),
@@ -131,6 +150,16 @@ export const tickets = build.table(
     index("idx_tickets_customer").on(t.customerId),
     index("idx_tickets_title_trgm").using("gin", t.title.op("gin_trgm_ops")),
     unique("uniq_tickets_org_id").on(t.orgId, t.id),
+    foreignKey({
+      columns: [t.orgId, t.assigneeMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_tickets_assignee_actor",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [t.orgId, t.reporterMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_tickets_reporter_actor",
+    }).onDelete("restrict"),
   ],
 );
 

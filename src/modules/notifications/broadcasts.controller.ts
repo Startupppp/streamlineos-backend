@@ -11,12 +11,13 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { BroadcastsService } from "./broadcasts.service";
 import {
   createBroadcastSchema,
@@ -28,6 +29,10 @@ import {
   type ListBroadcastsInput,
   type ListBroadcastInboxInput,
 } from "./dto/broadcast.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const broadcastIdParams = z.object({ broadcastId: z.coerce.number().int().positive() }).strict();
 
 /**
  * C21-02: PermissionGuard is on the admin methods only, not the class.
@@ -43,8 +48,9 @@ export class BroadcastsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:view")
+  @Validate({ query: listBroadcastsSchema })
   list(
-    @Query(new ZodValidationPipe(listBroadcastsSchema)) filters: ListBroadcastsInput,
+    @Query() filters: ListBroadcastsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.broadcastsService.list(u.orgId, filters);
@@ -56,8 +62,10 @@ export class BroadcastsController {
    * active member reads their own inbox.
    */
   @Get("inbox")
+  @Universal()
+  @Validate({ query: listBroadcastInboxSchema })
   listInbox(
-    @Query(new ZodValidationPipe(listBroadcastInboxSchema)) query: ListBroadcastInboxInput,
+    @Query() query: ListBroadcastInboxInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.broadcastsService.listInbox(u.orgId, u.userId, query.limit);
@@ -67,8 +75,9 @@ export class BroadcastsController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")
+  @Validate({ body: createBroadcastSchema })
   create(
-    @Body(new ZodValidationPipe(createBroadcastSchema)) dto: CreateBroadcastInput,
+    @Body() dto: CreateBroadcastInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.broadcastsService.create(u.orgId, u.userId, dto);
@@ -77,18 +86,21 @@ export class BroadcastsController {
   @Patch(":broadcastId")
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")
+  @Validate({ params: broadcastIdParams, body: updateBroadcastSchema })
   update(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
-    @Body(new ZodValidationPipe(updateBroadcastSchema)) dto: UpdateBroadcastInput,
+    @Body() dto: UpdateBroadcastInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.broadcastsService.update(u.orgId, broadcastId, u.userId, dto);
   }
 
   @Post(":broadcastId/publish")
+  @Idempotent("notifications.broadcast.publish")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")
+  @Validate({ params: broadcastIdParams })
   publish(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -102,7 +114,9 @@ export class BroadcastsController {
    * No permission gate — every authenticated member dismisses their own inbox.
    */
   @Post(":broadcastId/dismiss")
+  @Universal()
   @HttpCode(200)
+  @Validate({ params: broadcastIdParams })
   dismiss(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -114,6 +128,7 @@ export class BroadcastsController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")
+  @Validate({ params: broadcastIdParams })
   cancel(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -128,6 +143,7 @@ export class BroadcastsController {
   @Get(":broadcastId/receipts/count")
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:view")
+  @Validate({ params: broadcastIdParams })
   viewerCount(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -138,6 +154,7 @@ export class BroadcastsController {
   @Delete(":broadcastId")
   @UseGuards(PermissionGuard)
   @RequirePermission("notifications:broadcasts:manage")
+  @Validate({ params: broadcastIdParams })
   remove(
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,

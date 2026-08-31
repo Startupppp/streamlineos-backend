@@ -22,17 +22,15 @@ import { isSubjectResolved, resolveSubject } from "./subject-seam";
 import {
   deriveTitle,
   normaliseSubjectValues,
-  validateFieldDefinitions,
   validateSubjectValues,
 } from "./subject-values";
 import type {
   CreateSubjectInput,
-  CreateSubjectTypeInput,
   LinkPartyInput,
   ListSubjectsQuery,
   UpdateSubjectInput,
-  UpdateSubjectTypeInput,
 } from "./dto/subject.schemas";
+import { SubjectTypeService } from "./subject-type.service";
 
 const PG_UNIQUE_VIOLATION = "23505";
 
@@ -49,124 +47,8 @@ export class SubjectService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly types: SubjectTypeService,
   ) {}
-
-  // ── Types ──────────────────────────────────────────────────────────────────
-
-  async listTypes(organizationId: string) {
-    return this.db
-      .select()
-      .from(subjectTypes)
-      .where(
-        and(eq(subjectTypes.organizationId, organizationId), isNull(subjectTypes.deletedAt)),
-      )
-      .orderBy(subjectTypes.singular);
-  }
-
-  async createType(organizationId: string, userId: string, input: CreateSubjectTypeInput) {
-    this.assertDeclaration(input.fields, input.titleField);
-
-    try {
-      const [row] = await this.db
-        .insert(subjectTypes)
-        .values({
-          organizationId,
-          key: input.key,
-          singular: input.singular,
-          plural: input.plural,
-          titleField: input.titleField,
-          fields: input.fields,
-        })
-        .returning();
-
-      this.audit.log({
-        action: "party.subject_type.created",
-        userId,
-        orgId: organizationId,
-        resourceType: "subject_type",
-        resourceId: row?.subjectTypeId ?? input.key,
-        metadata: { key: input.key, fieldCount: input.fields.length },
-      });
-
-      return row;
-    } catch (error) {
-      if (isUniqueViolation(error))
-        throw new ConflictException(`A subject type with key "${input.key}" already exists`);
-      throw error;
-    }
-  }
-
-  async updateType(
-    organizationId: string,
-    subjectTypeId: string,
-    userId: string,
-    input: UpdateSubjectTypeInput,
-  ) {
-    const existing = await this.requireType(organizationId, subjectTypeId);
-
-    const fields = input.fields ?? existing.fields;
-    const titleField = input.titleField ?? existing.titleField;
-    this.assertDeclaration(fields, titleField);
-
-    const [row] = await this.db
-      .update(subjectTypes)
-      .set({
-        ...(input.key === undefined ? {} : { key: input.key }),
-        ...(input.singular === undefined ? {} : { singular: input.singular }),
-        ...(input.plural === undefined ? {} : { plural: input.plural }),
-        titleField,
-        fields,
-      })
-      .where(
-        and(
-          eq(subjectTypes.organizationId, organizationId),
-          eq(subjectTypes.subjectTypeId, subjectTypeId),
-        ),
-      )
-      .returning();
-
-    this.audit.log({
-      action: "party.subject_type.updated",
-      userId,
-      orgId: organizationId,
-      resourceType: "subject_type",
-      resourceId: subjectTypeId,
-      metadata: { fieldCount: fields.length },
-    });
-
-    return row;
-  }
-
-  /**
-   * Retires a type.
-   *
-   * Soft, and it deliberately leaves its subjects in place: deleting the records
-   * with the declaration would destroy a tenant's data because they tidied a
-   * settings screen.
-   */
-  async deleteType(organizationId: string, subjectTypeId: string, userId: string) {
-    await this.requireType(organizationId, subjectTypeId);
-
-    await this.db
-      .update(subjectTypes)
-      .set({ deletedAt: new Date() })
-      .where(
-        and(
-          eq(subjectTypes.organizationId, organizationId),
-          eq(subjectTypes.subjectTypeId, subjectTypeId),
-        ),
-      );
-
-    this.audit.log({
-      action: "party.subject_type.deleted",
-      userId,
-      orgId: organizationId,
-      resourceType: "subject_type",
-      resourceId: subjectTypeId,
-    });
-  }
-
-  // ── Subjects ───────────────────────────────────────────────────────────────
 
   async listSubjects(organizationId: string, query: ListSubjectsQuery) {
     const { limit, cursor, search, subjectTypeId, typeKey } = query;
@@ -174,16 +56,6 @@ export class SubjectService {
 
     const resolvedTypeId = subjectTypeId ?? (typeKey ? await this.typeIdForKey(organizationId, typeKey) : undefined);
 
-    /**
-     * A `typeKey` that names nothing returns nothing.
-     *
-     * `resolvedTypeId` was fed straight into `resolvedTypeId ? eq(...) :
-     * undefined`, so an unresolvable key dropped the predicate entirely and the
-     * caller got **every subject in the organisation** — properties, tickets and
-     * candidates in one list — instead of an empty page. A typo or a retired key
-     * turned a scoped read into a full dump, and it looked like a working list
-     * rather than an error.
-     */
     if (typeKey && !resolvedTypeId)
       return buildCursorPage([], limit, () => ({ sortValue: "", id: "" }));
 
@@ -232,8 +104,8 @@ export class SubjectService {
       )
       .where(
         and(
-          eq(subjectPartyLinks.organizationId, organizationId),
           eq(subjectPartyLinks.subjectId, subjectId),
+          eq(subjectPartyLinks.organizationId, organizationId),
         ),
       );
 
@@ -241,7 +113,7 @@ export class SubjectService {
   }
 
   async createSubject(organizationId: string, userId: string, input: CreateSubjectInput) {
-    const type = await this.requireType(organizationId, input.subjectTypeId);
+    const type = await this.types.requireType(organizationId, input.subjectTypeId);
     const values = this.assertValues(type.fields, input.values);
 
     try {
@@ -283,9 +155,8 @@ export class SubjectService {
     input: UpdateSubjectInput,
   ) {
     const current = await this.getSubject(organizationId, subjectId);
-    const type = await this.requireType(organizationId, current.subjectTypeId);
+    const type = await this.types.requireType(organizationId, current.subjectTypeId);
 
-    // Merged, not replaced: a caller sending one field must not clear the rest.
     const merged =
       input.values === undefined
         ? (current.customFields ?? {})
@@ -334,8 +205,6 @@ export class SubjectService {
     });
   }
 
-  // ── Links ──────────────────────────────────────────────────────────────────
-
   async linkParty(
     organizationId: string,
     subjectId: string,
@@ -361,38 +230,46 @@ export class SubjectService {
       action: "party.subject.linked",
       userId,
       orgId: organizationId,
-      resourceType: "subject",
-      resourceId: subjectId,
+      resourceType: "subject_party_link",
+      resourceId: row?.subjectPartyLinkId ?? "",
       metadata: { partyId: input.partyId, relationship: input.relationship },
     });
 
-    return row ?? null;
+    return row;
   }
 
   async unlinkParty(organizationId: string, subjectPartyLinkId: string, userId: string) {
-    const removed = await this.db
-      .delete(subjectPartyLinks)
+    const [link] = await this.db
+      .select()
+      .from(subjectPartyLinks)
       .where(
         and(
           eq(subjectPartyLinks.organizationId, organizationId),
           eq(subjectPartyLinks.subjectPartyLinkId, subjectPartyLinkId),
         ),
       )
-      .returning({ subjectId: subjectPartyLinks.subjectId });
+      .limit(1);
 
-    if (removed.length === 0) throw new NotFoundException("Link not found");
+    if (!link) throw new NotFoundException("Link not found");
+
+    await this.db
+      .delete(subjectPartyLinks)
+      .where(
+        and(
+          eq(subjectPartyLinks.organizationId, organizationId),
+          eq(subjectPartyLinks.subjectPartyLinkId, subjectPartyLinkId),
+        ),
+      );
 
     this.audit.log({
       action: "party.subject.unlinked",
       userId,
       orgId: organizationId,
-      resourceType: "subject",
-      resourceId: removed[0]?.subjectId ?? "",
-      metadata: { subjectPartyLinkId },
+      resourceType: "subject_party_link",
+      resourceId: subjectPartyLinkId,
     });
   }
 
-  /** Everything this party is attached to, whichever way round it was linked. */
   async listForParty(organizationId: string, partyId: string) {
     return this.db
       .select({
@@ -429,32 +306,6 @@ export class SubjectService {
       .limit(100);
   }
 
-  // ── Internals ──────────────────────────────────────────────────────────────
-
-  private assertDeclaration(fields: SubjectFieldDefinition[], titleField: string): void {
-    const problems = validateFieldDefinitions(fields, titleField);
-    if (problems.length > 0)
-      throw new BadRequestException({
-        code: "INVALID_SUBJECT_TYPE",
-        message: "The subject type declaration is not valid.",
-        details: problems,
-      });
-  }
-
-  private assertValues(
-    fields: SubjectFieldDefinition[],
-    values: Record<string, unknown>,
-  ): Record<string, unknown> {
-    const problems = validateSubjectValues(fields, values);
-    if (problems.length > 0)
-      throw new BadRequestException({
-        code: "INVALID_SUBJECT_VALUES",
-        message: "The values do not match this subject type.",
-        details: problems,
-      });
-    return normaliseSubjectValues(fields, values);
-  }
-
   private async typeIdForKey(organizationId: string, key: string): Promise<string | undefined> {
     const [row] = await this.db
       .select({ subjectTypeId: subjectTypes.subjectTypeId })
@@ -468,23 +319,6 @@ export class SubjectService {
       )
       .limit(1);
     return row?.subjectTypeId;
-  }
-
-  private async requireType(organizationId: string, subjectTypeId: string) {
-    const [row] = await this.db
-      .select()
-      .from(subjectTypes)
-      .where(
-        and(
-          eq(subjectTypes.organizationId, organizationId),
-          eq(subjectTypes.subjectTypeId, subjectTypeId),
-          isNull(subjectTypes.deletedAt),
-        ),
-      )
-      .limit(1);
-
-    if (!row) throw new NotFoundException("Subject type not found");
-    return row;
   }
 
   private async requireParty(organizationId: string, partyId: string) {
@@ -502,5 +336,19 @@ export class SubjectService {
 
     if (!row) throw new NotFoundException("Party not found");
     return row;
+  }
+
+  private assertValues(
+    fields: SubjectFieldDefinition[],
+    values: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const problems = validateSubjectValues(fields, values);
+    if (problems.length > 0)
+      throw new BadRequestException({
+        code: "INVALID_SUBJECT_VALUES",
+        message: "The values do not match this subject type.",
+        details: problems,
+      });
+    return normaliseSubjectValues(fields, values);
   }
 }

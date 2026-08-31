@@ -5,8 +5,11 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { LeavePoliciesService } from "./leave-policies.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
 const createLeavePolicySchema = z.object({
   leaveTypeId: z.number().int().positive(),
@@ -46,9 +49,10 @@ export class LeavePoliciesController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:manage")
+  @Validate({ body: createLeavePolicySchema })
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createLeavePolicySchema)) body: CreateLeavePolicyBody,
+    @Body() body: CreateLeavePolicyBody,
   ) {
     return this.service.create(u.orgId, body);
   }
@@ -56,10 +60,11 @@ export class LeavePoliciesController {
   @Patch(":policyId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:manage")
+  @Validate({ params: policyIdParams, body: updateLeavePolicySchema })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("policyId", ParseIntPipe) policyId: number,
-    @Body(new ZodValidationPipe(updateLeavePolicySchema)) body: UpdateLeavePolicyBody,
+    @Body() body: UpdateLeavePolicyBody,
   ) {
     return this.service.update(u.orgId, policyId, body);
   }
@@ -68,6 +73,7 @@ export class LeavePoliciesController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:manage")
+  @Validate({ params: policyIdParams })
   remove(@CurrentUser() u: CurrentUserContext, @Param("policyId", ParseIntPipe) policyId: number) {
     return this.service.remove(u.orgId, policyId);
   }

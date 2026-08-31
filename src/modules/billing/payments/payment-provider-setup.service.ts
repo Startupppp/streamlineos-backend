@@ -10,6 +10,7 @@ import { PaymentAuditService } from "./payment-audit.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
 import type { SaveCredentialsInput, UpdateProviderInput } from "./dto/payments.schemas";
 import type { RequestActorContext } from "../../../common/audit/actor-context";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 
 
 @Injectable()
@@ -69,6 +70,7 @@ export class PaymentProviderSetupService {
   }
 
   async createProvider(orgId: string, providerKey: string, actor: RequestActorContext) {
+    await assertOrganizationActor(this.db, orgId, { kind: "user", userId: actor.userId });
     const catalogEntry = getCatalogEntry(providerKey);
     if (!catalogEntry) throw new BadRequestException(`Unknown payment provider: ${providerKey}`);
 
@@ -106,6 +108,7 @@ export class PaymentProviderSetupService {
   }
 
   async updateProvider(orgId: string, providerKey: string, patch: UpdateProviderInput, actor: RequestActorContext) {
+    await assertOrganizationActor(this.db, orgId, { kind: "user", userId: actor.userId });
     const provider = await this.findProvider(orgId, providerKey);
     const [updated] = await this.db
       .update(paymentProviders)
@@ -128,6 +131,7 @@ export class PaymentProviderSetupService {
   }
 
   async disableProvider(orgId: string, providerKey: string, actor: RequestActorContext) {
+    await assertOrganizationActor(this.db, orgId, { kind: "user", userId: actor.userId });
     const provider = await this.findProvider(orgId, providerKey);
     const [updated] = await this.db
       .update(paymentProviders)
@@ -150,6 +154,7 @@ export class PaymentProviderSetupService {
   }
 
   async saveCredentials(orgId: string, providerKey: string, input: SaveCredentialsInput, actor: RequestActorContext) {
+    await assertOrganizationActor(this.db, orgId, { kind: "user", userId: actor.userId });
     const provider = await this.findProvider(orgId, providerKey);
     const adapter = this.registry.get(providerKey);
 

@@ -2,6 +2,8 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 import {
   holidays,
+  hrEmployments,
+  hrPeople,
   leaveBalances,
   leaveRequests,
   leaveTypes,
@@ -17,6 +19,17 @@ import { type DashboardForbidden } from "./dashboard.errors";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
 import { resolveLeavesDashboardScope } from "./dashboard-scope";
+import { resignationApprovalScope } from "./resignation-approval-scope";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../directory/employment-query";
+import {
+  leaveApprovalScope,
+  resolveLeavesViewScope,
+} from "../hr/time/leaves-scope";
+import { applyScope } from "../access/apply-scope";
+import { buildOrgDashboardCacheKey } from "./dashboard-cache-key";
 
 @Injectable()
 export class DashboardLeaveService {
@@ -26,7 +39,10 @@ export class DashboardLeaveService {
     private readonly access: AccessService,
   ) {}
 
-  getLeavesToday(orgId: string) {
+  async getLeavesToday(u: CurrentUserContext) {
+    const { orgId } = u;
+    const approvalScope = await resolveLeavesViewScope(this.access, u);
+    const scope = approvalScope === "none" ? "own" : approvalScope;
     const today = getTodayString();
     return this.db
       .select({
@@ -35,17 +51,22 @@ export class DashboardLeaveService {
         endDate: leaveRequests.endDate,
         leaveTypeId: leaveRequests.leaveTypeId,
         employeeName: users.name,
-        employeeDesignation: users.designation,
+        employeeDesignation: hrEmployments.designation,
         employeeImage: users.image,
       })
       .from(leaveRequests)
       .innerJoin(users, eq(leaveRequests.userId, users.id))
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .where(
         and(
           eq(leaveRequests.orgId, orgId),
           eq(leaveRequests.status, "APPROVED"),
           lte(leaveRequests.startDate, today),
           gte(leaveRequests.endDate, today),
+          applyScope(scope, orgId, u.userId, {
+            ownerColumn: leaveRequests.userId,
+          }),
         ),
       );
   }
@@ -84,7 +105,9 @@ export class DashboardLeaveService {
     }
 
     const isApprover = await this.access.holds(u, "hr:leaves:approve");
-    const key = `dashboard:pending-approvals:${orgId}:${isApprover ? "approver" : "self"}`;
+    const audience = scope === "all" ? "org" : u.userId;
+    const key = `dashboard:pending-approvals:${orgId}:${scope}:${audience}:${isApprover ? "approver" : "self"}`;
+    const visible = leaveApprovalScope(scope, orgId, u.userId);
 
     return this.cache.cached(
       key,
@@ -92,7 +115,9 @@ export class DashboardLeaveService {
         const [leaveCount] = await this.db
           .select({ count: sql<number>`count(*)::int` })
           .from(leaveRequests)
-          .where(and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.status, "PENDING")));
+          .where(
+            and(eq(leaveRequests.orgId, orgId), eq(leaveRequests.status, "PENDING"), visible),
+          );
 
         const resignationStatuses = isApprover ? ["SUBMITTED", "PENDING_HR"] : ["HR_APPROVED"];
 
@@ -106,6 +131,7 @@ export class DashboardLeaveService {
                 resignations.status,
                 resignationStatuses as ("SUBMITTED" | "PENDING_HR" | "HR_APPROVED")[],
               ),
+              resignationApprovalScope(scope, orgId, u.userId),
             ),
           );
 
@@ -122,10 +148,16 @@ export class DashboardLeaveService {
     );
   }
 
-  getUpcomingHolidays(orgId: string) {
+  async getUpcomingHolidays(orgId: string) {
     const today = getTodayString();
-    const key = `dashboard:upcoming-holidays:${orgId}:${today}`;
-    return this.cache.cached(
+    const key = await buildOrgDashboardCacheKey(
+      this.access,
+      orgId,
+      "holidays",
+      today,
+    );
+    return this.cache.cachedForOrg(
+      orgId,
       key,
       () =>
         this.db

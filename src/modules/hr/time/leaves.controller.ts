@@ -19,7 +19,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { LeavesService } from "./leaves.service";
 import { LeavesWriteService } from "./leaves-write.service";
 import { LeavesApprovalService } from "./leaves-approval.service";
@@ -49,6 +49,12 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CompOffGrantService } from "./comp-off-grant.service";
 import { LeaveTypesService } from "./leave-types.service";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const leaveTypeIdParams = z.object({ leaveTypeId: z.coerce.number().int().positive() }).strict();
+const leaveIdParams = z.object({ leaveId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/leaves")
@@ -77,9 +83,9 @@ export class LeavesController {
 
   @Get("my")
   @RequirePermission("hr:leaves:view")
+  @Validate({ query: listLeaveRequestsSchema })
   my(
-    @Query(new ZodValidationPipe(listLeaveRequestsSchema))
-    query: ListLeaveRequestsQuery,
+    @Query() query: ListLeaveRequestsQuery,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.leaves.my(currentUser.orgId, currentUser.userId, query);
@@ -99,8 +105,9 @@ export class LeavesController {
 
   @Get("analytics")
   @RequirePermission("hr:leaves:view")
+  @Validate({ query: leaveAnalyticsQuerySchema })
   analytics(
-    @Query(new ZodValidationPipe(leaveAnalyticsQuerySchema)) query: LeaveAnalyticsQuery,
+    @Query() query: LeaveAnalyticsQuery,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.leaves.analytics(currentUser, query.year ?? new Date().getFullYear());
@@ -109,8 +116,9 @@ export class LeavesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:leaves:create")
+  @Validate({ body: createLeaveSchema })
   create(
-    @Body(new ZodValidationPipe(createLeaveSchema)) body: CreateLeaveInput,
+    @Body() body: CreateLeaveInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.leavesWrite.create(currentUser, body);
@@ -131,9 +139,10 @@ export class LeavesController {
 
   @Patch("types/:leaveTypeId")
   @RequirePermission("hr:leaves:manage")
+  @Validate({ params: leaveTypeIdParams, body: updateLeaveTypeSchema })
   updateLeaveType(
     @Param("leaveTypeId", ParseIntPipe) leaveTypeId: number,
-    @Body(new ZodValidationPipe(updateLeaveTypeSchema)) body: UpdateLeaveTypeInput,
+    @Body() body: UpdateLeaveTypeInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.leaveTypes.update(currentUser.orgId, leaveTypeId, body);
@@ -141,6 +150,7 @@ export class LeavesController {
 
   @Delete("types/:leaveTypeId")
   @RequirePermission("hr:leaves:manage")
+  @Validate({ params: leaveTypeIdParams })
   deleteLeaveType(
     @Param("leaveTypeId", ParseIntPipe) leaveTypeId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -151,8 +161,9 @@ export class LeavesController {
   @Post("types")
   @HttpCode(201)
   @RequirePermission("hr:leaves:manage")
+  @Validate({ body: createLeaveTypeSchema })
   createLeaveType(
-    @Body(new ZodValidationPipe(createLeaveTypeSchema)) body: CreateLeaveTypeInput,
+    @Body() body: CreateLeaveTypeInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.leaveTypes.create(currentUser.orgId, body);
@@ -161,8 +172,9 @@ export class LeavesController {
   @Post("comp-off")
   @HttpCode(201)
   @RequirePermission("hr:leaves:manage")
+  @Validate({ body: compOffSchema })
   compOff(
-    @Body(new ZodValidationPipe(compOffSchema)) body: CompOffInput,
+    @Body() body: CompOffInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.compOffGrants.grant(currentUser, body);
@@ -170,6 +182,7 @@ export class LeavesController {
 
   @Patch(":leaveId/cancel")
   @RequirePermission("hr:leaves:create")
+  @Validate({ params: leaveIdParams })
   async cancel(
     @Param("leaveId", ParseIntPipe) leaveId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -180,22 +193,26 @@ export class LeavesController {
   }
 
   @Put(":leaveId/approve")
+  @Idempotent("hr.leave.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:approve")
+  @Validate({ params: leaveIdParams, body: approveLeaveSchema })
   approve(
     @Param("leaveId", ParseIntPipe) leaveId: number,
-    @Body(new ZodValidationPipe(approveLeaveSchema)) body: ApproveLeaveInput,
+    @Body() body: ApproveLeaveInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.leavesApproval.approve(currentUser, leaveId, body);
   }
 
   @Put(":leaveId/reject")
+  @Idempotent("hr.leave.reject")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:leaves:approve")
+  @Validate({ params: leaveIdParams, body: rejectLeaveSchema })
   reject(
     @Param("leaveId", ParseIntPipe) leaveId: number,
-    @Body(new ZodValidationPipe(rejectLeaveSchema)) body: RejectLeaveInput,
+    @Body() body: RejectLeaveInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.leavesApproval.reject(currentUser, leaveId, body);
@@ -203,9 +220,10 @@ export class LeavesController {
 
   @Patch(":leaveId")
   @RequirePermission("hr:leaves:approve")
+  @Validate({ params: leaveIdParams, body: updateLeaveSchema })
   async update(
     @Param("leaveId", ParseIntPipe) leaveId: number,
-    @Body(new ZodValidationPipe(updateLeaveSchema)) body: UpdateLeaveInput,
+    @Body() body: UpdateLeaveInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const result = await this.leavesApproval.updateStatus(currentUser, leaveId, body);
@@ -249,8 +267,9 @@ export class LeaveCalendarController {
 
   @Get()
   @RequirePermission("hr:leaves:read")
+  @Validate({ query: leaveCalendarQuerySchema })
   calendar(
-    @Query(new ZodValidationPipe(leaveCalendarQuerySchema)) query: LeaveCalendarQuery,
+    @Query() query: LeaveCalendarQuery,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const now = new Date();

@@ -1,3 +1,4 @@
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 ﻿import { z } from "zod";
 
 export const createChannelSchema = z.object({
@@ -22,8 +23,8 @@ export type UpdateChannelInput = z.infer<typeof updateChannelSchema>;
 
 export const listPublicationsQuerySchema = z.object({
   status: z.enum(["PENDING", "PUBLISHED", "FAILED"]).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 }).strict();
 export type ListPublicationsQueryInput = z.infer<typeof listPublicationsQuerySchema>;
 

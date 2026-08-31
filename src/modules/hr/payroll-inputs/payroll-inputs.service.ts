@@ -9,17 +9,14 @@ import {
 import { and, count, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import {
-  hrPayrollInputPeriods,
-  hrPayrollInputSnapshots,
-  hrPayrollAdjustments,
-} from "../../../db/schema/hr/payroll-inputs";
+import { hrPayrollInputPeriods, hrPayrollInputSnapshots, hrPayrollAdjustments } from "../../../db/schema/payroll/input-capture";
 import { hrLeaveLedger } from "../../../db/schema/hr/leave-ledger";
 import { hrLoanRepayments } from "../../../db/schema/hr/benefits";
 import { users } from "../../../db/schema/common/auth";
 import { HrAuditService } from "../core/hr-audit.service";
 import { HrAutomationEngineService } from "../automations/hr-automation-engine.service";
 import { PayrollInputsBuildService } from "./payroll-inputs-build.service";
+import { PayrollInputSnapshotsService } from "./payroll-input-snapshots.service";
 import type {
   CreatePeriodInput,
   ListPeriodsInput,
@@ -43,6 +40,7 @@ export class PayrollInputsService {
     private readonly audit: HrAuditService,
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly buildService: PayrollInputsBuildService,
+    private readonly snapshots: PayrollInputSnapshotsService,
   ) {}
 
   async listPeriods(orgId: string, input: ListPeriodsInput) {
@@ -158,7 +156,7 @@ export class PayrollInputsService {
       throw new BadRequestException("Period must be in 'built' status before locking");
     }
 
-    const freezeSummary = await this.buildFreezeSummary(orgId, periodId);
+    const freezeSummary = await this.snapshots.buildFreezeSummary(orgId, periodId);
 
     const [locked] = await this.db.transaction(async (tx) => {
       const result = await tx
@@ -302,66 +300,6 @@ export class PayrollInputsService {
     return unlocked;
   }
 
-  private async buildFreezeSummary(orgId: string, periodId: number) {
-    const empty = {
-      sections: {} as Record<string, number>,
-      employeeCount: 0,
-      attendanceRows: 0,
-      leaveRows: 0,
-      overtimeRows: 0,
-      compensationRows: 0,
-      approvedRegularizations: 0,
-    };
-
-    try {
-      const rows = await this.db
-        .select({
-          section: hrPayrollInputSnapshots.section,
-          userId: hrPayrollInputSnapshots.userId,
-          payload: hrPayrollInputSnapshots.payload,
-        })
-        .from(hrPayrollInputSnapshots)
-        .where(
-          and(
-            eq(hrPayrollInputSnapshots.orgId, orgId),
-            eq(hrPayrollInputSnapshots.periodId, periodId),
-          ),
-        );
-
-      if (!Array.isArray(rows)) return empty;
-
-      const sections: Record<string, number> = {};
-      const uniqueUsers = new Set<string>();
-      let approvedRegularizations = 0;
-
-      for (const row of rows) {
-        sections[row.section] = (sections[row.section] ?? 0) + 1;
-        uniqueUsers.add(row.userId);
-        if (
-          row.section === "attendance" &&
-          row.payload &&
-          typeof row.payload === "object"
-        ) {
-          const n = (row.payload as Record<string, unknown>).approvedRegularizations;
-          if (typeof n === "number") approvedRegularizations += n;
-          else if (typeof n === "string") approvedRegularizations += Number(n) || 0;
-        }
-      }
-
-      return {
-        sections,
-        employeeCount: uniqueUsers.size,
-        attendanceRows: sections.attendance ?? 0,
-        leaveRows: sections.leave ?? 0,
-        overtimeRows: sections.overtime ?? 0,
-        compensationRows: sections.compensation ?? 0,
-        approvedRegularizations,
-      };
-    } catch {
-      return empty;
-    }
-  }
-
   async getSectionSnapshot(
     orgId: string,
     periodId: number,
@@ -369,39 +307,7 @@ export class PayrollInputsService {
     input: SectionQueryInput,
   ) {
     await this.getPeriod(orgId, periodId);
-    const { page, limit } = input;
-    const offset = (page - 1) * limit;
-
-    const conditions = [
-      eq(hrPayrollInputSnapshots.orgId, orgId),
-      eq(hrPayrollInputSnapshots.periodId, periodId),
-      eq(hrPayrollInputSnapshots.section, section),
-    ];
-
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select({
-          id: hrPayrollInputSnapshots.id,
-          userId: hrPayrollInputSnapshots.userId,
-          section: hrPayrollInputSnapshots.section,
-          payload: hrPayrollInputSnapshots.payload,
-          sourceRefs: hrPayrollInputSnapshots.sourceRefs,
-          createdAt: hrPayrollInputSnapshots.createdAt,
-          userName: users.name,
-          userFirstName: users.firstName,
-          userLastName: users.lastName,
-          userEmail: users.email,
-        })
-        .from(hrPayrollInputSnapshots)
-        .innerJoin(users, eq(users.id, hrPayrollInputSnapshots.userId))
-        .where(and(...conditions))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrPayrollInputSnapshots).where(and(...conditions)),
-    ]);
-
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    return this.snapshots.listSectionSnapshot(orgId, periodId, section, input);
   }
 
   async listAdjustments(orgId: string, periodId: number, input: SectionQueryInput) {

@@ -6,7 +6,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { ImportService } from "./import.service";
@@ -26,6 +25,10 @@ import {
   type StageImportRowsInput,
   type ImportErrorsQueryInput,
 } from "./dto/import-export.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/import")
@@ -110,9 +113,10 @@ export class ImportController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }))
+  @Validate({ body: previewImportSchema })
   preview(
     @UploadedFile() file: Express.Multer.File | undefined,
-    @Body(new ZodValidationPipe(previewImportSchema)) body: PreviewImportInput,
+    @Body() body: PreviewImportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!file) throw new BadRequestException("No file provided");
@@ -122,8 +126,9 @@ export class ImportController {
   @Post("jobs")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
+  @Validate({ body: createImportJobSchema })
   createJob(
-    @Body(new ZodValidationPipe(createImportJobSchema)) body: CreateImportJobInput,
+    @Body() body: CreateImportJobInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createImportJob(u.orgId, u.userId, body);
@@ -132,8 +137,9 @@ export class ImportController {
   @Get("jobs")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
+  @Validate({ query: listJobsQuerySchema })
   listJobs(
-    @Query(new ZodValidationPipe(listJobsQuerySchema)) q: ListJobsQueryInput,
+    @Query() q: ListJobsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, q);
@@ -142,6 +148,7 @@ export class ImportController {
   @Get("jobs/:jobId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
+  @Validate({ params: jobIdParams })
   findJob(@Param("jobId", ParseIntPipe) id: number, @CurrentUser() u: CurrentUserContext) {
     return this.svc.findOne(u.orgId, id);
   }

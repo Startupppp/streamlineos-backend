@@ -9,6 +9,7 @@ import type { Db } from "../../db/drizzle.module";
 import { ROLE_RANK } from "../../common/rbac/grantability";
 import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { principalIsOrgOwner } from "../../common/auth/principal";
 
 export type ModuleStandingLevel = "owner" | "admin" | "member" | "none";
 
@@ -49,7 +50,7 @@ const STANDING: Readonly<Record<ModuleStandingSource, ModuleStanding>> = {
     level: "admin",
     source: "org-admin",
     canManageAccess: true,
-    canTransferOwnership: false,
+    canTransferOwnership: true,
   },
   "module-role": {
     level: "admin",
@@ -74,11 +75,6 @@ const STANDING: Readonly<Record<ModuleStandingSource, ModuleStanding>> = {
 export interface ModuleAuthorityFacts {
   isModuleOwner: boolean;
   isModuleAdmin: boolean;
-}
-
-interface ModuleAuthority extends ModuleAuthorityFacts {
-  isOrgOwner: boolean;
-  isOrgAdmin: boolean;
 }
 
 export async function resolveModuleOwnerUserId(
@@ -156,38 +152,16 @@ export async function resolveModuleAuthorityFacts(
   };
 }
 
-async function resolveModuleAuthority(
+async function resolveAuthoritySource(
   db: Db,
   actor: CurrentUserContext,
   moduleKey: string,
-): Promise<ModuleAuthority> {
-  if (actor.isOrgOwner) {
-    return {
-      isOrgOwner: true,
-      isOrgAdmin: false,
-      isModuleOwner: false,
-      isModuleAdmin: false,
-    };
-  }
-  if (await isStructuralOrgAdmin(db, actor)) {
-    return {
-      isOrgOwner: false,
-      isOrgAdmin: true,
-      isModuleOwner: false,
-      isModuleAdmin: false,
-    };
-  }
+): Promise<ModuleStandingSource | null> {
+  if (principalIsOrgOwner(actor.principal)) return "org-owner";
+  if (await isStructuralOrgAdmin(db, actor)) return "org-admin";
   const facts = await resolveModuleAuthorityFacts(db, actor, moduleKey);
-  return { isOrgOwner: false, isOrgAdmin: false, ...facts };
-}
-
-function authoritySource(
-  authority: ModuleAuthority,
-): ModuleStandingSource | null {
-  if (authority.isOrgOwner) return "org-owner";
-  if (authority.isModuleOwner) return "module-ownership";
-  if (authority.isOrgAdmin) return "org-admin";
-  if (authority.isModuleAdmin) return "module-role";
+  if (facts.isModuleOwner) return "module-ownership";
+  if (facts.isModuleAdmin) return "module-role";
   return null;
 }
 
@@ -196,29 +170,22 @@ export async function resolveModuleManagementStanding(
   actor: CurrentUserContext,
   moduleKey: string,
 ): Promise<ModuleStanding | null> {
-  const source = authoritySource(
-    await resolveModuleAuthority(db, actor, moduleKey),
-  );
+  const source = await resolveAuthoritySource(db, actor, moduleKey);
   return source ? STANDING[source] : null;
 }
 
-/**
- * The ownership-lifecycle question on its own. It asks only the two cheap
- * sources that carry transfer rights, so it costs what the duplicated checks
- * it replaces cost, while the answer still comes from the one rules table.
- */
 export async function canTransferModuleOwnership(
   db: Db,
   actor: CurrentUserContext,
   moduleKey: string,
 ): Promise<boolean> {
-  if (actor.isOrgOwner) return STANDING["org-owner"].canTransferOwnership;
+  if (principalIsOrgOwner(actor.principal))
+    return STANDING["org-owner"].canTransferOwnership;
 
-  const ownerUserId = await resolveModuleOwnerUserId(
-    db,
-    actor.orgId,
-    moduleKey,
-  );
+  if (await isStructuralOrgAdmin(db, actor))
+    return STANDING["org-admin"].canTransferOwnership;
+
+  const ownerUserId = await resolveModuleOwnerUserId(db, actor.orgId, moduleKey);
   if (ownerUserId !== null && ownerUserId === actor.userId)
     return STANDING["module-ownership"].canTransferOwnership;
 

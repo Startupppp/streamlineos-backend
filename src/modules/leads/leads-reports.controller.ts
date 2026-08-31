@@ -12,7 +12,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { logger } from "../../common/logger/logger.service";
 import { LeadsReportsService } from "./leads-reports.service";
 import { LeadsExportsService } from "./leads-exports.service";
@@ -28,6 +27,7 @@ import {
   type FollowUpsQuery,
 } from "./dto/lead-reports.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
 
 @RequireModule("crm")
 @Controller("leads")
@@ -41,8 +41,9 @@ export class LeadsReportsController {
 
   @Get("analytics")
   @RequirePermission("crm:leads:view")
+  @Validate({ query: analyticsQuerySchema })
   async getAnalytics(
-    @Query(new ZodValidationPipe(analyticsQuerySchema)) query: AnalyticsQuery,
+    @Query() query: AnalyticsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveLeadsViewScope(this.access, u);
@@ -85,8 +86,9 @@ export class LeadsReportsController {
 
   @Get("follow-ups")
   @RequirePermission("crm:leads:view")
+  @Validate({ query: followUpsQuerySchema })
   getFollowUps(
-    @Query(new ZodValidationPipe(followUpsQuerySchema)) query: FollowUpsQuery,
+    @Query() query: FollowUpsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.getFollowUps(u.orgId, query);
@@ -111,8 +113,9 @@ export class LeadsReportsController {
 
   @Get("check-duplicates")
   @RequirePermission("crm:leads:view")
+  @Validate({ query: checkDuplicatesQuerySchema })
   checkDuplicates(
-    @Query(new ZodValidationPipe(checkDuplicatesQuerySchema)) query: CheckDuplicatesQuery,
+    @Query() query: CheckDuplicatesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.exports.checkDuplicates(u.orgId, query);
@@ -122,8 +125,9 @@ export class LeadsReportsController {
   @RequirePermission("crm:leads:view")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="leads-export.csv"')
+  @Validate({ query: exportQuerySchema })
   exportCsv(
-    @Query(new ZodValidationPipe(exportQuerySchema)) query: ExportQuery,
+    @Query() query: ExportQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.exports.exportCsv(u.orgId, query);

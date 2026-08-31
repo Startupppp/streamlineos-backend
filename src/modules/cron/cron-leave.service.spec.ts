@@ -41,7 +41,8 @@ function makeDb(
 type Accrue = { accruedCount: number };
 
 function runAccrue(db: ReturnType<typeof makeDb>["db"], now: Date = NOW): Promise<Accrue> {
-  const svc = new CronLeaveService(db as never);
+  const mockReset = { resolveLeaveYearStartMonth: jest.fn(), resetYearlyLeaveBalances: jest.fn() };
+  const svc = new CronLeaveService(db as never, mockReset as never);
   return svc.accrueMonthlyLeaves(now, ORG);
 }
 

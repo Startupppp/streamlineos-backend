@@ -17,7 +17,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { CrmImportService, type ImportProgress } from "./crm-import.service";
 import type { ImportEntity } from "./import-entities";
@@ -35,6 +34,11 @@ import {
   type ExportQuery,
   type PreviewImportInput,
 } from "./dto/crm-import.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const crmImportIdParams = z.object({ crmImportId: z.string().min(1) }).strict();
+const crmConnectorSyncIdParams = z.object({ crmConnectorSyncId: z.string().min(1) }).strict();
 
 @Controller("crm")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -67,8 +71,9 @@ export class CrmImportController {
   /** What this file would do. Writes nothing to the CRM. */
   @Post("imports/preview")
   @RequirePermission("crm:imports:manage")
+  @Validate({ body: previewImportSchema })
   async preview(
-    @Body(new ZodValidationPipe(previewImportSchema)) body: PreviewImportInput,
+    @Body() body: PreviewImportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const entity = body.entity as ImportEntity;
@@ -88,6 +93,7 @@ export class CrmImportController {
 
   @Get("imports/:crmImportId")
   @RequirePermission("crm:imports:manage")
+  @Validate({ params: crmImportIdParams })
   getImport(
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -114,6 +120,7 @@ export class CrmImportController {
   @Post("imports/:crmImportId/commit")
   @Idempotent("crm.import.commit")
   @RequirePermission("crm:imports:manage")
+  @Validate({ params: crmImportIdParams })
   async commit(
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -135,6 +142,7 @@ export class CrmImportController {
   @Post("imports/:crmImportId/revert")
   @Idempotent("crm.import.revert")
   @RequirePermission("crm:imports:manage")
+  @Validate({ params: crmImportIdParams })
   async revert(
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -156,6 +164,7 @@ export class CrmImportController {
    */
   @Get("imports/:crmImportId/progress")
   @RequirePermission("crm:imports:manage")
+  @Validate({ params: crmImportIdParams })
   progress(
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -184,8 +193,9 @@ export class CrmImportController {
   @Post("connectors/sync")
   @Idempotent("crm.connector.sync")
   @RequirePermission("crm:imports:manage")
+  @Validate({ body: connectorSyncSchema })
   async sync(
-    @Body(new ZodValidationPipe(connectorSyncSchema)) body: ConnectorSyncInput,
+    @Body() body: ConnectorSyncInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.assertMayWrite(
@@ -214,6 +224,7 @@ export class CrmImportController {
    */
   @Get("connectors/:crmConnectorSyncId")
   @RequirePermission("crm:imports:manage")
+  @Validate({ params: crmConnectorSyncIdParams })
   connectorProgress(
     @Param("crmConnectorSyncId") crmConnectorSyncId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -235,8 +246,9 @@ export class CrmImportController {
    */
   @Get("export")
   @RequirePermission("party:parties:view")
+  @Validate({ query: exportQuerySchema })
   async exportEntity(
-    @Query(new ZodValidationPipe(exportQuerySchema)) query: ExportQuery,
+    @Query() query: ExportQuery,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {

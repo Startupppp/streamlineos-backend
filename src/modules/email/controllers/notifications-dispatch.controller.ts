@@ -1,9 +1,11 @@
 import { Body, Controller, HttpCode, Post, UseGuards } from "@nestjs/common";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { EmailRoutesService } from "../email-routes.service";
-import { dispatchSchema } from "../dto/email.schemas";
+import { dispatchSchema, type DispatchInput } from "../dto/email.schemas";
 
 @Controller("notifications")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -11,10 +13,11 @@ export class NotificationsDispatchController {
   constructor(private readonly routes: EmailRoutesService) {}
 
   @Post("dispatch")
+  @Idempotent("notifications.dispatch")
   @HttpCode(200)
   @RequirePermission("notifications:events:manage")
-  dispatch(@Body() raw: unknown) {
-    const body = dispatchSchema.parse(raw);
+  @Validate({ body: dispatchSchema })
+  dispatch(@Body() body: DispatchInput) {
     return this.routes.dispatch(body);
   }
 }

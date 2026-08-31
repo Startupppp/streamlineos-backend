@@ -104,6 +104,34 @@ describe("resolveRegionTopology", () => {
 
     expect(topology.regions["eu-west"]?.databaseUrl).toBe("postgres://eu-west/main");
   });
+
+  it("keeps dedicated cache credentials attached to their cell", () => {
+    const topology = resolveRegionTopology({
+      ...base,
+      REGION_KEYS: "primary,cell-2",
+      REGION_CELL_2_APP_DATABASE_URL: "postgres://cell-2/main",
+      REGION_CELL_2_UPSTASH_REDIS_REST_URL: "https://cell-2.upstash.io",
+      REGION_CELL_2_UPSTASH_REDIS_REST_TOKEN: "cell-2-token",
+      REGION_CELL_2_CACHE_KEY_PREFIX: "cell-2",
+    });
+
+    expect(topology.regions["cell-2"]?.cell.cache).toEqual({
+      upstashUrl: "https://cell-2.upstash.io",
+      upstashToken: "cell-2-token",
+      keyPrefix: "cell-2",
+    });
+  });
+
+  it("rejects a partially configured dedicated cache", () => {
+    expect(() =>
+      resolveRegionTopology({
+        ...base,
+        REGION_KEYS: "primary,cell-2",
+        REGION_CELL_2_APP_DATABASE_URL: "postgres://cell-2/main",
+        REGION_CELL_2_UPSTASH_REDIS_REST_URL: "https://cell-2.upstash.io",
+      }),
+    ).toThrow(/must configure both/);
+  });
 });
 
 describe("isKnownRegion", () => {

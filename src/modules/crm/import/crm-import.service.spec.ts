@@ -11,6 +11,9 @@ import {
   partyIdentifiers,
 } from "../../../db/schema";
 import { CrmImportService, REVERT_WINDOW_DAYS } from "./crm-import.service";
+import { CrmImportPreviewService } from "./crm-import-preview.service";
+import { CrmImportCommitService } from "./crm-import-commit.service";
+import { CrmImportRevertService } from "./crm-import-revert.service";
 
 const ORG = "org-1";
 const IMPORT = "import-1";
@@ -272,7 +275,12 @@ function plannedRow(over: Partial<Record<string, unknown>> = {}): Record<string,
 
 const workflows = { start: jest.fn(() => Promise.resolve("run-1")) };
 const service = (fake: FakeDb) =>
-  new CrmImportService(fake.db, workflows as unknown as WorkflowRunnerService);
+  new CrmImportService(
+    fake.db,
+    new CrmImportPreviewService(fake.db),
+    new CrmImportCommitService(fake.db, workflows as unknown as WorkflowRunnerService),
+    new CrmImportRevertService(fake.db, workflows as unknown as WorkflowRunnerService),
+  );
 
 beforeAll(() => {
   // The per-row failure is logged on purpose; the test output is not the place.

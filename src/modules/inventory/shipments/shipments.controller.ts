@@ -1,11 +1,9 @@
-import { Controller, Get, Post, Patch, Param, Body, Query, ParseIntPipe, UseGuards, HttpCode, HttpStatus } from "@nestjs/common";
-import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import { Controller, Get, Post, Patch, Param, Body, Query, ParseIntPipe, UseGuards, HttpCode, HttpStatus, Headers } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { ShipmentsService } from "./shipments.service";
@@ -19,6 +17,10 @@ import {
   type UpdateShipmentInput,
   type ShipActionInput,
 } from "./dto/shipments.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const shipmentIdParams = z.object({ shipmentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/shipments")
@@ -29,8 +31,9 @@ export class ShipmentsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
+  @Validate({ query: listShipmentsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listShipmentsQuerySchema)) query: ListShipmentsQueryInput,
+    @Query() query: ListShipmentsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, u.userId, query);
@@ -39,6 +42,7 @@ export class ShipmentsController {
   @Get(":shipmentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
+  @Validate({ params: shipmentIdParams })
   findOne(
     @Param("shipmentId", ParseIntPipe) shipmentId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -49,8 +53,9 @@ export class ShipmentsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
+  @Validate({ body: createShipmentSchema })
   create(
-    @Body(new ZodValidationPipe(createShipmentSchema)) body: CreateShipmentInput,
+    @Body() body: CreateShipmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.create(u.orgId, u.userId, body);
@@ -59,9 +64,10 @@ export class ShipmentsController {
   @Patch(":shipmentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
+  @Validate({ params: shipmentIdParams, body: updateShipmentSchema })
   update(
     @Param("shipmentId", ParseIntPipe) shipmentId: number,
-    @Body(new ZodValidationPipe(updateShipmentSchema)) body: UpdateShipmentInput,
+    @Body() body: UpdateShipmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.update(u.orgId, u.userId, shipmentId, body);
@@ -71,18 +77,21 @@ export class ShipmentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: shipmentIdParams, body: shipActionSchema })
   ship(
     @Param("shipmentId", ParseIntPipe) shipmentId: number,
-    @Body(new ZodValidationPipe(shipActionSchema)) body: ShipActionInput,
-    @IdempotencyKey() idempotencyKey: string,
+    @Body() body: ShipActionInput,
+    @Headers("idempotency-key") idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
-  ) {return this.svc.ship(u.orgId, u.userId, shipmentId, body, idempotencyKey);
+  ) {
+    return this.svc.ship(u.orgId, u.userId, shipmentId, body, idempotencyKey);
   }
 
   @Post(":shipmentId/cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: shipmentIdParams })
   cancel(
     @Param("shipmentId", ParseIntPipe) shipmentId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -15,12 +15,15 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbPageTemplatesService } from "./kb-page-templates.service";
 import {
   createPageTemplateSchema,
   type CreatePageTemplateInput,
 } from "./dto/kb-page-templates.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @RequireModule("kb")
@@ -36,8 +39,9 @@ export class KbPageTemplatesController {
 
   @Post("page-templates")
   @RequirePermission("kb:templates:manage")
+  @Validate({ body: createPageTemplateSchema })
   async create(
-    @Body(new ZodValidationPipe(createPageTemplateSchema)) body: CreatePageTemplateInput,
+    @Body() body: CreatePageTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.templates.create(u, body);
@@ -46,6 +50,7 @@ export class KbPageTemplatesController {
   @Delete("page-templates/:templateId")
   @HttpCode(204)
   @RequirePermission("kb:templates:manage")
+  @Validate({ params: templateIdParams })
   async remove(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

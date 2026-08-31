@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { Injectable, Inject, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
 import { and, eq, desc, sql } from "drizzle-orm";
 import {
@@ -15,6 +14,7 @@ import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
+import { randomUUID } from "node:crypto";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { runIdempotent } from "../stock-engine/idempotency";
 import type {

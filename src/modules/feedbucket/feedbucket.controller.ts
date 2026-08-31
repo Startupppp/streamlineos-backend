@@ -17,8 +17,8 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { readRequestScope } from "../organization/core/read-request-scope";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { FeedbucketWidgetsService } from "./feedbucket-widgets.service";
 import { FeedbucketSubmissionsService } from "./feedbucket-submissions.service";
 import { FeedbucketAiService } from "./feedbucket-ai.service";
@@ -35,7 +35,13 @@ import {
   type UpdateWidgetInput,
 } from "./feedbucket.schemas";
 import { analyzeBodySchema, type AnalyzeBodyInput } from "./feedbucket-ai.schemas";
+import { z } from "zod";
+import { Validate } from "../../common/validation/validate.decorator";
 
+const widgetIdParams = z.object({ widgetId: z.coerce.number().int().positive() }).strict();
+const submissionIdParams = z.object({ submissionId: z.coerce.number().int().positive() }).strict();
+
+@RequireModule("feedbucket")
 @Controller("feedbucket")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class FeedbucketController {
@@ -55,15 +61,17 @@ export class FeedbucketController {
   @Post("widgets")
   @RequirePermission("feedbucket:widgets:create")
   @HttpCode(201)
+  @Validate({ body: createWidgetSchema })
   createWidget(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createWidgetSchema)) dto: CreateWidgetInput,
+    @Body() dto: CreateWidgetInput,
   ) {
     return this.widgets.create(user.orgId, user.userId, dto);
   }
 
   @Get("widgets/:widgetId")
   @RequirePermission("feedbucket:widgets:view")
+  @Validate({ params: widgetIdParams })
   getWidget(
     @CurrentUser() user: CurrentUserContext,
     @Param("widgetId", ParseIntPipe) widgetId: number,
@@ -73,16 +81,18 @@ export class FeedbucketController {
 
   @Patch("widgets/:widgetId")
   @RequirePermission("feedbucket:widgets:update")
+  @Validate({ params: widgetIdParams, body: updateWidgetSchema })
   updateWidget(
     @CurrentUser() user: CurrentUserContext,
     @Param("widgetId", ParseIntPipe) widgetId: number,
-    @Body(new ZodValidationPipe(updateWidgetSchema)) dto: UpdateWidgetInput,
+    @Body() dto: UpdateWidgetInput,
   ) {
     return this.widgets.update(user.orgId, widgetId, dto);
   }
 
   @Delete("widgets/:widgetId")
   @RequirePermission("feedbucket:widgets:delete")
+  @Validate({ params: widgetIdParams })
   deleteWidget(
     @CurrentUser() user: CurrentUserContext,
     @Param("widgetId", ParseIntPipe) widgetId: number,
@@ -93,6 +103,7 @@ export class FeedbucketController {
   @Post("widgets/:widgetId/rotate-key")
   @RequirePermission("feedbucket:widgets:manage")
   @HttpCode(200)
+  @Validate({ params: widgetIdParams })
   rotateKey(
     @CurrentUser() user: CurrentUserContext,
     @Param("widgetId", ParseIntPipe) widgetId: number,
@@ -102,9 +113,10 @@ export class FeedbucketController {
 
   @Get("submissions")
   @RequirePermission("feedbucket:submissions:view")
+  @Validate({ query: listSubmissionsQuerySchema })
   listSubmissions(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listSubmissionsQuerySchema)) query: ListSubmissionsQuery,
+    @Query() query: ListSubmissionsQuery,
     @Req() req: Request,
   ) {
     const scope = readRequestScope(req);
@@ -113,6 +125,7 @@ export class FeedbucketController {
 
   @Get("submissions/:submissionId")
   @RequirePermission("feedbucket:submissions:view")
+  @Validate({ params: submissionIdParams })
   getSubmission(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
@@ -122,16 +135,18 @@ export class FeedbucketController {
 
   @Patch("submissions/:submissionId")
   @RequirePermission("feedbucket:submissions:update")
+  @Validate({ params: submissionIdParams, body: updateSubmissionSchema })
   updateSubmission(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
-    @Body(new ZodValidationPipe(updateSubmissionSchema)) dto: UpdateSubmissionInput,
+    @Body() dto: UpdateSubmissionInput,
   ) {
     return this.submissions.update(user.orgId, submissionId, dto);
   }
 
   @Delete("submissions/:submissionId")
   @RequirePermission("feedbucket:submissions:delete")
+  @Validate({ params: submissionIdParams })
   deleteSubmission(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
@@ -142,6 +157,7 @@ export class FeedbucketController {
   @Post("submissions/:submissionId/convert-to-ticket")
   @RequirePermission("feedbucket:submissions:manage")
   @HttpCode(201)
+  @Validate({ params: submissionIdParams })
   convertToTicket(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
@@ -152,10 +168,11 @@ export class FeedbucketController {
   @Post("submissions/:submissionId/ai-analyze")
   @RequirePermission("feedbucket:submissions:ai")
   @HttpCode(200)
+  @Validate({ params: submissionIdParams, body: analyzeBodySchema })
   analyzeSubmission(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
-    @Body(new ZodValidationPipe(analyzeBodySchema)) body: AnalyzeBodyInput,
+    @Body() body: AnalyzeBodyInput,
   ) {
     return this.feedbucketAi.analyze(user, submissionId, body.force ?? false);
   }
@@ -163,6 +180,7 @@ export class FeedbucketController {
   @Post("submissions/:submissionId/ai-create-ticket")
   @RequirePermission("feedbucket:submissions:manage")
   @HttpCode(201)
+  @Validate({ params: submissionIdParams })
   createTicketFromAnalysis(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,

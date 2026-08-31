@@ -1,9 +1,10 @@
 import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
+import { AuthorizedInService } from "../../../common/auth/authorized-in-service.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
 import {
   hrHubQuerySchema,
   type HrHubQuery,
@@ -18,9 +19,11 @@ export class HrHubController {
   constructor(private readonly hub: HrHubService) {}
 
   @Get()
+  @AuthorizedInService("HrHubService.getSnapshot narrows every panel through buildHrHubCapabilities")
+  @Validate({ query: hrHubQuerySchema })
   getSnapshot(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(hrHubQuerySchema)) query: HrHubQuery,
+    @Query() query: HrHubQuery,
   ): Promise<HrHubSnapshot> {
     return this.hub.getSnapshot(user, query.today);
   }

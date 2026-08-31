@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TeamsService } from "./teams.service";
 import {
   addTeamMemberSchema,
@@ -35,6 +34,13 @@ import {
   type UpdateTeamInput,
   type UpdateTeamMemberRoleInput,
 } from "./dto/teams.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const teamIdParams = z.object({ teamId: z.coerce.number().int().positive() }).strict();
+const teamIdmemberUserIdParams = z.object({ teamId: z.coerce.number().int().positive(), memberUserId: z.string().min(1) }).strict();
+const teamIdmemberIdParams = z.object({ teamId: z.coerce.number().int().positive(), memberId: z.string().min(1) }).strict();
+const teamIdprojectIdParams = z.object({ teamId: z.coerce.number().int().positive(), projectId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/teams")
@@ -44,8 +50,9 @@ export class TeamsController {
 
   @Get()
   @RequirePermission("build:teams:view")
+  @Validate({ query: listTeamsQuerySchema })
   listTeams(
-    @Query(new ZodValidationPipe(listTeamsQuerySchema)) query: ListTeamsQuery,
+    @Query() query: ListTeamsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listTeams(u.orgId, query);
@@ -53,6 +60,7 @@ export class TeamsController {
 
   @Get(":teamId")
   @RequirePermission("build:teams:view")
+  @Validate({ params: teamIdParams })
   getTeam(
     @Param("teamId", ParseIntPipe) teamId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -63,8 +71,9 @@ export class TeamsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:teams:create")
+  @Validate({ body: createTeamSchema })
   createTeam(
-    @Body(new ZodValidationPipe(createTeamSchema)) body: CreateTeamInput,
+    @Body() body: CreateTeamInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createTeam(u.orgId, u.userId, body);
@@ -72,9 +81,10 @@ export class TeamsController {
 
   @Patch(":teamId")
   @RequirePermission("build:teams:update")
+  @Validate({ params: teamIdParams, body: updateTeamSchema })
   updateTeam(
     @Param("teamId", ParseIntPipe) teamId: number,
-    @Body(new ZodValidationPipe(updateTeamSchema)) body: UpdateTeamInput,
+    @Body() body: UpdateTeamInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateTeam(u.orgId, u.userId, teamId, body);
@@ -83,6 +93,7 @@ export class TeamsController {
   @Delete(":teamId")
   @HttpCode(204)
   @RequirePermission("build:teams:delete")
+  @Validate({ params: teamIdParams })
   deleteTeam(
     @Param("teamId", ParseIntPipe) teamId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -92,10 +103,10 @@ export class TeamsController {
 
   @Get(":teamId/members")
   @RequirePermission("build:teams:view")
+  @Validate({ params: teamIdParams, query: listTeamMembersQuerySchema })
   listTeamMembers(
     @Param("teamId", ParseIntPipe) teamId: number,
-    @Query(new ZodValidationPipe(listTeamMembersQuerySchema))
-    query: ListTeamMembersQuery,
+    @Query() query: ListTeamMembersQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listTeamMembers(u.orgId, teamId, query);
@@ -104,9 +115,10 @@ export class TeamsController {
   @Post(":teamId/members")
   @HttpCode(201)
   @RequirePermission("build:teams:manage")
+  @Validate({ params: teamIdParams, body: addTeamMemberSchema })
   addMember(
     @Param("teamId", ParseIntPipe) teamId: number,
-    @Body(new ZodValidationPipe(addTeamMemberSchema)) body: AddTeamMemberInput,
+    @Body() body: AddTeamMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.addMember(u.orgId, u.userId, teamId, body);
@@ -114,11 +126,11 @@ export class TeamsController {
 
   @Patch(":teamId/members/:memberUserId")
   @RequirePermission("build:teams:manage")
+  @Validate({ params: teamIdmemberUserIdParams, body: updateTeamMemberRoleSchema })
   updateMemberRole(
     @Param("teamId", ParseIntPipe) teamId: number,
     @Param("memberUserId") memberUserId: string,
-    @Body(new ZodValidationPipe(updateTeamMemberRoleSchema))
-    body: UpdateTeamMemberRoleInput,
+    @Body() body: UpdateTeamMemberRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateMemberRole(
@@ -133,6 +145,7 @@ export class TeamsController {
   @Delete(":teamId/members/:memberId")
   @HttpCode(204)
   @RequirePermission("build:teams:manage")
+  @Validate({ params: teamIdmemberIdParams })
   removeMember(
     @Param("teamId", ParseIntPipe) teamId: number,
     @Param("memberId") memberId: string,
@@ -143,6 +156,7 @@ export class TeamsController {
 
   @Get(":teamId/projects")
   @RequirePermission("build:teams:view")
+  @Validate({ params: teamIdParams })
   listTeamProjects(
     @Param("teamId", ParseIntPipe) teamId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -153,9 +167,10 @@ export class TeamsController {
   @Post(":teamId/projects")
   @HttpCode(201)
   @RequirePermission("build:teams:manage")
+  @Validate({ params: teamIdParams, body: addTeamProjectSchema })
   addProject(
     @Param("teamId", ParseIntPipe) teamId: number,
-    @Body(new ZodValidationPipe(addTeamProjectSchema)) body: AddTeamProjectInput,
+    @Body() body: AddTeamProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.addProject(u.orgId, u.userId, teamId, body.projectId);
@@ -164,6 +179,7 @@ export class TeamsController {
   @Delete(":teamId/projects/:projectId")
   @HttpCode(204)
   @RequirePermission("build:teams:manage")
+  @Validate({ params: teamIdprojectIdParams })
   removeProject(
     @Param("teamId", ParseIntPipe) teamId: number,
     @Param("projectId", ParseIntPipe) projectId: number,

@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException, type OnModuleInit } from "@nestj
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { MembershipStateService } from "../../../common/auth/membership-state.service";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { NotificationVisibilityRegistry } from "../../notifications/notification-visibility.registry";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 
@@ -35,7 +36,7 @@ export class KbNotificationVisibility implements OnModuleInit {
     // Membership is resolved from the database, never from a token claim (§21), and
     // this runs with no request context, so nothing here may read request state.
     const state = await this.membership.resolve(userId, orgId);
-    if (!state.active) return false;
+    if (!state.active || state.membershipId === null) return false;
 
     try {
       await assertPageAccessible(
@@ -50,6 +51,7 @@ export class KbNotificationVisibility implements OnModuleInit {
           isOrgOwner: state.isOwner,
           sessionId: `notify:${userId}`,
           tokenScopes: null,
+          principal: humanSessionPrincipal(state.membershipId, state.isOwner),
         },
         pageId,
       );

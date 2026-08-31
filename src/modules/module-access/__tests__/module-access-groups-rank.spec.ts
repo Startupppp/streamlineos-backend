@@ -1,12 +1,21 @@
+jest.mock("../../../common/relocation/relocation-traffic-tracker", () => ({
+  refreshRelocationTargets: jest.fn().mockResolvedValue(undefined),
+  isRelocationTarget: jest.fn().mockReturnValue(false),
+}));
+
 import { ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ModuleAccessGroupsService } from "../module-access-groups.service";
+import { ModuleAccessGroupCrudService } from "../module-access-group-crud.service";
+import { ModuleAccessGroupMembersService } from "../module-access-group-members.service";
+import { ModuleAccessGroupPolicyService } from "../module-access-group-policy.service";
 import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { ROLE_RANK } from "../../../common/rbac/grantability";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 function actor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -16,6 +25,7 @@ function actor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext 
     isOrgOwner: false,
     sessionId: "s1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...overrides,
   };
 }
@@ -88,6 +98,9 @@ async function buildSvc(
   const m = await Test.createTestingModule({
     providers: [
       ModuleAccessGroupsService,
+      ModuleAccessGroupCrudService,
+      ModuleAccessGroupMembersService,
+      ModuleAccessGroupPolicyService,
       { provide: DRIZZLE, useValue: mockDb },
       {
         provide: AccessService,

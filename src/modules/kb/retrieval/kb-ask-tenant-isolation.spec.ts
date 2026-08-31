@@ -1,0 +1,59 @@
+import type { Db } from "../../../db/drizzle.module";
+import { KbAskService } from "./kb-ask.service";
+
+function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
+  if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
+  if (Array.isArray(v)) return v.flatMap(i => sqlValues(i, seen));
+  if (typeof v !== "object" || seen.has(v)) return [];
+  seen.add(v);
+  const r = v as { queryChunks?: unknown[]; value?: unknown };
+  return [...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []), ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : [])];
+}
+
+describe("KbAskService — cross-tenant isolation", () => {
+  const ATTACKER = "org-attacker";
+  const OWNER = "org-owner";
+
+  function makeUser(orgId: string) {
+    return { orgId, userId: "user-1", isOrgOwner: false } as never;
+  }
+
+  const aiGateway = {} as never;
+  const events = { record: jest.fn().mockResolvedValue(undefined) } as never;
+  const search = {} as never;
+  const access = {} as never;
+
+  function makeDb(hasContent: boolean) {
+    const executeArgs: unknown[] = [];
+    return {
+      db: {
+        execute: jest.fn().mockImplementation((sqlObj: unknown) => {
+          executeArgs.push(sqlObj);
+          return Promise.resolve(hasContent ? [{ one: 1 }] : []);
+        }),
+      } as unknown as Db,
+      executeArgs,
+    };
+  }
+
+  it("scopes indexed-content check to the requesting org (cross-tenant isolation)", async () => {
+    const { db, executeArgs } = makeDb(false);
+    const svc = new KbAskService(db, aiGateway, events, search, access);
+
+    await svc.ask(makeUser(ATTACKER), { question: "test?" } as never);
+
+    expect(executeArgs.length).toBeGreaterThan(0);
+    const vals = executeArgs.flatMap(a => sqlValues(a));
+    expect(vals).toContain(ATTACKER);
+    expect(vals).not.toContain(OWNER);
+  });
+
+  it("returns no-context answer for the owning org when no content exists (same-tenant control)", async () => {
+    const { db } = makeDb(false);
+    const svc = new KbAskService(db, aiGateway, events, search, access);
+
+    const result = await svc.ask(makeUser(OWNER), { question: "test?" } as never);
+
+    expect(result).toHaveProperty("hasContext", false);
+  });
+});

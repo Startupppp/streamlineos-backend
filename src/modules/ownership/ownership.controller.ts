@@ -12,12 +12,13 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { assertOwnerOnly } from "../../common/rbac/owner-only-operations";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { OwnershipService } from "./ownership.service";
@@ -35,6 +36,11 @@ import {
   type ListTransfersInput,
   type SetModuleOwnerInput,
 } from "./dto/ownership.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const moduleKeyParams = z.object({ moduleKey: z.string().min(1) }).strict();
+const transferIdParams = z.object({ transferId: z.string().min(1) }).strict();
 
 @Controller("ownership")
 @UseGuards(JwtAuthGuard)
@@ -55,6 +61,7 @@ export class OwnershipController {
   @Get("modules/:moduleKey")
   @UseGuards(PermissionGuard)
   @RequirePermission("ownership:modules:view")
+  @Validate({ params: moduleKeyParams })
   getModuleOwnership(
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -66,40 +73,41 @@ export class OwnershipController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:modules:manage")
   @UseRateLimit("ownership:force-set")
+  @Validate({ params: moduleKeyParams, body: setModuleOwnerSchema })
   forceSetModuleOwner(
     @Param("moduleKey") moduleKey: string,
-    @Body(new ZodValidationPipe(setModuleOwnerSchema)) body: SetModuleOwnerInput,
+    @Body() body: SetModuleOwnerInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner) {
-      throw new ForbiddenException("Only the org owner may force-set a module owner");
-    }
+    assertOwnerOnly(u, "organization.ownership.force-set-module-owner");
     return this.ownership.forceSetModuleOwner(u.orgId, u.userId, moduleKey, body);
   }
 
   @Post("org/transfer")
+  @Idempotent("ownership.org-transfer.initiate")
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:org:transfer")
   @UseRateLimit("ownership:transfer")
+  @Validate({ body: initiateOrgTransferSchema })
   initiateOrgTransfer(
-    @Body(new ZodValidationPipe(initiateOrgTransferSchema)) body: InitiateOrgTransferInput,
+    @Body() body: InitiateOrgTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!u.isOrgOwner) {
-      throw new ForbiddenException("Only the org owner may initiate an org ownership transfer");
-    }
+    assertOwnerOnly(u, "organization.ownership.transfer");
     return this.transfers.initiateOrgTransfer(u.orgId, u.userId, body);
   }
 
   @Post("modules/:moduleKey/transfer")
+  @Idempotent("ownership.module-transfer.initiate")
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:modules:manage")
   @UseRateLimit("ownership:transfer")
+  @Validate({ params: moduleKeyParams, body: initiateModuleTransferSchema })
   initiateModuleTransfer(
     @Param("moduleKey") moduleKey: string,
-    @Body(new ZodValidationPipe(initiateModuleTransferSchema)) body: InitiateModuleTransferInput,
+    @Body() body: InitiateModuleTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.transfers.initiateModuleTransfer(
@@ -107,7 +115,7 @@ export class OwnershipController {
       u.userId,
       moduleKey,
       body,
-      u.isOrgOwner,
+      u,
     );
   }
 
@@ -121,18 +129,21 @@ export class OwnershipController {
   @Get("transfers")
   @UseGuards(PermissionGuard)
   @RequirePermission("ownership:modules:view")
+  @Validate({ query: listTransfersSchema })
   listTransfers(
-    @Query(new ZodValidationPipe(listTransfersSchema)) query: ListTransfersInput,
+    @Query() query: ListTransfersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.transfers.listTransfers(u.orgId, query);
   }
 
   @Post("transfers/:transferId/accept")
+  @Idempotent("ownership.transfer.accept")
   @HttpCode(HttpStatus.OK)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:transfer:respond")
   @UseRateLimit("ownership:transfer")
+  @Validate({ params: transferIdParams })
   acceptTransfer(
     @Param("transferId") transferId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -141,23 +152,27 @@ export class OwnershipController {
   }
 
   @Post("transfers/:transferId/decline")
+  @Idempotent("ownership.transfer.decline")
   @HttpCode(HttpStatus.OK)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:transfer:respond")
   @UseRateLimit("ownership:transfer")
+  @Validate({ params: transferIdParams, body: declineTransferSchema })
   declineTransfer(
     @Param("transferId") transferId: string,
-    @Body(new ZodValidationPipe(declineTransferSchema)) body: DeclineTransferInput,
+    @Body() body: DeclineTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.responses.declineTransfer(u.orgId, u.userId, transferId, body);
   }
 
   @Delete("transfers/:transferId")
+  @Idempotent("ownership.transfer.cancel")
   @HttpCode(HttpStatus.OK)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("ownership:modules:manage")
   @UseRateLimit("ownership:transfer")
+  @Validate({ params: transferIdParams })
   cancelTransfer(
     @Param("transferId") transferId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -166,7 +181,7 @@ export class OwnershipController {
       u.orgId,
       u.userId,
       transferId,
-      u.isOrgOwner,
+      u,
     );
   }
 }

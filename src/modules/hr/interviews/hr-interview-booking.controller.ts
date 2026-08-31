@@ -1,8 +1,12 @@
 import { Body, Controller, HttpCode, Param, Post } from "@nestjs/common";
 import { Public } from "../../../common/auth/public.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrInterviewBookingService } from "./hr-interview-booking.service";
 import { bookInterviewSchema, type BookInterviewInput } from "./dto/interview-scheduling.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
 @Public()
 @Controller("public/interview-booking")
@@ -11,9 +15,10 @@ export class HrInterviewBookingController {
 
   @Post(":token")
   @HttpCode(200)
+  @Validate({ params: tokenParams, body: bookInterviewSchema })
   book(
     @Param("token") token: string,
-    @Body(new ZodValidationPipe(bookInterviewSchema)) body: BookInterviewInput,
+    @Body() body: BookInterviewInput,
   ) {
     return this.booking.book(token, body);
   }

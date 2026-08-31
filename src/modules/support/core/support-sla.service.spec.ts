@@ -165,6 +165,7 @@ describe("SupportSlaService", () => {
 
       expect(result).toEqual({ checked: 1, escalated: 1 });
       expect(mockNotifications.sendEscalationEmail).toHaveBeenCalledWith(
+        "org1",
         "agent1",
         "Broken checkout",
         1,
@@ -222,6 +223,7 @@ describe("SupportSlaService", () => {
 
       expect(result).toEqual({ checked: 1, escalated: 1 });
       expect(mockNotifications.sendEscalationEmail).toHaveBeenCalledWith(
+        "org1",
         "agent1",
         "Broken checkout",
         1,
@@ -231,12 +233,14 @@ describe("SupportSlaService", () => {
         expect.objectContaining({ assigneeId: "agent2" }),
       );
       expect(mockNotifications.sendEscalationEmail).toHaveBeenCalledWith(
+        "org1",
         "owner1",
         "Broken checkout",
         1,
         "first_response_breached",
       );
       expect(mockNotifications.sendEscalationEmail).toHaveBeenCalledWith(
+        "org1",
         "admin1",
         "Broken checkout",
         1,

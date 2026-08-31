@@ -5,7 +5,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { RecurringInvoicesService } from "./recurring-invoices.service";
 import {
   createRecurringTemplateSchema,
@@ -15,6 +15,10 @@ import {
   type UpdateRecurringTemplateInput,
   type ListRecurringTemplatesQuery,
 } from "./dto/finance-ar.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/recurring-invoices")
@@ -24,8 +28,9 @@ export class RecurringInvoicesController {
 
   @Get()
   @RequirePermission("accounting:recurring:read")
+  @Validate({ query: listRecurringTemplatesSchema })
   list(
-    @Query(new ZodValidationPipe(listRecurringTemplatesSchema)) query: ListRecurringTemplatesQuery,
+    @Query() query: ListRecurringTemplatesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, query);
@@ -34,8 +39,9 @@ export class RecurringInvoicesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("accounting:recurring:manage")
+  @Validate({ body: createRecurringTemplateSchema })
   create(
-    @Body(new ZodValidationPipe(createRecurringTemplateSchema)) body: CreateRecurringTemplateInput,
+    @Body() body: CreateRecurringTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.create(u.orgId, u.userId, body);
@@ -43,6 +49,7 @@ export class RecurringInvoicesController {
 
   @Get(":templateId")
   @RequirePermission("accounting:recurring:read")
+  @Validate({ params: templateIdParams })
   get(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -52,9 +59,10 @@ export class RecurringInvoicesController {
 
   @Patch(":templateId")
   @RequirePermission("accounting:recurring:manage")
+  @Validate({ params: templateIdParams, body: updateRecurringTemplateSchema })
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(updateRecurringTemplateSchema)) body: UpdateRecurringTemplateInput,
+    @Body() body: UpdateRecurringTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.update(u.orgId, u.userId, templateId, body);
@@ -62,6 +70,7 @@ export class RecurringInvoicesController {
 
   @Delete(":templateId")
   @RequirePermission("accounting:recurring:manage")
+  @Validate({ params: templateIdParams })
   remove(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -70,8 +79,10 @@ export class RecurringInvoicesController {
   }
 
   @Post(":templateId/run-now")
+  @Idempotent("finance.recurring-invoice.run-now")
   @HttpCode(200)
   @RequirePermission("accounting:recurring:manage")
+  @Validate({ params: templateIdParams })
   runNow(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

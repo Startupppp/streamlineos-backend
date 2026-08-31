@@ -34,8 +34,24 @@ const baseSchema = z
         .regex(REGION_KEY_PATTERN, "PRIMARY_REGION is lowercase letters, digits and dashes")
         .optional(),
     ),
+    /** Release identifier stamped onto every error report and span. */
+    APP_RELEASE: z.preprocess(emptyToUndefined, z.string().optional()),
+    /** Set to "false" to disable RouteClassifierGuard's boot-time and request-time enforcement. */
+    REQUIRE_ROUTE_CLASSIFICATION: z.preprocess(emptyToUndefined, z.string().optional()),
     /** Comma-separated regions this deployment serves; each secondary needs its own REGION_<KEY>_APP_DATABASE_URL. */
     REGION_KEYS: z.preprocess(emptyToUndefined, z.string().optional()),
+    /** The cell this deployment is. Defaults to `legacy-1`, the pre-cell production deployment. */
+    CELL_ID: z.preprocess(emptyToUndefined, z.string().optional()),
+    DATABASE_SHARD: z.preprocess(emptyToUndefined, z.string().optional()),
+    SEARCH_CLUSTER: z.preprocess(emptyToUndefined, z.string().optional()),
+    /** Signs the placement a session carries so a cell verifies it rather than trusting its cache; falls back to BACKEND_JWT_SECRET. */
+    PLACEMENT_SIGNING_KEY: z.preprocess(emptyToUndefined, deploymentSecret),
+    PLACEMENT_SIGNING_KEY_ID: z.preprocess(emptyToUndefined, z.string().optional()),
+    PLACEMENT_SIGNING_KEY_PREVIOUS: z.preprocess(emptyToUndefined, deploymentSecret),
+    PLACEMENT_SIGNING_KEY_PREVIOUS_ID: z.preprocess(
+      emptyToUndefined,
+      z.string().optional(),
+    ),
     ...poolEnvShape,
     BACKEND_JWT_SECRET: z
       .string()
@@ -200,6 +216,24 @@ const baseSchema = z
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
     ),
+    PAYROLL_EXPORT_WORKER_ENABLED: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
+    EXPENSE_EXPORT_WORKER_ENABLED: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
+    AV_SCANNER: z.preprocess(
+      emptyToUndefined,
+      z.enum(["clamav", "virustotal"]).optional(),
+    ),
+    CLAMAV_HOST: z.preprocess(emptyToUndefined, z.string().optional()),
+    CLAMAV_PORT: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().positive().optional(),
+    ),
+    VIRUSTOTAL_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
     OUTBOX_DISPATCH_ENABLED: z.preprocess(
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),

@@ -10,54 +10,33 @@ import { Public } from "../../common/auth/public.decorator";
 import { logger } from "../../common/logger/logger.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
-import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
-import { CronNotificationRetentionService } from "./cron-notification-retention.service";
-import { NotificationOutboxRelayService } from "../notifications/notification-outbox-relay.service";
-import { NotificationDigestService } from "../notifications/notification-digest.service";
 import { CronOrganizationService } from "./cron-organization.service";
 import { OwnershipTransfersService } from "../ownership/ownership-transfers.service";
 import { CronOrgPurgeWorkerService } from "./cron-org-purge-worker.service";
+import { AccountOrganizationIndexService } from "../organization/core/account-organization-index.service";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { CronWorkflowService } from "./cron-workflow.service";
-import { ChatReplyRemindersService } from "../chat/chat-reply-reminders.service";
 import { ExceptionsDetectorService } from "../timesheets/core/exceptions-detector.service";
 import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
-import { CrmFollowupSweepService } from "../crm/core/crm-followup-sweep.service";
-import { NotificationTimeSweepsService } from "../notifications/time-sweeps/notification-time-sweeps.service";
 import { CronLeaseService } from "./cron-lease.service";
+import { CalendarReminderSweepService } from "../calendar/calendar-reminder-sweep.service";
 
 @Public()
 @Controller("cron")
 export class CronPlatformController {
   constructor(
-    private readonly chatReplyReminders: ChatReplyRemindersService,
     private readonly emailOutbox: CronEmailOutboxService,
     private readonly workflow: CronWorkflowService,
-    private readonly notificationDelivery: CronNotificationDeliveryService,
     private readonly cronOrganization: CronOrganizationService,
     private readonly ownershipTransfers: OwnershipTransfersService,
     private readonly orgPurgeWorker: CronOrgPurgeWorkerService,
     private readonly timesheetExceptionsDetector: ExceptionsDetectorService,
     private readonly idempotency: CronIdempotencyService,
-    private readonly notificationRetention: CronNotificationRetentionService,
-    private readonly outboxRelay: NotificationOutboxRelayService,
-    private readonly digest: NotificationDigestService,
     private readonly buildDueSweep: BuildDueSweepService,
-    private readonly crmFollowupSweep: CrmFollowupSweepService,
-    private readonly timeSweeps: NotificationTimeSweepsService,
+    private readonly calendarReminderSweep: CalendarReminderSweepService,
+    private readonly accountOrgIndex: AccountOrganizationIndexService,
     private readonly cronLease: CronLeaseService,
   ) {}
-
-  @Get("notification-time-sweeps")
-  getNotificationTimeSweeps(@Headers("authorization") authorization?: string) {
-    return this.runNotificationTimeSweeps(authorization);
-  }
-
-  @Post("notification-time-sweeps")
-  @HttpCode(200)
-  postNotificationTimeSweeps(@Headers("authorization") authorization?: string) {
-    return this.runNotificationTimeSweeps(authorization);
-  }
 
   @Get("workflow-tick")
   async workflowTickGet(@Headers("authorization") authorization?: string) {
@@ -81,48 +60,15 @@ export class CronPlatformController {
     return this.runBuildDueSweep(authorization);
   }
 
-  @Get("notification-digest-flush")
-  getNotificationDigestFlush(@Headers("authorization") authorization?: string) {
-    return this.runNotificationDigestFlush(authorization);
+  @Get("calendar-reminder-sweep")
+  getCalendarReminderSweep(@Headers("authorization") authorization?: string) {
+    return this.runCalendarReminderSweep(authorization);
   }
 
-  @Post("notification-digest-flush")
+  @Post("calendar-reminder-sweep")
   @HttpCode(200)
-  postNotificationDigestFlush(@Headers("authorization") authorization?: string) {
-    return this.runNotificationDigestFlush(authorization);
-  }
-
-  @Get("notification-outbox-flush")
-  getNotificationOutboxFlush(@Headers("authorization") authorization?: string) {
-    return this.runNotificationOutboxFlush(authorization);
-  }
-
-  @Post("notification-outbox-flush")
-  @HttpCode(200)
-  postNotificationOutboxFlush(@Headers("authorization") authorization?: string) {
-    return this.runNotificationOutboxFlush(authorization);
-  }
-
-  @Get("notifications-retention-sweep")
-  getNotificationsRetentionSweep(@Headers("authorization") authorization?: string) {
-    return this.runNotificationsRetentionSweep(authorization);
-  }
-
-  @Post("notifications-retention-sweep")
-  @HttpCode(200)
-  postNotificationsRetentionSweep(@Headers("authorization") authorization?: string) {
-    return this.runNotificationsRetentionSweep(authorization);
-  }
-
-  @Get("chat-reply-reminders")
-  getChatReplyReminders(@Headers("authorization") authorization?: string) {
-    return this.runChatReplyReminders(authorization);
-  }
-
-  @Post("chat-reply-reminders")
-  @HttpCode(200)
-  postChatReplyReminders(@Headers("authorization") authorization?: string) {
-    return this.runChatReplyReminders(authorization);
+  postCalendarReminderSweep(@Headers("authorization") authorization?: string) {
+    return this.runCalendarReminderSweep(authorization);
   }
 
   @Get("email-outbox-flush")
@@ -134,21 +80,6 @@ export class CronPlatformController {
   @HttpCode(200)
   postEmailOutboxFlush(@Headers("authorization") authorization?: string) {
     return this.runEmailOutboxFlush(authorization);
-  }
-
-  @Get("notification-delivery-flush")
-  getNotificationDeliveryFlush(
-    @Headers("authorization") authorization?: string,
-  ) {
-    return this.runNotificationDeliveryFlush(authorization);
-  }
-
-  @Post("notification-delivery-flush")
-  @HttpCode(200)
-  postNotificationDeliveryFlush(
-    @Headers("authorization") authorization?: string,
-  ) {
-    return this.runNotificationDeliveryFlush(authorization);
   }
 
   @Get("invitation-expiry")
@@ -171,6 +102,17 @@ export class CronPlatformController {
   @HttpCode(200)
   postOwnershipTransferExpiry(@Headers("authorization") authorization?: string) {
     return this.runOwnershipTransferExpiry(authorization);
+  }
+
+  @Get("account-org-index-rebuild")
+  getAccountOrgIndexRebuild(@Headers("authorization") authorization?: string) {
+    return this.runAccountOrgIndexRebuild(authorization);
+  }
+
+  @Post("account-org-index-rebuild")
+  @HttpCode(200)
+  postAccountOrgIndexRebuild(@Headers("authorization") authorization?: string) {
+    return this.runAccountOrgIndexRebuild(authorization);
   }
 
   @Get("org-purge-worker")
@@ -196,17 +138,13 @@ export class CronPlatformController {
   }
 
   @Get("timesheets-exception-detection")
-  getTimesheetsExceptionDetection(
-    @Headers("authorization") authorization?: string,
-  ) {
+  getTimesheetsExceptionDetection(@Headers("authorization") authorization?: string) {
     return this.runTimesheetsExceptionDetection(authorization);
   }
 
   @Post("timesheets-exception-detection")
   @HttpCode(200)
-  postTimesheetsExceptionDetection(
-    @Headers("authorization") authorization?: string,
-  ) {
+  postTimesheetsExceptionDetection(@Headers("authorization") authorization?: string) {
     return this.runTimesheetsExceptionDetection(authorization);
   }
 
@@ -232,29 +170,6 @@ export class CronPlatformController {
     }
   }
 
-  private async runNotificationTimeSweeps(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const outcome = await this.cronLease.withLease("notification-time-sweeps", 300, () =>
-        Promise.all([this.crmFollowupSweep.sweep(), this.timeSweeps.sweep()]),
-      );
-      if (!outcome.ran) return { success: true, skipped: true, message: "notification-time-sweeps already running" };
-      const [crm, general] = outcome.result;
-      return {
-        success: true,
-        message:
-          `Follow-ups ${crm.due} due / ${crm.overdue} overdue; ` +
-          `${general.slaBreached} SLA, ${general.invoicesDueSoon} invoice, ` +
-          `${general.envelopesExpiring} envelope, ${general.eventsStartingSoon} calendar`,
-        ...crm,
-        ...general,
-      };
-    } catch (error) {
-      logger.error("Notification time sweeps cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
   private async runBuildDueSweep(authorization?: string) {
     assertCronSecret(authorization);
     try {
@@ -274,80 +189,16 @@ export class CronPlatformController {
     }
   }
 
-  private async runNotificationDigestFlush(authorization?: string) {
+  private async runCalendarReminderSweep(authorization?: string) {
     assertCronSecret(authorization);
     try {
-      const outcome = await this.cronLease.withLease("notification-digest-flush", 120, () =>
-        this.digest.flushDue(),
+      const outcome = await this.cronLease.withLease("calendar-reminder-sweep", 120, () =>
+        this.calendarReminderSweep.run(),
       );
-      if (!outcome.ran) return { success: true, skipped: true, message: "notification-digest-flush already running" };
-      const result = outcome.result;
-      return {
-        success: true,
-        message: `Flushed ${result.windows} digest window(s): ${result.itemsFlushed} item(s), ${result.notificationsCreated} notification(s)`,
-        ...result,
-      };
+      if (!outcome.ran) return { success: true, skipped: true, message: "calendar-reminder-sweep already running" };
+      return { success: true, ...outcome.result };
     } catch (error) {
-      logger.error("Notification digest flush cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runNotificationOutboxFlush(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const outcome = await this.cronLease.withLease("notification-outbox-flush", 120, () =>
-        this.outboxRelay.flush(),
-      );
-      if (!outcome.ran) return { success: true, skipped: true, message: "notification-outbox-flush already running" };
-      const result = outcome.result;
-      return {
-        success: true,
-        message: `Claimed ${result.claimed}: ${result.processed} processed, ${result.retried} retrying, ${result.dead} dead`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Notification outbox flush cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runNotificationsRetentionSweep(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const outcome = await this.cronLease.withLease("notifications-retention-sweep", 300, () =>
-        this.notificationRetention.sweep(),
-      );
-      if (!outcome.ran) return { success: true, skipped: true, message: "notifications-retention-sweep already running" };
-      const result = outcome.result;
-      return {
-        success: true,
-        message:
-          `Purged ${result.emailBodiesPurged} email bodies and ${result.deliveryBodiesPurged} delivery bodies; ` +
-          `deleted ${result.emailRecordsDeleted} email rows and ${result.deliveryRecordsDeleted} delivery rows`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Notification retention sweep cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runChatReplyReminders(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const outcome = await this.cronLease.withLease("chat-reply-reminders", 120, () =>
-        this.chatReplyReminders.processDueReminders(),
-      );
-      if (!outcome.ran) return { success: true, skipped: true, message: "chat-reply-reminders already running" };
-      const result = outcome.result;
-      return {
-        success: true,
-        message: `Sent ${result.sent} chat reply reminders, cancelled ${result.cancelled}`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Chat reply reminder cron failed", error);
+      logger.error("Calendar reminder sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }
@@ -367,25 +218,6 @@ export class CronPlatformController {
       };
     } catch (error) {
       logger.error("Email outbox flush cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runNotificationDeliveryFlush(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const outcome = await this.cronLease.withLease("notification-delivery-flush", 120, () =>
-        this.notificationDelivery.flush(),
-      );
-      if (!outcome.ran) return { success: true, skipped: true, message: "notification-delivery-flush already running" };
-      const result = outcome.result;
-      return {
-        success: true,
-        message: `Processed ${result.processed} deliveries: ${result.sent} sent, ${result.failed} retrying, ${result.dead} dead`,
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Notification delivery flush cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }
@@ -424,6 +256,32 @@ export class CronPlatformController {
       };
     } catch (error) {
       logger.error("Ownership transfer expiry cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runAccountOrgIndexRebuild(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease(
+        "account-org-index-rebuild",
+        600,
+        () => this.accountOrgIndex.rebuild(),
+      );
+      if (!outcome.ran)
+        return {
+          success: true,
+          skipped: true,
+          message: "account-org-index-rebuild already running",
+        };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Account-org index rebuilt: ${result.organizations} orgs, ${result.succeeded} succeeded, ${result.failed} failed`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Account-org index rebuild cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

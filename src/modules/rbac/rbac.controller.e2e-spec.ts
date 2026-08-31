@@ -52,14 +52,14 @@ describe("Rbac auth (e2e)", () => {
   });
 
   it("403 on GET /rbac/permissions without settings:rbac:manage", async () => {
-    const token = await signToken({ permissions: [], enabledModules: [] });
+    const token = await signToken({ permissions: [], enabledModules: ["settings"] });
     const res = await callRoute("get", "/rbac/permissions").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
   it("returns the static permission catalog on GET /rbac/permissions with settings:rbac:manage", async () => {
-    const token = await signToken({ permissions: ["settings:rbac:manage"], enabledModules: [] });
+    const token = await signToken({ permissions: ["settings:rbac:manage"], enabledModules: ["settings"] });
     const res = await callRoute("get", "/rbac/permissions").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body)).toBe(true);

@@ -11,7 +11,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { organizations, users } from "../common/auth";
-import { subscriptions } from "../common/shared";
+import { subscriptions } from "../common/subscriptions";
 import { billingPriceVersions } from "./commercial-catalog";
 
 export const billingProrationLines = pgTable(

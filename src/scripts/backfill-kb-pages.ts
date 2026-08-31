@@ -32,9 +32,30 @@ export function parseOptions(args: string[]): BackfillOptions & { apply: boolean
   };
 }
 
+export function validateApplyOptions(
+  options: BackfillOptions & { apply: boolean },
+): string | undefined {
+  if (!options.apply) return undefined;
+  if (!options.orgId?.trim()) return "--org-id is required with --apply";
+  if (!Number.isFinite(options.maxPages) || (options.maxPages ?? 0) <= 0)
+    return "--max-pages must be a positive finite number with --apply";
+  if (!Number.isFinite(options.batchSize) || (options.batchSize ?? 0) <= 0)
+    return "--batch-size must be a positive finite number with --apply";
+  if (!Number.isFinite(options.delayMs) || (options.delayMs ?? -1) < 0)
+    return "--delay-ms must be a non-negative finite number with --apply";
+  return undefined;
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const options = parseOptions(args);
+
+  const invalidApplyOptions = validateApplyOptions(options);
+  if (invalidApplyOptions) {
+    console.error(`Refusing to mutate KB indexes: ${invalidApplyOptions}. No data was changed.`);
+    process.exitCode = 2;
+    return;
+  }
 
   if (!options.apply) {
     console.error(

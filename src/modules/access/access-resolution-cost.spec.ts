@@ -61,6 +61,13 @@ function buildFixture(): CostFixture {
       shared.delete(key);
       return Promise.resolve();
     }),
+    cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+    cachedForOrgWith<T>(o: string, k: string, fn: () => Promise<T>) {
+      return this.cached(`${o}:${k}`, fn);
+    },
+    invalidateForOrg: jest.fn().mockResolvedValue(undefined),
     get: jest.fn().mockImplementation((key: string) => Promise.resolve(shared.get(key) ?? null)),
     set: jest.fn().mockImplementation((key: string, value: unknown) => {
       shared.set(key, value);

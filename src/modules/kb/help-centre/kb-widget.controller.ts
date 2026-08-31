@@ -3,6 +3,10 @@ import type { Response } from "express";
 import { Public } from "../../../common/auth/public.decorator";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const orgIdParams = z.object({ orgId: z.string().min(1) }).strict();
 
 @Public()
 @Controller("public/kb/widget")
@@ -16,6 +20,7 @@ export class KbWidgetController {
   }
 
   @Get(":orgId")
+  @Validate({ params: orgIdParams })
   config(@Param("orgId") orgId: string): {
     orgId: string;
     helpCenterUrl: string;
@@ -33,6 +38,7 @@ export class KbWidgetController {
   }
 
   @Get(":orgId/script")
+  @Validate({ params: orgIdParams })
   script(@Param("orgId") orgId: string, @Res() res: Response): void {
     const helpUrl = `${this.appUrl}/help/${encodeURIComponent(orgId)}`;
     const snippet = `(function () {

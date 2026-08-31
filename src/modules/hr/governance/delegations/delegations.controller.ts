@@ -19,7 +19,6 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { RequireModule } from "../../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { DelegationsService } from "./delegations.service";
 import {
   createProxySchema,
@@ -29,6 +28,10 @@ import {
   type UpdateProxyInput,
   type ListProxiesInput,
 } from "./delegations.dto";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const proxyIdParams = z.object({ proxyId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/governance/delegations")
@@ -38,27 +41,30 @@ export class DelegationsController {
 
   @Get("my")
   @RequirePermission("hr:workflows:view")
+  @Validate({ query: listProxiesSchema })
   async listMy(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listProxiesSchema)) query: ListProxiesInput,
+    @Query() query: ListProxiesInput,
   ) {
     return this.service.listMy(user.orgId, user.userId, query);
   }
 
   @Get()
   @RequirePermission("hr:workflows:manage")
+  @Validate({ query: listProxiesSchema })
   async listOrg(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listProxiesSchema)) query: ListProxiesInput,
+    @Query() query: ListProxiesInput,
   ) {
     return this.service.listOrg(user.orgId, query);
   }
 
   @Post()
   @RequirePermission("hr:workflows:view")
+  @Validate({ body: createProxySchema })
   async create(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createProxySchema)) body: CreateProxyInput,
+    @Body() body: CreateProxyInput,
     @Req() req: Request,
   ) {
     return this.service.create(user.orgId, user.userId, body, req.ip);
@@ -66,10 +72,11 @@ export class DelegationsController {
 
   @Patch(":proxyId")
   @RequirePermission("hr:workflows:view")
+  @Validate({ params: proxyIdParams, body: updateProxySchema })
   async update(
     @CurrentUser() user: CurrentUserContext,
     @Param("proxyId", ParseIntPipe) proxyId: number,
-    @Body(new ZodValidationPipe(updateProxySchema)) body: UpdateProxyInput,
+    @Body() body: UpdateProxyInput,
     @Req() req: Request,
   ) {
     return this.service.update(user.orgId, proxyId, user.userId, body, req.ip);
@@ -78,6 +85,7 @@ export class DelegationsController {
   @Delete(":proxyId")
   @RequirePermission("hr:workflows:view")
   @HttpCode(204)
+  @Validate({ params: proxyIdParams })
   async revoke(
     @CurrentUser() user: CurrentUserContext,
     @Param("proxyId", ParseIntPipe) proxyId: number,

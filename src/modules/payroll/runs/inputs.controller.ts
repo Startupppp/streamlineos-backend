@@ -19,7 +19,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { resolvePayrollRunsViewScope } from "../payroll-scope";
 import { InputsService } from "./inputs.service";
@@ -29,6 +28,11 @@ import {
   type PatchInputInput,
   type InputsQuery,
 } from "./dto/runs.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
+const runAndInputIdParams = z.object({ runId: z.coerce.number().int().positive(), inputId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/runs/:runId/inputs")
@@ -41,9 +45,10 @@ export class InputsController {
 
   @Get()
   @RequirePermission("payroll:runs:view")
+  @Validate({ params: runIdParams, query: inputsQuerySchema })
   async list(
     @Param("runId", ParseIntPipe) runId: number,
-    @Query(new ZodValidationPipe(inputsQuerySchema)) query: InputsQuery,
+    @Query() query: InputsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolvePayrollRunsViewScope(this.access, u);
@@ -54,10 +59,11 @@ export class InputsController {
 
   @Patch(":inputId")
   @RequirePermission("payroll:runs:update")
+  @Validate({ params: runAndInputIdParams, body: patchInputSchema })
   async patchInput(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("inputId", ParseIntPipe) inputId: number,
-    @Body(new ZodValidationPipe(patchInputSchema)) body: PatchInputInput,
+    @Body() body: PatchInputInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.inputsService.patchInput(u.orgId, runId, inputId, u.userId, body);
@@ -72,6 +78,7 @@ export class InputsController {
   @Post("reimport")
   @HttpCode(200)
   @RequirePermission("payroll:runs:update")
+  @Validate({ params: runIdParams })
   async reimport(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,

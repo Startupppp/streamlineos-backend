@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, gt, ilike, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, ilike, inArray, lt, or, sql } from "drizzle-orm";
 import type { DataScope } from "../../access/access.types";
 import { applyScope } from "../../access/apply-scope";
 import {
@@ -14,6 +14,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import type { AgedPayablesRow, VendorLedgerLine } from "./accounting.types";
 import type {
   AgedReceivablesQuery,
@@ -75,7 +76,7 @@ export class AccountingPayablesQueryService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listPurchaseBills(orgId: string, query: ListPurchaseBillsQuery, scope: DataScope, userId: string) {
-    const { page, pageSize, q, status, vendorId } = query;
+    const { cursor, limit, q, status, vendorId } = query;
     const conds = [eq(purchaseBills.orgId, orgId)];
     if (status) {
       if (Array.isArray(status)) {
@@ -87,30 +88,27 @@ export class AccountingPayablesQueryService {
     if (vendorId) conds.push(eq(purchaseBills.vendorId, vendorId));
     if (q) conds.push(ilike(purchaseBills.billNumber, `%${escapeLike(q)}%`));
     conds.push(applyScope(scope, orgId, userId, { ownerColumn: purchaseBills.createdBy }));
-
-    const where = and(...conds);
-    const { offset, limit } = paginateOffset({ page, pageSize });
+    const pos = decodeCursor(cursor);
+    if (pos) {
+      const cursorId = Number(pos.id);
+      conds.push(
+        or(
+          lt(purchaseBills.billDate, pos.sortValue),
+          and(eq(purchaseBills.billDate, pos.sortValue), gt(purchaseBills.id, cursorId))!,
+        )!,
+      );
+    }
     const rows = await this.db
-      .select({ ...BILL_COLUMNS, total: sql<string>`count(*) OVER ()` })
+      .select(BILL_COLUMNS)
       .from(purchaseBills)
       .leftJoin(clients, eq(clients.id, purchaseBills.vendorId))
-      .where(where)
+      .where(and(...conds))
       .orderBy(desc(purchaseBills.billDate), asc(purchaseBills.id))
-      .offset(offset)
-      .limit(limit);
-
-    let totalCount: number;
-    if (rows[0]) {
-      totalCount = Number(rows[0].total);
-    } else if (offset === 0) {
-      totalCount = 0;
-    } else {
-      const fallback = await this.db.select({ c: count() }).from(purchaseBills).where(where);
-      totalCount = Number(fallback[0]?.c ?? 0);
-    }
-
-    const items = rows.map(({ total: _total, ...rest }) => rest);
-    return buildListResponse(items, totalCount, { page, pageSize });
+      .limit(limit + 1);
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.billDate,
+      id: String(row.id),
+    }));
   }
 
   async getPurchaseBill(orgId: string, billId: number) {
@@ -124,7 +122,17 @@ export class AccountingPayablesQueryService {
     if (!header) throw new NotFoundException("Purchase bill not found");
 
     const items = await this.db
-      .select()
+      .select({
+        id: purchaseBillItems.id,
+        billId: purchaseBillItems.billId,
+        description: purchaseBillItems.description,
+        hsnSacCode: purchaseBillItems.hsnSacCode,
+        quantity: purchaseBillItems.quantity,
+        rate: purchaseBillItems.rate,
+        gstRate: purchaseBillItems.gstRate,
+        amount: purchaseBillItems.amount,
+        lineOrder: purchaseBillItems.lineOrder,
+      })
       .from(purchaseBillItems)
       .where(eq(purchaseBillItems.billId, billId))
       .orderBy(asc(purchaseBillItems.lineOrder));
@@ -141,7 +149,18 @@ export class AccountingPayablesQueryService {
     if (!bills[0]) throw new NotFoundException("Purchase bill not found");
 
     return this.db
-      .select()
+      .select({
+        id: vendorPayments.id,
+        orgId: vendorPayments.orgId,
+        billId: vendorPayments.billId,
+        amount: vendorPayments.amount,
+        paymentDate: vendorPayments.paymentDate,
+        paymentMethod: vendorPayments.paymentMethod,
+        referenceNumber: vendorPayments.referenceNumber,
+        notes: vendorPayments.notes,
+        createdBy: vendorPayments.createdBy,
+        createdAt: vendorPayments.createdAt,
+      })
       .from(vendorPayments)
       .where(and(eq(vendorPayments.billId, billId), eq(vendorPayments.orgId, orgId)))
       .orderBy(asc(vendorPayments.paymentDate), asc(vendorPayments.id))

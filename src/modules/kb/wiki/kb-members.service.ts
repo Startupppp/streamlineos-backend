@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql, isNull } from "drizzle-orm";
 import { kbSpaces, kbSpaceMembers, kbPages, kbArticles, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -29,7 +29,11 @@ export class KbMembersService {
 
   private async assertSpaceExists(orgId: string, spaceId: number): Promise<void> {
     const space = await this.db.query.kbSpaces.findFirst({
-      where: and(eq(kbSpaces.id, spaceId), eq(kbSpaces.orgId, orgId)),
+      where: and(
+        eq(kbSpaces.id, spaceId),
+        eq(kbSpaces.orgId, orgId),
+        isNull(kbSpaces.deletedAt),
+      ),
       columns: { id: true },
     });
     if (!space) throw new NotFoundException("Space not found");

@@ -65,7 +65,7 @@ describe("Phase 10.2 entity-scoped runs/filings", () => {
 
   describe("listRunsQuerySchema entityId filter", () => {
     it("coerces entityId from query string", () => {
-      const ok = listRunsQuerySchema.safeParse({ page: "1", limit: "20", entityId: "5" });
+      const ok = listRunsQuerySchema.safeParse({ limit: "20", entityId: "5" });
       expect(ok.success).toBe(true);
       if (ok.success) expect(ok.data.entityId).toBe(5);
     });

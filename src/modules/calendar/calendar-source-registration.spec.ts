@@ -82,4 +82,13 @@ describe("a module registers its own calendar source", () => {
 
     expect(output.events).toHaveLength(1);
   });
+
+  it("rejects different adapters that reuse a stable source key", () => {
+    const registry = makeRegistry(["hr"]);
+    registry.register(makeSource("leaves", "hr"));
+
+    expect(() => registry.register(makeSource("leaves", "hr"))).toThrow(
+      "Calendar source key already registered: leaves",
+    );
+  });
 });

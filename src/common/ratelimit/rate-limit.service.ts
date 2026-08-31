@@ -42,11 +42,14 @@ const TIERS: Record<string, Tier> = {
   "chat:huddle-heartbeat": { limit: 10, windowSecs: 60 },
   "whiteboard:public-view": { limit: 60, windowSecs: 60 },
   "whiteboard:public-edit": { limit: 30, windowSecs: 60 },
+  "organization:create": { limit: 5, windowSecs: 3600 },
   "invite:validate": { limit: 30, windowSecs: 60 },
   "invite:accept": { limit: 10, windowSecs: 60 },
   "survey:public-view": { limit: 60, windowSecs: 60 },
   "survey:public-start": { limit: 20, windowSecs: 60 },
   "survey:public-submit": { limit: 20, windowSecs: 60 },
+  "support:csat-view": { limit: 60, windowSecs: 60 },
+  "support:csat-submit": { limit: 5, windowSecs: 3600 },
   "support:portal-ticket-create": { limit: 10, windowSecs: 3600 },
   "support:inbound-email": { limit: 120, windowSecs: 60 },
   "support:inbound-whatsapp": { limit: 120, windowSecs: 60 },
@@ -81,6 +84,12 @@ const TIERS: Record<string, Tier> = {
   "ownership:transfer": { limit: 5, windowSecs: 3600 },
   "ownership:force-set": { limit: 10, windowSecs: 3600 },
   "crm:public-unsubscribe": { limit: 20, windowSecs: 3600 },
+  "public:application-status": { limit: 30, windowSecs: 60 },
+  "public:offer": { limit: 30, windowSecs: 60 },
+  "public:offer-respond": { limit: 5, windowSecs: 3600 },
+  "public:referrer-portal": { limit: 30, windowSecs: 60 },
+  "public:referral-submit": { limit: 5, windowSecs: 3600 },
+  "public:vendor-portal": { limit: 30, windowSecs: 60 },
 };
 
 const DEV_LIMIT_MULTIPLIER = process.env.NODE_ENV === "production" ? 1 : 10;

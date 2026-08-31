@@ -12,7 +12,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { organizations, users } from "../common/auth";
-import { subscriptions } from "../common/shared";
+import { subscriptions } from "../common/subscriptions";
 import { billingProrationLines } from "./proration-ledger";
 import { billingUsageRollups } from "./usage-events";
 

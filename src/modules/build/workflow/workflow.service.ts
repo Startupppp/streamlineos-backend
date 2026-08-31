@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, or } from "drizzle-orm";
-import { projectStatuses, projects, workflowTransitions } from "../../../db/schema";
+import { organizationMembers, projectStatuses, projects, workflowTransitions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -70,6 +70,11 @@ export class WorkflowService {
     if (input.fromStatusId != null) {
       await this.assertStatusInProject(orgId, projectId, input.fromStatusId);
     }
+    const [membership] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
     const [transition] = await this.db
       .insert(workflowTransitions)
       .values({
@@ -81,7 +86,7 @@ export class WorkflowService {
         requiresApproval: input.requiresApproval ?? false,
         requiredFields: input.requiredFields ?? [],
         allowedRoles: input.allowedRoles ?? [],
-        createdBy: userId,
+        createdByMembershipId: membership?.id ?? null,
       })
       .returning();
     if (!transition) throw new NotFoundException("Failed to create transition");

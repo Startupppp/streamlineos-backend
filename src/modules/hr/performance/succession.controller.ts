@@ -6,7 +6,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import {
   createSuccessionPlanSchema,
   updateSuccessionPlanSchema,
@@ -15,6 +15,10 @@ import {
   type UpdateSuccessionPlanInput,
   type SuccessionListInput,
 } from "./dto/succession.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const successionIdParams = z.object({ successionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/succession")
@@ -24,9 +28,10 @@ export class SuccessionController {
 
   @Get()
   @RequirePermission("hr:succession:view")
+  @Validate({ query: successionListSchema })
   list(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(successionListSchema)) query: SuccessionListInput,
+    @Query() query: SuccessionListInput,
   ) {
     return this.successionService.list(user.orgId, query);
   }
@@ -34,19 +39,21 @@ export class SuccessionController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:succession:manage")
+  @Validate({ body: createSuccessionPlanSchema })
   create(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createSuccessionPlanSchema)) body: CreateSuccessionPlanInput,
+    @Body() body: CreateSuccessionPlanInput,
   ) {
     return this.successionService.create(user.orgId, user.userId, body);
   }
 
   @Patch(":successionId")
   @RequirePermission("hr:succession:manage")
+  @Validate({ params: successionIdParams, body: updateSuccessionPlanSchema })
   update(
     @CurrentUser() user: CurrentUserContext,
     @Param("successionId", ParseIntPipe) successionId: number,
-    @Body(new ZodValidationPipe(updateSuccessionPlanSchema)) body: UpdateSuccessionPlanInput,
+    @Body() body: UpdateSuccessionPlanInput,
   ) {
     return this.successionService.update(user.orgId, successionId, body);
   }
@@ -54,6 +61,7 @@ export class SuccessionController {
   @Delete(":successionId")
   @HttpCode(204)
   @RequirePermission("hr:succession:manage")
+  @Validate({ params: successionIdParams })
   async remove(@CurrentUser() user: CurrentUserContext, @Param("successionId", ParseIntPipe) successionId: number) {
     await this.successionService.remove(user.orgId, successionId);
   }

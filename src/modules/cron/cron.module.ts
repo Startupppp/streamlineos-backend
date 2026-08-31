@@ -26,21 +26,26 @@ import { SupportKbGapModule } from "../support/kb-gap";
 import { TimesheetsCoreModule } from "../timesheets/core/timesheets-core.module";
 import { OrganizationModule } from "../organization/core/organization.module";
 import { CronBillingController } from "./cron-billing.controller";
+import { CronInvitationExpiryController } from "./cron-invitation-expiry.controller";
 import { CronHrController } from "./cron-hr.controller";
 import { CronPlatformController } from "./cron-platform.controller";
+import { CronNotificationsController } from "./cron-notifications.controller";
 import { CronOutboxController } from "./cron-outbox.controller";
 import { CronSupportController } from "./cron-support.controller";
 import { CronBuildController } from "./cron-build.controller";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronNotificationRetentionService } from "./cron-notification-retention.service";
+import { NotificationRetentionService } from "../notifications/notification-retention.service";
 import { CronAttendanceService } from "./cron-attendance.service";
 import { CronBillingService } from "./cron-billing.service";
+import { CronInvitationExpiryService } from "./cron-invitation-expiry.service";
 import { CronWorkflowService } from "./cron-workflow.service";
 import { CronHolidayService } from "./cron-holiday.service";
 import { CronHrService } from "./cron-hr.service";
 import { CronHrEnginesService } from "./cron-hr-engines.service";
 import { CronKbService } from "./cron-kb.service";
 import { CronLeaveService } from "./cron-leave.service";
+import { CronLeaveResetService } from "./cron-leave-reset.service";
 import { CronNotificationsService } from "./cron-notifications.service";
 import { CronProjectsService } from "./cron-projects.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
@@ -59,9 +64,14 @@ import { CronLeaseService } from "./cron-lease.service";
 import { ProjectsModule } from "../build/core/projects.module";
 import { CrmModule } from "../crm/core/crm.module";
 import { OutboxModule } from "../../common/outbox/outbox.module";
+import { SessionsModule } from "../sessions/sessions.module";
+import { EmploymentFactsModule } from "../directory/employment-facts.module";
+import { CalendarModule } from "../calendar/calendar.module";
 
 @Module({
   imports: [
+    EmploymentFactsModule,
+    CalendarModule,
     AutomationModule,
     AiModule,
     AiJobsModule,
@@ -91,20 +101,25 @@ import { OutboxModule } from "../../common/outbox/outbox.module";
     ProjectsModule,
     CrmModule,
     OutboxModule,
+    SessionsModule,
   ],
   controllers: [
     CronBillingController,
     CronHrController,
     CronPlatformController,
+    CronNotificationsController,
     CronOutboxController,
     CronSupportController,
     CronBuildController,
+    CronInvitationExpiryController,
   ],
   providers: [
     CronAttendanceService,
     CronBillingService,
+    CronInvitationExpiryService,
     CronWorkflowService,
     CronLeaveService,
+    CronLeaveResetService,
     CronNotificationsService,
     CronHolidayService,
     CronKbService,
@@ -117,6 +132,7 @@ import { OutboxModule } from "../../common/outbox/outbox.module";
     CronSupportService,
     CronNotificationDeliveryService,
     CronNotificationRetentionService,
+    NotificationRetentionService,
     CronFinanceService,
     CronCrmTasksService,
     CronIdempotencyService,

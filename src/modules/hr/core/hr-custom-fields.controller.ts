@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -18,7 +19,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrCustomFieldsService } from "./hr-custom-fields.service";
 import { AccessService } from "../../access/access.service";
 import {
@@ -27,12 +28,20 @@ import {
 } from "../directory/employees-scope";
 import {
   createCustomFieldSchema,
+  filterByCustomFieldQuerySchema,
   updateCustomFieldSchema,
   upsertCustomFieldValuesSchema,
   type CreateCustomFieldInput,
+  type FilterByCustomFieldQuery,
   type UpdateCustomFieldInput,
   type UpsertCustomFieldValuesInput,
 } from "./dto/hr-custom-fields.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const fieldIdParams = z.object({ fieldId: z.coerce.number().int().positive() }).strict();
+const entityTypeentityIdParams = z.object({ entityType: z.string().min(1), entityId: z.string().min(1) }).strict();
+const entityTypeParams = z.object({ entityType: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/custom-fields")
@@ -55,8 +64,9 @@ export class HrCustomFieldsController {
   @Post("definitions")
   @HttpCode(201)
   @RequirePermission("hr:custom-fields:manage")
+  @Validate({ body: createCustomFieldSchema })
   createDefinition(
-    @Body(new ZodValidationPipe(createCustomFieldSchema)) body: CreateCustomFieldInput,
+    @Body() body: CreateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createDefinition(u.orgId, body);
@@ -64,9 +74,10 @@ export class HrCustomFieldsController {
 
   @Patch("definitions/:fieldId")
   @RequirePermission("hr:custom-fields:manage")
+  @Validate({ params: fieldIdParams, body: updateCustomFieldSchema })
   updateDefinition(
     @Param("fieldId", ParseIntPipe) fieldId: number,
-    @Body(new ZodValidationPipe(updateCustomFieldSchema)) body: UpdateCustomFieldInput,
+    @Body() body: UpdateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateDefinition(u.orgId, fieldId, body);
@@ -75,6 +86,7 @@ export class HrCustomFieldsController {
   @Delete("definitions/:fieldId")
   @HttpCode(204)
   @RequirePermission("hr:custom-fields:manage")
+  @Validate({ params: fieldIdParams })
   deleteDefinition(
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -84,6 +96,7 @@ export class HrCustomFieldsController {
 
   @Get(":entityType/:entityId/values")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: entityTypeentityIdParams })
   async getValues(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
@@ -102,6 +115,7 @@ export class HrCustomFieldsController {
 
   @Get(":entityType/:entityId/values/sensitive")
   @RequirePermission("hr:sensitive:view")
+  @Validate({ params: entityTypeentityIdParams })
   async getValuesSensitive(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
@@ -120,10 +134,11 @@ export class HrCustomFieldsController {
 
   @Put(":entityType/:entityId/values")
   @RequirePermission("hr:employees:update")
+  @Validate({ params: entityTypeentityIdParams, body: upsertCustomFieldValuesSchema })
   async upsertValues(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
-    @Body(new ZodValidationPipe(upsertCustomFieldValuesSchema)) body: UpsertCustomFieldValuesInput,
+    @Body() body: UpsertCustomFieldValuesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveEmployeesManageScope(this.access, u);
@@ -140,10 +155,11 @@ export class HrCustomFieldsController {
 
   @Put(":entityType/:entityId/values/sensitive")
   @RequirePermission("hr:sensitive:manage")
+  @Validate({ params: entityTypeentityIdParams, body: upsertCustomFieldValuesSchema })
   async upsertValuesSensitive(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
-    @Body(new ZodValidationPipe(upsertCustomFieldValuesSchema)) body: UpsertCustomFieldValuesInput,
+    @Body() body: UpsertCustomFieldValuesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveEmployeesManageScope(this.access, u);
@@ -156,5 +172,33 @@ export class HrCustomFieldsController {
       body,
       true,
     );
+  }
+
+  @Get(":entityType/filter")
+  @RequirePermission("hr:employees:view")
+  @Validate({ params: entityTypeParams, query: filterByCustomFieldQuerySchema })
+  async filterByField(
+    @Param("entityType") entityType: string,
+    @Query() query: FilterByCustomFieldQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    const scope = await resolveEmployeesScope(this.access, u);
+    let value: unknown = undefined;
+    if (query.value !== undefined) {
+      try {
+        value = JSON.parse(query.value);
+      } catch {
+        throw new BadRequestException("value must be valid JSON");
+      }
+    }
+    const ids = await this.svc.filterByCustomField(
+      u.orgId,
+      u.userId,
+      scope,
+      entityType,
+      query.fieldKey,
+      value,
+    );
+    return { ids };
   }
 }

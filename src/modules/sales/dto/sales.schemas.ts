@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalPageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const commissionRuleCreateSchema = z.object({
   name: z.string().min(1, "Rule name is required"),
@@ -25,7 +26,7 @@ export const commissionRuleCreateSchema = z.object({
 export const commissionListSchema = z.object({
   userId: z.string().optional(),
   status: z.enum(["pending", "approved", "paid"]).optional(),
-  limit: z.coerce.number().min(1).max(50).optional(),
+  limit: optionalPageSizeField(50),
 });
 
 export const commissionUpdateSchema = z.object({
@@ -35,7 +36,7 @@ export const commissionUpdateSchema = z.object({
 export const quotaListSchema = z.object({
   userId: z.string().optional(),
   period: z.enum(["monthly", "quarterly", "yearly"]).optional(),
-  limit: z.coerce.number().min(1).max(50).optional(),
+  limit: optionalPageSizeField(50),
 });
 
 export const quotaCreateSchema = z

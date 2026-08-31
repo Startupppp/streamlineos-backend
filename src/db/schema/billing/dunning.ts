@@ -11,7 +11,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
-import { subscriptions } from "../common/shared";
+import { subscriptions } from "../common/subscriptions";
 
 export const dunningAttempts = pgTable(
   "dunning_attempts",

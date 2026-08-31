@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ApprovalsService } from "./approvals.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
@@ -30,6 +29,11 @@ import {
   type ListApprovalsQuery,
   type UpdateApprovalInput,
 } from "./dto/approvals.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
+const projectAndApprovalIdParams = z.object({ projectId: z.coerce.number().int().positive(), approvalId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/approvals")
@@ -52,9 +56,10 @@ export class ApprovalsController {
 
   @Get()
   @RequirePermission("build:approvals:view")
+  @Validate({ params: projectIdParams, query: listApprovalsQuerySchema })
   listApprovals(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(listApprovalsQuerySchema)) query: ListApprovalsQuery,
+    @Query() query: ListApprovalsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listApprovals(u.orgId, projectId, query);
@@ -62,6 +67,7 @@ export class ApprovalsController {
 
   @Get(":approvalId")
   @RequirePermission("build:approvals:view")
+  @Validate({ params: projectAndApprovalIdParams })
   getApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
@@ -74,9 +80,10 @@ export class ApprovalsController {
   @HttpCode(201)
   @RequirePermission("build:approvals:request")
   @Idempotent("build.approval.create")
+  @Validate({ params: projectIdParams, body: createApprovalSchema })
   createApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createApprovalSchema)) body: CreateApprovalInput,
+    @Body() body: CreateApprovalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createApproval(u.orgId, u.userId, projectId, body);
@@ -85,10 +92,11 @@ export class ApprovalsController {
   @Patch(":approvalId/decide")
   @RequirePermission("build:approvals:decide")
   @Idempotent("build.approval.decide")
+  @Validate({ params: projectAndApprovalIdParams, body: decideApprovalSchema })
   decideApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
-    @Body(new ZodValidationPipe(decideApprovalSchema)) body: DecideApprovalInput,
+    @Body() body: DecideApprovalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.decideApproval(u, projectId, approvalId, body);
@@ -96,10 +104,11 @@ export class ApprovalsController {
 
   @Patch(":approvalId")
   @RequirePermission("build:approvals:manage")
+  @Validate({ params: projectAndApprovalIdParams, body: updateApprovalSchema })
   updateApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
-    @Body(new ZodValidationPipe(updateApprovalSchema)) body: UpdateApprovalInput,
+    @Body() body: UpdateApprovalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateApproval(u.orgId, u.userId, projectId, approvalId, body);
@@ -108,6 +117,7 @@ export class ApprovalsController {
   @Delete(":approvalId")
   @RequirePermission("build:approvals:manage")
   @HttpCode(204)
+  @Validate({ params: projectAndApprovalIdParams })
   softDeleteApproval(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,

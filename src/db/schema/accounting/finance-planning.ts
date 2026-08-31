@@ -1,6 +1,6 @@
 import { boolean, decimal, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { ledgerAccounts } from "./accounting";
 import { orgUnits } from "../common/organization";
 import { projects } from "../build";
@@ -19,8 +19,8 @@ export const finBudgets = pgTable("fin_budgets", {
   dimensionType: finBudgetDimensionEnum("dimension_type").default("NONE"),
   status: finBudgetStatusEnum("status").default("DRAFT").notNull(),
   totalAmount: decimal("total_amount", { precision: 18, scale: 4 }).default("0").notNull(),
-  createdBy: text("created_by").references(() => users.id).notNull(),
-  approvedBy: text("approved_by").references(() => users.id),
+  createdByMembershipId: integer("created_by_membership_id"),
+  approvedByMembershipId: integer("approved_by_membership_id"),
   approvedAt: timestamp("approved_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -67,7 +67,7 @@ export const finCashFlowScenarios = pgTable("fin_cash_flow_scenarios", {
   kind: finScenarioKindEnum("kind").default("EXPECTED").notNull(),
   assumptions: jsonb("assumptions"),
   isDefault: boolean("is_default").default(false).notNull(),
-  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -77,8 +77,8 @@ export const finCashFlowScenarios = pgTable("fin_cash_flow_scenarios", {
 
 export const finBudgetsRelations = relations(finBudgets, ({ one, many }) => ({
   organization: one(organizations, { fields: [finBudgets.orgId], references: [organizations.id] }),
-  creator: one(users, { fields: [finBudgets.createdBy], references: [users.id], relationName: "budgetCreatedBy" }),
-  approver: one(users, { fields: [finBudgets.approvedBy], references: [users.id], relationName: "budgetApprovedBy" }),
+  creatorMember: one(organizationMembers, { fields: [finBudgets.orgId, finBudgets.createdByMembershipId], references: [organizationMembers.orgId, organizationMembers.id], relationName: "budgetCreatedBy" }),
+  approverMember: one(organizationMembers, { fields: [finBudgets.orgId, finBudgets.approvedByMembershipId], references: [organizationMembers.orgId, organizationMembers.id], relationName: "budgetApprovedBy" }),
   lines: many(finBudgetLines),
   revisions: many(finBudgetRevisions),
 }));
@@ -99,6 +99,6 @@ export const finBudgetRevisionsRelations = relations(finBudgetRevisions, ({ one 
 
 export const finCashFlowScenariosRelations = relations(finCashFlowScenarios, ({ one }) => ({
   organization: one(organizations, { fields: [finCashFlowScenarios.orgId], references: [organizations.id] }),
-  creator: one(users, { fields: [finCashFlowScenarios.createdBy], references: [users.id] }),
+  creatorMember: one(organizationMembers, { fields: [finCashFlowScenarios.orgId, finCashFlowScenarios.createdByMembershipId], references: [organizationMembers.orgId, organizationMembers.id] }),
 }));
 

@@ -16,7 +16,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrHandbookService } from "./hr-handbook.service";
 import {
   createHandbookSchema,
@@ -25,6 +25,10 @@ import {
   type UpdateHandbookInput,
 } from "./dto/handbook.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const handbookIdParams = z.object({ handbookId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/handbook")
@@ -41,8 +45,9 @@ export class HrHandbookController {
   @Post()
   @RequirePermission("hr:handbook:manage")
   @HttpCode(201)
+  @Validate({ body: createHandbookSchema })
   create(
-    @Body(new ZodValidationPipe(createHandbookSchema)) body: CreateHandbookInput,
+    @Body() body: CreateHandbookInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.handbook.create(u.orgId, body);
@@ -50,9 +55,10 @@ export class HrHandbookController {
 
   @Patch(":handbookId")
   @RequirePermission("hr:handbook:manage")
+  @Validate({ params: handbookIdParams, body: updateHandbookSchema })
   async update(
     @Param("handbookId", ParseIntPipe) handbookId: number,
-    @Body(new ZodValidationPipe(updateHandbookSchema)) body: UpdateHandbookInput,
+    @Body() body: UpdateHandbookInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const existing = await this.handbook.getById(u.orgId, handbookId);
@@ -63,6 +69,7 @@ export class HrHandbookController {
   @Delete(":handbookId")
   @HttpCode(204)
   @RequirePermission("hr:handbook:manage")
+  @Validate({ params: handbookIdParams })
   async remove(
     @Param("handbookId", ParseIntPipe) handbookId: number,
     @CurrentUser() u: CurrentUserContext,

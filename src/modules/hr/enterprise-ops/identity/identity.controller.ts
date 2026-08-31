@@ -16,7 +16,6 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { RequireModule } from "../../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { IdentityService } from "./identity.service";
 import {
   createProvisioningSchema,
@@ -34,6 +33,10 @@ import {
   type GenerateProvisioningInput,
 } from "../dto/identity.schemas";
 import { z } from "zod";
+import { Validate } from "../../../../common/validation/validate.decorator";
+
+const provisioningIdParams = z.object({ provisioningId: z.string().min(1) }).strict();
+const templateIdParams = z.object({ templateId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/enterprise/ops/identity")
@@ -43,9 +46,10 @@ export class IdentityController {
 
   @Get("provisioning")
   @RequirePermission("hr:identity:view")
+  @Validate({ query: listProvisioningSchema })
   listProvisioning(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listProvisioningSchema)) query: ListProvisioningInput,
+    @Query() query: ListProvisioningInput,
   ) {
     return this.svc.listProvisioning(user.orgId, query);
   }
@@ -53,9 +57,10 @@ export class IdentityController {
   @Post("provisioning")
   @HttpCode(201)
   @RequirePermission("hr:identity:manage")
+  @Validate({ body: createProvisioningSchema })
   createProvisioning(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createProvisioningSchema)) body: CreateProvisioningInput,
+    @Body() body: CreateProvisioningInput,
   ) {
     return this.svc.createProvisioning(user.orgId, body);
   }
@@ -63,19 +68,21 @@ export class IdentityController {
   @Post("provisioning/generate")
   @HttpCode(201)
   @RequirePermission("hr:identity:manage")
+  @Validate({ body: generateProvisioningSchema })
   generateProvisioning(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(generateProvisioningSchema)) body: GenerateProvisioningInput,
+    @Body() body: GenerateProvisioningInput,
   ) {
     return this.svc.generateProvisioning(user.orgId, body);
   }
 
   @Patch("provisioning/:provisioningId")
   @RequirePermission("hr:identity:manage")
+  @Validate({ params: provisioningIdParams, body: updateProvisioningSchema })
   updateProvisioning(
     @CurrentUser() user: CurrentUserContext,
     @Param("provisioningId") provisioningId: string,
-    @Body(new ZodValidationPipe(updateProvisioningSchema)) body: UpdateProvisioningInput,
+    @Body() body: UpdateProvisioningInput,
   ) {
     return this.svc.updateProvisioning(user.orgId, provisioningId, body);
   }
@@ -89,19 +96,21 @@ export class IdentityController {
   @Post("templates")
   @HttpCode(201)
   @RequirePermission("hr:identity:manage")
+  @Validate({ body: createTemplateSchema })
   createTemplate(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createTemplateSchema)) body: CreateTemplateInput,
+    @Body() body: CreateTemplateInput,
   ) {
     return this.svc.createTemplate(user.orgId, body);
   }
 
   @Patch("templates/:templateId")
   @RequirePermission("hr:identity:manage")
+  @Validate({ params: templateIdParams, body: updateTemplateSchema })
   updateTemplate(
     @CurrentUser() user: CurrentUserContext,
     @Param("templateId") templateId: string,
-    @Body(new ZodValidationPipe(updateTemplateSchema)) body: UpdateTemplateInput,
+    @Body() body: UpdateTemplateInput,
   ) {
     return this.svc.updateTemplate(user.orgId, templateId, body);
   }
@@ -109,6 +118,7 @@ export class IdentityController {
   @Delete("templates/:templateId")
   @HttpCode(204)
   @RequirePermission("hr:identity:manage")
+  @Validate({ params: templateIdParams })
   async deleteTemplate(
     @CurrentUser() user: CurrentUserContext,
     @Param("templateId") templateId: string,
@@ -118,9 +128,10 @@ export class IdentityController {
 
   @Get("exit-verification")
   @RequirePermission("hr:identity:view")
+  @Validate({ query: exitVerificationSchema })
   exitVerification(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(exitVerificationSchema)) query: z.infer<typeof exitVerificationSchema>,
+    @Query() query: z.infer<typeof exitVerificationSchema>,
   ) {
     return this.svc.getExitVerification(user.orgId, query.userId);
   }

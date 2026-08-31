@@ -9,6 +9,8 @@ import { BankAccountsService } from "./bank-accounts.service";
 import { ImportsService } from "./imports.service";
 import { MatchingService } from "./matching.service";
 import { ReconciliationService } from "./reconciliation.service";
+import { ReconciliationWorkspaceService } from "./reconciliation-workspace.service";
+import { ReconciliationRulesService } from "./reconciliation-rules.service";
 import { TransfersService } from "./transfers.service";
 
 @Module({
@@ -24,6 +26,8 @@ import { TransfersService } from "./transfers.service";
     ImportsService,
     MatchingService,
     ReconciliationService,
+    ReconciliationWorkspaceService,
+    ReconciliationRulesService,
     TransfersService,
   ],
 })

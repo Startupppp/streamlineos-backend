@@ -4,7 +4,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { AccessService } from "../access/access.service";
 import { isScopable } from "../rbac/permissions";
@@ -28,6 +27,12 @@ import {
   type UpdateAutonomySettingsInput,
   type CancelHoldInput,
 } from "./dto/autonomy-review.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const decisionIdParams = z.object({ decisionId: z.string().min(1) }).strict();
+const shadowScoreIdParams = z.object({ shadowScoreId: z.string().min(1) }).strict();
+const holdIdParams = z.object({ holdId: z.string().min(1) }).strict();
 
 const REVIEW_PERMISSION = "crm:autonomy:view";
 
@@ -43,8 +48,9 @@ export class AutonomyReviewController {
 
   @Get("decisions")
   @RequirePermission(REVIEW_PERMISSION)
+  @Validate({ query: listDecisionsQuerySchema })
   async listDecisions(
-    @Query(new ZodValidationPipe(listDecisionsQuerySchema)) query: ListDecisionsQuery,
+    @Query() query: ListDecisionsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listDecisions(u.orgId, u.userId, query, await this.readScope(u));
@@ -52,6 +58,7 @@ export class AutonomyReviewController {
 
   @Get("decisions/:decisionId")
   @RequirePermission(REVIEW_PERMISSION)
+  @Validate({ params: decisionIdParams })
   getDecision(
     @Param("decisionId") decisionId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -67,9 +74,10 @@ export class AutonomyReviewController {
   @Post("decisions/:decisionId/reverse")
   @Idempotent("crm.autonomy.reverse")
   @RequirePermission("crm:autonomy:reverse")
+  @Validate({ params: decisionIdParams, body: reverseDecisionSchema })
   reverseDecision(
     @Param("decisionId") decisionId: string,
-    @Body(new ZodValidationPipe(reverseDecisionSchema)) body: ReverseDecisionInput,
+    @Body() body: ReverseDecisionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.reverseDecision(u.orgId, u.userId, decisionId, body);
@@ -84,8 +92,9 @@ export class AutonomyReviewController {
   @Patch("switches")
   @Idempotent("crm.autonomy.switch")
   @RequirePermission("crm:autonomy:manage")
+  @Validate({ body: setSwitchSchema })
   setSwitch(
-    @Body(new ZodValidationPipe(setSwitchSchema)) body: SetSwitchInput,
+    @Body() body: SetSwitchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.setSwitch(u.orgId, u.userId, body);
@@ -100,8 +109,9 @@ export class AutonomyReviewController {
    */
   @Get("scoreboard")
   @RequirePermission(REVIEW_PERMISSION)
+  @Validate({ query: scoreboardQuerySchema })
   scoreboard(
-    @Query(new ZodValidationPipe(scoreboardQuerySchema)) query: ScoreboardQuery,
+    @Query() query: ScoreboardQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.scoring.scoreboard(u.orgId, query.days);
@@ -110,8 +120,9 @@ export class AutonomyReviewController {
   /** What a second pass disagreed with and nobody has looked at yet. */
   @Get("review-queue")
   @RequirePermission(REVIEW_PERMISSION)
+  @Validate({ query: reviewQueueQuerySchema })
   reviewQueue(
-    @Query(new ZodValidationPipe(reviewQueueQuerySchema)) query: ReviewQueueQuery,
+    @Query() query: ReviewQueueQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.scoring.reviewQueue(u.orgId, query.limit);
@@ -120,6 +131,7 @@ export class AutonomyReviewController {
   @Post("review-queue/:shadowScoreId/reviewed")
   @Idempotent("crm.autonomy.reviewed")
   @RequirePermission(REVIEW_PERMISSION)
+  @Validate({ params: shadowScoreIdParams })
   markReviewed(
     @Param("shadowScoreId") shadowScoreId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -145,9 +157,10 @@ export class AutonomyReviewController {
   @Post("holds/:holdId/cancel")
   @Idempotent("crm.autonomy.cancel-hold")
   @RequirePermission("crm:autonomy:reverse")
+  @Validate({ params: holdIdParams, body: cancelHoldSchema })
   cancelHold(
     @Param("holdId") holdId: string,
-    @Body(new ZodValidationPipe(cancelHoldSchema)) body: CancelHoldInput,
+    @Body() body: CancelHoldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.holds.cancelHold(u.orgId, u.userId, holdId, body.reason);
@@ -163,8 +176,9 @@ export class AutonomyReviewController {
   @Patch("settings")
   @Idempotent("crm.autonomy.settings")
   @RequirePermission("crm:autonomy:manage")
+  @Validate({ body: updateAutonomySettingsSchema })
   updateSettings(
-    @Body(new ZodValidationPipe(updateAutonomySettingsSchema)) body: UpdateAutonomySettingsInput,
+    @Body() body: UpdateAutonomySettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.scoring.updateSettings(u.orgId, body);

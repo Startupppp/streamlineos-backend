@@ -132,6 +132,37 @@ describe("ChatFanoutOutboxConsumer", () => {
     await expect(consumer.handle(makeEvent())).rejects.toThrow("provider down");
   });
 
+  it("turns a malformed persisted payload into a durable failed inbox record", async () => {
+    const db = makeDb();
+    const consumer = new ChatFanoutOutboxConsumer(
+      db as never,
+      { dispatchDeferred: jest.fn(), dispatchRealtime: jest.fn() } as never,
+      new OutboxConsumerRegistry(),
+    );
+
+    await expect(consumer.handle(makeEvent({ payload: { orgId: "org-1" } }))).resolves.toBeUndefined();
+
+    expect(db.update).toHaveBeenCalled();
+    expect(db.update.mock.results[0]?.value.set).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "FAILED" }),
+    );
+  });
+
+  it("propagates a realtime failure so the durable relay can retry the whole event", async () => {
+    const db = makeDb();
+    const consumer = new ChatFanoutOutboxConsumer(
+      db as never,
+      {
+        dispatchRealtime: jest.fn().mockRejectedValue(new Error("realtime unavailable")),
+        dispatchDeferred: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      new OutboxConsumerRegistry(),
+    );
+
+    await expect(consumer.handle(makeEvent())).rejects.toThrow("realtime unavailable");
+    expect(db.update).toHaveBeenCalled();
+  });
+
   it("reuses the same idempotency key when a worker crashes before inbox completion", async () => {
     const db = makeDb();
     const dispatchDeferred = jest

@@ -16,7 +16,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { CrmPricebooksService } from "./crm-pricebooks.service";
 import {
@@ -35,6 +34,12 @@ import {
   type CreateTemplateInput,
   type UpdateTemplateInput,
 } from "./dto/pricebooks.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const pricebookIdParams = z.object({ pricebookId: z.string().min(1) }).strict();
+const pricebookIdentryIdParams = z.object({ pricebookId: z.string().min(1), entryId: z.string().min(1) }).strict();
+const templateIdParams = z.object({ templateId: z.string().min(1) }).strict();
 
 @RequireModule("crm")
 @Controller("crm")
@@ -44,8 +49,9 @@ export class CrmPricebooksController {
 
   @Get("pricebooks/resolve-price")
   @RequirePermission("crm:quotes:create")
+  @Validate({ query: resolvePriceQuerySchema })
   resolvePrice(
-    @Query(new ZodValidationPipe(resolvePriceQuerySchema)) query: ResolvePriceQuery,
+    @Query() query: ResolvePriceQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.resolvePrice(u.orgId, query);
@@ -61,8 +67,9 @@ export class CrmPricebooksController {
   @HttpCode(201)
   @RequirePermission("crm:pricebooks:manage")
   @Idempotent("crm.pricebook.create")
+  @Validate({ body: createPricebookSchema })
   createPricebook(
-    @Body(new ZodValidationPipe(createPricebookSchema)) body: CreatePricebookInput,
+    @Body() body: CreatePricebookInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createPricebook(u.orgId, body);
@@ -70,9 +77,10 @@ export class CrmPricebooksController {
 
   @Patch("pricebooks/:pricebookId")
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ params: pricebookIdParams, body: updatePricebookSchema })
   updatePricebook(
     @Param("pricebookId") pricebookId: string,
-    @Body(new ZodValidationPipe(updatePricebookSchema)) body: UpdatePricebookInput,
+    @Body() body: UpdatePricebookInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updatePricebook(u.orgId, pricebookId, body);
@@ -80,6 +88,7 @@ export class CrmPricebooksController {
 
   @Delete("pricebooks/:pricebookId")
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ params: pricebookIdParams })
   deletePricebook(
     @Param("pricebookId") pricebookId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -89,6 +98,7 @@ export class CrmPricebooksController {
 
   @Get("pricebooks/:pricebookId/entries")
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ params: pricebookIdParams })
   listEntries(
     @Param("pricebookId") pricebookId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -99,9 +109,10 @@ export class CrmPricebooksController {
   @Post("pricebooks/:pricebookId/entries")
   @HttpCode(200)
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ params: pricebookIdParams, body: upsertEntrySchema })
   upsertEntry(
     @Param("pricebookId") pricebookId: string,
-    @Body(new ZodValidationPipe(upsertEntrySchema)) body: UpsertEntryInput,
+    @Body() body: UpsertEntryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.upsertEntry(u.orgId, pricebookId, body);
@@ -109,6 +120,7 @@ export class CrmPricebooksController {
 
   @Delete("pricebooks/:pricebookId/entries/:entryId")
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ params: pricebookIdentryIdParams })
   deleteEntry(
     @Param("pricebookId") pricebookId: string,
     @Param("entryId") entryId: string,
@@ -125,8 +137,9 @@ export class CrmPricebooksController {
 
   @Patch("quote-settings")
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ body: quoteSettingsSchema })
   upsertQuoteSettings(
-    @Body(new ZodValidationPipe(quoteSettingsSchema)) body: QuoteSettingsInput,
+    @Body() body: QuoteSettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.upsertQuoteSettings(u.orgId, body);
@@ -141,8 +154,9 @@ export class CrmPricebooksController {
   @Post("quote-templates")
   @HttpCode(201)
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ body: createTemplateSchema })
   createTemplate(
-    @Body(new ZodValidationPipe(createTemplateSchema)) body: CreateTemplateInput,
+    @Body() body: CreateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createTemplate(u.orgId, body);
@@ -150,9 +164,10 @@ export class CrmPricebooksController {
 
   @Patch("quote-templates/:templateId")
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ params: templateIdParams, body: updateTemplateSchema })
   updateTemplate(
     @Param("templateId") templateId: string,
-    @Body(new ZodValidationPipe(updateTemplateSchema)) body: UpdateTemplateInput,
+    @Body() body: UpdateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateTemplate(u.orgId, templateId, body);
@@ -160,6 +175,7 @@ export class CrmPricebooksController {
 
   @Delete("quote-templates/:templateId")
   @RequirePermission("crm:pricebooks:manage")
+  @Validate({ params: templateIdParams })
   deleteTemplate(
     @Param("templateId") templateId: string,
     @CurrentUser() u: CurrentUserContext,

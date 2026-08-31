@@ -15,10 +15,11 @@ import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decora
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { LlmService } from "../providers/llm.service";
 import { ProjectsAiService } from "../services/projects-ai.service";
-import { TicketAiService } from "../services/ticket-ai.service";
+import { TicketInsightsAiService } from "../services/ticket-insights-ai.service";
+import { TicketTriageAiService } from "../services/ticket-triage-ai.service";
+import { MeetingActionAiService } from "../services/meeting-action-ai.service";
 import { PlanLimitsService } from "../../../billing/core/plan-limits.service";
 import {
   planBodySchema,
@@ -36,6 +37,12 @@ import {
   type ImproveDescriptionBodyInput,
   type DraftTicketBodyInput,
 } from "../dto/ticket-ai.schemas";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const projectIdParams = z.object({ projectId: z.string().min(1) }).strict();
+const projectIdticketIdParams = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1) }).strict();
+const projectIdmeetingIdParams = z.object({ projectId: z.string().min(1), meetingId: z.string().min(1) }).strict();
 
 function parsePositiveInt(raw: string, label: string): number {
   const id = parseInt(raw, 10);
@@ -56,7 +63,9 @@ export class ProjectsAiController {
   constructor(
     private readonly llm: LlmService,
     private readonly projectsAi: ProjectsAiService,
-    private readonly ticketAi: TicketAiService,
+    private readonly ticketInsights: TicketInsightsAiService,
+    private readonly ticketTriage: TicketTriageAiService,
+    private readonly meetingAction: MeetingActionAiService,
     private readonly planLimits: PlanLimitsService,
   ) {}
 
@@ -65,6 +74,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/summary")
+  @Validate({ params: projectIdParams })
   async summary(@Param("projectId") rawId: string, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
     this.ensureLlm();
@@ -72,6 +82,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/risks")
+  @Validate({ params: projectIdParams })
   async risks(@Param("projectId") rawId: string, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
     this.ensureLlm();
@@ -79,6 +90,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/client-update")
+  @Validate({ params: projectIdParams })
   async clientUpdate(@Param("projectId") rawId: string, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
     this.ensureLlm();
@@ -86,9 +98,10 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/plan")
+  @Validate({ params: projectIdParams, body: planBodySchema })
   async plan(
     @Param("projectId") rawId: string,
-    @Body(new ZodValidationPipe(planBodySchema)) body: PlanBodyInput,
+    @Body() body: PlanBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
@@ -97,9 +110,10 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/extract-tasks")
+  @Validate({ params: projectIdParams, body: extractBodySchema })
   async extractTasks(
     @Param("projectId") rawId: string,
-    @Body(new ZodValidationPipe(extractBodySchema)) body: ExtractBodyInput,
+    @Body() body: ExtractBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
@@ -108,9 +122,10 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/ask")
+  @Validate({ params: projectIdParams, body: askBodySchema })
   async ask(
     @Param("projectId") rawId: string,
-    @Body(new ZodValidationPipe(askBodySchema)) body: AskBodyInput,
+    @Body() body: AskBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
@@ -119,14 +134,15 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/tickets/draft/suggest-title")
+  @Validate({ params: projectIdParams, body: draftTicketBodySchema })
   async suggestDraftTitle(
     @Param("projectId") rawPid: string,
-    @Body(new ZodValidationPipe(draftTicketBodySchema)) body: DraftTicketBodyInput,
+    @Body() body: DraftTicketBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.suggestTitleFromDraft(
+    return this.ticketTriage.suggestTitleFromDraft(
       u.orgId,
       u.userId,
       parsePositiveInt(rawPid, "projectId"),
@@ -135,14 +151,15 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/tickets/draft/improve-description")
+  @Validate({ params: projectIdParams, body: draftTicketBodySchema })
   async improveDraftDescription(
     @Param("projectId") rawPid: string,
-    @Body(new ZodValidationPipe(draftTicketBodySchema)) body: DraftTicketBodyInput,
+    @Body() body: DraftTicketBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.improveDescriptionDraft(
+    return this.ticketTriage.improveDescriptionDraft(
       u.orgId,
       u.userId,
       parsePositiveInt(rawPid, "projectId"),
@@ -151,14 +168,15 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/tickets/draft/suggest-fields")
+  @Validate({ params: projectIdParams, body: draftTicketBodySchema })
   async suggestDraftFields(
     @Param("projectId") rawPid: string,
-    @Body(new ZodValidationPipe(draftTicketBodySchema)) body: DraftTicketBodyInput,
+    @Body() body: DraftTicketBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.suggestFieldsFromDraft(
+    return this.ticketTriage.suggestFieldsFromDraft(
       u.orgId,
       u.userId,
       parsePositiveInt(rawPid, "projectId"),
@@ -167,6 +185,7 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/summarize")
+  @Validate({ params: projectIdticketIdParams })
   async summarizeTicket(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
@@ -174,10 +193,11 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.summarizeTicket(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
+    return this.ticketInsights.summarizeTicket(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
   }
 
   @Post("tickets/:projectId/:ticketId/summarize-comments")
+  @Validate({ params: projectIdticketIdParams })
   async summarizeTicketComments(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
@@ -185,7 +205,7 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.summarizeComments(
+    return this.ticketInsights.summarizeComments(
       u.orgId,
       u.userId,
       parsePositiveInt(rawPid, "projectId"),
@@ -194,18 +214,20 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/improve-description")
+  @Validate({ params: projectIdticketIdParams, body: improveDescriptionBodySchema })
   async improveTicketDescription(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
-    @Body(new ZodValidationPipe(improveDescriptionBodySchema)) body: ImproveDescriptionBodyInput,
+    @Body() body: ImproveDescriptionBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.improveDescription(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"), body.draft);
+    return this.ticketInsights.improveDescription(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"), body.draft);
   }
 
   @Post("tickets/:projectId/:ticketId/suggest-subtasks")
+  @Validate({ params: projectIdticketIdParams })
   async suggestTicketSubtasks(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
@@ -213,10 +235,11 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.suggestSubtasks(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
+    return this.ticketTriage.suggestSubtasks(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
   }
 
   @Post("tickets/:projectId/:ticketId/generate-checklist")
+  @Validate({ params: projectIdticketIdParams })
   async generateTicketChecklist(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
@@ -224,7 +247,7 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.generateChecklist(
+    return this.ticketTriage.generateChecklist(
       u.orgId,
       u.userId,
       parsePositiveInt(rawPid, "projectId"),
@@ -233,9 +256,10 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/weekly-update")
+  @Validate({ params: projectIdParams, body: weeklyUpdateBodySchema })
   async weeklyUpdate(
     @Param("projectId") rawId: string,
-    @Body(new ZodValidationPipe(weeklyUpdateBodySchema)) body: WeeklyUpdateBodyInput,
+    @Body() body: WeeklyUpdateBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
@@ -244,6 +268,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/meetings/:meetingId/extract-actions")
+  @Validate({ params: projectIdmeetingIdParams })
   async extractMeetingActions(
     @Param("projectId") rawPid: string,
     @Param("meetingId") rawMid: string,
@@ -251,10 +276,11 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.project-manager");
     this.ensureLlm();
-    return this.ticketAi.extractMeetingActions(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawMid, "meetingId"));
+    return this.meetingAction.extractMeetingActions(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawMid, "meetingId"));
   }
 
   @Post("projects/:projectId/change-impact")
+  @Validate({ params: projectIdParams })
   async changeImpact(
     @Param("projectId") rawId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -265,6 +291,7 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/handoff")
+  @Validate({ params: projectIdticketIdParams })
   async ticketHandoff(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
@@ -272,6 +299,6 @@ export class ProjectsAiController {
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.ticket-insights");
     this.ensureLlm();
-    return this.ticketAi.handoffSummary(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
+    return this.ticketInsights.handoffSummary(u.orgId, u.userId, parsePositiveInt(rawPid, "projectId"), parsePositiveInt(rawTid, "ticketId"));
   }
 }

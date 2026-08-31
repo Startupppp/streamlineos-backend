@@ -75,6 +75,7 @@ export class ExternalCalendarEventsService {
 
     const events: ExternalCalendarEventItem[] = [];
     const errors: ExternalEventsResult["errors"] = [];
+    const reauthIds: number[] = [];
     settled.forEach((outcome, i) => {
       const conn = connections[i];
       if (!conn) return;
@@ -84,15 +85,16 @@ export class ExternalCalendarEventsService {
         const message =
           outcome.reason instanceof Error ? outcome.reason.message : "Failed to load external events";
         errors.push({ connectionId: conn.id, accountEmail: conn.accountEmail, message });
-        if (outcome.reason instanceof ComposioToolError && outcome.reason.isAuthError) {
-          void this.db
-            .update(userIntegrationConnections)
-            .set({ status: "needs_reauth" })
-            .where(eq(userIntegrationConnections.id, conn.id))
-            .catch(() => undefined);
-        }
+        if (outcome.reason instanceof ComposioToolError && outcome.reason.isAuthError) reauthIds.push(conn.id);
       }
     });
+    if (reauthIds.length > 0) {
+      await this.db
+        .update(userIntegrationConnections)
+        .set({ status: "needs_reauth" })
+        .where(inArray(userIntegrationConnections.id, reauthIds))
+        .catch(() => undefined);
+    }
     events.sort((a, b) => a.start.localeCompare(b.start));
     return { events, errors };
   }

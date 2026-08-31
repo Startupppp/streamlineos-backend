@@ -3,33 +3,25 @@ import {
   ConflictException,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { and, count, desc, eq, gt, inArray, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import {
   finPaymentRuns,
   finPaymentRunItems,
   purchaseBills,
   vendorPayments,
-  finVendorPaymentAllocations,
   clients,
-  accountingSettings,
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import { logSideEffectFailure } from "../../../common/logger/side-effect";
-import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
-import { RateResolverService } from "../controls/rate-resolver.service";
-import { FxService } from "../controls/fx.service";
-import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
 import { checkApprovalPolicy } from "./ap-approval.helper";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
   CreatePaymentRunInput,
   UpdatePaymentRunItemInput,
@@ -44,16 +36,11 @@ const PAYMENT_RUN_CACHE_KEY = (orgId: string) => `fin:payment-runs:${orgId}`;
 
 @Injectable()
 export class PaymentRunsService {
-  private readonly logger = new Logger(PaymentRunsService.name);
-
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly dispatch: NotificationDispatchService,
-    private readonly journalPosting: JournalPostingService,
-    private readonly rateResolver: RateResolverService,
-    private readonly fx: FxService,
   ) {}
 
   async listRuns(orgId: string, query: ListPaymentRunsQuery) {
@@ -125,6 +112,7 @@ export class PaymentRunsService {
   }
 
   async createRun(orgId: string, userId: string, input: CreatePaymentRunInput) {
+    await assertOrganizationActor(this.db, orgId, { kind: "user", userId });
     const conds = [
       eq(purchaseBills.orgId, orgId),
       inArray(purchaseBills.status, ["POSTED", "PARTIALLY_PAID"]),
@@ -134,12 +122,10 @@ export class PaymentRunsService {
       ),
     ];
 
-    if (input.filters?.vendorIds?.length) {
+    if (input.filters?.vendorIds?.length)
       conds.push(inArray(purchaseBills.vendorId, input.filters.vendorIds));
-    }
-    if (input.filters?.dueBefore) {
+    if (input.filters?.dueBefore)
       conds.push(lte(purchaseBills.dueDate, input.filters.dueBefore));
-    }
     if (input.filters?.minAmount !== undefined) {
       const minAmt = input.filters.minAmount;
       conds.push(
@@ -162,18 +148,19 @@ export class PaymentRunsService {
 
     const filteredBills = matchingBills.filter((b) => {
       const outstanding = round2(Number(b.total ?? 0) - Number(b.amountPaid ?? 0));
-      if (input.filters?.maxAmount !== undefined && outstanding > input.filters.maxAmount) {
+      if (input.filters?.maxAmount !== undefined && outstanding > input.filters.maxAmount)
         return false;
-      }
       return outstanding > 0.005;
     });
 
-    if (filteredBills.length === 0) {
+    if (filteredBills.length === 0)
       throw new BadRequestException("No outstanding bills match the provided filters");
-    }
 
     const totalAmount = round2(
-      filteredBills.reduce((acc, b) => acc + round2(Number(b.total ?? 0) - Number(b.amountPaid ?? 0)), 0),
+      filteredBills.reduce(
+        (acc, b) => acc + round2(Number(b.total ?? 0) - Number(b.amountPaid ?? 0)),
+        0,
+      ),
     );
 
     return this.db.transaction(async (tx) => {
@@ -193,6 +180,7 @@ export class PaymentRunsService {
 
       await tx.insert(finPaymentRunItems).values(
         filteredBills.map((b) => ({
+          orgId,
           runId: run.id,
           billId: b.id,
           vendorId: b.vendorId ?? null,
@@ -207,6 +195,7 @@ export class PaymentRunsService {
 
   async approveRun(u: CurrentUserContext, runId: number) {
     const { orgId, userId } = u;
+    await assertOrganizationActor(this.db, orgId, { kind: "user", userId });
 
     const rows = await this.db
       .select()
@@ -215,9 +204,10 @@ export class PaymentRunsService {
       .limit(1);
     const run = rows[0];
     if (!run) throw new NotFoundException("Payment run not found");
-    if (run.status !== "DRAFT") {
-      throw new ConflictException(`Payment run is in status ${run.status}; only DRAFT runs can be approved`);
-    }
+    if (run.status !== "DRAFT")
+      throw new ConflictException(
+        `Payment run is in status ${run.status}; only DRAFT runs can be approved`,
+      );
 
     const total = Number(run.totalAmount ?? 0);
     const check = await checkApprovalPolicy(this.db, orgId, "VENDOR_PAYMENT", total);
@@ -236,11 +226,16 @@ export class PaymentRunsService {
 
     const [updated] = await this.db
       .update(finPaymentRuns)
-      .set({ status: "APPROVED", approvedBy: userId, approvedAt: new Date(), updatedAt: new Date() })
+      .set({
+        status: "APPROVED",
+        approvedBy: userId,
+        approvedAt: new Date(),
+        updatedAt: new Date(),
+      })
       .where(and(eq(finPaymentRuns.id, runId), eq(finPaymentRuns.orgId, orgId)))
       .returning();
 
-    void this.cache.invalidate(PAYMENT_RUN_CACHE_KEY(orgId));
+    await this.cache.invalidate(PAYMENT_RUN_CACHE_KEY(orgId));
 
     this.audit.log({
       action: "accounting.payment_run.approve",
@@ -254,179 +249,6 @@ export class PaymentRunsService {
     return updated;
   }
 
-  async executeRun(u: CurrentUserContext, runId: number) {
-    const { orgId, userId } = u;
-
-    const rows = await this.db
-      .select()
-      .from(finPaymentRuns)
-      .where(and(eq(finPaymentRuns.id, runId), eq(finPaymentRuns.orgId, orgId)))
-      .limit(1);
-    const run = rows[0];
-    if (!run) throw new NotFoundException("Payment run not found");
-    if (run.status !== "APPROVED") {
-      throw new ConflictException(`Payment run must be APPROVED before execution; current status: ${run.status}`);
-    }
-
-    const pendingItems = await this.db
-      .select()
-      .from(finPaymentRunItems)
-      .where(and(eq(finPaymentRunItems.runId, runId), eq(finPaymentRunItems.status, "PENDING")));
-
-    const today = new Date().toISOString().slice(0, 10);
-    await this.journalPosting.seedChartOfAccountsForOrg(orgId);
-
-    const settingsRows = await this.db
-      .select({ baseCurrency: accountingSettings.baseCurrency })
-      .from(accountingSettings)
-      .where(eq(accountingSettings.orgId, orgId))
-      .limit(1);
-    const baseCurrency = settingsRows[0]?.baseCurrency ?? "INR";
-
-    const billIds = pendingItems.map((item) => item.billId).filter((id): id is number => id !== null);
-    const billMap = new Map<number, typeof purchaseBills.$inferSelect>();
-    if (billIds.length > 0) {
-      const bills = await this.db
-        .select()
-        .from(purchaseBills)
-        .where(and(inArray(purchaseBills.id, billIds), eq(purchaseBills.orgId, orgId)));
-      for (const b of bills) billMap.set(b.id, b);
-    }
-
-    for (const item of pendingItems) {
-      type FxCapture = { billId: number; currency: string; exchangeRate: string; amount: number; userId: string };
-      let fxCapture: FxCapture | null = null;
-
-      try {
-        await this.db.transaction(async (tx) => {
-          const [payment] = await tx
-            .insert(vendorPayments)
-            .values({
-              orgId,
-              billId: item.billId,
-              amount: Number(item.amount).toFixed(2),
-              paymentDate: today,
-              paymentMethod: "bank_transfer",
-              notes: `Payment run ${run.name}`,
-              createdBy: userId,
-            })
-            .returning();
-
-          if (!payment) throw new Error("Vendor payment insert returned no rows");
-
-          await tx
-            .insert(finVendorPaymentAllocations)
-            .values({
-              orgId,
-              vendorPaymentId: payment.id,
-              billId: item.billId,
-              amount: item.amount,
-            })
-            .onConflictDoNothing();
-
-          const billRow = item.billId !== null ? (billMap.get(item.billId) ?? null) : null;
-          if (billRow) {
-            const newPaid = round2(Number(billRow.amountPaid ?? 0) + Number(item.amount));
-            const total = Number(billRow.total ?? 0);
-            const newStatus = newPaid >= total - 0.005 ? "PAID" : "PARTIALLY_PAID";
-
-            await tx
-              .update(purchaseBills)
-              .set({ amountPaid: newPaid.toFixed(4), status: newStatus, updatedAt: new Date() })
-              .where(and(eq(purchaseBills.id, item.billId), eq(purchaseBills.orgId, orgId)));
-
-            await this.journalPosting.postVendorPayment(
-              {
-                orgId,
-                paymentId: payment.id,
-                billNumber: billRow.billNumber,
-                paymentDate: today,
-                paymentMethod: "bank_transfer",
-                amount: Number(item.amount),
-                createdBy: userId,
-              },
-              tx,
-            );
-
-            if (newStatus === "PAID") {
-              await OutboxWriter.emit(tx, {
-                eventId: randomUUID(),
-                organizationId: orgId,
-                aggregateType: "purchase_bill",
-                aggregateId: String(item.billId),
-                aggregateVersion: Date.now(),
-                eventType: "accounting.bill.paid",
-                payload: {
-                  organization_id: orgId,
-                  bill_id: item.billId,
-                  bill_number: billRow.billNumber,
-                  payment_id: payment.id,
-                  amount_cents: Math.round(Number(item.amount) * 100),
-                  run_id: runId,
-                  actor_user_id: userId,
-                },
-                occurredAt: new Date(),
-              });
-            }
-
-            if (billRow.currency !== baseCurrency) {
-              fxCapture = {
-                billId: billRow.id,
-                currency: billRow.currency,
-                exchangeRate: billRow.exchangeRate,
-                amount: Number(item.amount),
-                userId,
-              };
-            }
-          }
-
-          await tx
-            .update(finPaymentRunItems)
-            .set({ status: "PAID", vendorPaymentId: payment.id })
-            .where(eq(finPaymentRunItems.id, item.id));
-
-          await this.dispatch.emit({
-            eventKey: "accounting.payment.recorded",
-            orgId,
-            actorUserId: userId,
-            targetUserIds: [userId],
-            entityType: "vendor_payment",
-            entityId: String(payment.id),
-            variables: { amount: Number(item.amount), billId: item.billId },
-          });
-        });
-
-        if (fxCapture !== null) {
-          void this.postRunItemFxGainLoss(orgId, baseCurrency, fxCapture, today);
-        }
-      } catch (err: unknown) {
-        logSideEffectFailure("payment run item execution", { orgId, runId, itemId: item.id })(err);
-        await this.db
-          .update(finPaymentRunItems)
-          .set({ status: "SKIPPED" })
-          .where(eq(finPaymentRunItems.id, item.id));
-      }
-    }
-
-    await this.db
-      .update(finPaymentRuns)
-      .set({ status: "COMPLETED", updatedAt: new Date() })
-      .where(and(eq(finPaymentRuns.id, runId), eq(finPaymentRuns.orgId, orgId)));
-
-    void this.cache.invalidate(PAYMENT_RUN_CACHE_KEY(orgId));
-
-    this.audit.log({
-      action: "accounting.payment_run.execute",
-      userId,
-      orgId,
-      resourceType: "payment_run",
-      resourceId: String(runId),
-      result: "SUCCESS",
-    });
-
-    return { id: runId, status: "COMPLETED" };
-  }
-
   async cancelRun(orgId: string, userId: string, runId: number) {
     const rows = await this.db
       .select()
@@ -435,16 +257,15 @@ export class PaymentRunsService {
       .limit(1);
     const run = rows[0];
     if (!run) throw new NotFoundException("Payment run not found");
-    if (run.status === "COMPLETED" || run.status === "CANCELLED") {
+    if (run.status === "COMPLETED" || run.status === "CANCELLED")
       throw new ConflictException(`Payment run is already ${run.status}`);
-    }
 
     await this.db
       .update(finPaymentRuns)
       .set({ status: "CANCELLED", updatedAt: new Date() })
       .where(and(eq(finPaymentRuns.id, runId), eq(finPaymentRuns.orgId, orgId)));
 
-    void this.cache.invalidate(PAYMENT_RUN_CACHE_KEY(orgId));
+    await this.cache.invalidate(PAYMENT_RUN_CACHE_KEY(orgId));
 
     this.audit.log({
       action: "accounting.payment_run.cancel",
@@ -458,7 +279,13 @@ export class PaymentRunsService {
     return { id: runId, status: "CANCELLED" };
   }
 
-  async updateRunItem(orgId: string, userId: string, runId: number, itemId: number, input: UpdatePaymentRunItemInput) {
+  async updateRunItem(
+    orgId: string,
+    userId: string,
+    runId: number,
+    itemId: number,
+    input: UpdatePaymentRunItemInput,
+  ) {
     const runRows = await this.db
       .select({ status: finPaymentRuns.status })
       .from(finPaymentRuns)
@@ -466,9 +293,8 @@ export class PaymentRunsService {
       .limit(1);
     const run = runRows[0];
     if (!run) throw new NotFoundException("Payment run not found");
-    if (run.status !== "DRAFT") {
+    if (run.status !== "DRAFT")
       throw new ConflictException("Items can only be modified while the run is in DRAFT status");
-    }
 
     const itemRows = await this.db
       .select()
@@ -491,11 +317,10 @@ export class PaymentRunsService {
       const bill = billRows[0];
       if (bill) {
         const outstanding = round2(Number(bill.total ?? 0) - Number(bill.amountPaid ?? 0));
-        if (input.amount > outstanding + 0.005) {
+        if (input.amount > outstanding + 0.005)
           throw new BadRequestException(
             `Amount ${input.amount.toFixed(2)} exceeds bill outstanding ${outstanding.toFixed(2)}`,
           );
-        }
       }
 
       await this.db
@@ -504,7 +329,9 @@ export class PaymentRunsService {
         .where(and(eq(finPaymentRunItems.id, itemId), eq(finPaymentRunItems.runId, runId)));
 
       const itemTotals = await this.db
-        .select({ total: sql<string>`COALESCE(sum(${finPaymentRunItems.amount}::numeric), 0)::text` })
+        .select({
+          total: sql<string>`COALESCE(sum(${finPaymentRunItems.amount}::numeric), 0)::text`,
+        })
         .from(finPaymentRunItems)
         .where(eq(finPaymentRunItems.runId, runId));
 
@@ -526,51 +353,5 @@ export class PaymentRunsService {
     });
 
     return { id: itemId, updated: true };
-  }
-
-  private async postRunItemFxGainLoss(
-    orgId: string,
-    baseCurrency: string,
-    capture: { billId: number; currency: string; exchangeRate: string; amount: number; userId: string },
-    paymentDateIso: string,
-  ): Promise<void> {
-    const bookedRate = Number(capture.exchangeRate ?? 1);
-    const baseAmountBooked = (capture.amount * bookedRate).toFixed(4);
-
-    try {
-      const settledRate = await this.rateResolver.getRate(
-        orgId,
-        capture.currency,
-        baseCurrency,
-        new Date(`${paymentDateIso}T00:00:00.000Z`),
-      );
-      const baseAmountSettled = (capture.amount * settledRate).toFixed(4);
-      const user: CurrentUserContext = {
-        userId: capture.userId,
-        orgId,
-        role: "system",
-        isOrgOwner: false,
-        tokenScopes: null,
-        sessionId: "",
-      };
-
-      this.fx
-        .postRealizedGainLoss(user, {
-          sourceType: "purchase_bill",
-          sourceId: String(capture.billId),
-          baseAmountBooked,
-          baseAmountSettled,
-          counterPurpose: "AP",
-        })
-        .catch((err: unknown) => {
-          this.logger.warn(
-            `FX gain/loss post failed for purchase_bill ${capture.billId}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        });
-    } catch (err) {
-      this.logger.warn(
-        `No exchange rate for FX on purchase_bill ${capture.billId}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
   }
 }

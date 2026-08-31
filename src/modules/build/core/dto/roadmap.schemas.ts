@@ -1,13 +1,14 @@
 import { z } from "zod";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const roadmapListQuerySchema = z.object({
   status: z
     .enum(["planned", "in_progress", "completed", "cancelled"])
     .optional(),
   search: z.string().trim().min(1).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().optional(),
+  limit: pageSizeField(50),
 });
 
 export const createRoadmapSchema = z.object({
@@ -44,8 +45,8 @@ export const feedbackListQuerySchema = z.object({
     .optional(),
   search: z.string().trim().min(1).optional(),
   includeMerged: queryBoolean.default(false),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().optional(),
+  limit: pageSizeField(50),
 });
 
 export const mergeFeedbackSchema = z.object({
@@ -76,8 +77,8 @@ export const updateFeedbackSchema = z.object({
 
 export const changelogListQuerySchema = z.object({
   type: z.enum(["feature", "improvement", "fix"]).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  cursor: z.string().optional(),
+  limit: pageSizeField(50),
 });
 
 export const createChangelogSchema = z.object({

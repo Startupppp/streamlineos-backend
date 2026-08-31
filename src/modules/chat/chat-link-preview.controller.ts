@@ -5,6 +5,8 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { checkWebhookUrl } from "../../common/security/ssrf-guard";
+import { Validate } from "../../common/validation/validate.decorator";
+import { linkPreviewQuerySchema, type LinkPreviewQueryInput } from "./dto/chat-link-preview.schemas";
 
 const MAX_PREVIEW_BYTES = 512 * 1024;
 
@@ -26,9 +28,10 @@ export class ChatLinkPreviewController {
   @ApiResponse({ status: 200, description: "Link metadata" })
   @Get()
   @RequirePermission("chat:messages:read")
-  async preview(@Query("url") url: string): Promise<LinkMeta> {
+  @Validate({ query: linkPreviewQuerySchema })
+  async preview(@Query() query: LinkPreviewQueryInput): Promise<LinkMeta> {
+    const { url } = query;
     const empty: LinkMeta = { url, title: null, description: null, image: null, siteName: null };
-    if (!url) return empty;
 
     const check = await checkWebhookUrl(url);
     if (!check.allowed) return empty;

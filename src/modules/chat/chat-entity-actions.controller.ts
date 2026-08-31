@@ -1,9 +1,10 @@
 import { Body, Controller, Logger, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import {
   entityActionOptionsSchema,
   entityActionsAvailableSchema,
@@ -25,14 +26,8 @@ import type {
   EntityActionResult,
   EntityReference,
 } from "../entity-reference/entity-reference.types";
+import { Validate } from "../../common/validation/validate.decorator";
 
-/**
- * Generic over reference type on purpose: it carries no module permission key,
- * because a module key on a route the reference seam serves can only ever
- * exclude the modules the seam exists to include. The right to be in the
- * conversation is what this route checks; the right to perform the action
- * belongs to the adapter that owns the record, which already enforces it.
- */
 @RequireModule("chat")
 @Controller("chat/entity-actions")
 @UseGuards(JwtAuthGuard)
@@ -46,12 +41,14 @@ export class ChatEntityActionsController {
   ) {}
 
   @Post("available")
+  @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
+  @Validate({ body: entityActionsAvailableSchema })
   async availableActions(
-    @Body(new ZodValidationPipe(entityActionsAvailableSchema))
+    @Body()
     body: EntityActionsAvailableInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.members.assertChannelMembership(body.channelId, u.userId);
+    await this.members.assertChannelMembership(body.channelId, u.userId, u.orgId);
 
     const actions = await this.entities.actionsFor(actorOf(u), [
       ...body.references,
@@ -66,23 +63,28 @@ export class ChatEntityActionsController {
   }
 
   @Post("options")
+  @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
+  @Validate({ body: entityActionOptionsSchema })
   async actionOptions(
-    @Body(new ZodValidationPipe(entityActionOptionsSchema))
+    @Body()
     body: EntityActionOptionsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.members.assertChannelMembership(body.channelId, u.userId);
+    await this.members.assertChannelMembership(body.channelId, u.userId, u.orgId);
 
     return { options: await this.entities.optionsFor(actorOf(u), body.reference) };
   }
 
   @Post("submit")
+  @Idempotent("chat.action.submit")
+  @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
+  @Validate({ body: submitEntityActionSchema })
   async submitAction(
-    @Body(new ZodValidationPipe(submitEntityActionSchema))
+    @Body()
     body: SubmitEntityActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.members.assertChannelMembership(body.channelId, u.userId);
+    await this.members.assertChannelMembership(body.channelId, u.userId, u.orgId);
 
     const result = await this.entities.submitAction(
       actorOf(u),

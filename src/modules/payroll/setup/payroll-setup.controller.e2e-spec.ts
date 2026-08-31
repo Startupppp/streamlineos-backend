@@ -8,6 +8,7 @@ import { EntitlementsService } from "../../access/entitlements.service";
 import { PayrollTemplatesService, seedPayrollTemplates } from "./templates.service";
 import { PayrollPoliciesService } from "./policies.service";
 import { PayrollComponentsService } from "./components.service";
+import { withAccessResolution } from "../../../../test/helpers/access-stub";
 
 const ALL_PAYROLL_SETUP_PERMS = new Map([
   ["payroll:templates:view", "all"],
@@ -18,15 +19,17 @@ const ALL_PAYROLL_SETUP_PERMS = new Map([
   ["payroll:components:manage", "all"],
 ]);
 
-const permittedAccess = {
+const permittedAccess = withAccessResolution({
   resolveUserPermissions: jest.fn().mockResolvedValue(ALL_PAYROLL_SETUP_PERMS),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+});
 
-const forbiddenAccess = {
+const forbiddenAccess = withAccessResolution({
   resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+});
 
 const mockTemplate = { id: 1, key: "INDIAN_STANDARD", name: "Indian Standard", category: "EMPLOYEE", isRecommended: true };
 const mockPolicy = { id: 1, orgId: "org_1", country: "IN", currency: "INR", status: "DRAFT" };
@@ -220,14 +223,15 @@ describe("payroll-setup RBAC — 200 view routes with view permission (e2e)", ()
 describe("payroll-setup RBAC — view-only caller blocked from manage routes (e2e)", () => {
   let app: INestApplication;
 
-  const viewOnlyAccess = {
+  const viewOnlyAccess = withAccessResolution({
     resolveUserPermissions: jest.fn().mockResolvedValue(new Map([
       ["payroll:templates:view", "all"],
       ["payroll:policies:view", "all"],
       ["payroll:components:view", "all"],
     ])),
     isModuleEnabled: jest.fn().mockResolvedValue(true),
-  };
+    moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+  });
 
   beforeAll(async () => { app = await buildApp(viewOnlyAccess); });
   afterAll(async () => app.close());

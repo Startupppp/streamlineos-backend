@@ -20,13 +20,15 @@ import {
   accessVersions,
 } from "../db/schema/common/access";
 import { orgUnits } from "../db/schema/common/organization";
-import { subscriptions } from "../db/schema/common/shared";
+import { subscriptions } from "../db/schema/common/subscriptions";
 import { hrPeople, hrEmployments, hrReportingLines } from "../db/schema/hr/core-people";
+import { organizationPeople } from "../db/schema/directory/organization-people";
 import { leaveTypes, leaveRequests } from "../db/schema/hr/leaves";
 import { leavePolicies } from "../db/schema/hr/leave-policies";
 import { attendance, holidays, helpdeskTickets } from "../db/schema/hr/attendance";
 import { shiftTemplates, employeeShiftAssignments } from "../db/schema/hr/shifts";
-import { jobPostings, candidates, candidateApplications } from "../db/schema/hr/hiring";
+import { jobPostings } from "../db/schema/hr/hiring-core";
+import { candidates, candidateApplications } from "../db/schema/hr/hiring-candidates";
 import { assets } from "../db/schema/hr/assets";
 import { documents } from "../db/schema/hr/documents";
 import { reviewCycles } from "../db/schema/hr/performance";
@@ -37,6 +39,8 @@ import {
   hrWorkflowStepActions,
 } from "../db/schema/hr/workflow-engine";
 import { PERMISSIONS, ROLE_DEFAULT_PERMISSIONS } from "../modules/rbac/permissions";
+import { buildPermissionCatalogRows } from "../modules/rbac/permission-catalog-rows";
+import { modulesCatalog } from "../db/schema/common/modules";
 import { DEFAULT_REGION } from "../common/region/region-registry";
 
 type Db = PostgresJsDatabase<typeof schema>;
@@ -70,14 +74,24 @@ function normalizeDatabaseUrl(url: string): string {
 
 async function seedRbac(db: Db, orgId: string, memberUserId: string, memberRole: string): Promise<void> {
   if (PERMISSIONS.length > 0) {
-    await db.insert(permissions).values(
-      PERMISSIONS.map((p) => ({
-        name: p.name,
-        resource: p.resource,
-        action: p.action,
-        description: p.description ?? null,
-      })),
-    ).onConflictDoNothing();
+    const catalogModules = new Set(
+      (await db.select({ moduleKey: modulesCatalog.moduleKey }).from(modulesCatalog))
+        .map((row) => row.moduleKey),
+    );
+    await db
+      .insert(permissions)
+      .values(buildPermissionCatalogRows(catalogModules))
+      .onConflictDoUpdate({
+        target: permissions.name,
+        set: {
+          resource: sql.raw("excluded.resource"),
+          action: sql.raw("excluded.action"),
+          description: sql.raw("excluded.description"),
+          moduleKey: sql.raw("excluded.module_key"),
+          administeringModuleKey: sql.raw("excluded.administering_module_key"),
+          isDelegable: sql.raw("excluded.is_delegable"),
+        },
+      });
   }
 
   const catalogRows = await db.select({ name: permissions.name }).from(permissions);
@@ -231,12 +245,38 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
   const employmentIds = new Map<string, number>();
 
   for (const p of PEOPLE) {
+    const [directoryPerson] = await db
+      .insert(organizationPeople)
+      .values({
+        organizationId: ORG_ID,
+        userId: p.id,
+        firstName: p.first,
+        lastName: p.last,
+        workEmail: p.email,
+      })
+      .onConflictDoNothing()
+      .returning({ organizationPersonId: organizationPeople.organizationPersonId });
+
+    let organizationPersonId = directoryPerson?.organizationPersonId;
+    if (!organizationPersonId) {
+      const existingDirectory = await db
+        .select({ organizationPersonId: organizationPeople.organizationPersonId })
+        .from(organizationPeople)
+        .where(
+          and(
+            eq(organizationPeople.organizationId, ORG_ID),
+            eq(organizationPeople.workEmail, p.email),
+          ),
+        )
+        .limit(1);
+      organizationPersonId = existingDirectory[0]?.organizationPersonId;
+    }
+    if (!organizationPersonId) continue;
+
     const [person] = await db.insert(hrPeople).values({
       orgId: ORG_ID,
       userId: p.id,
-      firstName: p.first,
-      lastName: p.last,
-      workEmail: p.email,
+      organizationPersonId,
     }).onConflictDoNothing().returning({ id: hrPeople.id });
 
     let personId = person?.id;
@@ -244,7 +284,12 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
       const existing = await db
         .select({ id: hrPeople.id })
         .from(hrPeople)
-        .where(eq(hrPeople.workEmail, p.email))
+        .where(
+          and(
+            eq(hrPeople.orgId, ORG_ID),
+            eq(hrPeople.organizationPersonId, organizationPersonId),
+          ),
+        )
         .limit(1);
       personId = existing[0]?.id;
     }

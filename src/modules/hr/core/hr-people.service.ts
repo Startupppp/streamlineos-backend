@@ -164,17 +164,6 @@ export class HrPeopleService {
       .values({
         orgId,
         organizationPersonId,
-        firstName: input.firstName,
-        lastName: input.lastName,
-        workEmail,
-        personalEmail: input.personalEmail?.toLowerCase().trim() ?? null,
-        phone: input.phone ?? null,
-        dateOfBirth: input.dateOfBirth ?? null,
-        gender: input.gender ?? null,
-        nationality: input.nationality ?? null,
-        address: input.address ?? null,
-        emergencyContact: input.emergencyContact ?? null,
-        avatarUrl: input.avatarUrl ?? null,
       })
       .returning({ id: hrPeople.id })
       .catch((err: unknown) => {

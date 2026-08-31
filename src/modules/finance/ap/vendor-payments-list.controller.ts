@@ -5,9 +5,9 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { VendorPaymentsListService } from "./vendor-payments-list.service";
 import { listVendorPaymentsQuerySchema, type ListVendorPaymentsQuery } from "./dto/finance-ap.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("accounting")
 @Controller("accounting/vendor-payments")
@@ -18,8 +18,9 @@ export class VendorPaymentsListController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:read")
+  @Validate({ query: listVendorPaymentsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listVendorPaymentsQuerySchema)) query: ListVendorPaymentsQuery,
+    @Query() query: ListVendorPaymentsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.list(u.orgId, query);

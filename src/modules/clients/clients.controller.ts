@@ -19,7 +19,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../access/access.service";
 import { ClientAccountsService } from "./client-accounts.service";
 import { ClientsService } from "./clients.service";
@@ -54,6 +53,13 @@ import {
 } from "./dto/clients.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Deprecated } from "../../common/deprecation/deprecated.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const accountIdParams = z.object({ accountId: z.coerce.number().int().positive() }).strict();
+const oppIdParams = z.object({ oppId: z.coerce.number().int().positive() }).strict();
+const itemIdParams = z.object({ itemId: z.coerce.number().int().positive() }).strict();
+const clientIdParams = z.object({ clientId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("clients")
@@ -70,8 +76,9 @@ export class ClientsController {
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations" })
   @Get()
   @RequirePermission("crm:clients:read")
+  @Validate({ query: listAccountsSchema })
   async listAccounts(
-    @Query(new ZodValidationPipe(listAccountsSchema)) query: ListAccountsInput,
+    @Query() query: ListAccountsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveClientsReadScope(this.access, u);
@@ -96,8 +103,9 @@ export class ClientsController {
 
   @Get("health")
   @RequirePermission("crm:clients:read")
+  @Validate({ query: healthQuerySchema })
   async getHealth(
-    @Query(new ZodValidationPipe(healthQuerySchema)) query: HealthQueryInput,
+    @Query() query: HealthQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveClientsReadScope(this.access, u);
@@ -137,9 +145,10 @@ export class ClientsController {
 
   @Patch("renewals/:accountId")
   @RequirePermission("crm:clients:update")
+  @Validate({ params: accountIdParams, body: updateRenewalSchema })
   async updateRenewal(
     @Param("accountId", ParseIntPipe) accountId: number,
-    @Body(new ZodValidationPipe(updateRenewalSchema)) body: UpdateRenewalInput,
+    @Body() body: UpdateRenewalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.accounts.updateRenewal(u.orgId, accountId, body);
@@ -149,8 +158,9 @@ export class ClientsController {
 
   @Get("opportunities")
   @RequirePermission("crm:clients:read")
+  @Validate({ query: opportunitiesListSchema })
   listOpportunities(
-    @Query(new ZodValidationPipe(opportunitiesListSchema)) query: OpportunitiesListInput,
+    @Query() query: OpportunitiesListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.opportunities.list(u.orgId, query.clientId);
@@ -159,8 +169,9 @@ export class ClientsController {
   @Post("opportunities")
   @HttpCode(201)
   @RequirePermission("crm:clients:update")
+  @Validate({ body: createOpportunitySchema })
   async createOpportunity(
-    @Body(new ZodValidationPipe(createOpportunitySchema)) body: CreateOpportunityInput,
+    @Body() body: CreateOpportunityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const created = await this.opportunities.create(u.orgId, u.userId, body);
@@ -170,9 +181,10 @@ export class ClientsController {
 
   @Patch("opportunities/:oppId")
   @RequirePermission("crm:clients:update")
+  @Validate({ params: oppIdParams, body: updateOpportunitySchema })
   async updateOpportunity(
     @Param("oppId", ParseIntPipe) oppId: number,
-    @Body(new ZodValidationPipe(updateOpportunitySchema)) body: UpdateOpportunityInput,
+    @Body() body: UpdateOpportunityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.opportunities.update(u.orgId, oppId, body);
@@ -183,6 +195,7 @@ export class ClientsController {
   @Delete("opportunities/:oppId")
   @HttpCode(204)
   @RequirePermission("crm:clients:update")
+  @Validate({ params: oppIdParams })
   async deleteOpportunity(
     @Param("oppId", ParseIntPipe) oppId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -193,8 +206,9 @@ export class ClientsController {
 
   @Get("onboarding/items")
   @RequirePermission("crm:clients:read")
+  @Validate({ query: onboardingItemsListSchema })
   listOnboardingItems(
-    @Query(new ZodValidationPipe(onboardingItemsListSchema)) query: OnboardingItemsListInput,
+    @Query() query: OnboardingItemsListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.onboarding.listItems(u.orgId, query.clientId);
@@ -203,8 +217,9 @@ export class ClientsController {
   @Post("onboarding/items")
   @HttpCode(201)
   @RequirePermission("crm:clients:update")
+  @Validate({ body: createOnboardingItemSchema })
   createOnboardingItem(
-    @Body(new ZodValidationPipe(createOnboardingItemSchema)) body: CreateOnboardingItemInput,
+    @Body() body: CreateOnboardingItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.onboarding.createItem(u.orgId, body);
@@ -212,9 +227,10 @@ export class ClientsController {
 
   @Patch("onboarding/items/:itemId")
   @RequirePermission("crm:clients:update")
+  @Validate({ params: itemIdParams, body: patchOnboardingItemSchema })
   async updateOnboardingItem(
     @Param("itemId", ParseIntPipe) itemId: number,
-    @Body(new ZodValidationPipe(patchOnboardingItemSchema)) body: PatchOnboardingItemInput,
+    @Body() body: PatchOnboardingItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.onboarding.updateItem(u.orgId, u.userId, itemId, body);
@@ -225,6 +241,7 @@ export class ClientsController {
   @Delete("onboarding/items/:itemId")
   @HttpCode(204)
   @RequirePermission("crm:clients:update")
+  @Validate({ params: itemIdParams })
   async deleteOnboardingItem(
     @Param("itemId", ParseIntPipe) itemId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -242,8 +259,9 @@ export class ClientsController {
   @Post("onboarding/templates")
   @HttpCode(201)
   @RequirePermission("settings:manage")
+  @Validate({ body: createTemplateSchema })
   createOnboardingTemplate(
-    @Body(new ZodValidationPipe(createTemplateSchema)) body: CreateTemplateInput,
+    @Body() body: CreateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.onboarding.createTemplate(u.orgId, u.userId, body);
@@ -252,6 +270,7 @@ export class ClientsController {
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId" })
   @Get(":clientId")
   @RequirePermission("crm:clients:read")
+  @Validate({ params: clientIdParams })
   async getClientAccount(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -265,9 +284,10 @@ export class ClientsController {
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId" })
   @Patch(":clientId")
   @RequirePermission("crm:clients:update")
+  @Validate({ params: clientIdParams, body: updateClientStatusSchema })
   async updateClientStatus(
     @Param("clientId", ParseIntPipe) clientId: number,
-    @Body(new ZodValidationPipe(updateClientStatusSchema)) body: UpdateClientStatusInput,
+    @Body() body: UpdateClientStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.accounts.updateStatus(u.orgId, u.userId, clientId, body);
@@ -278,6 +298,7 @@ export class ClientsController {
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId/timeline" })
   @Get(":clientId/activities")
   @RequirePermission("crm:clients:read")
+  @Validate({ params: clientIdParams })
   getClientActivities(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -288,9 +309,10 @@ export class ClientsController {
   @Post(":clientId/activities")
   @HttpCode(201)
   @RequirePermission("crm:clients:update")
+  @Validate({ params: clientIdParams, body: createActivitySchema })
   async createClientActivity(
     @Param("clientId", ParseIntPipe) clientId: number,
-    @Body(new ZodValidationPipe(createActivitySchema)) body: CreateActivityInput,
+    @Body() body: CreateActivityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const activity = await this.accounts.addActivity(u.orgId, clientId, u.userId, body);
@@ -301,6 +323,7 @@ export class ClientsController {
   @Deprecated({ sunset: "2026-10-25", link: "/crm/organizations/:organizationId/timeline" })
   @Get(":clientId/timeline")
   @RequirePermission("crm:clients:read")
+  @Validate({ params: clientIdParams })
   async getClientTimeline(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,

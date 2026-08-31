@@ -5,12 +5,19 @@ import {
   ConflictException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
-import { invPurchaseOrders, invGrns, invGrnLines, invGrnLineSerials, invLocations } from "../../../db/schema";
+import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import {
+  invPurchaseOrders,
+  invGrns,
+  invGrnLines,
+  invGrnLineSerials,
+  invLocations,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
@@ -18,10 +25,10 @@ import { UomConversionService } from "../stock-engine/uom-conversion.service";
 import { InvQuantityCaptureService } from "../products/inv-quantity-capture.service";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
 import type {
+  ListGrnInput,
   CancelGrnInput,
   CreateGrnDraftInput,
   CreateGrnInput,
-  ListGrnInput,
   ReverseGrnInput,
   UpdateGrnDraftInput,
 } from "./dto/inv-purchase-orders.schemas";
@@ -38,7 +45,6 @@ type GrnStatus = "DRAFT" | "COUNTING" | "QUALITY_REVIEW" | "POSTED" | "CANCELLED
 
 type GrnDraftLine = CreateGrnDraftInput["lines"][number];
 
-/** A purchase order loaded with everything a receipt line needs to validate. */
 interface ReceivablePo {
   id: number;
   warehouseId: number | null;
@@ -47,39 +53,19 @@ interface ReceivablePo {
     productVariant: {
       id: number;
       productId: number;
-      /** NEO-10. Whether this SKU's quantity is a count or a weight. */
       product?: { measureMode?: "PIECES" | "CATCH_WEIGHT" | null } | null;
     };
   }>;
 }
 
-/**
- * B1 — where a delivery lives before it is stock.
- *
- * `inv_grns` had no status, so `receiveGoods` was the only thing a receipt could
- * do: type it and it posted. There was no way to count a pallet over an
- * afternoon, note that two cartons were crushed, have quality look at them and
- * post the rest in the morning — which is how receiving actually works. This
- * service owns the document: opening it, counting into it, moving it through
- * DRAFT → COUNTING → QUALITY_REVIEW, abandoning it, reading it back. None of
- * that touches `inv_stock_transactions`; everything that does lives in
- * `GrnPostingService`, so the boundary is visible in the import list.
- */
 @Injectable()
 export class GrnService {
-  /**
-   * The transition table, as data. Written once rather than as an `if` per
-   * endpoint: a lifecycle scattered across four handlers is one nobody can read,
-   * and the fifth handler is always the one that forgets POSTED is terminal.
-   * POSTED and CANCELLED appear in no `from` list, which is what makes them so.
-   */
   private static readonly TRANSITIONS: Readonly<Record<"COUNTING" | "QUALITY_REVIEW" | "CANCELLED", readonly GrnStatus[]>> = {
     COUNTING: ["DRAFT", "QUALITY_REVIEW"],
     QUALITY_REVIEW: ["DRAFT", "COUNTING"],
     CANCELLED: ["DRAFT", "COUNTING", "QUALITY_REVIEW"],
   };
 
-  /** The states in which a receipt is still being written down. */
   private static readonly EDITABLE: readonly GrnStatus[] = ["DRAFT", "COUNTING"];
 
   constructor(
@@ -95,14 +81,80 @@ export class GrnService {
     private readonly reads: GrnReadService,
     private readonly quickCommerce: QuickCommerceInboundService,
     private readonly handlingUnits: HandlingUnitService,
+    private readonly engine: StockEngineService,
   ) {}
 
-  /**
-   * Opens a receipt without posting it. Claimed even though nothing moves: a
-   * retried create otherwise raises a second GRN document with its own number
-   * against the same delivery, and both are then postable — the defect A3 found
-   * on the adjustment path.
-   */
+  async listGrns(orgId: string, filters: ListGrnInput) {
+    const { poId, vendorId, dateFrom, dateTo, page, limit } = filters;
+    const offset = (page - 1) * limit;
+    const hash = `${poId ?? ""}:${vendorId ?? ""}:${dateFrom ?? ""}:${dateTo ?? ""}:${limit}:${offset}`;
+
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.invGrnNamespace(orgId),
+      hash,
+      async () => {
+        const conditions = [eq(invGrns.orgId, orgId)];
+        if (poId) conditions.push(eq(invGrns.poId, poId));
+        if (dateFrom) conditions.push(gte(invGrns.receivedDate, dateFrom));
+        if (dateTo) conditions.push(lte(invGrns.receivedDate, dateTo));
+
+        if (vendorId) {
+          const poIds = await this.db
+            .select({ id: invPurchaseOrders.id })
+            .from(invPurchaseOrders)
+            .where(
+              and(
+                eq(invPurchaseOrders.orgId, orgId),
+                eq(invPurchaseOrders.vendorId, vendorId),
+              ),
+            );
+          if (poIds.length === 0)
+            return { items: [], total: 0, page, totalPages: 0 };
+          conditions.push(
+            inArray(
+              invGrns.poId,
+              poIds.map((p) => p.id),
+            ),
+          );
+        }
+
+        const where = and(...conditions);
+
+        const [items, countResult] = await Promise.all([
+          this.db.query.invGrns.findMany({
+            where,
+            orderBy: [desc(invGrns.createdAt)],
+            limit,
+            offset,
+            with: {
+              purchaseOrder: {
+                columns: { id: true, poNumber: true, vendorId: true },
+                with: { vendor: { columns: { id: true, name: true } } },
+              },
+              creator: { columns: { id: true, name: true } },
+            },
+          }),
+          this.db
+            .select({ count: sql<number>`count(*)::int` })
+            .from(invGrns)
+            .where(where),
+        ]);
+
+        return {
+          items,
+          total: countResult[0]?.count ?? 0,
+          page,
+          totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
+        };
+      },
+      CACHE_TTL.SHORT,
+    );
+  }
+
+  async getGrn(orgId: string, grnId: number, userId: string) {
+    return this.reads.getGrn(orgId, grnId, userId);
+  }
+
   async createDraft(
     orgId: string,
     userId: string,
@@ -119,10 +171,6 @@ export class GrnService {
         idempotencyKey,
         { command: "inventory.receiving.draft", ...data, locationId },
         async () => {
-          // NEO-2. The `asn_required_for_grn` rule has one home, in the
-          // quick-commerce service; receiving asks it rather than carrying a
-          // copy. Inside the claim, so a refused first attempt rolls the claim
-          // back with it.
           await this.quickCommerce.assertReceivable(tx, orgId, { poId: po.id, asnId: data.asnId ?? null });
           return this.createDraftInTx(
             tx, orgId, userId, po, locationId, data.receivedDate, data.notes, data.lines, data.asnId ?? null,
@@ -136,12 +184,6 @@ export class GrnService {
     return this.getGrn(orgId, grnId, userId);
   }
 
-  /**
-   * Counting a delivery, saved. Not idempotency-claimed: an update names the
-   * receipt it edits and replaces the lines wholesale, so applying it twice
-   * leaves the same document. The status predicate on the write is what matters,
-   * checked by affected-row count rather than by a read beforehand.
-   */
   async updateDraft(
     orgId: string,
     grnId: number,
@@ -176,9 +218,6 @@ export class GrnService {
         throw new ConflictException("This goods receipt is no longer open for counting");
 
       if (data.lines) {
-        // A recount is "these are the lines", so the old set goes. Physical
-        // deletion is the §3 exception for an unsent draft, and the serials go
-        // with them through the composite cascade.
         await tx.delete(invGrnLines).where(and(eq(invGrnLines.grnId, grnId), eq(invGrnLines.orgId, orgId)));
         await this.insertLines(tx, orgId, grnId, po, data.lines);
       }
@@ -197,21 +236,14 @@ export class GrnService {
     return this.getGrn(orgId, grnId, userId);
   }
 
-  /** DRAFT → COUNTING, and back from quality when the count is disputed. */
   startCounting(orgId: string, grnId: number, userId: string) {
     return this.transition(orgId, grnId, userId, "COUNTING", "receiving.count");
   }
 
-  /** Hands the counted delivery to whoever inspects it. */
   submitForQualityReview(orgId: string, grnId: number, userId: string) {
     return this.transition(orgId, grnId, userId, "QUALITY_REVIEW", "receiving.quality-review");
   }
 
-  /**
-   * Abandons a receipt that will never post. The row stays and the status
-   * becomes terminal rather than the document being deleted: a delivery somebody
-   * walked away from is a fact, and its GRN number must not be reissued.
-   */
   cancelGrn(orgId: string, grnId: number, userId: string, data: CancelGrnInput) {
     return this.transition(orgId, grnId, userId, "CANCELLED", "receiving.cancel", data.reason);
   }
@@ -232,15 +264,6 @@ export class GrnService {
     return this.posting.reverseGrn(orgId, grnId, userId, idempotencyKey, data);
   }
 
-  /**
-   * Record and post a delivery in one command — the endpoint every existing
-   * caller uses. Kept, and kept atomic: counting and posting at the dock in one
-   * action is a real workflow, not a legacy shortcut, and splitting it into two
-   * HTTP calls would leave a half-finished document on every scanner that loses
-   * signal mid-shift. The draft and the post share one claim, so the whole
-   * delivery — document, PO arithmetic, movements, events, journal — is claimed
-   * once and a retry replays the same GRN id.
-   */
   async receiveGoods(
     orgId: string,
     poId: number,
@@ -272,19 +295,6 @@ export class GrnService {
     return this.getGrn(orgId, grnId, userId);
   }
 
-  listGrns(orgId: string, userId: string, filters: ListGrnInput) {
-    return this.reads.listGrns(orgId, userId, filters);
-  }
-
-  getGrn(orgId: string, grnId: number, userId: string) {
-    return this.reads.getGrn(orgId, grnId, userId);
-  }
-
-  /**
-   * One conditional UPDATE, and the affected-row count is the answer. Reading
-   * the status and then writing is a race: two clerks who both read COUNTING
-   * both pass. The `inArray` predicate is the check.
-   */
   private async transition(
     orgId: string,
     grnId: number,
@@ -335,7 +345,6 @@ export class GrnService {
     return this.getGrn(orgId, grnId, userId);
   }
 
-  /** The document and its lines, on a transaction the caller owns. */
   private async createDraftInTx(
     tx: Tx,
     orgId: string,
@@ -380,14 +389,6 @@ export class GrnService {
     return grn.id;
   }
 
-  /**
-   * The lines, with the unit conversion resolved and snapshotted.
-   * `inv_grn_lines` has carried `uom_id`, `quantity_entered` and `uom_factor`
-   * since INV-106 and receiving wrote none of them, so a delivery counted in
-   * cases reached the ledger as that many single units. The factor is resolved
-   * server-side and stored: looked up at read time instead, a later correction
-   * to a case size would rewrite what every historical receipt meant.
-   */
   private async insertLines(
     tx: Tx,
     orgId: string,
@@ -395,10 +396,6 @@ export class GrnService {
     po: ReceivablePo,
     lines: readonly GrnDraftLine[],
   ): Promise<void> {
-    // One receipt line per order line. Two lines against the same order line
-    // each measure "remaining" against the same pre-post total, so a 100-unit
-    // order accepts two 60-unit lines and posts 120 through a tolerance gate
-    // that refused 101.
     const seen = new Set<number>();
     for (const line of lines) {
       if (seen.has(line.poLineId))
@@ -410,17 +407,6 @@ export class GrnService {
       if (line.qualityStatus === "REJECTED" && !line.rejectionReason)
         throw new BadRequestException(`Line ${line.poLineId}: a rejected line needs a reason`);
 
-      // E4. Checked before the conversion, deliberately: converting first turns
-      // a rejected 2.9955 kg into an accepted 2995.5 g and hides the refusal
-      // behind a unit change. The conversion below is unchanged — it is what
-      // already stops a delivery counted in cases reaching the ledger as that
-      // many singles — and this only decides whether the figure was one this
-      // SKU may be counted in at all.
-      //
-      // Called unconditionally. The service reads the kirana pack itself and
-      // returns before it loads the product when it is off, so a flag check here
-      // would only be a second copy of the same condition — and the copy is what
-      // drifts. With the pack off this is a cached settings read and a return.
       await this.quantityCapture.assertEnteredQuantity(
         orgId,
         poLine.productVariant.id,
@@ -431,9 +417,6 @@ export class GrnService {
         await this.handlingUnits.assertCanHoldStockInTx(tx, orgId, line.handlingUnitId);
       }
 
-      // NEO-10. Checked before the UOM conversion, for the same reason E4's
-      // quantity capture is: converting first turns a rejected line into an
-      // accepted one behind a unit change.
       assertCatchWeightLine(poLine.productVariant.product?.measureMode ?? "PIECES", {
         quantity: line.quantityReceived,
         quantityPieces: line.quantityPieces ?? null,
@@ -459,9 +442,6 @@ export class GrnService {
           qualityStatus: line.qualityStatus,
           rejectionReason: line.rejectionReason,
           discrepancyReason: line.discrepancyReason,
-          // NEO-4. The unit is checked, not merely stored: a pallet that already
-          // contains cartons may not also hold loose stock of its own, and the
-          // rule lives in `HandlingUnitService` so there is one copy of it.
           handlingUnitId: line.handlingUnitId ?? null,
           crossDockSoId: line.crossDockSoId ?? null,
           quantityPieces: line.quantityPieces ?? null,
@@ -469,9 +449,6 @@ export class GrnService {
           lotNumber: line.lotNumber,
           expiryDate: line.expiryDate,
           manufactureDate: line.manufactureDate,
-          // E3. Snapshotted on the line as given. Whether they were *required*
-          // is the pharmacy pack's question and is asked at post, where the
-          // whole receipt is refused as one rather than line by line.
           mrpPaise: line.mrpPaise ?? null,
           purchaseRatePaise: line.purchaseRatePaise ?? null,
         })
@@ -480,9 +457,6 @@ export class GrnService {
 
       const serials = line.serialNumbers ?? [];
       if (serials.length === 0) continue;
-      // Deduplicated here as well as by `uniq_inv_grn_line_serials_line_number`,
-      // because a scanner that double-triggers should get a clean 400 rather
-      // than a unique-violation 500 on an otherwise valid count.
       const unique = [...new Set(serials)];
       if (unique.length !== serials.length)
         throw new BadRequestException(`Line ${line.poLineId}: the same serial was scanned twice`);
@@ -530,11 +504,6 @@ export class GrnService {
     return grn;
   }
 
-  /**
-   * The bin the goods land in, and the caller's right to put them there — a
-   * receipt into a warehouse the clerk is not assigned to is the exact hole
-   * warehouse scope exists to close.
-   */
   private async resolveLocation(
     orgId: string,
     userId: string,
@@ -544,9 +513,6 @@ export class GrnService {
     if (requested === undefined)
       return this.poService.resolveLocationId(orgId, warehouseId);
 
-    // Existence and activity as well as scope: `assertLocationVisible` returns
-    // early for a scope-all holder, so on its own it would let that caller
-    // receive into a retired bin in another organisation's id range.
     const loc = await this.db.query.invLocations.findFirst({
       where: and(
         eq(invLocations.id, requested),
@@ -560,7 +526,6 @@ export class GrnService {
     return loc.id;
   }
 
-  /** Parsed, not cast: the stored id has been through jsonb and may be a string. */
   private readonly revivedGrnId = (stored: unknown): number => {
     const id = revivedId(stored);
     if (!Number.isInteger(id))

@@ -9,7 +9,6 @@ import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { customFieldDefinitions } from "../../../db/schema/custom-field-engine";
-import { hrEmploymentCustomFieldValues } from "../../../db/schema/hr/core-org";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
 import { organizationMembers } from "../../../db/schema";
 import type { CreateCustomFieldInput, UpdateCustomFieldInput, UpsertCustomFieldValuesInput } from "./dto/hr-custom-fields.schemas";
@@ -180,24 +179,21 @@ export class HrCustomFieldsService {
     }
 
     await this.assertEmploymentInScope(orgId, actorUserId, scope, empId);
-    const defs = await this.listDefinitions(orgId, entityType);
-    const values = await this.db
-      .select({
-        fieldDefinitionId: hrEmploymentCustomFieldValues.fieldDefinitionId,
-        value: hrEmploymentCustomFieldValues.value,
-      })
-      .from(hrEmploymentCustomFieldValues)
-      .where(
-        and(
-          eq(hrEmploymentCustomFieldValues.orgId, orgId),
-          eq(hrEmploymentCustomFieldValues.employmentId, empId),
-        ),
-      );
 
-    const valueMap = new Map(values.map((v) => [v.fieldDefinitionId, v.value]));
+    const [defs, empRows] = await Promise.all([
+      this.listDefinitions(orgId, entityType),
+      this.db
+        .select({ customFieldValues: hrEmployments.customFieldValues })
+        .from(hrEmployments)
+        .where(and(eq(hrEmployments.id, empId), eq(hrEmployments.orgId, orgId)))
+        .limit(1),
+    ]);
+
+    const storedValues: Record<string, unknown> = empRows[0]?.customFieldValues ?? {};
 
     return defs.map((def) => {
-      const rawValue = valueMap.get(def.id);
+      const hasKey = Object.prototype.hasOwnProperty.call(storedValues, def.key);
+      const rawValue = hasKey ? storedValues[def.key] : undefined;
       return {
         definition: def,
         value: def.isSensitive && !canViewSensitive ? "[REDACTED]" : rawValue,
@@ -224,6 +220,7 @@ export class HrCustomFieldsService {
     const defs = await this.listDefinitions(orgId, entityType);
     const defMap = new Map(defs.map((d) => [d.id, d]));
 
+    const patch: Record<string, unknown> = {};
     for (const item of input.values) {
       const def = defMap.get(item.fieldDefinitionId);
       if (!def) throw new BadRequestException(`Field ${item.fieldDefinitionId} not found`);
@@ -233,28 +230,53 @@ export class HrCustomFieldsService {
       }
       this.validateFieldValue(def.fieldType, item.value, def.isRequired);
       await this.validateReferenceValue(orgId, def.fieldType, item.value);
+      patch[def.key] = item.value;
     }
 
-    const rows = input.values.map((item) => ({
-      orgId,
-      employmentId: empId,
-      fieldDefinitionId: item.fieldDefinitionId,
-      value: item.value,
-    }));
-
     await this.db
-      .insert(hrEmploymentCustomFieldValues)
-      .values(rows)
-      .onConflictDoUpdate({
-        target: [
-          hrEmploymentCustomFieldValues.employmentId,
-          hrEmploymentCustomFieldValues.fieldDefinitionId,
-        ],
-        set: {
-          value: sql`excluded.value`,
-          updatedAt: new Date(),
-        },
-      });
+      .update(hrEmployments)
+      .set({
+        customFieldValues: sql`${hrEmployments.customFieldValues} || ${JSON.stringify(patch)}::jsonb`,
+      })
+      .where(and(eq(hrEmployments.id, empId), eq(hrEmployments.orgId, orgId)));
+  }
+
+  async filterByCustomField(
+    orgId: string,
+    actorUserId: string,
+    scope: DataScope,
+    entityType: string,
+    fieldKey: string,
+    value: unknown,
+  ): Promise<number[]> {
+    this.assertSupportedValueEntity(entityType);
+
+    const fieldCondition =
+      value === undefined
+        ? sql`NOT (${hrEmployments.customFieldValues} ? ${fieldKey})`
+        : sql`${hrEmployments.customFieldValues} @> ${JSON.stringify({ [fieldKey]: value })}::jsonb`;
+
+    const rows = await this.db
+      .select({ id: hrEmployments.id })
+      .from(hrEmployments)
+      .innerJoin(
+        hrPeople,
+        and(
+          eq(hrPeople.orgId, hrEmployments.orgId),
+          eq(hrPeople.id, hrEmployments.personId),
+        ),
+      )
+      .where(
+        and(
+          eq(hrEmployments.orgId, orgId),
+          isNull(hrEmployments.deletedAt),
+          isNull(hrPeople.deletedAt),
+          applyScope(scope, orgId, actorUserId, { ownerColumn: hrPeople.userId }),
+          fieldCondition,
+        ),
+      );
+
+    return rows.map((r) => r.id);
   }
 
   private async validateReferenceValue(

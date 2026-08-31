@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
 /** "team" resolves teammates from org_unit_members (kind = TEAM) inside applyScope. */
 const dataScopeSchema = z.enum(["all", "team", "own", "none"]);
@@ -58,14 +59,15 @@ export const initiateOwnershipTransferSchema = z.object({
 });
 
 export const listMembersQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20),
   userId: z.string().min(1).max(64).optional(),
+  cursor: z.coerce.number().int().nonnegative().optional(),
 });
 
 export const memberCandidatesQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20),
   search: z.string().trim().max(100).default(""),
   userId: z.string().min(1).max(64).optional(),
   excludeAssigned: z
@@ -90,8 +92,8 @@ export const updateMemberGroupsSchema = z.object({
 });
 
 export const auditLogQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20),
 });
 
 export type ModuleKeyParam = z.infer<typeof moduleKeyParamSchema>;

@@ -29,7 +29,7 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
   }
 
   async load(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
-    const { eventsData, rsvpMap, linkedTicketMap } = await this.loader.load(
+    const { eventsData, linkedTicketMap } = await this.loader.load(
       ctx.orgId,
       ctx.userId,
       ctx.start,
@@ -49,10 +49,10 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
         location: event.location,
         meetingUrl: event.meetingUrl,
         description: event.description,
-        creatorName: event.creator?.name ?? null,
+        creatorName: event.creatorName ?? null,
         entityId: event.entityId,
         entityType: event.entityType,
-        myRsvpStatus: rsvpMap.get(event.id) ?? null,
+        myRsvpStatus: event.rsvpStatus ?? null,
         linkedTicket:
           event.entityType === "ticket" && event.entityId
             ? linkedTicketMap.get(Number(event.entityId)) ?? null

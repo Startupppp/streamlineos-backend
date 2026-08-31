@@ -1,21 +1,13 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { Universal } from "../../../common/auth/universal.decorator";
 import { AllowNoOrg } from "../../../common/auth/allow-no-org.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { BillingService } from "./billing.service";
-import { MarketplaceService } from "./marketplace.service";
-import { AiCreditsService } from "./ai-credits.service";
-import { AiCreditsUsageService } from "./ai-credits-usage.service";
-import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
-import { AffiliateService } from "./affiliate.service";
-import { ReferralService } from "./referral.service";
-import { RevenueAnalyticsService } from "./revenue-analytics.service";
-import { EnterpriseQuotesService } from "./enterprise-quotes.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import {
   createCouponSchema,
@@ -23,43 +15,26 @@ import {
   purchaseAddonSchema,
   updateBillingProfileSchema,
   updateCouponSchema,
+  validateCouponQuerySchema,
   verifyPaymentSchema,
-  planSchema,
   type CreateCouponInput,
   type CreateOrderInput,
-  type Plan,
   type PurchaseAddonInput,
   type UpdateBillingProfileInput,
   type UpdateCouponInput,
+  type ValidateCouponQueryInput,
   type VerifyPaymentInput,
 } from "./dto/billing.schemas";
-import { aiCreditsUsageQuerySchema, autoTopUpSchema, listTransactionsSchema, purchaseAiPackSchema, type PurchaseAiPackInput } from "./dto/ai-credits.schemas";
-import { createReferralSchema } from "./dto/affiliate.schemas";
-import { analyticsQuerySchema } from "./dto/analytics.schemas";
-import {
-  listEnterpriseQuotesSchema,
-  createEnterpriseQuoteSchema,
-  approveEnterpriseQuoteSchema,
-  rejectEnterpriseQuoteSchema,
-  type ListEnterpriseQuotesQuery,
-  type CreateEnterpriseQuoteInput,
-  type ApproveEnterpriseQuoteInput,
-  type RejectEnterpriseQuoteInput,
-} from "./dto/enterprise-quotes.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const couponIdParams = z.object({ couponId: z.coerce.number().int().positive() }).strict();
 
 @Controller("billing")
 @UseGuards(JwtAuthGuard)
 export class BillingController {
   constructor(
     private readonly billing: BillingService,
-    private readonly marketplace: MarketplaceService,
-    private readonly aiCredits: AiCreditsService,
-    private readonly aiCreditsUsage: AiCreditsUsageService,
-    private readonly providers: PaymentProviderResolver,
-    private readonly affiliate: AffiliateService,
-    private readonly referral: ReferralService,
-    private readonly analytics: RevenueAnalyticsService,
-    private readonly enterpriseQuotes: EnterpriseQuotesService,
     private readonly planLimits: PlanLimitsService,
   ) {}
 
@@ -72,32 +47,38 @@ export class BillingController {
 
   @AllowNoOrg()
   @Get("plans")
+  @Universal()
   getPlans() {
     return this.billing.getPlans();
   }
 
   @Get("marketplace")
+  @Universal()
   getMarketplace() {
     return this.billing.getMarketplace();
   }
 
   @Post("checkout")
+  @Idempotent("billing.checkout")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
+  @Validate({ body: createOrderSchema })
   checkout(
-    @Body(new ZodValidationPipe(createOrderSchema)) body: CreateOrderInput,
+    @Body() body: CreateOrderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.createOrder(u.orgId, u.userId, body.plan, body.billingCycle, body.couponId);
   }
 
   @Post("addons/purchase")
+  @Idempotent("billing.addon.purchase")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
+  @Validate({ body: purchaseAddonSchema })
   purchaseAddon(
-    @Body(new ZodValidationPipe(purchaseAddonSchema)) body: PurchaseAddonInput,
+    @Body() body: PurchaseAddonInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.purchaseAddon(u.orgId, body.addonId, body.quantity);
@@ -111,23 +92,27 @@ export class BillingController {
   }
 
   @Get("entitlements")
+  @Universal()
   getEntitlements(@CurrentUser() u: CurrentUserContext) {
     return this.planLimits.getEntitlements(u.orgId);
   }
 
   @UseGuards(PermissionGuard)
+  @RequirePermission("billing:subscription:view")
+  @Get("provisioning-failures")
+  listProvisioningFailures(@CurrentUser() u: CurrentUserContext) {
+    return this.billing.listProvisioningFailures(u.orgId);
+  }
+
+  @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
   @Get("coupons/validate")
+  @Validate({ query: validateCouponQuerySchema })
   validateCoupon(
-    @Query("code") code: string,
-    @Query("plan") plan: string,
+    @Query() query: ValidateCouponQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const parsedPlan = planSchema.safeParse(plan);
-    if (!parsedPlan.success) {
-      return { valid: false, message: "Invalid plan" };
-    }
-    return this.billing.validateCoupon(code ?? "", u.orgId, parsedPlan.data as Plan);
+    return this.billing.validateCoupon(query.code, u.orgId, query.plan);
   }
 
   @UseGuards(PermissionGuard)
@@ -138,11 +123,13 @@ export class BillingController {
   }
 
   @Post("razorpay")
+  @Idempotent("billing.order.create")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
+  @Validate({ body: createOrderSchema })
   createOrder(
-    @Body(new ZodValidationPipe(createOrderSchema)) body: CreateOrderInput,
+    @Body() body: CreateOrderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.createOrder(u.orgId, u.userId, body.plan, body.billingCycle, body.couponId);
@@ -152,121 +139,12 @@ export class BillingController {
   @Idempotent("billing.subscription.verify")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:subscription:manage")
+  @Validate({ body: verifyPaymentSchema })
   verifyPayment(
-    @Body(new ZodValidationPipe(verifyPaymentSchema)) body: VerifyPaymentInput,
+    @Body() body: VerifyPaymentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.verifyAndActivate(u.orgId, u.userId, body);
-  }
-
-  @Get("marketplace/apps")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:marketplace:view")
-  listApps(@CurrentUser() u: CurrentUserContext) {
-    return this.marketplace.listApps(u.orgId);
-  }
-
-  @Post("marketplace/:appId/install")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:marketplace:install")
-  installApp(
-    @Param("appId", ParseIntPipe) appId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.marketplace.installApp(u.orgId, u.userId, appId);
-  }
-
-  @Delete("marketplace/:appId/install")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:marketplace:install")
-  uninstallApp(
-    @Param("appId", ParseIntPipe) appId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.marketplace.uninstallApp(u.orgId, appId);
-  }
-
-  @Post("marketplace/:appId/trial")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:marketplace:install")
-  startTrial(
-    @Param("appId", ParseIntPipe) appId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.marketplace.startAppTrial(u.orgId, u.userId, appId);
-  }
-
-  @Get("ai-credits")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:ai-credits:view")
-  async getAiCredits(@CurrentUser() u: CurrentUserContext) {
-    const [wallet, packs] = await Promise.all([
-      this.aiCredits.getWallet(u.orgId),
-      this.aiCredits.listPacks(),
-    ]);
-    return { ...wallet, packs };
-  }
-
-  @Get("ai-credits/transactions")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:ai-credits:view")
-  listAiCreditTransactions(
-    @Query(new ZodValidationPipe(listTransactionsSchema)) query: ReturnType<typeof listTransactionsSchema.parse>,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.aiCredits.listTransactions(u.orgId, query.page, query.limit);
-  }
-
-  @Get("ai-credits/usage")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:ai-credits:view")
-  getAiCreditsUsage(
-    @Query(new ZodValidationPipe(aiCreditsUsageQuerySchema)) query: ReturnType<typeof aiCreditsUsageQuerySchema.parse>,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.aiCreditsUsage.getUsage(u.orgId, query.days);
-  }
-
-  @Post("ai-credits/auto-topup")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:ai-credits:purchase")
-  async configureAutoTopUp(
-    @Body(new ZodValidationPipe(autoTopUpSchema)) body: ReturnType<typeof autoTopUpSchema.parse>,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.aiCredits.updateAutoTopUp(
-      u.orgId,
-      body.enabled,
-      body.packId,
-      body.threshold,
-    );
-  }
-
-  @Post("ai-credits/purchase")
-  @Idempotent("billing.ai-credits.purchase")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:ai-credits:purchase")
-  async purchaseAiCredits(
-    @Body(new ZodValidationPipe(purchaseAiPackSchema)) body: PurchaseAiPackInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (body.paymentId) {
-      const adapter = await this.providers.resolveConfigured(u.orgId);
-      const valid =
-        adapter?.verifyPaymentSignature({
-          orderId: body.orderId ?? "",
-          paymentId: body.paymentId,
-          signature: body.signature ?? "",
-        }) ?? false;
-      if (!valid) throw new BadRequestException("Invalid payment signature");
-      return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId, false, body.paymentId);
-    }
-    if ((await this.providers.resolveConfigured(u.orgId))?.isReady() ?? false) {
-      return this.billing.purchaseAddon(u.orgId, `ai_pack_${body.packId}`, 1);
-    }
-    return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId);
   }
 
   @Get("profile")
@@ -279,8 +157,9 @@ export class BillingController {
   @Patch("profile")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:profile:update")
+  @Validate({ body: updateBillingProfileSchema })
   updateBillingProfile(
-    @Body(new ZodValidationPipe(updateBillingProfileSchema)) body: UpdateBillingProfileInput,
+    @Body() body: UpdateBillingProfileInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.billing.updateBillingProfile(u.orgId, body);
@@ -291,146 +170,6 @@ export class BillingController {
   @RequirePermission("billing:seats:view")
   getSeatInfo(@CurrentUser() u: CurrentUserContext) {
     return this.billing.getSeatInfo(u.orgId);
-  }
-
-  @Post("affiliate/register")
-  @HttpCode(201)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:affiliate:manage")
-  registerAffiliate(@CurrentUser() u: CurrentUserContext) {
-    return this.affiliate.register(u.userId, u.orgId);
-  }
-
-  @Get("affiliate")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:affiliate:manage")
-  getAffiliateDashboard(@CurrentUser() u: CurrentUserContext) {
-    return this.affiliate.getDashboard(u.userId);
-  }
-
-  @Post("affiliate/payout-request")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:affiliate:manage")
-  requestAffiliatePayoutRequest(@CurrentUser() u: CurrentUserContext) {
-    return this.billing.requestAffiliatePayoutRequest(u.orgId);
-  }
-
-  @Post("referrals")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:referrals:manage")
-  async createReferral(
-    @Body(new ZodValidationPipe(createReferralSchema)) body: ReturnType<typeof createReferralSchema.parse>,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.referral.createReferral(u.orgId, u.userId, body.email);
-  }
-
-  @Get("referrals")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:referrals:view")
-  listReferrals(@CurrentUser() u: CurrentUserContext) {
-    return this.referral.listReferrals(u.orgId);
-  }
-
-  @Get("analytics")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:analytics:view")
-  async getAnalytics(@Query(new ZodValidationPipe(analyticsQuerySchema)) query: ReturnType<typeof analyticsQuerySchema.parse>) {
-    const [metrics, timeSeries] = await Promise.all([
-      this.analytics.getMetrics(),
-      this.analytics.getTimeSeriesData(query.period),
-    ]);
-    return { metrics, timeSeries };
-  }
-
-  @Get("enterprise-quotes")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:view")
-  listEnterpriseQuotes(
-    @CurrentUser() u: CurrentUserContext,
-    @Query() query: ListEnterpriseQuotesQuery,
-  ) {
-    const parsed = listEnterpriseQuotesSchema.parse(query);
-    return this.enterpriseQuotes.list(u.orgId, parsed);
-  }
-
-  @Post("enterprise-quotes")
-  @HttpCode(201)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:create")
-  createEnterpriseQuote(
-    @Body(new ZodValidationPipe(createEnterpriseQuoteSchema)) body: CreateEnterpriseQuoteInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.enterpriseQuotes.create(u.orgId, u.userId, body);
-  }
-
-  @Get("enterprise-quotes/:quoteId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:view")
-  getEnterpriseQuote(
-    @Param("quoteId", ParseIntPipe) quoteId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.enterpriseQuotes.findOne(u.orgId, quoteId);
-  }
-
-  @Post("enterprise-quotes/:quoteId/submit")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:create")
-  submitEnterpriseQuote(
-    @Param("quoteId", ParseIntPipe) quoteId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.enterpriseQuotes.submit(u.orgId, quoteId);
-  }
-
-  @Post("enterprise-quotes/:quoteId/approve")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:approve")
-  approveEnterpriseQuote(
-    @Param("quoteId", ParseIntPipe) quoteId: number,
-    @Body(new ZodValidationPipe(approveEnterpriseQuoteSchema)) body: ApproveEnterpriseQuoteInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.enterpriseQuotes.approve(u.orgId, quoteId, u.userId, body);
-  }
-
-  @Post("enterprise-quotes/:quoteId/reject")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:approve")
-  rejectEnterpriseQuote(
-    @Param("quoteId", ParseIntPipe) quoteId: number,
-    @Body(new ZodValidationPipe(rejectEnterpriseQuoteSchema)) body: RejectEnterpriseQuoteInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.enterpriseQuotes.reject(u.orgId, quoteId, u.userId, body);
-  }
-
-  @Post("enterprise-quotes/:quoteId/send")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:approve")
-  sendEnterpriseQuote(
-    @Param("quoteId", ParseIntPipe) quoteId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.enterpriseQuotes.send(u.orgId, quoteId);
-  }
-
-  @Post("enterprise-quotes/:quoteId/accept")
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:enterprise-quotes:view")
-  acceptEnterpriseQuote(
-    @Param("quoteId", ParseIntPipe) quoteId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.enterpriseQuotes.accept(u.orgId, quoteId);
   }
 
   @Get("addons")
@@ -451,16 +190,18 @@ export class BillingController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:coupons:manage")
-  createCoupon(@Body(new ZodValidationPipe(createCouponSchema)) body: CreateCouponInput) {
+  @Validate({ body: createCouponSchema })
+  createCoupon(@Body() body: CreateCouponInput) {
     return this.billing.createCoupon(body);
   }
 
   @Patch("coupons/:couponId")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:coupons:manage")
+  @Validate({ params: couponIdParams, body: updateCouponSchema })
   updateCoupon(
     @Param("couponId", ParseIntPipe) couponId: number,
-    @Body(new ZodValidationPipe(updateCouponSchema)) body: UpdateCouponInput,
+    @Body() body: UpdateCouponInput,
   ) {
     return this.billing.updateCoupon(couponId, body);
   }
@@ -468,6 +209,7 @@ export class BillingController {
   @Delete("coupons/:couponId")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:coupons:manage")
+  @Validate({ params: couponIdParams })
   deleteCoupon(@Param("couponId", ParseIntPipe) couponId: number) {
     return this.billing.deleteCoupon(couponId);
   }

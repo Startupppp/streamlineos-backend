@@ -55,6 +55,10 @@ function makeInstance(
       shared.delete(key);
       return Promise.resolve();
     }),
+    cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+    invalidateForOrg: jest.fn().mockResolvedValue(undefined),
     get: jest
       .fn()
       .mockImplementation((key: string) => Promise.resolve(shared.get(key) ?? null)),

@@ -1,0 +1,198 @@
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, count, desc, eq, gte, ilike, lte } from "drizzle-orm";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
+import { auditLogs, organizationMembers } from "../../db/schema";
+import type { ListAuditInput } from "./dto/users.schemas";
+
+@Injectable()
+export class UserActivityService {
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  private async assertMember(orgId: string, userId: string): Promise<void> {
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+      ),
+      columns: { userId: true },
+    });
+    if (!membership)
+      throw new NotFoundException("User not found in this organization");
+  }
+
+  async getUserActivity(
+    orgId: string,
+    userId: string,
+    params?: { page?: number; limit?: number },
+  ) {
+    await this.assertMember(orgId, userId);
+
+    const page = params?.page ?? 1;
+    const limit = Math.min(params?.limit ?? 20, 100);
+    const offset = (page - 1) * limit;
+
+    const rows = await this.db
+      .select({
+        id: auditLogs.id,
+        orgId: auditLogs.orgId,
+        targetId: auditLogs.targetId,
+        actorUserId: auditLogs.actorUserId,
+        action: auditLogs.action,
+        resourceType: auditLogs.resourceType,
+        resourceId: auditLogs.resourceId,
+        metadata: auditLogs.metadata,
+        ipAddress: auditLogs.ipAddress,
+        createdAt: auditLogs.createdAt,
+      })
+      .from(auditLogs)
+      .where(
+        and(
+          eq(auditLogs.orgId, orgId),
+          eq(auditLogs.targetId, userId),
+          eq(auditLogs.targetType, "user"),
+        ),
+      )
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return {
+      data: rows.map((row) => ({
+        id: String(row.id),
+        orgId: row.orgId ?? "",
+        userId: row.targetId ?? "",
+        actorUserId: row.actorUserId ?? null,
+        action: row.action,
+        resourceType: row.resourceType ?? null,
+        resourceId: row.resourceId ?? null,
+        metadata: row.metadata ?? {},
+        ipAddress: row.ipAddress ?? null,
+        createdAt: row.createdAt,
+      })),
+      page,
+      limit,
+    };
+  }
+
+  async getAuditLog(orgId: string, params: ListAuditInput) {
+    const { page, limit, actorUserId, action, from, to } = params;
+    const offset = (page - 1) * limit;
+
+    const conditions = [
+      eq(auditLogs.orgId, orgId),
+      eq(auditLogs.targetType, "user"),
+    ];
+    if (actorUserId) conditions.push(eq(auditLogs.actorUserId, actorUserId));
+    if (action) conditions.push(ilike(auditLogs.action, `%${action}%`));
+    if (from) conditions.push(gte(auditLogs.createdAt, new Date(from)));
+    if (to) conditions.push(lte(auditLogs.createdAt, new Date(to)));
+
+    const [rows, countResult] = await Promise.all([
+      this.db
+        .select({
+          id: auditLogs.id,
+          orgId: auditLogs.orgId,
+          targetId: auditLogs.targetId,
+          actorUserId: auditLogs.actorUserId,
+          action: auditLogs.action,
+          resourceType: auditLogs.resourceType,
+          resourceId: auditLogs.resourceId,
+          metadata: auditLogs.metadata,
+          ipAddress: auditLogs.ipAddress,
+          createdAt: auditLogs.createdAt,
+        })
+        .from(auditLogs)
+        .where(and(...conditions))
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(auditLogs)
+        .where(and(...conditions)),
+    ]);
+
+    return {
+      data: rows.map((row) => ({
+        id: String(row.id),
+        orgId: row.orgId ?? "",
+        userId: row.targetId ?? "",
+        actorUserId: row.actorUserId ?? null,
+        action: row.action,
+        resourceType: row.resourceType ?? null,
+        resourceId: row.resourceId ?? null,
+        metadata: row.metadata ?? {},
+        ipAddress: row.ipAddress ?? null,
+        createdAt: row.createdAt,
+      })),
+      pagination: {
+        page,
+        limit,
+        total: countResult[0]?.total ?? 0,
+        totalPages: Math.ceil((countResult[0]?.total ?? 0) / limit),
+      },
+    };
+  }
+
+  async getUserAuditLog(orgId: string, userId: string, params: ListAuditInput) {
+    await this.assertMember(orgId, userId);
+
+    const { page, limit, from, to } = params;
+    const offset = (page - 1) * limit;
+
+    const conditions = [
+      eq(auditLogs.orgId, orgId),
+      eq(auditLogs.targetId, userId),
+      eq(auditLogs.targetType, "user"),
+    ];
+    if (from) conditions.push(gte(auditLogs.createdAt, new Date(from)));
+    if (to) conditions.push(lte(auditLogs.createdAt, new Date(to)));
+
+    const [rows, countResult] = await Promise.all([
+      this.db
+        .select({
+          id: auditLogs.id,
+          orgId: auditLogs.orgId,
+          targetId: auditLogs.targetId,
+          actorUserId: auditLogs.actorUserId,
+          action: auditLogs.action,
+          resourceType: auditLogs.resourceType,
+          resourceId: auditLogs.resourceId,
+          metadata: auditLogs.metadata,
+          ipAddress: auditLogs.ipAddress,
+          createdAt: auditLogs.createdAt,
+        })
+        .from(auditLogs)
+        .where(and(...conditions))
+        .orderBy(desc(auditLogs.createdAt))
+        .limit(limit)
+        .offset(offset),
+      this.db
+        .select({ total: count() })
+        .from(auditLogs)
+        .where(and(...conditions)),
+    ]);
+
+    return {
+      data: rows.map((row) => ({
+        id: String(row.id),
+        orgId: row.orgId ?? "",
+        userId: row.targetId ?? "",
+        actorUserId: row.actorUserId ?? null,
+        action: row.action,
+        resourceType: row.resourceType ?? null,
+        resourceId: row.resourceId ?? null,
+        metadata: row.metadata ?? {},
+        ipAddress: row.ipAddress ?? null,
+        createdAt: row.createdAt,
+      })),
+      pagination: {
+        page,
+        limit,
+        total: countResult[0]?.total ?? 0,
+        totalPages: Math.ceil((countResult[0]?.total ?? 0) / limit),
+      },
+    };
+  }
+}

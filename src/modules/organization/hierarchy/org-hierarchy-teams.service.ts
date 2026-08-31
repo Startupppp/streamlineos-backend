@@ -333,6 +333,7 @@ export class OrgHierarchyTeamsService {
         eq(orgUnits.id, teamId),
         eq(orgUnits.orgId, orgId),
         eq(orgUnits.kind, "TEAM"),
+        isNull(orgUnits.deletedAt),
       ),
     });
     if (!team) throw new NotFoundException("Team not found");

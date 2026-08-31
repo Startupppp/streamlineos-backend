@@ -11,10 +11,12 @@ import { TimerController } from "./timer.controller";
 import { PeriodsService } from "./periods.service";
 import { PeriodsController } from "./periods.controller";
 import { ApprovalsService } from "./approvals.service";
+import { ApprovalsBulkService } from "./approvals-bulk.service";
 import { ApprovalsController } from "./approvals.controller";
 import { BillingService } from "./billing.service";
 import { BillingController } from "./billing.controller";
 import { ReportsService } from "./reports.service";
+import { TimesheetAnalyticsService } from "./timesheet-analytics.service";
 import { ReportsController } from "./reports.controller";
 import { SettingsService } from "./settings.service";
 import { SettingsController } from "./settings.controller";
@@ -26,7 +28,7 @@ import { AuditController } from "./audit.controller";
 import { TeamController } from "./team.controller";
 import { TeamService } from "./team.service";
 import { ExceptionsService } from "./exceptions.service";
-import { ExceptionsController } from "./exceptions.controller";
+import { TimesheetExceptionsController } from "./exceptions.controller";
 import { ExceptionsDetectorService } from "./exceptions-detector.service";
 import { TimesheetsAiController } from "./timesheets-ai.controller";
 import { TimesheetsAiService } from "./timesheets-ai.service";
@@ -46,7 +48,7 @@ import { AiModule } from "../../ai/core/ai.module";
     BudgetsController,
     AuditController,
     TeamController,
-    ExceptionsController,
+    TimesheetExceptionsController,
     TimesheetsAiController,
   ],
   providers: [
@@ -59,8 +61,10 @@ import { AiModule } from "../../ai/core/ai.module";
     TimerService,
     PeriodsService,
     ApprovalsService,
+    ApprovalsBulkService,
     BillingService,
     ReportsService,
+    TimesheetAnalyticsService,
     SettingsService,
     RatesService,
     BudgetsService,

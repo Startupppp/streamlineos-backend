@@ -7,7 +7,7 @@ describe("listPageQuerySchema", () => {
   });
 
   it("caps limit at 100 and rejects non-positive pages", () => {
-    expect(() => listPageQuerySchema.parse({ limit: "500" })).toThrow();
+    expect(listPageQuerySchema.parse({ limit: "500" }).limit).toBe(100);
     expect(() => listPageQuerySchema.parse({ page: "0" })).toThrow();
     expect(() => listPageQuerySchema.parse({ page: "-1" })).toThrow();
   });

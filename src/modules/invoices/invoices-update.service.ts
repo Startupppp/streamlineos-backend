@@ -1,10 +1,8 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
 import { invoiceItems, invoices } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { AuditService } from "../../common/audit/audit.service";
 import { JournalPostingService } from "../accounting/posting/journal-posting.service";
 import { resolveSupplierStateCode } from "./lib/invoice-helpers";
@@ -80,23 +78,6 @@ export class InvoicesUpdateService {
             },
             tx,
           );
-          await OutboxWriter.emit(tx, {
-            eventId: randomUUID(),
-            organizationId: orgId,
-            aggregateType: "invoice",
-            aggregateId: String(invoiceId),
-            aggregateVersion: Date.now(),
-            eventType: "accounting.invoice.issued",
-            payload: {
-              organization_id: orgId,
-              invoice_id: invoiceId,
-              invoice_number: existing.invoiceNumber,
-              total_cents: Math.round(total * 100),
-              client_id: existing.clientId ?? null,
-              actor_user_id: userId,
-            },
-            occurredAt: new Date(),
-          });
         }
       });
 

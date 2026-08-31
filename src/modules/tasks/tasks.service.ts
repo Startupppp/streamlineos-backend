@@ -1,16 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import {
-  eq,
-  and,
-  asc,
-  desc,
-  count,
-  lt,
-  gte,
-  isNotNull,
-  sql,
-} from "drizzle-orm";
-import { tasks, taskSequences, taskSequenceSteps, crmActivities, users } from "../../db/schema";
+import { eq, and, asc, desc, count } from "drizzle-orm";
+import { tasks, crmActivities } from "../../db/schema";
 import { crmActivityTypeEnum } from "../../db/schema/common/enums";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -18,46 +8,10 @@ import { TaskNotificationsService } from "./task-notifications.service";
 import { AccessService } from "../access/access.service";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type {
-  ListInput,
-  CreateInput,
-  UpdateInput,
-  CompleteInput,
-  AnalyticsInput,
-  SequenceListInput,
-  SequenceCreateInput,
-  SequenceApplyInput,
-} from "./dto/task.schemas";
+import type { ListInput, CreateInput, UpdateInput, CompleteInput } from "./dto/task.schemas";
+import { addDays, addWeeks, addMonths } from "./task-date-utils";
 
-/**
- * Derived from the pgEnum, not hand-listed (§7: never maintain a parallel
- * union). The hand-written copy had already drifted — it omitted the value this
- * file needs, and a stale literal union fails silently at the call site rather
- * than at the schema.
- */
 type CrmActivityType = (typeof crmActivityTypeEnum.enumValues)[number];
-
-type TaskBucket = "OVERDUE" | "TODAY" | "THIS_WEEK" | "UPCOMING" | "NO_DATE";
-
-function addDays(date: Date, amount: number): Date {
-  const result = new Date(date);
-  result.setDate(result.getDate() + amount);
-  return result;
-}
-
-function addWeeks(date: Date, amount: number): Date {
-  return addDays(date, amount * 7);
-}
-
-function addMonths(date: Date, amount: number): Date {
-  const result = new Date(date);
-  const targetDay = result.getDate();
-  result.setDate(1);
-  result.setMonth(result.getMonth() + amount);
-  const daysInMonth = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
-  result.setDate(Math.min(targetDay, daysInMonth));
-  return result;
-}
 
 @Injectable()
 export class TasksService {
@@ -67,10 +21,6 @@ export class TasksService {
     private readonly access: AccessService,
   ) {}
 
-  /**
-   * `tasks:read` is a universal employee grant, so it only ever exposes the
-   * caller's own tasks. Seeing the whole org queue requires `crm:tasks:view`.
-   */
   private async canViewAllTasks(actor: CurrentUserContext): Promise<boolean> {
     if (actor.isOrgOwner) return true;
     const resolved = await this.access.resolveUserPermissions(
@@ -135,6 +85,7 @@ export class TasksService {
         : undefined;
       void this.notifications
         .notifyAssignee({
+          orgId,
           assigneeId: created.assigneeId,
           actorId: userId,
           title: created.title,
@@ -189,6 +140,7 @@ export class TasksService {
     ) {
       void this.notifications
         .notifyAssignee({
+          orgId,
           assigneeId: input.assigneeId,
           actorId: userId,
           title: updated.title,
@@ -232,10 +184,6 @@ export class TasksService {
         EMAIL: "email",
         MEETING: "meeting",
       };
-      // Anything that is not a call/email/meeting is a plain task completion.
-      // The old fallback was "deal_won", which fabricated a won-deal activity in
-      // the sales feed (`crm-sales-dashboard.service.ts` filters category
-      // "sales") every time someone ticked off an ordinary TODO.
       const activityType: CrmActivityType = typeToActivity[existing.type] ?? "task_completed";
 
       await tx.insert(crmActivities).values({
@@ -286,260 +234,4 @@ export class TasksService {
       return updated;
     });
   }
-
-  async myQueue(orgId: string, userId: string) {
-    const now = new Date();
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(now);
-    todayEnd.setHours(23, 59, 59, 999);
-
-    const rows = await this.db
-      .select()
-      .from(tasks)
-      .where(
-        and(
-          eq(tasks.orgId, orgId),
-          eq(tasks.assigneeId, userId),
-          eq(tasks.status, "pending"),
-        ),
-      )
-      .orderBy(asc(tasks.dueDate), asc(tasks.createdAt))
-      .limit(50);
-
-    const categorised = rows.map((task) => {
-      let bucket: TaskBucket = "NO_DATE";
-
-      if (task.dueDate) {
-        const due = new Date(task.dueDate);
-        if (due < todayStart) {
-          bucket = "OVERDUE";
-        } else if (due <= todayEnd) {
-          bucket = "TODAY";
-        } else {
-          const weekEnd = new Date(todayEnd);
-          weekEnd.setDate(weekEnd.getDate() + 6);
-          bucket = due <= weekEnd ? "THIS_WEEK" : "UPCOMING";
-        }
-      }
-
-      return { ...task, bucket };
-    });
-
-    const bucketOrder: Record<string, number> = {
-      OVERDUE: 0,
-      TODAY: 1,
-      THIS_WEEK: 2,
-      UPCOMING: 3,
-      NO_DATE: 4,
-    };
-    categorised.sort(
-      (a, b) =>
-        bucketOrder[a.bucket] - bucketOrder[b.bucket] ||
-        (a.dueDate && b.dueDate
-          ? new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
-          : 0),
-    );
-
-    return categorised;
-  }
-
-  async overdue(orgId: string, countOnly: boolean) {
-    const now = new Date();
-    const conditions = [
-      eq(tasks.orgId, orgId),
-      eq(tasks.status, "pending"),
-      isNotNull(tasks.dueDate),
-      lt(tasks.dueDate, now),
-    ];
-
-    if (countOnly) {
-      const rows = await this.db
-        .select({ id: tasks.id })
-        .from(tasks)
-        .where(and(...conditions));
-      return { count: rows.length };
-    }
-
-    const rows = await this.db
-      .select()
-      .from(tasks)
-      .where(and(...conditions))
-      .orderBy(tasks.dueDate)
-      .limit(100);
-
-    return { tasks: rows, count: rows.length };
-  }
-
-  async analytics(orgId: string, input: AnalyticsInput) {
-    const days = input.days;
-    const now = new Date();
-    const periodStart = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-
-    const [totalRow] = await this.db
-      .select({ total: count() })
-      .from(tasks)
-      .where(and(eq(tasks.orgId, orgId), gte(tasks.createdAt, periodStart)));
-
-    const [completedRow] = await this.db
-      .select({ completed: count() })
-      .from(tasks)
-      .where(
-        and(eq(tasks.orgId, orgId), eq(tasks.status, "completed"), gte(tasks.createdAt, periodStart)),
-      );
-
-    const [overdueRow] = await this.db
-      .select({ overdue: count() })
-      .from(tasks)
-      .where(
-        and(
-          eq(tasks.orgId, orgId),
-          eq(tasks.status, "pending"),
-          lt(tasks.dueDate, now),
-          isNotNull(tasks.dueDate),
-        ),
-      );
-
-    const perRep = await this.db
-      .select({
-        assigneeId: tasks.assigneeId,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        name: users.name,
-        total: count(),
-        completed: sql<number>`SUM(CASE WHEN ${tasks.status} = 'completed' THEN 1 ELSE 0 END)`,
-        overdue: sql<number>`SUM(CASE WHEN ${tasks.status} = 'pending' AND ${tasks.dueDate} < NOW() THEN 1 ELSE 0 END)`,
-      })
-      .from(tasks)
-      .leftJoin(users, eq(tasks.assigneeId, users.id))
-      .where(
-        and(eq(tasks.orgId, orgId), isNotNull(tasks.assigneeId), gte(tasks.createdAt, periodStart)),
-      )
-      .groupBy(tasks.assigneeId, users.firstName, users.lastName, users.name)
-      .orderBy(sql`SUM(CASE WHEN ${tasks.status} = 'completed' THEN 1 ELSE 0 END) DESC`)
-      .limit(20);
-
-    const totalNum = Number(totalRow?.total ?? 0);
-    const completedNum = Number(completedRow?.completed ?? 0);
-    const overdueNum = Number(overdueRow?.overdue ?? 0);
-
-    return {
-      period: days,
-      total: totalNum,
-      completed: completedNum,
-      overdue: overdueNum,
-      completionRate: totalNum > 0 ? Math.round((completedNum / totalNum) * 100) : 0,
-      perRep: perRep.map((r) => ({
-        assigneeId: r.assigneeId,
-        name:
-          r.firstName && r.lastName
-            ? `${r.firstName} ${r.lastName}`
-            : (r.name ?? "Unknown"),
-        total: Number(r.total),
-        completed: Number(r.completed),
-        overdue: Number(r.overdue),
-        completionRate:
-          Number(r.total) > 0
-            ? Math.round((Number(r.completed) / Number(r.total)) * 100)
-            : 0,
-      })),
-    };
-  }
-
-  listSequences(orgId: string, input: SequenceListInput) {
-    return this.db.query.taskSequences.findMany({
-      where: eq(taskSequences.orgId, orgId),
-      with: { steps: { orderBy: (s, { asc: ascOp }) => [ascOp(s.order)] } },
-      orderBy: (t, { desc: descOp }) => [descOp(t.createdAt)],
-      limit: input.limit,
-    });
-  }
-
-  async createSequence(orgId: string, userId: string, input: SequenceCreateInput) {
-    return this.db.transaction(async (tx) => {
-      const [seq] = await tx
-        .insert(taskSequences)
-        .values({
-          orgId,
-          name: input.name,
-          description: input.description,
-          createdBy: userId,
-        })
-        .returning();
-
-      if (input.steps.length > 0) {
-        await tx.insert(taskSequenceSteps).values(
-          input.steps.map((step, i) => ({
-            sequenceId: seq.id,
-            title: step.title,
-            type: step.type,
-            notes: step.notes,
-            offsetDays: step.offsetDays,
-            order: step.order ?? i,
-          })),
-        );
-      }
-
-      return tx.query.taskSequences.findFirst({
-        where: eq(taskSequences.id, seq.id),
-        with: { steps: { orderBy: (s, { asc: ascOp }) => [ascOp(s.order)] } },
-      });
-    });
-  }
-
-  async removeSequence(orgId: string, sequenceId: number) {
-    const [deleted] = await this.db
-      .delete(taskSequences)
-      .where(and(eq(taskSequences.id, sequenceId), eq(taskSequences.orgId, orgId)))
-      .returning();
-
-    if (!deleted) return null;
-    return { success: true };
-  }
-
-  async applySequence(orgId: string, userId: string, sequenceId: number, input: SequenceApplyInput) {
-    const seq = await this.db.query.taskSequences.findFirst({
-      where: and(eq(taskSequences.id, sequenceId), eq(taskSequences.orgId, orgId)),
-      with: { steps: { orderBy: (s, { asc: ascOp }) => [ascOp(s.order)] } },
-    });
-
-    if (!seq) return { error: "not_found" as const };
-    if (seq.steps.length === 0) return { error: "no_steps" as const };
-
-    const base = new Date(input.baseDate);
-
-    const created = await this.db
-      .insert(tasks)
-      .values(
-        seq.steps.map((step) => ({
-          orgId,
-          title: step.title,
-          notes: step.notes ?? null,
-          type: (step.type as "CALL" | "EMAIL" | "MEETING" | "CUSTOM") ?? "CUSTOM",
-          status: "pending" as const,
-          entityType: input.entityType ?? null,
-          entityId: input.entityId ?? null,
-          assigneeId: input.assigneeId ?? null,
-          createdBy: userId,
-          dueDate: addDays(base, step.offsetDays),
-        })),
-      )
-      .returning();
-
-    return { created, count: created.length };
-  }
-}
-
-export type ApplySequenceResult = Awaited<ReturnType<TasksService["applySequence"]>>;
-
-export function isSequenceNotFound(
-  result: ApplySequenceResult,
-): result is { error: "not_found" } {
-  return "error" in result && result.error === "not_found";
-}
-
-export function isSequenceNoSteps(
-  result: ApplySequenceResult,
-): result is { error: "no_steps" } {
-  return "error" in result && result.error === "no_steps";
 }

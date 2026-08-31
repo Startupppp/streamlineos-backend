@@ -2,6 +2,7 @@ process.env.APP_URL ??= "http://localhost:1000";
 
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { CompOffGrantService } from "./comp-off-grant.service";
 
 const USER: CurrentUserContext = {
@@ -11,6 +12,7 @@ const USER: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 function selectLimit(rows: unknown[]) {

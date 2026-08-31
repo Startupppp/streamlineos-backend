@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listProjectCustomersSchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().positive().max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20),
   search: z.string().optional(),
 });
 

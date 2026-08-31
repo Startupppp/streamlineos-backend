@@ -20,7 +20,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RecruitmentCandidateRecordsService } from "./recruitment-candidate-records.service";
 import { RecruitmentCandidateAiService } from "./recruitment-candidate-ai.service";
 import {
@@ -44,6 +43,13 @@ import {
   type UpdateReferralInput,
 } from "./dto/candidate-records.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const candidateIdParams = z.object({ candidateId: z.coerce.number().int().positive() }).strict();
+const candidateAndCheckIdParams = z.object({ candidateId: z.coerce.number().int().positive(), checkId: z.coerce.number().int().positive() }).strict();
+const candidateAndDocumentIdParams = z.object({ candidateId: z.coerce.number().int().positive(), documentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment/candidates/:candidateId")
@@ -56,6 +62,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Post("ai-score")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams })
   aiScore(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -65,6 +72,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Post("composite-score")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams })
   compositeScore(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -74,6 +82,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Post("resume-parse")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams })
   @UseInterceptors(
     FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }),
   )
@@ -88,6 +97,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("rollout-documents")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: candidateIdParams })
   listRolloutDocuments(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -98,9 +108,10 @@ export class RecruitmentCandidateRecordsController {
   @Post("rollout-documents")
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams, body: rolloutDocumentsSchema })
   generateRolloutDocuments(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(rolloutDocumentsSchema))
+    @Body()
     body: RolloutDocumentsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -114,6 +125,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("calibration")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: candidateIdParams })
   listCalibration(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -124,9 +136,10 @@ export class RecruitmentCandidateRecordsController {
   @Post("calibration")
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams, body: createCalibrationSchema })
   createCalibration(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(createCalibrationSchema))
+    @Body()
     body: CreateCalibrationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -135,9 +148,10 @@ export class RecruitmentCandidateRecordsController {
 
   @Patch("calibration")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams, body: updateCalibrationSchema })
   updateCalibration(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(updateCalibrationSchema))
+    @Body()
     body: UpdateCalibrationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -146,6 +160,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("referral")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: candidateIdParams })
   listReferrals(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -154,11 +169,13 @@ export class RecruitmentCandidateRecordsController {
   }
 
   @Post("referral")
+  @Idempotent("hr.recruitment.referral.create")
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams, body: createReferralSchema })
   createReferral(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(createReferralSchema))
+    @Body()
     body: CreateReferralInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -167,9 +184,10 @@ export class RecruitmentCandidateRecordsController {
 
   @Patch("referral")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams, body: updateReferralSchema })
   updateReferral(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(updateReferralSchema))
+    @Body()
     body: UpdateReferralInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -178,6 +196,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("reference-checks")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: candidateIdParams })
   listReferenceChecks(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -188,9 +207,10 @@ export class RecruitmentCandidateRecordsController {
   @Post("reference-checks")
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams, body: createReferenceCheckSchema })
   createReferenceCheck(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(createReferenceCheckSchema))
+    @Body()
     body: CreateReferenceCheckInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -204,10 +224,11 @@ export class RecruitmentCandidateRecordsController {
 
   @Patch("reference-checks/:checkId")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateAndCheckIdParams, body: updateReferenceCheckSchema })
   updateReferenceCheck(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("checkId", ParseIntPipe) checkId: number,
-    @Body(new ZodValidationPipe(updateReferenceCheckSchema))
+    @Body()
     body: UpdateReferenceCheckInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -222,6 +243,7 @@ export class RecruitmentCandidateRecordsController {
   @Delete("reference-checks/:checkId")
   @HttpCode(204)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateAndCheckIdParams })
   async deleteReferenceCheck(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("checkId", ParseIntPipe) checkId: number,
@@ -232,6 +254,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("documents")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: candidateIdParams })
   listDocuments(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -242,9 +265,10 @@ export class RecruitmentCandidateRecordsController {
   @Post("documents")
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams, body: generateDocumentSchema })
   generateDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(generateDocumentSchema))
+    @Body()
     body: GenerateDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -253,6 +277,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("documents/:documentId/view")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: candidateAndDocumentIdParams })
   async viewDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("documentId", ParseIntPipe) documentId: number,
@@ -276,6 +301,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("vault")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams })
   listVault(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -286,9 +312,10 @@ export class RecruitmentCandidateRecordsController {
   @Post("vault")
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams, body: addVaultDocumentSchema })
   addVaultDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Body(new ZodValidationPipe(addVaultDocumentSchema))
+    @Body()
     body: AddVaultDocumentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -298,16 +325,18 @@ export class RecruitmentCandidateRecordsController {
   @Delete("vault/:documentId")
   @HttpCode(204)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateAndDocumentIdParams })
   async deleteVaultDocument(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.records.deleteVaultDocument(u.orgId, candidateId, documentId);
+    await this.records.deleteVaultDocument(u.orgId, candidateId, documentId, u.userId);
   }
 
   @Get("vault/access-logs")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: candidateIdParams })
   listVaultAccessLogs(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -317,6 +346,7 @@ export class RecruitmentCandidateRecordsController {
 
   @Get("activity")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: candidateIdParams })
   getActivity(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,

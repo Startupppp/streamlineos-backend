@@ -12,6 +12,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import type { InsightsQuery, AnomalyFinding } from "./dto/insights.schemas";
 import { InsightsFindersService, monthStart, monthEnd, todayIso } from "./insights-finders.service";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 const ANOMALY_TTL = 300;
 
@@ -36,12 +37,12 @@ export class InsightsService {
     const to = query.to ?? todayIso();
 
     const results = await Promise.all([
-      this.finders.findExpenseSpikes(orgId, from, to).catch(() => [] as AnomalyFinding[]),
-      this.finders.findDuplicateBills(orgId, from, to).catch(() => [] as AnomalyFinding[]),
-      this.finders.findUnusualJournals(orgId, from, to).catch(() => [] as AnomalyFinding[]),
-      this.finders.findRoundAmountPatterns(orgId, from, to).catch(() => [] as AnomalyFinding[]),
-      this.finders.findArConcentration(orgId).catch(() => [] as AnomalyFinding[]),
-      this.finders.findCashDipProjected(orgId).catch(() => [] as AnomalyFinding[]),
+      this.finders.findExpenseSpikes(orgId, from, to).catch((err: unknown) => { logSideEffectFailure("findExpenseSpikes", { orgId })(err); return [] as AnomalyFinding[]; }),
+      this.finders.findDuplicateBills(orgId, from, to).catch((err: unknown) => { logSideEffectFailure("findDuplicateBills", { orgId })(err); return [] as AnomalyFinding[]; }),
+      this.finders.findUnusualJournals(orgId, from, to).catch((err: unknown) => { logSideEffectFailure("findUnusualJournals", { orgId })(err); return [] as AnomalyFinding[]; }),
+      this.finders.findRoundAmountPatterns(orgId, from, to).catch((err: unknown) => { logSideEffectFailure("findRoundAmountPatterns", { orgId })(err); return [] as AnomalyFinding[]; }),
+      this.finders.findArConcentration(orgId).catch((err: unknown) => { logSideEffectFailure("findArConcentration", { orgId })(err); return [] as AnomalyFinding[]; }),
+      this.finders.findCashDipProjected(orgId).catch((err: unknown) => { logSideEffectFailure("findCashDipProjected", { orgId })(err); return [] as AnomalyFinding[]; }),
     ]);
 
     return results.flat();

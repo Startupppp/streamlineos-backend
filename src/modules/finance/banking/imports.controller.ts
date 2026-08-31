@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ImportsService } from "./imports.service";
 import {
   bankImportsQuerySchema,
@@ -13,6 +12,7 @@ import {
   type BankImportsQuery,
   type CreateBankImportInput,
 } from "./dto/imports.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("accounting")
 @Controller("finance/bank-imports")
@@ -22,8 +22,9 @@ export class ImportsController {
 
   @Get()
   @RequirePermission("accounting:banking:read")
+  @Validate({ query: bankImportsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(bankImportsQuerySchema)) query: BankImportsQuery,
+    @Query() query: BankImportsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listImports(u, query);
@@ -32,8 +33,9 @@ export class ImportsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("accounting:banking:import")
+  @Validate({ body: createBankImportSchema })
   create(
-    @Body(new ZodValidationPipe(createBankImportSchema)) body: CreateBankImportInput,
+    @Body() body: CreateBankImportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createImport(u, body);

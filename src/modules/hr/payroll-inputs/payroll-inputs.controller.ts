@@ -7,13 +7,15 @@ import {
   Patch,
   Post,
   Query,
-  Req,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { CurrentUser } from "../../../common/auth/current-user.decorator";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { PayrollInputsService } from "./payroll-inputs.service";
 import {
   createPeriodSchema,
@@ -21,10 +23,16 @@ import {
   sectionQuerySchema,
   createAdjustmentSchema,
   rejectAdjustmentSchema,
+  type CreatePeriodInput,
+  type ListPeriodsInput,
+  type SectionQueryInput,
+  type CreateAdjustmentInput,
 } from "./dto/payroll-inputs.schemas";
-import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { z } from "zod";
 
-type RequestWithUser = { user: CurrentUserContext };
+const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
+const adjustmentIdParams = z.object({ adjustmentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/payroll-inputs")
@@ -34,133 +42,141 @@ export class PayrollInputsController {
 
   @Get("periods")
   @RequirePermission("hr:payroll:view")
-  async listPeriods(@Req() req: RequestWithUser, @Query() query: Record<string, string>) {
-    const input = listPeriodsSchema.parse(query);
-    return this.service.listPeriods(req.user.orgId, input);
+  @Validate({ query: listPeriodsSchema })
+  listPeriods(@Query() query: ListPeriodsInput, @CurrentUser() u: CurrentUserContext) {
+    return this.service.listPeriods(u.orgId, query);
   }
 
   @Post("periods")
   @RequirePermission("hr:payroll:generate")
-  async createPeriod(@Req() req: RequestWithUser, @Body() body: unknown) {
-    const input = createPeriodSchema.parse(body);
-    return this.service.createPeriod(req.user.orgId, req.user.userId, input);
+  @Validate({ body: createPeriodSchema })
+  createPeriod(@Body() body: CreatePeriodInput, @CurrentUser() u: CurrentUserContext) {
+    return this.service.createPeriod(u.orgId, u.userId, body);
   }
 
   @Get("periods/:periodId")
   @RequirePermission("hr:payroll:view")
-  async getPeriod(
-    @Req() req: RequestWithUser,
+  @Validate({ params: periodIdParams })
+  getPeriod(
     @Param("periodId", ParseIntPipe) periodId: number,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.getPeriod(req.user.orgId, periodId);
+    return this.service.getPeriod(u.orgId, periodId);
   }
 
   @Post("periods/:periodId/build")
   @RequirePermission("hr:payroll:generate")
-  async buildPeriod(
-    @Req() req: RequestWithUser,
+  @Validate({ params: periodIdParams })
+  buildPeriod(
     @Param("periodId", ParseIntPipe) periodId: number,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.buildPeriod(req.user.orgId, req.user.userId, periodId);
+    return this.service.buildPeriod(u.orgId, u.userId, periodId);
   }
 
   @Post("periods/:periodId/lock")
   @RequirePermission("hr:payroll:lock")
-  async lockPeriod(
-    @Req() req: RequestWithUser,
+  @Validate({ params: periodIdParams })
+  lockPeriod(
     @Param("periodId", ParseIntPipe) periodId: number,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.lockPeriod(req.user.orgId, req.user.userId, periodId);
+    return this.service.lockPeriod(u.orgId, u.userId, periodId);
   }
 
   @Post("periods/:periodId/unlock")
   @RequirePermission("hr:payroll:reopen")
-  async unlockPeriod(
-    @Req() req: RequestWithUser,
+  @Validate({ params: periodIdParams })
+  unlockPeriod(
     @Param("periodId", ParseIntPipe) periodId: number,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.unlockPeriod(req.user.orgId, req.user.userId, periodId);
+    return this.service.unlockPeriod(u.orgId, u.userId, periodId);
   }
 
   @Get("periods/:periodId/attendance")
   @RequirePermission("hr:payroll:view")
-  async getAttendance(
-    @Req() req: RequestWithUser,
+  @Validate({ query: sectionQuerySchema, params: periodIdParams })
+  getAttendance(
     @Param("periodId", ParseIntPipe) periodId: number,
-    @Query() query: Record<string, string>,
+    @Query() query: SectionQueryInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    const input = sectionQuerySchema.parse(query);
-    return this.service.getSectionSnapshot(req.user.orgId, periodId, "attendance", input);
+    return this.service.getSectionSnapshot(u.orgId, periodId, "attendance", query);
   }
 
   @Get("periods/:periodId/leaves")
   @RequirePermission("hr:payroll:view")
-  async getLeaves(
-    @Req() req: RequestWithUser,
+  @Validate({ query: sectionQuerySchema, params: periodIdParams })
+  getLeaves(
     @Param("periodId", ParseIntPipe) periodId: number,
-    @Query() query: Record<string, string>,
+    @Query() query: SectionQueryInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    const input = sectionQuerySchema.parse(query);
-    return this.service.getSectionSnapshot(req.user.orgId, periodId, "leave", input);
+    return this.service.getSectionSnapshot(u.orgId, periodId, "leave", query);
   }
 
   @Get("periods/:periodId/overtime")
   @RequirePermission("hr:payroll:view")
-  async getOvertime(
-    @Req() req: RequestWithUser,
+  @Validate({ query: sectionQuerySchema, params: periodIdParams })
+  getOvertime(
     @Param("periodId", ParseIntPipe) periodId: number,
-    @Query() query: Record<string, string>,
+    @Query() query: SectionQueryInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    const input = sectionQuerySchema.parse(query);
-    return this.service.getSectionSnapshot(req.user.orgId, periodId, "overtime", input);
+    return this.service.getSectionSnapshot(u.orgId, periodId, "overtime", query);
   }
 
   @Get("periods/:periodId/reimbursements")
   @RequirePermission("hr:payroll:view")
-  async getReimbursements(
-    @Req() req: RequestWithUser,
+  @Validate({ query: sectionQuerySchema, params: periodIdParams })
+  getReimbursements(
     @Param("periodId", ParseIntPipe) periodId: number,
-    @Query() query: Record<string, string>,
+    @Query() query: SectionQueryInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    const input = sectionQuerySchema.parse(query);
-    return this.service.getSectionSnapshot(req.user.orgId, periodId, "reimbursement", input);
+    return this.service.getSectionSnapshot(u.orgId, periodId, "reimbursement", query);
   }
 
   @Get("periods/:periodId/adjustments")
   @RequirePermission("hr:payroll:view")
-  async getAdjustments(
-    @Req() req: RequestWithUser,
+  @Validate({ query: sectionQuerySchema, params: periodIdParams })
+  getAdjustments(
     @Param("periodId", ParseIntPipe) periodId: number,
-    @Query() query: Record<string, string>,
+    @Query() query: SectionQueryInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    const input = sectionQuerySchema.parse(query);
-    return this.service.listAdjustments(req.user.orgId, periodId, input);
+    return this.service.listAdjustments(u.orgId, periodId, query);
   }
 
   @Post("adjustments")
+  @Idempotent("payroll.adjustment.create")
   @RequirePermission("hr:payroll:generate")
-  async createAdjustment(@Req() req: RequestWithUser, @Body() body: unknown) {
-    const input = createAdjustmentSchema.parse(body);
-    return this.service.createAdjustment(req.user.orgId, req.user.userId, input);
+  @Validate({ body: createAdjustmentSchema })
+  createAdjustment(@Body() body: CreateAdjustmentInput, @CurrentUser() u: CurrentUserContext) {
+    return this.service.createAdjustment(u.orgId, u.userId, body);
   }
 
   @Patch("adjustments/:adjustmentId/approve")
+  @Idempotent("payroll.adjustment.approve")
   @RequirePermission("hr:payroll:approve")
-  async approveAdjustment(
-    @Req() req: RequestWithUser,
+  @Validate({ params: adjustmentIdParams })
+  approveAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.approveAdjustment(req.user.orgId, req.user.userId, adjustmentId);
+    return this.service.approveAdjustment(u.orgId, u.userId, adjustmentId);
   }
 
   @Patch("adjustments/:adjustmentId/reject")
+  @Idempotent("payroll.adjustment.reject")
   @RequirePermission("hr:payroll:approve")
-  async rejectAdjustment(
-    @Req() req: RequestWithUser,
+  @Validate({ body: rejectAdjustmentSchema, params: adjustmentIdParams })
+  rejectAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
-    @Body() body: unknown,
+    @Body() body: { reason: string },
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    const input = rejectAdjustmentSchema.parse(body);
-    return this.service.rejectAdjustment(req.user.orgId, req.user.userId, adjustmentId, input.reason);
+    return this.service.rejectAdjustment(u.orgId, u.userId, adjustmentId, body.reason);
   }
 }

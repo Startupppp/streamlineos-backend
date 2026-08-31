@@ -16,7 +16,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { AssetsService } from "./assets.service";
 import { resolveAssetsScope } from "./assets-scope";
 import {
@@ -30,6 +30,11 @@ import {
   type PatchDeviceInput,
 } from "./dto/hr-directory.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const returnIdParams = z.object({ returnId: z.coerce.number().int().positive() }).strict();
+const deviceIdParams = z.object({ deviceId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr")
@@ -50,8 +55,9 @@ export class AssetsController {
   @Post("asset-returns")
   @RequirePermission("hr:assets:manage")
   @HttpCode(201)
+  @Validate({ body: createAssetReturnSchema })
   createAssetReturn(
-    @Body(new ZodValidationPipe(createAssetReturnSchema)) body: CreateAssetReturnInput,
+    @Body() body: CreateAssetReturnInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.assets.createAssetReturn(u.orgId, body);
@@ -59,9 +65,10 @@ export class AssetsController {
 
   @Patch("asset-returns/:returnId")
   @RequirePermission("hr:assets:manage")
+  @Validate({ params: returnIdParams, body: patchAssetReturnSchema })
   updateAssetReturn(
     @Param("returnId", ParseIntPipe) returnId: number,
-    @Body(new ZodValidationPipe(patchAssetReturnSchema)) body: PatchAssetReturnInput,
+    @Body() body: PatchAssetReturnInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.assets.updateAssetReturn(u.orgId, returnId, body);
@@ -76,8 +83,9 @@ export class AssetsController {
   @Post("devices")
   @HttpCode(201)
   @RequirePermission("hr:assets:manage")
+  @Validate({ body: createDeviceSchema })
   createDevice(
-    @Body(new ZodValidationPipe(createDeviceSchema)) body: CreateDeviceInput,
+    @Body() body: CreateDeviceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.assets.createDevice(u.orgId, body);
@@ -85,9 +93,10 @@ export class AssetsController {
 
   @Patch("devices/:deviceId")
   @RequirePermission("hr:assets:manage")
+  @Validate({ params: deviceIdParams, body: patchDeviceSchema })
   updateDevice(
     @Param("deviceId", ParseIntPipe) deviceId: number,
-    @Body(new ZodValidationPipe(patchDeviceSchema)) body: PatchDeviceInput,
+    @Body() body: PatchDeviceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.assets.updateDevice(u.orgId, deviceId, body);
@@ -96,6 +105,7 @@ export class AssetsController {
   @Delete("devices/:deviceId")
   @HttpCode(204)
   @RequirePermission("hr:assets:manage")
+  @Validate({ params: deviceIdParams })
   deleteDevice(@Param("deviceId", ParseIntPipe) deviceId: number, @CurrentUser() u: CurrentUserContext) {
     return this.assets.deleteDevice(u.orgId, deviceId);
   }

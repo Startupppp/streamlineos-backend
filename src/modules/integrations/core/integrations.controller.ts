@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { IntegrationsService } from "./integrations.service";
 import {
   finalizeConnectionSchema,
@@ -23,6 +22,10 @@ import {
   type FinalizeConnectionInput,
   type InitiateConnectionInput,
 } from "./dto/integrations.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const connectionIdParams = z.object({ connectionId: z.coerce.number().int().positive() }).strict();
 
 @Controller("integrations")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -38,8 +41,9 @@ export class IntegrationsController {
   @Post("connections/initiate")
   @HttpCode(200)
   @RequirePermission("integrations:connections:manage")
+  @Validate({ body: initiateConnectionSchema })
   initiate(
-    @Body(new ZodValidationPipe(initiateConnectionSchema)) body: InitiateConnectionInput,
+    @Body() body: InitiateConnectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.integrations.initiate(u.userId, body.toolkit, body.returnPath);
@@ -48,8 +52,9 @@ export class IntegrationsController {
   @Post("connections/finalize")
   @HttpCode(200)
   @RequirePermission("integrations:connections:manage")
+  @Validate({ body: finalizeConnectionSchema })
   finalize(
-    @Body(new ZodValidationPipe(finalizeConnectionSchema)) body: FinalizeConnectionInput,
+    @Body() body: FinalizeConnectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.integrations.finalize(u.orgId, u.userId, body.connectedAccountId);
@@ -57,6 +62,7 @@ export class IntegrationsController {
 
   @Delete("connections/:connectionId")
   @RequirePermission("integrations:connections:manage")
+  @Validate({ params: connectionIdParams })
   disconnect(
     @Param("connectionId", ParseIntPipe) connectionId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -66,6 +72,7 @@ export class IntegrationsController {
 
   @Patch("connections/:connectionId/primary")
   @RequirePermission("integrations:connections:manage")
+  @Validate({ params: connectionIdParams })
   setPrimary(
     @Param("connectionId", ParseIntPipe) connectionId: number,
     @CurrentUser() u: CurrentUserContext,

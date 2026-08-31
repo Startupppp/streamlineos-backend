@@ -14,7 +14,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ExceptionsService } from "./exceptions.service";
 import { ExceptionsDetectorService } from "./exceptions-detector.service";
 import {
@@ -25,10 +24,14 @@ import {
   type ResolveExceptionInput,
   type DismissExceptionInput,
 } from "./dto/exceptions.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const exceptionIdParams = z.object({ exceptionId: z.coerce.number().int().positive() }).strict();
 
 @Controller("timesheets/exceptions")
 @UseGuards(JwtAuthGuard, PermissionGuard)
-export class ExceptionsController {
+export class TimesheetExceptionsController {
   constructor(
     private readonly exceptions: ExceptionsService,
     private readonly detector: ExceptionsDetectorService,
@@ -36,8 +39,9 @@ export class ExceptionsController {
 
   @Get()
   @RequirePermission("timesheets:exceptions:view")
+  @Validate({ query: exceptionsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(exceptionsQuerySchema)) query: ExceptionsQuery,
+    @Query() query: ExceptionsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.exceptions.listExceptions(u, query);
@@ -52,9 +56,10 @@ export class ExceptionsController {
   @Post(":exceptionId/resolve")
   @HttpCode(200)
   @RequirePermission("timesheets:exceptions:manage")
+  @Validate({ params: exceptionIdParams, body: resolveExceptionSchema })
   resolve(
     @Param("exceptionId", ParseIntPipe) exceptionId: number,
-    @Body(new ZodValidationPipe(resolveExceptionSchema)) body: ResolveExceptionInput,
+    @Body() body: ResolveExceptionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.exceptions.resolveException(u, exceptionId, body);
@@ -63,9 +68,10 @@ export class ExceptionsController {
   @Post(":exceptionId/dismiss")
   @HttpCode(200)
   @RequirePermission("timesheets:exceptions:manage")
+  @Validate({ params: exceptionIdParams, body: dismissExceptionSchema })
   dismiss(
     @Param("exceptionId", ParseIntPipe) exceptionId: number,
-    @Body(new ZodValidationPipe(dismissExceptionSchema)) body: DismissExceptionInput,
+    @Body() body: DismissExceptionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.exceptions.dismissException(u, exceptionId, body);

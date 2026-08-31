@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const READINESS = ["ready_now", "1_2_years", "3_plus"] as const;
 
 export const successionListSchema = z.object({
   cursor: z.string().max(500).optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(30),
+  limit: pageSizeField(30, 100),
 });
 
 export const createSuccessionPlanSchema = z.object({

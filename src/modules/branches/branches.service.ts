@@ -1,6 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
+  hrEmployments,
+  hrPeople,
   orgUnits,
   organizationMembers,
   users,
@@ -12,6 +14,10 @@ import { CacheService } from "../../common/cache/cache.service";
 import { OrgHierarchyCacheService } from "../../common/cache/org-hierarchy-cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../directory/employment-query";
 import type {
   CreateBranchInput,
   UpdateBranchInput,
@@ -138,7 +144,9 @@ export class BranchesService {
           eq(organizationMembers.orgId, orgId),
         ),
       )
-      .where(eq(users.branchId, branchId));
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+      .where(eq(hrEmployments.locationId, branchId));
 
     return {
       id: branch.id,
@@ -189,7 +197,6 @@ export class BranchesService {
 
       for (const userId of [input.branchManagerId, input.branchHrId]) {
         if (!userId) continue;
-        await tx.update(users).set({ branchId: created.id }).where(eq(users.id, userId));
         await syncOrgUnitPlacement(tx, orgId, userId, { BRANCH: created.id });
       }
       return created;
@@ -261,10 +268,6 @@ export class BranchesService {
       if (!updatedBranch) return null;
 
       if (input.branchManagerId !== undefined) {
-        await tx
-          .update(users)
-          .set({ branchId: updatedBranch.id })
-          .where(eq(users.id, input.branchManagerId));
         await syncOrgUnitPlacement(tx, orgId, input.branchManagerId, {
           BRANCH: updatedBranch.id,
         });
@@ -272,10 +275,6 @@ export class BranchesService {
 
       if (input.branchHrId !== undefined) {
         if (input.branchHrId) {
-          await tx
-            .update(users)
-            .set({ branchId: updatedBranch.id })
-            .where(eq(users.id, input.branchHrId));
           await syncOrgUnitPlacement(tx, orgId, input.branchHrId, {
             BRANCH: updatedBranch.id,
           });
@@ -285,10 +284,6 @@ export class BranchesService {
           oldHrId !== input.branchHrId &&
           oldHrId !== updatedBranch.headUserId
         ) {
-          await tx
-            .update(users)
-            .set({ branchId: null })
-            .where(eq(users.id, oldHrId));
           await syncOrgUnitPlacement(tx, orgId, oldHrId, { BRANCH: null });
         }
       }
@@ -327,17 +322,9 @@ export class BranchesService {
 
     await this.db.transaction(async (tx) => {
       if (managerId) {
-        await tx
-          .update(users)
-          .set({ branchId: null })
-          .where(eq(users.id, managerId));
         await syncOrgUnitPlacement(tx, orgId, managerId, { BRANCH: null });
       }
       if (hrId && hrId !== managerId) {
-        await tx
-          .update(users)
-          .set({ branchId: null })
-          .where(eq(users.id, hrId));
         await syncOrgUnitPlacement(tx, orgId, hrId, { BRANCH: null });
       }
       await tx

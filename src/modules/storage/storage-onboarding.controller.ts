@@ -11,16 +11,21 @@ import {
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Universal } from "../../common/auth/universal.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { Validate } from "../../common/validation/validate.decorator";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { documents, onboardingSteps } from "../../db/schema";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { StorageService } from "./storage.service";
 import { onboardingDocTypeSchema } from "./dto/storage.schemas";
+
+const uploadBodySchema = z.object({ type: onboardingDocTypeSchema });
 
 const ALLOWED_TYPES = [
   "application/pdf",
@@ -39,7 +44,9 @@ export class OnboardingDocumentsController {
   ) {}
 
   @Post("documents")
+  @Universal()
   @HttpCode(201)
+  @Validate({ body: uploadBodySchema })
   @UseInterceptors(
     FileInterceptor("file", { limits: { fileSize: 25 * 1024 * 1024 } }),
   )

@@ -5,10 +5,13 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { PeriodsService } from "./periods.service";
 import { generatePeriodsSchema, type GeneratePeriodsInput } from "./dto/periods.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/periods")
@@ -27,8 +30,9 @@ export class PeriodsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:manage")
   @HttpCode(201)
+  @Validate({ body: generatePeriodsSchema })
   generatePeriods(
-    @Body(new ZodValidationPipe(generatePeriodsSchema)) body: GeneratePeriodsInput,
+    @Body() body: GeneratePeriodsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.periods.generatePeriods(u.orgId, u.userId, body);
@@ -37,6 +41,7 @@ export class PeriodsController {
   @Get(":periodId/close-checklist")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:read")
+  @Validate({ params: periodIdParams })
   getCloseChecklist(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -49,6 +54,7 @@ export class PeriodsController {
   @RequirePermission("accounting:periods:manage")
   @HttpCode(200)
   @Idempotent("accounting.period.close")
+  @Validate({ params: periodIdParams })
   closePeriod(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -61,6 +67,7 @@ export class PeriodsController {
   @RequirePermission("accounting:periods:manage")
   @HttpCode(200)
   @Idempotent("accounting.period.lock")
+  @Validate({ params: periodIdParams })
   lockPeriod(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -73,6 +80,7 @@ export class PeriodsController {
   @RequirePermission("accounting:periods:reopen")
   @HttpCode(200)
   @Idempotent("accounting.period.reopen")
+  @Validate({ params: periodIdParams })
   reopenPeriod(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -6,8 +6,16 @@ import { AiCreditsReservationService } from "../ai-credits-reservation.service";
 import { AiCreditsPacksService } from "../ai-credits-packs.service";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { PlanLimitsService } from "../plan-limits.service";
+import { ProrationLedgerService } from "../proration-ledger.service";
+import { VersionedCatalogService } from "../versioned-catalog.service";
 import { APP_CONFIG } from "../../../../config/config.module";
 import { PaymentProviderAdapterRegistry } from "../../payments/payment-provider-adapter.interface";
+import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../../payments/payment-provider-resolver.service";
+import { PaymentWebhookReceiverService } from "../../payments/payment-webhook-receiver.service";
+import { PaymentAnalyticsService } from "../../payments/payment-analytics.service";
+import { BillingProfileService } from "../billing-profile.service";
+import { RevenueAnalyticsService } from "../revenue-analytics.service";
+import { ExternalEffectLedger } from "../../../../common/outbox/external-effect-ledger";
 import { FakeProviderAdapter, FAKE_VALID_PAYMENT_SIG } from "../../payments/testing/fake-provider-adapter";
 import { creditsToMilli, milliToCredits } from "../../../ai/core/billing/ai-model-pricing.constants";
 import { planGrantMilli } from "../ai-credit-units";
@@ -73,6 +81,30 @@ function makeMockAiCreditsForBilling() {
   return { grantPlanCredits: jest.fn().mockResolvedValue(undefined) };
 }
 
+function makeResolver() {
+  const adapter = new FakeProviderAdapter();
+  const provider: OrganizationPaymentProvider = {
+    providerKey: adapter.providerKey,
+    environment: "test",
+    isReady: () => adapter.isReady(),
+    publicKeyId: () => adapter.publicKeyId(),
+    createOrder: (params) => adapter.createOrder({ ...params, keyId: "fake-public", keySecret: "fake-private" }),
+    verifyPaymentSignature: (params) => adapter.verifyPaymentSignature({ ...params, keySecret: "fake-private" }),
+    verifyWebhookSignature: (params) => adapter.verifyWebhookSignature({ ...params, webhookSecret: "fake-webhook-secret-at-least-32chars" }),
+    normalizeWebhook: (rawBody) => adapter.normalizeWebhook(rawBody),
+  };
+  return { resolve: jest.fn().mockResolvedValue(provider), resolveConfigured: jest.fn().mockResolvedValue(provider) };
+}
+
+function makeEffectLedger() {
+  return {
+    execute: jest.fn().mockImplementation(async (_effect: unknown, send: () => Promise<void>) => {
+      await send();
+      return "EXECUTED";
+    }),
+  };
+}
+
 describe("BillingService.verifyAndActivate — idempotency", () => {
   async function buildBilling(db: unknown, registry = makeRegistry()): Promise<BillingService> {
     const module = await Test.createTestingModule({
@@ -82,7 +114,17 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
         { provide: AiCreditsService, useValue: makeMockAiCreditsForBilling() },
         { provide: AuditService, useValue: makeAuditService() },
         { provide: PlanLimitsService, useValue: makePlanLimits() },
+
+        { provide: ProrationLedgerService, useValue: { recordPlanChange: jest.fn().mockResolvedValue(undefined) } },
+
+        { provide: VersionedCatalogService, useValue: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } },
+        { provide: RevenueAnalyticsService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        { provide: PaymentProviderResolver, useValue: makeResolver() },
         { provide: PaymentProviderAdapterRegistry, useValue: registry },
+        { provide: ExternalEffectLedger, useValue: makeEffectLedger() },
+        { provide: PaymentWebhookReceiverService, useValue: { recordSignatureFailure: jest.fn() } },
+        { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
+        { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
         { provide: APP_CONFIG, useValue: { RAZORPAY_WEBHOOK_SECRET: "test-secret" } },
       ],
     }).compile();

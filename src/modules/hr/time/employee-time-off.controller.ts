@@ -14,7 +14,7 @@ import {
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import {
@@ -31,6 +31,10 @@ import { LeavesPageService } from "./leaves-page.service";
 import { LeavesService } from "./leaves.service";
 import { LeavesWriteService } from "./leaves-write.service";
 import { WfhService } from "./wfh.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const leaveIdParams = z.object({ leaveId: z.coerce.number().int().positive() }).strict();
 
 @Controller("me/time-off")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -50,9 +54,9 @@ export class EmployeeTimeOffController {
 
   @Get("requests")
   @RequirePermission("self:leaves")
+  @Validate({ query: listLeaveRequestsSchema })
   requests(
-    @Query(new ZodValidationPipe(listLeaveRequestsSchema))
-    query: ListLeaveRequestsQuery,
+    @Query() query: ListLeaveRequestsQuery,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.leaves.my(user.orgId, user.userId, query);
@@ -67,8 +71,9 @@ export class EmployeeTimeOffController {
   @Post()
   @HttpCode(201)
   @RequirePermission("self:leaves")
+  @Validate({ body: createLeaveSchema })
   create(
-    @Body(new ZodValidationPipe(createLeaveSchema)) body: CreateLeaveInput,
+    @Body() body: CreateLeaveInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.leavesWrite.create(user, body);
@@ -76,6 +81,7 @@ export class EmployeeTimeOffController {
 
   @Patch(":leaveId/cancel")
   @RequirePermission("self:leaves")
+  @Validate({ params: leaveIdParams })
   async cancel(
     @Param("leaveId", ParseIntPipe) leaveId: number,
     @CurrentUser() user: CurrentUserContext,
@@ -94,8 +100,9 @@ export class EmployeeTimeOffController {
   @Post("wfh")
   @HttpCode(201)
   @RequirePermission("self:attendance")
+  @Validate({ body: createWfhSchema })
   createWfh(
-    @Body(new ZodValidationPipe(createWfhSchema)) body: CreateWfhInput,
+    @Body() body: CreateWfhInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.wfh.create(user.orgId, user.userId, body);

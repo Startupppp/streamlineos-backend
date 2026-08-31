@@ -12,22 +12,29 @@ import {
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbTranslationsService } from "./kb-translations.service";
 import {
   upsertTranslationSchema,
   type UpsertTranslationInput,
 } from "./dto/kb-translations.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
+const articleIdlocaleParams = z.object({ articleId: z.coerce.number().int().positive(), locale: z.string().min(1) }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@RequireModule("kb")
 export class KbTranslationsController {
   constructor(private readonly translations: KbTranslationsService) {}
 
   @Get("articles/:articleId/translations")
   @RequirePermission("kb:articles:view")
+  @Validate({ params: articleIdParams })
   async list(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -37,6 +44,7 @@ export class KbTranslationsController {
 
   @Get("articles/:articleId/translations/:locale")
   @RequirePermission("kb:articles:view")
+  @Validate({ params: articleIdlocaleParams })
   async get(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("locale") locale: string,
@@ -47,10 +55,11 @@ export class KbTranslationsController {
 
   @Put("articles/:articleId/translations/:locale")
   @RequirePermission("kb:articles:update")
+  @Validate({ params: articleIdlocaleParams, body: upsertTranslationSchema })
   async upsert(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("locale") locale: string,
-    @Body(new ZodValidationPipe(upsertTranslationSchema)) body: UpsertTranslationInput,
+    @Body() body: UpsertTranslationInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.translations.upsert(u.orgId, articleId, locale, body);
@@ -59,6 +68,7 @@ export class KbTranslationsController {
   @Delete("articles/:articleId/translations/:locale")
   @HttpCode(200)
   @RequirePermission("kb:articles:update")
+  @Validate({ params: articleIdlocaleParams })
   async remove(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Param("locale") locale: string,

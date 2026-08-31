@@ -1,6 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { livePersonOfUser, orgUnitInOrg, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
+  hrEmployeeSensitiveFields,
+  hrEmployments,
+  hrPeople,
   organizationMembers,
   orgUnitMembers,
   orgUnits,
@@ -56,10 +60,12 @@ export class HrDashboardReportsService {
     const windowEnd = months[months.length - 1].end;
 
     const joiningRows = await this.db
-      .select({ joiningDate: users.joiningDate })
+      .select({ joiningDate: hrEmployments.joiningDate })
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(organizationMembers.orgId, orgId), isNotNull(users.joiningDate), lte(users.joiningDate, windowEnd)));
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+      .where(and(eq(organizationMembers.orgId, orgId), isNotNull(hrEmployments.joiningDate), lte(hrEmployments.joiningDate, windowEnd)));
 
     const countByMonthEnd = new Map<string, number>();
     for (const r of joiningRows) {
@@ -303,14 +309,17 @@ export class HrDashboardReportsService {
         email: users.email,
         gender: users.gender,
         dateOfBirth: users.dateOfBirth,
-        joiningDate: users.joiningDate,
-        taxId: users.taxId,
+        joiningDate: hrEmployments.joiningDate,
+        taxId: hrEmployeeSensitiveFields.taxId,
         departmentName: orgUnits.name,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .leftJoin(orgUnitMembers, eq(orgUnitMembers.userId, organizationMembers.userId))
-      .leftJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+      .leftJoin(hrEmployeeSensitiveFields, and(eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id), eq(hrEmployeeSensitiveFields.orgId, orgId)))
+      .leftJoin(orgUnitMembers, and(eq(orgUnitMembers.userId, organizationMembers.userId), eq(orgUnitMembers.orgId, orgId)))
+      .leftJoin(orgUnits, orgUnitInOrg(orgId, orgUnitMembers.orgUnitId))
       .where(eq(organizationMembers.orgId, orgId));
   }
 }

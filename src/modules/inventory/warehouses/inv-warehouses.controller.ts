@@ -5,7 +5,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { InvWarehousesService } from "./inv-warehouses.service";
 import { PutawayService } from "./putaway.service";
 import { WarehouseAssignmentsService } from "./warehouse-assignments.service";
@@ -18,6 +17,11 @@ import {
   type GrantWarehouseUserInput, type ListAssignableUsersInput, type ListWarehouseUsersInput,
 } from "./dto/inv-warehouses.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const warehouseIdParams = z.object({ warehouseId: z.coerce.number().int().positive() }).strict();
+const warehouseIdlocationIdParams = z.object({ warehouseId: z.coerce.number().int().positive(), locationId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/warehouses")
@@ -46,8 +50,9 @@ export class InvWarehousesController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:read")
+  @Validate({ query: listWarehousesSchema })
   list(
-    @Query(new ZodValidationPipe(listWarehousesSchema)) filters: ListWarehousesInput,
+    @Query() filters: ListWarehousesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.warehouses.listWarehouses(u.orgId, u.userId, filters);
@@ -56,6 +61,7 @@ export class InvWarehousesController {
   @Get(":warehouseId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:read")
+  @Validate({ params: warehouseIdParams })
   get(@Param("warehouseId", ParseIntPipe) warehouseId: number, @CurrentUser() u: CurrentUserContext) {
     return this.warehouses.getWarehouse(u.orgId, u.userId, warehouseId);
   }
@@ -111,8 +117,9 @@ export class InvWarehousesController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
+  @Validate({ body: createWarehouseSchema })
   create(
-    @Body(new ZodValidationPipe(createWarehouseSchema)) body: CreateWarehouseInput,
+    @Body() body: CreateWarehouseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.warehouses.createWarehouse(u.orgId, u.userId, body);
@@ -121,9 +128,10 @@ export class InvWarehousesController {
   @Patch(":warehouseId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
+  @Validate({ params: warehouseIdParams, body: updateWarehouseSchema })
   update(
     @Param("warehouseId", ParseIntPipe) warehouseId: number,
-    @Body(new ZodValidationPipe(updateWarehouseSchema)) body: UpdateWarehouseInput,
+    @Body() body: UpdateWarehouseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.warehouses.updateWarehouse(u.orgId, warehouseId, body);
@@ -132,9 +140,10 @@ export class InvWarehousesController {
   @Get(":warehouseId/stock")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ params: warehouseIdParams, query: listWarehouseStockSchema })
   getStock(
     @Param("warehouseId", ParseIntPipe) warehouseId: number,
-    @Query(new ZodValidationPipe(listWarehouseStockSchema)) filters: ListWarehouseStockInput,
+    @Query() filters: ListWarehouseStockInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.warehouses.getWarehouseStock(u.orgId, u.userId, warehouseId, filters.page, filters.limit);
@@ -143,6 +152,7 @@ export class InvWarehousesController {
   @Get(":warehouseId/locations")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:read")
+  @Validate({ params: warehouseIdParams })
   listLocations(@Param("warehouseId", ParseIntPipe) warehouseId: number, @CurrentUser() u: CurrentUserContext) {
     return this.warehouses.listLocations(u.orgId, u.userId, warehouseId);
   }
@@ -150,9 +160,10 @@ export class InvWarehousesController {
   @Post(":warehouseId/locations")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
+  @Validate({ params: warehouseIdParams, body: createLocationSchema })
   createLocation(
     @Param("warehouseId", ParseIntPipe) warehouseId: number,
-    @Body(new ZodValidationPipe(createLocationSchema)) body: CreateLocationInput,
+    @Body() body: CreateLocationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.warehouses.createLocation(u.orgId, warehouseId, body);
@@ -161,10 +172,11 @@ export class InvWarehousesController {
   @Patch(":warehouseId/locations/:locationId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
+  @Validate({ params: warehouseIdlocationIdParams, body: updateLocationSchema })
   updateLocation(
     @Param("warehouseId", ParseIntPipe) _: number,
     @Param("locationId", ParseIntPipe) locationId: number,
-    @Body(new ZodValidationPipe(updateLocationSchema)) body: UpdateLocationInput,
+    @Body() body: UpdateLocationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.warehouses.updateLocation(u.orgId, locationId, body);

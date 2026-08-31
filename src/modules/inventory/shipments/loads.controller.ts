@@ -1,11 +1,9 @@
-import { Controller, Get, Post, Param, Body, Query, ParseIntPipe, UseGuards, HttpCode, HttpStatus } from "@nestjs/common";
+import { Controller, Get, Post, Param, Body, Query, ParseIntPipe, UseGuards, HttpCode, HttpStatus, Headers } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { LoadsService } from "./loads.service";
@@ -19,6 +17,10 @@ import {
   type DispatchLoadInput,
   type CloseLoadInput,
 } from "./dto/shipments.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const loadIdParams = z.object({ loadId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/loads")
@@ -29,8 +31,9 @@ export class LoadsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
+  @Validate({ query: listLoadsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listLoadsQuerySchema)) query: ListLoadsQueryInput,
+    @Query() query: ListLoadsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, u.userId, query);
@@ -39,6 +42,7 @@ export class LoadsController {
   @Get(":loadId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
+  @Validate({ params: loadIdParams })
   findOne(
     @Param("loadId", ParseIntPipe) loadId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -49,8 +53,9 @@ export class LoadsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
+  @Validate({ body: createLoadSchema })
   create(
-    @Body(new ZodValidationPipe(createLoadSchema)) body: CreateLoadInput,
+    @Body() body: CreateLoadInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.create(u.orgId, u.userId, body);
@@ -60,10 +65,11 @@ export class LoadsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: loadIdParams, body: dispatchLoadSchema })
   dispatch(
-    @IdempotencyKey() idempotencyKey: string,
+    @Headers("idempotency-key") idempotencyKey: string,
     @Param("loadId", ParseIntPipe) loadId: number,
-    @Body(new ZodValidationPipe(dispatchLoadSchema)) body: DispatchLoadInput,
+    @Body() body: DispatchLoadInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.dispatch(u.orgId, u.userId, loadId, body, idempotencyKey);
@@ -73,9 +79,10 @@ export class LoadsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: loadIdParams, body: closeLoadSchema })
   close(
     @Param("loadId", ParseIntPipe) loadId: number,
-    @Body(new ZodValidationPipe(closeLoadSchema)) body: CloseLoadInput,
+    @Body() body: CloseLoadInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.close(u.orgId, u.userId, loadId, body);
@@ -85,6 +92,7 @@ export class LoadsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: loadIdParams })
   cancel(
     @Param("loadId", ParseIntPipe) loadId: number,
     @CurrentUser() u: CurrentUserContext,

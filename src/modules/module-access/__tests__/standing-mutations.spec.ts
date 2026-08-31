@@ -6,6 +6,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { ROLE_RANK } from "../../../common/rbac/grantability";
 import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
 
@@ -34,7 +35,7 @@ const TARGET_USER = "u-target";
 const ADMIN_ROLE_ID = 42;
 
 function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
-  return {
+  const merged = {
     userId: ACTOR_USER,
     orgId: ORG,
     role: "MEMBER",
@@ -42,6 +43,11 @@ function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserCont
     sessionId: "s-1",
     tokenScopes: null,
     ...overrides,
+  };
+  return {
+    ...merged,
+    principal:
+      overrides.principal ?? humanSessionPrincipal(1, merged.isOrgOwner),
   };
 }
 

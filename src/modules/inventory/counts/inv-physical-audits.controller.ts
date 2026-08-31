@@ -6,13 +6,16 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvPhysicalAuditsService } from "./inv-physical-audits.service";
 import {
   listCountsSchema, createAuditSchema, updateCountLinesSchema,
   type ListCountsInput, type CreateAuditInput, type UpdateCountLinesInput,
 } from "./dto/inv-counts.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const auditIdParams = z.object({ auditId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/physical-audits")
@@ -23,8 +26,9 @@ export class InvPhysicalAuditsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ query: listCountsSchema })
   list(
-    @Query(new ZodValidationPipe(listCountsSchema)) filters: ListCountsInput,
+    @Query() filters: ListCountsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.audits.listAudits(u.orgId, u.userId, filters);
@@ -33,6 +37,7 @@ export class InvPhysicalAuditsController {
   @Get(":auditId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ params: auditIdParams })
   getOne(
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -43,8 +48,9 @@ export class InvPhysicalAuditsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ body: createAuditSchema })
   create(
-    @Body(new ZodValidationPipe(createAuditSchema)) body: CreateAuditInput,
+    @Body() body: CreateAuditInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.audits.createAudit(u.orgId, u.userId, body);
@@ -53,6 +59,7 @@ export class InvPhysicalAuditsController {
   @Post(":auditId/start")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: auditIdParams })
   start(
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -63,9 +70,10 @@ export class InvPhysicalAuditsController {
   @Patch(":auditId/lines")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: auditIdParams, body: updateCountLinesSchema })
   updateLines(
     @Param("auditId", ParseIntPipe) auditId: number,
-    @Body(new ZodValidationPipe(updateCountLinesSchema)) body: UpdateCountLinesInput,
+    @Body() body: UpdateCountLinesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.audits.updateLines(u.orgId, auditId, body);
@@ -74,6 +82,7 @@ export class InvPhysicalAuditsController {
   @Post(":auditId/review")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: auditIdParams })
   review(
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -84,6 +93,7 @@ export class InvPhysicalAuditsController {
   @Post(":auditId/post")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: auditIdParams })
   post(
     @IdempotencyKey() idempotencyKey: string,
     @Param("auditId", ParseIntPipe) auditId: number,
@@ -94,6 +104,7 @@ export class InvPhysicalAuditsController {
   @Post(":auditId/cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: auditIdParams })
   cancel(
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,

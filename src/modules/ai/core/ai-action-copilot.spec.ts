@@ -3,6 +3,7 @@ import { ProjectsCopilotTools } from "./projects-copilot-tools";
 import { ToolAccessService } from "./tool-access.service";
 import { AiConfirmationService } from "../confirmation/ai-confirmation.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const mockActor: CurrentUserContext = {
   userId: "user-1",
@@ -11,6 +12,7 @@ const mockActor: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "sess-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 type BuiltTools = ReturnType<ProjectsCopilotTools["buildTools"]>;

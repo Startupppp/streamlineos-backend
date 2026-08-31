@@ -19,7 +19,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import {
   CsatService,
   isSubmitNotFound,
@@ -36,6 +35,10 @@ import {
   type SubmitResponseInput,
 } from "./dto/csat.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("support")
 @Controller("csat")
@@ -52,8 +55,9 @@ export class CsatController {
   @Post()
   @HttpCode(201)
   @RequirePermission("support:csat:manage")
+  @Validate({ body: createSchema })
   create(
-    @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
+    @Body() body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.csat.createSurvey(u.orgId, u.userId, body);
@@ -61,6 +65,7 @@ export class CsatController {
 
   @Get(":surveyId")
   @RequirePermission("support:csat:view")
+  @Validate({ params: surveyIdParams })
   async get(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -72,9 +77,10 @@ export class CsatController {
 
   @Patch(":surveyId")
   @RequirePermission("support:csat:manage")
+  @Validate({ params: surveyIdParams, body: patchSchema })
   async update(
     @Param("surveyId", ParseIntPipe) surveyId: number,
-    @Body(new ZodValidationPipe(patchSchema)) body: PatchInput,
+    @Body() body: PatchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.csat.updateSurvey(u.orgId, surveyId, body);
@@ -84,6 +90,7 @@ export class CsatController {
 
   @Delete(":surveyId")
   @RequirePermission("support:csat:manage")
+  @Validate({ params: surveyIdParams })
   async remove(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -95,9 +102,10 @@ export class CsatController {
 
   @Get(":surveyId/responses")
   @RequirePermission("support:csat:view")
+  @Validate({ params: surveyIdParams, query: listResponsesSchema })
   async listResponses(
     @Param("surveyId", ParseIntPipe) surveyId: number,
-    @Query(new ZodValidationPipe(listResponsesSchema)) query: ListResponsesInput,
+    @Query() query: ListResponsesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const responses = await this.csat.listResponses(u.orgId, surveyId, query.limit);
@@ -108,9 +116,10 @@ export class CsatController {
   @Public()
   @Post(":surveyId/responses")
   @HttpCode(201)
+  @Validate({ params: surveyIdParams, body: submitResponseSchema })
   async submitResponse(
     @Param("surveyId", ParseIntPipe) surveyId: number,
-    @Body(new ZodValidationPipe(submitResponseSchema)) body: SubmitResponseInput,
+    @Body() body: SubmitResponseInput,
   ) {
     const result = await this.csat.submitResponse(surveyId, body);
     if (isSubmitNotFound(result)) {

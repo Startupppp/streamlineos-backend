@@ -11,15 +11,16 @@ import {
   Query,
   UseGuards,
 } from "@nestjs/common";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { KbPagesService } from "./kb-pages.service";
+import { KbPageStatusService } from "./kb-page-status.service";
 import { KbPageVersionsService } from "./kb-page-versions.service";
 import { KbPageVisitsService } from "./kb-page-visits.service";
 import { KbPageTreeService } from "./kb-page-tree.service";
@@ -41,6 +42,11 @@ import {
   type SetVisibilityInput,
   type VerifyPageInput,
 } from "./dto/kb-pages.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
+const pageIdversionNumberParams = z.object({ pageId: z.coerce.number().int().positive(), versionNumber: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @RequireModule("kb")
@@ -48,6 +54,7 @@ import {
 export class KbPagesController {
   constructor(
     private readonly pages: KbPagesService,
+    private readonly status: KbPageStatusService,
     private readonly versions: KbPageVersionsService,
     private readonly visits: KbPageVisitsService,
     private readonly tree: KbPageTreeService,
@@ -56,8 +63,9 @@ export class KbPagesController {
 
   @Get("pages/tree")
   @RequirePermission("kb:pages:view")
+  @Validate({ query: listPagesSchema })
   async getTree(
-    @Query(new ZodValidationPipe(listPagesSchema)) query: ListPagesInput,
+    @Query() query: ListPagesInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.tree.getTree(u, query.projectId);
@@ -83,8 +91,9 @@ export class KbPagesController {
 
   @Get("pages/search")
   @RequirePermission("kb:pages:view")
+  @Validate({ query: searchPagesSchema })
   async search(
-    @Query(new ZodValidationPipe(searchPagesSchema)) query: SearchPagesInput,
+    @Query() query: SearchPagesInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.pages.search(u, query.q);
@@ -93,8 +102,9 @@ export class KbPagesController {
   @Post("pages")
   @HttpCode(201)
   @RequirePermission("kb:pages:create")
+  @Validate({ body: createPageSchema })
   async create(
-    @Body(new ZodValidationPipe(createPageSchema)) body: CreatePageInput,
+    @Body() body: CreatePageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.pages.create(u, body);
@@ -102,6 +112,7 @@ export class KbPagesController {
 
   @Get("pages/:pageId")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdParams })
   async get(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -112,9 +123,10 @@ export class KbPagesController {
 
   @Patch("pages/:pageId")
   @RequirePermission("kb:pages:update")
+  @Validate({ params: pageIdParams, body: updatePageSchema })
   async update(
     @Param("pageId", ParseIntPipe) pageId: number,
-    @Body(new ZodValidationPipe(updatePageSchema)) body: UpdatePageInput,
+    @Body() body: UpdatePageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     const canManage = await this.resolveCanManage(u);
@@ -124,9 +136,10 @@ export class KbPagesController {
   @Post("pages/:pageId/move")
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
+  @Validate({ params: pageIdParams, body: movePageSchema })
   async move(
     @Param("pageId", ParseIntPipe) pageId: number,
-    @Body(new ZodValidationPipe(movePageSchema)) body: MovePageInput,
+    @Body() body: MovePageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.tree.move(u, pageId, body);
@@ -135,6 +148,7 @@ export class KbPagesController {
   @Post("pages/:pageId/duplicate")
   @RequirePermission("kb:pages:create")
   @HttpCode(201)
+  @Validate({ params: pageIdParams })
   async duplicate(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -144,6 +158,7 @@ export class KbPagesController {
 
   @Delete("pages/:pageId")
   @RequirePermission("kb:pages:delete")
+  @Validate({ params: pageIdParams })
   async remove(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -154,6 +169,7 @@ export class KbPagesController {
   @Post("pages/:pageId/restore")
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
+  @Validate({ params: pageIdParams })
   async restore(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -171,6 +187,7 @@ export class KbPagesController {
   @Delete("pages/:pageId/permanent")
   @HttpCode(204)
   @RequirePermission("kb:pages:purge")
+  @Validate({ params: pageIdParams })
   async hardDelete(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -181,6 +198,7 @@ export class KbPagesController {
   @Post("pages/:pageId/favorite")
   @HttpCode(200)
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdParams })
   async addFavorite(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -190,6 +208,7 @@ export class KbPagesController {
 
   @Delete("pages/:pageId/favorite")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdParams })
   async removeFavorite(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -200,6 +219,7 @@ export class KbPagesController {
   @Post("pages/:pageId/visit")
   @HttpCode(200)
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdParams })
   async recordVisit(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -209,6 +229,7 @@ export class KbPagesController {
 
   @Get("pages/:pageId/backlinks")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdParams })
   async backlinks(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -218,6 +239,7 @@ export class KbPagesController {
 
   @Get("pages/:pageId/versions")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdParams })
   async listVersions(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -227,6 +249,7 @@ export class KbPagesController {
 
   @Get("pages/:pageId/versions/:versionNumber")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdversionNumberParams })
   async getVersion(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Param("versionNumber", ParseIntPipe) versionNumber: number,
@@ -238,6 +261,7 @@ export class KbPagesController {
   @Post("pages/:pageId/versions/:versionNumber/restore")
   @RequirePermission("kb:pages:update")
   @HttpCode(200)
+  @Validate({ params: pageIdversionNumberParams })
   async restoreVersion(
     @Param("pageId", ParseIntPipe) pageId: number,
     @Param("versionNumber", ParseIntPipe) versionNumber: number,
@@ -249,19 +273,21 @@ export class KbPagesController {
 
   @Patch("pages/:pageId/lock")
   @RequirePermission("kb:pages:manage")
+  @Validate({ params: pageIdParams, body: lockPageSchema })
   async lock(
     @Param("pageId", ParseIntPipe) pageId: number,
-    @Body(new ZodValidationPipe(lockPageSchema)) body: LockPageInput,
+    @Body() body: LockPageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.lock(u, pageId, body.isLocked);
+    return this.status.lock(u, pageId, body.isLocked);
   }
 
   @Patch("pages/:pageId/visibility")
   @RequirePermission("kb:pages:update")
+  @Validate({ params: pageIdParams, body: setVisibilitySchema })
   async setVisibility(
     @Param("pageId", ParseIntPipe) pageId: number,
-    @Body(new ZodValidationPipe(setVisibilitySchema)) body: SetVisibilityInput,
+    @Body() body: SetVisibilityInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     const canManage = await this.resolveCanManage(u);
@@ -269,54 +295,60 @@ export class KbPagesController {
   }
 
   @Post("pages/:pageId/publish")
+  @Idempotent("kb.page.publish")
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
+  @Validate({ params: pageIdParams })
   async publish(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.publish(u, pageId);
+    return this.status.publish(u, pageId);
   }
 
   @Post("pages/:pageId/archive")
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
+  @Validate({ params: pageIdParams })
   async archive(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.archive(u, pageId);
+    return this.status.archive(u, pageId);
   }
 
   @Post("pages/:pageId/unarchive")
   @HttpCode(200)
   @RequirePermission("kb:pages:update")
+  @Validate({ params: pageIdParams })
   async unarchive(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.unarchive(u, pageId);
+    return this.status.unarchive(u, pageId);
   }
 
   @Post("pages/:pageId/verify")
   @HttpCode(200)
   @RequirePermission("kb:pages:manage")
+  @Validate({ params: pageIdParams, body: verifyPageSchema })
   async verify(
     @Param("pageId", ParseIntPipe) pageId: number,
-    @Body(new ZodValidationPipe(verifyPageSchema)) body: VerifyPageInput,
+    @Body() body: VerifyPageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.verify(u, pageId, body);
+    return this.status.verify(u, pageId, body);
   }
 
   @Post("pages/:pageId/mark-stale")
   @HttpCode(200)
   @RequirePermission("kb:pages:manage")
+  @Validate({ params: pageIdParams })
   async markStale(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.pages.markStale(u, pageId);
+    return this.status.markStale(u, pageId);
   }
 
   private async resolveCanManage(u: CurrentUserContext): Promise<boolean> {

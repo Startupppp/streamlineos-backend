@@ -7,6 +7,7 @@ import {
   index,
   vector,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { relations } from "drizzle-orm";
@@ -49,7 +50,8 @@ export const kbArticleChunks = pgTable(
     pageVisibility: text("page_visibility"),
     pageProjectId: integer("page_project_id"),
     pageCreatedById: text("page_created_by_id"),
-    aclRevision: integer("acl_revision"),
+    pageCreatedByMembershipId: integer("page_created_by_membership_id"),
+    aclRevision: integer("acl_revision").notNull().default(1),
     contentRevision: integer("content_revision"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -64,6 +66,7 @@ export const kbArticleChunks = pgTable(
         table.pageVisibility,
         table.pageProjectId,
         table.pageCreatedById,
+        table.pageCreatedByMembershipId,
       )
       .where(sql`page_id IS NOT NULL`),
     index("idx_kb_chunks_embedding_hnsw").using(
@@ -71,6 +74,10 @@ export const kbArticleChunks = pgTable(
       table.embedding.op("vector_cosine_ops"),
     ),
     unique("uniq_kb_article_chunks_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.articleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_kb_chunks_org_article" }).onDelete("cascade"),
+    foreignKey({ columns: [table.orgId, table.pageId], foreignColumns: [kbPages.orgId, kbPages.id], name: "fk_kb_chunks_org_page" }).onDelete("cascade"),
+    foreignKey({ columns: [table.orgId, table.attachmentId], foreignColumns: [kbArticleAttachments.orgId, kbArticleAttachments.id], name: "fk_kb_chunks_org_attachment" }).onDelete("cascade"),
+    foreignKey({ columns: [table.orgId, table.sourceId], foreignColumns: [kbSources.orgId, kbSources.id], name: "fk_kb_chunks_org_source" }).onDelete("cascade"),
   ],
 );
 

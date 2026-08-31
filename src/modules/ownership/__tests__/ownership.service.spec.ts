@@ -7,11 +7,15 @@ import {
 import { Test } from "@nestjs/testing";
 import { OwnershipService } from "../ownership.service";
 import { OwnershipTransfersService } from "../ownership-transfers.service";
+import { OwnershipTransferExpiryService } from "../ownership-transfer-expiry.service";
 import { OwnershipTransferResponseService } from "../ownership-transfer-response.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { OrganizationSagaService } from "../../organization/core/lifecycle/organization-saga.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 type SelectChain = {
   from: jest.Mock;
@@ -87,11 +91,24 @@ describe("OwnershipService — access / business-rule logic", () => {
     update: jest.Mock;
     delete: jest.Mock;
     transaction: jest.Mock;
+    query: { organizationMembers: { findFirst: jest.Mock } };
   };
 
   const ORG = "org-unit-test";
   const ACTOR_USER = "u-actor";
   const TARGET_USER = "u-target";
+
+  function makeActor(isOrgOwner: boolean): CurrentUserContext {
+    return {
+      orgId: ORG,
+      userId: ACTOR_USER,
+      role: isOrgOwner ? "OWNER" : "MEMBER",
+      isOrgOwner,
+      sessionId: "s-1",
+      tokenScopes: null,
+      principal: humanSessionPrincipal(1, isOrgOwner),
+    };
+  }
 
   beforeEach(async () => {
     jest.resetAllMocks();
@@ -104,17 +121,43 @@ describe("OwnershipService — access / business-rule logic", () => {
       transaction: jest.fn().mockImplementation(
         async (fn: (tx: typeof mockDb) => Promise<unknown>) => fn(mockDb),
       ),
+      query: { organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) } },
     };
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         OwnershipService,
+        { provide: OwnershipTransferExpiryService, useValue: { expireStaleTransfers: jest.fn() } },
         OwnershipTransfersService,
         OwnershipTransferResponseService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        { provide: CacheService, useValue: { invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined), cached: jest.fn(), cachedVersioned: jest.fn() } },
+        {
+          provide: CacheService,
+          useValue: {
+            invalidate: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+            invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
+            cached: jest.fn(),
+            cachedVersioned: jest.fn(),
+            cachedForOrg: jest.fn(),
+            cachedVersionedForOrg: jest.fn(),
+          },
+        },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: OrganizationSagaService,
+          useValue: {
+            begin: jest.fn().mockResolvedValue({ saga: { sagaId: "saga-test" }, steps: [] }),
+            runStep: jest
+              .fn()
+              .mockImplementation((_s, _n, fn) => fn()),
+            complete: jest.fn().mockResolvedValue(undefined),
+            compensate: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+
       ],
     }).compile();
     ownership = moduleRef.get(OwnershipService);
@@ -220,6 +263,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "ORGANIZATION",
         moduleKey: null,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         toMembershipId: 2,
         status: "ACCEPTED",
         expiresAt: new Date(Date.now() + 3_600_000),
@@ -236,6 +280,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "ORGANIZATION",
         moduleKey: null,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         toMembershipId: 2,
         status: "PENDING",
         expiresAt: new Date(Date.now() - 1000),
@@ -255,6 +300,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "ORGANIZATION",
         moduleKey: null,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         toMembershipId: 2,
         status: "PENDING",
         expiresAt: new Date(Date.now() + 3_600_000),
@@ -273,6 +319,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "ORGANIZATION",
         moduleKey: null,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         toMembershipId: 2,
         status: "PENDING",
         expiresAt: new Date(Date.now() + 3_600_000),
@@ -301,6 +348,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       const transfer = {
         id: TRANSFER_ID,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         status: "CANCELLED",
         scope: "MODULE",
         moduleKey: "hr",
@@ -316,6 +364,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       const transfer = {
         id: TRANSFER_ID,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         status: "PENDING",
         scope: "MODULE",
         moduleKey: "hr",
@@ -324,9 +373,10 @@ describe("OwnershipService — access / business-rule logic", () => {
       const actorMembership = { id: 99, userId: ACTOR_USER, isOwner: false, status: "ACTIVE" };
       mockDb.select
         .mockReturnValueOnce(makeSelectChain([transfer]))
-        .mockReturnValueOnce(makeSelectChain([actorMembership]));
+        .mockReturnValueOnce(makeSelectChain([actorMembership]))
+        .mockReturnValueOnce(makeSelectChain([]));
       await expect(
-        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, false),
+        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, makeActor(false)),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
@@ -334,6 +384,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       const transfer = {
         id: TRANSFER_ID,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         status: "PENDING",
         scope: "MODULE",
         moduleKey: "hr",
@@ -342,7 +393,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       mockDb.select.mockReturnValue(makeSelectChain([transfer]));
       mockDb.update.mockReturnValue(makeUpdateChain());
       await expect(
-        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, true),
+        responses.cancelTransfer(ORG, ACTOR_USER, TRANSFER_ID, makeActor(true)),
       ).resolves.toMatchObject({ success: true });
     });
   });
@@ -358,6 +409,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "ORGANIZATION",
         moduleKey: null,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
       };
       const actorMembership = { id: 99, userId: ACTOR_USER, isOwner: false, status: "ACTIVE" };
       mockDb.select
@@ -382,6 +434,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "MODULE" as const,
         moduleKey: MODULE_KEY,
         fromMembershipId: FROM_MEMBERSHIP_ID,
+        initiatedByMembershipId: FROM_MEMBERSHIP_ID,
         toMembershipId: TO_MEMBERSHIP_ID,
         status: "PENDING" as const,
         expiresAt: new Date(Date.now() + 3_600_000),
@@ -484,6 +537,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "ORGANIZATION" as const,
         moduleKey: null,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
       };
       const recipientMembership = { id: 2, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
 
@@ -501,6 +555,7 @@ describe("OwnershipService — access / business-rule logic", () => {
       const transfer = {
         id: TRANSFER_ID,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
         status: "PENDING" as const,
         scope: "MODULE" as const,
         moduleKey: "hr",
@@ -526,6 +581,7 @@ describe("OwnershipService — access / business-rule logic", () => {
         scope: "ORGANIZATION" as const,
         moduleKey: null,
         fromMembershipId: 1,
+        initiatedByMembershipId: 1,
       };
       const recipientMembership = { id: 2, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
 

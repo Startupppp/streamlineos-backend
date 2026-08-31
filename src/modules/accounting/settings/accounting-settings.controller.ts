@@ -12,7 +12,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccountingSettingsService } from "./accounting-settings.service";
 import {
   updateSettingsSchema,
@@ -25,6 +24,10 @@ import {
   type UpsertPaymentTermsInput,
 } from "./dto/settings.schemas";
 import { BadRequestException } from "@nestjs/common";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const entityTypeParams = z.object({ entityType: z.string().min(1) }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/settings")
@@ -40,8 +43,9 @@ export class AccountingSettingsController {
 
   @Patch()
   @RequirePermission("accounting:settings:manage")
+  @Validate({ body: updateSettingsSchema })
   updateSettings(
-    @Body(new ZodValidationPipe(updateSettingsSchema)) body: UpdateSettingsInput,
+    @Body() body: UpdateSettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateSettings(u, body);
@@ -61,8 +65,9 @@ export class AccountingSettingsController {
 
   @Patch("payment-terms")
   @RequirePermission("accounting:settings:manage")
+  @Validate({ body: upsertPaymentTermsSchema })
   updatePaymentTerms(
-    @Body(new ZodValidationPipe(upsertPaymentTermsSchema)) body: UpsertPaymentTermsInput,
+    @Body() body: UpsertPaymentTermsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updatePaymentTerms(u, body);
@@ -70,9 +75,10 @@ export class AccountingSettingsController {
 
   @Patch("sequences/:entityType")
   @RequirePermission("accounting:settings:manage")
+  @Validate({ params: entityTypeParams, body: updateSequenceSchema })
   updateSequence(
     @Param("entityType") entityType: string,
-    @Body(new ZodValidationPipe(updateSequenceSchema)) body: UpdateSequenceInput,
+    @Body() body: UpdateSequenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (!isSequenceEntityType(entityType)) {

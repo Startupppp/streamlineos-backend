@@ -8,13 +8,21 @@ export interface MembershipStateOverride {
   active?: boolean;
   isOwner?: boolean;
   role?: string;
+  membershipId?: number | null;
 }
 
-function toState(override: MembershipStateOverride): MembershipState {
+function toState(
+  override: MembershipStateOverride,
+  membershipId: number,
+): MembershipState {
   return {
     active: override.active ?? true,
     isOwner: override.isOwner ?? false,
     role: override.role ?? "MEMBER",
+    membershipId:
+      override.membershipId === undefined
+        ? membershipId
+        : override.membershipId,
   };
 }
 
@@ -24,12 +32,12 @@ export function stubMembershipState(
   fallback: MembershipStateOverride = {},
 ): TestingModuleBuilder {
   const states = new Map<string, MembershipState>(
-    Object.entries(byUserId).map(([userId, override]) => [
+    Object.entries(byUserId).map(([userId, override], index) => [
       userId,
-      toState(override),
+      toState(override, index + 1),
     ]),
   );
-  const fallbackState = toState(fallback);
+  const fallbackState = toState(fallback, Object.keys(byUserId).length + 1);
 
   return builder.overrideProvider(MembershipStateService).useValue({
     resolve: jest

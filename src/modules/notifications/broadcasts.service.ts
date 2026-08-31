@@ -3,18 +3,26 @@ import { eq, and, desc, lt, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   broadcastAudienceTargets,
   broadcasts,
+  hrEmployments,
+  hrPeople,
   organizationMembers,
   roleAssignments,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { buildIdCursorPage } from "../../common/pagination/cursor";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { NotificationDispatchService } from "./notification-dispatch.service";
 import { broadcastReadReceipts } from "../../db/schema";
 import type { CreateBroadcastInput, UpdateBroadcastInput, ListBroadcastsInput } from "./dto/broadcast.schemas";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../directory/employment-query";
+import { resolveBroadcastRecipients, replaceBroadcastAudienceTargets } from "./broadcasts-audience.queries";
 
 @Injectable()
 export class BroadcastsService {
@@ -64,15 +72,11 @@ export class BroadcastsService {
           filters.cursor ? lt(broadcasts.id, filters.cursor) : undefined,
         ),
       )
-      .orderBy(desc(broadcasts.createdAt))
+      .orderBy(desc(broadcasts.id))
       .limit(limit + 1);
 
-    const hasMore = rows.length > limit;
-    const items = hasMore ? rows.slice(0, limit) : rows;
-    return {
-      items,
-      nextCursor: hasMore ? items[items.length - 1]?.id : undefined,
-    };
+    const page = buildIdCursorPage(rows, limit, (row) => row.id);
+    return { items: page.data, nextCursor: page.nextCursor };
   }
 
   async findOne(orgId: string, id: number) {
@@ -103,7 +107,7 @@ export class BroadcastsService {
         })
         .returning();
       if (!row) throw new BadRequestException("Broadcast could not be created");
-      await this.replaceAudienceTargets(tx, orgId, row.id, dto.audience);
+      await replaceBroadcastAudienceTargets(tx, orgId, row.id, dto.audience);
       return row;
     });
     await this.invalidateCache(orgId);
@@ -130,7 +134,7 @@ export class BroadcastsService {
         })
         .where(and(eq(broadcasts.id, id), eq(broadcasts.orgId, orgId)))
         .returning();
-      if (dto.audience !== undefined) await this.replaceAudienceTargets(tx, orgId, id, dto.audience);
+      if (dto.audience !== undefined) await replaceBroadcastAudienceTargets(tx, orgId, id, dto.audience);
       return row;
     });
     await this.invalidateCache(orgId);
@@ -183,7 +187,7 @@ export class BroadcastsService {
       return updated;
     }
 
-    const recipientUserIds = await this.resolveRecipients(orgId, broadcast.id, broadcast.audienceType);
+    const recipientUserIds = await resolveBroadcastRecipients(this.db, orgId, broadcast.id, broadcast.audienceType);
 
     const [sent] = await this.db
       .update(broadcasts)
@@ -248,8 +252,10 @@ export class BroadcastsService {
 
     const [userRow, roleRows] = await Promise.all([
       this.db
-        .select({ deptId: users.orgDepartmentId })
+        .select({ deptId: hrEmployments.departmentId })
         .from(users)
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(eq(users.id, userId))
         .then((rows) => rows[0]),
       this.db
@@ -399,103 +405,6 @@ export class BroadcastsService {
     });
 
     return { success: true };
-  }
-
-  private async resolveRecipients(
-    orgId: string,
-    broadcastId: number,
-    audienceType: "all" | "roles" | "departments" | "users",
-  ): Promise<string[]> {
-    const dedupe = (ids: string[]): string[] => [...new Set(ids.filter(Boolean))];
-
-    const targetIds = async (kind: "ROLE" | "DEPARTMENT" | "USER"): Promise<string[]> => {
-      const rows = await this.db
-        .select({ targetId: broadcastAudienceTargets.targetId })
-        .from(broadcastAudienceTargets)
-        .where(
-          and(
-            eq(broadcastAudienceTargets.orgId, orgId),
-            eq(broadcastAudienceTargets.broadcastId, broadcastId),
-            eq(broadcastAudienceTargets.kind, kind),
-          ),
-        );
-      return dedupe(rows.map((r) => r.targetId));
-    };
-
-    if (audienceType === "users") {
-      const ids = await targetIds("USER");
-      if (ids.length === 0) return [];
-      const rows = await this.db
-        .select({ userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, ids)));
-      return dedupe(rows.map((r) => r.userId));
-    }
-
-    if (audienceType === "roles") {
-      const roleIds = (await targetIds("ROLE")).map(Number).filter((n) => Number.isInteger(n));
-      if (roleIds.length === 0) return [];
-      const rows = await this.db
-        .select({ userId: organizationMembers.userId })
-        .from(roleAssignments)
-        .innerJoin(
-          organizationMembers,
-          and(
-            eq(organizationMembers.orgId, roleAssignments.orgId),
-            eq(organizationMembers.id, roleAssignments.organizationMembershipId),
-          ),
-        )
-        .where(and(eq(roleAssignments.orgId, orgId), inArray(roleAssignments.roleId, roleIds)));
-      return dedupe(rows.map((r) => r.userId));
-    }
-
-    if (audienceType === "departments") {
-      const deptIds = await targetIds("DEPARTMENT");
-      if (deptIds.length === 0) return [];
-      const rows = await this.db
-        .select({ userId: organizationMembers.userId })
-        .from(organizationMembers)
-        .innerJoin(users, eq(users.id, organizationMembers.userId))
-        .where(and(eq(organizationMembers.orgId, orgId), inArray(users.orgDepartmentId, deptIds)));
-      return dedupe(rows.map((r) => r.userId));
-    }
-
-    const memberships = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(eq(organizationMembers.orgId, orgId));
-    return dedupe(memberships.map((m) => m.userId));
-  }
-
-  private async replaceAudienceTargets(
-    tx: Db,
-    orgId: string,
-    broadcastId: number,
-    audience: { type: string; roleIds?: string[]; departmentIds?: string[]; userIds?: string[] },
-  ): Promise<void> {
-    await tx
-      .delete(broadcastAudienceTargets)
-      .where(
-        and(
-          eq(broadcastAudienceTargets.orgId, orgId),
-          eq(broadcastAudienceTargets.broadcastId, broadcastId),
-        ),
-      );
-
-    const rows: Array<{
-      orgId: string;
-      broadcastId: number;
-      kind: "ROLE" | "DEPARTMENT" | "USER";
-      targetId: string;
-    }> = [];
-    const add = (kind: "ROLE" | "DEPARTMENT" | "USER", ids: string[] | undefined) => {
-      for (const targetId of new Set(ids ?? []))
-        if (targetId) rows.push({ orgId, broadcastId, kind, targetId });
-    };
-    add("ROLE", audience.roleIds);
-    add("DEPARTMENT", audience.departmentIds);
-    add("USER", audience.userIds);
-    if (rows.length > 0) await tx.insert(broadcastAudienceTargets).values(rows);
   }
 
   private async invalidateCache(orgId: string) {

@@ -14,9 +14,12 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { HrTravelVisitsService } from "./hr-travel-visits.service";
 import { createVisitLogSchema, type CreateVisitLogInput } from "./dto/benefits.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const travelRequestIdParams = z.object({ travelRequestId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/travel-visits")
@@ -26,6 +29,7 @@ export class HrTravelVisitsController {
 
   @Get(":travelRequestId")
   @RequirePermission("hr:benefits:view")
+  @Validate({ params: travelRequestIdParams })
   listVisits(
     @CurrentUser() u: CurrentUserContext,
     @Param("travelRequestId", ParseIntPipe) travelRequestId: number,
@@ -36,9 +40,10 @@ export class HrTravelVisitsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:benefits:view")
+  @Validate({ body: createVisitLogSchema })
   addVisit(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createVisitLogSchema)) body: CreateVisitLogInput,
+    @Body() body: CreateVisitLogInput,
   ) {
     return this.service.addVisit(u.orgId, u.userId, body);
   }

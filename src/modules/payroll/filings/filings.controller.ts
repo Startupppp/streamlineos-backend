@@ -18,7 +18,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PayrollFilingsService } from "./filings.service";
 import {
   prepareFilingSchema,
@@ -26,6 +25,11 @@ import {
   attachAcknowledgementSchema,
   type AttachAcknowledgementInput,
 } from "./dto/filings.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const filingIdParams = z.object({ filingId: z.coerce.number().int().positive() }).strict();
+const filingIduserIdParams = z.object({ filingId: z.coerce.number().int().positive(), userId: z.string().min(1) }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/filings")
@@ -47,6 +51,7 @@ export class PayrollFilingsController {
 
   @Get(":filingId/export")
   @RequirePermission("payroll:tax:view")
+  @Validate({ params: filingIdParams })
   async downloadExport(
     @CurrentUser() u: CurrentUserContext,
     @Param("filingId", ParseIntPipe) filingId: number,
@@ -64,6 +69,7 @@ export class PayrollFilingsController {
   /** Employees on a FORM16 filing (for period-summary PDF download). */
   @Get(":filingId/form16/employees")
   @RequirePermission("payroll:tax:view")
+  @Validate({ params: filingIdParams })
   listForm16Employees(
     @CurrentUser() u: CurrentUserContext,
     @Param("filingId", ParseIntPipe) filingId: number,
@@ -77,6 +83,7 @@ export class PayrollFilingsController {
    */
   @Get(":filingId/form16/:userId")
   @RequirePermission("payroll:tax:view")
+  @Validate({ params: filingIduserIdParams })
   async downloadForm16Pdf(
     @CurrentUser() u: CurrentUserContext,
     @Param("filingId", ParseIntPipe) filingId: number,
@@ -98,6 +105,7 @@ export class PayrollFilingsController {
 
   @Get(":filingId")
   @RequirePermission("payroll:tax:view")
+  @Validate({ params: filingIdParams })
   get(
     @CurrentUser() u: CurrentUserContext,
     @Param("filingId", ParseIntPipe) filingId: number,
@@ -108,19 +116,21 @@ export class PayrollFilingsController {
   @Post("export")
   @HttpCode(201)
   @RequirePermission("payroll:tax:manage")
+  @Validate({ body: prepareFilingSchema })
   prepare(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(prepareFilingSchema)) body: PrepareFilingInput,
+    @Body() body: PrepareFilingInput,
   ) {
     return this.service.prepareExport(u.orgId, u.userId, body);
   }
 
   @Patch(":filingId/acknowledgement")
   @RequirePermission("payroll:tax:manage")
+  @Validate({ params: filingIdParams, body: attachAcknowledgementSchema })
   ack(
     @CurrentUser() u: CurrentUserContext,
     @Param("filingId", ParseIntPipe) filingId: number,
-    @Body(new ZodValidationPipe(attachAcknowledgementSchema)) body: AttachAcknowledgementInput,
+    @Body() body: AttachAcknowledgementInput,
   ) {
     return this.service.attachAcknowledgement(u.orgId, filingId, body);
   }

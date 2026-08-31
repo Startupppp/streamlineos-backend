@@ -11,11 +11,17 @@ export interface MembershipState {
   active: boolean;
   isOwner: boolean;
   role: string;
+  membershipId: number | null;
 }
 
 const MEMBERSHIP_STATUS_TTL_SECONDS = 15;
 
-const UNKNOWN: MembershipState = { active: false, isOwner: false, role: "" };
+const UNKNOWN: MembershipState = {
+  active: false,
+  isOwner: false,
+  role: "",
+  membershipId: null,
+};
 
 export async function bustMembershipStatusCache(
   cache: CacheService,
@@ -54,6 +60,7 @@ export class MembershipStateService {
         (tx) =>
           tx
             .select({
+              membershipId: organizationMembers.id,
               status: organizationMembers.status,
               isOwner: organizationMembers.isOwner,
               role: organizationMembers.role,
@@ -86,6 +93,7 @@ export class MembershipStateService {
             row.orgDeletedAt === null,
           isOwner: row.isOwner,
           role: row.role,
+          membershipId: row.membershipId,
         };
       }
     } catch {

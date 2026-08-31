@@ -19,7 +19,6 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { RequireModule } from "../../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { RetentionService } from "./retention.service";
 import {
   createRetentionPolicySchema,
@@ -35,6 +34,12 @@ import {
   type UpdateDataRequestInput,
   type ListDataRequestsInput,
 } from "./retention.dto";
+import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
+const requestIdParams = z.object({ requestId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/governance/retention")
@@ -44,18 +49,20 @@ export class RetentionController {
 
   @Get("policies")
   @RequirePermission("hr:retention:manage")
+  @Validate({ query: listRetentionPoliciesSchema })
   async listPolicies(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listRetentionPoliciesSchema)) query: ListRetentionPoliciesInput,
+    @Query() query: ListRetentionPoliciesInput,
   ) {
     return this.service.listPolicies(user.orgId, query);
   }
 
   @Post("policies")
   @RequirePermission("hr:retention:manage")
+  @Validate({ body: createRetentionPolicySchema })
   async createPolicy(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createRetentionPolicySchema)) body: CreateRetentionPolicyInput,
+    @Body() body: CreateRetentionPolicyInput,
     @Req() req: Request,
   ) {
     return this.service.createPolicy(user.orgId, user.userId, body, req.ip);
@@ -63,10 +70,11 @@ export class RetentionController {
 
   @Patch("policies/:policyId")
   @RequirePermission("hr:retention:manage")
+  @Validate({ params: policyIdParams, body: updateRetentionPolicySchema })
   async updatePolicy(
     @CurrentUser() user: CurrentUserContext,
     @Param("policyId", ParseIntPipe) policyId: number,
-    @Body(new ZodValidationPipe(updateRetentionPolicySchema)) body: UpdateRetentionPolicyInput,
+    @Body() body: UpdateRetentionPolicyInput,
     @Req() req: Request,
   ) {
     return this.service.updatePolicy(user.orgId, policyId, user.userId, body, req.ip);
@@ -75,6 +83,7 @@ export class RetentionController {
   @Delete("policies/:policyId")
   @RequirePermission("hr:retention:manage")
   @HttpCode(204)
+  @Validate({ params: policyIdParams })
   async deletePolicy(
     @CurrentUser() user: CurrentUserContext,
     @Param("policyId", ParseIntPipe) policyId: number,
@@ -85,18 +94,20 @@ export class RetentionController {
 
   @Get("requests")
   @RequirePermission("hr:retention:manage")
+  @Validate({ query: listDataRequestsSchema })
   async listRequests(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listDataRequestsSchema)) query: ListDataRequestsInput,
+    @Query() query: ListDataRequestsInput,
   ) {
     return this.service.listRequests(user.orgId, query);
   }
 
   @Post("requests")
   @RequirePermission("hr:retention:manage")
+  @Validate({ body: createDataRequestSchema })
   async createRequest(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createDataRequestSchema)) body: CreateDataRequestInput,
+    @Body() body: CreateDataRequestInput,
     @Req() req: Request,
   ) {
     return this.service.createRequest(user.orgId, user.userId, body, req.ip);
@@ -104,17 +115,20 @@ export class RetentionController {
 
   @Patch("requests/:requestId")
   @RequirePermission("hr:retention:manage")
+  @Validate({ params: requestIdParams, body: updateDataRequestSchema })
   async updateRequest(
     @CurrentUser() user: CurrentUserContext,
     @Param("requestId", ParseIntPipe) requestId: number,
-    @Body(new ZodValidationPipe(updateDataRequestSchema)) body: UpdateDataRequestInput,
+    @Body() body: UpdateDataRequestInput,
     @Req() req: Request,
   ) {
     return this.service.updateRequest(user.orgId, requestId, user.userId, body, req.ip);
   }
 
   @Post("requests/:requestId/approve")
+  @Idempotent("hr.retention.approve")
   @RequirePermission("hr:retention:manage")
+  @Validate({ params: requestIdParams })
   async approveRequest(
     @CurrentUser() user: CurrentUserContext,
     @Param("requestId", ParseIntPipe) requestId: number,
@@ -125,6 +139,7 @@ export class RetentionController {
 
   @Post("requests/:requestId/process")
   @RequirePermission("hr:retention:manage")
+  @Validate({ params: requestIdParams })
   async processRequest(
     @CurrentUser() user: CurrentUserContext,
     @Param("requestId", ParseIntPipe) requestId: number,

@@ -4,9 +4,9 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { NotificationPolicyService } from "./notification-policy.service";
 import { upsertPolicySchema, type UpsertPolicyInput } from "./dto/policy.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
 
 @Controller("notifications/admin/policy")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -21,8 +21,9 @@ export class NotificationPolicyController {
 
   @Put()
   @RequirePermission("notifications:policy:manage")
+  @Validate({ body: upsertPolicySchema })
   upsert(
-    @Body(new ZodValidationPipe(upsertPolicySchema)) body: UpsertPolicyInput,
+    @Body() body: UpsertPolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.policy.upsert(u.orgId, u.userId, body);

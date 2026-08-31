@@ -286,7 +286,7 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
 
     await this.db
       .insert(candidateResumes)
-      .values({ candidateId, resumeText: text.slice(0, 100000) })
+      .values({ orgId, candidateId, resumeText: text.slice(0, 100000) })
       .onConflictDoUpdate({
         target: candidateResumes.candidateId,
         set: { resumeText: text.slice(0, 100000), updatedAt: new Date() },

@@ -17,7 +17,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { TaxAdminService } from "./tax-admin.service";
 import {
   rejectDeclarationSchema,
@@ -25,6 +25,10 @@ import {
   taxDeclarationsQuerySchema,
   type TaxDeclarationsQuery,
 } from "./dto/insights.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const declarationIdParams = z.object({ declarationId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/tax")
@@ -34,15 +38,18 @@ export class TaxAdminController {
 
   @Get("declarations")
   @RequirePermission("payroll:tax:view")
+  @Validate({ query: taxDeclarationsQuerySchema })
   listDeclarations(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(taxDeclarationsQuerySchema)) query: TaxDeclarationsQuery,
+    @Query() query: TaxDeclarationsQuery,
   ) {
     return this.service.listDeclarations(u.orgId, query);
   }
 
   @Patch("declarations/:declarationId/approve")
+  @Idempotent("payroll.tax-declaration.approve")
   @RequirePermission("payroll:tax:manage")
+  @Validate({ params: declarationIdParams })
   approve(
     @CurrentUser() u: CurrentUserContext,
     @Param("declarationId", ParseIntPipe) declarationId: number,
@@ -51,20 +58,23 @@ export class TaxAdminController {
   }
 
   @Patch("declarations/:declarationId/reject")
+  @Idempotent("payroll.tax-declaration.reject")
   @RequirePermission("payroll:tax:manage")
+  @Validate({ params: declarationIdParams, body: rejectDeclarationSchema })
   reject(
     @CurrentUser() u: CurrentUserContext,
     @Param("declarationId", ParseIntPipe) declarationId: number,
-    @Body(new ZodValidationPipe(rejectDeclarationSchema)) body: RejectDeclarationInput,
+    @Body() body: RejectDeclarationInput,
   ) {
     return this.service.reject(u.orgId, declarationId, body.note);
   }
 
   @Get("export")
   @RequirePermission("payroll:reports:export")
+  @Validate({ query: taxDeclarationsQuerySchema })
   async export(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(taxDeclarationsQuerySchema)) query: TaxDeclarationsQuery,
+    @Query() query: TaxDeclarationsQuery,
     @Res({ passthrough: true }) res: Response,
   ) {
     const file = await this.service.exportCsv(u.orgId, query.financialYear);

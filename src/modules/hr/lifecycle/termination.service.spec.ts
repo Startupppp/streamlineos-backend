@@ -57,6 +57,7 @@ describe("TerminationService.create - structural owner block", () => {
       undefined as never,
       undefined as never,
       undefined as never,
+      { getFacts: jest.fn().mockResolvedValue({ userId: "u", employmentId: null, employeeNumber: null, designation: null, joiningDate: null, departmentId: null, locationId: null, managerUserId: null }), getFactsBatch: jest.fn().mockResolvedValue(new Map()) } as never,
     );
   }
 
@@ -117,6 +118,7 @@ describe("TerminationService.list - paginated envelope and status counts", () =>
       undefined as never,
       undefined as never,
       undefined as never,
+      { getFacts: jest.fn().mockResolvedValue({ userId: "u", employmentId: null, employeeNumber: null, designation: null, joiningDate: null, departmentId: null, locationId: null, managerUserId: null }), getFactsBatch: jest.fn().mockResolvedValue(new Map()) } as never,
     );
   }
 
@@ -211,6 +213,7 @@ describe("TerminationService.complete - tenant-scoped account access", () => {
       { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as never,
       { emit: jest.fn().mockResolvedValue(undefined) } as never,
       memberships as never,
+      { getFacts: jest.fn().mockResolvedValue({ userId: "u", employmentId: null, employeeNumber: null, designation: null, joiningDate: null, departmentId: null, locationId: null, managerUserId: null }), getFactsBatch: jest.fn().mockResolvedValue(new Map()) } as never,
     );
 
     const result = await runWithTenantContext(

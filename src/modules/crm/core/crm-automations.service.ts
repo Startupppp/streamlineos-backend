@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, getTableColumns, isNull } from "drizzle-orm";
 import { crmAutomationRules, crmAutomationRuns } from "../../../db/schema";
 import { crmAutomationEvents, crmAutomationActions } from "../../../db/schema/crm/metadata";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -9,6 +9,11 @@ import { CrmAutomationRunnerService } from "../automation-studio/crm-automation-
 import type { TestAutomationRuleInput } from "../automation-studio/dto/automation-studio.schemas";
 import type { CrmAutomationCondition } from "../../../db/schema/crm/automation-rules";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import {
+  resolveWindowedTotal,
+  totalOverWindow,
+  withoutTotal,
+} from "../../../common/pagination/window-count";
 
 @Injectable()
 export class CrmAutomationsService {
@@ -138,19 +143,20 @@ export class CrmAutomationsService {
 
     const limit = 20;
     const offset = (page - 1) * limit;
-    const runs = await this.db
-      .select()
+    const where = and(eq(crmAutomationRuns.orgId, orgId), eq(crmAutomationRuns.ruleId, ruleId));
+    const rows = await this.db
+      .select({ ...getTableColumns(crmAutomationRuns), total: totalOverWindow })
       .from(crmAutomationRuns)
-      .where(and(eq(crmAutomationRuns.orgId, orgId), eq(crmAutomationRuns.ruleId, ruleId)))
+      .where(where)
       .orderBy(desc(crmAutomationRuns.startedAt))
       .limit(limit)
       .offset(offset);
 
-    const countResult = await this.db
-      .select({ count: crmAutomationRuns.id })
-      .from(crmAutomationRuns)
-      .where(and(eq(crmAutomationRuns.orgId, orgId), eq(crmAutomationRuns.ruleId, ruleId)));
+    const total = await resolveWindowedTotal(rows, offset, async () => {
+      const fallback = await this.db.select({ c: count() }).from(crmAutomationRuns).where(where);
+      return Number(fallback[0]?.c ?? 0);
+    });
 
-    return { runs, total: countResult.length };
+    return { runs: withoutTotal(rows), total };
   }
 }

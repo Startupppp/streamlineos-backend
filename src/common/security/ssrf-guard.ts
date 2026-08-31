@@ -133,7 +133,8 @@ export function assertSafeWebhookUrl(url: string): void {
   }
 
   const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
-  if (hostname === "" || hostname.toLowerCase() === "localhost") {
+  const lowered = hostname.toLowerCase();
+  if (hostname === "" || lowered === "localhost" || lowered.endsWith(".localhost")) {
     throw new Error("SSRF: private/internal URLs are blocked");
   }
 

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gt, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
-import { calendarEvents, calendarEventExceptions, eventAttendees } from "../../db/schema";
+import { calendarEvents, calendarEventExceptions, eventAttendees, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db, TenantTx } from "../../db/drizzle.types";
 import {
@@ -33,6 +33,16 @@ export class CalendarConflictService {
     startDate: Date,
     endDate: Date,
   ): Promise<CalendarOccurrence[]> {
+    const callerMember = await tx.query.organizationMembers.findFirst({
+      columns: { id: true },
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+    });
+    const callerMembershipId = callerMember?.id ?? 0;
+
     const rows = await tx
       .select({
         id: calendarEvents.id,
@@ -42,7 +52,7 @@ export class CalendarConflictService {
         allDay: calendarEvents.allDay,
         timezone: calendarEvents.timezone,
         orgId: calendarEvents.orgId,
-        createdBy: calendarEvents.createdBy,
+        createdByMembershipId: calendarEvents.createdByMembershipId,
         rrule: calendarEvents.rrule,
         recurrenceEnd: calendarEvents.recurrenceEnd,
       })
@@ -110,7 +120,8 @@ export class CalendarConflictService {
       .from(eventAttendees)
       .where(
         and(
-          eq(eventAttendees.userId, userId),
+          eq(eventAttendees.orgId, orgId),
+          eq(eventAttendees.membershipId, callerMembershipId),
           inArray(eventAttendees.eventId, eventIds),
         ),
       );
@@ -121,7 +132,7 @@ export class CalendarConflictService {
     const occurrences: CalendarOccurrence[] = [];
     for (const row of rows) {
       const rsvpStatus = rsvpMap.get(row.id) ?? null;
-      if (row.createdBy !== userId && rsvpStatus === null) continue;
+      if (row.createdByMembershipId !== callerMembershipId && rsvpStatus === null) continue;
       if (rsvpStatus === "declined") continue;
       const exceptions = exceptionsByEvent.get(row.id) ?? [];
       occurrences.push(

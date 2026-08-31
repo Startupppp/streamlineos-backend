@@ -5,10 +5,11 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { actingMembershipId } from "../../common/auth/principal";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { updateChatOrgSettingsSchema, type UpdateChatOrgSettingsInput } from "./dto/chat.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
 
 @ApiTags("Chat Org Settings")
 @ApiBearerAuth()
@@ -30,10 +31,11 @@ export class ChatOrgSettingsController {
   @ApiResponse({ status: 200, description: "OK" })
   @Patch()
   @RequirePermission("chat:org-settings:manage")
+  @Validate({ body: updateChatOrgSettingsSchema })
   update(
-    @Body(new ZodValidationPipe(updateChatOrgSettingsSchema)) body: UpdateChatOrgSettingsInput,
+    @Body() body: UpdateChatOrgSettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.updateSettings(u.orgId, u.userId, body);
+    return this.settings.updateSettings(u.orgId, actingMembershipId(u.principal), body);
   }
 }

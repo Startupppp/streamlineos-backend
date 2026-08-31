@@ -5,12 +5,12 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { SupportReportsService } from "./support-reports.service";
 import { resolveSupportTicketsViewScope } from "./support-tickets-scope";
 import { supportReportFiltersSchema, type SupportReportFiltersInput } from "./dto/support.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("support")
 @Controller("support/reports")
@@ -23,16 +23,18 @@ export class SupportReportsController {
   ) {}
 
   @Get("overview")
+  @Validate({ query: supportReportFiltersSchema })
   getOverview(
-    @Query(new ZodValidationPipe(supportReportFiltersSchema)) filters: SupportReportFiltersInput,
+    @Query() filters: SupportReportFiltersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.getOverview(u.orgId, filters);
   }
 
   @Get("agent-performance")
+  @Validate({ query: supportReportFiltersSchema })
   async getAgentPerformance(
-    @Query(new ZodValidationPipe(supportReportFiltersSchema)) filters: SupportReportFiltersInput,
+    @Query() filters: SupportReportFiltersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveSupportTicketsViewScope(this.access, u);
@@ -41,24 +43,27 @@ export class SupportReportsController {
   }
 
   @Get("queue-performance")
+  @Validate({ query: supportReportFiltersSchema })
   getQueuePerformance(
-    @Query(new ZodValidationPipe(supportReportFiltersSchema)) filters: SupportReportFiltersInput,
+    @Query() filters: SupportReportFiltersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.getQueuePerformance(u.orgId, filters);
   }
 
   @Get("channel-performance")
+  @Validate({ query: supportReportFiltersSchema })
   getChannelPerformance(
-    @Query(new ZodValidationPipe(supportReportFiltersSchema)) filters: SupportReportFiltersInput,
+    @Query() filters: SupportReportFiltersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.getChannelPerformance(u.orgId, filters);
   }
 
   @Get("automation-performance")
+  @Validate({ query: supportReportFiltersSchema })
   getAutomationPerformance(
-    @Query(new ZodValidationPipe(supportReportFiltersSchema)) filters: SupportReportFiltersInput,
+    @Query() filters: SupportReportFiltersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.getAutomationPerformance(u.orgId, filters);

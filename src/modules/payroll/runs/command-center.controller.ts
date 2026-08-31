@@ -11,7 +11,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { CommandCenterService } from "./command-center.service";
 import { commandCenterQuerySchema, type CommandCenterQuery } from "./dto/runs.schemas";
 
@@ -23,8 +23,9 @@ export class CommandCenterController {
 
   @Get()
   @RequirePermission("payroll:runs:view")
+  @Validate({ query: commandCenterQuerySchema })
   async get(
-    @Query(new ZodValidationPipe(commandCenterQuerySchema)) query: CommandCenterQuery,
+    @Query() query: CommandCenterQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.commandCenterService.getCommandCenter(u.orgId, query);

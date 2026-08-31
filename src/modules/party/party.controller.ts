@@ -15,7 +15,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PartyService } from "./party.service";
 import { PartyDivergenceService } from "./party-divergence.service";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
@@ -33,6 +32,11 @@ import {
   type CreateContactInput,
   type UpdateContactInput,
 } from "./dto/party.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const partyIdParams = z.object({ partyId: z.string().min(1) }).strict();
+const partyContactIdParams = z.object({ partyContactId: z.string().min(1) }).strict();
 
 @Controller("party")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -52,8 +56,9 @@ export class PartyController {
    */
   @Get("mirror/divergence")
   @RequirePermission("party:divergence:view")
+  @Validate({ query: mirrorDivergenceQuerySchema })
   mirrorDivergence(
-    @Query(new ZodValidationPipe(mirrorDivergenceQuerySchema)) query: MirrorDivergenceQuery,
+    @Query() query: MirrorDivergenceQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.divergence.report(u.orgId, {
@@ -65,8 +70,9 @@ export class PartyController {
 
   @Get("parties")
   @RequirePermission("party:parties:view")
+  @Validate({ query: listPartiesQuerySchema })
   listParties(
-    @Query(new ZodValidationPipe(listPartiesQuerySchema)) query: ListPartiesQuery,
+    @Query() query: ListPartiesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listParties(u.orgId, query);
@@ -76,8 +82,9 @@ export class PartyController {
   @Idempotent("party.create")
   @HttpCode(201)
   @RequirePermission("party:parties:create")
+  @Validate({ body: createPartySchema })
   createParty(
-    @Body(new ZodValidationPipe(createPartySchema)) body: CreatePartyInput,
+    @Body() body: CreatePartyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createParty(u.orgId, u.userId, body);
@@ -85,6 +92,7 @@ export class PartyController {
 
   @Get("parties/:partyId")
   @RequirePermission("party:parties:view")
+  @Validate({ params: partyIdParams })
   getParty(
     @Param("partyId") partyId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -95,9 +103,10 @@ export class PartyController {
   @Patch("parties/:partyId")
   @Idempotent("party.update")
   @RequirePermission("party:parties:update")
+  @Validate({ params: partyIdParams, body: updatePartySchema })
   updateParty(
     @Param("partyId") partyId: string,
-    @Body(new ZodValidationPipe(updatePartySchema)) body: UpdatePartyInput,
+    @Body() body: UpdatePartyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateParty(u.orgId, u.userId, partyId, body);
@@ -107,6 +116,7 @@ export class PartyController {
   @Idempotent("party.delete")
   @HttpCode(204)
   @RequirePermission("party:parties:delete")
+  @Validate({ params: partyIdParams })
   deleteParty(
     @Param("partyId") partyId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -116,6 +126,7 @@ export class PartyController {
 
   @Get("parties/:partyId/contacts")
   @RequirePermission("party:contacts:view")
+  @Validate({ params: partyIdParams })
   listContacts(
     @Param("partyId") partyId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -127,9 +138,10 @@ export class PartyController {
   @Idempotent("party.contact.create")
   @HttpCode(201)
   @RequirePermission("party:contacts:manage")
+  @Validate({ params: partyIdParams, body: createContactSchema })
   createContact(
     @Param("partyId") partyId: string,
-    @Body(new ZodValidationPipe(createContactSchema)) body: CreateContactInput,
+    @Body() body: CreateContactInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createContact(u.orgId, u.userId, { ...body, partyId });
@@ -138,9 +150,10 @@ export class PartyController {
   @Patch("contacts/:partyContactId")
   @Idempotent("party.contact.update")
   @RequirePermission("party:contacts:manage")
+  @Validate({ params: partyContactIdParams, body: updateContactSchema })
   updateContact(
     @Param("partyContactId") partyContactId: string,
-    @Body(new ZodValidationPipe(updateContactSchema)) body: UpdateContactInput,
+    @Body() body: UpdateContactInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateContact(u.orgId, u.userId, partyContactId, body);
@@ -150,6 +163,7 @@ export class PartyController {
   @Idempotent("party.contact.delete")
   @HttpCode(204)
   @RequirePermission("party:contacts:manage")
+  @Validate({ params: partyContactIdParams })
   deleteContact(
     @Param("partyContactId") partyContactId: string,
     @CurrentUser() u: CurrentUserContext,

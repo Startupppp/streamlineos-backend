@@ -6,8 +6,6 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
-import { randomUUID } from "node:crypto";
-import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import {
   signDocuments,
   signEnvelopes,
@@ -274,23 +272,6 @@ export class SignEnvelopesService {
         .where(eq(signEnvelopes.id, envelopeId))
         .returning();
 
-      if (row) {
-        await OutboxWriter.emit(tx, {
-          eventId: randomUUID(),
-          organizationId: orgId,
-          aggregateType: "sign_envelope",
-          aggregateId: String(envelopeId),
-          aggregateVersion: Date.now(),
-          eventType: "sign.envelope.voided",
-          payload: {
-            envelopeId,
-            orgId,
-            reason: input.reason,
-            actorUserId: actor.userId,
-          },
-          occurredAt: new Date(),
-        });
-      }
       return row;
     });
 

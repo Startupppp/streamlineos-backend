@@ -1,10 +1,15 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, eq, gte, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, getTableColumns, gte, isNull, lte, or, sql } from "drizzle-orm";
 import { journalEntries, journalLines, finRecurringJournalTemplates, accNumberSequences } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import {
+  resolveWindowedTotal,
+  totalOverWindow,
+  withoutTotal,
+} from "../../../common/pagination/window-count";
 import {
   type CreateRecurringJournalInput,
   type UpdateRecurringJournalInput,
@@ -45,20 +50,24 @@ export class RecurringJournalsService {
 
   async listTemplates(orgId: string, page = 1, pageSize = 50) {
     const { offset, limit } = paginateOffset({ page, pageSize });
-    const items = await this.db
-      .select()
+    const where = eq(finRecurringJournalTemplates.orgId, orgId);
+    const rows = await this.db
+      .select({ ...getTableColumns(finRecurringJournalTemplates), total: totalOverWindow })
       .from(finRecurringJournalTemplates)
-      .where(eq(finRecurringJournalTemplates.orgId, orgId))
+      .where(where)
       .orderBy(finRecurringJournalTemplates.name)
       .offset(offset)
       .limit(limit);
 
-    const totalRows = await this.db
-      .select({ c: sql<number>`count(*)` })
-      .from(finRecurringJournalTemplates)
-      .where(eq(finRecurringJournalTemplates.orgId, orgId));
+    const total = await resolveWindowedTotal(rows, offset, async () => {
+      const fallback = await this.db
+        .select({ c: sql<number>`count(*)` })
+        .from(finRecurringJournalTemplates)
+        .where(where);
+      return Number(fallback[0]?.c ?? 0);
+    });
 
-    return buildListResponse(items, Number(totalRows[0]?.c ?? 0), { page, pageSize });
+    return buildListResponse(withoutTotal(rows), total, { page, pageSize });
   }
 
   async createTemplate(orgId: string, userId: string, input: CreateRecurringJournalInput) {

@@ -1,4 +1,5 @@
 import { DirectoryIdentityService } from "./directory-identity.service";
+import { DirectoryPersonEnsureService } from "./directory-person-ensure.service";
 
 const ORG_ID = "org-1";
 const PERSON_ID = "person-1";
@@ -366,7 +367,8 @@ describe("DirectoryIdentityService", () => {
         .mockReturnValueOnce(deletedPersonQuery.chain),
       insert: jest.fn().mockReturnValue({ values }),
     };
-    const service = new DirectoryIdentityService(db as never);
+    const identityService = { reconcilePersonIdentity: jest.fn() } as unknown as DirectoryIdentityService;
+    const service = new DirectoryPersonEnsureService(db as never, identityService);
 
     await expect(
       service.ensurePersonForMember(ORG_ID, MEMBER_USER_ID),
@@ -418,7 +420,8 @@ describe("DirectoryIdentityService", () => {
       update: jest.fn().mockReturnValue({ set }),
       insert: jest.fn(),
     };
-    const service = new DirectoryIdentityService(db as never);
+    const identityService = { reconcilePersonIdentity: jest.fn() } as unknown as DirectoryIdentityService;
+    const service = new DirectoryPersonEnsureService(db as never, identityService);
 
     await expect(
       service.ensurePersonForMember(ORG_ID, MEMBER_USER_ID),

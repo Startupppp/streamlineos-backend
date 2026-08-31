@@ -1,11 +1,16 @@
 import { Test } from "@nestjs/testing";
-import { INestApplication, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, INestApplication, NotFoundException } from "@nestjs/common";
+import { Readable } from "node:stream";
 import { eq } from "drizzle-orm";
 import { PDFDocument } from "pdf-lib";
 import { AppModule } from "../../../app.module";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { organizations, users, signRecipients, signCertificates } from "../../../db/schema";
+import { organizations, users, signRecipients, signCertificates, subscriptions } from "../../../db/schema";
+import { seedOrg } from "../../../../test/helpers/e2e-seed";
+import { installFixtureRegionRegistry } from "../../../../test/helpers/e2e-app";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { StorageService } from "../../storage/storage.service";
 import { SignEnvelopesService } from "../sign-envelopes.service";
 import { SignDocumentsService } from "../sign-documents.service";
 import { SignRecipientsService } from "../sign-recipients.service";
@@ -42,6 +47,27 @@ const mockNotifications = {
   sendBulkJobCompleted: jest.fn().mockResolvedValue(undefined),
 };
 
+const memStore = new Map<string, Buffer>();
+const storageStub = {
+  isConfigured: () => true,
+  uploadFile: async (_orgId: string, buffer: Buffer, folder = "uploads", fileName = "file", mimeType = "application/octet-stream") => {
+    const key = `${folder}/${fileName}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    memStore.set(key, buffer);
+    return { key, url: `https://test.local/${key}`, size: buffer.length, mimeType };
+  },
+  getFileStream: async (_orgId: string, key: string) => {
+    const buf = memStore.get(key);
+    if (!buf) throw new NotFoundException(`Storage stub: key not found: ${key}`);
+    return { body: Readable.from([buf]) as Readable, contentType: "application/octet-stream", contentLength: buf.length };
+  },
+  getFileUrl: async (_orgId: string, key: string, _expiry: number) => `https://test.local/${key}`,
+  deleteFile: jest.fn().mockResolvedValue(undefined),
+  getFileKeyFromUrl: (url: string) => url.replace("https://test.local/", ""),
+  getFileNameFromKey: (key: string) => key.split("/").pop() ?? "file",
+  getMimeType: () => "application/octet-stream",
+  isValidFileKey: () => true,
+};
+
 describe("SignOS signing flow integration (e2e)", () => {
   let app: INestApplication;
   let db: Db;
@@ -57,22 +83,35 @@ describe("SignOS signing flow integration (e2e)", () => {
 
   const actor: RequestActorContext = { orgId: ORG_ID, userId: USER_ID };
 
+  function inOrg<T>(fn: () => Promise<T>): Promise<T> {
+    return runInTenantTransaction(db, () => fn(), { orgId: ORG_ID });
+  }
+
+  function inOrgOf<T>(orgId: string, fn: () => Promise<T>): Promise<T> {
+    return runInTenantTransaction(db, () => fn(), { orgId });
+  }
+
   async function cleanup(): Promise<void> {
     await db.delete(organizations).where(eq(organizations.id, ORG_ID));
     await db.delete(organizations).where(eq(organizations.id, ORG_B_ID));
     await db.delete(users).where(eq(users.id, USER_ID));
     await db.delete(users).where(eq(users.id, USER_B_ID));
+    await db.delete(users).where(eq(users.id, `${ORG_ID}-seed-owner`));
+    await db.delete(users).where(eq(users.id, `${ORG_B_ID}-seed-owner`));
   }
 
   beforeAll(async () => {
     const ref = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(SignNotificationsService)
       .useValue(mockNotifications)
+      .overrideProvider(StorageService)
+      .useValue(storageStub)
       .compile();
     app = ref.createNestApplication();
     await app.init();
 
     db = app.get(DRIZZLE);
+    installFixtureRegionRegistry(db);
     envelopesSvc = app.get(SignEnvelopesService);
     documentsSvc = app.get(SignDocumentsService);
     recipientsSvc = app.get(SignRecipientsService);
@@ -84,10 +123,13 @@ describe("SignOS signing flow integration (e2e)", () => {
     watermarkSvc = app.get(SignWatermarkService);
 
     await cleanup();
-    await db.insert(organizations).values({ id: ORG_ID, name: "E2E SignOS Org", slug: `${P}slug`, ownerMembershipId: 0 });
-    await db.insert(organizations).values({ id: ORG_B_ID, name: "E2E SignOS Org B", slug: `${P}slug-b`, ownerMembershipId: 0 });
-    await db.insert(users).values({ id: USER_ID, email: `${P}sender@example.com`, name: "Sender" });
-    await db.insert(users).values({ id: USER_B_ID, email: `${P}sender-b@example.com`, name: "Sender B" });
+    await seedOrg(db, ORG_ID, `${P}slug`);
+    await seedOrg(db, ORG_B_ID, `${P}slug-b`);
+    await db.insert(users).values({ id: USER_ID, email: `${P}sender@example.com`, name: "Sender" }).onConflictDoNothing();
+    await db.insert(users).values({ id: USER_B_ID, email: `${P}sender-b@example.com`, name: "Sender B" }).onConflictDoNothing();
+    await runInTenantTransaction(db, async () => {
+      await db.insert(subscriptions).values({ orgId: ORG_ID, plan: "ENTERPRISE", status: "ACTIVE" }).onConflictDoNothing();
+    }, { orgId: ORG_ID });
   }, 90_000);
 
   afterAll(async () => {
@@ -99,75 +141,78 @@ describe("SignOS signing flow integration (e2e)", () => {
     const orgId = opts?.orgId ?? ORG_ID;
     const userId = opts?.userId ?? USER_ID;
     const localActor: RequestActorContext = { orgId, userId };
-
-    const envelope = await envelopesSvc.create(orgId, userId, {
-      title: "Test agreement",
-      routingMode: "parallel",
-      ccTiming: "on_complete",
-      allowDecline: true,
-      reminderEnabled: true,
-      reminderFirstAfterDays: 3,
-      reminderRepeatDays: 3,
-      reminderMaxCount: 5,
-      watermarkPolicyId: opts?.watermarkPolicyId,
-    });
-
     const pdfBuffer = await makeTestPdfBuffer();
-    const document = await documentsSvc.upload(
-      envelope.id,
-      { buffer: pdfBuffer, originalName: "agreement.pdf", mimeType: "application/pdf", size: pdfBuffer.length },
-      0,
-      { orgId, userId },
-    );
 
-    const recipient = await recipientsSvc.add(
-      orgId,
-      envelope.id,
-      {
-        roleName: "Signer 1",
-        recipientType: "signer",
-        name: "Jane Signer",
-        email: `${P}signer@example.com`,
-        routingOrder: 1,
-        authMethod: "email_link",
-      },
-      localActor,
-    );
+    return runInTenantTransaction(db, async () => {
+      const envelope = await envelopesSvc.create(orgId, userId, {
+        title: "Test agreement",
+        routingMode: "parallel",
+        ccTiming: "on_complete",
+        allowDecline: true,
+        reminderEnabled: true,
+        reminderFirstAfterDays: 3,
+        reminderRepeatDays: 3,
+        reminderMaxCount: 5,
+        watermarkPolicyId: opts?.watermarkPolicyId,
+      });
 
-    const field = await fieldsSvc.add(
-      orgId,
-      envelope.id,
-      {
-        documentId: document.id,
-        recipientId: recipient.id,
-        fieldType: "signature",
-        pageNumber: 1,
-        x: 50,
-        y: 50,
-        width: 150,
-        height: 40,
-        required: true,
-        readonly: false,
-        orderIndex: 0,
-      },
-      localActor,
-    );
+      const document = await documentsSvc.upload(
+        envelope.id,
+        { buffer: pdfBuffer, originalName: "agreement.pdf", mimeType: "application/pdf", size: pdfBuffer.length },
+        0,
+        { orgId, userId },
+      );
 
-    return { envelope, document, recipient, field };
+      const recipient = await recipientsSvc.add(
+        orgId,
+        envelope.id,
+        {
+          roleName: "Signer 1",
+          recipientType: "signer",
+          name: "Jane Signer",
+          email: `${P}signer@example.com`,
+          routingOrder: 1,
+          authMethod: "email_link",
+        },
+        localActor,
+      );
+
+      const field = await fieldsSvc.add(
+        orgId,
+        envelope.id,
+        {
+          documentId: document.id,
+          recipientId: recipient.id,
+          fieldType: "signature",
+          pageNumber: 1,
+          x: 50,
+          y: 50,
+          width: 150,
+          height: 40,
+          required: true,
+          readonly: false,
+          orderIndex: 0,
+        },
+        localActor,
+      );
+
+      return { envelope, document, recipient, field };
+    }, { orgId });
   }
 
   async function issueRawTokenFor(recipientId: number, expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000)): Promise<string> {
     const raw = tokensSvc.generateSigningToken();
-    await db
-      .update(signRecipients)
-      .set({ status: "invited", signingTokenHash: tokensSvc.hash(raw), tokenExpiresAt: expiresAt, tokenRevokedAt: null })
-      .where(eq(signRecipients.id, recipientId));
+    await inOrg(() =>
+      db.update(signRecipients)
+        .set({ status: "invited", signingTokenHash: tokensSvc.hash(raw), tokenExpiresAt: expiresAt, tokenRevokedAt: null })
+        .where(eq(signRecipients.id, recipientId)),
+    );
     return raw;
   }
 
   it("blocks completion when a required signature field has not been filled", async () => {
     const { envelope, recipient } = await createEnvelopeWithSigner();
-    await envelopesSvc.send(ORG_ID, envelope.id, actor);
+    await inOrg(() => envelopesSvc.send(ORG_ID, envelope.id, actor));
     const token = await issueRawTokenFor(recipient.id);
 
     await publicSvc.getSession(token, {});
@@ -180,7 +225,7 @@ describe("SignOS signing flow integration (e2e)", () => {
 
   it("completes a full signing flow and finalizes idempotently with a real certificate and final PDF", async () => {
     const { envelope, recipient } = await createEnvelopeWithSigner();
-    await envelopesSvc.send(ORG_ID, envelope.id, actor);
+    await inOrg(() => envelopesSvc.send(ORG_ID, envelope.id, actor));
     const token = await issueRawTokenFor(recipient.id);
 
     await publicSvc.getSession(token, {});
@@ -191,25 +236,23 @@ describe("SignOS signing flow integration (e2e)", () => {
     expect(outcome.completed).toBe(true);
     expect(outcome.envelopeCompleted).toBe(true);
 
-    const completedEnvelope = await envelopesSvc.mustGet(ORG_ID, envelope.id);
+    const completedEnvelope = await inOrg(() => envelopesSvc.mustGet(ORG_ID, envelope.id));
     expect(completedEnvelope.status).toBe("completed");
 
-    const [first, second] = await Promise.all([
-      finalizationSvc.finalize(ORG_ID, envelope.id),
-      finalizationSvc.finalize(ORG_ID, envelope.id),
-    ]);
+    const first = await inOrg(() => finalizationSvc.finalize(ORG_ID, envelope.id));
+    const second = await inOrg(() => finalizationSvc.finalize(ORG_ID, envelope.id));
     expect(first.certificateNumber).toBe(second.certificateNumber);
 
-    const certRows = await db.select().from(signCertificates).where(eq(signCertificates.envelopeId, envelope.id));
+    const certRows = await inOrg(() => db.select().from(signCertificates).where(eq(signCertificates.envelopeId, envelope.id)));
     expect(certRows).toHaveLength(1);
     expect(certRows[0]?.certificateNumber).toMatch(/^SGN-\d+-[A-F0-9]+$/);
     expect(certRows[0]?.certificateFileKey).toBeTruthy();
 
-    const finalizedEnvelope = await envelopesSvc.mustGet(ORG_ID, envelope.id);
+    const finalizedEnvelope = await inOrg(() => envelopesSvc.mustGet(ORG_ID, envelope.id));
     expect(finalizedEnvelope.finalPdfFileKey).toBeTruthy();
     expect(finalizedEnvelope.finalPdfHash).toBeTruthy();
 
-    const events = await auditSvc.listForEnvelope(ORG_ID, envelope.id);
+    const events = await inOrg(() => auditSvc.listForEnvelope(ORG_ID, envelope.id));
     const eventTypes = new Set<string>(events.map((e) => e.eventType));
     for (const expected of [
       "envelope_created",
@@ -232,41 +275,41 @@ describe("SignOS signing flow integration (e2e)", () => {
 
     const session = await publicSvc.getSession(token, {});
     expect(session.state).toBe("expired");
-    await expect(publicSvc.complete(token, {})).rejects.toThrow();
+    await expect(publicSvc.complete(token, {})).rejects.toThrow(ForbiddenException);
   }, 45_000);
 
   it("revokes every outstanding signing link when the envelope is voided", async () => {
     const { envelope, recipient } = await createEnvelopeWithSigner();
-    await envelopesSvc.send(ORG_ID, envelope.id, actor);
+    await inOrg(() => envelopesSvc.send(ORG_ID, envelope.id, actor));
     const token = await issueRawTokenFor(recipient.id);
 
-    await envelopesSvc.voidEnvelope(ORG_ID, envelope.id, { reason: "test void" }, actor);
+    await inOrg(() => envelopesSvc.voidEnvelope(ORG_ID, envelope.id, { reason: "test void" }, actor));
 
     const session = await publicSvc.getSession(token, {});
     expect(session.state).toBe("envelope_voided");
-    await expect(publicSvc.complete(token, {})).rejects.toThrow();
+    await expect(publicSvc.complete(token, {})).rejects.toThrow(ForbiddenException);
   }, 45_000);
 
   it("records a decline, moves the envelope to declined, and blocks further signing on that link", async () => {
     const { envelope, recipient } = await createEnvelopeWithSigner();
-    await envelopesSvc.send(ORG_ID, envelope.id, actor);
+    await inOrg(() => envelopesSvc.send(ORG_ID, envelope.id, actor));
     const token = await issueRawTokenFor(recipient.id);
 
     await publicSvc.getSession(token, {});
     await publicSvc.acceptConsent(token, { disclosureVersion: "v1" }, {});
     await publicSvc.decline(token, { reason: "Not agreeing to terms" }, {});
 
-    const declinedEnvelope = await envelopesSvc.mustGet(ORG_ID, envelope.id);
+    const declinedEnvelope = await inOrg(() => envelopesSvc.mustGet(ORG_ID, envelope.id));
     expect(declinedEnvelope.status).toBe("declined");
 
-    const events = await auditSvc.listForEnvelope(ORG_ID, envelope.id);
+    const events = await inOrg(() => auditSvc.listForEnvelope(ORG_ID, envelope.id));
     expect(events.some((e) => e.eventType === "recipient_declined")).toBe(true);
 
-    await expect(publicSvc.complete(token, {})).rejects.toThrow();
+    await expect(publicSvc.complete(token, {})).rejects.toThrow(ForbiddenException);
   }, 45_000);
 
   it("stamps the final PDF as watermarked when a matching tenant watermark policy is configured", async () => {
-    const policy = await watermarkSvc.create(ORG_ID, USER_ID, {
+    const policy = await inOrg(() => watermarkSvc.create(ORG_ID, USER_ID, {
       scopeType: "tenant",
       appliesStates: ["completed"],
       text: "CONFIDENTIAL",
@@ -279,10 +322,10 @@ describe("SignOS signing flow integration (e2e)", () => {
       showOnFinalPdf: true,
       previewOnly: false,
       enabled: true,
-    });
+    }));
 
     const { envelope, recipient } = await createEnvelopeWithSigner({ watermarkPolicyId: policy.id });
-    await envelopesSvc.send(ORG_ID, envelope.id, actor);
+    await inOrg(() => envelopesSvc.send(ORG_ID, envelope.id, actor));
     const token = await issueRawTokenFor(recipient.id);
 
     await publicSvc.getSession(token, {});
@@ -290,16 +333,16 @@ describe("SignOS signing flow integration (e2e)", () => {
     await publicSvc.adoptSignature(token, { assetType: "signature", method: "typed", typedText: "Jane Signer" }, {});
     await publicSvc.complete(token, {});
 
-    const certificate = await finalizationSvc.finalize(ORG_ID, envelope.id);
+    const certificate = await inOrg(() => finalizationSvc.finalize(ORG_ID, envelope.id));
     expect(certificate.watermarked).toBe(true);
   }, 45_000);
 
   it("enforces tenant isolation: org A cannot fetch an envelope that belongs to org B", async () => {
     const { envelope: orgBEnvelope } = await createEnvelopeWithSigner({ orgId: ORG_B_ID, userId: USER_B_ID });
 
-    await expect(envelopesSvc.mustGet(ORG_ID, orgBEnvelope.id)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(inOrg(() => envelopesSvc.mustGet(ORG_ID, orgBEnvelope.id))).rejects.toBeInstanceOf(NotFoundException);
 
-    const visibleToOrgB = await envelopesSvc.mustGet(ORG_B_ID, orgBEnvelope.id);
+    const visibleToOrgB = await inOrgOf(ORG_B_ID, () => envelopesSvc.mustGet(ORG_B_ID, orgBEnvelope.id));
     expect(visibleToOrgB.id).toBe(orgBEnvelope.id);
   }, 45_000);
 });

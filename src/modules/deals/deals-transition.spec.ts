@@ -7,7 +7,7 @@ import { CrmBlueprintsService } from "../crm/metadata/crm-blueprints.service";
 import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
-import { EmailService } from "../email/email.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 
@@ -85,9 +85,9 @@ describe("DealsService – blueprint transition enforcement", () => {
 
     service = new DealsService(
       mockDb,
-      { cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()), invalidate: jest.fn(), invalidatePattern: jest.fn().mockResolvedValue(undefined), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService,
+      { cached: jest.fn().mockImplementation((_k: unknown, fn: () => unknown) => fn()), invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService,
       { log: jest.fn() } as unknown as AuditService,
-      { sendDealAssigned: jest.fn() } as unknown as EmailService,
+      { emit: jest.fn().mockResolvedValue(undefined) } as unknown as NotificationDispatchService,
       { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as unknown as AutomationService,
       { dispatch: jest.fn().mockResolvedValue(undefined) } as unknown as WebhooksDispatchService,
       mockBlueprints as unknown as CrmBlueprintsService,

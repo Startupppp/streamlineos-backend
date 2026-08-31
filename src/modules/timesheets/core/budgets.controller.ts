@@ -17,7 +17,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { BudgetsService } from "./budgets.service";
 import {
   createBudgetSchema,
@@ -25,6 +24,10 @@ import {
   type CreateBudgetInput,
   type UpdateBudgetInput,
 } from "./dto/budgets.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const budgetIdParams = z.object({ budgetId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("timesheets/budgets")
@@ -41,8 +44,9 @@ export class BudgetsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("timesheets:budgets:manage")
+  @Validate({ body: createBudgetSchema })
   create(
-    @Body(new ZodValidationPipe(createBudgetSchema)) body: CreateBudgetInput,
+    @Body() body: CreateBudgetInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.budgets.create(u.orgId, u.userId, body);
@@ -50,9 +54,10 @@ export class BudgetsController {
 
   @Patch(":budgetId")
   @RequirePermission("timesheets:budgets:manage")
+  @Validate({ params: budgetIdParams, body: updateBudgetSchema })
   update(
     @Param("budgetId", ParseIntPipe) budgetId: number,
-    @Body(new ZodValidationPipe(updateBudgetSchema)) body: UpdateBudgetInput,
+    @Body() body: UpdateBudgetInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.budgets.update(u.orgId, u.userId, budgetId, body);
@@ -61,6 +66,7 @@ export class BudgetsController {
   @Delete(":budgetId")
   @HttpCode(204)
   @RequirePermission("timesheets:budgets:manage")
+  @Validate({ params: budgetIdParams })
   remove(
     @Param("budgetId", ParseIntPipe) budgetId: number,
     @CurrentUser() u: CurrentUserContext,

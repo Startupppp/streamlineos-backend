@@ -35,11 +35,14 @@ export const supportTickets = pgTable("support_tickets", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_support_tickets_org_status").on(table.orgId, table.status),
-  index("idx_support_tickets_assignee").on(table.assigneeId),
+  // org_id leads so the RLS policy (org_id = current_org_id()) is satisfied by the index
+  // and the planner can use it for assignee lookups without a heap fetch.
+  index("idx_support_tickets_org_assignee").on(table.orgId, table.assigneeId, table.createdAt),
+  // Queue view: filter by org + queue + open statuses, order by priority then SLA deadline.
+  index("idx_support_tickets_org_queue_status_priority").on(table.orgId, table.queueId, table.status, table.priority, table.createdAt),
   index("idx_support_tickets_client").on(table.clientId),
   index("idx_support_tickets_priority").on(table.priority),
   index("idx_support_tickets_sla").on(table.slaDeadline),
-  index("idx_support_tickets_queue").on(table.queueId),
   index("idx_support_tickets_source_message").on(table.sourceMessageId),
   index("idx_support_tickets_snoozed_until").on(table.snoozedUntil),
   unique("uniq_support_tickets_org_id").on(table.orgId, table.id),

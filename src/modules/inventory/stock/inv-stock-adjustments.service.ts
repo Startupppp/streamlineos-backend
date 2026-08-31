@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { applyScope } from "../../access/apply-scope";
@@ -30,6 +29,7 @@ import {
   needsApproval as adjustmentNeedsApproval,
   resolveScrapLocation,
 } from "./lib/adjustment-approval";
+import { sqlstateOf } from "../../../common/observability/error-classification";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -149,6 +149,7 @@ export class InvStockAdjustmentsService {
     // only a product deleted from the catalogue is refused here.
     const variants = await loadCorrectableVariants(this.db, orgId, data.lines.map((l) => l.productVariantId));
 
+<<<<<<< HEAD
     // D8. A write-off is an adjustment with a condemning reason, so the two
     // rules that only make sense for one are asserted for one.
     const writeOff = isWriteOffReason(data.reason);
@@ -157,6 +158,47 @@ export class InvStockAdjustmentsService {
       throw new BadRequestException(
         `A scrap location only applies to a write-off (${WRITE_OFF_REASONS.join(", ")}), not to a ${data.reason} adjustment`,
       );
+=======
+    let referenceNumber: string;
+    try {
+      referenceNumber = await this.db.transaction(async (tx) => {
+        const refNum = await this.numSeq.next(orgId, "ADJUSTMENT", tx);
+        const [adj] = await tx.insert(invStockAdjustments).values({
+          orgId,
+          referenceNumber: refNum,
+          reason: data.reason,
+          notes: data.notes,
+          status: needsApproval ? "PENDING_APPROVAL" : "PENDING_POST",
+          createdBy: userId,
+        }).returning({ id: invStockAdjustments.id, refNum: invStockAdjustments.referenceNumber });
+
+        await tx.insert(invStockAdjustmentLines).values(
+          data.lines.map((line) => ({
+            adjustmentId: adj!.id,
+            productVariantId: line.productVariantId,
+            locationId: line.locationId,
+            quantityChange: line.quantityChange.toString(),
+            notes: line.notes,
+          }))
+        );
+
+        return refNum;
+      });
+    } catch (err) {
+      if (sqlstateOf(err) === "23503")
+        throw new BadRequestException("One or more product variants or locations referenced in the adjustment lines do not exist");
+      throw err;
+    }
+
+    if (!needsApproval) {
+      const adj = await this.db.query.invStockAdjustments.findFirst({
+        where: and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.referenceNumber, referenceNumber)),
+        with: { lines: true },
+      });
+      if (adj) {
+        await this.applyAdjustmentLines(orgId, userId, adj, idempotencyKey);
+      }
+>>>>>>> origin/main
     }
     const scrapLocationId = writeOff
       ? await resolveScrapLocation(this.db, orgId, data.lines, data.scrapLocationId)

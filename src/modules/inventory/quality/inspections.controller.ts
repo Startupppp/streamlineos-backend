@@ -1,11 +1,9 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
-import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import { Body, Controller, Get, Headers, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { InspectionsService } from "./quality-inspections.service";
@@ -23,6 +21,10 @@ import type {
   FailInspectionInput,
   DisposeInspectionInput,
 } from "./dto/quality.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const inspectionIdParams = z.object({ inspectionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/quality/inspections")
@@ -33,8 +35,9 @@ export class InspectionsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
+  @Validate({ query: listInspectionsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listInspectionsQuerySchema)) q: ListInspectionsQueryInput,
+    @Query() q: ListInspectionsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, q);
@@ -43,6 +46,7 @@ export class InspectionsController {
   @Get(":inspectionId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
+  @Validate({ params: inspectionIdParams })
   findOne(
     @Param("inspectionId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,
@@ -53,8 +57,9 @@ export class InspectionsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Validate({ body: createInspectionSchema })
   create(
-    @Body(new ZodValidationPipe(createInspectionSchema)) body: CreateInspectionInput,
+    @Body() body: CreateInspectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.create(u.orgId, u.userId, body);
@@ -63,6 +68,7 @@ export class InspectionsController {
   @Post(":inspectionId/start")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Validate({ params: inspectionIdParams })
   start(
     @Param("inspectionId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,
@@ -73,9 +79,10 @@ export class InspectionsController {
   @Post(":inspectionId/pass")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:release")
+  @Validate({ params: inspectionIdParams })
   pass(
     @Param("inspectionId", ParseIntPipe) id: number,
-    @IdempotencyKey() idempotencyKey: string,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {return this.svc.pass(u.orgId, u.userId, id, idempotencyKey);
   }
@@ -83,9 +90,10 @@ export class InspectionsController {
   @Post(":inspectionId/fail")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Validate({ params: inspectionIdParams, body: failInspectionSchema })
   fail(
     @Param("inspectionId", ParseIntPipe) id: number,
-    @Body(new ZodValidationPipe(failInspectionSchema)) body: FailInspectionInput,
+    @Body() body: FailInspectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.fail(u.orgId, u.userId, id, body);
@@ -94,10 +102,11 @@ export class InspectionsController {
   @Post(":inspectionId/dispose")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Validate({ params: inspectionIdParams, body: disposeInspectionSchema })
   dispose(
     @Param("inspectionId", ParseIntPipe) id: number,
-    @IdempotencyKey() idempotencyKey: string,
-    @Body(new ZodValidationPipe(disposeInspectionSchema)) body: DisposeInspectionInput,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Body() body: DisposeInspectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {return this.svc.dispose(u.orgId, u.userId, id, body, idempotencyKey);
   }
@@ -109,9 +118,10 @@ export class InspectionsController {
   @Post(":inspectionId/cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Validate({ params: inspectionIdParams })
   cancel(
     @Param("inspectionId", ParseIntPipe) id: number,
-    @IdempotencyKey() idempotencyKey: string,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.cancel(u.orgId, u.userId, id, idempotencyKey);
@@ -124,9 +134,10 @@ export class InspectionsController {
   @Post(":inspectionId/correct")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Validate({ params: inspectionIdParams, body: correctInspectionSchema })
   correct(
     @Param("inspectionId", ParseIntPipe) id: number,
-    @Body(new ZodValidationPipe(correctInspectionSchema)) body: CorrectInspectionInput,
+    @Body() body: CorrectInspectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.correct(u.orgId, u.userId, id, body);

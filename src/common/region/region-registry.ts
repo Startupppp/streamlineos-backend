@@ -1,5 +1,18 @@
+import { HttpException, HttpStatus } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.types";
 import { isKnownRegion, type RegionDefinition, type RegionTopology } from "./region.config";
+import {
+  decidePlacement,
+  placementFromRegion,
+  type OrganizationPlacement,
+  type PlacementIntent,
+} from "./placement";
+import {
+  signPlacement,
+  verifyPlacement,
+  type PlacementKeyring,
+  type SignedPlacementRejection,
+} from "./placement-signature";
 
 /** One region's live handles. */
 export interface RegionBinding {
@@ -7,25 +20,85 @@ export interface RegionBinding {
   readonly db: Db;
 }
 
-/** Reads an organisation's region from the control plane. Null means unplaced. */
-export type OrgRegionLookup = (orgId: string) => Promise<string | null>;
+/** Reads an organisation's placement from the control plane. Null means unplaced. */
+export type OrgRegionLookup = (
+  orgId: string,
+) => Promise<OrganizationPlacement | string | null>;
 
 /** Region is effectively immutable per organisation; moving one is a migration. */
-const CACHE_TTL_MS = 10 * 60 * 1000;
+export const PLACEMENT_CACHE_TTL_MS = 10 * 60 * 1000;
 
-interface CacheEntry {
-  region: string;
-  expiresAt: number;
+export interface PlacementCacheEntry {
+  readonly placement: OrganizationPlacement;
+  readonly expiresAt: number;
+  readonly token: string | null;
+}
+
+export class ControlPlaneUnavailableError extends HttpException {
+  constructor(orgId: string, readonly cause: unknown) {
+    super(
+      {
+        code: "CONTROL_PLANE_UNAVAILABLE",
+        message:
+          `Placement for organisation ${orgId} is not cached and the control plane is ` +
+          `unreachable. Refusing rather than guessing which cell owns it.`,
+        details: { retryable: true, retryAfterMs: 2_000 },
+      },
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
+    this.name = "ControlPlaneUnavailableError";
+  }
+}
+
+export class SignedPlacementRejectedError extends HttpException {
+  constructor(readonly reason: SignedPlacementRejection) {
+    super(
+      {
+        code: "SIGNED_PLACEMENT_REJECTED",
+        message: `The presented placement could not be trusted: ${reason}.`,
+        details: { retryable: reason === "EXPIRED", reason },
+      },
+      HttpStatus.UNAUTHORIZED,
+    );
+    this.name = "SignedPlacementRejectedError";
+  }
+}
+
+export class PlacementRefusedError extends HttpException {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly retryable: boolean,
+    readonly retryAfterMs: number | null,
+    readonly placement: OrganizationPlacement,
+  ) {
+    super(
+      {
+        code,
+        message,
+        details: {
+          retryable,
+          retryAfterMs,
+          cellId: placement.cellId,
+          placementVersion: placement.placementVersion,
+          status: placement.status,
+        },
+      },
+      retryable ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.CONFLICT,
+    );
+    this.name = "PlacementRefusedError";
+  }
 }
 
 export class RegionRegistry {
-  private readonly cache = new Map<string, CacheEntry>();
+  protected readonly cache = new Map<string, PlacementCacheEntry>();
 
   constructor(
     private readonly topology: RegionTopology,
     private readonly bindings: ReadonlyMap<string, RegionBinding>,
     private readonly lookupOrgRegion: OrgRegionLookup,
-    private readonly now: () => number = () => Date.now(),
+    protected readonly now: () => number = () => Date.now(),
+    private readonly keyring: PlacementKeyring | null = null,
   ) {}
 
   get primary(): string {
@@ -34,6 +107,10 @@ export class RegionRegistry {
 
   get keys(): readonly string[] {
     return Object.keys(this.topology.regions);
+  }
+
+  cellFor(region: string): string {
+    return this.bindingFor(region).definition.cell.cellId;
   }
 
   /**
@@ -45,27 +122,38 @@ export class RegionRegistry {
    * rows end up written into another region's database, which is the single
    * failure this whole seam exists to make impossible.
    */
-  async regionForOrg(orgId: string): Promise<string> {
+  async placementForOrg(orgId: string): Promise<OrganizationPlacement> {
     if (!orgId) throw new Error("[region] regionForOrg: orgId must be a non-empty string");
 
-    const cached = this.cache.get(orgId);
-    if (cached && cached.expiresAt > this.now()) return cached.region;
+    const cached = this.readCache(orgId);
+    if (cached) return cached;
 
-    const region = await this.lookupOrgRegion(orgId);
+    const placement = await this.resolvePlacement(orgId);
+    this.writeCache(orgId, placement);
+    return placement;
+  }
 
-    if (region === null)
-      throw new Error(
-        `[region] organisation ${orgId} has no region. It must be placed before its data can be reached.`,
+  async regionForOrg(orgId: string): Promise<string> {
+    return (await this.placementForOrg(orgId)).region;
+  }
+
+  async admittedPlacementForOrg(
+    orgId: string,
+    intent: PlacementIntent,
+  ): Promise<OrganizationPlacement> {
+    const placement = await this.placementForOrg(orgId);
+    const decision = decidePlacement(placement, intent, this.now());
+
+    if (!decision.admitted)
+      throw new PlacementRefusedError(
+        decision.code,
+        decision.message,
+        decision.retryable,
+        decision.retryAfterMs,
+        placement,
       );
 
-    if (!isKnownRegion(this.topology, region))
-      throw new Error(
-        `[region] organisation ${orgId} is placed in "${region}", which this deployment does not serve. ` +
-          `Configured: ${this.keys.join(", ") || "none"}.`,
-      );
-
-    this.cache.set(orgId, { region, expiresAt: this.now() + CACHE_TTL_MS });
-    return region;
+    return placement;
   }
 
   bindingFor(region: string): RegionBinding {
@@ -86,9 +174,116 @@ export class RegionRegistry {
     return this.bindingFor(await this.regionForOrg(orgId)).definition.storage;
   }
 
+  async cacheKeyPrefixForOrg(orgId: string): Promise<string | null> {
+    const region = await this.regionForOrg(orgId);
+    return this.bindingFor(region).definition.cell.cache.keyPrefix ?? null;
+  }
+
+  async cacheConfigForOrg(orgId: string): Promise<RegionDefinition["cell"]["cache"]> {
+    const region = await this.regionForOrg(orgId);
+    return this.bindingFor(region).definition.cell.cache;
+  }
+
   /** Call when an organisation is placed or moved. */
   forget(orgId: string): void {
     this.cache.delete(orgId);
+  }
+
+  private async lookup(
+    orgId: string,
+  ): Promise<OrganizationPlacement | string | null> {
+    try {
+      return await this.lookupOrgRegion(orgId);
+    } catch (error) {
+      throw new ControlPlaneUnavailableError(orgId, error);
+    }
+  }
+
+  forgetVersionsBelow(orgId: string, placementVersion: number): void {
+    const entry = this.cache.get(orgId);
+    if (entry && entry.placement.placementVersion < placementVersion)
+      this.cache.delete(orgId);
+  }
+
+  async signedPlacementFor(
+    orgId: string,
+  ): Promise<{ placement: OrganizationPlacement; token: string | null }> {
+    const placement = await this.placementForOrg(orgId);
+    return { placement, token: this.cache.get(orgId)?.token ?? null };
+  }
+
+  acceptSignedPlacement(token: string): OrganizationPlacement {
+    if (!this.keyring) throw new SignedPlacementRejectedError("UNKNOWN_KEY");
+
+    const verdict = verifyPlacement(token, this.keyring, this.now());
+    if (!verdict.ok) throw new SignedPlacementRejectedError(verdict.reason);
+
+    const cached = this.cache.get(verdict.placement.organizationId);
+    if (cached && cached.placement.placementVersion > verdict.placement.placementVersion)
+      throw new SignedPlacementRejectedError("EXPIRED");
+
+    return verdict.placement;
+  }
+
+  protected readCache(orgId: string): OrganizationPlacement | null {
+    const cached = this.cache.get(orgId);
+    if (!cached) return null;
+    if (cached.expiresAt <= this.now()) {
+      this.cache.delete(orgId);
+      return null;
+    }
+    if (this.keyring && cached.token !== null) {
+      const verdict = verifyPlacement(cached.token, this.keyring, this.now());
+      if (!verdict.ok) {
+        this.cache.delete(orgId);
+        return null;
+      }
+      return verdict.placement;
+    }
+    return cached.placement;
+  }
+
+  protected writeCache(orgId: string, placement: OrganizationPlacement): void {
+    const expiresAt = this.now() + PLACEMENT_CACHE_TTL_MS;
+    this.cache.set(orgId, {
+      placement,
+      expiresAt,
+      token: this.keyring
+        ? signPlacement(placement, expiresAt, this.keyring.current)
+        : null,
+    });
+  }
+
+  protected async resolvePlacement(orgId: string): Promise<OrganizationPlacement> {
+    const raw = await this.lookup(orgId);
+
+    if (raw === null)
+      throw new Error(
+        `[region] organisation ${orgId} has no region. It must be placed before its data can be reached.`,
+      );
+
+    const region = typeof raw === "string" ? raw : raw.region;
+
+    if (!isKnownRegion(this.topology, region))
+      throw new Error(
+        `[region] organisation ${orgId} is placed in "${region}", which this deployment does not serve. ` +
+          `Configured: ${this.keys.join(", ") || "none"}.`,
+      );
+
+    const binding = this.bindingFor(region);
+    const placement =
+      typeof raw === "string"
+        ? placementFromRegion(orgId, region, binding.definition.storage.region)
+        : raw;
+
+    if (placement.cellId !== binding.definition.cell.cellId)
+      throw new Error(
+        `[region] organisation ${orgId} is placed in cell "${placement.cellId}", but region ` +
+          `"${region}" here is cell "${binding.definition.cell.cellId}". Serving it would mean ` +
+          `two cells owning one organisation.`,
+      );
+
+    return placement;
   }
 }
 
@@ -122,15 +317,9 @@ export function hasRegionRegistry(): boolean {
 }
 
 /**
- * The region a newly created organisation is placed in.
- *
- * Every creation path calls this rather than writing a literal, so placement has
- * one rule. Outside a booted application (unit tests, seeds) it falls back to the
- * documented default, which matches both PRIMARY_REGION's default and the value
- * the migration backfills onto existing rows.
+ * The fallback region outside a booted application (unit tests, seeds). It
+ * matches both PRIMARY_REGION's default and the value the migration backfills
+ * onto existing rows. Creation paths call `chooseRegionForNewOrg`, which selects
+ * a measured cell and records why.
  */
 export const DEFAULT_REGION = "primary";
-
-export function regionForNewOrg(): string {
-  return hasRegionRegistry() ? getRegionRegistry().primary : DEFAULT_REGION;
-}

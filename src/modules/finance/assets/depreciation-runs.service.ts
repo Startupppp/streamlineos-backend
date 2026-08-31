@@ -16,6 +16,7 @@ import {
 } from "../../../db/schema/accounting/finance-assets";
 import { ledgerAccounts, journalLines } from "../../../db/schema/accounting/accounting";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { systemActor } from "../../../common/auth/system-actor";
 import type { ListRunsQuery } from "./dto/assets.schemas";
 
 @Injectable()
@@ -348,14 +349,7 @@ export class DepreciationRunsService {
 
     for (const { orgId: oId, periodKey } of toRun) {
       try {
-        const systemUser: CurrentUserContext = {
-          userId: "system",
-          orgId: oId,
-          role: "SYSTEM",
-          isOrgOwner: false,
-          tokenScopes: null,
-          sessionId: "cron",
-        };
+        const systemUser = systemActor("finance.depreciation-run.execute", oId);
         const run = await this.runDepreciation(systemUser, periodKey);
         results.push({ orgId: oId, periodKey, runId: run?.id });
       } catch (error) {

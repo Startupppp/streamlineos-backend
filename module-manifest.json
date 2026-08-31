@@ -1,0 +1,351 @@
+{
+  "modules": [
+    {
+      "administersNamespaces": [],
+      "administrable": true,
+      "cacheNamespaces": [
+        "fin",
+        "invoices"
+      ],
+      "displayName": "Accounting",
+      "id": "accounting",
+      "ladder": "delegable",
+      "moduleFolder": "accounting",
+      "planGated": true,
+      "productKey": "finance",
+      "publicExposure": false,
+      "route": "/accounting",
+      "schemaFolder": "accounting"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": false,
+      "cacheNamespaces": [],
+      "displayName": "Billing",
+      "id": "billing",
+      "ladder": "platform-admin",
+      "moduleFolder": "billing",
+      "planGated": false,
+      "productKey": null,
+      "publicExposure": true,
+      "route": null,
+      "schemaFolder": "billing"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": false,
+      "cacheNamespaces": [],
+      "displayName": "Blog",
+      "id": "blog",
+      "ladder": "delegable",
+      "moduleFolder": "blog",
+      "planGated": false,
+      "productKey": null,
+      "publicExposure": true,
+      "route": "/blog",
+      "schemaFolder": "blog"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": true,
+      "cacheNamespaces": [
+        "projects",
+        "tickets"
+      ],
+      "displayName": "Build",
+      "id": "build",
+      "ladder": "delegable",
+      "moduleFolder": "build",
+      "planGated": true,
+      "productKey": "build",
+      "publicExposure": true,
+      "route": "/build",
+      "schemaFolder": "build"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": false,
+      "cacheNamespaces": [
+        "calendar"
+      ],
+      "displayName": "Calendar",
+      "id": "calendar",
+      "ladder": "universal",
+      "moduleFolder": "calendar",
+      "planGated": false,
+      "productKey": null,
+      "publicExposure": false,
+      "route": "/calendar",
+      "schemaFolder": "calendar"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": true,
+      "cacheNamespaces": [],
+      "displayName": "Chat",
+      "id": "chat",
+      "ladder": "universal",
+      "moduleFolder": "chat",
+      "planGated": false,
+      "productKey": null,
+      "publicExposure": false,
+      "route": "/chat",
+      "schemaFolder": "chat"
+    },
+    {
+      "administersNamespaces": [
+        "party"
+      ],
+      "administrable": true,
+      "cacheNamespaces": [
+        "leads",
+        "crm",
+        "deals",
+        "clients",
+        "sales",
+        "ce",
+        "targets",
+        "quotes"
+      ],
+      "displayName": "CRM",
+      "id": "crm",
+      "ladder": "delegable",
+      "moduleFolder": "crm",
+      "planGated": true,
+      "productKey": "crm",
+      "publicExposure": true,
+      "route": "/crm",
+      "schemaFolder": "crm"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": false,
+      "cacheNamespaces": [],
+      "displayName": "Directory",
+      "id": "directory",
+      "ladder": "delegable",
+      "moduleFolder": "directory",
+      "planGated": false,
+      "productKey": null,
+      "publicExposure": false,
+      "route": "/directory",
+      "schemaFolder": "directory"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": true,
+      "cacheNamespaces": [],
+      "displayName": "Feedbucket",
+      "id": "feedbucket",
+      "ladder": "delegable",
+      "moduleFolder": "feedbucket",
+      "planGated": true,
+      "productKey": null,
+      "publicExposure": true,
+      "route": null,
+      "schemaFolder": null
+    },
+    {
+      "administersNamespaces": [
+        "chat",
+        "mail",
+        "calendar",
+        "notifications"
+      ],
+      "administrable": false,
+      "cacheNamespaces": [
+        "dashboard"
+      ],
+      "displayName": "Home",
+      "id": "home",
+      "ladder": "universal",
+      "moduleFolder": "dashboard",
+      "planGated": false,
+      "productKey": "home",
+      "publicExposure": false,
+      "route": "/dashboard",
+      "schemaFolder": null
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": true,
+      "cacheNamespaces": [
+        "hr"
+      ],
+      "displayName": "HR",
+      "id": "hr",
+      "ladder": "delegable",
+      "moduleFolder": "hr",
+      "planGated": true,
+      "productKey": "hrms",
+      "publicExposure": true,
+      "route": "/hr",
+      "schemaFolder": "hr"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": true,
+      "cacheNamespaces": [
+        "inv"
+      ],
+      "displayName": "Inventory",
+      "id": "inventory",
+      "ladder": "delegable",
+      "moduleFolder": "inventory",
+      "planGated": true,
+      "productKey": "inventory",
+      "publicExposure": false,
+      "route": "/inventory",
+      "schemaFolder": "inventory"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": true,
+      "cacheNamespaces": [
+        "kb"
+      ],
+      "displayName": "Knowledge Base",
+      "id": "kb",
+      "ladder": "universal",
+      "moduleFolder": "kb",
+      "planGated": false,
+      "productKey": "documents",
+      "publicExposure": true,
+      "route": "/knowledge",
+      "schemaFolder": "kb"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": false,
+      "cacheNamespaces": [
+        "mail"
+      ],
+      "displayName": "Mail",
+      "id": "mail",
+      "ladder": "universal",
+      "moduleFolder": "mail",
+      "planGated": false,
+      "productKey": null,
+      "publicExposure": false,
+      "route": "/mail",
+      "schemaFolder": "mail"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": false,
+      "cacheNamespaces": [],
+      "displayName": "Notifications",
+      "id": "notifications",
+      "ladder": "universal",
+      "moduleFolder": "notifications",
+      "planGated": false,
+      "productKey": null,
+      "publicExposure": true,
+      "route": "/notifications",
+      "schemaFolder": null
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": true,
+      "cacheNamespaces": [],
+      "displayName": "Payroll",
+      "id": "payroll",
+      "ladder": "delegable",
+      "moduleFolder": "payroll",
+      "planGated": true,
+      "productKey": "payroll",
+      "publicExposure": false,
+      "route": "/payroll",
+      "schemaFolder": "payroll"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": false,
+      "cacheNamespaces": [],
+      "displayName": "Settings",
+      "id": "settings",
+      "ladder": "platform-admin",
+      "moduleFolder": "settings",
+      "planGated": false,
+      "productKey": null,
+      "publicExposure": false,
+      "route": "/settings",
+      "schemaFolder": null
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": true,
+      "cacheNamespaces": [],
+      "displayName": "Sign",
+      "id": "sign",
+      "ladder": "delegable",
+      "moduleFolder": "e-sign",
+      "planGated": true,
+      "productKey": "sign",
+      "publicExposure": true,
+      "route": "/sign",
+      "schemaFolder": "e-sign"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": true,
+      "cacheNamespaces": [
+        "support"
+      ],
+      "displayName": "Support",
+      "id": "support",
+      "ladder": "delegable",
+      "moduleFolder": "support",
+      "planGated": true,
+      "productKey": "helpdesk",
+      "publicExposure": true,
+      "route": "/support",
+      "schemaFolder": "support"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": true,
+      "cacheNamespaces": [],
+      "displayName": "Surveys",
+      "id": "surveys",
+      "ladder": "delegable",
+      "moduleFolder": "surveys",
+      "planGated": true,
+      "productKey": "surveys",
+      "publicExposure": true,
+      "route": "/surveys",
+      "schemaFolder": "surveys"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": true,
+      "cacheNamespaces": [
+        "timesheets"
+      ],
+      "displayName": "Timesheets",
+      "id": "timesheets",
+      "ladder": "delegable",
+      "moduleFolder": "timesheets",
+      "planGated": true,
+      "productKey": "timesheets",
+      "publicExposure": false,
+      "route": "/timesheets",
+      "schemaFolder": "timesheets"
+    },
+    {
+      "administersNamespaces": [],
+      "administrable": false,
+      "cacheNamespaces": [],
+      "displayName": "Workflows",
+      "id": "workflows",
+      "ladder": "delegable",
+      "moduleFolder": "workflows",
+      "planGated": false,
+      "productKey": null,
+      "publicExposure": true,
+      "route": "/workflows",
+      "schemaFolder": null
+    }
+  ],
+  "version": 1
+}

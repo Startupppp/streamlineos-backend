@@ -7,6 +7,8 @@ import {
   uniqueIndex,
   primaryKey,
   unique,
+  index,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
@@ -30,11 +32,16 @@ export const kbTags = pgTable(
 export const kbArticleTags = pgTable(
   "kb_article_tags",
   {
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     articleId: integer("article_id").references(() => kbArticles.id, { onDelete: "cascade" }).notNull(),
     tagId: integer("tag_id").references(() => kbTags.id, { onDelete: "cascade" }).notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.articleId, table.tagId] }),
+    primaryKey({ columns: [table.orgId, table.articleId, table.tagId] }),
+    index("idx_kb_article_tags_org_article").on(table.orgId, table.articleId),
+    index("idx_kb_article_tags_org_tag").on(table.orgId, table.tagId),
+    foreignKey({ columns: [table.orgId, table.articleId], foreignColumns: [kbArticles.orgId, kbArticles.id], name: "fk_kb_article_tags_org_article" }).onDelete("cascade"),
+    foreignKey({ columns: [table.orgId, table.tagId], foreignColumns: [kbTags.orgId, kbTags.id], name: "fk_kb_article_tags_org_tag" }).onDelete("cascade"),
   ],
 );
 

@@ -5,7 +5,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { GrnService } from "./grn.service";
@@ -15,22 +14,11 @@ import {
   type ListGrnInput, type ReverseGrnInput, type CreateGrnDraftInput,
   type UpdateGrnDraftInput, type CancelGrnInput,
 } from "./dto/inv-purchase-orders.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
 
-/**
- * B1. Receiving as a document with a life, not a single irreversible click.
- *
- * The transitions are separate routes rather than one `PATCH { status }`: each
- * is a different authority question later (quality review is the natural place
- * for a second permission when B12 makes inspection mandatory) and a status
- * field on a general update is the shape that lets a client walk a document
- * straight to POSTED past every check the lifecycle exists to impose.
- *
- * All six carry `inventory:purchase-orders:receive`, which is the live key the
- * permission map assigns to `inventory:receiving:*`. Opening a receipt and
- * posting it are not split into two keys here: nothing in the catalogue
- * expresses that distinction today and inventing a key without a backfill
- * migration leaves it held by nobody.
- */
+const grnIdParams = z.object({ grnId: z.coerce.number().int().positive() }).strict();
+
 @RequireModule("inventory")
 @Controller("inventory/goods-receipts")
 @UseGuards(JwtAuthGuard, ModuleGuard)
@@ -43,8 +31,9 @@ export class GrnController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:read")
+  @Validate({ query: listGrnSchema })
   list(
-    @Query(new ZodValidationPipe(listGrnSchema)) filters: ListGrnInput,
+    @Query() filters: ListGrnInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reads.listGrns(u.orgId, u.userId, filters);
@@ -53,6 +42,7 @@ export class GrnController {
   @Get(":grnId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:read")
+  @Validate({ params: grnIdParams })
   get(
     @Param("grnId", ParseIntPipe) grnId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -64,8 +54,9 @@ export class GrnController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.CREATED)
+  @Validate({ body: createGrnDraftSchema })
   createDraft(
-    @Body(new ZodValidationPipe(createGrnDraftSchema)) body: CreateGrnDraftInput,
+    @Body() body: CreateGrnDraftInput,
     @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -75,9 +66,10 @@ export class GrnController {
   @Patch(":grnId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
+  @Validate({ params: grnIdParams, body: updateGrnDraftSchema })
   updateDraft(
     @Param("grnId", ParseIntPipe) grnId: number,
-    @Body(new ZodValidationPipe(updateGrnDraftSchema)) body: UpdateGrnDraftInput,
+    @Body() body: UpdateGrnDraftInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.grns.updateDraft(u.orgId, grnId, u.userId, body);
@@ -87,6 +79,7 @@ export class GrnController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: grnIdParams })
   startCounting(
     @Param("grnId", ParseIntPipe) grnId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -98,6 +91,7 @@ export class GrnController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: grnIdParams })
   submitForQualityReview(
     @Param("grnId", ParseIntPipe) grnId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -109,6 +103,7 @@ export class GrnController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: grnIdParams })
   post(
     @Param("grnId", ParseIntPipe) grnId: number,
     @IdempotencyKey() idempotencyKey: string,
@@ -121,9 +116,10 @@ export class GrnController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: grnIdParams, body: cancelGrnSchema })
   cancel(
     @Param("grnId", ParseIntPipe) grnId: number,
-    @Body(new ZodValidationPipe(cancelGrnSchema)) body: CancelGrnInput,
+    @Body() body: CancelGrnInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.grns.cancelGrn(u.orgId, grnId, u.userId, body);
@@ -133,9 +129,10 @@ export class GrnController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: grnIdParams, body: reverseGrnSchema })
   reverse(
     @Param("grnId", ParseIntPipe) grnId: number,
-    @Body(new ZodValidationPipe(reverseGrnSchema)) body: ReverseGrnInput,
+    @Body() body: ReverseGrnInput,
     @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {

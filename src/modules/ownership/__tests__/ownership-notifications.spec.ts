@@ -3,7 +3,9 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { OrganizationSagaService } from "../../organization/core/lifecycle/organization-saga.service";
 import { OwnershipTransfersService } from "../ownership-transfers.service";
+import { OwnershipTransferExpiryService } from "../ownership-transfer-expiry.service";
 import { OwnershipTransferResponseService } from "../ownership-transfer-response.service";
 
 const ORG = "org-a";
@@ -85,6 +87,7 @@ describe("Ownership transfer notifications", () => {
 
     const moduleRef = await Test.createTestingModule({
       providers: [
+        { provide: OwnershipTransferExpiryService, useValue: { expireStaleTransfers: jest.fn() } },
         OwnershipTransfersService,
         OwnershipTransferResponseService,
         { provide: DRIZZLE, useValue: db },
@@ -94,9 +97,26 @@ describe("Ownership transfer notifications", () => {
           useValue: {
             invalidate: jest.fn().mockResolvedValue(undefined),
             invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
+            invalidateForOrg: jest.fn().mockResolvedValue(undefined),
           },
         },
         { provide: NotificationDispatchService, useValue: { emit } },
+        {
+          provide: OrganizationSagaService,
+          useValue: {
+            begin: jest
+              .fn()
+              .mockResolvedValue({ saga: { sagaId: "saga-notif" }, steps: [] }),
+            runStep: jest
+              .fn()
+              .mockImplementation(
+                (_sagaId: string, _step: string, fn: () => Promise<unknown>) => fn(),
+              ),
+            complete: jest.fn().mockResolvedValue(undefined),
+            compensate: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 

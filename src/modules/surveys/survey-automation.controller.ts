@@ -1,10 +1,11 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import { SurveyAutomationService } from "./survey-automation.service";
 import {
   createAutomationSchema,
@@ -13,6 +14,9 @@ import {
   type PatchAutomationInput,
 } from "./dto/survey-automation.schemas";
 
+const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
+const surveyAndAutomationIdParams = z.object({ surveyId: z.coerce.number().int().positive(), automationId: z.string().min(1) }).strict();
+
 @Controller("surveys/:surveyId/automations")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class SurveyAutomationController {
@@ -20,6 +24,7 @@ export class SurveyAutomationController {
 
   @Get()
   @RequirePermission("surveys:automations:manage")
+  @Validate({ params: surveyIdParams })
   list(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
     return this.automations.list(u.orgId, surveyId);
   }
@@ -27,9 +32,10 @@ export class SurveyAutomationController {
   @Post()
   @HttpCode(201)
   @RequirePermission("surveys:automations:manage")
+  @Validate({ params: surveyIdParams, body: createAutomationSchema })
   create(
     @Param("surveyId", ParseIntPipe) surveyId: number,
-    @Body(new ZodValidationPipe(createAutomationSchema)) body: CreateAutomationInput,
+    @Body() body: CreateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.create(u.orgId, surveyId, body);
@@ -37,10 +43,11 @@ export class SurveyAutomationController {
 
   @Patch(":automationId")
   @RequirePermission("surveys:automations:manage")
+  @Validate({ params: surveyAndAutomationIdParams, body: patchAutomationSchema })
   patch(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("automationId") automationId: string,
-    @Body(new ZodValidationPipe(patchAutomationSchema)) body: PatchAutomationInput,
+    @Body() body: PatchAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.patch(u.orgId, surveyId, automationId, body);
@@ -48,6 +55,7 @@ export class SurveyAutomationController {
 
   @Delete(":automationId")
   @RequirePermission("surveys:automations:manage")
+  @Validate({ params: surveyAndAutomationIdParams })
   remove(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Param("automationId") automationId: string,

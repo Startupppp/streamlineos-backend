@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
@@ -8,7 +7,6 @@ import {
 } from "@nestjs/common";
 import { and, asc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import {
-  organizationMembers,
   projectMembers,
   projects,
   projectTeamAssignments,
@@ -18,6 +16,12 @@ import {
   tickets,
   users,
 } from "../../../db/schema";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
+import type { OrganizationActor } from "../../../common/organization/organization-actor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
@@ -232,20 +236,12 @@ export class ProjectsMembersService {
     await assertProjectOwnership(this.db, orgId, projectId);
     await this.assertCanManageProject(u, projectId);
 
-    const [orgMember] = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, body.userId),
-        ),
-      )
-      .limit(1);
-    if (!orgMember) {
-      throw new BadRequestException(
-        "Cannot add this user to the project — they are not a member of this organization.",
-      );
+    let actor: OrganizationActor;
+    try {
+      actor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId: body.userId });
+    } catch (e) {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
     }
 
     const existing = await this.db.query.projectMembers.findFirst({
@@ -259,7 +255,7 @@ export class ProjectsMembersService {
 
     const [member] = await this.db
       .insert(projectMembers)
-      .values({ orgId, projectId, userId: body.userId, role: body.role })
+      .values({ orgId, projectId, userId: body.userId, membershipId: actor.membershipId, role: body.role })
       .returning();
 
     this.webhooksDispatch.dispatch(orgId, projectId, "member.added", {

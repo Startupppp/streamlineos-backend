@@ -16,7 +16,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { EmailService } from "../../email/email.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { AutomationService } from "../../automation/automation.service";
 import { HrAutomationEngineService } from "../automations/hr-automation-engine.service";
 import { ResignationJobsService } from "./resignation-jobs.service";
@@ -44,7 +44,7 @@ export class ExitWriteService {
   private readonly logger = new Logger(ExitWriteService.name);
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly automation: AutomationService,
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly resignationJobs: ResignationJobsService,
@@ -156,6 +156,8 @@ export class ExitWriteService {
       void this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId).catch(() => undefined);
 
       this.dispatchResignationApproved(
+        orgId,
+        resignationId,
         actor.userId,
         existing.userId,
         existing.lastWorkingDate,
@@ -339,38 +341,22 @@ export class ExitWriteService {
 
       const submittingUser = await this.db.query.users.findFirst({
         where: eq(users.id, actorUserId),
-        columns: { email: true, name: true, designation: true },
+        columns: { email: true, name: true },
       });
 
       const adminUserIds = adminMembers.map((m) => m.userId);
-      const adminUsers = adminUserIds.length
-        ? await this.db
-            .select({ email: users.email, name: users.name })
-            .from(users)
-            .where(inArray(users.id, adminUserIds))
-        : [];
-
       const submissionDate = formatDdMmmYyyy(new Date());
       const lastWorkingDate = formatDdMmmYyyy(new Date(input.lastWorkingDate));
-
-      for (const admin of adminUsers) {
-        if (admin.email && admin.email !== submittingUser?.email) {
-          try {
-            await this.email.sendResignationSubmittedEmail(
-              admin.email,
-              admin.name ?? "HR",
-              submittingUser?.name ?? "Employee",
-              submittingUser?.designation ?? "N/A",
-              submissionDate,
-              lastWorkingDate,
-              noticePeriodDays,
-              input.reason,
-            );
-          } catch (err) {
-            this.logger.warn(`Resignation notification email failed for admin ${admin.email}: ${err instanceof Error ? err.message : String(err)}`);
-          }
-        }
-      }
+      await this.dispatch.emit({
+        eventKey: "hr.resignation.submitted",
+        orgId,
+        actorUserId,
+        targetUserIds: adminUserIds,
+        entityType: "resignation",
+        entityId: String(resignationId),
+        message: `${submittingUser?.name ?? "Employee"} submitted a resignation.`,
+        variables: { employeeName: submittingUser?.name ?? "Employee", submissionDate, lastWorkingDate, noticePeriodDays, reason: input.reason ?? null },
+      });
 
       await this.hrAutomation.emit(orgId, "resignation.submitted", {
         resignationId,
@@ -397,6 +383,8 @@ export class ExitWriteService {
   }
 
   private dispatchResignationApproved(
+    orgId: string,
+    resignationId: number,
     actorUserId: string,
     employeeId: string,
     lastWorkingDate: string | null,
@@ -405,20 +393,21 @@ export class ExitWriteService {
   ): void {
     void (async () => {
       const [employee, approver] = await Promise.all([
-        this.db.query.users.findFirst({ where: eq(users.id, employeeId), columns: { email: true, name: true } }),
+        this.db.query.users.findFirst({ where: eq(users.id, employeeId), columns: { name: true } }),
         this.db.query.users.findFirst({ where: eq(users.id, actorUserId), columns: { name: true } }),
       ]);
-      if (!employee?.email) return;
       const lwd = lastWorkingDate ? new Date(lastWorkingDate) : new Date();
       const sub = submittedAt ?? new Date();
-      await this.email.sendResignationApprovedEmail(
-        employee.email,
-        employee.name ?? "Employee",
-        approver?.name ?? "Approver",
-        formatDdMmmYyyy(lwd),
-        noticePeriodDays ?? 30,
-        formatDdMmmYyyy(sub),
-      );
+      await this.dispatch.emit({
+        eventKey: "hr.resignation.approved",
+        orgId,
+        actorUserId,
+        targetUserIds: [employeeId],
+        entityType: "resignation",
+        entityId: String(resignationId),
+        message: "Your resignation has been approved.",
+        variables: { employeeName: employee?.name ?? "Employee", approverName: approver?.name ?? "Approver", lastWorkingDate: formatDdMmmYyyy(lwd), noticePeriodDays: noticePeriodDays ?? 30, submittedAt: formatDdMmmYyyy(sub) },
+      });
     })().catch(() => undefined);
   }
 

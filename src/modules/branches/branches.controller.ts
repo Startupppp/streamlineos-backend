@@ -12,7 +12,6 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { BranchesService } from "./branches.service";
@@ -22,6 +21,10 @@ import {
   type CreateBranchInput,
   type UpdateBranchInput,
 } from "./dto/branches.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const branchIdParams = z.object({ branchId: z.string().min(1) }).strict();
 
 @Controller("branches")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -36,6 +39,7 @@ export class BranchesController {
 
   @Get(":branchId")
   @RequirePermission("branch:view")
+  @Validate({ params: branchIdParams })
   async getOne(
     @Param("branchId") branchId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -47,8 +51,9 @@ export class BranchesController {
 
   @Post()
   @RequirePermission("branch:create")
+  @Validate({ body: createBranchSchema })
   async create(
-    @Body(new ZodValidationPipe(createBranchSchema)) body: CreateBranchInput,
+    @Body() body: CreateBranchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.branches.create(u.orgId, body);
@@ -56,9 +61,10 @@ export class BranchesController {
 
   @Patch(":branchId")
   @RequirePermission("branch:update")
+  @Validate({ params: branchIdParams, body: updateBranchSchema })
   async update(
     @Param("branchId") branchId: string,
-    @Body(new ZodValidationPipe(updateBranchSchema)) body: UpdateBranchInput,
+    @Body() body: UpdateBranchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.branches.update(u.orgId, branchId, body);
@@ -68,6 +74,7 @@ export class BranchesController {
 
   @Delete(":branchId")
   @RequirePermission("branch:delete")
+  @Validate({ params: branchIdParams })
   async remove(
     @Param("branchId") branchId: string,
     @CurrentUser() u: CurrentUserContext,

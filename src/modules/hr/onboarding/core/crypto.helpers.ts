@@ -67,7 +67,7 @@ export function decrypt(ciphertext: string): string {
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
 }
 
-const bankDetailsDecodeSchema = z.object({
+export const bankDetailsDecodeSchema = z.object({
   accountNumber: z.string(),
   bankName: z.string(),
   branch: z.string(),

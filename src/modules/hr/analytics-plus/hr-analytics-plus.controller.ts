@@ -10,27 +10,30 @@ import {
   UseGuards,
   ForbiddenException,
 } from "@nestjs/common";
-import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { AccessService } from "../../access/access.service";
 import { HrAnalyticsPlusService } from "./hr-analytics-plus.service";
+import {
+  departmentQuerySchema,
+  cycleQuerySchema,
+  drilldownQuerySchema,
+  headcountPlanSchema,
+  updateHeadcountPlanSchema,
+  type DepartmentQuery,
+  type CycleQuery,
+  type DrilldownQuery,
+  type HeadcountPlanInput,
+  type UpdateHeadcountPlanInput,
+} from "./dto/hr-analytics-plus.schemas";
+import { z } from "zod";
 
-const headcountPlanSchema = z.object({
-  fiscalYear: z.number().int().min(2020).max(2050),
-  departmentId: z.string().uuid().optional(),
-  budgetedHeadcount: z.number().int().positive(),
-  budgetedCostCents: z.number().int().positive().optional(),
-  note: z.string().max(500).optional(),
-});
-
-const updatePlanSchema = headcountPlanSchema.partial().omit({ fiscalYear: true });
-
-const drilldownMetricSchema = z.enum(["attrition", "leave", "attendance", "cases"]);
+const planIdParams = z.object({ planId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/analytics-plus")
@@ -43,36 +46,38 @@ export class HrAnalyticsPlusController {
   ) {}
 
   @Get()
+  @Validate({ query: departmentQuerySchema })
   getCommandCenter(
     @CurrentUser() u: CurrentUserContext,
-    @Query("departmentId") departmentId?: string,
+    @Query() query: DepartmentQuery,
   ) {
-    return this.svc.getCommandCenter(u.orgId, departmentId);
+    return this.svc.getCommandCenter(u.orgId, query.departmentId);
   }
 
   @Get("attrition")
+  @Validate({ query: departmentQuerySchema })
   getAttrition(
     @CurrentUser() u: CurrentUserContext,
-    @Query("departmentId") departmentId?: string,
+    @Query() query: DepartmentQuery,
   ) {
-    return this.svc.getAttrition(u.orgId, departmentId);
+    return this.svc.getAttrition(u.orgId, query.departmentId);
   }
 
   @Get("leave-trends")
+  @Validate({ query: departmentQuerySchema })
   getLeaveTrends(
     @CurrentUser() u: CurrentUserContext,
-    @Query("departmentId") departmentId?: string,
+    @Query() query: DepartmentQuery,
   ) {
-    return this.svc.getLeaveTrends(u.orgId, departmentId);
+    return this.svc.getLeaveTrends(u.orgId, query.departmentId);
   }
 
   @Get("payroll-cost")
   async getPayrollCost(@CurrentUser() u: CurrentUserContext) {
     if (!u.isOrgOwner) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:salary:view") && !perms.has("hr:payroll:view")) {
+      if (!perms.has("hr:salary:view") && !perms.has("hr:payroll:view"))
         throw new ForbiddenException("hr:salary:view or hr:payroll:view required");
-      }
     }
     return this.svc.getPayrollCost(u.orgId);
   }
@@ -83,19 +88,21 @@ export class HrAnalyticsPlusController {
   }
 
   @Get("performance-distribution")
+  @Validate({ query: cycleQuerySchema })
   getPerformanceDist(
     @CurrentUser() u: CurrentUserContext,
-    @Query("cycleId", new ParseIntPipe({ optional: true })) cycleId?: number,
+    @Query() query: CycleQuery,
   ) {
-    return this.svc.getPerformanceDistribution(u.orgId, cycleId);
+    return this.svc.getPerformanceDistribution(u.orgId, query.cycleId);
   }
 
   @Get("compliance-gaps")
+  @Validate({ query: departmentQuerySchema })
   getComplianceGaps(
     @CurrentUser() u: CurrentUserContext,
-    @Query("departmentId") departmentId?: string,
+    @Query() query: DepartmentQuery,
   ) {
-    return this.svc.getComplianceGaps(u.orgId, departmentId);
+    return this.svc.getComplianceGaps(u.orgId, query.departmentId);
   }
 
   @Get("metric-definitions")
@@ -104,15 +111,18 @@ export class HrAnalyticsPlusController {
   }
 
   @Get("drilldown")
+  @Validate({ query: drilldownQuerySchema })
   getDrilldown(
     @CurrentUser() u: CurrentUserContext,
-    @Query("metric") metric: string,
-    @Query("page", new ParseIntPipe({ optional: true })) page = 1,
-    @Query("limit", new ParseIntPipe({ optional: true })) limit = 20,
-    @Query("departmentId") departmentId?: string,
+    @Query() query: DrilldownQuery,
   ) {
-    const parsedMetric = drilldownMetricSchema.parse(metric);
-    return this.svc.getDrilldown(u.orgId, parsedMetric, page, Math.min(limit, 100), departmentId);
+    return this.svc.getDrilldown(
+      u.orgId,
+      query.metric,
+      query.page ?? 1,
+      query.limit ?? 20,
+      query.departmentId,
+    );
   }
 
   @Get("workforce/plans")
@@ -123,20 +133,23 @@ export class HrAnalyticsPlusController {
 
   @Post("workforce/plans")
   @RequirePermission("hr:workforce:manage")
-  createPlan(@CurrentUser() u: CurrentUserContext, @Body() body: unknown) {
-    const parsed = headcountPlanSchema.parse(body);
-    return this.svc.createHeadcountPlan(u.orgId, parsed);
+  @Validate({ body: headcountPlanSchema })
+  createPlan(
+    @CurrentUser() u: CurrentUserContext,
+    @Body() body: HeadcountPlanInput,
+  ) {
+    return this.svc.createHeadcountPlan(u.orgId, body);
   }
 
   @Patch("workforce/plans/:planId")
   @RequirePermission("hr:workforce:manage")
+  @Validate({ body: updateHeadcountPlanSchema, params: planIdParams })
   updatePlan(
     @CurrentUser() u: CurrentUserContext,
     @Param("planId", ParseIntPipe) planId: number,
-    @Body() body: unknown,
+    @Body() body: UpdateHeadcountPlanInput,
   ) {
-    const parsed = updatePlanSchema.parse(body);
-    return this.svc.updateHeadcountPlan(u.orgId, planId, parsed);
+    return this.svc.updateHeadcountPlan(u.orgId, planId, body);
   }
 
   @Get("workforce/budget-vs-actual")

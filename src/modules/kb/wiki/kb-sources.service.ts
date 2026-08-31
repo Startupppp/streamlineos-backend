@@ -14,7 +14,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { kbSources } from "../../../db/schema";
 import { StorageService } from "../../storage/storage.service";
 import { validateMagicBytes } from "../../storage/file-signatures";
-import { KbIndexingService } from "../retrieval/kb-indexing.service";
+import { KbAttachmentIndexingService } from "../retrieval/kb-attachment-indexing.service";
 import { isExtractableMime, extractAttachmentText } from "../retrieval/kb-attachment-extract.util";
 import type { CreateKbSourceNoteInput } from "./dto/kb-sources.schemas";
 import { APP_CONFIG } from "../../../config/config.module";
@@ -32,7 +32,7 @@ export class KbSourcesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly storage: StorageService,
-    private readonly indexing: KbIndexingService,
+    private readonly attachmentIndexing: KbAttachmentIndexingService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -164,7 +164,7 @@ export class KbSourcesService {
     if (!rows[0]) {
       throw new NotFoundException("Source not found");
     }
-    await this.indexing.removeSourceChunks(orgId, id);
+    await this.attachmentIndexing.removeSourceChunks(orgId, id);
     return { success: true };
   }
 
@@ -174,7 +174,7 @@ export class KbSourcesService {
     text: string,
   ): Promise<void> {
     try {
-      const count = await this.indexing.indexSource(orgId, sourceId, text);
+      const count = await this.attachmentIndexing.indexSource(orgId, sourceId, text);
       await this.db
         .update(kbSources)
         .set({

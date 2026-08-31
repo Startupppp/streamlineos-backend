@@ -4,6 +4,7 @@ import {
   chatChannelMembers,
   chatChannels,
   chatMessages,
+  organizationMembers,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -15,6 +16,7 @@ import type { CreateChannelInput } from "./dto/chat.schemas";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
+import { resolvePeopleIdentities, subjectKey } from "../directory/person-seam";
 
 export function entityChannelFallbackName(
   entityType: string,
@@ -31,6 +33,18 @@ export class ChatChannelsService {
     private readonly cache: CacheService,
     private readonly entities: EntityReferenceService,
   ) {}
+
+  private async membershipId(orgId: string, userId: string): Promise<number | null> {
+    const row = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    return row?.id ?? null;
+  }
 
   private async resolveEntityChannelDisplayName<
     T extends {
@@ -88,6 +102,8 @@ export class ChatChannelsService {
   }
 
   async listMemberChannelIds(orgId: string, userId: string): Promise<number[]> {
+    const membershipId = await this.membershipId(orgId, userId);
+    if (membershipId === null) return [];
     const rows = await this.db
       .select({ channelId: chatChannels.id })
       .from(chatChannelMembers)
@@ -95,7 +111,7 @@ export class ChatChannelsService {
       .where(
         and(
           eq(chatChannels.orgId, orgId),
-          eq(chatChannelMembers.userId, userId),
+          eq(chatChannelMembers.membershipId, membershipId),
           eq(chatChannels.isArchived, false),
         ),
       );
@@ -118,7 +134,10 @@ export class ChatChannelsService {
         .from(chatChannelMembers)
         .where(
           and(
-            eq(chatChannelMembers.userId, userId),
+            eq(chatChannelMembers.orgId, orgId),
+            actor.membershipId !== undefined
+              ? eq(chatChannelMembers.membershipId, actor.membershipId)
+              : eq(chatChannelMembers.userId, userId),
             archived ? isNotNull(chatChannelMembers.archivedAt) : isNull(chatChannelMembers.archivedAt),
           ),
         );
@@ -153,7 +172,9 @@ export class ChatChannelsService {
               chatChannelMembers,
               and(
                 eq(chatChannelMembers.channelId, chatMessages.channelId),
-                eq(chatChannelMembers.userId, userId),
+                actor.membershipId !== undefined
+                  ? eq(chatChannelMembers.membershipId, actor.membershipId)
+                  : eq(chatChannelMembers.userId, userId),
               ),
             )
             .where(
@@ -173,21 +194,29 @@ export class ChatChannelsService {
         .selectDistinctOn([chatMessages.channelId], {
           channelId: chatMessages.channelId,
           content: chatMessages.content,
-          senderName: users.name,
+          senderId: chatMessages.senderId,
           createdAt: chatMessages.createdAt,
         })
         .from(chatMessages)
-        .leftJoin(users, eq(users.id, chatMessages.senderId))
         .where(
           and(inArray(chatMessages.channelId, channelIds), eq(chatMessages.isDeleted, false)),
         )
         .orderBy(chatMessages.channelId, desc(chatMessages.createdAt));
 
+      const lastMsgSenderIds = [...new Set(lastMessageRows.map((r) => r.senderId).filter((id): id is string => id !== null))];
+      const senderIdentities = await resolvePeopleIdentities(
+        this.db,
+        orgId,
+        lastMsgSenderIds.map((userId) => ({ kind: "user" as const, userId })),
+      );
+
       const lastMsgMap = new Map(
-        lastMessageRows.map((r) => [
-          r.channelId,
-          { content: r.content, senderName: r.senderName, createdAt: r.createdAt },
-        ]),
+        lastMessageRows.map((r) => {
+          const identity = r.senderId ? senderIdentities.get(subjectKey({ kind: "user", userId: r.senderId })) : undefined;
+          const parts = [identity?.firstName, identity?.lastName].filter(Boolean).join(" ");
+          const senderName = identity?.displayName ?? (parts || null);
+          return [r.channelId, { content: r.content, senderName, createdAt: r.createdAt }];
+        }),
       );
 
       const resolutions = await Promise.allSettled(
@@ -212,6 +241,8 @@ export class ChatChannelsService {
   }
 
   async listPublicChannels(orgId: string, userId: string) {
+    const currentMembershipId = await this.membershipId(orgId, userId);
+    if (currentMembershipId === null) return [];
     const publicChannels = await this.db.query.chatChannels.findMany({
       where: and(
         eq(chatChannels.orgId, orgId),
@@ -222,7 +253,7 @@ export class ChatChannelsService {
       limit: 100,
       with: {
         members: {
-          columns: { userId: true },
+          columns: { userId: true, membershipId: true },
         },
       },
     });
@@ -234,13 +265,18 @@ export class ChatChannelsService {
       avatarUrl: ch.avatarUrl,
       type: ch.type,
       memberCount: ch.members.length,
-      isMember: ch.members.some((m) => m.userId === userId),
+      isMember: ch.members.some((m) =>
+        m.membershipId === currentMembershipId ||
+        (m.membershipId === null && m.userId === userId),
+      ),
       createdAt: ch.createdAt,
       lastMessageAt: ch.lastMessageAt,
     }));
   }
 
   async createChannel(orgId: string, userId: string, body: CreateChannelInput) {
+    const creatorMembershipId = await this.membershipId(orgId, userId);
+    if (creatorMembershipId === null) throw new NotFoundException("Organization membership not found");
     if (body.type === "DIRECT") {
       const { targetUserId } = body;
       const isSelfDm = targetUserId === userId;
@@ -282,6 +318,10 @@ export class ChatChannelsService {
           columns: { name: true },
         }),
       ]);
+      const targetMembershipId = isSelfDm
+        ? creatorMembershipId
+        : (await this.membershipId(orgId, targetUserId));
+      if (targetMembershipId === null) throw new NotFoundException("User not found in this organization");
 
       const channel = await this.db.transaction(async (tx) => {
         const [created] = await tx
@@ -293,18 +333,20 @@ export class ChatChannelsService {
               : `${currentUser?.name ?? "User"} & ${targetUser?.name ?? "User"}`,
             type: "DIRECT",
             createdBy: userId,
+            createdByMembershipId: creatorMembershipId,
           })
           .returning();
 
-        await tx.insert(chatChannelMembers).values(
+      await tx.insert(chatChannelMembers).values(
           isSelfDm
-            ? [{ orgId, channelId: created.id, userId, role: "MEMBER" }]
+            ? [{ orgId, channelId: created.id, userId, membershipId: creatorMembershipId, role: "MEMBER" }]
             : [
-                { orgId, channelId: created.id, userId, role: "MEMBER" },
+                { orgId, channelId: created.id, userId, membershipId: creatorMembershipId, role: "MEMBER" },
                 {
                   orgId,
                   channelId: created.id,
                   userId: targetUserId,
+                  membershipId: targetMembershipId,
                   role: "MEMBER",
                 },
               ],
@@ -318,6 +360,12 @@ export class ChatChannelsService {
 
     const { name, description, avatarUrl, memberIds, entityType, entityId } = body;
     const allMembers = [...new Set([userId, ...memberIds])];
+    const memberRows = await this.db
+      .select({ userId: organizationMembers.userId, membershipId: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE"), inArray(organizationMembers.userId, allMembers)));
+    const membershipByUser = new Map(memberRows.map((row) => [row.userId, row.membershipId]));
+    if (allMembers.some((id) => !membershipByUser.has(id))) throw new NotFoundException("User not found in this organization");
     const channelType = body.type;
     const isPrivate = channelType === "PRIVATE";
 
@@ -335,6 +383,7 @@ export class ChatChannelsService {
           description,
           avatarUrl,
           createdBy: userId,
+          createdByMembershipId: creatorMembershipId,
           isPrivate,
           ...(entityType ? { entityType } : {}),
           ...(entityId ? { entityId } : {}),
@@ -346,6 +395,7 @@ export class ChatChannelsService {
           orgId,
           channelId: created.id,
           userId: uid,
+          membershipId: membershipByUser.get(uid),
           role: uid === userId ? "ADMIN" : "MEMBER",
         })),
       );
@@ -395,6 +445,7 @@ export class ChatChannelsService {
           name: resolution.card.title,
           type: "GROUP",
           createdBy: actor.userId,
+          ...(actor.membershipId === undefined ? {} : { createdByMembershipId: actor.membershipId }),
           entityType,
           entityId,
         })
@@ -404,6 +455,7 @@ export class ChatChannelsService {
         orgId: actor.orgId,
         channelId: created.id,
         userId: actor.userId,
+        ...(actor.membershipId === undefined ? {} : { membershipId: actor.membershipId }),
         role: "ADMIN",
       });
 

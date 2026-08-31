@@ -2,7 +2,10 @@ import { Injectable } from "@nestjs/common";
 import type { InviteActor } from "./invitations.service";
 import { OrgProfileService } from "./org-profile.service";
 import { OrgMembershipService } from "./org-membership.service";
+import { OrgMembershipStatusService } from "./org-membership-status.service";
+import { OrgMemberDepartureService } from "./org-member-departure.service";
 import { OrgLifecycleService } from "./org-lifecycle.service";
+import { OrgPurgeService } from "./org-purge.service";
 import type {
   CreateOrganizationInput,
   ListMembersInput,
@@ -13,7 +16,10 @@ export class OrganizationService {
   constructor(
     private readonly orgProfile: OrgProfileService,
     private readonly orgMembership: OrgMembershipService,
+    private readonly orgMembershipStatus: OrgMembershipStatusService,
+    private readonly orgMemberDeparture: OrgMemberDepartureService,
     private readonly orgLifecycle: OrgLifecycleService,
+    private readonly orgPurge: OrgPurgeService,
   ) {}
 
   async listUserOrganizations(userId: string) {
@@ -37,15 +43,15 @@ export class OrganizationService {
   }
 
   async removeMember(orgId: string, actorUserId: string, memberUserId: string) {
-    return this.orgMembership.removeMember(orgId, actorUserId, memberUserId);
+    return this.orgMemberDeparture.removeMember(orgId, actorUserId, memberUserId);
   }
 
   async suspendMember(orgId: string, actorUserId: string, memberUserId: string) {
-    return this.orgMembership.suspendMember(orgId, actorUserId, memberUserId);
+    return this.orgMembershipStatus.suspendMember(orgId, actorUserId, memberUserId);
   }
 
   async reactivateMember(orgId: string, actorUserId: string, memberUserId: string) {
-    return this.orgMembership.reactivateMember(orgId, actorUserId, memberUserId);
+    return this.orgMembershipStatus.reactivateMember(orgId, actorUserId, memberUserId);
   }
 
   async updateMemberRole(
@@ -58,7 +64,7 @@ export class OrganizationService {
   }
 
   async leaveOrg(orgId: string, userId: string) {
-    return this.orgMembership.leaveOrg(orgId, userId);
+    return this.orgMemberDeparture.leaveOrg(orgId, userId);
   }
 
   async listArchivedOwnedOrganizations(userId: string) {
@@ -74,7 +80,7 @@ export class OrganizationService {
   }
 
   async deleteOrg(orgId: string, userId: string, confirmation: string) {
-    return this.orgLifecycle.deleteOrg(orgId, userId, confirmation);
+    return this.orgPurge.deleteOrg(orgId, userId, confirmation);
   }
 
   async schedulePurge(
@@ -83,10 +89,10 @@ export class OrganizationService {
     scheduledForDays: number,
     reason: string,
   ) {
-    return this.orgLifecycle.schedulePurge(orgId, actorUserId, scheduledForDays, reason);
+    return this.orgPurge.schedulePurge(orgId, actorUserId, scheduledForDays, reason);
   }
 
   async cancelPurge(orgId: string, actorUserId: string) {
-    return this.orgLifecycle.cancelPurge(orgId, actorUserId);
+    return this.orgPurge.cancelPurge(orgId, actorUserId);
   }
 }

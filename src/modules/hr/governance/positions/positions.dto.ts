@@ -1,15 +1,16 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const paginationSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 });
 
 export const createPositionSchema = z.object({
   title: z.string().min(1).max(300),
   departmentId: z.string().uuid().optional(),
   jobLevelId: z.number().int().positive().optional(),
-  status: z.enum(["open", "filled", "frozen", "future"]),
+  status: z.string().min(1).max(100),
   budgetedCostCents: z.number().int().positive().optional(),
   effectiveFrom: z.string().min(1),
   incumbentUserId: z.string().optional(),
@@ -19,7 +20,7 @@ export const createPositionSchema = z.object({
 export const updatePositionSchema = createPositionSchema.partial();
 
 export const listPositionsSchema = paginationSchema.extend({
-  status: z.enum(["open", "filled", "frozen", "future"]).optional(),
+  status: z.string().min(1).max(100).optional(),
   departmentId: z.string().uuid().optional(),
 });
 

@@ -15,9 +15,12 @@ import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decora
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../../common/validation/validate.decorator";
 import { LlmService } from "../providers/llm.service";
-import { HrAiService } from "../services/hr-ai.service";
+import { HrPerformanceAiService } from "../services/hr-performance-ai.service";
+import { HrRecruitmentAiService } from "../services/hr-recruitment-ai.service";
+import { HrPolicyAiService } from "../services/hr-policy-ai.service";
+import { HrHelpdeskAiService } from "../services/hr-helpdesk-ai.service";
 import { PlanLimitsService } from "../../../billing/core/plan-limits.service";
 import {
   acceptCandidateScoreSchema,
@@ -52,7 +55,10 @@ const ADVISORY_DISCLAIMER = "AI estimate only. Human decision required.";
 export class HrAiController {
   constructor(
     private readonly llm: LlmService,
-    private readonly hr: HrAiService,
+    private readonly hrPerformance: HrPerformanceAiService,
+    private readonly hrRecruitment: HrRecruitmentAiService,
+    private readonly hrPolicy: HrPolicyAiService,
+    private readonly hrHelpdesk: HrHelpdeskAiService,
     private readonly planLimits: PlanLimitsService,
   ) {}
 
@@ -62,46 +68,50 @@ export class HrAiController {
 
   @Post("attrition-risk")
   @RequirePermission("hr:employees:manage")
+  @Validate({ body: attritionRiskSchema })
   async attritionRisk(
-    @Body(new ZodValidationPipe(attritionRiskSchema)) body: AttritionRiskInput,
+    @Body() body: AttritionRiskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
-    const result = await this.hr.analyzeAttritionRisk(u.orgId, body.userId);
+    const result = await this.hrPerformance.analyzeAttritionRisk(u.orgId, body.userId);
     if (!result) throw new NotFoundException("Employee not found or analysis failed");
     return { ...result, advisory: true, disclaimer: ADVISORY_DISCLAIMER };
   }
 
   @Post("generate-review")
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: generateReviewSchema })
   async generateReview(
-    @Body(new ZodValidationPipe(generateReviewSchema)) body: GenerateReviewInput,
+    @Body() body: GenerateReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
-    const result = await this.hr.generateReview(u.orgId, body.userId, body.periodStart, body.periodEnd);
+    const result = await this.hrPerformance.generateReview(u.orgId, body.userId, body.periodStart, body.periodEnd);
     if (!result) throw new NotFoundException("Employee not found or review generation failed");
     return { ...result, advisory: true, disclaimer: "Draft only — requires human review before any official use." };
   }
 
   @Post("generate-jd")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ body: generateJdSchema })
   generateJd(
-    @Body(new ZodValidationPipe(generateJdSchema)) body: GenerateJdInput,
+    @Body() body: GenerateJdInput,
   ) {
     this.ensureLlm("AI is not configured. Set OPENAI_API_KEY.");
-    return this.hr.generateJd(body);
+    return this.hrRecruitment.generateJd(body);
   }
 
   @Post("score-candidate")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ body: scoreCandidateSchema })
   async scoreCandidate(
-    @Body(new ZodValidationPipe(scoreCandidateSchema)) body: ScoreCandidateInput,
+    @Body() body: ScoreCandidateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.candidate-scoring");
     this.ensureLlm("AI scoring is not configured. Set OPENAI_API_KEY.");
-    const result = await this.hr.scoreCandidate(u.orgId, body.candidateId, body.jobId);
+    const result = await this.hrRecruitment.scoreCandidate(u.orgId, body.candidateId, body.jobId);
     if (!result) throw new NotFoundException("Candidate not found or scoring failed");
     return {
       ...result,
@@ -112,8 +122,9 @@ export class HrAiController {
 
   @Post("helpdesk-reply")
   @RequirePermission("hr:helpdesk:manage")
+  @Validate({ body: helpdeskReplySchema })
   async helpdeskReply(
-    @Body(new ZodValidationPipe(helpdeskReplySchema)) body: HelpdeskReplyInput,
+    @Body() body: HelpdeskReplyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
@@ -121,7 +132,7 @@ export class HrAiController {
 
     let result: HelpdeskReplyResult | null;
     try {
-      result = await this.hr.suggestHelpdeskReply(u.orgId, body.ticketId);
+      result = await this.hrHelpdesk.suggestHelpdeskReply(u.orgId, body.ticketId);
     } catch {
       throw new ServiceUnavailableException("Failed to generate AI reply. Please try again later.");
     }
@@ -132,41 +143,44 @@ export class HrAiController {
   @Get("hr/policy-qa/capabilities")
   @RequirePermission("hr:policies:view")
   policyQaCapabilities() {
-    return this.hr.policyQaCapabilities();
+    return this.hrPolicy.policyQaCapabilities();
   }
 
   @Post("hr/policy-qa")
   @RequirePermission("hr:policies:view")
+  @Validate({ body: policyQaSchema })
   async policyQa(
-    @Body(new ZodValidationPipe(policyQaSchema)) body: PolicyQaInput,
+    @Body() body: PolicyQaInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm("AI policy Q&A is not configured.");
-    return this.hr.policyQa(u.orgId, u.userId, body.question);
+    return this.hrPolicy.policyQa(u.orgId, u.userId, body.question);
   }
 
   @Post("hr/interview-kit")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ body: interviewKitSchema })
   async interviewKit(
-    @Body(new ZodValidationPipe(interviewKitSchema)) body: InterviewKitInput,
+    @Body() body: InterviewKitInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.review-generation");
     this.ensureLlm("AI interview kit is not configured.");
-    const result = await this.hr.generateInterviewKit(u.orgId, body.jobPostingId);
+    const result = await this.hrRecruitment.generateInterviewKit(u.orgId, body.jobPostingId);
     if (!result) throw new NotFoundException("Job posting not found");
     return { ...result, advisory: true, disclaimer: "Draft only. Review and customize before use." };
   }
 
   @Post("hr/letter-draft")
   @RequirePermission("hr:employees:manage")
+  @Validate({ body: letterDraftSchema })
   async letterDraft(
-    @Body(new ZodValidationPipe(letterDraftSchema)) body: LetterDraftInput,
+    @Body() body: LetterDraftInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.review-generation");
     this.ensureLlm("AI letter drafting is not configured.");
-    const result = await this.hr.draftLetter(u.orgId, u.userId, body.userId, body.letterType, body.details ?? null);
+    const result = await this.hrHelpdesk.draftLetter(u.orgId, u.userId, body.userId, body.letterType, body.details ?? null);
     if (!result) throw new NotFoundException("Employee not found");
     return {
       ...result,
@@ -177,12 +191,13 @@ export class HrAiController {
 
   @Post("hr/interview-notes-summary")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ body: interviewNotesSummarySchema })
   async interviewNotesSummary(
-    @Body(new ZodValidationPipe(interviewNotesSummarySchema)) body: InterviewNotesSummaryInput,
+    @Body() body: InterviewNotesSummaryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm("AI interview summary is not configured.");
-    const result = await this.hr.summarizeInterviewNotes(u.orgId, body.candidateId, body.jobPostingId);
+    const result = await this.hrRecruitment.summarizeInterviewNotes(u.orgId, body.candidateId, body.jobPostingId);
     if (!result) throw new NotFoundException("No interview notes found for this candidate");
     return {
       ...result,
@@ -193,12 +208,13 @@ export class HrAiController {
 
   @Post("hr/accept-candidate-score")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ body: acceptCandidateScoreSchema })
   async acceptCandidateScore(
-    @Body(new ZodValidationPipe(acceptCandidateScoreSchema)) body: AcceptCandidateScoreInput,
+    @Body() body: AcceptCandidateScoreInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.candidate-scoring");
     this.ensureLlm("AI scoring is not configured.");
-    return this.hr.acceptCandidateScore(u.orgId, body.candidateId, body.aiScore);
+    return this.hrRecruitment.acceptCandidateScore(u.orgId, body.candidateId, body.aiScore);
   }
 }

@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listTeamsQuerySchema = z.object({
-  page: z.coerce.number().int().positive().optional().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).optional().default(50),
+  page: pageNumberField,
+  pageSize: pageSizeField(50),
   search: z.string().optional(),
 });
 
@@ -32,8 +33,8 @@ export const addTeamMemberSchema = z.object({
 });
 
 export const listTeamMembersQuerySchema = z.object({
-  page: z.coerce.number().int().positive().optional().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).optional().default(50),
+  page: pageNumberField,
+  pageSize: pageSizeField(50),
 });
 
 export const updateTeamMemberRoleSchema = z.object({

@@ -1,11 +1,9 @@
-import { Controller, Get, Post, Patch, Delete, Param, ParseIntPipe, Query, Body, UseGuards, HttpCode, HttpStatus } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Delete, Param, ParseIntPipe, Query, Body, UseGuards, HttpCode, HttpStatus, Headers } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvReplenishmentService } from "./inv-replenishment.service";
@@ -21,6 +19,10 @@ import {
   type GeneratePoInput,
   type SuggestionsQueryInput,
 } from "./dto/replenishment.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/replenishment")
@@ -31,8 +33,9 @@ export class InvReplenishmentController {
   @Get("rules")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
+  @Validate({ query: listRulesSchema })
   listRules(
-    @Query(new ZodValidationPipe(listRulesSchema)) filters: ListRulesInput,
+    @Query() filters: ListRulesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.replenishment.listRules(u.orgId, filters);
@@ -41,8 +44,9 @@ export class InvReplenishmentController {
   @Post("rules")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
+  @Validate({ body: createRuleSchema })
   createRule(
-    @Body(new ZodValidationPipe(createRuleSchema)) body: CreateRuleInput,
+    @Body() body: CreateRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.replenishment.createRule(u.orgId, body);
@@ -51,9 +55,10 @@ export class InvReplenishmentController {
   @Patch("rules/:ruleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
+  @Validate({ params: ruleIdParams, body: updateRuleSchema })
   updateRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Body(new ZodValidationPipe(updateRuleSchema)) body: UpdateRuleInput,
+    @Body() body: UpdateRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.replenishment.updateRule(u.orgId, ruleId, body);
@@ -63,6 +68,7 @@ export class InvReplenishmentController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: ruleIdParams })
   deleteRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -73,8 +79,9 @@ export class InvReplenishmentController {
   @Get("suggestions")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
+  @Validate({ query: suggestionsQuerySchema })
   getSuggestions(
-    @Query(new ZodValidationPipe(suggestionsQuerySchema)) filters: SuggestionsQueryInput,
+    @Query() filters: SuggestionsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.replenishment.getSuggestions(u.orgId, filters);
@@ -83,9 +90,10 @@ export class InvReplenishmentController {
   @Post("suggestions/generate-po")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:create")
+  @Validate({ body: generatePoSchema })
   generatePo(
-    @IdempotencyKey() idempotencyKey: string,
-    @Body(new ZodValidationPipe(generatePoSchema)) body: GeneratePoInput,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Body() body: GeneratePoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.replenishment.generatePo(u.orgId, u.userId, body, idempotencyKey);

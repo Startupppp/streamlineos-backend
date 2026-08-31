@@ -22,27 +22,8 @@ import type {
   CalendarEventSource,
   CalendarSourceContext,
 } from "../calendar/calendar-event-source";
-
-const WEEKDAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
-
-function dateOnly(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-
-function dateAtNoon(date: string): Date {
-  return new Date(`${date}T12:00:00.000Z`);
-}
-
-function enumerateDates(start: string, end: string): string[] {
-  const dates: string[] = [];
-  const current = new Date(`${start}T00:00:00.000Z`);
-  const last = new Date(`${end}T00:00:00.000Z`);
-  while (current <= last) {
-    dates.push(current.toISOString().slice(0, 10));
-    current.setUTCDate(current.getUTCDate() + 1);
-  }
-  return dates;
-}
+import { EmploymentFactsService } from "../directory/employment-facts.service";
+import { WEEKDAY_NAMES, dateOnly, dateAtNoon, enumerateDates, loadAttendanceOnly } from "./hr-calendar-sub-sources";
 
 @Injectable()
 export class HrCalendarSource implements CalendarEventSource {
@@ -53,111 +34,16 @@ export class HrCalendarSource implements CalendarEventSource {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly attendancePolicy: AttendancePolicyService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
-  /**
-   * The registry owns source selection. Granular HR adapters use this method
-   * so disabling leaves or interviews does not invoke the aggregate loader.
-   * Attendance retains the aggregate calculation because absence/WFH status
-   * depends on the same attendance policy projection.
-   */
   async loadSource(
     ctx: CalendarSourceContext,
     source: "leave" | "interview" | "attendance",
   ): Promise<CalendarEventProjection[]> {
     if (source === "leave") return this.loadLeaves(ctx);
     if (source === "interview") return this.loadInterviews(ctx);
-    return this.loadAttendanceOnly(ctx);
-  }
-
-  /** Attendance projection is intentionally independent of the leave/interview loaders. */
-  private async loadAttendanceOnly(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
-    const startStr = dateOnly(ctx.start);
-    const endStr = dateOnly(ctx.end);
-    const policyDate = dateOnly(ctx.end.getTime() < Date.now() ? ctx.end : new Date());
-    const [attendanceData, wfhData, organizationData, attendanceRules] = await Promise.all([
-      this.db
-        .select({
-          id: attendance.id,
-          date: attendance.date,
-          checkIn: attendance.checkIn,
-          checkOut: attendance.checkOut,
-          status: attendance.status,
-          workHours: attendance.workHours,
-          breakHours: attendance.breakHours,
-          createdAt: attendance.createdAt,
-        })
-        .from(attendance)
-        .where(and(
-          eq(attendance.orgId, ctx.orgId),
-          eq(attendance.userId, ctx.userId),
-          gte(attendance.date, startStr),
-          lte(attendance.date, endStr),
-        ))
-        .orderBy(desc(attendance.createdAt)),
-      this.db
-        .select({ id: wfhRequests.id, date: wfhRequests.date })
-        .from(wfhRequests)
-        .where(and(
-          eq(wfhRequests.orgId, ctx.orgId),
-          eq(wfhRequests.userId, ctx.userId),
-          eq(wfhRequests.status, "APPROVED"),
-          gte(wfhRequests.date, startStr),
-          lte(wfhRequests.date, endStr),
-        )),
-      this.db
-        .select({ timezone: organizations.timezone })
-        .from(organizations)
-        .where(eq(organizations.id, ctx.orgId))
-        .limit(1),
-      this.attendancePolicy.getAttendanceRules(ctx.orgId, ctx.userId, policyDate),
-    ]);
-
-    const timezone = organizationData[0]?.timezone ?? "Asia/Kolkata";
-    const today = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
-    const wfhDates = new Set(wfhData.map((row) => row.date));
-    type AttendanceLog = (typeof attendanceData)[number];
-    const byDate = new Map<string, AttendanceLog[]>();
-    for (const log of attendanceData) byDate.set(log.date, [...(byDate.get(log.date) ?? []), log]);
-
-    return [...byDate.entries()].map(([date, logs]) => {
-      const latest = logs.reduce((current, log) => (log.createdAt > current.createdAt ? log : current));
-      const statuses = new Set(logs.map((log) => log.status?.toUpperCase()).filter((value): value is string => Boolean(value)));
-      const open = logs.some((log) => !log.checkOut);
-      const workedMinutes = Math.round(logs.reduce(
-        (total, log) => total + Math.max(0, Number(log.workHours ?? 0) - Number(log.breakHours ?? 0)),
-        0,
-      ) * 60);
-      const past = date < today;
-      let status: "ABSENT" | "HALF_DAY" | "LATE" | "MISSING_CHECKOUT" | "PRESENT" = "PRESENT";
-      if (statuses.has("ABSENT")) status = "ABSENT";
-      else if (statuses.has("HALF_DAY")) status = "HALF_DAY";
-      else if (statuses.has("LATE")) status = "LATE";
-      else if (open && past) status = "MISSING_CHECKOUT";
-      else if (!open && past) {
-        if (workedMinutes <= attendanceRules.absentThresholdMinutes) status = "ABSENT";
-        else if (workedMinutes < attendanceRules.halfDayThresholdMinutes) status = "HALF_DAY";
-      }
-      const statusLabel = status === "HALF_DAY" ? "Half day" : status === "ABSENT" ? "Absent" : status === "LATE" ? "Late" : status === "MISSING_CHECKOUT" ? "Missing checkout" : "Present";
-      const netHours = workedMinutes / 60;
-      const wfh = wfhDates.has(date) || statuses.has("WFH");
-      const onBreak = statuses.has("ON_BREAK");
-      const description = [
-        wfh ? "Work from home" : null,
-        onBreak ? "Currently on break" : null,
-        netHours > 0 ? `${netHours.toFixed(1)} hours recorded` : null,
-      ].filter((value): value is string => Boolean(value)).join(" - ");
-      return {
-        id: `attendance-${latest.id}`,
-        title: `${wfh ? "WFH" : "Attendance"} - ${statusLabel}${netHours > 0 ? ` - ${netHours.toFixed(1)}h` : ""}`,
-        start: dateAtNoon(date),
-        end: dateAtNoon(date),
-        allDay: true,
-        color: status === "ABSENT" ? "red" : status === "HALF_DAY" || status === "LATE" || status === "MISSING_CHECKOUT" || onBreak ? "yellow" : wfh ? "blue" : "green",
-        category: "attendance",
-        meta: { source: "attendance", description: description || null },
-      };
-    });
+    return loadAttendanceOnly(this.db, this.attendancePolicy, ctx);
   }
 
   private async loadLeaves(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
@@ -259,6 +145,7 @@ export class HrCalendarSource implements CalendarEventSource {
       attendanceRules,
       shiftRosterRules,
       membershipData,
+      employmentFacts,
     ] = await Promise.all([
       this.db
         .select({
@@ -381,10 +268,8 @@ export class HrCalendarSource implements CalendarEventSource {
         .select({
           joinedAt: organizationMembers.joinedAt,
           activatedAt: organizationMembers.activatedAt,
-          joiningDate: users.joiningDate,
         })
         .from(organizationMembers)
-        .innerJoin(users, eq(users.id, organizationMembers.userId))
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
@@ -392,6 +277,8 @@ export class HrCalendarSource implements CalendarEventSource {
           ),
         )
         .limit(1),
+
+      this.employment.getFacts(orgId, userId),
     ]);
 
     const result: CalendarEventProjection[] = [];
@@ -438,7 +325,7 @@ export class HrCalendarSource implements CalendarEventSource {
     const today = formatInTimeZone(new Date(), orgTimezone, "yyyy-MM-dd");
     const membership = membershipData[0];
     const employmentStart =
-      membership?.joiningDate ??
+      employmentFacts.joiningDate ??
       (membership?.activatedAt
         ? formatInTimeZone(membership.activatedAt, orgTimezone, "yyyy-MM-dd")
         : membership?.joinedAt

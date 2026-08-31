@@ -7,8 +7,7 @@ import { ALL_MODULES, signToken } from "../../../test/helpers/sign-token";
 import { EntitlementsService } from "./entitlements.service";
 import { AccessService } from "./access.service";
 
-const RBAC_E2E_DATABASE_URL = process.env.RBAC_E2E_DATABASE_URL;
-const describeWithDb = RBAC_E2E_DATABASE_URL ? describe : describe.skip;
+import { describeWithDb, RBAC_E2E_DATABASE_URL } from "test/helpers/db-describe";
 
 const mockModules: Array<{ moduleKey: string; enabled: boolean }> = [
   { moduleKey: "crm", enabled: true },

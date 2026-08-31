@@ -6,6 +6,7 @@ import { HrAutomationsModule } from "../automations/hr-automations.module";
 import { PayrollInputsController } from "./payroll-inputs.controller";
 import { PayrollInputsService } from "./payroll-inputs.service";
 import { PayrollInputsBuildService } from "./payroll-inputs-build.service";
+import { PayrollInputSnapshotsService } from "./payroll-input-snapshots.service";
 
 @Module({
   imports: [
@@ -15,7 +16,7 @@ import { PayrollInputsBuildService } from "./payroll-inputs-build.service";
     HrAutomationsModule,
   ],
   controllers: [PayrollInputsController],
-  providers: [PayrollInputsService, PayrollInputsBuildService],
+  providers: [PayrollInputsService, PayrollInputsBuildService, PayrollInputSnapshotsService],
   exports: [PayrollInputsService],
 })
 export class HrPayrollInputsModule {}

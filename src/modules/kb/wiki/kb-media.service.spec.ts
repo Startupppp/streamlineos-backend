@@ -1,12 +1,14 @@
 jest.mock("sharp", () => ({ __esModule: true, default: jest.fn() }));
 
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { KbMediaService } from "./kb-media.service";
 import type { StorageService, UploadResult } from "../../storage/storage.service";
 import type { AuditService } from "../../../common/audit/audit.service";
-import type { KbIndexingService } from "../retrieval/kb-indexing.service";
+import type { KbAttachmentIndexingService } from "../retrieval/kb-attachment-indexing.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { validateEnv } from "../../../config/env.validation";
+import type { AvScanner } from "../../../common/security/av-scan";
 
 const kbConfig = validateEnv({
   DATABASE_URL: "postgres://test",
@@ -48,6 +50,7 @@ function makeUser(orgId = "org-42"): CurrentUserContext {
     role: "member",
     sessionId: "sess-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
   };
 }
 
@@ -65,9 +68,10 @@ describe("KbMediaService", () => {
   let mockAudit: { log: jest.Mock };
   let mockSharp: jest.Mock;
   let mockChain: MockChain;
+  let mockScanner: { scan: jest.Mock };
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
 
     mockChain = {
       rotate: jest.fn(),
@@ -87,14 +91,16 @@ describe("KbMediaService", () => {
       uploadFile: jest.fn().mockResolvedValue(MOCK_RESULT),
     };
     mockAudit = { log: jest.fn() };
+    mockScanner = { scan: jest.fn().mockResolvedValue({ status: "clean" }) };
 
-    const mockIndexing = {} as unknown as KbIndexingService;
+    const mockAttachmentIndexing = {} as unknown as KbAttachmentIndexingService;
 
     service = new KbMediaService(
       mockStorage as unknown as StorageService,
       mockAudit as unknown as AuditService,
-      mockIndexing,
+      mockAttachmentIndexing,
       kbConfig,
+      mockScanner as unknown as AvScanner,
     );
   });
 
@@ -310,6 +316,57 @@ describe("KbMediaService", () => {
         undefined,
         undefined,
       );
+    });
+  });
+
+  describe("malware scan gate", () => {
+    it("rejects infected files with 422 and does NOT upload to storage", async () => {
+      mockScanner.scan.mockResolvedValue({ status: "infected", threat: "Eicar-Test-Signature" });
+      await expect(
+        service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser()),
+      ).rejects.toBeInstanceOf(UnprocessableEntityException);
+      expect(mockStorage.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it("rejects scanner errors with 503 and does NOT upload to storage", async () => {
+      mockScanner.scan.mockResolvedValue({ status: "error", reason: "clamd-unreachable" });
+      await expect(
+        service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser()),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(mockStorage.uploadFile).not.toHaveBeenCalled();
+    });
+
+    it("scans the original buffer before compression", async () => {
+      await service.upload(makeFile("image/jpeg", JPEG_BUF, "photo.jpg"), makeUser());
+      expect(mockScanner.scan).toHaveBeenCalledWith(JPEG_BUF, "photo.jpg", "image/jpeg");
+    });
+
+    it("proceeds with upload when scanner returns clean", async () => {
+      mockScanner.scan.mockResolvedValue({ status: "clean" });
+      await service.upload(makeFile("image/jpeg", JPEG_BUF, "photo.jpg"), makeUser());
+      expect(mockStorage.uploadFile).toHaveBeenCalled();
+    });
+
+    it("noop scanner (no AV_SCANNER set) behaves fail-open — upload proceeds", async () => {
+      mockScanner.scan.mockResolvedValue({ status: "clean" });
+      const result = await service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser());
+      expect(result).toBeDefined();
+      expect(mockStorage.uploadFile).toHaveBeenCalled();
+    });
+
+    it("cross-tenant: org-A cannot receive org-B storage key", async () => {
+      const orgA = makeUser("org-a");
+      const orgB = makeUser("org-b");
+      mockStorage.uploadFile
+        .mockResolvedValueOnce({ ...MOCK_RESULT, key: "kb-media/org-a/file.webp" })
+        .mockResolvedValueOnce({ ...MOCK_RESULT, key: "kb-media/org-b/file.webp" });
+
+      const resultA = await service.upload(makeFile("image/jpeg", JPEG_BUF), orgA);
+      const resultB = await service.upload(makeFile("image/jpeg", JPEG_BUF), orgB);
+
+      expect(resultA.key).toContain("org-a");
+      expect(resultB.key).toContain("org-b");
+      expect(resultA.key).not.toBe(resultB.key);
     });
   });
 });

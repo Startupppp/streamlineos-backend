@@ -8,6 +8,7 @@ import { and, eq } from "drizzle-orm";
 import {
   calendarEvents,
   eventAttendees,
+  organizationMembers,
   userIntegrationConnections,
   users,
 } from "../../../../db/schema";
@@ -47,7 +48,6 @@ interface MeetingEventContext {
   entityId: string | null;
   linkedLeadId: number | null;
   linkedDealId: number | null;
-  createdBy: string;
   externalEventId: string | null;
   integrationConnectionId: number | null;
   attendees: MeetingAttendee[];
@@ -83,7 +83,6 @@ export class MeetingsPrepService {
         entityId: calendarEvents.entityId,
         linkedLeadId: calendarEvents.linkedLeadId,
         linkedDealId: calendarEvents.linkedDealId,
-        createdBy: calendarEvents.createdBy,
         externalEventId: calendarEvents.externalEventId,
         integrationConnectionId: calendarEvents.integrationConnectionId,
       })
@@ -96,13 +95,17 @@ export class MeetingsPrepService {
 
     const attendeeRows = await tx
       .select({
-        userId: eventAttendees.userId,
+        userId: organizationMembers.userId,
         name: users.name,
         status: eventAttendees.status,
       })
       .from(eventAttendees)
-      .innerJoin(users, eq(eventAttendees.userId, users.id))
-      .where(eq(eventAttendees.eventId, eventId));
+      .innerJoin(
+        organizationMembers,
+        and(eq(eventAttendees.orgId, organizationMembers.orgId), eq(eventAttendees.membershipId, organizationMembers.id)),
+      )
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .where(and(eq(eventAttendees.orgId, orgId), eq(eventAttendees.eventId, eventId)));
 
     return {
       ...event,

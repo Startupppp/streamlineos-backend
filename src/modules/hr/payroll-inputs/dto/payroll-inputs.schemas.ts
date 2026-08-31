@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createPeriodSchema = z.object({
   periodKey: z.string().regex(/^\d{4}-\d{2}$/, "Must be YYYY-MM"),
@@ -6,14 +7,14 @@ export const createPeriodSchema = z.object({
 });
 
 export const listPeriodsSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   status: z.enum(["open", "building", "built", "locked"]).optional(),
 });
 
 export const sectionQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
   preview: z
     .string()
     .optional()
@@ -43,6 +44,7 @@ export const createAdjustmentSchema = z.object({
 export const rejectAdjustmentSchema = z.object({
   reason: z.string().min(1).max(1000),
 });
+export type RejectAdjustmentInput = z.infer<typeof rejectAdjustmentSchema>;
 
 export type CreatePeriodInput = z.infer<typeof createPeriodSchema>;
 export type ListPeriodsInput = z.infer<typeof listPeriodsSchema>;

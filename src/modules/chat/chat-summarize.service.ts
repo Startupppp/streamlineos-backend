@@ -27,6 +27,7 @@ export class ChatSummarizeService {
   ): Promise<{ summary: string }> {
     const member = await this.db.query.chatChannelMembers.findFirst({
       where: and(
+        eq(chatChannelMembers.orgId, actor.orgId),
         eq(chatChannelMembers.channelId, channelId),
         eq(chatChannelMembers.userId, actor.userId),
       ),
@@ -47,6 +48,7 @@ export class ChatSummarizeService {
       .leftJoin(users, eq(chatMessages.senderId, users.id))
       .where(
         and(
+          eq(chatMessages.orgId, actor.orgId),
           eq(chatMessages.channelId, channelId),
           eq(chatMessages.isDeleted, false),
         ),

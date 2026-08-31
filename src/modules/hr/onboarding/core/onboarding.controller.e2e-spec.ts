@@ -104,7 +104,7 @@ describe("Onboarding auth/RBAC (e2e)", () => {
       const token = await signToken({
         role: "EMPLOYEE",
         permissions: ["onboarding:module-checklists:view"],
-        enabledModules: ["HR"],
+        enabledModules: ["HR", "ONBOARDING"],
       });
       const res = await callRoute("get", "/onboarding/module-checklists/HR").set(
         "Authorization",
@@ -119,7 +119,7 @@ describe("Onboarding auth/RBAC (e2e)", () => {
         const token = await signToken({
           role: "SALES",
           permissions: ["onboarding:module-checklists:manage"],
-          enabledModules: ["HR", "CRM"],
+          enabledModules: ["HR", "CRM", "ONBOARDING"],
         });
         const req = callRoute(method, path).set("Authorization", `Bearer ${token}`);
         const res = path.includes("/skip") ? await req.send({ reason: "test" }) : await req;
@@ -131,8 +131,8 @@ describe("Onboarding auth/RBAC (e2e)", () => {
       const token = await signToken({
         role: "OWNER",
         isOrgOwner: true,
-        permissions: [],
-        enabledModules: ["HR"],
+        permissions: ["onboarding:module-checklists:view"],
+        enabledModules: ["HR", "ONBOARDING"],
       });
       const res = await callRoute("get", "/onboarding/module-checklists/HR").set(
         "Authorization",

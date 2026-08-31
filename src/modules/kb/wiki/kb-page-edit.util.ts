@@ -20,6 +20,7 @@ export async function snapshotIfNeeded(
   authorId: string,
   changeSummary: string | null = null,
   force = false,
+  authorMembershipId: number | null = null,
 ): Promise<void> {
   if (!page.content) return;
 
@@ -61,6 +62,7 @@ export async function snapshotIfNeeded(
     contentText: page.contentText ?? null,
     changeSummary,
     authorId,
+    authorMembershipId,
   });
 }
 

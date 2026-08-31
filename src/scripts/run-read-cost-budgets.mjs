@@ -46,6 +46,24 @@ export function walk(node, out) {
   return out;
 }
 
+export function extractScans(node, out = []) {
+  const t = node["Node Type"];
+  if (
+    ["Seq Scan", "Index Scan", "Index Only Scan", "Bitmap Heap Scan"].includes(t) &&
+    node["Relation Name"]
+  ) {
+    out.push({
+      relation: node["Relation Name"],
+      actualRows: node["Actual Rows"] ?? 0,
+      removedByFilter:
+        (node["Rows Removed by Filter"] ?? 0) +
+        (node["Rows Removed by Index Recheck"] ?? 0),
+    });
+  }
+  for (const child of node.Plans ?? []) extractScans(child, out);
+  return out;
+}
+
 export function checkPlanAssertions(planAssertions, nodes, budgetId) {
   const failures = [];
   for (const assertion of planAssertions ?? []) {
@@ -74,11 +92,16 @@ export function checkPlanAssertions(planAssertions, nodes, budgetId) {
   return failures;
 }
 
+<<<<<<< HEAD
 async function runBudget(budget, fixtures, db, orgId, assumeRole) {
+=======
+async function runBudget(budget, fixtures, dbUrl, ssl, orgId) {
+>>>>>>> origin/main
   const params = budget.params(fixtures);
   if (params === null)
     return { status: "skip", reason: "no fixture data for this budget" };
 
+  const db = postgres(dbUrl, { max: 1, prepare: false, ssl, onnotice: () => {} });
   try {
     return await db.begin(async (tx) => {
       // Measuring as the owner is measuring nothing: neondb_owner has
@@ -90,22 +113,37 @@ async function runBudget(budget, fixtures, db, orgId, assumeRole) {
       await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
 
       const [{ count }] = await tx.unsafe(budget.rowCountSql, [orgId]);
-      const rowCount = Number(count);
-      if (rowCount < budget.minRows)
-        return { status: "seed-too-small", measured: rowCount, required: budget.minRows };
+      const tableRows = Number(count);
+      if (tableRows < budget.minRows)
+        return { status: "seed-too-small", measured: tableRows, required: budget.minRows };
 
-      const rows = await tx.unsafe(
-        `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${budget.sql}`,
-        params,
-      );
-      const root = rows[0]["QUERY PLAN"][0].Plan;
-      const blocks = (root["Shared Hit Blocks"] ?? 0) + (root["Shared Read Blocks"] ?? 0);
-      const nodes = walk(root, []);
+      const plan1 = await tx.unsafe(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${budget.sql}`, params);
+      const root1 = plan1[0]["QUERY PLAN"][0].Plan;
+      const hit1 = root1["Shared Hit Blocks"] ?? 0;
+      const read1 = root1["Shared Read Blocks"] ?? 0;
+
+      const plan2 = await tx.unsafe(`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${budget.sql}`, params);
+      const root2 = plan2[0]["QUERY PLAN"][0].Plan;
+      const hit2 = root2["Shared Hit Blocks"] ?? 0;
+      const read2 = root2["Shared Read Blocks"] ?? 0;
+
+      const nodes = walk(root1, []);
+      const scans = extractScans(root1);
       const assertionFailures = checkPlanAssertions(budget.planAssertions, nodes, budget.id);
-      return { status: "measured", blocks, assertionFailures };
+
+      return {
+        status: "measured",
+        run1: { hitBlocks: hit1, readBlocks: read1, totalBlocks: hit1 + read1 },
+        run2: { hitBlocks: hit2, readBlocks: read2, totalBlocks: hit2 + read2 },
+        scans,
+        tableRows,
+        assertionFailures,
+      };
     });
   } catch (e) {
     return { status: "error", message: e instanceof Error ? e.message : String(e) };
+  } finally {
+    await db.end();
   }
 }
 
@@ -126,7 +164,6 @@ async function main() {
     process.exit(1);
   }
 
-  const ORG = process.env.SEED_ORG_ID ?? "aa5627a2-a7de-4dca-97d2-135f3a5f801b";
   const SELF_TEST = process.argv.includes("--self-test");
 
   const validationErrors = validateBudgets(BUDGETS);
@@ -141,13 +178,47 @@ async function main() {
   const ssl = process.env.PGSSLMODE === "disable" ? false : "require";
   const db = postgres(url, { max: 1, prepare: false, ssl, onnotice: () => {} });
 
+  let ORG = process.env.SEED_ORG_ID;
+  if (!ORG) {
+    const orgRows = await db`SELECT id FROM organizations LIMIT 20`;
+    let bestOrg = null;
+    let bestCount = 0;
+    for (const { id } of orgRows) {
+      try {
+        const rows = await db.begin(async (tx) => {
+          await tx`SELECT set_config('app.organization_id', ${id}, true)`;
+          return tx.unsafe(
+            `SELECT count(*)::int AS n FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE'`,
+            [id],
+          );
+        });
+        const n = rows[0]?.n ?? 0;
+        if (n > bestCount) { bestCount = n; bestOrg = id; }
+      } catch (_) {}
+    }
+    if (!bestOrg) {
+      await db.end();
+      console.error("SEED_ORG_ID not set and no org with active members found in the database.");
+      console.error("Set SEED_ORG_ID in .env to a seeded org ID, or seed the database first.");
+      process.exit(1);
+    }
+    ORG = bestOrg;
+    if (!SELF_TEST) console.log(`Auto-discovered seed org: ${ORG} (${bestCount} active members)`);
+  }
+
   try {
+    // Self-test: use a budget whose params never returns null so the harness always exercises
+    // the breach path. BUDGETS[0] (scoped-board-page) returns null when no project exists,
+    // causing a SKIP that never touches breaches — a guard that cannot fail is useless.
+    // org-members-list uses params: (f) => [f.orgId], which is always non-null.
+    const selfTestBudget = BUDGETS.find((b) => b.id === "org-members-list") ?? BUDGETS[0];
     const budgets = SELF_TEST
-      ? [{ ...BUDGETS[0], id: "self-test", ceiling: 0 }]
+      ? [{ ...selfTestBudget, id: "self-test", ceiling: 0 }]
       : filterIds
         ? BUDGETS.filter((b) => filterIds.has(b.id))
         : BUDGETS;
 
+<<<<<<< HEAD
     // Fail closed. A misconfigured role here does not error -- it quietly
     // measures as the owner and reports comfortable numbers that mean nothing,
     // which is worse than not measuring at all.
@@ -168,37 +239,50 @@ async function main() {
 
     const fixtures = await db.begin(async (tx) => {
       await tx`SELECT set_config('app.organization_id', ${ORG}, true)`;
+=======
+    const tryFixture = async (query) => {
+      try {
+        return await db.begin(async (tx) => {
+          await tx`SELECT set_config('app.organization_id', ${ORG}, true)`;
+          return query(tx);
+        });
+      } catch (_) {
+        return null;
+      }
+    };
+>>>>>>> origin/main
 
-      const [project] = await tx`
+    const [project] = (await tryFixture((tx) => tx`
         SELECT project_id, count(*)::int n FROM build.tickets
         WHERE org_id = ${ORG} AND deleted_at IS NULL
-        GROUP BY project_id ORDER BY n DESC LIMIT 1`;
+        GROUP BY project_id ORDER BY n DESC LIMIT 1`)) ?? [null];
 
-      const [participant] = await tx`
+    const [participant] = (await tryFixture((tx) => tx`
         SELECT user_id, count(*)::int n FROM build.ticket_assignees
-        WHERE org_id = ${ORG} GROUP BY user_id ORDER BY n DESC LIMIT 1`;
+        WHERE org_id = ${ORG} GROUP BY user_id ORDER BY n DESC LIMIT 1`)) ?? [null];
 
-      const [channel] = await tx`
+    const [channel] = (await tryFixture((tx) => tx`
         SELECT channel_id, count(*)::int n FROM chat_messages
-        WHERE org_id = ${ORG} GROUP BY channel_id ORDER BY n DESC LIMIT 1`;
+        WHERE org_id = ${ORG} GROUP BY channel_id ORDER BY n DESC LIMIT 1`)) ?? [null];
 
-      const [space] = await tx`
+    const [space] = (await tryFixture((tx) => tx`
         SELECT id AS space_id FROM kb_spaces
-        WHERE org_id = ${ORG} LIMIT 1`;
+        WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
 
-      const [payrollRun] = await tx`
+    const [payrollRun] = (await tryFixture((tx) => tx`
         SELECT id AS run_id FROM payroll_runs
-        WHERE org_id = ${ORG} ORDER BY id DESC LIMIT 1`;
+        WHERE org_id = ${ORG} ORDER BY id DESC LIMIT 1`)) ?? [null];
 
-      const now = new Date();
-      const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const now = new Date();
+    const period = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-      const leaveTypePolicies = await tx`
+    const leaveTypeRows = (await tryFixture((tx) => tx`
         SELECT DISTINCT leave_type_id
         FROM leave_policies
-        WHERE org_id = ${ORG} AND accrual_type = 'MONTHLY' AND is_active = true`;
-      const leaveTypeIds = leaveTypePolicies.map((r) => r.leave_type_id);
+        WHERE org_id = ${ORG} AND accrual_type = 'MONTHLY' AND is_active = true`)) ?? [];
+    const leaveTypeIds = leaveTypeRows.map((r) => r.leave_type_id);
 
+<<<<<<< HEAD
       // G1. Page two of a keyset walk starts where page one ended, so the
       // fixture is the 51st row in the list's own order. The timestamp is read
       // as text at full precision, exactly as the endpoint projects it -- a
@@ -222,6 +306,33 @@ async function main() {
         ledgerCursorId: ledgerCursor?.id ?? null,
         auditCursorAt: auditCursor?.cursor_at ?? null,
         auditCursorId: auditCursor?.id ?? null,
+=======
+    const [kbPageProbe] = (await tryFixture((tx) => tx`
+        SELECT 1 AS present FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'app' AND p.proname = 'search_kb_page_ids'
+        LIMIT 1`)) ?? [null];
+
+    const [roadmapRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM build.roadmap_items WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
+
+    const [feedbackRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM build.feedback_posts WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
+
+    const [changelogRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM build.changelog_entries WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
+
+    const [taxPaymentRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM acc_tax_payments WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
+
+    const [reminderPolicyRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM fin_reminder_policies WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
+
+    const [mailMessageRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM mail_message_metadata WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
+
+    const fixtures = {
+>>>>>>> origin/main
         orgId: ORG,
         projectId: project?.project_id ?? null,
         projectTickets: project?.n ?? 0,
@@ -232,9 +343,15 @@ async function main() {
         spaceId: space?.space_id ?? null,
         payrollRunId: payrollRun?.run_id ?? null,
         leaveTypeIds,
+        hasKbPageProbe: kbPageProbe !== undefined && kbPageProbe !== null,
+        hasRoadmapItems: roadmapRow !== null && roadmapRow !== undefined,
+        hasFeedbackPosts: feedbackRow !== null && feedbackRow !== undefined,
+        hasChangelogEntries: changelogRow !== null && changelogRow !== undefined,
+        hasTaxPayments: taxPaymentRow !== null && taxPaymentRow !== undefined,
+        hasReminderPolicies: reminderPolicyRow !== null && reminderPolicyRow !== undefined,
+        hasMailMessages: mailMessageRow !== null && mailMessageRow !== undefined,
         period,
       };
-    });
 
     if (!SELF_TEST) {
       console.log(
@@ -251,50 +368,85 @@ async function main() {
     }
 
     const breaches = [];
+    const unusable = [];
     let skipped = 0;
 
     for (const budget of budgets) {
+<<<<<<< HEAD
       const result = await runBudget(budget, fixtures, db, ORG, assumeRole);
+=======
+      const result = await runBudget(budget, fixtures, url, ssl, ORG);
+>>>>>>> origin/main
 
       if (result.status === "skip") {
         if (!SELF_TEST)
           console.log(`SKIP  ${budget.id.padEnd(36)} (${result.reason})`);
+        else unusable.push(`${budget.id}: skipped — ${result.reason}`);
         skipped++;
         continue;
       }
 
       if (result.status === "seed-too-small") {
         const label = `FAIL  ${budget.id.padEnd(36)} seed too small (${result.measured} < ${result.required})`;
-        breaches.push(`${budget.id}: seed too small — ${result.measured} rows, need ${result.required}`);
-        if (!SELF_TEST) console.error(label);
+        const detail = `${budget.id}: seed too small — ${result.measured} rows, need ${result.required}`;
+        if (SELF_TEST) unusable.push(detail);
+        else {
+          breaches.push(detail);
+          console.error(label);
+        }
         continue;
       }
 
       if (result.status === "error") {
         const label = `FAIL  ${budget.id.padEnd(36)} error: ${result.message}`;
-        breaches.push(`${budget.id}: ${result.message}`);
-        if (!SELF_TEST) console.error(label);
+        if (SELF_TEST) unusable.push(`${budget.id}: ${result.message}`);
+        else {
+          breaches.push(`${budget.id}: ${result.message}`);
+          console.error(label);
+        }
         continue;
       }
 
-      const { blocks, assertionFailures } = result;
-      const overCeiling = blocks > budget.ceiling;
+      const { run1, run2, scans, tableRows, assertionFailures } = result;
+      const totalBlocks = run1.totalBlocks;
+      const overCeiling = totalBlocks > budget.ceiling;
       const ok = !overCeiling && assertionFailures.length === 0;
 
       if (!SELF_TEST) {
+        const primaryScan = scans.length > 0
+          ? scans.reduce((a, b) =>
+              a.actualRows + a.removedByFilter >= b.actualRows + b.removedByFilter ? a : b)
+          : null;
+        const scanTotal = primaryScan ? primaryScan.actualRows + primaryScan.removedByFilter : 0;
+        const sel = primaryScan && scanTotal > 0
+          ? `${((primaryScan.actualRows / scanTotal) * 100).toFixed(0)}%`
+          : "n/a";
+        const coldTag = run1.readBlocks > 0 ? "!" : " ";
         console.log(
           `${ok ? "PASS" : "FAIL"}  ${budget.id.padEnd(36)}` +
-            ` blocks=${String(blocks).padStart(7)} (ceiling ${budget.ceiling})`,
+          ` r1:h=${String(run1.hitBlocks).padStart(5)} rd=${String(run1.readBlocks).padStart(4)}${coldTag}` +
+          ` r2:h=${String(run2.hitBlocks).padStart(5)} rd=${String(run2.readBlocks).padStart(4)}` +
+          `  ceil=${budget.ceiling}  tbl=${tableRows} scan=${scanTotal} sel=${sel}`,
         );
         for (const f of assertionFailures) console.error(`        assertion: ${f}`);
       }
 
       if (overCeiling)
-        breaches.push(`${budget.id}: ${blocks} blocks > ceiling ${budget.ceiling}`);
+        breaches.push(`${budget.id}: ${totalBlocks} blocks > ceiling ${budget.ceiling}`);
+      else if (SELF_TEST && run1.totalBlocks === 0)
+        unusable.push(`${budget.id}: run1.totalBlocks=0 — budget measured nothing`);
       for (const f of assertionFailures) breaches.push(f);
     }
 
     if (SELF_TEST) {
+      if (unusable.length > 0) {
+        console.error(
+          "SELF-TEST INCONCLUSIVE: the fixture never produced a measurement, so the ceiling was never tested.",
+        );
+        for (const u of unusable) console.error(`  UNUSABLE: ${u}`);
+        process.exitCode = 1;
+        return;
+      }
       if (breaches.length > 0) {
         console.log("SELF-TEST PASS: breach detected — guard can fail");
         process.exitCode = 0;

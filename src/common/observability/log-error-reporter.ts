@@ -1,4 +1,7 @@
 import type { ErrorReport, ErrorReporter } from "./error-reporter";
+import { isTenantContextError, sqlstateOf } from "./error-classification";
+import { fingerprintOf } from "./error-fingerprint";
+import { currentRelease } from "./release";
 import { redact, truncateForLog } from "./redact";
 
 /**
@@ -34,6 +37,7 @@ function describe(error: unknown, depth = 0): unknown {
 export class LogErrorReporter implements ErrorReporter {
   report(report: ErrorReport): void {
     const { context } = report;
+    const sqlstate = sqlstateOf(report.error);
     process.stderr.write(
       JSON.stringify({
         timestamp: new Date().toISOString(),
@@ -44,6 +48,16 @@ export class LogErrorReporter implements ErrorReporter {
         actorId: context?.actorId,
         method: context?.method,
         route: context?.route,
+        // Grouping and release marking, the two things giving up an error
+        // tracker cost. `count(*) group by fingerprint` turns N lines back into
+        // one incident, and `release` is what implicates a deploy in a spike.
+        fingerprint: fingerprintOf(report.error, context?.route),
+        release: currentRelease(),
+        // Lifted out of the cause chain: the SQLSTATE is the only thing that
+        // distinguishes a missing tenant GUC from any other 500, and it appears
+        // nowhere in the message an alert would otherwise have to match on.
+        ...(sqlstate !== undefined ? { sqlstate } : {}),
+        ...(isTenantContextError(report.error) ? { errorClass: "tenant-context" } : {}),
         error: describe(report.error),
         ...(report.extra !== undefined ? { extra: redact(report.extra) } : {}),
       }) + "\n",

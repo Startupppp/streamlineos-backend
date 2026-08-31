@@ -16,7 +16,6 @@ describe("AuthService organization access session state", () => {
             name: "Asha Rao",
             image: null,
             isActive: true,
-            branchId: null,
             onboardingCompletedAt: null,
             lastActiveOrgId: "org-original",
           }),

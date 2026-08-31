@@ -13,7 +13,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { BillsWorkflowService } from "./bills-workflow.service";
 import {
@@ -22,6 +21,10 @@ import {
   type BillApprovalNote,
   type BillCancel,
 } from "./dto/finance-ap.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const billIdParams = z.object({ billId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/purchase-bills")
@@ -34,9 +37,10 @@ export class BillsWorkflowController {
   @RequirePermission("accounting:payables:manage")
   @HttpCode(200)
   @Idempotent("accounting.bill.submit-approval")
+  @Validate({ params: billIdParams, body: billApprovalNoteSchema })
   submitForApproval(
     @Param("billId", ParseIntPipe) billId: number,
-    @Body(new ZodValidationPipe(billApprovalNoteSchema)) body: BillApprovalNote,
+    @Body() body: BillApprovalNote,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.submitForApproval(u, billId, body);
@@ -47,6 +51,7 @@ export class BillsWorkflowController {
   @RequirePermission("accounting:payables:approve")
   @HttpCode(200)
   @Idempotent("accounting.bill.approve")
+  @Validate({ params: billIdParams })
   approveBill(
     @Param("billId", ParseIntPipe) billId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -58,9 +63,10 @@ export class BillsWorkflowController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:manage")
   @HttpCode(200)
+  @Validate({ params: billIdParams, body: billCancelSchema })
   cancelBill(
     @Param("billId", ParseIntPipe) billId: number,
-    @Body(new ZodValidationPipe(billCancelSchema)) body: BillCancel,
+    @Body() body: BillCancel,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.cancelBill(u, billId, body);

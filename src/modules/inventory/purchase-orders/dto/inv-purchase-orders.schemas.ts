@@ -1,11 +1,12 @@
 import { positiveDecimalQuantity } from "../../stock-engine/dto/quantity.schemas";
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listPoSchema = z.object({
   status: z.enum(["DRAFT", "SENT", "PARTIAL", "RECEIVED", "CLOSED", "CANCELLED"]).optional(),
   vendorId: z.coerce.number().int().positive().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 }).strict();
 export type ListPoInput = z.infer<typeof listPoSchema>;
 
@@ -170,21 +171,10 @@ export type CancelGrnInput = z.infer<typeof cancelGrnSchema>;
 export const listGrnSchema = z.object({
   poId: z.coerce.number().int().positive().optional(),
   vendorId: z.coerce.number().int().positive().optional(),
-  status: z.enum(["DRAFT", "COUNTING", "QUALITY_REVIEW", "POSTED", "CANCELLED"]).optional(),
-  /**
-   * One site's receipts.
-   *
-   * `inv_grns` carries a `location_id` and no warehouse column, so this is
-   * resolved through `inv_locations` — the same resolution the warehouse scope
-   * already performs on this table, rather than a second answer to "which
-   * warehouse is this receipt in". A receipt posted to no location belongs to no
-   * warehouse and so matches no filter.
-   */
-  warehouseId: z.coerce.number().int().positive().optional(),
   dateFrom: isoDate.optional(),
   dateTo: isoDate.optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 }).strict();
 export type ListGrnInput = z.infer<typeof listGrnSchema>;
 

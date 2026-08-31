@@ -17,7 +17,6 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProjectsService } from "./projects.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import {
@@ -43,6 +42,14 @@ import {
   type UpdateProjectMemberRoleInput,
 } from "./dto/projects.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const labelIdParams = z.object({ labelId: z.coerce.number().int().positive() }).strict();
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
+const projectIdmemberUserIdParams = z.object({ projectId: z.coerce.number().int().positive(), memberUserId: z.string().min(1) }).strict();
+const projectIdstateIdParams = z.object({ projectId: z.coerce.number().int().positive(), stateId: z.coerce.number().int().positive() }).strict();
+const projectIdParams_ = z.object({ projectId: z.string().min(1) }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -55,8 +62,9 @@ export class ProjectsController {
 
   @Get()
   @RequirePermission("build:view")
+  @Validate({ query: listProjectsSchema })
   listProjects(
-    @Query(new ZodValidationPipe(listProjectsSchema)) query: ListProjectsInput,
+    @Query() query: ListProjectsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.projects.listProjects(u, query);
@@ -66,8 +74,9 @@ export class ProjectsController {
   @RequirePermission("build:create")
   @HttpCode(201)
   @Idempotent("build.project.create")
+  @Validate({ body: createProjectSchema })
   createProject(
-    @Body(new ZodValidationPipe(createProjectSchema)) body: CreateProjectInput,
+    @Body() body: CreateProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.projects.createProject(u.orgId, u.userId, body);
@@ -77,8 +86,9 @@ export class ProjectsController {
   @RequirePermission("build:create")
   @HttpCode(201)
   @Idempotent("build.project.create_from_deal")
+  @Validate({ body: fromDealSchema })
   createFromDeal(
-    @Body(new ZodValidationPipe(fromDealSchema)) body: FromDealInput,
+    @Body() body: FromDealInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.projects.createFromDeal(u.orgId, u.userId, body);
@@ -93,8 +103,9 @@ export class ProjectsController {
   @Post("labels")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @Validate({ body: createLabelSchema })
   createLabel(
-    @Body(new ZodValidationPipe(createLabelSchema)) body: CreateLabelInput,
+    @Body() body: CreateLabelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.createLabel(u.orgId, body);
@@ -102,9 +113,10 @@ export class ProjectsController {
 
   @Patch("labels/:labelId")
   @RequirePermission("build:manage")
+  @Validate({ params: labelIdParams, body: updateLabelSchema })
   updateLabel(
     @Param("labelId", ParseIntPipe) labelId: number,
-    @Body(new ZodValidationPipe(updateLabelSchema)) body: UpdateLabelInput,
+    @Body() body: UpdateLabelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.updateLabel(u.orgId, labelId, body);
@@ -113,6 +125,7 @@ export class ProjectsController {
   @Delete("labels/:labelId")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @Validate({ params: labelIdParams })
   deleteLabel(
     @Param("labelId", ParseIntPipe) labelId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -122,6 +135,7 @@ export class ProjectsController {
 
   @Get(":projectId/members")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   listMembers(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -131,6 +145,7 @@ export class ProjectsController {
 
   @Get(":projectId/roster")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   getRoster(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -141,9 +156,10 @@ export class ProjectsController {
   @Post(":projectId/members")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @Validate({ params: projectIdParams, body: addMemberSchema })
   addMember(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(addMemberSchema)) body: AddMemberInput,
+    @Body() body: AddMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.addMember(projectId, body, u);
@@ -152,9 +168,10 @@ export class ProjectsController {
   @Delete(":projectId/members")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @Validate({ params: projectIdParams, body: removeMemberSchema })
   removeMember(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(removeMemberSchema)) body: RemoveMemberInput,
+    @Body() body: RemoveMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.removeMember(projectId, body.userId, u);
@@ -162,11 +179,11 @@ export class ProjectsController {
 
   @Patch(":projectId/members/:memberUserId")
   @RequirePermission("build:manage")
+  @Validate({ params: projectIdmemberUserIdParams, body: updateProjectMemberRoleSchema })
   updateMemberRole(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("memberUserId") memberUserId: string,
-    @Body(new ZodValidationPipe(updateProjectMemberRoleSchema))
-    body: UpdateProjectMemberRoleInput,
+    @Body() body: UpdateProjectMemberRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.updateMemberRole(projectId, memberUserId, body, u);
@@ -174,6 +191,7 @@ export class ProjectsController {
 
   @Get(":projectId/custom-states")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   listCustomStates(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -184,9 +202,10 @@ export class ProjectsController {
   @Post(":projectId/custom-states")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @Validate({ params: projectIdParams, body: createStateSchema })
   createCustomState(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createStateSchema)) body: CreateStateInput,
+    @Body() body: CreateStateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.createCustomState(u, projectId, body);
@@ -194,11 +213,11 @@ export class ProjectsController {
 
   @Patch(":projectId/custom-states/:stateId")
   @RequirePermission("build:manage")
+  @Validate({ params: projectIdstateIdParams, body: updateCustomStateSchema })
   updateCustomState(
     @Param("projectId", ParseIntPipe) _: number,
     @Param("stateId", ParseIntPipe) stateId: number,
-    @Body(new ZodValidationPipe(updateCustomStateSchema))
-    body: UpdateCustomStateInput,
+    @Body() body: UpdateCustomStateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.updateCustomState(u, stateId, body);
@@ -207,6 +226,7 @@ export class ProjectsController {
   @Delete(":projectId/custom-states/:stateId")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @Validate({ params: projectIdstateIdParams })
   deleteCustomState(
     @Param("projectId", ParseIntPipe) _: number,
     @Param("stateId", ParseIntPipe) stateId: number,
@@ -217,6 +237,7 @@ export class ProjectsController {
 
   @Get(":projectId/labels")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams_ })
   listProjectLabels(@CurrentUser() u: CurrentUserContext) {
     return this.members.listLabels(u.orgId);
   }
@@ -224,8 +245,9 @@ export class ProjectsController {
   @Post(":projectId/labels")
   @RequirePermission("build:manage")
   @HttpCode(201)
+  @Validate({ params: projectIdParams_, body: createLabelSchema })
   createProjectLabel(
-    @Body(new ZodValidationPipe(createLabelSchema)) body: CreateLabelInput,
+    @Body() body: CreateLabelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.createLabel(u.orgId, body);

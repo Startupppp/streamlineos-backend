@@ -80,6 +80,9 @@ describe("InvoicesWriteService — cache invalidation", () => {
           findFirst: jest.fn().mockResolvedValue(null),
           findMany: jest.fn().mockResolvedValue([]),
         },
+        organizations: {
+          findFirst: jest.fn().mockResolvedValue(undefined),
+        },
       },
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnThis(),

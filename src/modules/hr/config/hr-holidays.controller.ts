@@ -18,7 +18,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrHolidaysService } from "./hr-holidays.service";
 import {
   createHolidaySchema,
@@ -31,6 +31,10 @@ import {
   type UpdateHolidayInput,
 } from "./dto/holidays.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const holidayIdParams = z.object({ holidayId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/holidays")
@@ -40,8 +44,9 @@ export class HrHolidaysController {
 
   @Get()
   @RequirePermission("hr:attendance:view")
+  @Validate({ query: holidayListQuerySchema })
   list(
-    @Query(new ZodValidationPipe(holidayListQuerySchema)) query: HolidayListQuery,
+    @Query() query: HolidayListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const year = query.year || new Date().getFullYear();
@@ -50,8 +55,9 @@ export class HrHolidaysController {
 
   @Get("calendar")
   @RequirePermission("hr:attendance:view")
+  @Validate({ query: holidayCalendarQuerySchema })
   calendar(
-    @Query(new ZodValidationPipe(holidayCalendarQuerySchema)) query: HolidayCalendarQuery,
+    @Query() query: HolidayCalendarQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const year = query.year || new Date().getFullYear();
@@ -62,8 +68,9 @@ export class HrHolidaysController {
   @Post()
   @RequirePermission("hr:attendance:manage")
   @HttpCode(201)
+  @Validate({ body: createHolidaySchema })
   async create(
-    @Body(new ZodValidationPipe(createHolidaySchema)) body: CreateHolidayInput,
+    @Body() body: CreateHolidayInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.holidays.create(u.orgId, body);
@@ -75,9 +82,10 @@ export class HrHolidaysController {
 
   @Patch(":holidayId")
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: holidayIdParams, body: updateHolidaySchema })
   async update(
     @Param("holidayId", ParseIntPipe) holidayId: number,
-    @Body(new ZodValidationPipe(updateHolidaySchema)) body: UpdateHolidayInput,
+    @Body() body: UpdateHolidayInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const existing = await this.holidays.getById(u.orgId, holidayId);
@@ -88,6 +96,7 @@ export class HrHolidaysController {
   @Delete(":holidayId")
   @HttpCode(204)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: holidayIdParams })
   async remove(
     @Param("holidayId", ParseIntPipe) holidayId: number,
     @CurrentUser() u: CurrentUserContext,

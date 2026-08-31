@@ -16,9 +16,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { logger } from "../../common/logger/logger.service";
-import { EmailService } from "../email/email.service";
-import { appUrl } from "../email/app-url";
-import { getLeadDistributionEmailTemplate } from "../email/templates/crm";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import type {
   BulkDeleteInput,
   BulkUpdateInput,
@@ -47,11 +45,12 @@ export class LeadsOpsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly access: AccessService,
   ) {}
 
   private async sendDistributionEmails(
+    orgId: string,
     actorId: string,
     salesPeople: { id: string; name: string | null; email: string | null }[],
     assignments: Map<string, LeadView[]>,
@@ -64,15 +63,18 @@ export class LeadsOpsService {
 
     for (const sp of salesPeople) {
       const assignedLeads = assignments.get(sp.id) ?? [];
-      if (assignedLeads.length === 0 || !sp.email) continue;
-      const { subject, html } = getLeadDistributionEmailTemplate({
-        recipientName: sp.name ?? "Team Member",
-        assignerName,
-        leadCount: assignedLeads.length,
-        leadsUrl: `${appUrl()}/crm/leads`,
-      });
+      if (assignedLeads.length === 0) continue;
       try {
-        await this.email.sendEmail({ to: sp.email, subject, html });
+        await this.dispatch.emit({
+          eventKey: "crm.lead.assigned",
+          orgId,
+          actorUserId: actorId,
+          targetUserIds: [sp.id],
+          title: "Leads assigned to you",
+          message: `${assignedLeads.length} lead(s) were assigned to you by ${assignerName}.`,
+          link: "/crm/leads",
+          variables: { leadCount: assignedLeads.length, assignerName },
+        });
       } catch (error) {
         logger.error("Failed to send lead distribution email", {
           salesPersonId: sp.id,
@@ -307,7 +309,7 @@ export class LeadsOpsService {
       });
     }
 
-    void this.sendDistributionEmails(userId, salesPeople, assignments).catch(
+    void this.sendDistributionEmails(orgId, userId, salesPeople, assignments).catch(
       logSideEffectFailure("lead distribution emails", { orgId }),
     );
 

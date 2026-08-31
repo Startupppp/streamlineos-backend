@@ -16,6 +16,7 @@ describe("ChatReplyRemindersService", () => {
         chatChannelMembers: {
           findMany: jest.fn().mockResolvedValue(members),
         },
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
       },
       update: jest.fn(() => ({
         set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
@@ -50,6 +51,7 @@ describe("ChatReplyRemindersService", () => {
         chatChannelMembers: {
           findMany: jest.fn().mockResolvedValue([{ userId: "sender" }]),
         },
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
       },
       update: jest.fn(() => ({
         set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),

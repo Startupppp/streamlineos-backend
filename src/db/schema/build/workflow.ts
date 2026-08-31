@@ -1,7 +1,7 @@
-import { text, integer, boolean, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
+import { text, integer, boolean, jsonb, timestamp, index, unique, foreignKey } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { projects, projectStatuses } from "./core";
 
 export const workflowTransitions = build.table("workflow_transitions", {
@@ -14,7 +14,7 @@ export const workflowTransitions = build.table("workflow_transitions", {
   requiresApproval: boolean("requires_approval").notNull().default(false),
   requiredFields: jsonb("required_fields").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   allowedRoles: jsonb("allowed_roles").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
-  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
@@ -23,4 +23,9 @@ export const workflowTransitions = build.table("workflow_transitions", {
   index("idx_workflow_transitions_from").on(t.fromStatusId),
   index("idx_workflow_transitions_to").on(t.toStatusId),
   unique("uniq_workflow_transitions_org_id").on(t.orgId, t.id),
+  foreignKey({
+    name: "fk_workflow_transitions_created_by_actor",
+    columns: [t.orgId, t.createdByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("restrict"),
 ]);

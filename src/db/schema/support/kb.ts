@@ -46,6 +46,16 @@ export const kbCategories = pgTable(
       foreignColumns: [table.id],
       name: "fk_kb_categories_parent",
     }).onDelete("set null"),
+    foreignKey({
+      columns: [table.orgId, table.spaceId],
+      foreignColumns: [kbSpaces.orgId, kbSpaces.id],
+      name: "fk_kb_categories_org_space",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.orgId, table.parentId],
+      foreignColumns: [table.orgId, table.id],
+      name: "fk_kb_categories_org_parent",
+    }).onDelete("set null"),
     unique("uniq_kb_categories_org_id").on(table.orgId, table.id),
   ],
 );
@@ -92,6 +102,16 @@ export const kbArticles = pgTable(
     index("idx_kb_articles_org_status_views").on(table.orgId, table.status, table.views),
     index("idx_kb_articles_fts").using("gin", table.fts),
     unique("uniq_kb_articles_org_id").on(table.orgId, table.id),
+    foreignKey({
+      columns: [table.orgId, table.categoryId],
+      foreignColumns: [kbCategories.orgId, kbCategories.id],
+      name: "fk_kb_articles_org_category",
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [table.orgId, table.spaceId],
+      foreignColumns: [kbSpaces.orgId, kbSpaces.id],
+      name: "fk_kb_articles_org_space",
+    }).onDelete("cascade"),
   ],
 );
 
@@ -110,6 +130,11 @@ export const kbArticleFeedback = pgTable(
     index("idx_kb_article_feedback_article").on(table.articleId),
     uniqueIndex("uniq_kb_article_feedback_org_article_visitor").on(table.orgId, table.articleId, table.visitorId),
     unique("uniq_kb_article_feedback_org_id").on(table.orgId, table.id),
+    foreignKey({
+      columns: [table.orgId, table.articleId],
+      foreignColumns: [kbArticles.orgId, kbArticles.id],
+      name: "fk_kb_article_feedback_org_article",
+    }).onDelete("cascade"),
   ],
 );
 

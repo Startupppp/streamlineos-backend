@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 export const listStockLevelsSchema = z.object({
@@ -10,9 +11,18 @@ export const listStockLevelsSchema = z.object({
   serialId: z.coerce.number().int().positive().optional(),
   lowStock: queryBoolean.optional(),
   negative: queryBoolean.optional(),
+export const listStockLevelsSchema = z.object({
+  warehouseId: z.coerce.number().int().positive().optional(),
+  locationId: z.coerce.number().int().positive().optional(),
+  productId: z.coerce.number().int().positive().optional(),
+  variantId: z.coerce.number().int().positive().optional(),
+  lotId: z.coerce.number().int().positive().optional(),
+  serialId: z.coerce.number().int().positive().optional(),
+  lowStock: queryBoolean.optional(),
+  negative: queryBoolean.optional(),
   search: z.string().max(200).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 }).strict();
 export type ListStockLevelsInput = z.infer<typeof listStockLevelsSchema>;
 
@@ -30,8 +40,8 @@ export const listTransactionsSchema = z.object({
   search: z.string().max(200).optional(),
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
   /**
    * G1. Opaque `(created_at, id)` position. Present, it replaces `page`: the
    * ledger is append-only and a reader who scrolls it while the engine posts
@@ -53,9 +63,10 @@ export const listReservationsSchema = z.object({
   status: z.enum(["ACTIVE", "CONSUMED", "RELEASED", "EXPIRED"]).optional(),
   variantId: z.coerce.number().int().positive().optional(),
   warehouseId: z.coerce.number().int().positive().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 }).strict();
+export type ListReservationsInput = z.infer<typeof listReservationsSchema>;
 export type ListReservationsInput = z.infer<typeof listReservationsSchema>;
 
 export const createReservationSchema = z.object({
@@ -105,12 +116,18 @@ export const adjustmentReasons = [
 
 export const listAdjustmentsSchema = z.object({
   status: z.enum(["DRAFT", "PENDING_APPROVAL", "APPROVED", "PENDING_POST", "POSTED", "CANCELLED"]).optional(),
+<<<<<<< HEAD
   reason: z.enum(adjustmentReasons).optional(),
   /** D8. Every reason that condemns stock, in one filter — the write-off queue. */
   writeOffsOnly: queryBoolean.optional(),
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 }).strict();
+=======
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
+});
+>>>>>>> origin/main
 export type ListAdjustmentsInput = z.infer<typeof listAdjustmentsSchema>;
 
 const adjustmentLineSchema = z.object({
@@ -141,8 +158,8 @@ export const listTransfersSchema = z.object({
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
   search: z.string().max(200).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 }).strict();
 export type ListTransfersInput = z.infer<typeof listTransfersSchema>;
 

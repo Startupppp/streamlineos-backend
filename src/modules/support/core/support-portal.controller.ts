@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { SupportPortalService } from "./support-portal.service";
 import { SupportCustomFieldsService } from "./support-custom-fields.service";
@@ -28,6 +27,10 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("support")
 @Controller("support/portal")
@@ -55,8 +58,9 @@ export class SupportPortalController {
   @Idempotent("support:portal_ticket.create")
   @RequirePermission("support:portal:tickets:create")
   @HttpCode(201)
+  @Validate({ body: createPortalTicketSchema })
   async createTicket(
-    @Body(new ZodValidationPipe(createPortalTicketSchema)) body: CreatePortalTicketInput,
+    @Body() body: CreatePortalTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const rate = await this.rateLimit.check("support:portal-ticket-create", `${u.orgId}:${u.userId}`);
@@ -71,6 +75,7 @@ export class SupportPortalController {
 
   @Get("tickets/:ticketId")
   @RequirePermission("support:portal:tickets:view")
+  @Validate({ params: ticketIdParams })
   getMyTicket(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     return this.portal.getMyTicket(u.orgId, u.userId, ticketId);
   }
@@ -79,9 +84,10 @@ export class SupportPortalController {
   @Idempotent("support:portal_ticket.reply")
   @RequirePermission("support:portal:tickets:reply")
   @HttpCode(201)
+  @Validate({ params: ticketIdParams, body: createPortalMessageSchema })
   addMessage(
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(createPortalMessageSchema)) body: CreatePortalMessageInput,
+    @Body() body: CreatePortalMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.portal.addMessage(u.orgId, u.userId, ticketId, body);

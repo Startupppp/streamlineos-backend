@@ -1,11 +1,15 @@
 import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { ModuleAccessGroupsService } from "../module-access-groups.service";
+import { ModuleAccessGroupCrudService } from "../module-access-group-crud.service";
+import { ModuleAccessGroupMembersService } from "../module-access-group-members.service";
+import { ModuleAccessGroupPolicyService } from "../module-access-group-policy.service";
 import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -15,6 +19,7 @@ function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserCont
     isOrgOwner: false,
     sessionId: "s-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...overrides,
   };
 }
@@ -155,6 +160,9 @@ async function buildSvc(opts: {
   const m = await Test.createTestingModule({
     providers: [
       ModuleAccessGroupsService,
+      ModuleAccessGroupCrudService,
+      ModuleAccessGroupMembersService,
+      ModuleAccessGroupPolicyService,
       { provide: DRIZZLE, useValue: mockDb },
       {
         provide: AccessService,

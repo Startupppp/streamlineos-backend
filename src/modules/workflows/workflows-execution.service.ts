@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import {
   workflows,
   workflowVersions,
@@ -15,6 +15,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import type {
   WorkflowExecutionQueryDto,
   TriggerWorkflowDto,
@@ -79,29 +80,38 @@ export class WorkflowsExecutionService {
     });
     if (!workflow) throw new NotFoundException("Workflow not found");
 
-    const { page, limit, status } = query;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, direction, status } = query;
 
-    const conditions = [
+    const conditions: ReturnType<typeof eq>[] = [
       eq(workflowExecutions.workflowId, workflowId),
       eq(workflowExecutions.orgId, orgId),
     ];
     if (status) conditions.push(eq(workflowExecutions.status, status));
 
-    const where = and(...conditions);
+    const decoded = decodeCursor(cursor);
+    if (decoded) {
+      const cursorDate = new Date(decoded.sortValue);
+      const cursorId = decoded.id;
+      const cursorCond =
+        direction === "desc"
+          ? sql`(${workflowExecutions.createdAt}, ${workflowExecutions.id}::text) < (${sql.param(cursorDate, workflowExecutions.createdAt)}, ${cursorId})`
+          : sql`(${workflowExecutions.createdAt}, ${workflowExecutions.id}::text) > (${sql.param(cursorDate, workflowExecutions.createdAt)}, ${cursorId})`;
+      conditions.push(cursorCond as ReturnType<typeof eq>);
+    }
 
-    const [data, [countRow]] = await Promise.all([
-      this.db
-        .select()
-        .from(workflowExecutions)
-        .where(where)
-        .orderBy(desc(workflowExecutions.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(workflowExecutions).where(where),
-    ]);
+    const orderFn = direction === "asc" ? asc : desc;
 
-    return { data, total: countRow?.total ?? 0, page, limit };
+    const rows = await this.db
+      .select()
+      .from(workflowExecutions)
+      .where(and(...conditions))
+      .orderBy(orderFn(workflowExecutions.createdAt), orderFn(workflowExecutions.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: row.id,
+    }));
   }
 
   async getExecution(
@@ -160,26 +170,35 @@ export class WorkflowsExecutionService {
   }
 
   async listAllExecutions(orgId: string, query: WorkflowExecutionQueryDto) {
-    const { page, limit, status } = query;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, direction, status } = query;
 
-    const conditions = [eq(workflowExecutions.orgId, orgId)];
+    const conditions: ReturnType<typeof eq>[] = [eq(workflowExecutions.orgId, orgId)];
     if (status) conditions.push(eq(workflowExecutions.status, status));
 
-    const where = and(...conditions);
+    const decoded = decodeCursor(cursor);
+    if (decoded) {
+      const cursorDate = new Date(decoded.sortValue);
+      const cursorId = decoded.id;
+      const cursorCond =
+        direction === "desc"
+          ? sql`(${workflowExecutions.createdAt}, ${workflowExecutions.id}::text) < (${sql.param(cursorDate, workflowExecutions.createdAt)}, ${cursorId})`
+          : sql`(${workflowExecutions.createdAt}, ${workflowExecutions.id}::text) > (${sql.param(cursorDate, workflowExecutions.createdAt)}, ${cursorId})`;
+      conditions.push(cursorCond as ReturnType<typeof eq>);
+    }
 
-    const [data, [countRow]] = await Promise.all([
-      this.db
-        .select()
-        .from(workflowExecutions)
-        .where(where)
-        .orderBy(desc(workflowExecutions.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(workflowExecutions).where(where),
-    ]);
+    const orderFn = direction === "asc" ? asc : desc;
 
-    return { data, total: countRow?.total ?? 0, page, limit };
+    const rows = await this.db
+      .select()
+      .from(workflowExecutions)
+      .where(and(...conditions))
+      .orderBy(orderFn(workflowExecutions.createdAt), orderFn(workflowExecutions.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: row.id,
+    }));
   }
 
   async getApprovals(orgId: string, userId: string) {
@@ -238,18 +257,30 @@ export class WorkflowsExecutionService {
     approvalId: string,
     dto: ApprovalActionDto,
   ) {
-    const approval = await this.db.query.workflowApprovals.findFirst({
-      where: and(
-        eq(workflowApprovals.id, approvalId),
-        eq(workflowApprovals.approverId, userId),
-        eq(workflowApprovals.status, "pending"),
-      ),
-      with: { execution: { columns: { orgId: true, workflowId: true } } },
-    });
-    if (!approval)
-      throw new NotFoundException("Approval not found or already actioned");
-    if (approval.execution.orgId !== orgId)
-      throw new ForbiddenException("Access denied");
+    const [approval] = await this.db
+      .select({
+        id: workflowApprovals.id,
+        executionId: workflowApprovals.executionId,
+        stepId: workflowApprovals.stepId,
+        workflowId: workflowExecutions.workflowId,
+      })
+      .from(workflowApprovals)
+      .innerJoin(
+        workflowExecutions,
+        and(
+          eq(workflowExecutions.id, workflowApprovals.executionId),
+          eq(workflowExecutions.orgId, orgId),
+        ),
+      )
+      .where(
+        and(
+          eq(workflowApprovals.id, approvalId),
+          eq(workflowApprovals.approverId, userId),
+          eq(workflowApprovals.status, "pending"),
+        ),
+      )
+      .limit(1);
+    if (!approval) throw new NotFoundException("Approval not found or already actioned");
 
     const now = new Date();
     const [updated] = await this.db
@@ -265,7 +296,7 @@ export class WorkflowsExecutionService {
 
     await this.db.insert(workflowAuditLogs).values({
       orgId,
-      workflowId: approval.execution.workflowId,
+      workflowId: approval.workflowId,
       executionId: approval.executionId,
       actorId: userId,
       event: dto.action === "approve" ? "approved" : "rejected",

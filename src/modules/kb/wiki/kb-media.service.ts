@@ -1,12 +1,13 @@
-import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import sharp from "sharp";
 import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { StorageService, type UploadResult } from "../../storage/storage.service";
 import { validateMagicBytes } from "../../storage/file-signatures";
-import { KbIndexingService } from "../retrieval/kb-indexing.service";
+import { KbAttachmentIndexingService } from "../retrieval/kb-attachment-indexing.service";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
+import { AvScanner } from "../../../common/security/av-scan";
 
 export interface KbMediaUploadResult extends UploadResult {
   name: string;
@@ -58,8 +59,9 @@ export class KbMediaService {
   constructor(
     private readonly storage: StorageService,
     private readonly audit: AuditService,
-    private readonly indexing: KbIndexingService,
+    private readonly attachmentIndexing: KbAttachmentIndexingService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
+    private readonly avScanner: AvScanner,
   ) {}
 
   async upload(
@@ -84,6 +86,12 @@ export class KbMediaService {
     if (!validateMagicBytes(buffer, mimetype)) {
       throw new BadRequestException("File content does not match declared type");
     }
+
+    const scanResult = await this.avScanner.scan(buffer, originalname, mimetype);
+    if (scanResult.status === "infected")
+      throw new UnprocessableEntityException(`Upload rejected: malware detected (${scanResult.threat})`);
+    if (scanResult.status === "error")
+      throw new ServiceUnavailableException("Malware scan unavailable — upload rejected");
 
     const folder = `kb-media/${u.orgId}`;
     let uploadBuffer = buffer;
@@ -125,7 +133,7 @@ export class KbMediaService {
     });
 
     if (pageId != null && DOC_TYPES.has(mimetype)) {
-      this.indexing
+      this.attachmentIndexing
         .indexPageDocument(u.orgId, pageId, buffer, mimetype, originalname)
         .catch((err: unknown) => {
           this.logger.error(`Failed to index page document (page ${pageId}): ${err}`);

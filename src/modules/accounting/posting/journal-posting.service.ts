@@ -1,10 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, like } from "drizzle-orm";
 import { ledgerAccounts, journalEntries, journalLines } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { ACCOUNT_CODES, type GstSplit, paymentMethodToAccountCode, splitTaxPool } from "../core/posting-rules";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -287,26 +285,6 @@ export class JournalPostingService {
         });
         await executor.insert(journalLines).values(lineRows);
 
-        if (tx) {
-          await OutboxWriter.emit(tx, {
-            eventId: randomUUID(),
-            organizationId: draft.orgId,
-            aggregateType: "journal_entry",
-            aggregateId: String(entry.id),
-            aggregateVersion: Date.now(),
-            eventType: "accounting.journal.posted",
-            payload: {
-              organization_id: draft.orgId,
-              entry_id: entry.id,
-              entry_number: entry.entryNumber,
-              entry_date: draft.entryDate,
-              source_type: draft.sourceType,
-              source_id: draft.sourceId,
-              actor_user_id: draft.createdBy,
-            },
-            occurredAt: new Date(),
-          });
-        }
         return entry;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

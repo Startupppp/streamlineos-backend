@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, inArray, not } from "drizzle-orm";
-import { finCashFlowScenarios } from "../../../db/schema";
+import { finCashFlowScenarios, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -82,6 +82,13 @@ export class ScenariosService {
         );
     }
 
+    const [scenarioActor] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+    const createdByMembershipId = scenarioActor?.id ?? null;
+
     const [created] = await this.db
       .insert(finCashFlowScenarios)
       .values({
@@ -90,7 +97,7 @@ export class ScenariosService {
         kind: input.kind ?? "CUSTOM",
         assumptions: input.assumptions ?? null,
         isDefault: input.isDefault ?? false,
-        createdBy: userId,
+        createdByMembershipId,
       })
       .returning();
 
@@ -238,6 +245,13 @@ export class ScenariosService {
 
     if (toInsert.length === 0) return { created: 0 };
 
+    const [seedActor] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+    const seededByMembershipId = seedActor?.id ?? null;
+
     for (const scenario of toInsert) {
       const shouldBeDefault =
         !hasDefault && scenario.kind === "EXPECTED";
@@ -260,7 +274,7 @@ export class ScenariosService {
         kind: scenario.kind,
         assumptions: scenario.assumptions,
         isDefault: shouldBeDefault,
-        createdBy: userId,
+        createdByMembershipId: seededByMembershipId,
       });
     }
 

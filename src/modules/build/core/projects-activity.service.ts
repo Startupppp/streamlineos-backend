@@ -3,6 +3,7 @@ import { and, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import {
   cycles,
   organizationMembers,
+  organizationPeople,
   projects,
   ticketActivityLog,
   ticketCommentMentions,
@@ -112,6 +113,16 @@ export class ProjectsActivityService {
     private readonly dispatch: NotificationDispatchService,
   ) {}
 
+  private async resolveMembershipId(orgId: string, userId: string | null): Promise<number | null> {
+    if (!userId) return null;
+    const [row] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+    return row?.id ?? null;
+  }
+
   async logTicketActivity(
     orgId: string,
     ticketId: number,
@@ -120,10 +131,11 @@ export class ProjectsActivityService {
     fromValue?: string | null,
     toValue?: string | null,
   ): Promise<void> {
+    const userMembershipId = await this.resolveMembershipId(orgId, userId);
     await this.db.insert(ticketActivityLog).values({
       orgId,
       ticketId,
-      userId: userId ?? null,
+      userMembershipId,
       action,
       fromValue: fromValue ?? null,
       toValue: toValue ?? null,
@@ -150,7 +162,7 @@ export class ProjectsActivityService {
     }
     if (changes.assigneeId !== undefined && normalize(changes.assigneeId) !== normalize(before.assigneeId)) {
       const ids = [before.assigneeId, changes.assigneeId].filter((id): id is string => !!id);
-      const nameById = await this.resolveUserNames(ids);
+      const nameById = await this.resolveUserNames(orgId, ids);
       entries.push({
         action: "assignee_changed",
         from: before.assigneeId ? (nameById.get(before.assigneeId) ?? before.assigneeId) : null,
@@ -181,11 +193,12 @@ export class ProjectsActivityService {
 
     if (entries.length === 0) return;
 
+    const userMembershipId = await this.resolveMembershipId(orgId, userId);
     await this.db.insert(ticketActivityLog).values(
       entries.map((entry) => ({
         orgId,
         ticketId,
-        userId,
+        userMembershipId,
         action: entry.action,
         fromValue: entry.from,
         toValue: entry.to,
@@ -193,24 +206,32 @@ export class ProjectsActivityService {
     );
   }
 
-  private async resolveUserNames(ids: string[]): Promise<Map<string, string>> {
+  private async resolveUserNames(orgId: string, ids: string[]): Promise<Map<string, string>> {
     const map = new Map<string, string>();
     const unique = Array.from(new Set(ids));
     if (unique.length === 0) return map;
 
     const rows = await this.db
       .select({
-        id: users.id,
-        name: users.name,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        email: users.email,
+        userId: organizationPeople.userId,
+        displayName: organizationPeople.displayName,
+        firstName: organizationPeople.firstName,
+        lastName: organizationPeople.lastName,
+        workEmail: organizationPeople.workEmail,
       })
-      .from(users)
-      .where(inArray(users.id, unique));
+      .from(organizationPeople)
+      .where(
+        and(
+          eq(organizationPeople.organizationId, orgId),
+          inArray(organizationPeople.userId, unique),
+        ),
+      );
 
     for (const row of rows) {
-      map.set(row.id, displayName(row));
+      if (!row.userId) continue;
+      const fallback = `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim();
+      const name = row.displayName ?? (fallback.length > 0 ? fallback : (row.workEmail ?? row.userId));
+      map.set(row.userId, name);
     }
     return map;
   }
@@ -263,6 +284,13 @@ export class ProjectsActivityService {
     );
     if (mentioned.length === 0) return;
 
+    const mentionedUserIds = mentioned.map((u) => u.id);
+    const memberRows = await this.db
+      .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, input.orgId), inArray(organizationMembers.userId, mentionedUserIds)));
+    const membershipByUserId = new Map(memberRows.map((r) => [r.userId, r.id]));
+
     try {
       await this.db
         .insert(ticketCommentMentions)
@@ -271,6 +299,7 @@ export class ProjectsActivityService {
             orgId: input.orgId,
             commentId: input.commentId,
             mentionedUserId: user.id,
+            mentionedUserMembershipId: membershipByUserId.get(user.id) ?? null,
           })),
         )
         .onConflictDoNothing();

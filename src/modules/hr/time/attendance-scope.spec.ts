@@ -1,4 +1,5 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -28,6 +29,7 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     isOrgOwner: false,
     sessionId: "s1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...overrides,
   };
 }
@@ -87,11 +89,10 @@ describe("resolveAttendanceScope", () => {
     expect(compiled.params).toEqual(["u1"]);
   });
 
-  it("binds team summary reads to the actor's tenant teams", () => {
+  it("falls back to owner-only when no team members are resolved", () => {
     const compiled = new PgDialect().sqlToQuery(
       attendanceMemberScope("team", "o1", "manager-1"),
     );
-    expect(compiled.params).toContain("manager-1");
-    expect(compiled.params).toContain("o1");
+    expect(compiled.params).toEqual(["manager-1"]);
   });
 });

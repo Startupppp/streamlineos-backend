@@ -16,7 +16,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrInterviewsService } from "./hr-interviews.service";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import {
@@ -25,6 +25,10 @@ import {
   type InterviewListInput,
   type UpsertSlaInput,
 } from "./dto/hr-interviews.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const interviewIdParams = z.object({ interviewId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment/interviews")
@@ -34,8 +38,9 @@ export class HrInterviewsController {
 
   @Get()
   @RequirePermission("hr:interviews:view")
+  @Validate({ query: interviewListSchema })
   list(
-    @Query(new ZodValidationPipe(interviewListSchema)) query: InterviewListInput,
+    @Query() query: InterviewListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.interviews.list(u.orgId, query);
@@ -55,7 +60,8 @@ export class HrInterviewsController {
 
   @Put("slas")
   @RequirePermission("hr:interviews:manage")
-  upsertSla(@Body(new ZodValidationPipe(upsertSlaSchema)) body: UpsertSlaInput, @CurrentUser() u: CurrentUserContext) {
+  @Validate({ body: upsertSlaSchema })
+  upsertSla(@Body() body: UpsertSlaInput, @CurrentUser() u: CurrentUserContext) {
     return this.interviews.upsertSla(u.orgId, body);
   }
 
@@ -67,6 +73,7 @@ export class HrInterviewsController {
 
   @Get(":interviewId/scorecard/summary")
   @RequirePermission("hr:interviews:view")
+  @Validate({ params: interviewIdParams })
   async scorecardSummary(@Param("interviewId", ParseIntPipe) interviewId: number, @CurrentUser() u: CurrentUserContext) {
     const result = await this.interviews.scorecardSummary(u.orgId, interviewId);
     if (!result) throw new NotFoundException("Interview not found.");
@@ -75,6 +82,7 @@ export class HrInterviewsController {
 
   @Get(":interviewId/ics")
   @RequirePermission("hr:interviews:view")
+  @Validate({ params: interviewIdParams })
   async ics(
     @Param("interviewId", ParseIntPipe) interviewId: number,
     @CurrentUser() u: CurrentUserContext,

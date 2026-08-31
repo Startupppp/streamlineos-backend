@@ -2,6 +2,7 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, foreignKey, index, uniqueIndex, unique, primaryKey, uuid } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { genderEnum, onboardingStatusEnum, onboardingDocStatusEnum, membershipStatusEnum, organizationStatusEnum, invitationStatusEnum } from "./enums";
+import { modulesCatalog } from "./modules";
 
 
 export const organizations = pgTable("organizations", {
@@ -99,11 +100,13 @@ export const organizationMembers = pgTable("organization_members", {
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("uniq_org_members_user_org").on(table.userId, table.orgId),
+  unique("uniq_org_members_org_user").on(table.orgId, table.userId),
   unique("uniq_org_members_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_org_members_single_owner").on(table.orgId).where(sql`is_owner = true`),
   index("idx_org_members_org_role").on(table.orgId, table.role),
   index("idx_org_members_owner").on(table.orgId, table.isOwner),
   index("idx_org_members_org_status").on(table.orgId, table.status),
+  index("idx_org_members_org_joined").on(table.orgId, table.joinedAt.desc()),
 ]);
 
 export const users = pgTable("users", {
@@ -114,18 +117,11 @@ export const users = pgTable("users", {
   firstName: text("first_name"),
   lastName: text("last_name"),
   gender: genderEnum("gender"),
-  joiningDate: date("joining_date"),
   dateOfBirth: date("date_of_birth"),
-  taxId: text("tax_id"),
-  bankDetails: text("bank_details"),
   image: text("image"),
-  orgDepartmentId: text("org_department_id"),
-  designation: text("designation"),
   phone: text("phone"),
   whatsappNumber: text("whatsapp_number"),
   whatsappSameAsPhone: boolean("whatsapp_same_as_phone").default(true).notNull(),
-  monthlySalary: decimal("monthly_salary", { precision: 15, scale: 2 }),
-  employeeId: text("employee_id"),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   isActive: boolean("is_active").default(true).notNull(),
   userStatus: text("user_status").default("active").notNull(),
@@ -133,8 +129,6 @@ export const users = pgTable("users", {
   activatedAt: timestamp("activated_at"),
   archivedAt: timestamp("archived_at"),
   deletedAt: timestamp("deleted_at"),
-  reportingTo: text("reporting_to"),
-  branchId: text("branch_id"),
   emergencyContact: jsonb("emergency_contact").$type<{
     name: string;
     relation: string;
@@ -157,9 +151,6 @@ export const users = pgTable("users", {
 }, (table) => [
   index("idx_users_email").on(table.email),
   index("idx_users_last_active_org").on(table.lastActiveOrgId),
-  index("idx_users_reporting_to").on(table.reportingTo),
-  index("idx_users_org_department").on(table.orgDepartmentId),
-  foreignKey({ columns: [table.reportingTo], foreignColumns: [table.id] }),
 ]);
 
 export const accounts = pgTable("accounts", {
@@ -283,7 +274,7 @@ export const roles = pgTable("roles", {
   slug: text("slug").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   isSystem: boolean("is_system").default(false).notNull(),
-  moduleKey: text("module_key"),
+  moduleKey: text("module_key").references(() => modulesCatalog.moduleKey),
   rank: integer("rank").notNull().default(40),
   description: text("description"),
   version: integer("version").notNull().default(1),
@@ -308,10 +299,18 @@ export const permissions = pgTable("permissions", {
   action: text("action").notNull(),
   description: text("description"),
   moduleKey: text("module_key"),
+  administeringModuleKey: text("administering_module_key").references(
+    () => modulesCatalog.moduleKey,
+  ),
   riskClass: text("risk_class"),
   isDelegable: boolean("is_delegable").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (table) => [
+  unique("uniq_permissions_name_administering_module").on(
+    table.name,
+    table.administeringModuleKey,
+  ),
+]);
 
 export const onboardingSteps = pgTable("onboarding_steps", {
   id: serial("id").primaryKey(),
@@ -342,14 +341,9 @@ export const organizationMembersRelations = relations(organizationMembers, ({ on
   }),
 }));
 
-export const usersRelations = relations(users, ({ one, many }) => ({
+export const usersRelations = relations(users, ({ many }) => ({
   organizations: many(organizationMembers),
   accounts: many(accounts),
-  manager: one(users, {
-    fields: [users.reportingTo],
-    references: [users.id],
-    relationName: "manager",
-  }),
 }));
 
 export const accountsRelations = relations(accounts, ({ one }) => ({
@@ -459,12 +453,15 @@ export const userApiTokensRelations = relations(userApiTokens, ({ one }) => ({
 export const userDelegations = pgTable("user_delegations", {
   id: text("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+<<<<<<< HEAD
   /**
    * Acting-for hangs off the membership, not the login — the same reason the
    * rest of the RBAC tables key that way. A delegation keyed on the user id
    * outlived the person's membership and could not carry the composite tenant
    * FK, so a delegatee from another organisation was representable.
    */
+=======
+>>>>>>> origin/main
   delegatorMembershipId: integer("delegator_membership_id").notNull(),
   delegateeMembershipId: integer("delegatee_membership_id").notNull(),
   startsAt: timestamp("starts_at").defaultNow().notNull(),
@@ -520,6 +517,7 @@ export const userDelegationPermissions = pgTable("user_delegation_permissions", 
 
 export const userDelegationsRelations = relations(userDelegations, ({ one, many }) => ({
   org: one(organizations, { fields: [userDelegations.orgId], references: [organizations.id] }),
+<<<<<<< HEAD
   delegator: one(organizationMembers, {
     fields: [userDelegations.delegatorMembershipId],
     references: [organizationMembers.id],
@@ -529,6 +527,17 @@ export const userDelegationsRelations = relations(userDelegations, ({ one, many 
     fields: [userDelegations.delegateeMembershipId],
     references: [organizationMembers.id],
     relationName: "delegatee_membership",
+=======
+  delegatorMembership: one(organizationMembers, {
+    fields: [userDelegations.orgId, userDelegations.delegatorMembershipId],
+    references: [organizationMembers.orgId, organizationMembers.id],
+    relationName: "delegatorMembership",
+  }),
+  delegateeMembership: one(organizationMembers, {
+    fields: [userDelegations.orgId, userDelegations.delegateeMembershipId],
+    references: [organizationMembers.orgId, organizationMembers.id],
+    relationName: "delegateeMembership",
+>>>>>>> origin/main
   }),
   permissionGrants: many(userDelegationPermissions),
 }));

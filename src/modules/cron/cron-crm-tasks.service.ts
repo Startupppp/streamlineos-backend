@@ -38,7 +38,7 @@ export class CronCrmTasksService {
         .limit(200);
 
       for (const task of newlyOverdue) {
-        void this.bus.emit(orgId, "task.overdue", {
+        await this.bus.emit(orgId, "task.overdue", {
           entityType: "task",
           entityId: String(task.id),
           data: {

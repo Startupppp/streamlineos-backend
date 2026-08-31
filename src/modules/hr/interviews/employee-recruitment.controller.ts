@@ -13,7 +13,7 @@ import {
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import {
@@ -29,6 +29,10 @@ import {
   HrInterviewsService,
   type AssignedInterviewsPage,
 } from "./hr-interviews.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const interviewIdParams = z.object({ interviewId: z.coerce.number().int().positive() }).strict();
 
 @Controller("me/recruitment")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -40,9 +44,9 @@ export class EmployeeRecruitmentController {
   ) {}
 
   @Get()
+  @Validate({ query: selfInterviewListSchema })
   list(
-    @Query(new ZodValidationPipe(selfInterviewListSchema))
-    query: SelfInterviewListInput,
+    @Query() query: SelfInterviewListInput,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<AssignedInterviewsPage> {
     return this.interviews.listMine(user.orgId, user.userId, query);
@@ -50,10 +54,10 @@ export class EmployeeRecruitmentController {
 
   @Post(":interviewId/scorecard")
   @HttpCode(201)
+  @Validate({ params: interviewIdParams, body: submitScorecardSchema })
   async submitScorecard(
     @Param("interviewId", ParseIntPipe) interviewId: number,
-    @Body(new ZodValidationPipe(submitScorecardSchema))
-    body: SubmitScorecardInput,
+    @Body() body: SubmitScorecardInput,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<unknown> {
     const assigned = await this.interviews.isAssignedTo(

@@ -1,9 +1,9 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { SQL, and, count, desc, eq, ne, sql } from "drizzle-orm";
-import { assets, users } from "../../../db/schema";
+import { assets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { EmailService } from "../../email/email.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { formatDateOnly } from "../../../common/date";
 import type {
   AssignAssetInput,
@@ -16,7 +16,7 @@ import type {
 export class AssetInventoryService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async list(orgId: string, query: ListAssetsQueryInput) {
@@ -110,7 +110,7 @@ export class AssetInventoryService {
       .where(and(eq(assets.id, body.assetId), eq(assets.orgId, orgId)));
 
     if (body.assignedTo && body.assignedTo !== target.assignedTo) {
-      this.dispatchAssetAssigned(body.assignedTo, target.name, target.type, target.serialNumber ?? null);
+      this.dispatchAssetAssigned(orgId, body.assetId, body.assignedTo, target.name, target.type, target.serialNumber ?? null);
     }
 
     return { success: true };
@@ -160,6 +160,8 @@ export class AssetInventoryService {
 
     if (body.assignedTo && body.assignedTo !== existing.assignedTo) {
       this.dispatchAssetAssigned(
+        orgId,
+        assetId,
         body.assignedTo,
         body.name ?? existing.name,
         body.type ?? existing.type,
@@ -171,24 +173,24 @@ export class AssetInventoryService {
   }
 
   private dispatchAssetAssigned(
+    orgId: string,
+    assetId: number,
     assignedTo: string,
     assetName: string,
     assetType: string,
     serialNumber: string | null,
   ): void {
     void (async () => {
-      const employee = await this.db.query.users.findFirst({
-        where: eq(users.id, assignedTo),
-        columns: { email: true, name: true },
+      await this.dispatch.emit({
+        eventKey: "hr.asset.assigned",
+        orgId,
+        targetUserIds: [assignedTo],
+        entityType: "asset",
+        entityId: String(assetId),
+        title: "Asset assigned",
+        message: `${assetName} has been assigned to you.`,
+        variables: { assetName, assetType, serialNumber },
       });
-      if (!employee?.email) return;
-      await this.email.sendAssetAssignedEmail(
-        employee.email,
-        employee.name ?? "Employee",
-        assetName,
-        assetType,
-        serialNumber,
-      );
     })().catch(() => undefined);
   }
 }

@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProjectsReleasesService } from "./projects-releases.service";
 import {
   createReleaseSchema,
@@ -16,6 +15,12 @@ import {
 } from "./dto/releases.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
+const projectIdreleaseIdParams = z.object({ projectId: z.string().min(1), releaseId: z.coerce.number().int().positive() }).strict();
+const projectIdreleaseIdticketIdParams = z.object({ projectId: z.string().min(1), releaseId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -25,6 +30,7 @@ export class ProjectsReleasesController {
 
   @Get(":projectId/releases")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   listReleases(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -36,9 +42,10 @@ export class ProjectsReleasesController {
   @RequirePermission("build:manage")
   @HttpCode(201)
   @Idempotent("build.release.create")
+  @Validate({ params: projectIdParams, body: createReleaseSchema })
   createRelease(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createReleaseSchema)) body: CreateReleaseInput,
+    @Body() body: CreateReleaseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.releases.createRelease(u.orgId, projectId, u.userId, body);
@@ -46,9 +53,10 @@ export class ProjectsReleasesController {
 
   @Patch(":projectId/releases/:releaseId")
   @RequirePermission("build:manage")
+  @Validate({ params: projectIdreleaseIdParams, body: updateReleaseSchema })
   updateRelease(
     @Param("releaseId", ParseIntPipe) releaseId: number,
-    @Body(new ZodValidationPipe(updateReleaseSchema)) body: UpdateReleaseInput,
+    @Body() body: UpdateReleaseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.releases.updateRelease(u.orgId, releaseId, body);
@@ -57,6 +65,7 @@ export class ProjectsReleasesController {
   @Delete(":projectId/releases/:releaseId")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @Validate({ params: projectIdreleaseIdParams })
   deleteRelease(
     @Param("releaseId", ParseIntPipe) releaseId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -67,9 +76,10 @@ export class ProjectsReleasesController {
   @Post(":projectId/releases/:releaseId/tickets")
   @RequirePermission("build:tickets:update")
   @HttpCode(200)
+  @Validate({ params: projectIdreleaseIdParams, body: addReleaseTicketSchema })
   addTicket(
     @Param("releaseId", ParseIntPipe) releaseId: number,
-    @Body(new ZodValidationPipe(addReleaseTicketSchema)) body: AddReleaseTicketInput,
+    @Body() body: AddReleaseTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.releases.addTicketToRelease(u.orgId, releaseId, body.ticketId);
@@ -78,6 +88,7 @@ export class ProjectsReleasesController {
   @Delete(":projectId/releases/:releaseId/tickets/:ticketId")
   @RequirePermission("build:tickets:update")
   @HttpCode(204)
+  @Validate({ params: projectIdreleaseIdticketIdParams })
   removeTicket(
     @Param("releaseId", ParseIntPipe) releaseId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,

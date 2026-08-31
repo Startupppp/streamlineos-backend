@@ -20,6 +20,9 @@ import { DrizzleModule } from "./db/drizzle.module";
 import { CacheModule } from "./common/cache/cache.module";
 import { AuditModule } from "./common/audit/audit.module";
 import { RateLimitModule } from "./common/ratelimit/rate-limit.module";
+import { AdmissionModule } from "./common/admission/admission.module";
+import { AdmissionGuard } from "./common/admission/admission.guard";
+import { AdmissionInterceptor } from "./common/admission/admission.interceptor";
 import { LeadsModule } from "./modules/leads/leads.module";
 import { ContactsModule } from "./modules/contacts/contacts.module";
 import { CsatModule } from "./modules/csat/csat.module";
@@ -90,6 +93,7 @@ import { CrmImportModule } from "./modules/crm/import/crm-import.module";
 import { PortalModule } from "./modules/portal/portal.module";
 import { ModuleAccessModule } from "./modules/module-access/module-access.module";
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
+import { IdempotencyInterceptor } from "./common/idempotency/idempotency.interceptor";
 import { OutboxModule } from "./common/outbox/outbox.module";
 import { HealthController } from "./health/health.controller";
 import { MeController } from "./me/me.controller";
@@ -99,9 +103,11 @@ import { ZodValidationInterceptor } from "./common/validation/zod-validation.int
 import { DataQualityModule } from "./modules/data-quality/data-quality.module";
 import { IssuesModule } from "./modules/issues/issues.module";
 import { RecordLayoutsModule } from "./modules/record-layouts/record-layouts.module";
+import { EmploymentFactsModule } from "./modules/directory/employment-facts.module";
 
 @Module({
   imports: [
+    EmploymentFactsModule,
     DiscoveryModule,
     RegionModule,
     WorkflowModule,
@@ -115,6 +121,7 @@ import { RecordLayoutsModule } from "./modules/record-layouts/record-layouts.mod
     SurveysModule,
     ContactsModule,
     RateLimitModule,
+    AdmissionModule,
     AuditLogModule,
     GoalsModule,
     ExpensesModule,
@@ -194,13 +201,16 @@ import { RecordLayoutsModule } from "./modules/record-layouts/record-layouts.mod
     TenantContextService,
     { provide: APP_GUARD, useClass: RouteClassifierGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: AdmissionGuard },
     { provide: APP_GUARD, useClass: MfaGuard },
     { provide: APP_GUARD, useClass: ModuleGuard },
+    { provide: APP_INTERCEPTOR, useClass: AdmissionInterceptor },
     // First interceptor to run, so everything after it logs under a known caller.
     { provide: APP_INTERCEPTOR, useClass: ObservabilityEnrichmentInterceptor },
     { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: ZodValidationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
   ],
 })
 export class AppModule {}

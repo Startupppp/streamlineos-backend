@@ -6,7 +6,6 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvAiService } from "./inv-ai.service";
@@ -16,6 +15,10 @@ import {
   type ListInsightsInput,
   type UpdateInsightStatusInput,
 } from "./dto/ai-insights.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const insightIdParams = z.object({ insightId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/ai")
@@ -25,9 +28,10 @@ export class InvAiController {
 
   @Get("insights")
   @UseGuards(PermissionGuard)
-  @RequirePermission("inventory:ai:read")
+  @RequirePermission("inventory:reports:read")
+  @Validate({ query: listInsightsSchema })
   listInsights(
-    @Query(new ZodValidationPipe(listInsightsSchema)) filters: ListInsightsInput,
+    @Query() filters: ListInsightsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.aiService.listInsights(u, filters);
@@ -45,9 +49,10 @@ export class InvAiController {
   @Patch("insights/:insightId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:ai:manage")
+  @Validate({ params: insightIdParams, body: updateInsightStatusSchema })
   updateInsightStatus(
     @Param("insightId", ParseIntPipe) insightId: number,
-    @Body(new ZodValidationPipe(updateInsightStatusSchema)) body: UpdateInsightStatusInput,
+    @Body() body: UpdateInsightStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.aiService.updateInsightStatus(u, insightId, body);

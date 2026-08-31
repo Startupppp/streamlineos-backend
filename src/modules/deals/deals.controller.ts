@@ -20,7 +20,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { AccessService } from "../access/access.service";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { DealsService } from "./deals.service";
 import { resolveDealsReadScope } from "./deals-scope";
@@ -43,6 +42,10 @@ import {
   type UpdateDealInput,
 } from "./dto/deals.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("deals")
@@ -56,8 +59,9 @@ export class DealsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @Validate({ query: listDealsSchema })
   async listDeals(
-    @Query(new ZodValidationPipe(listDealsSchema)) query: ListDealsInput,
+    @Query() query: ListDealsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveDealsReadScope(this.access, u);
@@ -69,8 +73,9 @@ export class DealsController {
   @RequirePermission("crm:deals:create")
   @HttpCode(201)
   @Idempotent("crm.deal.create")
+  @Validate({ body: createDealSchema })
   createDeal(
-    @Body(new ZodValidationPipe(createDealSchema)) body: CreateDealInput,
+    @Body() body: CreateDealInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.deals.createDeal(u.orgId, u.userId, body);
@@ -79,8 +84,9 @@ export class DealsController {
   @Patch("bulk")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
+  @Validate({ body: dealBulkUpdateSchema })
   bulkUpdate(
-    @Body(new ZodValidationPipe(dealBulkUpdateSchema)) body: DealBulkUpdateInput,
+    @Body() body: DealBulkUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.deals.bulkUpdate(u.orgId, u.userId, body);
@@ -89,8 +95,9 @@ export class DealsController {
   @Delete("bulk")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:delete")
+  @Validate({ body: dealBulkDeleteSchema })
   bulkDelete(
-    @Body(new ZodValidationPipe(dealBulkDeleteSchema)) body: DealBulkDeleteInput,
+    @Body() body: DealBulkDeleteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.deals.bulkDelete(u.orgId, u.userId, body);
@@ -101,8 +108,9 @@ export class DealsController {
   @RequirePermission("crm:deals:create")
   @HttpCode(201)
   @Idempotent("crm.deals.bulkImport")
+  @Validate({ body: bulkImportDealsSchema })
   bulkImport(
-    @Body(new ZodValidationPipe(bulkImportDealsSchema)) body: BulkImportDealsInput,
+    @Body() body: BulkImportDealsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.deals.bulkImport(u.orgId, u.userId, body);
@@ -121,6 +129,7 @@ export class DealsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:create")
   @HttpCode(200)
+  @Validate({ params: dealIdParams })
   cloneDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -131,6 +140,7 @@ export class DealsController {
   @Get(":dealId/activities")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @Validate({ params: dealIdParams })
   listActivities(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -138,10 +148,10 @@ export class DealsController {
     return this.deals.listActivities(u.orgId, dealId);
   }
 
-  /** Every move this deal made through the pipeline, and what moved it. */
   @Get(":dealId/transitions")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @Validate({ params: dealIdParams })
   async listStageTransitions(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -153,9 +163,10 @@ export class DealsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
   @HttpCode(201)
+  @Validate({ params: dealIdParams, body: logActivitySchema })
   addActivity(
     @Param("dealId", ParseIntPipe) dealId: number,
-    @Body(new ZodValidationPipe(logActivitySchema)) body: LogActivityInput,
+    @Body() body: LogActivityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.deals.addActivity(u.orgId, u.userId, dealId, body);
@@ -164,9 +175,10 @@ export class DealsController {
   @Patch(":dealId/custom-data")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
+  @Validate({ params: dealIdParams, body: patchCustomDataSchema })
   updateCustomData(
     @Param("dealId", ParseIntPipe) dealId: number,
-    @Body(new ZodValidationPipe(patchCustomDataSchema)) body: PatchCustomDataInput,
+    @Body() body: PatchCustomDataInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.deals.updateCustomData(u.orgId, dealId, body);
@@ -175,9 +187,10 @@ export class DealsController {
   @Patch(":dealId")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
+  @Validate({ params: dealIdParams, body: updateDealSchema })
   async updateDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
-    @Body(new ZodValidationPipe(updateDealSchema)) body: UpdateDealInput,
+    @Body() body: UpdateDealInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.deals.updateDeal(u.orgId, u.userId, dealId, body);
@@ -196,6 +209,7 @@ export class DealsController {
   @Get(":dealId")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @Validate({ params: dealIdParams })
   async getDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -209,6 +223,7 @@ export class DealsController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:delete")
+  @Validate({ params: dealIdParams })
   async deleteDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,

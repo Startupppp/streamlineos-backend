@@ -9,6 +9,7 @@ import { Test } from "@nestjs/testing";
 import type { NextFunction, Request, Response } from "express";
 import request from "supertest";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import { Public } from "../../common/auth/public.decorator";
 import { AccessService } from "./access.service";
 import { PermissionGuard } from "./permission.guard";
@@ -49,6 +50,7 @@ const user: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 function attachUser(req: Request, _res: Response, next: NextFunction): void {
@@ -71,6 +73,18 @@ describe("PermissionGuard routes (e2e)", () => {
           useValue: {
             resolveUserPermissions,
             isModuleEnabled: jest.fn().mockResolvedValue(true),
+            getModuleState: jest.fn().mockResolvedValue(true),
+            scopeFor: jest.fn(async (user: CurrentUserContext, key: string) => {
+              if (user.isOrgOwner) return "all";
+              const resolved = await resolveUserPermissions(user.orgId, user.userId);
+              return resolved.get(key) ?? "none";
+            }),
+            buildModuleAvailabilityResolver: () => ({
+              isCoreModule: () => true,
+              getModuleMap: async () => ({}),
+              getUserDeniedModules: async () => new Set<string>(),
+              getPlanLockedModules: async () => [],
+            }),
           },
         },
       ],

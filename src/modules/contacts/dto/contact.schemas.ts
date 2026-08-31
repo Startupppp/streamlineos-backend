@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { optionalPageSizeField } from "../../../common/pagination/list-query.schema";
 import { personNameSchema } from "../../../common/validation/person-name.schema";
 
 export const listSchema = z.object({
   search: z.string().optional(),
   organizationId: z.coerce.number().optional(),
-  limit: z.coerce.number().min(1).max(100).optional(),
+  limit: optionalPageSizeField(),
   offset: z.coerce.number().min(0).optional(),
 });
 

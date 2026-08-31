@@ -13,7 +13,8 @@ import { ReservationService } from "../stock-engine/reservation.service";
 import { ChannelPoolService } from "../stock-engine/channel-pool.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
-import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
+import { INV_ERRORS } from "../stock-engine/stock-engine.types";
+import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
 import { SoCoreService } from "./so-core.service";
 import { clientBehindSource, resolveShelfLifeFloor } from "../settings/min-shelf-life";
 import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dto/inv-sales-orders.schemas";
@@ -56,7 +57,7 @@ export class SoFulfillmentService {
     private readonly channelPools: ChannelPoolService,
     private readonly settingsService: InventorySettingsService,
     private readonly numSeq: NumberSequenceService,
-    private readonly journalPosting: InventoryAccountingBridge,
+    private readonly journalPosting: JournalPostingService,
     private readonly soCore: SoCoreService,
     private readonly projection: StockProjectionService,
     private readonly compliance: IndiaComplianceService,

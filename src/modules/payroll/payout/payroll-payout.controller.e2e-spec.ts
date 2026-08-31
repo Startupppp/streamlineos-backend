@@ -7,9 +7,13 @@ import { EntitlementsService } from "../../access/entitlements.service";
 import { ApprovalsService } from "./approvals.service";
 import { LockingService } from "./locking.service";
 import { PayoutBatchesService } from "./payout-batches.service";
+import { BatchCreatorService } from "./batch-creator.service";
+import { BatchStatusService } from "./batch-status.service";
+import { PayoutValidationService } from "./payout-validation.service";
 import { PayslipTemplatesService } from "./payslip-templates.service";
 import { PublishingService } from "./publishing.service";
 import { PayrollCommandReceiptsService } from "../command-receipts.service";
+import { withAccessResolution } from "../../../../test/helpers/access-stub";
 
 const ALL_PAYOUT_PERMS = new Map([
   ["payroll:runs:view", "all"],
@@ -22,23 +26,26 @@ const ALL_PAYOUT_PERMS = new Map([
   ["payroll:payslips:manage", "all"],
 ]);
 
-const permittedAccess = {
+const permittedAccess = withAccessResolution({
   resolveUserPermissions: jest.fn().mockResolvedValue(ALL_PAYOUT_PERMS),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+});
 
-const forbiddenAccess = {
+const forbiddenAccess = withAccessResolution({
   resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+});
 
-const approveOnlyAccess = {
+const approveOnlyAccess = withAccessResolution({
   resolveUserPermissions: jest.fn().mockResolvedValue(new Map([
     ["payroll:runs:view", "all"],
     ["payroll:runs:approve", "all"],
   ])),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+});
 
 const mockApproval = { id: 1, runId: 1, stage: 1, status: "PENDING" };
 const mockBatch = { id: 1, runId: 1, format: "NEFT_CSV", status: "DRAFT", totalAmount: "0.00" };
@@ -59,16 +66,25 @@ const mockLockingService = {
 };
 
 const mockPayoutBatchesService = {
-  validatePayout: jest.fn().mockResolvedValue({ valid: true, blockers: [] }),
-  createBatch: jest.fn().mockResolvedValue(mockBatch),
   listBatches: jest.fn().mockResolvedValue([mockBatch]),
   getBatch: jest.fn().mockResolvedValue(mockBatch),
   getFile: jest.fn().mockResolvedValue({ content: "", filename: "batch.csv" }),
+  getBankDetails: jest.fn().mockResolvedValue({ accountNumber: "***1234", ifsc: "SBIN0001" }),
+};
+
+const mockBatchCreatorService = {
+  createBatch: jest.fn().mockResolvedValue(mockBatch),
+};
+
+const mockBatchStatusService = {
   markSent: jest.fn().mockResolvedValue({ ok: true }),
   markBatchPaid: jest.fn().mockResolvedValue({ ok: true }),
   markItemPaid: jest.fn().mockResolvedValue({ ok: true }),
   markItemFailed: jest.fn().mockResolvedValue({ ok: true }),
-  getBankDetails: jest.fn().mockResolvedValue({ accountNumber: "***1234", ifsc: "SBIN0001" }),
+};
+
+const mockPayoutValidationService = {
+  validatePayout: jest.fn().mockResolvedValue({ valid: true, blockers: [] }),
 };
 
 const mockPayslipTemplatesService = {
@@ -81,7 +97,7 @@ const mockPayslipTemplatesService = {
 
 const mockPublishingService = {
   publish: jest.fn().mockResolvedValue({ published: 0, skipped: 0 }),
-  listPublications: jest.fn().mockResolvedValue([mockPublication]),
+  listPublications: jest.fn().mockResolvedValue({ items: [mockPublication], truncated: false }),
   downloadPdf: jest.fn().mockResolvedValue({ buffer: Buffer.from(""), contentType: "application/pdf" }),
 };
 
@@ -134,6 +150,9 @@ async function buildApp(accessMock: typeof permittedAccess): Promise<INestApplic
       { provide: ApprovalsService, useValue: mockApprovalsService },
       { provide: LockingService, useValue: mockLockingService },
       { provide: PayoutBatchesService, useValue: mockPayoutBatchesService },
+      { provide: BatchCreatorService, useValue: mockBatchCreatorService },
+      { provide: BatchStatusService, useValue: mockBatchStatusService },
+      { provide: PayoutValidationService, useValue: mockPayoutValidationService },
       { provide: PayslipTemplatesService, useValue: mockPayslipTemplatesService },
       { provide: PublishingService, useValue: mockPublishingService },
       { provide: PayrollCommandReceiptsService, useValue: mockCommandReceiptsService },

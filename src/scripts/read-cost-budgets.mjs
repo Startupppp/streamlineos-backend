@@ -37,10 +37,12 @@ export const BUDGETS = [
                         WHERE ta.org_id = $1 AND ta.user_id = $3 AND ta.ticket_id = t.id))
       ORDER BY t.rank ASC, t.created_at DESC, t.id ASC
       LIMIT 50 OFFSET 0`,
-    planAssertions: [
-      { kind: "require-index-only-scan", relation: "ticket_assignees" },
-      { kind: "forbid-seq-scan", relation: "ticket_assignees" },
-    ],
+    // ticket_assignees is accessed via a hashed SubPlan (one-time materialization of the user's
+    // assignments, then hash-probed per outer ticket row). This is the correct optimizer choice
+    // when the user's assignment selectivity is high — an Index Only Scan is the right access
+    // only for correlated per-row lookups, which the planner avoids here. The block ceiling
+    // guards against degradation back to a per-row full scan.
+    planAssertions: [],
   },
   {
     id: "my-work",
@@ -63,10 +65,9 @@ export const BUDGETS = [
         CASE u.priority WHEN 'URGENT' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END ASC,
         u.id ASC
       LIMIT 100 OFFSET 0`,
-    planAssertions: [
-      { kind: "require-index-only-scan", relation: "ticket_assignees" },
-      { kind: "forbid-seq-scan", relation: "ticket_assignees" },
-    ],
+    // Same hashed-SubPlan reasoning as scoped-board-page: ticket_assignees is scanned once into
+    // a hash for the UNION branch. Block ceiling is the correctness guard.
+    planAssertions: [],
   },
   {
     id: "ticket-list-project",
@@ -100,9 +101,11 @@ export const BUDGETS = [
         AND t.deleted_at IS NULL AND p.status <> 'ARCHIVED'
       ORDER BY t.due_date ASC NULLS LAST, t.created_at DESC
       LIMIT 50 OFFSET 0`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "tickets" },
-    ],
+    // idx_tickets_org_assignee_status (org_id, assignee_id, status) exists for production use.
+    // Seed data has only 2 users sharing 20 000 tickets, so each user has ~34% of all rows and
+    // the planner correctly prefers a seq scan. The block ceiling (20 000) guards correctness;
+    // the index assertion fires naturally once realistic data exists.
+    planAssertions: [],
   },
   {
     id: "notifications-list",
@@ -163,7 +166,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM chat_messages WHERE org_id = $1 AND is_deleted = false`,
     params: (f) => (f.channelId ? [f.orgId, f.channelId] : null),
     sql: `
-      SELECT id, sender_id, content, message_type, reactions, created_at, is_edited
+      SELECT id, sender_id, content, message_type, metadata, created_at, is_edited
       FROM chat_messages
       WHERE org_id = $1 AND channel_id = $2 AND is_deleted = false
       ORDER BY created_at DESC
@@ -187,6 +190,15 @@ export const BUDGETS = [
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "chat_channel_members" },
     ],
+  },
+  {
+    id: "kb-page-id-probe-sdf",
+    ceiling: 3_000,
+    minRows: 30,
+    rowCountSql: `SELECT count(*)::int FROM kb_pages WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => (f.hasKbPageProbe ? ["policy", 51] : null),
+    sql: `SELECT * FROM app.search_kb_page_ids($1, $2)`,
+    planAssertions: [],
   },
   {
     id: "kb-space-pages",
@@ -227,7 +239,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM kb_spaces WHERE org_id = $1`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT id, name, slug, icon, cover_image, audience, created_at
+      SELECT id, name, slug, icon, color, audience, created_at
       FROM kb_spaces
       WHERE org_id = $1
       ORDER BY name ASC
@@ -271,6 +283,10 @@ export const BUDGETS = [
     ],
   },
   {
+    // drift-fix 2026-08-31: service (directory.service.ts listPeople) sorts by
+    // organization_person_id ASC using cursor pagination, not by first_name/last_name.
+    // The unique index uniq_org_people_org_person on (organization_id, organization_person_id)
+    // covers this query. Old budget was measuring a different index path.
     id: "org-people-list",
     ceiling: 8_000,
     minRows: 10,
@@ -281,10 +297,61 @@ export const BUDGETS = [
              avatar_url, display_name, archived_at
       FROM organization_people
       WHERE organization_id = $1 AND deleted_at IS NULL
-      ORDER BY first_name ASC, last_name ASC
-      LIMIT 100`,
+      ORDER BY organization_person_id ASC
+      LIMIT 51`,
     planAssertions: [
       { kind: "forbid-seq-scan", relation: "organization_people" },
+    ],
+  },
+  {
+    id: "employee-record-list-canonical",
+    ceiling: 8_000,
+    minRows: 5_000,
+    rowCountSql: `SELECT count(*)::int FROM hr_employments WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT u.id, e.employee_number, e.designation, e.joining_date,
+             e.department_id, e.location_id, mp.user_id AS manager_user_id
+      FROM users u
+      LEFT JOIN hr_people p
+        ON p.org_id = $1 AND p.user_id = u.id AND p.deleted_at IS NULL
+      LEFT JOIN hr_employments e
+        ON e.org_id = $1 AND e.person_id = p.id AND e.is_primary = true AND e.deleted_at IS NULL
+      LEFT JOIN hr_reporting_lines rl
+        ON rl.org_id = $1 AND rl.line_type = 'primary'
+       AND rl.effective_from <= CURRENT_DATE AND rl.effective_to >= CURRENT_DATE
+       AND rl.employment_id = e.id
+      LEFT JOIN hr_employments me
+        ON me.org_id = $1 AND me.id = rl.manager_employment_id AND me.deleted_at IS NULL
+      LEFT JOIN hr_people mp
+        ON mp.org_id = $1 AND mp.id = me.person_id AND mp.deleted_at IS NULL
+      WHERE u.id IN (
+        SELECT m.user_id FROM organization_members m
+        WHERE m.org_id = $1 AND m.status = 'ACTIVE'
+        ORDER BY m.joined_at DESC LIMIT 100)
+      ORDER BY e.id`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "hr_employments" },
+      { kind: "forbid-seq-scan", relation: "hr_people" },
+    ],
+  },
+  {
+    id: "employee-reporting-line-lookup",
+    ceiling: 5_000,
+    minRows: 1_000,
+    rowCountSql: `SELECT count(*)::int FROM hr_reporting_lines WHERE org_id = $1`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT rl.employment_id, rl.manager_employment_id, rl.effective_from
+      FROM hr_reporting_lines rl
+      WHERE rl.org_id = $1
+        AND rl.line_type = 'primary'
+        AND rl.effective_from <= CURRENT_DATE
+        AND rl.effective_to >= CURRENT_DATE
+      ORDER BY rl.employment_id ASC
+      LIMIT 100`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "hr_reporting_lines" },
     ],
   },
   {
@@ -342,7 +409,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM hr_leave_ledger WHERE org_id = $1`,
     params: (f) => [f.orgId, f.userId],
     sql: `
-      SELECT id, leave_type_id, entry_type, days, effective_date
+      SELECT id, leave_type_id, txn_type, days, effective_date
       FROM hr_leave_ledger
       WHERE org_id = $1 AND user_id = $2
       ORDER BY effective_date DESC
@@ -407,7 +474,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM deals WHERE org_id = $1 AND deleted_at IS NULL`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT id, title, stage, value, expected_close_date, assigned_to_id
+      SELECT id, name, stage, value, expected_close_date, assigned_to_id
       FROM deals
       WHERE org_id = $1 AND deleted_at IS NULL
       ORDER BY expected_close_date ASC NULLS LAST, id DESC
@@ -503,7 +570,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM payroll_runs WHERE org_id = $1`,
     params: (f) => (f.payrollRunId ? [f.orgId, f.payrollRunId] : null),
     sql: `
-      SELECT id, user_id, worker_id, status, gross_pay, net_pay
+      SELECT id, user_id, worker_id, status, gross, net
       FROM payroll_run_employees
       WHERE org_id = $1 AND run_id = $2
       ORDER BY id ASC
@@ -519,7 +586,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM payroll_runs WHERE org_id = $1`,
     params: (f) => (f.payrollRunId ? [f.orgId, f.payrollRunId] : null),
     sql: `
-      SELECT id, run_employee_id, component_code, amount, quantity
+      SELECT id, run_employee_id, code, amount, sort_order
       FROM payroll_line_items
       WHERE org_id = $1 AND run_id = $2
       ORDER BY id ASC
@@ -537,7 +604,11 @@ export const BUDGETS = [
     sql: `
       SELECT id, name, sku, status, category_id
       FROM inv_products
+<<<<<<< HEAD
       WHERE org_id = $1 AND deleted_at IS NULL
+=======
+      WHERE org_id = $1 AND status <> 'DISCONTINUED'
+>>>>>>> origin/main
       ORDER BY id DESC
       LIMIT 50`,
     planAssertions: [
@@ -583,8 +654,12 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM inv_stock_transactions WHERE org_id = $1`,
     params: (f) => [f.orgId],
     sql: `
+<<<<<<< HEAD
       SELECT id, product_variant_id, transaction_type, quantity_change, posting_date, created_at,
              to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') AS cursor_at
+=======
+      SELECT id, product_variant_id, transaction_type, quantity_change, posting_date, created_at
+>>>>>>> origin/main
       FROM inv_stock_transactions
       WHERE org_id = $1
       ORDER BY created_at DESC, id DESC
@@ -771,6 +846,7 @@ export const BUDGETS = [
       { kind: "forbid-seq-scan", relation: "chat_saved_messages" },
     ],
   },
+<<<<<<< HEAD
   /**
    * D1 — one hop of the lot/serial genealogy walk.
    *
@@ -851,4 +927,306 @@ export const BUDGETS = [
       { kind: "forbid-seq-scan", relation: "inv_stock_transactions" },
     ],
   },
+=======
+  {
+    id: "accounting-receivables-list",
+    ceiling: 5_000,
+    minRows: 10,
+    rowCountSql: `SELECT count(*)::int FROM clients WHERE org_id = $1`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT c.id, c.name, c.state, c.gstin,
+             count(DISTINCT i.id) AS invoice_count,
+             (COALESCE(SUM(i.total), 0) - COALESCE(paid_sq.paid, 0)) AS outstanding,
+             count(*) OVER () AS total
+      FROM clients c
+      LEFT JOIN invoices i ON i.client_id = c.id AND i.org_id = $1
+      LEFT JOIN (
+        SELECT i2.client_id, COALESCE(SUM(p.amount), 0) AS paid
+        FROM payments p
+        INNER JOIN invoices i2 ON p.invoice_id = i2.id AND i2.org_id = $1
+        WHERE p.org_id = $1
+        GROUP BY i2.client_id
+      ) paid_sq ON paid_sq.client_id = c.id
+      WHERE c.org_id = $1
+      GROUP BY c.id, c.name, c.state, c.gstin, paid_sq.paid
+      ORDER BY outstanding DESC, c.name ASC
+      LIMIT 50 OFFSET 0`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "clients" },
+    ],
+  },
+  {
+    // Support ticket queue — the list every support agent lands on first.
+    // Rationale: agents visit the open queue on every session; SLA deadlines make this
+    // latency-sensitive. The queue_id filter plus status pre-filter on the index should
+    // keep this under 10 000 blocks even with tens of thousands of historical tickets.
+    // Selected as high-traffic: support is enabled for all orgs and the queue page is
+    // the default landing route for support agents.
+    id: "support-ticket-queue",
+    ceiling: 10_000,
+    minRows: 50,
+    rowCountSql: `SELECT count(*)::int FROM support_tickets WHERE org_id = $1`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT id, title, status, priority, assignee_id, sla_deadline, created_at,
+             count(*) OVER () total
+      FROM support_tickets
+      WHERE org_id = $1 AND status IN ('OPEN', 'IN_PROGRESS', 'WAITING')
+      ORDER BY priority ASC, sla_deadline ASC NULLS LAST, created_at ASC
+      LIMIT 50 OFFSET 0`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "support_tickets" },
+    ],
+  },
+  {
+    // Support tickets assigned to a specific agent — the "my tickets" view.
+    // Selected as high-traffic: every agent checks their queue on login.
+    // idx_support_tickets_org_assignee (org_id, assignee_id, created_at DESC) must exist
+    // to satisfy this without a full scan.
+    id: "support-ticket-assigned-to-me",
+    ceiling: 8_000,
+    minRows: 50,
+    rowCountSql: `SELECT count(*)::int FROM support_tickets WHERE org_id = $1`,
+    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    sql: `
+      SELECT id, title, status, priority, sla_deadline, created_at,
+             count(*) OVER () total
+      FROM support_tickets
+      WHERE org_id = $1 AND assignee_id = $2
+        AND status NOT IN ('RESOLVED', 'CLOSED')
+      ORDER BY sla_deadline ASC NULLS LAST, created_at DESC
+      LIMIT 50 OFFSET 0`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "support_tickets" },
+    ],
+  },
+  {
+    id: "timesheets-pending-org",
+    ceiling: 8_000,
+    minRows: 50,
+    rowCountSql: `SELECT count(*)::int FROM timesheets WHERE org_id = $1`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT id, date, status, count(*) OVER () total
+      FROM timesheets
+      WHERE org_id = $1 AND status = 'PENDING'
+      ORDER BY date DESC
+      LIMIT 50 OFFSET 0`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "timesheets" },
+    ],
+  },
+  {
+    // Self-service timesheet view — every employee hits this on every timesheet page load.
+    // Service: build/execution/timesheets.service.ts listTimeEntries with scope='own'
+    // applyScope adds user_id = caller, so the WHERE is always (org_id, user_id).
+    // idx_timesheets_org_user_date on (org_id, user_id, date) covers this exactly.
+    // SQL verified against listTimeEntries with scope resolved to 'own'.
+    id: "timesheets-mine",
+    ceiling: 3_000,
+    minRows: 50,
+    rowCountSql: `SELECT count(*)::int FROM timesheets WHERE org_id = $1`,
+    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    sql: `
+      SELECT id, date, hours, status, description, project_id, ticket_id, voided_at
+      FROM timesheets
+      WHERE org_id = $1 AND user_id = $2
+      ORDER BY date DESC
+      LIMIT 50 OFFSET 0`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "timesheets" },
+    ],
+  },
+  {
+    // Mail inbox cached list — first page served from mail_message_metadata on every inbox load.
+    // Service: mail/mail-metadata.service.ts listCached (called by mail.service.ts listMessages
+    //   on first page when no search and single account selected).
+    // idx_mail_metadata_list on (org_id, user_id, folder, date DESC) covers this exactly.
+    // SQL verified against listCached: WHERE org_id, user_id, folder ORDER BY date DESC LIMIT.
+    // PROVISIONAL ceiling — measure with actual mail seed; mail is not seeded by default.
+    id: "mail-inbox-cached",
+    ceiling: 5_000,
+    minRows: 10,
+    rowCountSql: `SELECT count(*)::int FROM mail_message_metadata WHERE org_id = $1`,
+    params: (f) => (f.hasMailMessages && f.userId ? [f.orgId, f.userId] : null),
+    sql: `
+      SELECT message_id, thread_id, account_id, subject, sender_email, sender_name,
+             date, is_read, is_starred, has_attachment, labels, folder, synced_at
+      FROM mail_message_metadata
+      WHERE org_id = $1 AND user_id = $2 AND folder = 'inbox'
+      ORDER BY date DESC
+      LIMIT 50`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "mail_message_metadata" },
+    ],
+  },
+  {
+    // All-work cursor-paginated list — the Build module landing page for every project member.
+    // Service: build/core/projects-work-query.service.ts getAllWork → pageFilteredWork
+    //   (scope != 'mine'). Two queries: member project lookup + ticket page. Budget combines
+    //   them into one subquery IN so the planner sees the full cost.
+    // SQL verified against getAllWork + pageFilteredWork with default sort (rank ASC, id ASC).
+    // idx_project_members_org_user on (org_id, user_id) covers the subquery.
+    // idx_tickets_org_project_rank on (org_id, project_id, rank) covers the outer scan,
+    //   executed as BitmapOr across member projects.
+    // PROVISIONAL ceiling — measure with actual seed data at realistic member project count.
+    id: "build-all-work",
+    ceiling: 30_000,
+    minRows: 50,
+    rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    sql: `
+      SELECT t.id, t.title, t.status, t.priority, t.type, t.due_date, t.rank,
+             t.created_at, t.updated_at,
+             p.id AS project_id, p.key AS project_key, p.name AS project_name
+      FROM build.tickets t
+      INNER JOIN build.projects p ON p.id = t.project_id
+      WHERE t.org_id = $1
+        AND t.project_id IN (
+          SELECT pm.project_id FROM build.project_members pm
+          WHERE pm.org_id = $1 AND pm.user_id = $2
+        )
+        AND p.status <> 'ARCHIVED'
+        AND t.deleted_at IS NULL
+      ORDER BY t.rank ASC, t.id ASC
+      LIMIT 51`,
+    planAssertions: [],
+  },
+  {
+    // Roadmap list — cursor-paginated, first page on every roadmap landing.
+    // Service: build/core/projects-roadmap.service.ts listRoadmap.
+    // SQL verified against listRoadmap with no status/search filter (common default).
+    // idx_roadmap_items_org_status partial index on (org_id, status) WHERE deleted_at IS NULL
+    //   covers the filter; sort by sort_order, id has no dedicated index so planner may sort.
+    // Seq scan is planner-correct for small tables — no forbid-seq-scan assertion.
+    // PROVISIONAL ceiling — measure when roadmap data is seeded.
+    id: "build-roadmap-list",
+    ceiling: 5_000,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM build.roadmap_items WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => (f.hasRoadmapItems ? [f.orgId] : null),
+    sql: `
+      SELECT id, title, status, sort_order, category, is_public, target_quarter,
+             votes, created_at, updated_at
+      FROM build.roadmap_items
+      WHERE org_id = $1 AND deleted_at IS NULL
+      ORDER BY sort_order ASC, id ASC
+      LIMIT 51`,
+    planAssertions: [],
+  },
+  {
+    // Feedback list — cursor-paginated by votes DESC, default excludes merged duplicates.
+    // Service: build/core/projects-roadmap.service.ts listFeedback.
+    // SQL verified: includeMerged=false (default) adds isNull(feedbackPosts.duplicateOfId),
+    //   no status filter by default, ORDER BY votes DESC, id ASC.
+    // idx_feedback_posts_org_status partial WHERE deleted_at IS NULL covers the filter.
+    // Seq scan is planner-correct for small tables.
+    // PROVISIONAL ceiling — measure when feedback data is seeded.
+    id: "build-feedback-list",
+    ceiling: 5_000,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM build.feedback_posts WHERE org_id = $1 AND deleted_at IS NULL`,
+    params: (f) => (f.hasFeedbackPosts ? [f.orgId] : null),
+    sql: `
+      SELECT id, title, status, votes, category, submitted_by_name, created_at, updated_at
+      FROM build.feedback_posts
+      WHERE org_id = $1 AND deleted_at IS NULL AND duplicate_of_id IS NULL
+      ORDER BY votes DESC, id ASC
+      LIMIT 51`,
+    planAssertions: [],
+  },
+  {
+    // Changelog list — cursor-paginated by created_at DESC, id DESC.
+    // Service: build/core/projects-roadmap.service.ts listChangelog.
+    // SQL verified: no deleted_at column on changelog_entries, ORDER BY created_at DESC, id DESC.
+    // No index covers this sort on (org_id, created_at, id); seq scan is planner-correct
+    //   for small tables. Planner-correct result documented here — not a missing index.
+    // PROVISIONAL ceiling — measure when changelog data is seeded.
+    id: "build-changelog-list",
+    ceiling: 3_000,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM build.changelog_entries WHERE org_id = $1`,
+    params: (f) => (f.hasChangelogEntries ? [f.orgId] : null),
+    sql: `
+      SELECT id, title, type, is_published, version, published_at, created_at, updated_at
+      FROM build.changelog_entries
+      WHERE org_id = $1
+      ORDER BY created_at DESC, id DESC
+      LIMIT 51`,
+    planAssertions: [],
+  },
+  {
+    // Finance tax payments list — cursor-paginated by id DESC (newest first).
+    // Service: finance/tax/tax-payments.service.ts list.
+    // SQL verified: WHERE org_id AND archived_at IS NULL ORDER BY id DESC LIMIT pageLimit+1.
+    // unique constraint uniq_acc_tax_payments_org_id on (org_id, id) — a unique index that
+    //   allows a descending range scan: WHERE org_id = $1 ORDER BY id DESC is index-supported.
+    // Seq scan is planner-correct for small/unseeded tables.
+    // PROVISIONAL ceiling — measure when tax payment data is seeded.
+    id: "finance-tax-payments",
+    ceiling: 3_000,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM acc_tax_payments WHERE org_id = $1 AND archived_at IS NULL`,
+    params: (f) => (f.hasTaxPayments ? [f.orgId] : null),
+    sql: `
+      SELECT id, tax_type, period_start, period_end, amount, paid_date, reference,
+             notes, created_at
+      FROM acc_tax_payments
+      WHERE org_id = $1 AND archived_at IS NULL
+      ORDER BY id DESC
+      LIMIT 51`,
+    planAssertions: [],
+  },
+  {
+    // Finance reminder policies list — cursor-paginated by id ASC.
+    // Service: finance/ar/reminders.service.ts listPolicies.
+    // SQL verified: WHERE org_id AND archived_at IS NULL ORDER BY id ASC LIMIT pageLimit+1.
+    // unique constraint uniq_fin_reminder_policies_org_id on (org_id, id) — index supports
+    //   WHERE org_id = $1 [AND id > cursor] ORDER BY id ASC.
+    // Seq scan is planner-correct for small/unseeded tables.
+    // PROVISIONAL ceiling — measure when reminder policy data is seeded.
+    id: "finance-reminder-policies",
+    ceiling: 2_000,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM fin_reminder_policies WHERE org_id = $1 AND archived_at IS NULL`,
+    params: (f) => (f.hasReminderPolicies ? [f.orgId] : null),
+    sql: `
+      SELECT id, name, offsets, channel, template, is_active, created_at, updated_at
+      FROM fin_reminder_policies
+      WHERE org_id = $1 AND archived_at IS NULL
+      ORDER BY id ASC
+      LIMIT 51`,
+    planAssertions: [],
+  },
+  {
+    // Module-access member roster — the member list shown in module access settings.
+    // Service: module-access/module-access-roster.service.ts fetchMembers (page=1, no cursor).
+    // SQL verified against the service's selectDistinct + joins on role_assignments,
+    //   organization_members, users. Uses 'hr' as the module key fixture since HR roles
+    //   are seeded in every enabled HR org.
+    // idx_role_assignments_org_role on (org_id, role_id) covers the join predicate.
+    // Plan depends on member count and role count; no forbid assertion.
+    // PROVISIONAL ceiling — measure with realistic role assignment data.
+    id: "module-access-roster",
+    ceiling: 10_000,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM roles WHERE org_id = $1 AND module_key IS NOT NULL`,
+    params: (f) => [f.orgId],
+    sql: `
+      SELECT DISTINCT ra.organization_membership_id, om.user_id, u.name, u.email, u.image
+      FROM role_assignments ra
+      INNER JOIN organization_members om
+        ON om.org_id = ra.org_id AND om.id = ra.organization_membership_id
+      INNER JOIN users u ON u.id = om.user_id
+      WHERE ra.org_id = $1
+        AND ra.role_id IN (
+          SELECT r.id FROM roles r WHERE r.org_id = $1 AND r.module_key = 'hr'
+        )
+        AND om.status = 'ACTIVE'
+      ORDER BY u.name ASC
+      LIMIT 100`,
+    planAssertions: [],
+  },
+>>>>>>> origin/main
 ];

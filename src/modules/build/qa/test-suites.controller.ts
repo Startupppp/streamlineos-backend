@@ -16,7 +16,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TestManagementService } from "./test-management.service";
 import {
   createTestSuiteSchema,
@@ -24,6 +23,10 @@ import {
   type CreateTestSuiteInput,
   type UpdateTestSuiteInput,
 } from "./dto/qa.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const suiteIdParams = z.object({ suiteId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/test-suites")
@@ -43,9 +46,10 @@ export class TestSuitesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:qa:manage")
+  @Validate({ body: createTestSuiteSchema })
   createSuite(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createTestSuiteSchema)) body: CreateTestSuiteInput,
+    @Body() body: CreateTestSuiteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createSuite(u.orgId, u.userId, projectId, body);
@@ -53,10 +57,11 @@ export class TestSuitesController {
 
   @Patch(":suiteId")
   @RequirePermission("build:qa:manage")
+  @Validate({ params: suiteIdParams, body: updateTestSuiteSchema })
   updateSuite(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("suiteId", ParseIntPipe) suiteId: number,
-    @Body(new ZodValidationPipe(updateTestSuiteSchema)) body: UpdateTestSuiteInput,
+    @Body() body: UpdateTestSuiteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateSuite(u.orgId, projectId, suiteId, body);
@@ -65,6 +70,7 @@ export class TestSuitesController {
   @Delete(":suiteId")
   @RequirePermission("build:qa:manage")
   @HttpCode(204)
+  @Validate({ params: suiteIdParams })
   deleteSuite(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("suiteId", ParseIntPipe) suiteId: number,

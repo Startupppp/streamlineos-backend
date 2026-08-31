@@ -1,0 +1,40 @@
+name: Legacy Actor Ratchet
+
+# Guards ticket-11 criterion 1: the organizational users.id FK count must never
+# rise above the committed baseline. Every PR that migrates a column makes the
+# gate easier to pass; no PR may add a new legacy reference.
+#
+# This is a SEPARATE workflow from ci.yml so it never collides with Lane B's CI
+# edits. It runs purely on the source tree — no database or credentials needed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: legacy-actor-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ratchet:
+    name: Legacy org-actor ratchet
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check legacy org-actor count against baseline
+        run: node src/scripts/scan-legacy-org-actors.mjs --check
+        working-directory: backend
+
+      - name: Self-test the scanner
+        run: node src/scripts/scan-legacy-org-actors.mjs --self-test
+        working-directory: backend

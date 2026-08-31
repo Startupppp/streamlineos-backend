@@ -10,7 +10,10 @@ import {
 } from "../../../../db/schema";
 import type { AuditService } from "../../../../common/audit/audit.service";
 import type { PayrollPostingService } from "../../payroll-posting.service";
+import { systemActor } from "../../../../common/auth/system-actor";
 import type { JournalOutboxService } from "../../insights/journal-outbox.service";
+import { registerAfterCommit } from "../../../../common/tenant/tenant-context";
+import { logSideEffectFailure } from "../../../../common/logger/side-effect";
 
 export interface RunCompletionDeps {
   db: Db;
@@ -198,13 +201,21 @@ export async function checkRunCompletion(
       .limit(1);
 
     if (paidRun[0]) {
-      void deps.payrollPosting.postPaid(
-        { userId: actorId, orgId, role: "system", isOrgOwner: true, sessionId: "system", tokenScopes: null },
-        runId,
-        paidRun[0].month,
-        paidRun[0].netTotal ?? "0",
-      );
-      void autoSnapshotJournal(deps, orgId, actorId, paidRun[0].month, runId);
+      deps.payrollPosting
+        .postPaid(
+          systemActor("payroll.run.payout-posting", orgId, actorId),
+          runId,
+          paidRun[0].month,
+          paidRun[0].netTotal ?? "0",
+        )
+        .catch((e: unknown) =>
+          deps.logger.warn("postPaid accounting integration failed", { error: String(e), runId, orgId }),
+        );
+      const snapshotTask = () =>
+        autoSnapshotJournal(deps, orgId, actorId, paidRun[0].month, runId).catch(
+          logSideEffectFailure("payroll auto-snapshot journal", { orgId, runId }),
+        );
+      if (!registerAfterCommit(snapshotTask)) void snapshotTask();
     }
   }
 }

@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, inArray, isNotNull, lte, notInArray, sql } from "drizzle-orm";
-import { calendarEvents, invoices, signEnvelopes, supportTickets } from "../../../db/schema";
+import { aliasedTable, and, eq, inArray, isNotNull, lte, notInArray, sql } from "drizzle-orm";
+import { calendarEvents, eventAttendees, invoices, organizationMembers, signEnvelopes, supportTickets } from "../../../db/schema";
+
+const calendarCreatorMember = aliasedTable(organizationMembers, "notif_calendar_creator");
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { forEachOrg } from "../../../common/tenant";
@@ -184,10 +186,6 @@ export class NotificationTimeSweepsService {
     }
   }
 
-  /**
-   * `attendeeIds` is a JSONB array of user ids, so the membership test has to happen in
-   * SQL rather than by loading every event and filtering in JS.
-   */
   private async sweepEventsStartingSoon(
     tx: Db,
     orgId: string,
@@ -198,10 +196,16 @@ export class NotificationTimeSweepsService {
         id: calendarEvents.id,
         title: calendarEvents.title,
         startDate: calendarEvents.startDate,
-        createdBy: calendarEvents.createdBy,
-        attendeeIds: calendarEvents.attendeeIds,
+        createdByUserId: calendarCreatorMember.userId,
       })
       .from(calendarEvents)
+      .innerJoin(
+        calendarCreatorMember,
+        and(
+          eq(calendarCreatorMember.orgId, calendarEvents.orgId),
+          eq(calendarCreatorMember.id, calendarEvents.createdByMembershipId),
+        ),
+      )
       .where(
         and(
           eq(calendarEvents.orgId, orgId),
@@ -211,11 +215,29 @@ export class NotificationTimeSweepsService {
       )
       .limit(200);
 
+    const attendeeRows = rows.length === 0 ? [] : await tx
+      .select({ eventId: eventAttendees.eventId, userId: organizationMembers.userId })
+      .from(eventAttendees)
+      .innerJoin(
+        organizationMembers,
+        and(eq(eventAttendees.orgId, organizationMembers.orgId), eq(eventAttendees.membershipId, organizationMembers.id)),
+      )
+      .where(
+        and(
+          eq(eventAttendees.orgId, orgId),
+          inArray(eventAttendees.eventId, rows.map((event) => event.id)),
+        ),
+      );
+    const attendeesByEvent = new Map<number, string[]>();
+    for (const attendee of attendeeRows) {
+      const userList = attendeesByEvent.get(attendee.eventId) ?? [];
+      userList.push(attendee.userId);
+      attendeesByEvent.set(attendee.eventId, userList);
+    }
+
     for (const event of rows) {
-      const attendees = Array.isArray(event.attendeeIds)
-        ? event.attendeeIds.filter((id): id is string => typeof id === "string")
-        : [];
-      const targets = [...new Set([...attendees, event.createdBy])].filter(Boolean);
+      const attendees = attendeesByEvent.get(event.id) ?? [];
+      const targets = [...new Set([...attendees, event.createdByUserId])].filter(Boolean);
       if (targets.length === 0) continue;
       await this.dispatch.emit({
         eventKey: "calendar.event.starting_soon",
@@ -226,6 +248,7 @@ export class NotificationTimeSweepsService {
         title: `Starting soon: ${event.title}`,
         message: "This event starts within the next 30 minutes.",
         link: `/calendar?event=${event.id}`,
+        dedupeKey: `calendar-starting-soon:${event.id}:${event.startDate.toISOString()}`,
       });
       result.eventsStartingSoon += 1;
     }

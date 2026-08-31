@@ -17,7 +17,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { AccessService } from "../../access/access.service";
 import {
   resolveDocumentsManageScope,
@@ -52,6 +52,11 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const documentIdParams = z.object({ documentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr")
@@ -69,8 +74,9 @@ export class DocumentsController {
 
   @Get("documents")
   @RequirePermission("hr:documents:view")
+  @Validate({ query: listDocumentsSchema })
   async listDocuments(
-    @Query(new ZodValidationPipe(listDocumentsSchema)) filters: ListDocumentsInput,
+    @Query() filters: ListDocumentsInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveDocumentsScope(this.access, currentUser);
@@ -80,8 +86,9 @@ export class DocumentsController {
   @Post("documents")
   @HttpCode(201)
   @RequirePermission("hr:documents:manage")
+  @Validate({ body: createDocumentSchema })
   async createDocument(
-    @Body(new ZodValidationPipe(createDocumentSchema)) body: CreateDocumentInput,
+    @Body() body: CreateDocumentInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveDocumentsManageScope(this.access, currentUser);
@@ -90,6 +97,7 @@ export class DocumentsController {
 
   @Get("documents/:documentId/file")
   @RequirePermission("hr:documents:view")
+  @Validate({ params: documentIdParams })
   async getDocumentFile(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -128,9 +136,10 @@ export class DocumentsController {
 
   @Patch("documents/:documentId")
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: documentIdParams, body: updateDocumentSchema })
   async updateDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
-    @Body(new ZodValidationPipe(updateDocumentSchema)) body: UpdateDocumentInput,
+    @Body() body: UpdateDocumentInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveDocumentsManageScope(this.access, currentUser);
@@ -146,6 +155,7 @@ export class DocumentsController {
   @Delete("documents/:documentId")
   @HttpCode(204)
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: documentIdParams })
   async deleteDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -175,8 +185,9 @@ export class DocumentsController {
   @Post("compliance")
   @HttpCode(201)
   @RequirePermission("hr:compliance:manage")
+  @Validate({ body: sendAckSchema })
   sendCompliance(
-    @Body(new ZodValidationPipe(sendAckSchema)) body: SendAckInput,
+    @Body() body: SendAckInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.compliance.sendAcknowledgments(currentUser.orgId, body);
@@ -184,8 +195,9 @@ export class DocumentsController {
 
   @Patch("compliance")
   @RequirePermission("hr:documents:view")
+  @Validate({ body: ackSchema })
   acknowledgeCompliance(
-    @Body(new ZodValidationPipe(ackSchema)) body: AckInput,
+    @Body() body: AckInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.compliance.acknowledge(currentUser.orgId, currentUser.userId, body);
@@ -199,8 +211,9 @@ export class DocumentsController {
 
   @Get("rich-documents")
   @RequirePermission("hr:documents:view")
+  @Validate({ query: listRichDocumentsSchema })
   listRichDocuments(
-    @Query(new ZodValidationPipe(listRichDocumentsSchema)) query: ListRichDocumentsInput,
+    @Query() query: ListRichDocumentsInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.richDocuments.list(currentUser.orgId, query);
@@ -209,8 +222,9 @@ export class DocumentsController {
   @Post("rich-documents")
   @HttpCode(201)
   @RequirePermission("hr:documents:manage")
+  @Validate({ body: createRichDocumentSchema })
   createRichDocument(
-    @Body(new ZodValidationPipe(createRichDocumentSchema)) body: CreateRichDocumentInput,
+    @Body() body: CreateRichDocumentInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.richDocuments.create(currentUser.orgId, currentUser.userId, body);
@@ -218,6 +232,7 @@ export class DocumentsController {
 
   @Get("rich-documents/:documentId")
   @RequirePermission("hr:documents:view")
+  @Validate({ params: documentIdParams })
   getRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -226,7 +241,9 @@ export class DocumentsController {
   }
 
   @Patch("rich-documents/:documentId/publish")
+  @Idempotent("hr.performance-document.publish")
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: documentIdParams })
   publishRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -236,9 +253,10 @@ export class DocumentsController {
 
   @Patch("rich-documents/:documentId")
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: documentIdParams, body: updateRichDocumentSchema })
   updateRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
-    @Body(new ZodValidationPipe(updateRichDocumentSchema)) body: UpdateRichDocumentInput,
+    @Body() body: UpdateRichDocumentInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.richDocuments.update(currentUser.orgId, currentUser.userId, documentId, body);
@@ -247,6 +265,7 @@ export class DocumentsController {
   @Delete("rich-documents/:documentId")
   @HttpCode(204)
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: documentIdParams })
   async deleteRichDocument(
     @Param("documentId", ParseIntPipe) documentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -266,8 +285,9 @@ export class DocumentsController {
   @Post("documents/letters/render")
   @RequirePermission("hr:documents:manage")
   @HttpCode(200)
+  @Validate({ body: renderLetterSchema })
   renderLetter(
-    @Body(new ZodValidationPipe(renderLetterSchema)) body: RenderLetterInput,
+    @Body() body: RenderLetterInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.letters.renderLetter(currentUser.orgId, body);
@@ -276,8 +296,9 @@ export class DocumentsController {
   @Post("documents/letters")
   @RequirePermission("hr:documents:manage")
   @HttpCode(201)
+  @Validate({ body: saveLetterSchema })
   saveLetter(
-    @Body(new ZodValidationPipe(saveLetterSchema)) body: SaveLetterInput,
+    @Body() body: SaveLetterInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.letters.saveLetter(currentUser.orgId, currentUser.userId, body);

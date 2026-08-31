@@ -17,7 +17,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrEmploymentsService } from "./hr-employments.service";
 import { HrEmployeeRecordListsService } from "./hr-employee-record-lists.service";
 import { AccessService } from "../../access/access.service";
@@ -32,6 +32,10 @@ import {
   type TransitionStatusInput,
   type UpdateEmploymentInput,
 } from "./dto/hr-core.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const employmentIdParams = z.object({ employmentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/employments")
@@ -46,8 +50,9 @@ export class HrEmploymentsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
+  @Validate({ query: listEmploymentsSchema })
   async list(
-    @Query(new ZodValidationPipe(listEmploymentsSchema)) query: ListEmploymentsInput,
+    @Query() query: ListEmploymentsInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveEmployeesScope(this.access, currentUser);
@@ -70,6 +75,7 @@ export class HrEmploymentsController {
   @Get(":employmentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
+  @Validate({ params: employmentIdParams })
   async getOne(
     @Param("employmentId", ParseIntPipe) employmentId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -87,8 +93,9 @@ export class HrEmploymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @Validate({ body: createEmploymentSchema })
   create(
-    @Body(new ZodValidationPipe(createEmploymentSchema)) body: CreateEmploymentInput,
+    @Body() body: CreateEmploymentInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.employments.create(
@@ -101,9 +108,10 @@ export class HrEmploymentsController {
   @Patch(":employmentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: employmentIdParams, body: updateEmploymentSchema })
   update(
     @Param("employmentId", ParseIntPipe) employmentId: number,
-    @Body(new ZodValidationPipe(updateEmploymentSchema)) body: UpdateEmploymentInput,
+    @Body() body: UpdateEmploymentInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.employments.update(
@@ -118,9 +126,10 @@ export class HrEmploymentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(200)
+  @Validate({ params: employmentIdParams, body: transitionStatusSchema })
   transition(
     @Param("employmentId", ParseIntPipe) employmentId: number,
-    @Body(new ZodValidationPipe(transitionStatusSchema)) body: TransitionStatusInput,
+    @Body() body: TransitionStatusInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.employments.transition(
@@ -135,6 +144,7 @@ export class HrEmploymentsController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: employmentIdParams })
   remove(
     @Param("employmentId", ParseIntPipe) employmentId: number,
     @CurrentUser() currentUser: CurrentUserContext,

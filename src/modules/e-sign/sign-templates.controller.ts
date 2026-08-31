@@ -7,7 +7,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import { SignTemplatesService } from "./sign-templates.service";
 import {
   createTemplateSchema,
@@ -20,6 +20,9 @@ import {
   type PublishPublicFormInput,
 } from "./dto/e-sign.schemas";
 
+const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
+
 @RequireModule("sign")
 @Controller("sign")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
@@ -29,13 +32,15 @@ export class SignTemplatesController {
   @Post("templates")
   @HttpCode(201)
   @RequirePermission("sign:template:manage")
-  create(@Body(new ZodValidationPipe(createTemplateSchema)) body: CreateTemplateInput, @CurrentUser() u: CurrentUserContext) {
+  @Validate({ body: createTemplateSchema })
+  create(@Body() body: CreateTemplateInput, @CurrentUser() u: CurrentUserContext) {
     return this.templates.create(u.orgId, u.userId, body);
   }
 
   @Post("envelopes/:envelopeId/save-as-template")
   @HttpCode(201)
   @RequirePermission("sign:template:manage")
+  @Validate({ params: envelopeIdParams })
   createFromEnvelope(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
     @Body() body: unknown,
@@ -54,15 +59,17 @@ export class SignTemplatesController {
 
   @Get("templates/:templateId")
   @RequirePermission("sign:template:manage")
+  @Validate({ params: templateIdParams })
   get(@Param("templateId", ParseIntPipe) templateId: number, @CurrentUser() u: CurrentUserContext) {
     return this.templates.get(u.orgId, templateId);
   }
 
   @Patch("templates/:templateId")
   @RequirePermission("sign:template:manage")
+  @Validate({ params: templateIdParams, body: updateTemplateSchema })
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(updateTemplateSchema)) body: UpdateTemplateInput,
+    @Body() body: UpdateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.update(u.orgId, templateId, body, { orgId: u.orgId, userId: u.userId });
@@ -70,6 +77,7 @@ export class SignTemplatesController {
 
   @Post("templates/:templateId/duplicate")
   @RequirePermission("sign:template:manage")
+  @Validate({ params: templateIdParams })
   duplicate(@Param("templateId", ParseIntPipe) templateId: number, @CurrentUser() u: CurrentUserContext) {
     return this.templates.duplicate(u.orgId, templateId, { orgId: u.orgId, userId: u.userId });
   }
@@ -77,9 +85,10 @@ export class SignTemplatesController {
   @Post("templates/:templateId/create-envelope")
   @HttpCode(201)
   @RequirePermission("sign:envelope:create")
+  @Validate({ params: templateIdParams, body: createEnvelopeFromTemplateSchema })
   createEnvelope(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(createEnvelopeFromTemplateSchema)) body: CreateEnvelopeFromTemplateInput,
+    @Body() body: CreateEnvelopeFromTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.instantiate(u.orgId, u.userId, templateId, body);
@@ -87,9 +96,10 @@ export class SignTemplatesController {
 
   @Post("templates/:templateId/publish-public-form")
   @RequirePermission("sign:template:manage")
+  @Validate({ params: templateIdParams, body: publishPublicFormSchema })
   publishPublicForm(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(publishPublicFormSchema)) body: PublishPublicFormInput,
+    @Body() body: PublishPublicFormInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.publishPublicForm(u.orgId, u.userId, templateId, body);

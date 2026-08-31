@@ -7,6 +7,9 @@ import { EmailService } from "../../email/email.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { SessionsService } from "../../sessions/sessions.service";
 import { OrgMembershipService } from "./org-membership.service";
+import { OrgMembershipStatusService } from "./org-membership-status.service";
+import { OrgMemberDepartureService } from "./org-member-departure.service";
+import { OrgMembershipReadService } from "./org-membership-read.service";
 import { AblyService } from "../../realtime/ably.service";
 
 const ORG = "org-a";
@@ -51,7 +54,7 @@ describe("OrgMembershipService access notifications", () => {
       from: jest.fn().mockReturnValue(joinChain),
     }),
     update: jest.fn().mockReturnValue({
-      set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+      set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue(Object.assign(Promise.resolve([]), { returning: jest.fn().mockResolvedValue([]) })) }),
     }),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
     insert: jest.fn().mockReturnValue({
@@ -91,7 +94,9 @@ describe("OrgMembershipService access notifications", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         OrgMembershipService,
-        { provide: AblyService, useValue: { revokeUserTokens: jest.fn() } },
+        OrgMembershipStatusService,
+        OrgMemberDepartureService,
+        { provide: AblyService, useValue: { revokeUserTokens: jest.fn().mockResolvedValue(undefined) } },
         { provide: DRIZZLE, useValue: db },
         { provide: AuditService, useValue: { log: jest.fn() } },
         {
@@ -99,10 +104,13 @@ describe("OrgMembershipService access notifications", () => {
           useValue: {
             invalidate: jest.fn().mockResolvedValue(undefined),
             invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+            invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
+            invalidateForOrg: jest.fn().mockResolvedValue(undefined),
           },
         },
         { provide: SessionsService, useValue: { revokeAllForUser: jest.fn() } },
         { provide: AccessService, useValue: {} },
+        { provide: OrgMembershipReadService, useValue: {} },
         {
           provide: EmailService,
           useValue: { sendMembershipRemovedEmail, sendMembershipSuspendedEmail },

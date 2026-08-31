@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { CrmCampaignsService } from "./crm-campaigns.service";
 import { CrmAttributionReportService } from "./crm-attribution-report.service";
@@ -29,6 +28,10 @@ import {
   type CampaignCreateInput,
   type CampaignUpdateInput,
 } from "./dto/campaigns.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const campaignIdParams = z.object({ campaignId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("crm/campaigns")
@@ -41,8 +44,9 @@ export class CrmCampaignsController {
 
   @Get()
   @RequirePermission("crm:campaigns:view")
+  @Validate({ query: campaignListSchema })
   list(
-    @Query(new ZodValidationPipe(campaignListSchema)) query: CampaignListQuery,
+    @Query() query: CampaignListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.campaigns.list(u.orgId, query);
@@ -52,8 +56,9 @@ export class CrmCampaignsController {
   @RequirePermission("crm:campaigns:manage")
   @HttpCode(201)
   @Idempotent("crm.campaign.create")
+  @Validate({ body: campaignCreateSchema })
   create(
-    @Body(new ZodValidationPipe(campaignCreateSchema)) body: CampaignCreateInput,
+    @Body() body: CampaignCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.campaigns.create(u.orgId, body);
@@ -73,6 +78,7 @@ export class CrmCampaignsController {
 
   @Get(":campaignId/roi")
   @RequirePermission("crm:campaigns:view")
+  @Validate({ params: campaignIdParams })
   roi(
     @Param("campaignId", ParseIntPipe) campaignId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -82,6 +88,7 @@ export class CrmCampaignsController {
 
   @Get(":campaignId/leads")
   @RequirePermission("crm:campaigns:view")
+  @Validate({ params: campaignIdParams })
   campaignLeads(
     @Param("campaignId", ParseIntPipe) campaignId: number,
     @Query("page") page: string | undefined,
@@ -98,9 +105,10 @@ export class CrmCampaignsController {
 
   @Patch(":campaignId")
   @RequirePermission("crm:campaigns:manage")
+  @Validate({ params: campaignIdParams, body: campaignUpdateSchema })
   update(
     @Param("campaignId", ParseIntPipe) campaignId: number,
-    @Body(new ZodValidationPipe(campaignUpdateSchema)) body: CampaignUpdateInput,
+    @Body() body: CampaignUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.campaigns.update(u.orgId, campaignId, body);
@@ -109,6 +117,7 @@ export class CrmCampaignsController {
   @Delete(":campaignId")
   @HttpCode(204)
   @RequirePermission("crm:campaigns:manage")
+  @Validate({ params: campaignIdParams })
   async remove(
     @Param("campaignId", ParseIntPipe) campaignId: number,
     @CurrentUser() u: CurrentUserContext,

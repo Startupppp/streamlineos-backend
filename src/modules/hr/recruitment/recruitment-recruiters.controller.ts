@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RecruitmentRecruitersService } from "./recruitment-recruiters.service";
 import {
   recruiterActivityQuerySchema,
@@ -26,6 +25,10 @@ import {
   type UpsertPortalInput,
 } from "./dto/jobs.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const platformParams = z.object({ platform: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment")
@@ -41,8 +44,9 @@ export class RecruitmentRecruitersController {
 
   @Post("portals")
   @RequirePermission("hr:employees:manage")
+  @Validate({ body: upsertPortalSchema })
   async upsertPortal(
-    @Body(new ZodValidationPipe(upsertPortalSchema)) body: UpsertPortalInput,
+    @Body() body: UpsertPortalInput,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -53,6 +57,7 @@ export class RecruitmentRecruitersController {
 
   @Post("portals/:platform/sync")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: platformParams })
   syncPortal(
     @Param("platform") platform: string,
     @CurrentUser() u: CurrentUserContext,
@@ -68,8 +73,9 @@ export class RecruitmentRecruitersController {
 
   @Get("recruiters/activity")
   @RequirePermission("hr:employees:view")
+  @Validate({ query: recruiterActivityQuerySchema })
   listActivity(
-    @Query(new ZodValidationPipe(recruiterActivityQuerySchema)) query: RecruiterActivityQueryInput,
+    @Query() query: RecruiterActivityQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.recruiters.listActivity(u.orgId, query);
@@ -78,8 +84,9 @@ export class RecruitmentRecruitersController {
   @Post("recruiters/activity")
   @HttpCode(201)
   @RequirePermission("hr:employees:view")
+  @Validate({ body: recruiterActivitySchema })
   logActivity(
-    @Body(new ZodValidationPipe(recruiterActivitySchema)) body: RecruiterActivityInput,
+    @Body() body: RecruiterActivityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.recruiters.logActivity(u.orgId, u.userId, body);

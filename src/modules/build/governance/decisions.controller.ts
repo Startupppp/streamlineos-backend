@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { DecisionsService } from "./decisions.service";
 import {
   createDecisionSchema,
@@ -27,6 +26,10 @@ import {
   type ListDecisionsQuery,
   type UpdateDecisionInput,
 } from "./dto/governance.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const decisionIdParams = z.object({ decisionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/decisions")
@@ -36,9 +39,10 @@ export class DecisionsController {
 
   @Get()
   @RequirePermission("build:decisions:view")
+  @Validate({ query: listDecisionsQuerySchema })
   listDecisions(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(listDecisionsQuerySchema)) query: ListDecisionsQuery,
+    @Query() query: ListDecisionsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listDecisions(u.orgId, projectId, query);
@@ -46,6 +50,7 @@ export class DecisionsController {
 
   @Get(":decisionId")
   @RequirePermission("build:decisions:view")
+  @Validate({ params: decisionIdParams })
   getDecision(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("decisionId", ParseIntPipe) decisionId: number,
@@ -57,9 +62,10 @@ export class DecisionsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:decisions:manage")
+  @Validate({ body: createDecisionSchema })
   createDecision(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createDecisionSchema)) body: CreateDecisionInput,
+    @Body() body: CreateDecisionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createDecision(u.orgId, u.userId, projectId, body);
@@ -67,10 +73,11 @@ export class DecisionsController {
 
   @Patch(":decisionId")
   @RequirePermission("build:decisions:manage")
+  @Validate({ params: decisionIdParams, body: updateDecisionSchema })
   updateDecision(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("decisionId", ParseIntPipe) decisionId: number,
-    @Body(new ZodValidationPipe(updateDecisionSchema)) body: UpdateDecisionInput,
+    @Body() body: UpdateDecisionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateDecision(u.orgId, u.userId, projectId, decisionId, body);
@@ -79,6 +86,7 @@ export class DecisionsController {
   @Delete(":decisionId")
   @RequirePermission("build:decisions:manage")
   @HttpCode(204)
+  @Validate({ params: decisionIdParams })
   softDeleteDecision(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("decisionId", ParseIntPipe) decisionId: number,

@@ -1,18 +1,18 @@
 import { NotFoundException } from "@nestjs/common";
 import { REQUIRE_PERMISSION } from "../access/require-permission.decorator";
 import { RolesController } from "./roles.controller";
-import { RolesService } from "./roles.service";
+import { RolesQueryService } from "./roles-query.service";
+import type { Db } from "../../db/drizzle.module";
 
-function makeService(target: { isOwner: boolean } | undefined): RolesService {
-  const service = Object.create(RolesService.prototype) as RolesService;
-  Reflect.set(service, "db", {
+function makeQueryService(target: { isOwner: boolean } | undefined): RolesQueryService {
+  const db = {
     query: {
       organizationMembers: {
         findFirst: jest.fn().mockResolvedValue(target),
       },
     },
-  });
-  return service;
+  } as unknown as Db;
+  return new RolesQueryService(db);
 }
 
 describe("role permission simulation", () => {
@@ -29,14 +29,14 @@ describe("role permission simulation", () => {
   });
 
   it("rejects targets without an active membership in the organization", async () => {
-    const service = makeService(undefined);
+    const service = makeQueryService(undefined);
     await expect(service.getSimulationTarget("org-1", "user-2")).rejects.toBeInstanceOf(
       NotFoundException,
     );
   });
 
   it("returns ownership only for the scoped active member", async () => {
-    const service = makeService({ isOwner: true });
+    const service = makeQueryService({ isOwner: true });
     await expect(service.getSimulationTarget("org-1", "user-1")).resolves.toEqual({
       isOwner: true,
     });

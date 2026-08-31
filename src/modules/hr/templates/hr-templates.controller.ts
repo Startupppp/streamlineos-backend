@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { HrTemplatesService } from "./hr-templates.service";
 import {
@@ -32,6 +31,10 @@ import {
   type TransitionTemplateInput,
   type UpdateTemplateInput,
 } from "./dto/hr-templates.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/templates")
@@ -50,8 +53,9 @@ export class HrTemplatesController {
 
   @Get()
   @RequirePermission("hr:templates:view")
+  @Validate({ query: templateListQuerySchema })
   list(
-    @Query(new ZodValidationPipe(templateListQuerySchema)) query: TemplateListQuery,
+    @Query() query: TemplateListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.list(u.orgId, query);
@@ -60,8 +64,9 @@ export class HrTemplatesController {
   @Post()
   @RequirePermission("hr:templates:manage")
   @HttpCode(201)
+  @Validate({ body: createTemplateSchema })
   create(
-    @Body(new ZodValidationPipe(createTemplateSchema)) body: CreateTemplateInput,
+    @Body() body: CreateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.create(u.orgId, u.userId, body);
@@ -76,6 +81,7 @@ export class HrTemplatesController {
 
   @Get(":templateId")
   @RequirePermission("hr:templates:view")
+  @Validate({ params: templateIdParams })
   getOne(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -85,9 +91,10 @@ export class HrTemplatesController {
 
   @Patch(":templateId")
   @RequirePermission("hr:templates:manage")
+  @Validate({ params: templateIdParams, body: updateTemplateSchema })
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(updateTemplateSchema)) body: UpdateTemplateInput,
+    @Body() body: UpdateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.update(u.orgId, u.userId, templateId, body);
@@ -96,9 +103,10 @@ export class HrTemplatesController {
   @Post(":templateId/transition")
   @RequirePermission("hr:templates:manage")
   @HttpCode(200)
+  @Validate({ params: templateIdParams, body: transitionTemplateSchema })
   transition(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(transitionTemplateSchema)) body: TransitionTemplateInput,
+    @Body() body: TransitionTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.transition(u.orgId, u.userId, templateId, body.to);
@@ -107,6 +115,7 @@ export class HrTemplatesController {
   @Post(":templateId/versions")
   @RequirePermission("hr:templates:manage")
   @HttpCode(201)
+  @Validate({ params: templateIdParams })
   newVersion(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -117,9 +126,10 @@ export class HrTemplatesController {
   @Post(":templateId/render")
   @RequirePermission("hr:templates:view")
   @HttpCode(200)
+  @Validate({ params: templateIdParams, body: renderTemplateSchema })
   async render(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(renderTemplateSchema)) body: RenderTemplateInput,
+    @Body() body: RenderTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (body.includeSensitive) {
@@ -133,6 +143,7 @@ export class HrTemplatesController {
 
   @Get(":templateId/renders")
   @RequirePermission("hr:templates:view")
+  @Validate({ params: templateIdParams })
   listRenders(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

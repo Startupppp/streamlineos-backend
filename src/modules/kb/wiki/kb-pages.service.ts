@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { kbPages, kbPageFavorites, kbPageTemplates, kbSpaces } from "../../../db/schema";
+import { kbPages, kbPageFavorites, kbPageTemplates, kbSpaces, organizationMembers } from "../../../db/schema";
 import type { KbPageContent } from "../../../db/schema/kb/pages";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -18,13 +18,13 @@ import { NotificationsService } from "../../notifications/notifications.service"
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { extractMentionUserIds } from "./kb-page-content.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import type { CreatePageInput, UpdatePageInput, VerifyPageInput } from "./dto/kb-pages.schemas";
+import type { CreatePageInput, UpdatePageInput } from "./dto/kb-pages.schemas";
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
-import { computeVerificationInterval, shouldResetTrust } from "./kb-page-governance.util";
-import { KbPageReviewsService } from "./kb-page-reviews.service";
+import { shouldResetTrust } from "./kb-page-governance.util";
 import { resyncPageLinks, snapshotIfNeeded } from "./kb-page-edit.util";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
+import { actingMembershipId } from "../../../common/auth/principal";
 
 type PageRow = typeof kbPages.$inferSelect;
 
@@ -35,9 +35,12 @@ export class KbPagesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: NotificationsService,
-    private readonly reviews: KbPageReviewsService,
     private readonly planLimits: PlanLimitsService,
   ) {}
+
+  private membershipId(user: CurrentUserContext): number | null {
+    return user.principal === undefined ? null : actingMembershipId(user.principal);
+  }
 
   async create(user: CurrentUserContext, input: CreatePageInput): Promise<PageRow> {
     const orgId = user.orgId;
@@ -64,7 +67,11 @@ export class KbPagesService {
 
     if (input.spaceId != null) {
       const space = await this.db.query.kbSpaces.findFirst({
-        where: and(eq(kbSpaces.id, input.spaceId), eq(kbSpaces.orgId, orgId)),
+        where: and(
+          eq(kbSpaces.id, input.spaceId),
+          eq(kbSpaces.orgId, orgId),
+          isNull(kbSpaces.deletedAt),
+        ),
         columns: { id: true },
       });
       if (!space) throw new NotFoundException("Space not found");
@@ -96,7 +103,9 @@ export class KbPagesService {
         content: templateContent ?? null,
         sortOrder: maxSort + 100,
         createdById: user.userId,
+        createdByMembershipId: this.membershipId(user),
         lastEditedById: user.userId,
+        lastEditedByMembershipId: this.membershipId(user),
         projectId: input.projectId ?? null,
       })
       .returning();
@@ -127,7 +136,9 @@ export class KbPagesService {
       columns: { id: true },
     });
 
-    const canShare = user.isOrgOwner || canManage || page.createdById === user.userId;
+    const canShare = user.isOrgOwner || canManage || (
+      this.membershipId(user) !== null && page.createdByMembershipId === this.membershipId(user)
+    ) || (page.createdByMembershipId === null && page.createdById === user.userId);
 
     return {
       ...page,
@@ -149,11 +160,18 @@ export class KbPagesService {
       throw new HttpException({ message: "Page is locked", code: "PAGE_LOCKED" }, HttpStatus.CONFLICT);
     }
 
-    const values: Partial<typeof kbPages.$inferInsert> = { lastEditedById: user.userId };
+    const values: Partial<typeof kbPages.$inferInsert> = {
+      lastEditedById: user.userId,
+      lastEditedByMembershipId: this.membershipId(user),
+    };
     if (input.spaceId !== undefined) {
       if (input.spaceId != null) {
         const space = await this.db.query.kbSpaces.findFirst({
-          where: and(eq(kbSpaces.id, input.spaceId), eq(kbSpaces.orgId, orgId)),
+          where: and(
+          eq(kbSpaces.id, input.spaceId),
+          eq(kbSpaces.orgId, orgId),
+          isNull(kbSpaces.deletedAt),
+        ),
           columns: { id: true },
         });
         if (!space) throw new NotFoundException("Space not found");
@@ -167,7 +185,19 @@ export class KbPagesService {
     if (input.contentText !== undefined) values.contentText = input.contentText;
     if (input.status !== undefined) values.status = input.status;
     if (input.contentType !== undefined) values.contentType = input.contentType;
-    if (input.ownerUserId !== undefined) values.ownerUserId = input.ownerUserId;
+    if (input.ownerUserId !== undefined) {
+      values.ownerUserId = input.ownerUserId;
+      values.ownerMembershipId = input.ownerUserId === null
+        ? null
+        : (await this.db.query.organizationMembers.findFirst({
+          where: and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.userId, input.ownerUserId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+          columns: { id: true },
+        }))?.id ?? null;
+    }
 
     const contentChanged = input.content !== undefined;
     const aclChanged = input.spaceId !== undefined;
@@ -189,7 +219,7 @@ export class KbPagesService {
       if (!updated) throw new NotFoundException("Page not found");
 
       if (contentChanged && input.content !== undefined) {
-        await snapshotIfNeeded(tx, orgId, updated, user.userId, input.changeSummary ?? null);
+        await snapshotIfNeeded(tx, orgId, updated, user.userId, input.changeSummary ?? null, false, this.membershipId(user));
         await resyncPageLinks(tx, orgId, pageId, input.content);
 
         const oldMentions = new Set(extractMentionUserIds(current.content));
@@ -224,179 +254,6 @@ export class KbPagesService {
     });
 
     return result;
-  }
-
-  async lock(user: CurrentUserContext, pageId: number, isLocked: boolean): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
-    const orgId = user.orgId;
-    const [updated] = await this.db
-      .update(kbPages)
-      .set({ isLocked, lastEditedById: user.userId })
-      .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)))
-      .returning();
-    if (!updated) throw new NotFoundException("Page not found");
-    return updated;
-  }
-
-  async publish(user: CurrentUserContext, pageId: number): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
-    const orgId = user.orgId;
-    const current = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
-      columns: { id: true },
-    });
-    if (!current) throw new NotFoundException("Page not found");
-    return this.db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(kbPages)
-        .set({ status: "published", lastEditedById: user.userId })
-        .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-        .returning();
-      if (!updated) throw new NotFoundException("Page not found");
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "kb_page",
-        aggregateId: String(pageId),
-        aggregateVersion: Date.now(),
-        eventType: "kb.content.index",
-        payload: { contentType: "page", contentId: pageId, contentRevision: updated.contentRevision, aclRevision: updated.aclRevision },
-        occurredAt: new Date(),
-      });
-      return updated;
-    });
-  }
-
-  async archive(user: CurrentUserContext, pageId: number): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
-    const orgId = user.orgId;
-    const current = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
-      columns: { id: true },
-    });
-    if (!current) throw new NotFoundException("Page not found");
-    return this.db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(kbPages)
-        .set({ status: "archived", lastEditedById: user.userId })
-        .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-        .returning();
-      if (!updated) throw new NotFoundException("Page not found");
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "kb_page",
-        aggregateId: String(pageId),
-        aggregateVersion: Date.now(),
-        eventType: "kb.content.index",
-        payload: { contentType: "page", contentId: pageId, contentRevision: updated.contentRevision, aclRevision: updated.aclRevision },
-        occurredAt: new Date(),
-      });
-      return updated;
-    });
-  }
-
-  async unarchive(user: CurrentUserContext, pageId: number): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
-    const orgId = user.orgId;
-    const current = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
-      columns: { id: true },
-    });
-    if (!current) throw new NotFoundException("Page not found");
-    return this.db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(kbPages)
-        .set({ status: "draft", lastEditedById: user.userId })
-        .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-        .returning();
-      if (!updated) throw new NotFoundException("Page not found");
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "kb_page",
-        aggregateId: String(pageId),
-        aggregateVersion: Date.now(),
-        eventType: "kb.content.index",
-        payload: { contentType: "page", contentId: pageId, contentRevision: updated.contentRevision, aclRevision: updated.aclRevision },
-        occurredAt: new Date(),
-      });
-      return updated;
-    });
-  }
-
-  private async setStatus(
-    user: CurrentUserContext,
-    pageId: number,
-    status: "draft" | "in_review" | "published" | "archived",
-  ): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
-    const orgId = user.orgId;
-    const current = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
-      columns: { id: true },
-    });
-    if (!current) throw new NotFoundException("Page not found");
-    const [updated] = await this.db
-      .update(kbPages)
-      .set({ status, lastEditedById: user.userId })
-      .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-      .returning();
-    if (!updated) throw new NotFoundException("Page not found");
-    return updated;
-  }
-
-  async verify(user: CurrentUserContext, pageId: number, input: VerifyPageInput): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
-    const orgId = user.orgId;
-    const current = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
-      columns: { id: true, contentType: true },
-    });
-    if (!current) throw new NotFoundException("Page not found");
-
-    const days = computeVerificationInterval(current.contentType, input.intervalDays);
-    const now = new Date();
-    const verifiedUntil = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
-    const nextReviewAt = verifiedUntil;
-
-    const [updated] = await this.db
-      .update(kbPages)
-      .set({
-        trustState: "verified",
-        verifiedById: user.userId,
-        verifiedUntil,
-        nextReviewAt,
-        lastEditedById: user.userId,
-      })
-      .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-      .returning();
-    if (!updated) throw new NotFoundException("Page not found");
-    return updated;
-  }
-
-  async markStale(user: CurrentUserContext, pageId: number): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
-    const orgId = user.orgId;
-    const current = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
-      columns: { id: true },
-    });
-    if (!current) throw new NotFoundException("Page not found");
-
-    const [updated] = await this.db
-      .update(kbPages)
-      .set({ trustState: "verification_expired", lastEditedById: user.userId })
-      .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
-      .returning();
-    if (!updated) throw new NotFoundException("Page not found");
-
-    await this.reviews.create(user, pageId, {
-      type: "freshness",
-      dueAt: new Date().toISOString(),
-    });
-
-    return updated;
   }
 
   async search(user: CurrentUserContext, q: string): Promise<{ id: number; title: string; icon: string | null; snippet: string }[]> {
@@ -447,11 +304,12 @@ export class KbPagesService {
     const orgId = user.orgId;
     const page = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
-      columns: { id: true, createdById: true, visibility: true, publicToken: true },
+      columns: { id: true, createdById: true, createdByMembershipId: true, visibility: true, publicToken: true },
     });
     if (!page) throw new NotFoundException("Page not found");
 
-    const isCreator = page.createdById === user.userId;
+    const isCreator = this.membershipId(user) !== null && page.createdByMembershipId === this.membershipId(user)
+      || (page.createdByMembershipId === null && page.createdById === user.userId);
     if (!isCreator && !canManage) {
       throw new NotFoundException("Page not found");
     }

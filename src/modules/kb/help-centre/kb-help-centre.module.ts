@@ -4,6 +4,7 @@ import { AiJobsModule } from "../../ai/jobs/ai-jobs.module";
 import { KbCoreModule } from "../core/kb-core.module";
 import { KbRetrievalModule } from "../retrieval/kb-retrieval.module";
 import { KbArticlesService } from "./kb-articles.service";
+import { KbArticleQueryService } from "./kb-article-query.service";
 import { KbCategoriesService } from "./kb-categories.service";
 import { KbCommentsService } from "./kb-comments.service";
 import { KbArticleAiService } from "./kb-article-ai.service";
@@ -39,6 +40,7 @@ import { KbWidgetController } from "./kb-widget.controller";
   ],
   providers: [
     KbArticlesService,
+    KbArticleQueryService,
     KbCategoriesService,
     KbCommentsService,
     KbArticleAiService,

@@ -1,8 +1,9 @@
 import { Body, Controller, Get, HttpCode, HttpException, Param, ParseIntPipe, Post, Req } from "@nestjs/common";
+import { z } from "zod";
 import type { Request } from "express";
 import { Public } from "../../common/auth/public.decorator";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import { SignPublicService } from "./sign-public.service";
 import {
   publicAuthSchema,
@@ -25,6 +26,11 @@ function clientIp(req: Request): string {
   return (raw?.split(",")[0]?.trim() || req.ip || "anon").slice(0, 100);
 }
 
+const tokenParams = z.object({ token: z.string().min(1) }).strict();
+const slugParams = z.object({ slug: z.string().min(1) }).strict();
+const tokenAndDocumentIdParams = z.object({ token: z.string().min(1), documentId: z.coerce.number().int().positive() }).strict();
+const tokenAndFieldIdParams = z.object({ token: z.string().min(1), fieldId: z.coerce.number().int().positive() }).strict();
+
 @Public()
 @Controller("public/sign")
 export class SignPublicController {
@@ -39,12 +45,14 @@ export class SignPublicController {
   }
 
   @Get(":token/session")
+  @Validate({ params: tokenParams })
   async getSession(@Param("token") token: string, @Req() req: Request) {
     await this.guard("sign:public-session", token, req);
     return this.publicSigning.getSession(token, { ipAddress: clientIp(req), userAgent: req.headers["user-agent"] });
   }
 
   @Get(":token/documents/:documentId/preview")
+  @Validate({ params: tokenAndDocumentIdParams })
   async getDocumentPreview(@Param("token") token: string, @Param("documentId", ParseIntPipe) documentId: number, @Req() req: Request) {
     await this.guard("sign:public-session", token, req);
     return this.publicSigning.getDocumentPreview(token, documentId);
@@ -52,6 +60,7 @@ export class SignPublicController {
 
   @Post(":token/request-otp")
   @HttpCode(200)
+  @Validate({ params: tokenParams })
   async requestOtp(@Param("token") token: string, @Req() req: Request) {
     await this.guard("sign:public-otp-request", token, req);
     return this.publicSigning.requestOtp(token);
@@ -59,9 +68,10 @@ export class SignPublicController {
 
   @Post(":token/auth")
   @HttpCode(200)
+  @Validate({ params: tokenParams, body: publicAuthSchema })
   async authenticate(
     @Param("token") token: string,
-    @Body(new ZodValidationPipe(publicAuthSchema)) body: PublicAuthInput,
+    @Body() body: PublicAuthInput,
     @Req() req: Request,
   ) {
     await this.guard("sign:public-auth", token, req);
@@ -70,9 +80,10 @@ export class SignPublicController {
 
   @Post(":token/consent")
   @HttpCode(200)
+  @Validate({ params: tokenParams, body: publicConsentSchema })
   async consent(
     @Param("token") token: string,
-    @Body(new ZodValidationPipe(publicConsentSchema)) body: PublicConsentInput,
+    @Body() body: PublicConsentInput,
     @Req() req: Request,
   ) {
     await this.guard("sign:public-session", token, req);
@@ -81,10 +92,11 @@ export class SignPublicController {
 
   @Post(":token/fields/:fieldId")
   @HttpCode(200)
+  @Validate({ params: tokenAndFieldIdParams, body: publicFieldValueSchema })
   async setFieldValue(
     @Param("token") token: string,
     @Param("fieldId", ParseIntPipe) fieldId: number,
-    @Body(new ZodValidationPipe(publicFieldValueSchema)) body: PublicFieldValueInput,
+    @Body() body: PublicFieldValueInput,
     @Req() req: Request,
   ) {
     await this.guard("sign:public-session", token, req);
@@ -93,9 +105,10 @@ export class SignPublicController {
 
   @Post(":token/adopt-signature")
   @HttpCode(200)
+  @Validate({ params: tokenParams, body: adoptSignatureSchema })
   async adoptSignature(
     @Param("token") token: string,
-    @Body(new ZodValidationPipe(adoptSignatureSchema)) body: AdoptSignatureInput,
+    @Body() body: AdoptSignatureInput,
     @Req() req: Request,
   ) {
     await this.guard("sign:public-session", token, req);
@@ -104,6 +117,7 @@ export class SignPublicController {
 
   @Post(":token/complete")
   @HttpCode(200)
+  @Validate({ params: tokenParams })
   async complete(@Param("token") token: string, @Req() req: Request) {
     await this.guard("sign:public-complete", token, req);
     return this.publicSigning.complete(token, { ipAddress: clientIp(req), userAgent: req.headers["user-agent"] });
@@ -111,9 +125,10 @@ export class SignPublicController {
 
   @Post(":token/decline")
   @HttpCode(200)
+  @Validate({ params: tokenParams, body: declineSchema })
   async decline(
     @Param("token") token: string,
-    @Body(new ZodValidationPipe(declineSchema)) body: DeclineInput,
+    @Body() body: DeclineInput,
     @Req() req: Request,
   ) {
     await this.guard("sign:public-complete", token, req);
@@ -121,6 +136,7 @@ export class SignPublicController {
   }
 
   @Get("forms/:slug")
+  @Validate({ params: slugParams })
   async getPublicForm(@Param("slug") slug: string, @Req() req: Request) {
     await this.guard("sign:public-session", slug, req);
     return this.publicSigning.getPublicForm(slug);
@@ -128,9 +144,10 @@ export class SignPublicController {
 
   @Post("forms/:slug/submit")
   @HttpCode(201)
+  @Validate({ params: slugParams, body: publicFormSubmitSchema })
   async submitPublicForm(
     @Param("slug") slug: string,
-    @Body(new ZodValidationPipe(publicFormSubmitSchema)) body: PublicFormESignSubmitInput,
+    @Body() body: PublicFormESignSubmitInput,
     @Req() req: Request,
   ) {
     await this.guard("sign:public-form-submit", slug, req);

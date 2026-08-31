@@ -1,0 +1,296 @@
+import { Injectable, Inject } from "@nestjs/common";
+import { and, eq, inArray, isNull, gte, lte, or } from "drizzle-orm";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import type { Db } from "../../../db/drizzle.module";
+import {
+  payrollInputs,
+  employeeSalaryProfileComponents,
+  salaryComponents,
+  bonuses,
+  reimbursements,
+  salaryLoans,
+  payrollLoanAdjustments,
+  incentives,
+  taxDeclarations,
+} from "../../../db/schema";
+import type { PayrollToggles } from "../payroll.types";
+import type { CalcInputPulls } from "./lib/calculation-engine";
+import {
+  buildPulledInputsFromSections,
+  loadLiveAttendanceByUser,
+  loadLockedSectionsByUser,
+  type PulledInputs,
+  type SectionMap,
+} from "./lib/input-puller";
+import type { ResolvedComponent } from "./lib/calculation-engine";
+import type { ProfileData, RunBatchData } from "./run-types";
+
+type RunInputRow = typeof payrollInputs.$inferSelect;
+type BonusRow = { id: number; userId: string; amount: string; type: string; taxable: boolean };
+type IncentiveRow = { id: number; salesRepId: string; approvedAmount: string | null; calculatedAmount: string };
+type ReimbursementRow = { id: number; userId: string; amount: string; category: string };
+type TaxDeclarationRow = {
+  userId: string;
+  section80c: string;
+  section80d: string;
+  hra: string;
+  lta: string;
+  homeLoanInterest: string;
+  section80g: string;
+  previousEmploymentIncome: string;
+  previousEmployerTds: string;
+  status: string;
+};
+
+function getFyString(month: string): string {
+  const [yearStr, monStr] = month.split("-");
+  const year = parseInt(yearStr ?? "2025", 10);
+  const mon = parseInt(monStr ?? "4", 10);
+  if (mon >= 4) return `${year}-${String(year + 1).slice(-2)}`;
+  return `${year - 1}-${String(year).slice(-2)}`;
+}
+
+function groupBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
+  const map = new Map<string, T[]>();
+  for (const row of rows) {
+    const k = key(row);
+    const list = map.get(k) ?? [];
+    list.push(row);
+    map.set(k, list);
+  }
+  return map;
+}
+
+@Injectable()
+export class RunBatchLoaderService {
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  async loadRunBatchData(
+    orgId: string,
+    runId: number,
+    month: string,
+    toggles: PayrollToggles,
+    profiles: ProfileData[],
+    lockedPeriodId: number | null,
+  ): Promise<RunBatchData> {
+    const userIds = profiles
+      .map((p) => p.userId)
+      .filter((id): id is string => id !== null);
+    const profileIds = profiles.map((p) => p.id);
+    const [year, mon] = month.split("-").map(Number);
+    const monthStart = new Date(year!, mon! - 1, 1);
+    const monthEnd = new Date(year!, mon!, 0, 23, 59, 59, 999);
+    const fy = getFyString(month);
+
+    const [
+      lockedSectionsByUser,
+      runInputRows,
+      components,
+      bonusRows,
+      incentiveRows,
+      reimbursementRows,
+      loanRows,
+      taxDeclRows,
+    ] = await Promise.all([
+      lockedPeriodId != null
+        ? loadLockedSectionsByUser(this.db, orgId, lockedPeriodId, userIds)
+        : Promise.resolve(new Map<string, SectionMap>()),
+      userIds.length > 0
+        ? this.db
+            .select()
+            .from(payrollInputs)
+            .where(and(eq(payrollInputs.runId, runId), inArray(payrollInputs.userId, userIds)))
+        : Promise.resolve([] as RunInputRow[]),
+      profileIds.length > 0
+        ? this.loadComponentsByProfile(orgId, profileIds)
+        : Promise.resolve(new Map<number, ResolvedComponent[]>()),
+      toggles.bonuses && userIds.length > 0
+        ? this.db
+            .select({
+              id: bonuses.id,
+              userId: bonuses.userId,
+              amount: bonuses.amount,
+              type: bonuses.type,
+              taxable: bonuses.taxable,
+            })
+            .from(bonuses)
+            .where(and(eq(bonuses.orgId, orgId), inArray(bonuses.userId, userIds), eq(bonuses.status, "APPROVED"), eq(bonuses.month, month)))
+        : Promise.resolve([] as BonusRow[]),
+      toggles.incentives && userIds.length > 0
+        ? this.db
+            .select({
+              id: incentives.id,
+              salesRepId: incentives.salesRepId,
+              approvedAmount: incentives.approvedAmount,
+              calculatedAmount: incentives.calculatedAmount,
+            })
+            .from(incentives)
+            .where(
+              and(
+                eq(incentives.orgId, orgId),
+                inArray(incentives.salesRepId, userIds),
+                eq(incentives.status, "APPROVED"),
+                gte(incentives.approvedAt, monthStart),
+                lte(incentives.approvedAt, monthEnd),
+              ),
+            )
+        : Promise.resolve([] as IncentiveRow[]),
+      toggles.reimbursements && userIds.length > 0
+        ? this.db
+            .select({ id: reimbursements.id, userId: reimbursements.userId, amount: reimbursements.amount, category: reimbursements.category })
+            .from(reimbursements)
+            .where(
+              and(
+                eq(reimbursements.orgId, orgId),
+                inArray(reimbursements.userId, userIds),
+                eq(reimbursements.status, "APPROVED"),
+                isNull(reimbursements.paidAt),
+                or(
+                  isNull(reimbursements.payrollMonth),
+                  eq(reimbursements.payrollMonth, month),
+                ),
+              ),
+            )
+        : Promise.resolve([] as ReimbursementRow[]),
+      toggles.loans && userIds.length > 0
+        ? this.db
+            .select()
+            .from(salaryLoans)
+            .where(and(eq(salaryLoans.orgId, orgId), inArray(salaryLoans.userId, userIds), eq(salaryLoans.status, "ACTIVE")))
+        : Promise.resolve([] as (typeof salaryLoans.$inferSelect)[]),
+      toggles.tds && userIds.length > 0
+        ? this.db
+            .select({
+              userId: taxDeclarations.userId,
+              section80c: taxDeclarations.section80c,
+              section80d: taxDeclarations.section80d,
+              hra: taxDeclarations.hra,
+              lta: taxDeclarations.lta,
+              homeLoanInterest: taxDeclarations.homeLoanInterest,
+              section80g: taxDeclarations.section80g,
+              previousEmploymentIncome: taxDeclarations.previousEmploymentIncome,
+              previousEmployerTds: taxDeclarations.previousEmployerTds,
+              status: taxDeclarations.status,
+            })
+            .from(taxDeclarations)
+            .where(
+              and(
+                eq(taxDeclarations.orgId, orgId),
+                inArray(taxDeclarations.userId, userIds),
+                eq(taxDeclarations.financialYear, fy),
+                eq(taxDeclarations.status, "VERIFIED"),
+              ),
+            )
+        : Promise.resolve([] as TaxDeclarationRow[]),
+    ]);
+
+    const loanIds = loanRows.map((l) => l.id);
+    const adjustments = loanIds.length > 0
+      ? await this.db
+          .select()
+          .from(payrollLoanAdjustments)
+          .where(and(eq(payrollLoanAdjustments.runId, runId), inArray(payrollLoanAdjustments.loanId, loanIds)))
+      : [];
+
+    const loansByUser = new Map<string, CalcInputPulls["activeLoans"]>();
+    for (const [userId, userLoans] of groupBy(loanRows, (l) => l.userId)) {
+      loansByUser.set(
+        userId,
+        userLoans.map((loan) => {
+          const adj = adjustments.find((a) => a.loanId === loan.id);
+          return {
+            id: loan.id,
+            emiAmount: loan.emiAmount,
+            amount: loan.amount,
+            paidEmis: loan.paidEmis,
+            totalEmis: loan.totalEmis,
+            adjustment: adj ? { type: adj.type, amount: adj.amount } : null,
+          };
+        }),
+      );
+    }
+
+    const runInputsByUser = new Map<string, RunInputRow>();
+    for (const row of runInputRows) {
+      if (!runInputsByUser.has(row.userId)) runInputsByUser.set(row.userId, row);
+    }
+
+    const taxDeclarationByUser = new Map<string, TaxDeclarationRow>();
+    for (const row of taxDeclRows) {
+      if (!taxDeclarationByUser.has(row.userId)) taxDeclarationByUser.set(row.userId, row);
+    }
+
+    let liveAttendanceByUser = new Map<string, PulledInputs | null>();
+    if (toggles.lopFromAttendance) {
+      const usersNeedingLive = userIds.filter((userId) => {
+        if (runInputsByUser.has(userId)) return false;
+        const sections = lockedSectionsByUser.get(userId);
+        return buildPulledInputsFromSections(userId, month, sections) == null;
+      });
+      liveAttendanceByUser = await loadLiveAttendanceByUser(this.db, orgId, usersNeedingLive, month);
+    }
+
+    return {
+      lockedPeriodId,
+      lockedSectionsByUser,
+      runInputsByUser,
+      liveAttendanceByUser,
+      componentsByProfileId: components,
+      bonusesByUser: groupBy(bonusRows, (b) => b.userId),
+      incentivesByUser: groupBy(incentiveRows, (i) => i.salesRepId),
+      reimbursementsByUser: groupBy(reimbursementRows, (r) => r.userId),
+      loansByUser,
+      taxDeclarationByUser,
+    };
+  }
+
+  private async loadComponentsByProfile(orgId: string, profileIds: number[]): Promise<Map<number, ResolvedComponent[]>> {
+    const rows = await this.db
+      .select({
+        profileId: employeeSalaryProfileComponents.profileId,
+        id: salaryComponents.id,
+        code: salaryComponents.code,
+        name: salaryComponents.name,
+        type: salaryComponents.type,
+        calcMethod: salaryComponents.calcMethod,
+        amount: employeeSalaryProfileComponents.amount,
+        baseAmount: salaryComponents.amount,
+        percent: employeeSalaryProfileComponents.percent,
+        basePercent: salaryComponents.percent,
+        formula: salaryComponents.formula,
+        formulaOverride: employeeSalaryProfileComponents.formulaOverride,
+        calcMethodOverride: employeeSalaryProfileComponents.calcMethodOverride,
+        taxable: salaryComponents.taxable,
+        showOnPayslip: salaryComponents.showOnPayslip,
+        includeInCtc: salaryComponents.includeInCtc,
+        isStatutory: salaryComponents.isStatutory,
+        sortOrder: salaryComponents.sortOrder,
+      })
+      .from(employeeSalaryProfileComponents)
+      .innerJoin(salaryComponents, eq(salaryComponents.id, employeeSalaryProfileComponents.componentId))
+      .where(and(inArray(employeeSalaryProfileComponents.profileId, profileIds), eq(employeeSalaryProfileComponents.orgId, orgId)))
+      .orderBy(salaryComponents.sortOrder);
+
+    const byProfile = new Map<number, ResolvedComponent[]>();
+    for (const r of rows) {
+      const list = byProfile.get(r.profileId) ?? [];
+      list.push({
+        id: r.id,
+        code: r.code,
+        name: r.name,
+        type: r.type,
+        calcMethod: r.calcMethodOverride ?? r.calcMethod,
+        amount: r.amount ?? r.baseAmount,
+        percent: r.percent ?? r.basePercent,
+        formula: r.formulaOverride ?? r.formula,
+        taxable: r.taxable,
+        showOnPayslip: r.showOnPayslip,
+        includeInCtc: r.includeInCtc,
+        isStatutory: r.isStatutory,
+        sortOrder: r.sortOrder,
+      });
+      byProfile.set(r.profileId, list);
+    }
+    return byProfile;
+  }
+}

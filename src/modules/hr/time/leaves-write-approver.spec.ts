@@ -6,6 +6,7 @@ import {
   type TenantContext,
 } from "../../../common/tenant/tenant-context";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { createLeaveSchema } from "./dto/leaves.schemas";
 import { LeavesWriteService } from "./leaves-write.service";
 
@@ -16,6 +17,7 @@ const USER: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 function balanceSelect() {
@@ -28,6 +30,17 @@ function balanceSelect() {
   chain.from.mockReturnValue(chain);
   chain.where.mockReturnValue(chain);
   chain.for.mockReturnValue(chain);
+  return chain;
+}
+
+function selectChain(rows: unknown[]) {
+  const chain = {
+    from: jest.fn(),
+    where: jest.fn(),
+    limit: jest.fn().mockResolvedValue(rows),
+  };
+  chain.from.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
   return chain;
 }
 
@@ -69,6 +82,10 @@ describe("LeavesWriteService server-derived approver", () => {
       query: {
         users: { findFirst: jest.fn().mockResolvedValue(undefined) },
       },
+      select: jest.fn()
+        .mockReturnValueOnce(selectChain([{ id: 5, orgId: "org-1", userId: "manager-1", role: "MEMBER", isOwner: false, status: "ACTIVE" }]))
+        .mockReturnValueOnce(selectChain([]))
+        .mockReturnValueOnce(selectChain([{ probationRestricted: false }])),
       transaction: jest.fn(
         async (callback: (transaction: typeof tx) => Promise<unknown>) =>
           callback(tx),
@@ -91,7 +108,11 @@ describe("LeavesWriteService server-derived approver", () => {
           name: "Manager",
         }),
       } as never,
-      { isOnProbationDuring: jest.fn().mockResolvedValue(false) } as never,
+      { probationCoverageOn: jest.fn().mockResolvedValue("past-probation") } as never,
+      {
+        getFacts: jest.fn().mockResolvedValue({ managerUserId: null }),
+        getDirectReportUserIds: jest.fn().mockResolvedValue([]),
+      } as never,
     );
     const afterCommit: AfterCommitHook[] = [];
     const context = {
@@ -119,6 +140,7 @@ describe("LeavesWriteService server-derived approver", () => {
         orgId: USER.orgId,
         userId: USER.userId,
         approverId: "manager-1",
+        approverMembershipId: 5,
       }),
     );
     expect(workflowEngine.startWorkflow).not.toHaveBeenCalled();

@@ -1,7 +1,18 @@
-import { Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, asc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { kbPageReviews, kbPages, users } from "../../../db/schema";
+import {
+  kbPageReviews,
+  kbPages,
+  organizationMembers,
+  users,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -13,6 +24,7 @@ import type {
   RejectReviewInput,
 } from "./dto/kb-page-reviews.schemas";
 import { AccessService } from "../../access/access.service";
+import { actingMembershipId } from "../../../common/auth/principal";
 
 type ReviewRow = typeof kbPageReviews.$inferSelect;
 const REVIEW_STATUSES = ["pending", "approved", "rejected", "expired"] as const;
@@ -40,6 +52,31 @@ export class KbPageReviewsService {
     private readonly access: AccessService,
   ) {}
 
+  private actorMembershipId(user: CurrentUserContext): number {
+    const membershipId = actingMembershipId(user.principal);
+    if (membershipId === null)
+      throw new ForbiddenException("An organization membership is required");
+    return membershipId;
+  }
+
+  private async reviewerMembershipId(
+    orgId: string,
+    reviewerId: string | undefined,
+  ): Promise<number | null> {
+    if (!reviewerId) return null;
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, reviewerId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    if (!membership)
+      throw new NotFoundException("Reviewer not found in this organization");
+    return membership.id;
+  }
+
   async list(
     user: CurrentUserContext,
     status: string | undefined,
@@ -47,6 +84,14 @@ export class KbPageReviewsService {
   ): Promise<ReviewWithContext[]> {
     const requester = alias(users, "requester");
     const reviewer = alias(users, "reviewer");
+    const requesterMembership = alias(
+      organizationMembers,
+      "reviewer_requester_membership",
+    );
+    const reviewerMembership = alias(
+      organizationMembers,
+      "reviewer_assignee_membership",
+    );
 
     const conditions = [eq(kbPageReviews.orgId, user.orgId)];
     if (status && REVIEW_STATUSES.includes(status as ReviewRow["status"])) {
@@ -55,10 +100,11 @@ export class KbPageReviewsService {
     if (type && REVIEW_TYPES.includes(type as ReviewRow["type"])) {
       conditions.push(eq(kbPageReviews.type, type as ReviewRow["type"]));
     }
-    if (!await reviewerCanSeeAllReviews(user, this.access)) {
+    if (!(await reviewerCanSeeAllReviews(user, this.access))) {
+      const membershipId = this.actorMembershipId(user);
       const ownOnly = or(
-        eq(kbPageReviews.reviewerId, user.userId),
-        eq(kbPageReviews.requestedById, user.userId),
+        eq(kbPageReviews.reviewerMembershipId, membershipId),
+        eq(kbPageReviews.requestedByMembershipId, membershipId),
       );
       if (ownOnly) conditions.push(ownOnly);
     }
@@ -72,6 +118,8 @@ export class KbPageReviewsService {
         status: kbPageReviews.status,
         requestedById: kbPageReviews.requestedById,
         reviewerId: kbPageReviews.reviewerId,
+        requestedByMembershipId: kbPageReviews.requestedByMembershipId,
+        reviewerMembershipId: kbPageReviews.reviewerMembershipId,
         dueAt: kbPageReviews.dueAt,
         decidedAt: kbPageReviews.decidedAt,
         decisionNote: kbPageReviews.decisionNote,
@@ -83,8 +131,16 @@ export class KbPageReviewsService {
       })
       .from(kbPageReviews)
       .leftJoin(kbPages, eq(kbPageReviews.pageId, kbPages.id))
-      .leftJoin(requester, eq(kbPageReviews.requestedById, requester.id))
-      .leftJoin(reviewer, eq(kbPageReviews.reviewerId, reviewer.id))
+      .leftJoin(
+        requesterMembership,
+        eq(kbPageReviews.requestedByMembershipId, requesterMembership.id),
+      )
+      .leftJoin(
+        reviewerMembership,
+        eq(kbPageReviews.reviewerMembershipId, reviewerMembership.id),
+      )
+      .leftJoin(requester, eq(requesterMembership.userId, requester.id))
+      .leftJoin(reviewer, eq(reviewerMembership.userId, reviewer.id))
       .where(and(...conditions))
       .orderBy(sql`${kbPageReviews.dueAt} ASC NULLS LAST`)
       .limit(100);
@@ -93,6 +149,14 @@ export class KbPageReviewsService {
   async listDue(orgId: string): Promise<ReviewWithContext[]> {
     const requester = alias(users, "requester");
     const reviewer = alias(users, "reviewer");
+    const requesterMembership = alias(
+      organizationMembers,
+      "reviewer_requester_membership",
+    );
+    const reviewerMembership = alias(
+      organizationMembers,
+      "reviewer_assignee_membership",
+    );
 
     return this.db
       .select({
@@ -103,6 +167,8 @@ export class KbPageReviewsService {
         status: kbPageReviews.status,
         requestedById: kbPageReviews.requestedById,
         reviewerId: kbPageReviews.reviewerId,
+        requestedByMembershipId: kbPageReviews.requestedByMembershipId,
+        reviewerMembershipId: kbPageReviews.reviewerMembershipId,
         dueAt: kbPageReviews.dueAt,
         decidedAt: kbPageReviews.decidedAt,
         decisionNote: kbPageReviews.decisionNote,
@@ -114,8 +180,16 @@ export class KbPageReviewsService {
       })
       .from(kbPageReviews)
       .leftJoin(kbPages, eq(kbPageReviews.pageId, kbPages.id))
-      .leftJoin(requester, eq(kbPageReviews.requestedById, requester.id))
-      .leftJoin(reviewer, eq(kbPageReviews.reviewerId, reviewer.id))
+      .leftJoin(
+        requesterMembership,
+        eq(kbPageReviews.requestedByMembershipId, requesterMembership.id),
+      )
+      .leftJoin(
+        reviewerMembership,
+        eq(kbPageReviews.reviewerMembershipId, reviewerMembership.id),
+      )
+      .leftJoin(requester, eq(requesterMembership.userId, requester.id))
+      .leftJoin(reviewer, eq(reviewerMembership.userId, reviewer.id))
       .where(
         and(
           eq(kbPageReviews.orgId, orgId),
@@ -143,6 +217,11 @@ export class KbPageReviewsService {
       columns: { id: true, title: true },
     });
     if (!page) throw new NotFoundException("Page not found");
+    const requestedByMembershipId = this.actorMembershipId(user);
+    const reviewerMembershipId = await this.reviewerMembershipId(
+      user.orgId,
+      input.reviewerId,
+    );
 
     const [review] = await this.db
       .insert(kbPageReviews)
@@ -152,11 +231,14 @@ export class KbPageReviewsService {
         type: input.type,
         requestedById: user.userId,
         reviewerId: input.reviewerId ?? null,
+        requestedByMembershipId,
+        reviewerMembershipId,
         dueAt: input.dueAt ? new Date(input.dueAt) : null,
         decisionNote: input.note ?? null,
       })
       .returning();
-    if (!review) throw new InternalServerErrorException("Failed to create review");
+    if (!review)
+      throw new InternalServerErrorException("Failed to create review");
 
     this.audit.log({
       action: "kb.review.created",
@@ -193,19 +275,29 @@ export class KbPageReviewsService {
     input: ApproveReviewInput,
   ): Promise<ReviewRow> {
     const existing = await this.db.query.kbPageReviews.findFirst({
-      where: and(eq(kbPageReviews.id, reviewId), eq(kbPageReviews.orgId, user.orgId)),
+      where: and(
+        eq(kbPageReviews.id, reviewId),
+        eq(kbPageReviews.orgId, user.orgId),
+      ),
     });
     if (!existing) throw new NotFoundException("Review not found");
+    const reviewerMembershipId = this.actorMembershipId(user);
 
     const [updated] = await this.db
       .update(kbPageReviews)
       .set({
         status: "approved",
         reviewerId: user.userId,
+        reviewerMembershipId,
         decidedAt: new Date(),
         decisionNote: input.note ?? null,
       })
-      .where(and(eq(kbPageReviews.id, reviewId), eq(kbPageReviews.orgId, user.orgId)))
+      .where(
+        and(
+          eq(kbPageReviews.id, reviewId),
+          eq(kbPageReviews.orgId, user.orgId),
+        ),
+      )
       .returning();
     if (!updated) throw new NotFoundException("Review not found");
 
@@ -245,19 +337,29 @@ export class KbPageReviewsService {
     input: RejectReviewInput,
   ): Promise<ReviewRow> {
     const existing = await this.db.query.kbPageReviews.findFirst({
-      where: and(eq(kbPageReviews.id, reviewId), eq(kbPageReviews.orgId, user.orgId)),
+      where: and(
+        eq(kbPageReviews.id, reviewId),
+        eq(kbPageReviews.orgId, user.orgId),
+      ),
     });
     if (!existing) throw new NotFoundException("Review not found");
+    const reviewerMembershipId = this.actorMembershipId(user);
 
     const [updated] = await this.db
       .update(kbPageReviews)
       .set({
         status: "rejected",
         reviewerId: user.userId,
+        reviewerMembershipId,
         decidedAt: new Date(),
         decisionNote: input.note,
       })
-      .where(and(eq(kbPageReviews.id, reviewId), eq(kbPageReviews.orgId, user.orgId)))
+      .where(
+        and(
+          eq(kbPageReviews.id, reviewId),
+          eq(kbPageReviews.orgId, user.orgId),
+        ),
+      )
       .returning();
     if (!updated) throw new NotFoundException("Review not found");
 

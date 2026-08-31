@@ -17,7 +17,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { AccessService } from "../../access/access.service";
 import { resolvePerformanceScope } from "./performance-scope";
 import { PerformanceGoalsService } from "./performance-goals.service";
@@ -29,6 +29,7 @@ import {
   createPerformanceReviewSchema,
   createPipSchema,
   createReviewCycleSchema,
+  listPerformanceReviewsSchema,
   updateGoalCollectionSchema,
   updateGoalItemSchema,
   updateKeyResultSchema,
@@ -42,6 +43,7 @@ import {
   type CreatePerformanceReviewInput,
   type CreatePipInput,
   type CreateReviewCycleInput,
+  type ListPerformanceReviewsInput,
   type UpdateGoalCollectionInput,
   type UpdateGoalItemInput,
   type UpdateKeyResultInput,
@@ -51,6 +53,14 @@ import {
   type UpdateReviewCycleInput,
 } from "./dto/performance.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const goalIdParams = z.object({ goalId: z.coerce.number().int().positive() }).strict();
+const meetingIdParams = z.object({ meetingId: z.coerce.number().int().positive() }).strict();
+const pipIdParams = z.object({ pipId: z.coerce.number().int().positive() }).strict();
+const reviewIdParams = z.object({ reviewId: z.coerce.number().int().positive() }).strict();
+const cycleIdParams = z.object({ cycleId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/performance")
@@ -72,8 +82,9 @@ export class PerformanceController {
   @Post("goals")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: createGoalSchema })
   createGoal(
-    @Body(new ZodValidationPipe(createGoalSchema)) body: CreateGoalInput,
+    @Body() body: CreateGoalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.goalsService.createGoal(u.orgId, body);
@@ -81,8 +92,9 @@ export class PerformanceController {
 
   @Patch("goals")
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: updateGoalCollectionSchema })
   updateGoalCollection(
-    @Body(new ZodValidationPipe(updateGoalCollectionSchema)) body: UpdateGoalCollectionInput,
+    @Body() body: UpdateGoalCollectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.goalsService.updateGoalFromCollection(u.orgId, body);
@@ -90,9 +102,10 @@ export class PerformanceController {
 
   @Patch("goals/:goalId")
   @RequirePermission("hr:performance:view")
+  @Validate({ params: goalIdParams, body: updateGoalItemSchema })
   async updateGoal(
     @Param("goalId", ParseIntPipe) goalId: number,
-    @Body(new ZodValidationPipe(updateGoalItemSchema)) body: UpdateGoalItemInput,
+    @Body() body: UpdateGoalItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.goalsService.updateGoalItem(u.orgId, u.userId, await this.canManagePerformance(u), goalId, body);
@@ -101,6 +114,7 @@ export class PerformanceController {
   @Delete("goals/:goalId")
   @HttpCode(204)
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: goalIdParams })
   async deleteGoal(
     @Param("goalId", ParseIntPipe) goalId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -122,8 +136,9 @@ export class PerformanceController {
   @Post("key-results")
   @HttpCode(201)
   @RequirePermission("hr:performance:view")
+  @Validate({ body: createKeyResultSchema })
   async createKeyResult(
-    @Body(new ZodValidationPipe(createKeyResultSchema)) body: CreateKeyResultInput,
+    @Body() body: CreateKeyResultInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.goalsService.createKeyResult(u.orgId, u.userId, await this.canManagePerformance(u), body);
@@ -131,8 +146,9 @@ export class PerformanceController {
 
   @Patch("key-results")
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: updateKeyResultSchema })
   updateKeyResult(
-    @Body(new ZodValidationPipe(updateKeyResultSchema)) body: UpdateKeyResultInput,
+    @Body() body: UpdateKeyResultInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.goalsService.updateKeyResult(u.orgId, body);
@@ -150,8 +166,9 @@ export class PerformanceController {
   @Post("one-on-ones")
   @HttpCode(201)
   @RequirePermission("hr:performance:view")
+  @Validate({ body: createOneOnOneSchema })
   createOneOnOne(
-    @Body(new ZodValidationPipe(createOneOnOneSchema)) body: CreateOneOnOneInput,
+    @Body() body: CreateOneOnOneInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.createOneOnOne(u.orgId, u.userId, body);
@@ -159,9 +176,10 @@ export class PerformanceController {
 
   @Patch("one-on-ones/:meetingId")
   @RequirePermission("hr:performance:view")
+  @Validate({ params: meetingIdParams, body: updateOneOnOneSchema })
   async updateOneOnOne(
     @Param("meetingId", ParseIntPipe) meetingId: number,
-    @Body(new ZodValidationPipe(updateOneOnOneSchema)) body: UpdateOneOnOneInput,
+    @Body() body: UpdateOneOnOneInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.updateOneOnOne(u.orgId, u.userId, await this.canManagePerformance(u), meetingId, body);
@@ -170,6 +188,7 @@ export class PerformanceController {
   @Delete("one-on-ones/:meetingId")
   @HttpCode(204)
   @RequirePermission("hr:performance:view")
+  @Validate({ params: meetingIdParams })
   async deleteOneOnOne(
     @Param("meetingId", ParseIntPipe) meetingId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -187,8 +206,9 @@ export class PerformanceController {
   @Post("pip")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: createPipSchema })
   createPip(
-    @Body(new ZodValidationPipe(createPipSchema)) body: CreatePipInput,
+    @Body() body: CreatePipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.createPip(u.orgId, u.userId, body);
@@ -196,9 +216,10 @@ export class PerformanceController {
 
   @Patch("pip/:pipId")
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: pipIdParams, body: updatePipSchema })
   updatePip(
     @Param("pipId", ParseIntPipe) pipId: number,
-    @Body(new ZodValidationPipe(updatePipSchema)) body: UpdatePipInput,
+    @Body() body: UpdatePipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.updatePip(u.orgId, pipId, body);
@@ -206,29 +227,21 @@ export class PerformanceController {
 
   @Get("reviews")
   @RequirePermission("hr:performance:view")
+  @Validate({ query: listPerformanceReviewsSchema })
   async listReviews(
-    @Query("userId") userId: string | undefined,
-    @Query("cycleId") cycleId: string | undefined,
-    @Query("limit") limit: string | undefined,
-    @Query("offset") offset: string | undefined,
+    @Query() query: ListPerformanceReviewsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolvePerformanceScope(this.access, u);
-    const rawLimit = limit !== undefined ? Number(limit) : undefined;
-    const cappedLimit = rawLimit !== undefined ? Math.min(Math.max(rawLimit, 1), 100) : undefined;
-    return this.reviewsService.listReviews(u.orgId, u.userId, scope, {
-      userId,
-      cycleId: cycleId ? Number(cycleId) : undefined,
-      limit: cappedLimit,
-      offset: offset !== undefined ? Math.max(Number(offset), 0) : undefined,
-    });
+    return this.reviewsService.listReviews(u.orgId, u.userId, scope, query);
   }
 
   @Post("reviews")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: createPerformanceReviewSchema })
   createReview(
-    @Body(new ZodValidationPipe(createPerformanceReviewSchema)) body: CreatePerformanceReviewInput,
+    @Body() body: CreatePerformanceReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.createReview(u.orgId, u.userId, body);
@@ -236,6 +249,7 @@ export class PerformanceController {
 
   @Get("reviews/:reviewId")
   @RequirePermission("hr:performance:view")
+  @Validate({ params: reviewIdParams })
   getReview(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -246,6 +260,7 @@ export class PerformanceController {
   @Delete("reviews/:reviewId")
   @HttpCode(204)
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: reviewIdParams })
   async deleteReview(
     @Param("reviewId", ParseIntPipe) reviewId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -255,9 +270,10 @@ export class PerformanceController {
 
   @Patch("reviews/:reviewId")
   @RequirePermission("hr:performance:view")
+  @Validate({ params: reviewIdParams, body: updatePerformanceReviewSchema })
   async updateReview(
     @Param("reviewId", ParseIntPipe) reviewId: number,
-    @Body(new ZodValidationPipe(updatePerformanceReviewSchema)) body: UpdatePerformanceReviewInput,
+    @Body() body: UpdatePerformanceReviewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.updateReview(u.orgId, u.userId, await this.canManagePerformance(u), reviewId, body);
@@ -272,8 +288,9 @@ export class PerformanceController {
   @Post("cycles")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: createReviewCycleSchema })
   createCycle(
-    @Body(new ZodValidationPipe(createReviewCycleSchema)) body: CreateReviewCycleInput,
+    @Body() body: CreateReviewCycleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.createCycle(u.orgId, u.userId, body);
@@ -281,6 +298,7 @@ export class PerformanceController {
 
   @Get("cycles/:cycleId")
   @RequirePermission("hr:performance:view")
+  @Validate({ params: cycleIdParams })
   getCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -290,9 +308,10 @@ export class PerformanceController {
 
   @Patch("cycles/:cycleId")
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: cycleIdParams, body: updateReviewCycleSchema })
   updateCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
-    @Body(new ZodValidationPipe(updateReviewCycleSchema)) body: UpdateReviewCycleInput,
+    @Body() body: UpdateReviewCycleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reviewsService.updateCycle(u.orgId, cycleId, body);
@@ -301,6 +320,7 @@ export class PerformanceController {
   @Delete("cycles/:cycleId")
   @HttpCode(204)
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: cycleIdParams })
   async deleteCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,

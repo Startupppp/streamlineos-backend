@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 const TYPES = ["INFO", "SUCCESS", "WARNING", "ERROR"] as const;
 const PRIORITIES = ["LOW", "NORMAL", "HIGH", "CRITICAL"] as const;
@@ -28,12 +29,12 @@ export const updateBroadcastSchema = createBroadcastSchema.partial();
 
 export const listBroadcastsSchema = z.object({
   status: z.enum(STATUSES).optional(),
-  limit: z.coerce.number().min(1).max(100).optional().default(20),
+  limit: pageSizeField(20),
   cursor: z.coerce.number().optional(),
 });
 
 export const listBroadcastInboxSchema = z.object({
-  limit: z.coerce.number().min(1).max(100).optional().default(20),
+  limit: pageSizeField(20),
 });
 
 export type CreateBroadcastInput = z.infer<typeof createBroadcastSchema>;

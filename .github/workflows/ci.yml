@@ -58,10 +58,77 @@ jobs:
       - name: Import cycles
         run: pnpm check:cycles
 
+      - name: Permission key catalog check
+        run: pnpm check:permission-keys
+
+      # Absence of a declaration is the defect, so this gates every commit now
+      # that the count is zero. RouteClassifierGuard enforces the same thing at
+      # boot; this fails earlier and names the file.
+      - name: Route classification
+        run: pnpm check:route-classification
+
+      - name: Navigation gates name the route's permission
+        run: pnpm check:navigation-permissions
+
+      - name: OpenAPI contract is current
+        run: pnpm openapi:check:self-test && pnpm openapi:check
+        env:
+          NODE_ENV: test
+          DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          REGION_PRIMARY_APP_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+          BACKEND_JWT_SECRET: ci-openapi-generation-secret-not-used-for-signing
+          PORTAL_JWT_SECRET: ci-openapi-generation-portal-secret-not-used-here
+          ENCRYPTION_KEY: ci-openapi-generation-encryption-key-unused
+          CORS_ORIGINS: http://localhost:1000
+          APP_URL: http://localhost:1000
+
+      - name: Retryable commands are fenced
+        run: pnpm check:idempotent-commands:self-test && pnpm check:idempotent-commands
+
+      - name: Module manifest agrees with enablement and entitlement
+        run: pnpm check:module-entitlement:self-test && pnpm check:module-entitlement
+
+      - name: Module lifecycle gates are wired
+        run: pnpm check:module-lifecycle:self-test
+
+      - name: Every resolved DataScope reaches a predicate
+        run: pnpm check:scope-application
+
+      - name: No record read can return a deleted row
+        run: pnpm check:record-access
+
+      # The index half of the RLS invariant, which needs no database: the policy
+      # half is db:verify-rls in the tenant-isolation job below, and that job only
+      # runs on a schedule because it needs credentials. Without a leading tenant
+      # index the RLS qual cannot be answered from an index and the read becomes a
+      # sequential scan, so this is an isolation cost, not a tuning preference.
+      - name: Tenant index check
+        run: pnpm check:tenant-indexes
+
+      # Restore the chain-gaps marker from the most recent nightly cold bootstrap.
+      # The file is absent on the very first run; in that case criterion (e) of
+      # verify-migration-chain.mjs silently skips rather than failing the build.
+      - name: Restore chain-gaps marker
+        uses: actions/cache/restore@v4
+        with:
+          path: .chain-gaps
+          key: chain-gaps-never-exact-match
+          restore-keys: |
+            chain-gaps-
+
+      # Migration chain integrity: every .sql must be journalled (or on the deliberate
+      # allowlist), no two files may share a numeric prefix, `when` timestamps must be
+      # strictly ascending, and no journal entry may name a missing file. Self-test first;
+      # then the live check. Chain-gap count (criterion e) is only checked when the
+      # .chain-gaps marker is present — it is written by the nightly bootstrap job.
+      - name: Migration chain verification
+        run: pnpm check:migration-chain:self-test && pnpm check:migration-chain
+
       - name: Dead-code report
         run: pnpm exec knip --no-progress
         continue-on-error: true
 
+<<<<<<< HEAD
   # The golden path, on every pull request.
   #
   # It proves the one thing no unit test can: that buy -> receive -> put away ->
@@ -103,6 +170,32 @@ jobs:
           NODE_OPTIONS: --max-old-space-size=8192
           DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
           BACKEND_JWT_SECRET: ${{ secrets.CI_BACKEND_JWT_SECRET }}
+=======
+      # No source line may hand a secret or PII to a logger outside the redactor, and every
+      # @UseRateLimit key must have a TIERS entry — an unknown key silently disables the limit
+      # while the decorator still reads as protection. Self-test first: a scanner that matches
+      # nothing reports a clean tree.
+      - name: No secret reaches a log, and every rate limit has a tier
+        run: pnpm check:log-secrets:self-test && pnpm check:log-secrets
+
+      # Alert detection logic, exercised against fixtures. These do not touch a database or a
+      # webhook; they prove each alert fires on a breaching input and stays quiet on a clean one.
+      - name: Alert self-tests
+        run: |
+          pnpm alert:queue-age:self-test
+          pnpm alert:pool-saturation:self-test
+          pnpm alert:tenant-cost:self-test
+          pnpm alert:dispatch:self-test
+          pnpm failure-drill:self-test
+
+      # Cross-tenant negative-test coverage. Reported, not enforced: coverage is 18% (136/773
+      # tenant-owned services) and failing the build on a number nobody can move in one commit
+      # would train people to ignore it. Flip continue-on-error off once the baseline is raised
+      # and the check compares against a recorded floor rather than demanding completeness.
+      - name: Cross-tenant isolation coverage (reported)
+        run: pnpm check:tenant-isolation:self-test && pnpm check:tenant-isolation
+        continue-on-error: true
+>>>>>>> origin/main
 
   # Tenant isolation, against a real database as the real application role.
   #
@@ -139,6 +232,11 @@ jobs:
           # The non-owner role. Without it the suite skips rather than lying.
           APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
           BACKEND_JWT_SECRET: ${{ secrets.CI_BACKEND_JWT_SECRET }}
+
+      - name: Module lifecycle gates (timesheets)
+        run: pnpm check:module-lifecycle
+        env:
+          APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
 
   # Separate job so a provider outage or a credit limit fails visibly on its own
   # rather than looking like a broken build.

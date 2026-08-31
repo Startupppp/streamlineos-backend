@@ -56,6 +56,7 @@ export interface EntityAction {
 export interface EntityActor {
   orgId: string;
   userId: string;
+  membershipId?: number;
   isOrgOwner: boolean;
 }
 

@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
-import { candidates } from "./hiring";
+import { candidates } from "./hiring-candidates";
 
 export const talentPools = pgTable("talent_pools", {
   id: serial("id").primaryKey(),

@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import { z } from "zod";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
@@ -7,7 +8,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import { SignFieldsService } from "./sign-fields.service";
 import { createFieldSchema, updateFieldSchema, type CreateFieldInput, type UpdateFieldInput } from "./dto/e-sign.schemas";
 
@@ -16,6 +17,9 @@ function clientIp(req: Request): string | undefined {
   const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
   return (raw?.split(",")[0]?.trim() || req.ip)?.slice(0, 100);
 }
+
+const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
+const fieldIdParams = z.object({ fieldId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("sign")
 @Controller("sign")
@@ -26,9 +30,10 @@ export class SignFieldsController {
   @Post("envelopes/:envelopeId/fields")
   @HttpCode(201)
   @RequirePermission("sign:envelope:create")
+  @Validate({ params: envelopeIdParams, body: createFieldSchema })
   add(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
-    @Body(new ZodValidationPipe(createFieldSchema)) body: CreateFieldInput,
+    @Body() body: CreateFieldInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -37,15 +42,17 @@ export class SignFieldsController {
 
   @Get("envelopes/:envelopeId/fields")
   @RequirePermission("sign:envelope:view")
+  @Validate({ params: envelopeIdParams })
   list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
     return this.fields.listForEnvelope(u.orgId, envelopeId);
   }
 
   @Patch("fields/:fieldId")
   @RequirePermission("sign:envelope:create")
+  @Validate({ params: fieldIdParams, body: updateFieldSchema })
   update(
     @Param("fieldId", ParseIntPipe) fieldId: number,
-    @Body(new ZodValidationPipe(updateFieldSchema)) body: UpdateFieldInput,
+    @Body() body: UpdateFieldInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -54,6 +61,7 @@ export class SignFieldsController {
 
   @Delete("fields/:fieldId")
   @RequirePermission("sign:envelope:create")
+  @Validate({ params: fieldIdParams })
   async remove(@Param("fieldId", ParseIntPipe) fieldId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     await this.fields.remove(u.orgId, fieldId, { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req) });
     return { success: true };

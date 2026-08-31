@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { UserApiTokensService } from "./user-api-tokens.service";
 import {
   createUserApiTokenSchema,
@@ -23,6 +22,10 @@ import {
   listUserApiTokensSchema,
   type ListUserApiTokensInput,
 } from "./dto/user-api-tokens.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const tokenIdParams = z.object({ tokenId: z.string().min(1) }).strict();
 
 @Controller("me/api-tokens")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -31,10 +34,10 @@ export class UserApiTokensController {
 
   @Get()
   @RequirePermission("settings:api-tokens:read")
+  @Validate({ query: listUserApiTokensSchema })
   list(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(listUserApiTokensSchema))
-    query: ListUserApiTokensInput,
+    @Query() query: ListUserApiTokensInput,
   ) {
     return this.userApiTokensService.list(u.userId, query);
   }
@@ -47,9 +50,10 @@ export class UserApiTokensController {
 
   @Post()
   @RequirePermission("settings:api-tokens:write")
+  @Validate({ body: createUserApiTokenSchema })
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createUserApiTokenSchema)) body: CreateUserApiTokenInput,
+    @Body() body: CreateUserApiTokenInput,
   ) {
     return this.userApiTokensService.create(u, body);
   }
@@ -57,6 +61,7 @@ export class UserApiTokensController {
   @Delete(":tokenId")
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermission("settings:api-tokens:write")
+  @Validate({ params: tokenIdParams })
   revoke(@CurrentUser() u: CurrentUserContext, @Param("tokenId") tokenId: string) {
     return this.userApiTokensService.revoke(u.userId, tokenId);
   }

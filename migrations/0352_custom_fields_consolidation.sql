@@ -102,12 +102,44 @@ BEGIN
     RETURN;
   END IF;
 
+<<<<<<< HEAD
   -- ───────────────────────────────────────────────────────────────────────────
   -- Step 1: drop old value tables (children first)
   -- ───────────────────────────────────────────────────────────────────────────
   DROP TABLE IF EXISTS "hr_custom_field_values";
   DROP TABLE IF EXISTS "ticket_custom_field_values";
   DROP TABLE IF EXISTS "support_ticket_custom_field_values";
+=======
+-- The regenerated 0000 baseline snapshots a pre-consolidation
+-- custom_field_definitions (no project_id, no key), so a cold replay reaches
+-- Step 3 with the old shape already present. Dropping it here is the same
+-- consolidation this migration already performs on its five siblings.
+DROP TABLE IF EXISTS "custom_field_definitions" CASCADE;
+--> statement-breakpoint
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Step 3: unified definitions table
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE "custom_field_definitions" (
+  "id"            SERIAL PRIMARY KEY,
+  "org_id"        TEXT    NOT NULL REFERENCES "organizations"("id") ON DELETE CASCADE,
+  "entity_type"   TEXT    NOT NULL,
+  "project_id"    INTEGER NOT NULL DEFAULT 0,
+  "key"           TEXT    NOT NULL,
+  "label"         TEXT    NOT NULL,
+  "field_type"    TEXT    NOT NULL,
+  "options"       JSONB,
+  "settings"      JSONB,
+  "is_sensitive"  BOOLEAN NOT NULL DEFAULT FALSE,
+  "is_required"   BOOLEAN NOT NULL DEFAULT FALSE,
+  "category"      TEXT,
+  "is_active"     BOOLEAN NOT NULL DEFAULT TRUE,
+  "display_order" INTEGER NOT NULL DEFAULT 0,
+  "created_at"    TIMESTAMP   NOT NULL DEFAULT NOW(),
+  "updated_at"    TIMESTAMP   NOT NULL DEFAULT NOW()
+);
+--> statement-breakpoint
+>>>>>>> origin/main
 
   -- ───────────────────────────────────────────────────────────────────────────
   -- Step 2: drop old definition tables (parents after their children)

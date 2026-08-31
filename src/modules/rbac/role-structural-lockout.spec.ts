@@ -1,5 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -50,6 +51,7 @@ describe("removeRoleMember — no lockout barrier after structural authority cha
     isOrgOwner: false,
     tokenScopes: null,
     sessionId: "sess-abc",
+    principal: humanSessionPrincipal(1, false),
   };
 
   beforeEach(async () => {

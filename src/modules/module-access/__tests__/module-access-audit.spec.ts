@@ -1,11 +1,14 @@
 import { Test } from "@nestjs/testing";
-import { ModuleAccessGroupsService } from "../module-access-groups.service";
+import { ModuleAccessGroupCrudService } from "../module-access-group-crud.service";
+import { ModuleAccessGroupMembersService } from "../module-access-group-members.service";
 import { ModuleAccessService } from "../module-access.service";
+import { ModuleAccessGroupPolicyService } from "../module-access-group-policy.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 jest.mock("../../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
@@ -19,6 +22,7 @@ function makeActor(overrides: Partial<CurrentUserContext> = {}): CurrentUserCont
     isOrgOwner: true,
     sessionId: "s-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, true),
     ...overrides,
   };
 }
@@ -51,7 +55,18 @@ function makeFlexChain(results: unknown[]) {
   return chain;
 }
 
-describe("ModuleAccessGroupsService — audit: group created", () => {
+function mockGroupPolicyService() {
+  return {
+    provide: ModuleAccessGroupPolicyService,
+    useValue: {
+      permissionKeys: jest.fn().mockReturnValue(new Set<string>()),
+      assertGroupBelongsToModule: jest.fn().mockResolvedValue(undefined),
+      resolveOwnerUserId: jest.fn().mockResolvedValue(null),
+    },
+  };
+}
+
+describe("ModuleAccessGroupCrudService — audit: group created", () => {
   it("logs module_access.group_created with moduleKey after the transaction commits", async () => {
     const auditLog = jest.fn();
 
@@ -77,15 +92,16 @@ describe("ModuleAccessGroupsService — audit: group created", () => {
 
     const m = await Test.createTestingModule({
       providers: [
-        ModuleAccessGroupsService,
+        ModuleAccessGroupCrudService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions: jest.fn(), isModuleEnabled: jest.fn().mockResolvedValue(true) } },
-        { provide: CacheService, useValue: { invalidate: jest.fn() } },
+        { provide: CacheService, useValue: { invalidate: jest.fn(), cached: jest.fn() } },
         { provide: AuditService, useValue: { log: auditLog } },
+        mockGroupPolicyService(),
       ],
     }).compile();
 
-    await m.get(ModuleAccessGroupsService).createGroup(makeActor(), "hr", { name: "HR Admins" });
+    await m.get(ModuleAccessGroupCrudService).createGroup(makeActor(), "hr", { name: "HR Admins" });
 
     expect(auditLog).toHaveBeenCalledTimes(1);
     expect(auditLog).toHaveBeenCalledWith(
@@ -97,7 +113,7 @@ describe("ModuleAccessGroupsService — audit: group created", () => {
   });
 });
 
-describe("ModuleAccessGroupsService — audit: group deleted", () => {
+describe("ModuleAccessGroupCrudService — audit: group deleted", () => {
   it("logs module_access.group_deleted with moduleKey after the transaction commits", async () => {
     const auditLog = jest.fn();
 
@@ -119,15 +135,16 @@ describe("ModuleAccessGroupsService — audit: group deleted", () => {
 
     const m = await Test.createTestingModule({
       providers: [
-        ModuleAccessGroupsService,
+        ModuleAccessGroupCrudService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AccessService, useValue: { resolveUserPermissions: jest.fn(), isModuleEnabled: jest.fn().mockResolvedValue(true) } },
-        { provide: CacheService, useValue: { invalidate: jest.fn() } },
+        { provide: CacheService, useValue: { invalidate: jest.fn(), cached: jest.fn() } },
         { provide: AuditService, useValue: { log: auditLog } },
+        mockGroupPolicyService(),
       ],
     }).compile();
 
-    await m.get(ModuleAccessGroupsService).deleteGroup(makeActor(), "hr", 9);
+    await m.get(ModuleAccessGroupCrudService).deleteGroup(makeActor(), "hr", 9);
 
     expect(auditLog).toHaveBeenCalledTimes(1);
     expect(auditLog).toHaveBeenCalledWith(
@@ -139,11 +156,10 @@ describe("ModuleAccessGroupsService — audit: group deleted", () => {
   });
 });
 
-describe("ModuleAccessGroupsService — audit: group member added", () => {
+describe("ModuleAccessGroupMembersService — audit: group member added", () => {
   it("logs module_access.group_member_added with moduleKey and targetUserId", async () => {
     const auditLog = jest.fn();
 
-    const groupRow = { id: 9, orgId: "org-1", moduleKey: "hr" };
     const txMock = {
       execute: jest.fn().mockResolvedValue([]),
       insert: jest.fn().mockReturnValue({
@@ -158,7 +174,6 @@ describe("ModuleAccessGroupsService — audit: group member added", () => {
         async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
       ),
       query: {
-        roles: { findFirst: jest.fn().mockResolvedValue(groupRow) },
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ id: 55, status: "ACTIVE" }),
         },
@@ -167,16 +182,16 @@ describe("ModuleAccessGroupsService — audit: group member added", () => {
 
     const m = await Test.createTestingModule({
       providers: [
-        ModuleAccessGroupsService,
+        ModuleAccessGroupMembersService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: AccessService, useValue: { resolveUserPermissions: jest.fn(), isModuleEnabled: jest.fn().mockResolvedValue(true) } },
         { provide: CacheService, useValue: { invalidate: jest.fn() } },
         { provide: AuditService, useValue: { log: auditLog } },
+        mockGroupPolicyService(),
       ],
     }).compile();
 
     await m
-      .get(ModuleAccessGroupsService)
+      .get(ModuleAccessGroupMembersService)
       .addGroupMember(makeActor(), "hr", 9, { userId: "u-target" });
 
     expect(auditLog).toHaveBeenCalledTimes(1);

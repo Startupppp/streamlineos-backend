@@ -6,8 +6,11 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { GeofencingService } from "./geofencing.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const zoneIdParams = z.object({ zoneId: z.coerce.number().int().positive() }).strict();
 
 const createZoneSchema = z.object({
   name: z.string().min(1).max(100),
@@ -38,9 +41,10 @@ export class GeofencingController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ body: createZoneSchema })
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createZoneSchema)) body: CreateZoneInput,
+    @Body() body: CreateZoneInput,
   ) {
     return this.service.create(u.orgId, body);
   }
@@ -48,10 +52,11 @@ export class GeofencingController {
   @Patch(":zoneId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: zoneIdParams, body: updateZoneSchema })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("zoneId", ParseIntPipe) zoneId: number,
-    @Body(new ZodValidationPipe(updateZoneSchema)) body: UpdateZoneInput,
+    @Body() body: UpdateZoneInput,
   ) {
     return this.service.update(u.orgId, zoneId, body);
   }
@@ -60,6 +65,7 @@ export class GeofencingController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: zoneIdParams })
   remove(@CurrentUser() u: CurrentUserContext, @Param("zoneId", ParseIntPipe) zoneId: number) {
     return this.service.remove(u.orgId, zoneId);
   }

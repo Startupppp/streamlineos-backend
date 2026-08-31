@@ -14,7 +14,7 @@ import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decora
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../../common/validation/validate.decorator";
 import { LlmService } from "../providers/llm.service";
 import { OrgFeaturesService } from "../services/org-features.service";
 import { MeetingsPrepService } from "../services/meetings-prep.service";
@@ -51,8 +51,9 @@ export class MeetingsAiController {
   }
 
   @Post("prep")
+  @Validate({ body: meetingPrepBodySchema })
   async prep(
-    @Body(new ZodValidationPipe(meetingPrepBodySchema)) body: MeetingPrepBodyInput,
+    @Body() body: MeetingPrepBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId);
@@ -64,8 +65,9 @@ export class MeetingsAiController {
   }
 
   @Post("follow-up")
+  @Validate({ body: meetingFollowUpBodySchema })
   async followUp(
-    @Body(new ZodValidationPipe(meetingFollowUpBodySchema)) body: MeetingFollowUpBodyInput,
+    @Body() body: MeetingFollowUpBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId);
@@ -80,8 +82,9 @@ export class MeetingsAiController {
   }
 
   @Post("follow-up/propose-send")
+  @Validate({ body: proposeSendBodySchema })
   async proposeSend(
-    @Body(new ZodValidationPipe(proposeSendBodySchema)) body: ProposeSendBodyInput,
+    @Body() body: ProposeSendBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.requireAiFlag(u.orgId);
@@ -95,8 +98,9 @@ export class MeetingsAiController {
   }
 
   @Post("follow-up/confirm-send")
+  @Validate({ body: meetingSendConfirmBodySchema })
   async confirmSend(
-    @Body(new ZodValidationPipe(meetingSendConfirmBodySchema)) body: MeetingSendConfirmBodyInput,
+    @Body() body: MeetingSendConfirmBodyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.meetingsPrep.executeSendFollowUp(u.orgId, u.userId, body.token);

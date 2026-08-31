@@ -11,22 +11,23 @@ import {
   Query,
   Res,
   ServiceUnavailableException,
+  UnprocessableEntityException,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
-import { eq, ilike } from "drizzle-orm";
+import { ilike } from "drizzle-orm";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AuditService } from "../../common/audit/audit.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
   documents,
-  organizationMembers,
   onboardingDocuments,
   expenses,
   reimbursements,
@@ -37,6 +38,14 @@ import {
 import { StorageService, type FileStreamResult } from "./storage.service";
 import { validateMagicBytes } from "./file-signatures";
 import { AccessService } from "../access/access.service";
+import { AvScanner } from "../../common/security/av-scan";
+import { Validate } from "../../common/validation/validate.decorator";
+import {
+  downloadQuerySchema,
+  imageQuerySchema,
+  type DownloadQueryInput,
+  type ImageQueryInput,
+} from "./dto/storage.schemas";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
 
@@ -101,9 +110,11 @@ export class StorageController {
     private readonly storage: StorageService,
     private readonly audit: AuditService,
     private readonly access: AccessService,
+    private readonly avScanner: AvScanner,
   ) {}
 
   @Post("upload")
+  @AuthorizedInService("assertUploadAllowed")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 50 * 1024 * 1024 } }))
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
@@ -126,6 +137,12 @@ export class StorageController {
     if (!validateMagicBytes(file.buffer, file.mimetype)) {
       throw new BadRequestException("File content does not match declared type");
     }
+
+    const scanResult = await this.avScanner.scan(file.buffer, file.originalname, file.mimetype);
+    if (scanResult.status === "infected")
+      throw new UnprocessableEntityException(`Upload rejected: malware detected (${scanResult.threat})`);
+    if (scanResult.status === "error")
+      throw new ServiceUnavailableException("Malware scan unavailable — upload rejected");
 
     try {
       const result = await this.storage.uploadCompressed(
@@ -151,11 +168,10 @@ export class StorageController {
   }
 
   @Get("download")
+  @AuthorizedInService("resolveFileOwner")
+  @Validate({ query: downloadQuerySchema })
   async download(
-    @Query("url") urlParam: string | undefined,
-    @Query("key") keyParam: string | undefined,
-    @Query("expiresIn") expiresInParam: string | undefined,
-    @Query("attachment") attachmentParam: string | undefined,
+    @Query() queryParams: DownloadQueryInput,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {
@@ -163,29 +179,22 @@ export class StorageController {
       throw new ServiceUnavailableException("Cloud storage not configured");
     }
 
-    const rawExpires = parseInt(expiresInParam ?? "3600", 10);
-    const expiresIn = Number.isNaN(rawExpires) ? 3600 : Math.min(Math.max(rawExpires, 60), 86400);
+    const { url: urlParam, key: keyParam, expiresIn, attachment: attachmentParam } = queryParams;
     const attachment = attachmentParam === "1";
-
-    if (!urlParam && !keyParam) throw new BadRequestException("URL or key required");
 
     const fileKey = keyParam || (urlParam ? this.storage.getFileKeyFromUrl(urlParam) : "");
     if (!fileKey || !this.storage.isValidFileKey(fileKey)) {
       throw new BadRequestException("Invalid file reference");
     }
 
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: eq(organizationMembers.userId, u.userId),
-    });
-    const orgId = member?.orgId ?? u.orgId;
+    const orgId = u.orgId;
 
     const fileOwner = await this.resolveFileOwner(fileKey);
     if (fileOwner !== null) {
-      if (fileOwner.orgId !== orgId || requiresDedicatedAccess(fileOwner)) {
-        throw new ForbiddenException("Access denied");
-      }
+      if (fileOwner.orgId !== orgId) throw new NotFoundException("File not found");
+      if (requiresDedicatedAccess(fileOwner)) throw new ForbiddenException("Access denied");
     } else if (isSensitiveKey(fileKey)) {
-      throw new ForbiddenException("Access denied");
+      throw new NotFoundException("File not found");
     }
 
     this.audit.log({ action: "file.download", userId: u.userId, orgId, metadata: { fileKey } });
@@ -207,35 +216,30 @@ export class StorageController {
   }
 
   @Get("image")
+  @AuthorizedInService("resolveFileOwner")
+  @Validate({ query: imageQuerySchema })
   async image(
-    @Query("key") keyParam: string | undefined,
+    @Query() queryParams: ImageQueryInput,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ): Promise<void> {
-    if (!keyParam || !this.storage.isValidFileKey(keyParam)) {
+    const keyParam = queryParams.key;
+    if (!this.storage.isValidFileKey(keyParam)) {
       throw new BadRequestException("Invalid key parameter");
     }
     if (!this.storage.isConfigured()) {
       throw new ServiceUnavailableException("Storage not available");
     }
 
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: eq(organizationMembers.userId, u.userId),
-    });
-    if (!member) throw new ForbiddenException("Forbidden");
-
     if (isSensitiveKey(keyParam)) {
       const fileOwner = await this.resolveFileOwner(keyParam);
-      if (
-        fileOwner === null ||
-        fileOwner.orgId !== (member.orgId ?? u.orgId) ||
-        requiresDedicatedAccess(fileOwner)
-      ) {
-        throw new ForbiddenException("Access denied");
+      if (fileOwner === null || fileOwner.orgId !== u.orgId) {
+        throw new NotFoundException("Not found");
       }
+      if (requiresDedicatedAccess(fileOwner)) throw new ForbiddenException("Access denied");
     }
 
-    const stream = await this.openStream(member.orgId ?? u.orgId, keyParam, "Not found");
+    const stream = await this.openStream(u.orgId, keyParam, "Not found");
     res.setHeader("Content-Type", stream.contentType || this.storage.getMimeType(keyParam));
     res.setHeader("Cache-Control", "public, max-age=86400, immutable");
     this.pipe(stream.body, res);

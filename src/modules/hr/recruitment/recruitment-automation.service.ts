@@ -6,6 +6,9 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, max, sql } from "drizzle-orm";
+
+const PIPELINE_AUTOMATION_CAP = 100;
+const EMAIL_SEQUENCE_CAP = 100;
 import {
   candidateMessages,
   candidates,
@@ -40,6 +43,7 @@ export class RecruitmentAutomationService {
       where: eq(pipelineAutomations.orgId, orgId),
       with: { creator: { columns: { id: true, name: true } } },
       orderBy: [desc(pipelineAutomations.createdAt)],
+      limit: PIPELINE_AUTOMATION_CAP,
     });
   }
 
@@ -195,6 +199,7 @@ export class RecruitmentAutomationService {
         creator: { columns: { id: true, name: true } },
       },
       orderBy: [desc(emailSequences.createdAt)],
+      limit: EMAIL_SEQUENCE_CAP,
     });
   }
 

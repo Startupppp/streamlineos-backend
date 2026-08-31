@@ -1,6 +1,6 @@
 {
   "id": "abc353ba311a98c4a44875842110c25f",
-  "prevId": "b0bf38c0-d2ee-455b-8c2a-8d890dfe90c4",
+  "prevId": "295b84e7-4fd8-43c9-8cf9-85250afa2373",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2895,44 +2895,14 @@
           "primaryKey": false,
           "notNull": false
         },
-        "joining_date": {
-          "name": "joining_date",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
         "date_of_birth": {
           "name": "date_of_birth",
           "type": "date",
           "primaryKey": false,
           "notNull": false
         },
-        "tax_id": {
-          "name": "tax_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "bank_details": {
-          "name": "bank_details",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "image": {
           "name": "image",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "org_department_id": {
-          "name": "org_department_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "designation": {
-          "name": "designation",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -2955,18 +2925,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
-        },
-        "monthly_salary": {
-          "name": "monthly_salary",
-          "type": "numeric(15, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "employee_id": {
-          "name": "employee_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         },
         "metadata": {
           "name": "metadata",
@@ -3009,18 +2967,6 @@
         "deleted_at": {
           "name": "deleted_at",
           "type": "timestamp",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reporting_to": {
-          "name": "reporting_to",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "branch_id": {
-          "name": "branch_id",
-          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -3145,36 +3091,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_users_reporting_to": {
-          "name": "idx_users_reporting_to",
-          "columns": [
-            {
-              "expression": "reporting_to",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_users_org_department": {
-          "name": "idx_users_org_department",
-          "columns": [
-            {
-              "expression": "org_department_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -3189,19 +3105,6 @@
             "id"
           ],
           "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "users_reporting_to_users_id_fk": {
-          "name": "users_reporting_to_users_id_fk",
-          "tableFrom": "users",
-          "tableTo": "users",
-          "columnsFrom": [
-            "reporting_to"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -135370,7 +135273,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false,
-          "default": "'Export prepared \u00e2\u20ac\u201d external filing required'"
+          "default": "'Export prepared â€” external filing required'"
         },
         "submitted_at": {
           "name": "submitted_at",

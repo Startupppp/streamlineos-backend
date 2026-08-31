@@ -8,10 +8,11 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import { PushService } from "./push.service";
 import {
   subscribeSchema,
@@ -32,17 +33,22 @@ export class PushController {
   }
 
   @Post("subscribe")
+  @Universal()
+  @Validate({ body: subscribeSchema })
   subscribe(
-    @Body(new ZodValidationPipe(subscribeSchema)) body: SubscribeInput,
+    @Body() body: SubscribeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.push.subscribe(u.orgId, u.userId, body);
   }
 
   @Delete("subscribe")
+  @Universal()
+  @Validate({ query: unsubscribeSchema })
   unsubscribe(
-    @Query(new ZodValidationPipe(unsubscribeSchema)) query: UnsubscribeInput,
+    @Query() query: UnsubscribeInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.push.unsubscribe(query.endpoint);
+    return this.push.unsubscribe(query.endpoint, u.userId);
   }
 }

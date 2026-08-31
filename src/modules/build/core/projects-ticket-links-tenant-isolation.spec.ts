@@ -1,0 +1,89 @@
+import type { Db } from "../../../db/drizzle.module";
+import { NotFoundException } from "@nestjs/common";
+import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
+import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+
+function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
+  if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
+  if (typeof value !== "object" || seen.has(value)) return [];
+  seen.add(value);
+  const record = value as { queryChunks?: unknown[]; value?: unknown };
+  return [
+    ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
+    ...(Object.prototype.hasOwnProperty.call(record, "value") ? sqlValues(record.value, seen) : []),
+  ];
+}
+
+const ATTACKER_ORG = "org-attacker";
+const OWNER_ORG = "org-owner";
+
+function makeCtx(orgId: string): CurrentUserContext {
+  return { userId: "u1", orgId, isOrgOwner: false, sessionId: "s1" } as CurrentUserContext;
+}
+
+describe("ProjectsTicketLinksService — cross-tenant isolation", () => {
+  it("getGitLinks throws NotFoundException when project not found for attacker org (cross-tenant isolation — returns 404 not 403)", async () => {
+    const db = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        tickets: { findFirst: jest.fn().mockResolvedValue(undefined) },
+      },
+    } as unknown as Db;
+    const svc = new ProjectsTicketLinksService(db);
+
+    await expect(svc.getGitLinks(ATTACKER_ORG, 1, 1)).rejects.toThrow(NotFoundException);
+  });
+
+  it("getGitLinks returns links for the owning org (control — same-tenant access works)", async () => {
+    const fakeLink = { id: 1, provider: "github", refType: "pr", externalId: "123", title: "Fix", url: "https://github.com/x", author: null, status: null, createdAt: new Date() };
+    let qCall = 0;
+    const db = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
+        tickets: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
+      },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([fakeLink]) }) }),
+        }),
+      }),
+    } as unknown as Db;
+    const svc = new ProjectsTicketLinksService(db);
+
+    const result = await svc.getGitLinks(OWNER_ORG, 1, 1);
+    expect(result).toHaveLength(1);
+  });
+});
+
+describe("ProjectsTicketRelationsService — cross-tenant isolation", () => {
+  it("requireProjectTicket throws NotFoundException when ticket not found for attacker org (cross-tenant isolation — returns 404 not 403)", async () => {
+    const db = {
+      query: {
+        projectMembers: { findFirst: jest.fn().mockResolvedValue({ userId: "u1", projectId: 1 }) },
+        tickets: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        workItemRelations: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+    } as unknown as Db;
+    const svc = new ProjectsTicketRelationsService(db);
+
+    const u = makeCtx(ATTACKER_ORG);
+    await expect(svc.addRelation(u, 1, 999, { relatedTicketId: 1000, relationType: "blocks" })).rejects.toThrow(NotFoundException);
+  });
+
+  it("listRelations works within the owning org (control — same-tenant access works)", async () => {
+    const db = {
+      query: {
+        projectMembers: { findFirst: jest.fn().mockResolvedValue({ userId: "u1", projectId: 1 }) },
+        tickets: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: OWNER_ORG }) },
+        workItemRelations: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+    } as unknown as Db;
+    const svc = new ProjectsTicketRelationsService(db);
+
+    const u = makeCtx(OWNER_ORG);
+    const result = await svc.listRelations(u, 1, 1);
+    expect(result).toBeDefined();
+  });
+});

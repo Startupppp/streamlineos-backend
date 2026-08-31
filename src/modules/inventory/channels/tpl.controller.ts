@@ -14,7 +14,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { TplService } from "./tpl.service";
 import {
@@ -25,6 +24,10 @@ import type {
   Create3plConnectionInput,
   Update3plConnectionInput,
 } from "./dto/channels.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const connectionIdParams = z.object({ connectionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/3pl")
@@ -42,8 +45,9 @@ export class TplController {
   @Post("connections")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:3pl:manage")
+  @Validate({ body: create3plConnectionSchema })
   createConnection(
-    @Body(new ZodValidationPipe(create3plConnectionSchema)) body: Create3plConnectionInput,
+    @Body() body: Create3plConnectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createConnection(u.orgId, u.userId, body);
@@ -52,9 +56,10 @@ export class TplController {
   @Patch("connections/:connectionId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:3pl:manage")
+  @Validate({ params: connectionIdParams, body: update3plConnectionSchema })
   updateConnection(
     @Param("connectionId", ParseIntPipe) id: number,
-    @Body(new ZodValidationPipe(update3plConnectionSchema)) body: Update3plConnectionInput,
+    @Body() body: Update3plConnectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateConnection(u.orgId, u.userId, id, body);
@@ -63,6 +68,7 @@ export class TplController {
   @Post("connections/:connectionId/sync")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:3pl:manage")
+  @Validate({ params: connectionIdParams })
   syncConnection(
     @Param("connectionId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,

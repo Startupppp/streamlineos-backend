@@ -16,10 +16,13 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
 import { LockingService } from "./locking.service";
 import { reopenRunSchema, type ReopenRunInput } from "./dto/payout.schemas";
 import { PayrollCommandReceiptsService } from "../command-receipts.service";
+
+const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/runs/:runId")
@@ -33,6 +36,7 @@ export class LockingController {
   @Post("lock")
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
+  @Validate({ params: runIdParams })
   async lock(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -46,9 +50,10 @@ export class LockingController {
   @Post("reopen")
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
+  @Validate({ params: runIdParams, body: reopenRunSchema })
   async reopen(
     @Param("runId", ParseIntPipe) runId: number,
-    @Body(new ZodValidationPipe(reopenRunSchema)) body: ReopenRunInput,
+    @Body() body: ReopenRunInput,
     @CurrentUser() u: CurrentUserContext,
     @Headers("idempotency-key") idempotencyKey?: string,
   ) {
@@ -65,6 +70,7 @@ export class LockingController {
   @Post("close")
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
+  @Validate({ params: runIdParams })
   async close(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,

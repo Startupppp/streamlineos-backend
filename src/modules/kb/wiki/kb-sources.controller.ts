@@ -18,12 +18,15 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbSourcesService } from "./kb-sources.service";
 import {
   createKbSourceNoteSchema,
   type CreateKbSourceNoteInput,
 } from "./dto/kb-sources.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const sourceIdParams = z.object({ sourceId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -57,8 +60,9 @@ export class KbSourcesController {
   @Post("sources/note")
   @RequirePermission("kb:pages:create")
   @HttpCode(201)
+  @Validate({ body: createKbSourceNoteSchema })
   async createNote(
-    @Body(new ZodValidationPipe(createKbSourceNoteSchema)) body: CreateKbSourceNoteInput,
+    @Body() body: CreateKbSourceNoteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.sources.createNote(u, body);
@@ -66,6 +70,7 @@ export class KbSourcesController {
 
   @Delete("sources/:sourceId")
   @RequirePermission("kb:pages:delete")
+  @Validate({ params: sourceIdParams })
   async remove(
     @Param("sourceId", ParseIntPipe) sourceId: number,
     @CurrentUser() u: CurrentUserContext,

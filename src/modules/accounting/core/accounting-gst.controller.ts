@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccountingGstService } from "./accounting-gst.service";
 import {
   gstr1QuerySchema,
@@ -13,6 +12,7 @@ import {
   type Gstr3BQuery,
 } from "./dto/accounting.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("accounting")
 @Controller("accounting/reports")
@@ -23,8 +23,9 @@ export class AccountingGstController {
   @Get("gstr-1")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: gstr1QuerySchema })
   gstr1(
-    @Query(new ZodValidationPipe(gstr1QuerySchema)) query: Gstr1Query,
+    @Query() query: Gstr1Query,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.gst.gstr1(u.orgId, query);
@@ -33,8 +34,9 @@ export class AccountingGstController {
   @Get("gstr-3b")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
+  @Validate({ query: gstr3BQuerySchema })
   gstr3b(
-    @Query(new ZodValidationPipe(gstr3BQuerySchema)) query: Gstr3BQuery,
+    @Query() query: Gstr3BQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.gst.gstr3b(u.orgId, query);

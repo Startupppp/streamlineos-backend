@@ -19,7 +19,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import { authorize } from "../../access/authorize";
 import { JournalOutboxService } from "./journal-outbox.service";
@@ -37,6 +36,10 @@ import {
   type JournalBatchListQuery,
   type PeriodReconQuery,
 } from "./dto/insights.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const batchIdParams = z.object({ batchId: z.coerce.number().int().positive() }).strict();
 
 const CSV_HEADERS = ["lineNo", "account", "description", "debit", "credit", "costCenter"] as const;
 
@@ -52,8 +55,9 @@ export class JournalOutboxController {
 
   @Get()
   @RequirePermission("payroll:accounting:view")
+  @Validate({ query: journalBatchListQuerySchema })
   async list(
-    @Query(new ZodValidationPipe(journalBatchListQuerySchema)) query: JournalBatchListQuery,
+    @Query() query: JournalBatchListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.outbox.list(u.orgId, query);
@@ -65,8 +69,9 @@ export class JournalOutboxController {
    */
   @Get("period-reconciliation")
   @RequirePermission("payroll:accounting:view")
+  @Validate({ query: periodReconQuerySchema })
   async periodReconciliation(
-    @Query(new ZodValidationPipe(periodReconQuerySchema)) query: PeriodReconQuery,
+    @Query() query: PeriodReconQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.periodRecon.getPeriodReconciliation(u.orgId, query.periodKey);
@@ -74,6 +79,7 @@ export class JournalOutboxController {
 
   @Get(":batchId")
   @RequirePermission("payroll:accounting:view")
+  @Validate({ params: batchIdParams })
   async get(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -83,6 +89,7 @@ export class JournalOutboxController {
 
   @Get(":batchId/export")
   @RequirePermission("payroll:accounting:view")
+  @Validate({ params: batchIdParams })
   async exportCsv(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -117,8 +124,9 @@ export class JournalOutboxController {
   @Post()
   @HttpCode(201)
   @RequirePermission("payroll:accounting:manage")
+  @Validate({ body: journalBatchCreateSchema })
   async create(
-    @Body(new ZodValidationPipe(journalBatchCreateSchema)) body: JournalBatchCreate,
+    @Body() body: JournalBatchCreate,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.outbox.createBatch(u.orgId, u.userId, body);
@@ -126,6 +134,7 @@ export class JournalOutboxController {
 
   @Post(":batchId/post")
   @RequirePermission("payroll:accounting:manage")
+  @Validate({ params: batchIdParams })
   async post(
     @Param("batchId", ParseIntPipe) batchId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -135,9 +144,10 @@ export class JournalOutboxController {
 
   @Post(":batchId/reverse")
   @RequirePermission("payroll:accounting:manage")
+  @Validate({ params: batchIdParams, body: journalBatchReverseSchema })
   async reverse(
     @Param("batchId", ParseIntPipe) batchId: number,
-    @Body(new ZodValidationPipe(journalBatchReverseSchema)) body: JournalBatchReverse,
+    @Body() body: JournalBatchReverse,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.outbox.reverseBatch(u.orgId, u.userId, batchId, body.reason);
@@ -145,9 +155,10 @@ export class JournalOutboxController {
 
   @Post(":batchId/reconcile")
   @RequirePermission("payroll:accounting:manage")
+  @Validate({ params: batchIdParams, body: journalBatchReconcileSchema })
   async reconcile(
     @Param("batchId", ParseIntPipe) batchId: number,
-    @Body(new ZodValidationPipe(journalBatchReconcileSchema)) body: JournalBatchReconcile,
+    @Body() body: JournalBatchReconcile,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.outbox.reconcile(u.orgId, u.userId, batchId, body);

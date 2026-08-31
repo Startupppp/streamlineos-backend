@@ -1,16 +1,18 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
-import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards, Headers } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { HoldsService } from "./quality-holds.service";
 import { listHoldsQuerySchema, createHoldSchema } from "./dto/quality.schemas";
 import type { ListHoldsQueryInput, CreateHoldInput } from "./dto/quality.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const holdIdParams = z.object({ holdId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/quality/holds")
@@ -21,8 +23,9 @@ export class HoldsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
+  @Validate({ query: listHoldsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listHoldsQuerySchema)) q: ListHoldsQueryInput,
+    @Query() q: ListHoldsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, u.userId, q);
@@ -31,6 +34,7 @@ export class HoldsController {
   @Get(":holdId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
+  @Validate({ params: holdIdParams })
   findOne(
     @Param("holdId", ParseIntPipe) holdId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -41,9 +45,10 @@ export class HoldsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Validate({ body: createHoldSchema })
   create(
-    @IdempotencyKey() idempotencyKey: string,
-    @Body(new ZodValidationPipe(createHoldSchema)) body: CreateHoldInput,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @Body() body: CreateHoldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {return this.svc.create(u.orgId, u.userId, idempotencyKey, body);
   }
@@ -51,9 +56,10 @@ export class HoldsController {
   @Post(":holdId/release")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:release")
+  @Validate({ params: holdIdParams })
   release(
     @Param("holdId", ParseIntPipe) holdId: number,
-    @IdempotencyKey() idempotencyKey: string,
+    @Headers("idempotency-key") idempotencyKey: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {return this.svc.release(u.orgId, u.userId, holdId, idempotencyKey);
   }

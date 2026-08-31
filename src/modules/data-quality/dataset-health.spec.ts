@@ -299,7 +299,7 @@ describe("the dataset-health number moves when the queue is worked", () => {
     resolution = new DataQualityResolutionService(
       fakeDb(store),
       queue as unknown as DataQualityQueueService,
-      { merge: jest.fn(), revert: jest.fn() } as unknown as PartyMergeService,
+      { merge: jest.fn() } as unknown as PartyMergeService,
       health,
     );
   });

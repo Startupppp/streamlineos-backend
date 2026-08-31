@@ -1,0 +1,71 @@
+name: Cell daily samples
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check credentials
+        id: check-creds
+        run: |
+          if [ -z "$APP_DATABASE_URL" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Sample Skipped::CI_APP_DATABASE_URL secret is not set. Set it in repository secrets to enable daily cell sampling."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
+
+      - uses: pnpm/action-setup@v4
+        if: steps.check-creds.outputs.configured == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.check-creds.outputs.configured == 'true'
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+        if: steps.check-creds.outputs.configured == 'true'
+
+      - name: Restore sample history
+        if: steps.check-creds.outputs.configured == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cell-capacity-history.json
+            .cell-cost-history.json
+          key: cell-history-${{ github.run_id }}
+          restore-keys: |
+            cell-history-
+
+      - name: Record capacity sample
+        if: steps.check-creds.outputs.configured == 'true'
+        run: pnpm cell:capacity:record
+        env:
+          APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
+          DIRECT_DATABASE_URL: ${{ secrets.CI_DIRECT_DATABASE_URL }}
+
+      - name: Record unit-cost sample
+        if: steps.check-creds.outputs.configured == 'true'
+        run: pnpm cell:cost:record
+        env:
+          APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
+          DIRECT_DATABASE_URL: ${{ secrets.CI_DIRECT_DATABASE_URL }}
+
+      - name: Forecast readiness
+        if: steps.check-creds.outputs.configured == 'true'
+        run: node src/scripts/cell-forecast-status.mjs

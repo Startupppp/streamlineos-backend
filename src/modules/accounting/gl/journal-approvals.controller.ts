@@ -1,13 +1,17 @@
 import { Body, Controller, HttpCode, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { JournalApprovalsService } from "./journal-approvals.service";
 import { approvalDecisionSchema, type ApprovalDecisionInput } from "./dto/journal-approvals.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/journal")
@@ -16,9 +20,11 @@ export class JournalApprovalsController {
   constructor(private readonly approvals: JournalApprovalsService) {}
 
   @Post(":entryId/submit-approval")
+  @Idempotent("accounting.journal.submit-approval")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:create")
   @HttpCode(200)
+  @Validate({ params: entryIdParams })
   submitForApproval(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -27,24 +33,28 @@ export class JournalApprovalsController {
   }
 
   @Post(":entryId/approve")
+  @Idempotent("accounting.journal.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:approve")
   @HttpCode(200)
+  @Validate({ params: entryIdParams, body: approvalDecisionSchema })
   approveJournal(
     @Param("entryId", ParseIntPipe) entryId: number,
-    @Body(new ZodValidationPipe(approvalDecisionSchema)) body: ApprovalDecisionInput,
+    @Body() body: ApprovalDecisionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.approvals.approveJournal(u.orgId, u.userId, entryId, body);
   }
 
   @Post(":entryId/reject")
+  @Idempotent("accounting.journal.reject")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:approve")
   @HttpCode(200)
+  @Validate({ params: entryIdParams, body: approvalDecisionSchema })
   rejectJournal(
     @Param("entryId", ParseIntPipe) entryId: number,
-    @Body(new ZodValidationPipe(approvalDecisionSchema)) body: ApprovalDecisionInput,
+    @Body() body: ApprovalDecisionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.approvals.rejectJournal(u.orgId, u.userId, entryId, body);

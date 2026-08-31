@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { BillingModule } from "../billing/core/billing.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { ChatActionsController } from "./chat-actions.controller";
 import { ChatEntityActionsController } from "./chat-entity-actions.controller";
 import { ChatChannelsController } from "./chat-channels.controller";
@@ -17,6 +18,8 @@ import { ChatRealtimeController } from "./chat-realtime.controller";
 import { ChatChannelsService } from "./chat-channels.service";
 import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatMessagesService } from "./chat-messages.service";
+import { ChatMessageTimelineService } from "./chat-message-timeline.service";
+import { ChatReactionsService } from "./chat-reactions.service";
 import { ChatMessageFanoutService } from "./chat-message-fanout.service";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatTypingService } from "./chat-typing.service";
@@ -37,7 +40,7 @@ import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
 import { OutboxBackedMessageFanoutProvider } from "./outbox-backed-message-fanout.provider";
 
 @Module({
-  imports: [BillingModule, RealtimeModule, EntityReferenceModule, OutboxModule],
+  imports: [BillingModule, NotificationsModule, RealtimeModule, EntityReferenceModule, OutboxModule],
   controllers: [
     ChatActionsController,
     ChatEntityActionsController,
@@ -62,6 +65,8 @@ import { OutboxBackedMessageFanoutProvider } from "./outbox-backed-message-fanou
     ChatChannelsService,
     ChatChannelMembersService,
     ChatMessagesService,
+    ChatMessageTimelineService,
+    ChatReactionsService,
     ChatPresenceService,
     ChatTypingService,
     ChatPinsService,

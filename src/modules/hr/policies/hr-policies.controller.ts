@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { HrPoliciesService } from "./hr-policies.service";
 import {
   createPolicySchema,
@@ -31,6 +30,9 @@ import {
   type UpdatePolicyInput,
 } from "./dto/hr-policy.schemas";
 import type { PolicyType } from "./hr-policy-types";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
 const activatePolicySchema = z.object({
   force: z.boolean().optional().default(false),
@@ -55,8 +57,9 @@ export class HrPoliciesController {
 
   @Get()
   @RequirePermission("hr:policies:view")
+  @Validate({ query: policiesListQuerySchema })
   list(
-    @Query(new ZodValidationPipe(policiesListQuerySchema)) query: PoliciesListQuery,
+    @Query() query: PoliciesListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.list(u.orgId, query);
@@ -65,8 +68,9 @@ export class HrPoliciesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:policies:manage")
+  @Validate({ body: createPolicySchema })
   create(
-    @Body(new ZodValidationPipe(createPolicySchema)) body: CreatePolicyInput,
+    @Body() body: CreatePolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.create(u.orgId, u.userId, body);
@@ -87,9 +91,9 @@ export class HrPoliciesController {
 
   @Get("conflicts")
   @RequirePermission("hr:policies:view")
+  @Validate({ query: orgConflictsQuerySchema })
   orgConflicts(
-    @Query(new ZodValidationPipe(orgConflictsQuerySchema))
-    query: z.infer<typeof orgConflictsQuerySchema>,
+    @Query() query: z.infer<typeof orgConflictsQuerySchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.detectOrgConflicts(u.orgId, query.type);
@@ -98,9 +102,9 @@ export class HrPoliciesController {
   @Post("simulate")
   @HttpCode(200)
   @RequirePermission("hr:policies:view")
+  @Validate({ body: simulatePolicySchema })
   simulate(
-    @Body(new ZodValidationPipe(simulatePolicySchema))
-    body: z.infer<typeof simulatePolicySchema>,
+    @Body() body: z.infer<typeof simulatePolicySchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.simulate(u.orgId, {
@@ -113,6 +117,7 @@ export class HrPoliciesController {
 
   @Get(":policyId")
   @RequirePermission("hr:policies:view")
+  @Validate({ params: policyIdParams })
   getById(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -122,9 +127,10 @@ export class HrPoliciesController {
 
   @Patch(":policyId")
   @RequirePermission("hr:policies:manage")
+  @Validate({ params: policyIdParams, body: updatePolicySchema })
   update(
     @Param("policyId", ParseIntPipe) policyId: number,
-    @Body(new ZodValidationPipe(updatePolicySchema)) body: UpdatePolicyInput,
+    @Body() body: UpdatePolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.update(u.orgId, policyId, body);
@@ -133,6 +139,7 @@ export class HrPoliciesController {
   @Post(":policyId/versions")
   @HttpCode(201)
   @RequirePermission("hr:policies:manage")
+  @Validate({ params: policyIdParams })
   createVersion(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -143,10 +150,10 @@ export class HrPoliciesController {
   @Post(":policyId/activate")
   @HttpCode(200)
   @RequirePermission("hr:policies:manage")
+  @Validate({ params: policyIdParams, body: activatePolicySchema })
   activate(
     @Param("policyId", ParseIntPipe) policyId: number,
-    @Body(new ZodValidationPipe(activatePolicySchema))
-    body: z.infer<typeof activatePolicySchema>,
+    @Body() body: z.infer<typeof activatePolicySchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.activate(u.orgId, policyId, { force: body.force });
@@ -154,6 +161,7 @@ export class HrPoliciesController {
 
   @Get(":policyId/conflicts")
   @RequirePermission("hr:policies:view")
+  @Validate({ params: policyIdParams })
   conflicts(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -164,6 +172,7 @@ export class HrPoliciesController {
   @Post(":policyId/archive")
   @HttpCode(200)
   @RequirePermission("hr:policies:manage")
+  @Validate({ params: policyIdParams })
   archive(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -173,9 +182,10 @@ export class HrPoliciesController {
 
   @Get(":policyId/preview")
   @RequirePermission("hr:policies:view")
+  @Validate({ params: policyIdParams, query: previewQuerySchema })
   async preview(
     @Param("policyId", ParseIntPipe) policyId: number,
-    @Query(new ZodValidationPipe(previewQuerySchema)) query: PreviewQuery,
+    @Query() query: PreviewQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const policy = await this.service.getById(u.orgId, policyId);

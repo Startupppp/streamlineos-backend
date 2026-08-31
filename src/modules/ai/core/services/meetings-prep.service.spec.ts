@@ -128,7 +128,10 @@ function makeFluentChain(resolveWith: unknown) {
   (whereChain as Record<string, unknown>).then = (res: (v: unknown) => unknown) =>
     Promise.resolve(resolveWith).then(res);
   const where = jest.fn().mockReturnValue(whereChain);
-  const from = jest.fn().mockReturnValue({ where, innerJoin: jest.fn().mockReturnValue({ where }), limit });
+  const joinChain: Record<string, unknown> = { where, limit };
+  joinChain.innerJoin = jest.fn().mockReturnValue(joinChain);
+  joinChain.leftJoin = jest.fn().mockReturnValue(joinChain);
+  const from = jest.fn().mockReturnValue(joinChain);
   return { from };
 }
 

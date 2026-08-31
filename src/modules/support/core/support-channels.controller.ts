@@ -19,7 +19,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { SupportChannelsService } from "./support-channels.service";
 import { SupportSettingsAuditService } from "./support-settings-audit.service";
@@ -41,6 +40,12 @@ import {
 } from "./dto/support.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
+const orgIdParams = z.object({ orgId: z.string().min(1) }).strict();
+const orgIdsessionTokenParams = z.object({ orgId: z.string().min(1), sessionToken: z.string().min(1) }).strict();
 
 @RequireModule("support")
 @Controller("support")
@@ -62,8 +67,9 @@ export class SupportChannelsController {
   @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
   @RequirePermission("support:channels:manage")
   @HttpCode(201)
+  @Validate({ body: createSupportChannelSchema })
   async createChannel(
-    @Body(new ZodValidationPipe(createSupportChannelSchema)) body: CreateSupportChannelInput,
+    @Body() body: CreateSupportChannelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.channels.createChannel(u.orgId, body);
@@ -74,9 +80,10 @@ export class SupportChannelsController {
   @Patch("channels/:channelId")
   @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
   @RequirePermission("support:channels:manage")
+  @Validate({ params: channelIdParams, body: updateSupportChannelSchema })
   async updateChannel(
     @Param("channelId", ParseIntPipe) channelId: number,
-    @Body(new ZodValidationPipe(updateSupportChannelSchema)) body: UpdateSupportChannelInput,
+    @Body() body: UpdateSupportChannelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.channels.updateChannel(u.orgId, channelId, body);
@@ -87,6 +94,7 @@ export class SupportChannelsController {
   @Delete("channels/:channelId")
   @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
   @RequirePermission("support:channels:manage")
+  @Validate({ params: channelIdParams })
   async deleteChannel(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
     const result = await this.channels.deleteChannel(u.orgId, channelId);
     await this.audit.record(u.orgId, u.userId, "channel", channelId, "deleted");
@@ -105,10 +113,11 @@ export class SupportChannelsController {
   @Public()
   @Post("inbound/email/:orgId")
   @HttpCode(200)
+  @Validate({ params: orgIdParams, body: inboundEmailSchema })
   async inboundEmail(
     @Param("orgId") orgId: string,
     @Headers("x-webhook-secret") secret: string | undefined,
-    @Body(new ZodValidationPipe(inboundEmailSchema)) body: InboundEmailInput,
+    @Body() body: InboundEmailInput,
   ) {
     const rate = await this.rateLimit.check("support:inbound-email", orgId);
     if (!rate.allowed) {
@@ -123,10 +132,11 @@ export class SupportChannelsController {
   @Public()
   @Post("inbound/whatsapp/:orgId")
   @HttpCode(200)
+  @Validate({ params: orgIdParams, body: inboundWhatsAppSchema })
   async inboundWhatsApp(
     @Param("orgId") orgId: string,
     @Headers("x-webhook-secret") secret: string | undefined,
-    @Body(new ZodValidationPipe(inboundWhatsAppSchema)) body: InboundWhatsAppInput,
+    @Body() body: InboundWhatsAppInput,
   ) {
     const rate = await this.rateLimit.check("support:inbound-whatsapp", orgId);
     if (!rate.allowed) {
@@ -141,10 +151,11 @@ export class SupportChannelsController {
   @Public()
   @Post("inbound/sms/:orgId")
   @HttpCode(200)
+  @Validate({ params: orgIdParams, body: inboundSmsSchema })
   async inboundSms(
     @Param("orgId") orgId: string,
     @Headers("x-webhook-secret") secret: string | undefined,
-    @Body(new ZodValidationPipe(inboundSmsSchema)) body: InboundSmsInput,
+    @Body() body: InboundSmsInput,
   ) {
     const rate = await this.rateLimit.check("support:inbound-sms", orgId);
     if (!rate.allowed) {
@@ -163,9 +174,10 @@ export class SupportChannelsController {
   @Public()
   @Post("chat/:orgId/start")
   @HttpCode(201)
+  @Validate({ params: orgIdParams, body: startChatSessionSchema })
   async startChatSession(
     @Param("orgId") orgId: string,
-    @Body(new ZodValidationPipe(startChatSessionSchema)) body: StartChatSessionInput,
+    @Body() body: StartChatSessionInput,
   ) {
     const rate = await this.rateLimit.check("support:chat-widget", orgId);
     if (!rate.allowed) {
@@ -176,6 +188,7 @@ export class SupportChannelsController {
 
   @Public()
   @Get("chat/:orgId/:sessionToken/messages")
+  @Validate({ params: orgIdsessionTokenParams })
   async getChatSession(@Param("orgId") orgId: string, @Param("sessionToken") sessionToken: string) {
     return this.channels.getChatSession(orgId, sessionToken);
   }
@@ -183,10 +196,11 @@ export class SupportChannelsController {
   @Public()
   @Post("chat/:orgId/:sessionToken/messages")
   @HttpCode(201)
+  @Validate({ params: orgIdsessionTokenParams, body: sendChatMessageSchema })
   async sendChatMessage(
     @Param("orgId") orgId: string,
     @Param("sessionToken") sessionToken: string,
-    @Body(new ZodValidationPipe(sendChatMessageSchema)) body: SendChatMessageInput,
+    @Body() body: SendChatMessageInput,
   ) {
     const rate = await this.rateLimit.check("support:chat-widget", `${orgId}:${sessionToken}`);
     if (!rate.allowed) {

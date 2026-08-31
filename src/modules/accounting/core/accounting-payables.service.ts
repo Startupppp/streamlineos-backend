@@ -21,6 +21,7 @@ import { AccountingPayablesQueryService } from "./accounting-payables-query.serv
 import { RateResolverService } from "../../finance/controls/rate-resolver.service";
 import { FxService } from "../../finance/controls/fx.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { systemActor } from "../../../common/auth/system-actor";
 import type { DataScope } from "../../access/access.types";
 import type {
   AgedReceivablesQuery,
@@ -342,7 +343,7 @@ export class AccountingPayablesService {
       return inserted;
     });
 
-    void this.postApFxGainLoss(orgId, userId, bill, input.amount, input.paymentDate);
+    await this.postApFxGainLoss(orgId, userId, bill, input.amount, input.paymentDate);
 
     this.audit.log({
       action: "accounting.bill.payment_recorded",
@@ -385,28 +386,15 @@ export class AccountingPayablesService {
       );
       const baseAmountSettled = (allocatedAmount * settledRate).toFixed(4);
 
-      const user: CurrentUserContext = {
-        userId,
-        orgId,
-        role: "system",
-        isOrgOwner: false,
-        tokenScopes: null,
-        sessionId: "",
-      };
+      const user = systemActor("accounting.payables.fx-posting", orgId, userId);
 
-      this.fx
-        .postRealizedGainLoss(user, {
-          sourceType: "purchase_bill",
-          sourceId: String(bill.id),
-          baseAmountBooked,
-          baseAmountSettled,
-          counterPurpose: "AP",
-        })
-        .catch((err: unknown) => {
-          this.logger.warn(
-            `FX gain/loss post failed for purchase_bill ${bill.id}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        });
+      await this.fx.postRealizedGainLoss(user, {
+        sourceType: "purchase_bill",
+        sourceId: String(bill.id),
+        baseAmountBooked,
+        baseAmountSettled,
+        counterPurpose: "AP",
+      });
     } catch (err) {
       this.logger.warn(
         `No exchange rate for FX on purchase_bill ${bill.id}: ${err instanceof Error ? err.message : String(err)}`,

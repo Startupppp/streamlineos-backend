@@ -6,6 +6,7 @@ import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import type { MailService } from "./mail.service";
 import type { AiInvokeResult, AiInvokeWithUsageResult, AiUsageMeta } from "../ai/core/gateway/ai-gateway.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 
 const ACTOR: CurrentUserContext = {
   userId: "user-1",
@@ -14,6 +15,7 @@ const ACTOR: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "sess-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 const MOCK_MESSAGES = [

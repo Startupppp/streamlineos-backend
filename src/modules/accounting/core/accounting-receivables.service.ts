@@ -55,19 +55,20 @@ export class AccountingReceivablesService {
   async listCustomers(orgId: string, query: ListCustomersOutstandingQuery) {
     const { page, pageSize, q, onlyOutstanding } = query;
 
-    const paidExpr = sql<string>`COALESCE((
-      SELECT SUM(${payments.amount})
-      FROM ${payments}
-      WHERE ${payments.orgId} = ${orgId}
-        AND ${payments.invoiceId} IN (
-          SELECT ${invoices.id}
-          FROM ${invoices}
-          WHERE ${invoices.orgId} = ${orgId}
-            AND ${invoices.clientId} = ${clients.id}
-        )
-    ), 0)`;
+    const paidSq = this.db
+      .select({
+        clientId: invoices.clientId,
+        paid: sql<string>`COALESCE(SUM(${payments.amount}), 0)`.as("paid"),
+      })
+      .from(payments)
+      .innerJoin(invoices, and(eq(payments.invoiceId, invoices.id), eq(invoices.orgId, orgId)))
+      .where(eq(payments.orgId, orgId))
+      .groupBy(invoices.clientId)
+      .as("paid_sq");
+
+    const paidAmt = sql<string>`COALESCE(${paidSq.paid}, 0)`;
     const invoiceCountExpr = sql<number>`COUNT(DISTINCT ${invoices.id})`;
-    const outstandingExpr = sql<string>`(COALESCE(SUM(${invoices.total}), 0) - ${paidExpr})`;
+    const outstandingExpr = sql<string>`(COALESCE(SUM(${invoices.total}), 0) - ${paidAmt})`;
 
     const conds = [eq(clients.orgId, orgId)];
     if (q) conds.push(ilike(clients.name, `%${escapeLike(q)}%`));
@@ -85,8 +86,9 @@ export class AccountingReceivablesService {
       })
       .from(clients)
       .leftJoin(invoices, and(eq(invoices.clientId, clients.id), eq(invoices.orgId, orgId)))
+      .leftJoin(paidSq, eq(paidSq.clientId, clients.id))
       .where(and(...conds))
-      .groupBy(clients.id, clients.name, clients.state, clients.gstin)
+      .groupBy(clients.id, clients.name, clients.state, clients.gstin, paidSq.paid)
       .$dynamic();
     if (onlyOutstanding) listQuery = listQuery.having(gt(outstandingExpr, "0"));
 
@@ -118,8 +120,9 @@ export class AccountingReceivablesService {
           .select({ id: clients.id })
           .from(clients)
           .leftJoin(invoices, and(eq(invoices.clientId, clients.id), eq(invoices.orgId, orgId)))
+          .leftJoin(paidSq, eq(paidSq.clientId, clients.id))
           .where(and(...conds))
-          .groupBy(clients.id)
+          .groupBy(clients.id, paidSq.paid)
           .having(gt(outstandingExpr, "0"))
           .as("g"),
       );

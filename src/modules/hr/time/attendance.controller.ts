@@ -4,7 +4,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { AttendanceService } from "./attendance.service";
 import {
   attendanceEmailReportSchema,
@@ -30,6 +30,10 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const holidayIdParams = z.object({ holidayId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/attendance")
@@ -41,8 +45,9 @@ export class AttendanceController {
   @HttpCode(200)
   @RequirePermission("hr:attendance:view")
   @Idempotent("hr.attendance.check-in")
+  @Validate({ body: checkInSchema })
   checkIn(
-    @Body(new ZodValidationPipe(checkInSchema)) input: CheckInInput,
+    @Body() input: CheckInInput,
     @CurrentUser() currentUser: CurrentUserContext,
     @Headers("idempotency-key") idempotencyKey: string,
   ) {
@@ -58,8 +63,9 @@ export class AttendanceController {
   @HttpCode(200)
   @RequirePermission("hr:attendance:view")
   @Idempotent("hr.attendance.check-out")
+  @Validate({ body: checkOutSchema })
   checkOut(
-    @Body(new ZodValidationPipe(checkOutSchema)) _validatedInput: CheckOutInput,
+    @Body() _validatedInput: CheckOutInput,
     @CurrentUser() currentUser: CurrentUserContext,
     @Headers("idempotency-key") idempotencyKey: string,
   ) {
@@ -93,8 +99,9 @@ export class AttendanceController {
 
   @Get("logs")
   @RequirePermission("hr:attendance:view")
+  @Validate({ query: attendanceLogsQuerySchema })
   async logs(
-    @Query(new ZodValidationPipe(attendanceLogsQuerySchema)) query: AttendanceLogsQuery,
+    @Query() query: AttendanceLogsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return await this.attendance.logs(u, query.userId, query.year, query.month);
@@ -102,8 +109,9 @@ export class AttendanceController {
 
   @Get("monthly")
   @RequirePermission("hr:attendance:view")
+  @Validate({ query: monthlyQuerySchema })
   monthly(
-    @Query(new ZodValidationPipe(monthlyQuerySchema)) query: MonthlyQuery,
+    @Query() query: MonthlyQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.attendance.monthly(u, query.userId ?? u.userId, query.year, query.month);
@@ -111,8 +119,9 @@ export class AttendanceController {
 
   @Get("heatmap")
   @RequirePermission("hr:attendance:view")
+  @Validate({ query: heatmapQuerySchema })
   heatmap(
-    @Query(new ZodValidationPipe(heatmapQuerySchema)) query: HeatmapQuery,
+    @Query() query: HeatmapQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.attendance.heatmap(u, query.userId ?? u.userId, query.year ?? new Date().getFullYear());
@@ -120,8 +129,9 @@ export class AttendanceController {
 
   @Get("team-status")
   @RequirePermission("hr:attendance:view")
+  @Validate({ query: teamStatusQuerySchema })
   teamStatus(
-    @Query(new ZodValidationPipe(teamStatusQuerySchema)) query: TeamStatusQuery,
+    @Query() query: TeamStatusQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.attendance.teamStatus(u, query);
@@ -131,8 +141,9 @@ export class AttendanceController {
   @RequirePermission("hr:attendance:manage")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("hr:attendance-report")
+  @Validate({ body: attendanceEmailReportSchema })
   emailReport(
-    @Body(new ZodValidationPipe(attendanceEmailReportSchema)) body: AttendanceEmailReportInput,
+    @Body() body: AttendanceEmailReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.attendance.emailReport(u, body);
@@ -147,19 +158,21 @@ export class AttendanceController {
   @Post("holidays")
   @HttpCode(201)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ body: createOrgHolidaySchema })
   createHoliday(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createOrgHolidaySchema)) body: CreateOrgHolidayInput,
+    @Body() body: CreateOrgHolidayInput,
   ) {
     return this.attendance.createHoliday(u.orgId, u.userId, body);
   }
 
   @Patch("holidays/:holidayId")
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: holidayIdParams, body: updateOrgHolidaySchema })
   updateHoliday(
     @CurrentUser() u: CurrentUserContext,
     @Param("holidayId") holidayId: string,
-    @Body(new ZodValidationPipe(updateOrgHolidaySchema)) body: UpdateOrgHolidayInput,
+    @Body() body: UpdateOrgHolidayInput,
   ) {
     return this.attendance.updateHoliday(u.orgId, holidayId, body);
   }
@@ -167,6 +180,7 @@ export class AttendanceController {
   @Delete("holidays/:holidayId")
   @HttpCode(204)
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: holidayIdParams })
   deleteHoliday(@CurrentUser() u: CurrentUserContext, @Param("holidayId") holidayId: string) {
     return this.attendance.deleteHoliday(u.orgId, holidayId);
   }

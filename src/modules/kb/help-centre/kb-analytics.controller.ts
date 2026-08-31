@@ -4,19 +4,22 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbAnalyticsService } from "./kb-analytics.service";
 import { rangeSchema, type RangeInput } from "./dto/kb-analytics.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@RequireModule("kb")
 export class KbAnalyticsController {
   constructor(private readonly analytics: KbAnalyticsService) {}
 
   @Get("analytics/overview")
   @RequirePermission("kb:analytics:view")
+  @Validate({ query: rangeSchema })
   async overview(
-    @Query(new ZodValidationPipe(rangeSchema)) query: RangeInput,
+    @Query() query: RangeInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.analytics.overview(u.orgId, query);
@@ -24,8 +27,9 @@ export class KbAnalyticsController {
 
   @Get("analytics/no-results")
   @RequirePermission("kb:analytics:view")
+  @Validate({ query: rangeSchema })
   async noResults(
-    @Query(new ZodValidationPipe(rangeSchema)) query: RangeInput,
+    @Query() query: RangeInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.analytics.noResults(u.orgId, query);
@@ -39,8 +43,9 @@ export class KbAnalyticsController {
 
   @Get("analytics/gaps")
   @RequirePermission("kb:analytics:view")
+  @Validate({ query: rangeSchema })
   async gaps(
-    @Query(new ZodValidationPipe(rangeSchema)) query: RangeInput,
+    @Query() query: RangeInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.analytics.gaps(u.orgId, query);
@@ -48,8 +53,9 @@ export class KbAnalyticsController {
 
   @Get("analytics/content-gaps")
   @RequirePermission("kb:analytics:view")
+  @Validate({ query: rangeSchema })
   async contentGaps(
-    @Query(new ZodValidationPipe(rangeSchema)) query: RangeInput,
+    @Query() query: RangeInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.analytics.contentGaps(u.orgId, query);

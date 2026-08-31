@@ -18,6 +18,10 @@ import { AiSummariesService } from "./ai-summaries.service";
 import { saveSnapshotSchema, isAllowedEntityType } from "./save-snapshot.dto";
 import type { SnapshotWithDiff } from "./ai-summaries.types";
 import type { AiSummarySnapshot } from "../../../db/schema/ai/ai-summaries";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const entityTypeentityIdParams = z.object({ entityType: z.string().min(1), entityId: z.string().min(1) }).strict();
 
 @Controller("ai/summaries")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -27,6 +31,7 @@ export class AiSummariesController {
 
   @Get(":entityType/:entityId")
   @RequirePermission("ai:summaries:view")
+  @Validate({ params: entityTypeentityIdParams })
   async getLatest(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,
@@ -41,6 +46,7 @@ export class AiSummariesController {
   @Post(":entityType/:entityId/snapshot")
   @HttpCode(201)
   @RequirePermission("ai:summaries:create")
+  @Validate({ params: entityTypeentityIdParams })
   async saveSnapshot(
     @Param("entityType") entityType: string,
     @Param("entityId") entityId: string,

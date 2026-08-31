@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ChannelsService } from "./channels.service";
 import {
@@ -30,6 +29,10 @@ import type {
   ListPublicationsQueryInput,
   RetryPublicationsInput,
 } from "./dto/channels.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/channels")
@@ -47,8 +50,9 @@ export class ChannelsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
+  @Validate({ body: createChannelSchema })
   create(
-    @Body(new ZodValidationPipe(createChannelSchema)) body: CreateChannelInput,
+    @Body() body: CreateChannelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.create(u.orgId, u.userId, body);
@@ -57,9 +61,10 @@ export class ChannelsController {
   @Patch(":channelId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
+  @Validate({ params: channelIdParams, body: updateChannelSchema })
   update(
     @Param("channelId", ParseIntPipe) id: number,
-    @Body(new ZodValidationPipe(updateChannelSchema)) body: UpdateChannelInput,
+    @Body() body: UpdateChannelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.update(u.orgId, u.userId, id, body);
@@ -68,6 +73,7 @@ export class ChannelsController {
   @Post(":channelId/sync-stock")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
+  @Validate({ params: channelIdParams })
   syncStock(
     @Param("channelId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,
@@ -78,9 +84,10 @@ export class ChannelsController {
   @Get(":channelId/publications")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
+  @Validate({ params: channelIdParams, query: listPublicationsQuerySchema })
   listPublications(
     @Param("channelId", ParseIntPipe) id: number,
-    @Query(new ZodValidationPipe(listPublicationsQuerySchema)) q: ListPublicationsQueryInput,
+    @Query() q: ListPublicationsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listPublications(u.orgId, id, q);
@@ -89,9 +96,10 @@ export class ChannelsController {
   @Post(":channelId/publications/retry")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
+  @Validate({ params: channelIdParams, body: retryPublicationsSchema })
   retryPublications(
     @Param("channelId", ParseIntPipe) id: number,
-    @Body(new ZodValidationPipe(retryPublicationsSchema)) body: RetryPublicationsInput,
+    @Body() body: RetryPublicationsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.retryPublications(u.orgId, u.userId, id, body);

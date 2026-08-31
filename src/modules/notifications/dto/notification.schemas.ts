@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 const SECTIONS = ["ALL", "UNREAD", "READ", "MENTIONS", "ASSIGNED_TO_ME", "APPROVALS", "BROADCASTS", "ARCHIVED", "SYSTEM", "PINNED"] as const;
 const CATEGORIES = ["SECURITY", "CRM", "HRMS", "BILLING", "AI", "PROJECTS", "WORKFLOW", "MARKETING", "SYSTEM", "CHAT", "PAYROLL", "RECRUITMENT", "KNOWLEDGE", "SIGN", "INVENTORY", "SURVEYS", "CALENDAR", "SUPPORT"] as const;
@@ -10,7 +11,7 @@ export const listSchema = z.object({
   priority: z.enum(PRIORITIES).optional(),
   sourceModule: z.string().optional(),
   search: z.string().min(1).max(200).optional(),
-  limit: z.coerce.number().min(1).max(100).optional().default(20),
+  limit: pageSizeField(20),
   cursor: z.coerce.number().optional(),
   unreadOnly: z
     .enum(["true", "false", "1", "0"])

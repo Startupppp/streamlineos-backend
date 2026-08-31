@@ -4,7 +4,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { WorkspaceOnboardingService } from "./workspace-onboarding.service";
 import { generateSchema, type GenerateInput } from "./dto/workspace-onboarding.schemas";
 
@@ -17,8 +17,9 @@ export class WorkspaceOnboardingController {
   @HttpCode(200)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:organization:manage")
+  @Validate({ body: generateSchema })
   generateWorkspace(
-    @Body(new ZodValidationPipe(generateSchema)) body: GenerateInput,
+    @Body() body: GenerateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.generateWorkspace(u.orgId, body.industry, body.enabledModules);

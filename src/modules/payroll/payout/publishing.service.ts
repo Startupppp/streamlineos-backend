@@ -8,6 +8,8 @@ import {
   StreamableFile,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
+
+const PUBLICATION_LIST_CAP = 1_000;
 import { createHash } from "crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -22,19 +24,20 @@ import {
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
-import { EmailService } from "../../email/email.service";
 import { AccessService } from "../../access/access.service";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { logger } from "../../../common/logger/logger.service";
 import { generatePayslipPdf } from "../hr-payroll/lib/payslip-pdf";
 import { buildPayslipPdfData } from "./lib/payslip-renderer";
 import { getPayslipEmailTemplate } from "../../email/templates/payroll";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import {
   filterPayeesByRunEmployeeIds,
   filterPayeesBySubjectKeys,
   loadRunEmployeePayeeById,
   loadRunEmployeePayees,
 } from "../lib/payroll-run-payee";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import type { CalculationSnapshot, PayrollToggles } from "../payroll.types";
 import type { PayslipTemplateConfig } from "./dto/payout.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -62,9 +65,10 @@ export class PublishingService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly storage: StorageService,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly access: AccessService,
     private readonly notifications: PayrollNotificationsService,
+    private readonly efService: EmploymentFactsService,
   ) {}
 
   async publish(
@@ -102,7 +106,7 @@ export class PublishingService {
       ? [org.address.city, org.address.state, org.address.country].filter(Boolean).join(", ")
       : undefined;
 
-    let payees = await loadRunEmployeePayees(this.db, orgId, runId);
+    let payees = await loadRunEmployeePayees(this.db, orgId, runId, this.efService);
     const totalRunEmployeeCount = payees.length;
 
     if (runEmployeeIds && runEmployeeIds.length > 0) {
@@ -243,13 +247,7 @@ export class PublishingService {
       const wasAlreadyPublished = priorStatusByRunEmployee.get(payee.runEmployeeId) === "PUBLISHED";
       if (pubStatus === "PUBLISHED") {
         published++;
-        if (upsertedPub && !wasAlreadyPublished && payee.subject.userId) {
-          await this.notifications
-            .notifyPayslipPublished(orgId, payee.subject.userId, upsertedPub.id, run.month)
-            .catch((e: unknown) => logger.error("notifyPayslipPublished failed", { error: e }));
-        }
-
-        if (!wasAlreadyPublished && emailPayslips && payee.email && renderedPdfBuffer) {
+        if (upsertedPub && !wasAlreadyPublished && payee.subject.userId && emailPayslips && payee.email && renderedPdfBuffer) {
           try {
             const monthLabel = fmtMonthYear(run.month);
             // SEC-007: the net figure stays in the attached PDF. It is no longer
@@ -259,17 +257,21 @@ export class PublishingService {
               month: monthLabel,
               orgName,
             });
-            void this.email.sendEmail({
-              to: payee.email,
-              subject: emailTemplate.subject,
-              html: emailTemplate.html,
-              attachments: [
-                {
-                  filename: `payslip-${monthLabel.replace(" ", "-")}.pdf`,
-                  content: renderedPdfBuffer,
-                  type: "application/pdf",
-                },
-              ],
+            await this.dispatch.emit({
+              orgId,
+              eventKey: "payroll.payslip.ready",
+              targetUserIds: [payee.subject.userId],
+              title: emailTemplate.subject,
+              message: `Your payslip for ${monthLabel} is ready to download.`,
+              link: "/payroll/me/payslips",
+              emailHtml: emailTemplate.html,
+              attachments: [{
+                filename: `payslip-${monthLabel.replace(" ", "-")}.pdf`,
+                contentBase64: renderedPdfBuffer.toString("base64"),
+                type: "application/pdf",
+              }],
+              dedupeKey: `payslip-publication:${upsertedPub.id}`,
+              metadata: { publicationId: upsertedPub.id, runId, month: run.month },
             });
           } catch (error) {
             logger.warn("Payslip publication email failed", {
@@ -279,6 +281,10 @@ export class PublishingService {
               error,
             });
           }
+        } else if (upsertedPub && !wasAlreadyPublished && payee.subject.userId) {
+          await this.notifications
+            .notifyPayslipPublished(orgId, payee.subject.userId, upsertedPub.id, run.month)
+            .catch((e: unknown) => logger.error("notifyPayslipPublished failed", { error: e }));
         }
       } else {
         logger.error("Payslip publication failed", {
@@ -336,7 +342,7 @@ export class PublishingService {
     });
     if (!run) throw new NotFoundException("Payroll run not found");
 
-    return this.db.query.payslipPublications.findMany({
+    const rows = await this.db.query.payslipPublications.findMany({
       where: and(eq(payslipPublications.runId, runId), eq(payslipPublications.orgId, orgId)),
       columns: {
         id: true,
@@ -352,7 +358,9 @@ export class PublishingService {
         attemptCount: true,
         lastAttemptAt: true,
       },
+      limit: PUBLICATION_LIST_CAP,
     });
+    return { items: rows, truncated: rows.length === PUBLICATION_LIST_CAP };
   }
 
   /**
@@ -447,7 +455,7 @@ export class PublishingService {
       throw new ConflictException("Calculation snapshot not available for this payslip");
     }
 
-    const payee = await loadRunEmployeePayeeById(this.db, publication.orgId, publication.runEmployeeId);
+    const payee = await loadRunEmployeePayeeById(this.db, publication.orgId, publication.runEmployeeId, this.efService);
     if (!payee) {
       throw new ConflictException("Payee details not available for this payslip");
     }

@@ -1,12 +1,14 @@
 import { BadRequestException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { FinancePostingService } from "./finance-posting.service";
+import { FinancePostingAccountsService } from "./finance-posting-accounts.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { PostJournalInput } from "../core/finance-posting.types";
 import { ACCT_STATEMENTS_NS } from "../settings/accounting-settings.constants";
 
@@ -17,7 +19,25 @@ const USER: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "sess1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
+
+/**
+ * A select double that answers whether the caller ends on `.limit()` or awaits
+ * `.where()` directly. `finApprovalPolicies` and the reversal's line read do the
+ * latter, so a `where: mockReturnThis()` chain hands them the builder itself.
+ */
+function selectChain(rows: unknown[], limitRows: unknown[] = rows) {
+  const builder: Record<string, unknown> = {};
+  const chain = () => builder;
+  Object.assign(builder, {
+    from: chain,
+    where: chain,
+    limit: () => Promise.resolve(limitRows),
+    then: (resolve: (value: unknown[]) => unknown) => resolve(rows),
+  });
+  return builder;
+}
 
 function makeBalancedInput(overrides: Partial<PostJournalInput> = {}): PostJournalInput {
   return {
@@ -36,6 +56,7 @@ function makeBalancedInput(overrides: Partial<PostJournalInput> = {}): PostJourn
 
 describe("FinancePostingService", () => {
   let service: FinancePostingService;
+  let accountsService: FinancePostingAccountsService;
   let mockDb: {
     select: jest.Mock;
     insert: jest.Mock;
@@ -75,6 +96,7 @@ describe("FinancePostingService", () => {
     const module = await Test.createTestingModule({
       providers: [
         FinancePostingService,
+        FinancePostingAccountsService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
         { provide: NotificationDispatchService, useValue: mockDispatch },
@@ -83,6 +105,7 @@ describe("FinancePostingService", () => {
     }).compile();
 
     service = module.get(FinancePostingService);
+    accountsService = module.get(FinancePostingAccountsService);
   });
 
   describe("postJournal — balance check", () => {
@@ -287,11 +310,7 @@ describe("FinancePostingService", () => {
       }));
 
       mockDb.transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-        const txSelect = jest.fn().mockReturnValue({
-          from: jest.fn().mockReturnThis(),
-          where: jest.fn().mockReturnThis(),
-          limit: jest.fn().mockResolvedValue([]),
-        });
+        const txSelect = jest.fn().mockImplementation(() => selectChain([]));
         const txInsert = jest.fn()
           .mockReturnValueOnce({
             values: jest.fn().mockReturnThis(),
@@ -338,22 +357,10 @@ describe("FinancePostingService", () => {
       }));
 
       mockDb.transaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-        const txSelect = jest.fn().mockReturnValue({
-          from: jest.fn().mockReturnThis(),
-          where: jest.fn().mockReturnThis(),
-          limit: jest.fn().mockResolvedValue([]),
-        });
-        const txSelectApproval = jest.fn()
-          .mockReturnValueOnce({
-            from: jest.fn().mockReturnThis(),
-            where: jest.fn().mockReturnThis(),
-            limit: jest.fn().mockResolvedValue([]),
-          })
-          .mockReturnValue({
-            from: jest.fn().mockReturnThis(),
-            where: jest.fn().mockReturnThis(),
-            limit: jest.fn().mockResolvedValue([{ id: 1, approverUserId: null, minAmount: null }]),
-          });
+        const txSelect = jest.fn().mockImplementation(() => selectChain([]));
+        const txSelectApproval = jest
+          .fn()
+          .mockImplementation(() => selectChain([{ id: 1, approverUserId: null, minAmount: null }]));
 
         const txInsert = jest.fn()
           .mockReturnValueOnce({
@@ -404,16 +411,26 @@ describe("FinancePostingService", () => {
           sourceEvent: "create",
           currency: "INR",
         };
-        let txSelectCallCount = 0;
-        const txSelect = jest.fn().mockImplementation(() => ({
-          from: jest.fn().mockReturnThis(),
-          where: jest.fn().mockReturnThis(),
-          limit: jest.fn().mockImplementation(() => {
-            txSelectCallCount++;
-            if (txSelectCallCount === 1) return Promise.resolve([postedEntry]);
-            return Promise.resolve([]);
-          }),
-        }));
+        const reversalLine = {
+          accountId: 1,
+          debit: "100.00",
+          credit: "0",
+          description: null,
+          lineOrder: 0,
+          currency: null,
+          exchangeRate: null,
+          clientId: null,
+          vendorId: null,
+          projectId: null,
+          departmentId: null,
+          employeeId: null,
+          taxCodeId: null,
+          dimensionValues: null,
+        };
+        const txSelect = jest
+          .fn()
+          .mockImplementationOnce(() => selectChain([], [postedEntry]))
+          .mockImplementation(() => selectChain([reversalLine], []));
         const txInsert = jest.fn()
           .mockReturnValueOnce({
             values: jest.fn().mockReturnThis(),
@@ -439,7 +456,7 @@ describe("FinancePostingService", () => {
     });
   });
 
-  describe("resolveSystemAccount — self-heal", () => {
+  describe("FinancePostingAccountsService.resolveSystemAccount — self-heal", () => {
     it("returns existing mapped account id without insert", async () => {
       mockDb.select.mockImplementation(() => ({
         from: jest.fn().mockReturnThis(),
@@ -447,7 +464,7 @@ describe("FinancePostingService", () => {
         limit: jest.fn().mockResolvedValue([{ accountId: 55 }]),
       }));
 
-      const id = await service.resolveSystemAccount("org1", "AR");
+      const id = await accountsService.resolveSystemAccount("org1", "AR");
       expect(id).toBe(55);
       expect(mockDb.insert).not.toHaveBeenCalled();
     });
@@ -470,7 +487,7 @@ describe("FinancePostingService", () => {
       };
       mockDb.insert.mockReturnValue(insertReturn);
 
-      const id = await service.resolveSystemAccount("org1", "AR");
+      const id = await accountsService.resolveSystemAccount("org1", "AR");
       expect(id).toBe(77);
       expect(mockDb.insert).toHaveBeenCalledTimes(1);
     });
@@ -482,7 +499,7 @@ describe("FinancePostingService", () => {
         limit: jest.fn().mockResolvedValue([]),
       }));
 
-      await expect(service.resolveSystemAccount("org1", "AR")).rejects.toThrow(BadRequestException);
+      await expect(accountsService.resolveSystemAccount("org1", "AR")).rejects.toThrow(BadRequestException);
     });
   });
 });

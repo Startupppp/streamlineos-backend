@@ -7,6 +7,7 @@ import {
   scanSchema,
   SWEEPABLE_PRODUCERS,
 } from "./data-quality.schemas";
+import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 /**
  * Asserted against the schemas directly rather than over HTTP, for the reason
@@ -71,9 +72,21 @@ describe("data quality schemas", () => {
       expect(listFindingsQuerySchema.parse({ unassignedOnly: "true" }).unassignedOnly).toBe(true);
     });
 
-    it("lets the page be as large as one decision can cover", () => {
-      expect(listFindingsQuerySchema.parse({ limit: String(MAX_BULK) }).limit).toBe(MAX_BULK);
-      expect(() => listFindingsQuerySchema.parse({ limit: String(MAX_BULK + 1) })).toThrow();
+    it("clamps the page to the platform cap even though a bulk decision covers more", () => {
+      expect(listFindingsQuerySchema.parse({ limit: String(MAX_BULK) }).limit).toBe(PAGE_SIZE_CAP);
+      expect(listFindingsQuerySchema.parse({ limit: String(MAX_BULK + 1) }).limit).toBe(
+        PAGE_SIZE_CAP,
+      );
+    });
+
+    it("keeps the bulk selection bound at MAX_BULK, which is not a page size", () => {
+      const ids = Array.from({ length: MAX_BULK }, (_, i) => `finding-${String(i)}`);
+      const accepted = findingSelectionSchema.parse({ kind: "ids", findingIds: ids });
+
+      expect(accepted.kind === "ids" && accepted.findingIds).toHaveLength(MAX_BULK);
+      expect(() =>
+        findingSelectionSchema.parse({ kind: "ids", findingIds: [...ids, "finding-over"] }),
+      ).toThrow();
     });
 
     it("refuses a filter it does not know", () => {

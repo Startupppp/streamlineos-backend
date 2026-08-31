@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, count, desc, eq, inArray, max } from "drizzle-orm";
-import { finBudgets, finBudgetLines, finBudgetRevisions, ledgerAccounts } from "../../../db/schema";
+import { finBudgets, finBudgetLines, finBudgetRevisions, ledgerAccounts, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
@@ -40,7 +40,20 @@ export class BudgetsService {
     const { offset, limit } = paginateOffset({ page, pageSize });
     const [items, totalRows] = await Promise.all([
       this.db
-        .select()
+        .select({
+          id: finBudgets.id,
+          name: finBudgets.name,
+          fiscalYear: finBudgets.fiscalYear,
+          periodType: finBudgets.periodType,
+          dimensionType: finBudgets.dimensionType,
+          status: finBudgets.status,
+          totalAmount: finBudgets.totalAmount,
+          createdByMembershipId: finBudgets.createdByMembershipId,
+          approvedByMembershipId: finBudgets.approvedByMembershipId,
+          approvedAt: finBudgets.approvedAt,
+          createdAt: finBudgets.createdAt,
+          updatedAt: finBudgets.updatedAt,
+        })
         .from(finBudgets)
         .where(where)
         .orderBy(desc(finBudgets.createdAt))
@@ -52,6 +65,13 @@ export class BudgetsService {
   }
 
   async createBudget(orgId: string, userId: string, input: CreateBudgetInput) {
+    const [budgetCreator] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+    const createdByMembershipId = budgetCreator?.id ?? null;
+
     const [budget] = await this.db
       .insert(finBudgets)
       .values({
@@ -62,7 +82,7 @@ export class BudgetsService {
         dimensionType: input.dimensionType,
         status: "DRAFT",
         totalAmount: "0",
-        createdBy: userId,
+        createdByMembershipId,
       })
       .returning();
     if (!budget) throw new Error("Failed to create budget");
@@ -299,9 +319,16 @@ export class BudgetsService {
       throw new ForbiddenException("Budget is not in PENDING_APPROVAL status");
     }
 
+    const [budgetApprover] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+    const approvedByMembershipId = budgetApprover?.id ?? null;
+
     const [updated] = await this.db
       .update(finBudgets)
-      .set({ status: "APPROVED", approvedBy: userId, approvedAt: new Date() })
+      .set({ status: "APPROVED", approvedByMembershipId, approvedAt: new Date() })
       .where(and(eq(finBudgets.id, budgetId), eq(finBudgets.orgId, orgId)))
       .returning();
 
@@ -371,6 +398,13 @@ export class BudgetsService {
 
     const multiplier = String(1 + input.upliftPct / 100);
 
+    const [dupCreator] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+    const dupCreatedByMembershipId = dupCreator?.id ?? null;
+
     const finalBudget = await this.db.transaction(async (tx) => {
       const [newBudget] = await tx
         .insert(finBudgets)
@@ -382,7 +416,7 @@ export class BudgetsService {
           dimensionType: source.dimensionType,
           status: "DRAFT",
           totalAmount: "0",
-          createdBy: userId,
+          createdByMembershipId: dupCreatedByMembershipId,
         })
         .returning();
       if (!newBudget) throw new Error("Failed to duplicate budget");

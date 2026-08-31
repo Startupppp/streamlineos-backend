@@ -1,6 +1,32 @@
+import { drizzle } from "drizzle-orm/postgres-js";
+import { pgTable, integer, text } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
 import { createTenantAwareDb, type DbWithClient } from "../tenant-db";
 import { TenantContextService, type TenantContext } from "../tenant-context";
 import type { TenantTx } from "../with-tenant";
+
+const testProjects = pgTable("test_proj", {
+  id: integer("id").primaryKey(),
+  orgId: text("org_id"),
+});
+
+const testMembers = pgTable("test_mem", {
+  id: integer("id").primaryKey(),
+  projectId: integer("project_id"),
+});
+
+const testProjectRelations = relations(testProjects, ({ many }) => ({
+  members: many(testMembers),
+}));
+
+const testMemberRelations = relations(testMembers, ({ one }) => ({
+  project: one(testProjects, {
+    fields: [testMembers.projectId],
+    references: [testProjects.id],
+  }),
+}));
+
+const testSchema = { testProjects, testMembers, testProjectRelations, testMemberRelations };
 
 type FakeClient = { end: jest.Mock };
 
@@ -114,5 +140,70 @@ describe("createTenantAwareDb", () => {
 
       expect(capturedReceiver.value).toBe(txWithCapture);
     });
+  });
+});
+
+describe("relational query routing through real Drizzle internals", () => {
+  const service = new TenantContextService();
+
+  function buildTrackedClients() {
+    const txUnsafe = jest.fn().mockReturnValue({
+      values: jest.fn().mockResolvedValue([]),
+    });
+    const poolUnsafe = jest.fn().mockReturnValue({
+      values: jest.fn().mockResolvedValue([]),
+    });
+    const txClient = { unsafe: txUnsafe };
+    const poolClient = {
+      unsafe: poolUnsafe,
+      options: { parsers: {}, serializers: {} },
+      begin: jest.fn().mockImplementation((fn: (c: typeof txClient) => unknown) => fn(txClient)),
+    };
+    return { txUnsafe, poolUnsafe, txClient, poolClient };
+  }
+
+  it("findFirst({ with: {...} }) calls txClient.unsafe when a tenant context is active", async () => {
+    const { txUnsafe, poolUnsafe, poolClient } = buildTrackedClients();
+
+    const db = drizzle(poolClient as never, { schema: testSchema });
+    const proxy = createTenantAwareDb(
+      Object.assign(db, { __client: poolClient }) as unknown as DbWithClient,
+    );
+
+    await (db as { session: { transaction: (fn: (tx: TenantTx) => Promise<void>) => Promise<void> } }).session.transaction(
+      async (tx: TenantTx) => {
+        await service.run({ orgId: "org-1", audience: "INTERNAL", tx }, async () => {
+          txUnsafe.mockClear();
+          poolUnsafe.mockClear();
+
+          await (proxy as { query: { testProjects: { findFirst: (cfg: unknown) => Promise<unknown> } } }).query.testProjects.findFirst({
+            with: { members: true },
+          });
+
+          expect(txUnsafe).toHaveBeenCalled();
+          expect(poolUnsafe).not.toHaveBeenCalled();
+        });
+      },
+    );
+  });
+
+  it("findFirst({ with: {...} }) calls poolClient.unsafe when bypassing the proxy (anti-test — proves the tracker bites)", async () => {
+    const { txUnsafe, poolUnsafe, poolClient } = buildTrackedClients();
+
+    const db = drizzle(poolClient as never, { schema: testSchema });
+
+    await (db as { session: { transaction: (fn: (tx: TenantTx) => Promise<void>) => Promise<void> } }).session.transaction(
+      async (_tx: TenantTx) => {
+        poolUnsafe.mockClear();
+        txUnsafe.mockClear();
+
+        await (db as { query: { testProjects: { findFirst: (cfg: unknown) => Promise<unknown> } } }).query.testProjects.findFirst({
+          with: { members: true },
+        });
+
+        expect(poolUnsafe).toHaveBeenCalled();
+        expect(txUnsafe).not.toHaveBeenCalled();
+      },
+    );
   });
 });

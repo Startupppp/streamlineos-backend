@@ -47,7 +47,32 @@ export class FakeProviderAdapter implements PaymentProviderAdapter {
       if (typeof raw.event !== "string" || !raw.payload || typeof raw.payload !== "object") {
         return { ok: false, error: "invalid_payload" };
       }
-      return { ok: true, eventType: raw.event, payload: raw.payload as Record<string, unknown> };
+      const payload = raw.payload as Record<string, unknown>;
+      const payment = payload.payment;
+      const entity = payment && typeof payment === "object" && "entity" in payment
+        ? (payment as { entity?: unknown }).entity
+        : undefined;
+      if (!entity || typeof entity !== "object") {
+        return { ok: true, eventType: raw.event, payload };
+      }
+      const value = entity as Record<string, unknown>;
+      const normalizedEntity = Object.fromEntries(
+        Object.entries({
+          id: value.id,
+          orderId: value.order_id,
+          amount: value.amount,
+          fee: value.fee,
+          currency: value.currency,
+          status: value.status,
+          method: value.method,
+          email: value.email,
+          description: value.description,
+          notes: value.notes,
+          invoiceId: value.invoice_id,
+          createdAt: value.created_at,
+        }).filter(([, entry]) => entry !== undefined),
+      );
+      return { ok: true, eventType: raw.event, payload: { ...payload, payment: { entity: normalizedEntity } } };
     } catch {
       return { ok: false, error: "invalid_json" };
     }

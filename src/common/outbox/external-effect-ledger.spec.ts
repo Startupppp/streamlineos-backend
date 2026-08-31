@@ -7,7 +7,10 @@ jest.mock("../tenant/run-in-tenant-transaction", () => ({
 
 type State = "PENDING" | "IN_FLIGHT" | "SUCCEEDED" | "FAILED";
 
-function makeHarness(initial?: { state: State; expired?: boolean }) {
+function makeHarness(
+  initial?: { state: State; expired?: boolean },
+  options: { loseCompletionLease?: boolean } = {},
+) {
   const row: { state?: State; token?: string; uncertain: number; error?: string | null } = {
     state: initial?.state,
     uncertain: 0,
@@ -36,7 +39,7 @@ function makeHarness(initial?: { state: State; expired?: boolean }) {
                 row.token = patch.attemptToken as string;
                 return [{ id: 1 }];
               }
-              if (row.state !== "IN_FLIGHT" || !row.token) return [];
+              if (options.loseCompletionLease || row.state !== "IN_FLIGHT" || !row.token) return [];
               row.state = patch.state as State;
               row.error = patch.lastError as string | null;
               row.token = undefined;
@@ -122,5 +125,16 @@ describe("ExternalEffectLedger", () => {
     await expect(harness.ledger.execute(effect, jest.fn().mockResolvedValue(undefined))).resolves.toBe("EXECUTED");
     expect(harness.row.uncertain).toBe(1);
     expect(harness.row.state).toBe("SUCCEEDED");
+  });
+
+  it("fails closed when completion loses the lease after the provider call", async () => {
+    const harness = makeHarness(undefined, { loseCompletionLease: true });
+    const send = jest.fn().mockResolvedValue(undefined);
+
+    await expect(harness.ledger.execute(effect, send)).rejects.toThrow(
+      "lost its lease before completion was recorded",
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(harness.row.state).toBe("IN_FLIGHT");
   });
 });

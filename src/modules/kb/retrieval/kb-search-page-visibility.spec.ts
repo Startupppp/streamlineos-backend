@@ -1,6 +1,7 @@
 import { KbSearchService } from "./kb-search.service";
 import { pageVisibleTo } from "./kb-page-visibility";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const ACCESSIBLE_PROJECT_IDS = [7];
 
@@ -11,6 +12,7 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   isOrgOwner: false,
   sessionId: "sess-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
   ...overrides,
 });
 

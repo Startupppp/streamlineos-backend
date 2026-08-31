@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, lte } from "drizzle-orm";
-import { leaveRequests, leaveTypes, organizationMembers, users } from "../../../db/schema";
+import { hrEmployments, hrPeople, leaveRequests, leaveTypes, organizationMembers, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -8,6 +8,10 @@ import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { addYears, differenceInDays, formatDateOnly, formatMonthDay, startOfDay } from "../../../common/date";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../../directory/employment-query";
 
 export interface FeedItem {
   userId: string;
@@ -58,10 +62,12 @@ export class CelebrationsService {
         name: users.name,
         image: users.image,
         dateOfBirth: users.dateOfBirth,
-        joiningDate: users.joiningDate,
+        joiningDate: hrEmployments.joiningDate,
       })
       .from(organizationMembers)
       .leftJoin(users, eq(users.id, organizationMembers.userId))
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .where(
         and(
           eq(organizationMembers.orgId, orgId),
@@ -151,10 +157,12 @@ export class CelebrationsService {
         lastName: users.lastName,
         image: users.image,
         dateOfBirth: users.dateOfBirth,
-        joiningDate: users.joiningDate,
+        joiningDate: hrEmployments.joiningDate,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .where(
         and(
           eq(organizationMembers.orgId, orgId),

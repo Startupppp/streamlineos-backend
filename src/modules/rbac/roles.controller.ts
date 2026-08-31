@@ -14,14 +14,15 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { AccessService } from "../access/access.service";
 import type { DataScope } from "../access/access.types";
 import { RolesService } from "./roles.service";
+import { RolesQueryService } from "./roles-query.service";
 import {
   materializeTemplateSchema,
   type MaterializeTemplateInput,
@@ -36,6 +37,11 @@ import {
   type SimulationCandidatesQuery,
   type UpdateRoleInput,
 } from "./dto/rbac.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const targetUserIdParams = z.object({ targetUserId: z.string().min(1) }).strict();
+const roleIdParams = z.object({ roleId: z.string().min(1) }).strict();
 
 interface SimulateAccessResponse {
   userId: string;
@@ -49,14 +55,16 @@ interface SimulateAccessResponse {
 export class RolesController {
   constructor(
     private readonly roles: RolesService,
+    private readonly query: RolesQueryService,
     private readonly access: AccessService,
   ) {}
 
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ query: listRolesQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listRolesQuerySchema)) query: ListRolesQuery,
+    @Query() query: ListRolesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.getRoles(u.orgId, query);
@@ -66,7 +74,7 @@ export class RolesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   getAnalytics(@CurrentUser() u: CurrentUserContext) {
-    return this.roles.getRoleAnalytics(u.orgId);
+    return this.query.getRoleAnalytics(u.orgId);
   }
 
   @Get("permissions/matrix")
@@ -79,23 +87,24 @@ export class RolesController {
   @Get("simulate/candidates")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ query: simulationCandidatesQuerySchema })
   listSimulationCandidates(
-    @Query(new ZodValidationPipe(simulationCandidatesQuerySchema))
-    query: SimulationCandidatesQuery,
+    @Query() query: SimulationCandidatesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roles.listSimulationCandidates(u.orgId, query);
+    return this.query.listSimulationCandidates(u.orgId, query);
   }
 
   @Get("simulate/:targetUserId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: targetUserIdParams })
   async simulateAccess(
     @Param("targetUserId") targetUserId: string,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<SimulateAccessResponse> {
     if (!targetUserId) throw new NotFoundException("targetUserId is required");
-    const target = await this.roles.getSimulationTarget(u.orgId, targetUserId);
+    const target = await this.query.getSimulationTarget(u.orgId, targetUserId);
     const resolved = await this.access.resolveUserPermissions(
       u.orgId,
       targetUserId,
@@ -127,15 +136,17 @@ export class RolesController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ body: materializeTemplateSchema })
   materializeTemplate(
-    @Body(new ZodValidationPipe(materializeTemplateSchema))
-    body: MaterializeTemplateInput,
+    @Body() body: MaterializeTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.materializeTemplate(u, body.templateId);
   }
 
+  // ROLE_TEMPLATES is a product constant, no actor and no tenant data; materializing one is the gated action.
   @Get("templates")
+  @Universal()
   templates() {
     return this.roles.listTemplates();
   }
@@ -144,12 +155,13 @@ export class RolesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   listAssignableDepartments(@CurrentUser() u: CurrentUserContext) {
-    return this.roles.listAssignableDepartments(u.orgId);
+    return this.query.listAssignableDepartments(u.orgId);
   }
 
   @Get(":roleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams })
   get(@Param("roleId") roleId: string, @CurrentUser() u: CurrentUserContext) {
     return this.roles.getRole(u.orgId, this.parseRoleId(roleId));
   }
@@ -157,9 +169,10 @@ export class RolesController {
   @Patch(":roleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams, body: updateRoleSchema })
   update(
     @Param("roleId") roleId: string,
-    @Body(new ZodValidationPipe(updateRoleSchema)) body: UpdateRoleInput,
+    @Body() body: UpdateRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.updateRole(u, this.parseRoleId(roleId), body);
@@ -168,6 +181,7 @@ export class RolesController {
   @Delete(":roleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams })
   remove(
     @Param("roleId") roleId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -178,6 +192,7 @@ export class RolesController {
   @Get(":roleId/permissions")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams })
   getPermissions(
     @Param("roleId") roleId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -188,10 +203,10 @@ export class RolesController {
   @Put(":roleId/permissions")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams, body: setRolePermissionsSchema })
   setPermissions(
     @Param("roleId") roleId: string,
-    @Body(new ZodValidationPipe(setRolePermissionsSchema))
-    body: SetRolePermissionsInput,
+    @Body() body: SetRolePermissionsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.setRolePermissions(u, this.parseRoleId(roleId), body);
@@ -200,6 +215,7 @@ export class RolesController {
   @Get(":roleId/members")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams })
   getMembers(
     @Param("roleId") roleId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -211,9 +227,10 @@ export class RolesController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams, body: roleMemberSchema })
   addMember(
     @Param("roleId") roleId: string,
-    @Body(new ZodValidationPipe(roleMemberSchema)) body: RoleMemberInput,
+    @Body() body: RoleMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.addRoleMember(u, this.parseRoleId(roleId), body);
@@ -222,9 +239,10 @@ export class RolesController {
   @Delete(":roleId/members")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: roleIdParams, body: roleMemberSchema })
   removeMember(
     @Param("roleId") roleId: string,
-    @Body(new ZodValidationPipe(roleMemberSchema)) body: RoleMemberInput,
+    @Body() body: RoleMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.roles.removeRoleMember(u, this.parseRoleId(roleId), body);

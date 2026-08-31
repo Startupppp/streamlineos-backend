@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  optionalPageNumberField,
+  optionalPageSizeField,
+} from "../../../../common/pagination/list-query.schema";
 
 export const createCalendarEventSchema = z.object({
   type: z.string(),
@@ -9,23 +13,25 @@ export const createCalendarEventSchema = z.object({
 
 export const patchCalendarEventSchema = createCalendarEventSchema.partial();
 
-export const accountingMappingCreateSchema = z.object({
-  componentId: z.number().int().optional(),
-  category: z.string().optional(),
-  ledgerName: z.string().min(1),
-  costCenterSource: z.string().optional(),
-  notes: z.string().optional(),
-}).superRefine((data, ctx) => {
-  const hasComponent = data.componentId !== undefined;
-  const hasCategory = data.category !== undefined;
-  if (hasComponent === hasCategory) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Exactly one of componentId or category must be provided",
-      path: [],
-    });
-  }
-});
+export const accountingMappingCreateSchema = z
+  .object({
+    componentId: z.number().int().optional(),
+    category: z.string().optional(),
+    ledgerName: z.string().min(1),
+    costCenterSource: z.string().optional(),
+    notes: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const hasComponent = data.componentId !== undefined;
+    const hasCategory = data.category !== undefined;
+    if (hasComponent === hasCategory) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Exactly one of componentId or category must be provided",
+        path: [],
+      });
+    }
+  });
 
 export const accountingMappingUpdateSchema = z.object({
   componentId: z.number().int().nullable().optional(),
@@ -35,35 +41,42 @@ export const accountingMappingUpdateSchema = z.object({
   notes: z.string().nullable().optional(),
 });
 
-export const essBankSchema = z.object({
-  accountNumber: z.string().min(8).max(34),
-  bankName: z.string().min(1).max(100),
-  branch: z.string().min(1).max(100),
-  ifsc: z.string().max(50).optional(),
-  code: z.string().max(50).optional(),
-  accountHolder: z.string().min(1).max(100),
-  accountHolderName: z.string().max(100).optional(),
-  pfUanNumber: z.string().max(30).optional(),
-  bankCountry: z.string().length(2).toUpperCase().optional(),
-}).superRefine((data, ctx) => {
-  const effectiveCode = data.code ?? data.ifsc ?? "";
-  if (!effectiveCode) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: "Bank code (IFSC / routing / sort code / IBAN) is required",
-      path: ["code"],
-    });
-  }
-});
+export const essBankSchema = z
+  .object({
+    accountNumber: z.string().min(8).max(34),
+    bankName: z.string().min(1).max(100),
+    branch: z.string().min(1).max(100),
+    ifsc: z.string().max(50).optional(),
+    code: z.string().max(50).optional(),
+    accountHolder: z.string().min(1).max(100),
+    accountHolderName: z.string().max(100).optional(),
+    pfUanNumber: z.string().max(30).optional(),
+    bankCountry: z.string().length(2).toUpperCase().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const effectiveCode = data.code ?? data.ifsc ?? "";
+    if (!effectiveCode) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Bank code (IFSC / routing / sort code / IBAN) is required",
+        path: ["code"],
+      });
+    }
+  });
 
 export const essCreateReimbursementSchema = z.object({
   category: z.string().min(1).max(100),
   amount: z.number().positive().max(999999),
   description: z.string().max(1000).optional(),
   receiptUrl: z.string().url().optional().or(z.literal("")).optional(),
-  payrollMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
+  payrollMonth: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+    .optional(),
 });
-export type EssCreateReimbursement = z.infer<typeof essCreateReimbursementSchema>;
+export type EssCreateReimbursement = z.infer<
+  typeof essCreateReimbursementSchema
+>;
 
 export const essCreateLoanSchema = z.object({
   amount: z.number().min(1000).max(10000000),
@@ -82,7 +95,9 @@ export const essSubmitTaxDeclarationSchema = z.object({
   section80g: z.number().nonnegative().optional(),
   homeLoanInterest: z.number().nonnegative().optional(),
 });
-export type EssSubmitTaxDeclaration = z.infer<typeof essSubmitTaxDeclarationSchema>;
+export type EssSubmitTaxDeclaration = z.infer<
+  typeof essSubmitTaxDeclarationSchema
+>;
 
 export const essAddTaxProofSchema = z.object({
   declarationId: z.number().int().positive(),
@@ -95,12 +110,18 @@ export type EssAddTaxProof = z.infer<typeof essAddTaxProofSchema>;
 
 export type CreateCalendarEvent = z.infer<typeof createCalendarEventSchema>;
 export type PatchCalendarEvent = z.infer<typeof patchCalendarEventSchema>;
-export type AccountingMappingCreate = z.infer<typeof accountingMappingCreateSchema>;
-export type AccountingMappingUpdate = z.infer<typeof accountingMappingUpdateSchema>;
+export type AccountingMappingCreate = z.infer<
+  typeof accountingMappingCreateSchema
+>;
+export type AccountingMappingUpdate = z.infer<
+  typeof accountingMappingUpdateSchema
+>;
 export type EssBank = z.output<typeof essBankSchema>;
 
 export const journalBatchCreateSchema = z.object({
-  periodKey: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "periodKey must be YYYY-MM"),
+  periodKey: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "periodKey must be YYYY-MM"),
   allowProvisional: z.boolean().optional(),
   note: z.string().max(500).optional(),
 });
@@ -118,15 +139,22 @@ export const journalBatchReconcileSchema = z.object({
 export type JournalBatchReconcile = z.infer<typeof journalBatchReconcileSchema>;
 
 export const journalBatchListQuerySchema = z.object({
-  periodKey: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
-  status: z.enum(["DRAFT", "POSTED", "EXPORTED", "REVERSED", "FAILED"]).optional(),
-  page: z.coerce.number().int().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
+  periodKey: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+    .optional(),
+  status: z
+    .enum(["DRAFT", "POSTED", "EXPORTED", "REVERSED", "FAILED"])
+    .optional(),
+  page: optionalPageNumberField(),
+  limit: optionalPageSizeField(),
 });
 export type JournalBatchListQuery = z.infer<typeof journalBatchListQuerySchema>;
 
 export const periodReconQuerySchema = z.object({
-  periodKey: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "periodKey must be YYYY-MM"),
+  periodKey: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/, "periodKey must be YYYY-MM"),
 });
 export type PeriodReconQuery = z.infer<typeof periodReconQuerySchema>;
 
@@ -146,13 +174,25 @@ export const taxDeclarationsQuerySchema = z.object({
 });
 export type TaxDeclarationsQuery = z.infer<typeof taxDeclarationsQuerySchema>;
 
+export const journalQuerySchema = z.object({
+  month: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+    .optional(),
+  format: z.enum(["json", "csv"]).optional(),
+});
+export type JournalQuery = z.infer<typeof journalQuerySchema>;
+
 export const reportsQuerySchema = z.object({
-  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).optional(),
+  month: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+    .optional(),
   format: z.enum(["json", "csv"]).optional(),
   department: z.string().trim().max(100).optional(),
   costCenter: z.string().trim().max(100).optional(),
   workerType: z.string().trim().max(50).optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional(),
+  limit: optionalPageSizeField(),
   offset: z.coerce.number().int().min(0).optional(),
 });
 export type ReportsQuery = z.infer<typeof reportsQuerySchema>;

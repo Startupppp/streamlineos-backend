@@ -8,12 +8,15 @@ import {
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Public } from "../../common/auth/public.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { BlogService } from "./blog.service";
 import {
   feedSchema,
   type FeedInput,
   } from "./dto/blog.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const slugParams = z.object({ slug: z.string().min(1) }).strict();
 
 @Controller("blog")
 @UseGuards(JwtAuthGuard)
@@ -22,6 +25,7 @@ export class BlogController {
 
   @Public()
   @Get("by-slug/:slug")
+  @Validate({ params: slugParams })
   async getPostBySlug(@Param("slug") slug: string) {
     const post = await this.blog.getPublishedPostBySlug(slug);
     if (!post) throw new NotFoundException("Post not found");
@@ -30,6 +34,7 @@ export class BlogController {
 
   @Public()
   @Get("by-slug/:slug/adjacent")
+  @Validate({ params: slugParams })
   getAdjacentPosts(@Param("slug") slug: string) {
     return this.blog.getAdjacentPosts(slug);
   }
@@ -42,7 +47,8 @@ export class BlogController {
 
   @Public()
   @Get("feed")
-  feed(@Query(new ZodValidationPipe(feedSchema)) query: FeedInput) {
+  @Validate({ query: feedSchema })
+  feed(@Query() query: FeedInput) {
     return this.blog.getPublishedPosts(query);
   }
 }

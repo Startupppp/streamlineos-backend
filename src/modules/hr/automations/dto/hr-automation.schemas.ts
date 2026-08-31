@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { hrAutomationEventSchema } from "../hr-automation-events";
 
 const conditionSchema = z.object({
@@ -121,8 +122,8 @@ export const testHrAutomationSchema = z.object({
 });
 
 export const listRunsSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 });
 
 export type CreateHrAutomationRuleInput = z.infer<typeof createHrAutomationRuleSchema>;

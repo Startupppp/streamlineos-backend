@@ -1,5 +1,4 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   invoices,
@@ -10,7 +9,6 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { AuditService } from "../../common/audit/audit.service";
 import { JournalPostingService, type DbOrTx } from "../accounting/posting/journal-posting.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -18,6 +16,7 @@ import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 import { RateResolverService } from "../finance/controls/rate-resolver.service";
 import { FxService } from "../finance/controls/fx.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { systemActor } from "../../common/auth/system-actor";
 import type { RecordPaymentInput } from "./dto/invoice-write.schemas";
 
 @Injectable()
@@ -149,30 +148,11 @@ export class InvoicesPaymentService {
         },
         tx,
       );
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "payment",
-        aggregateId: String(payment.id),
-        aggregateVersion: Date.now(),
-        eventType: "accounting.payment.received",
-        payload: {
-          organization_id: orgId,
-          payment_id: payment.id,
-          invoice_id: invoiceId,
-          invoice_number: invoice.invoiceNumber,
-          amount_cents: Math.round(input.amount * 100),
-          payment_date: input.paymentDate,
-          payment_method: input.paymentMethod,
-          actor_user_id: userId,
-        },
-        occurredAt: new Date(),
-      });
 
       return payment;
     });
 
-    void this.postArFxGainLoss(orgId, userId, invoice, input.amount, input.paymentDate);
+    await this.postArFxGainLoss(orgId, userId, invoice, input.amount, input.paymentDate);
 
     const members = await this.db
       .select({ userId: organizationMembers.userId })
@@ -232,28 +212,15 @@ export class InvoicesPaymentService {
         new Date(`${paymentDateIso}T00:00:00.000Z`),
       );
       const baseAmountSettled = (allocatedAmount * settledRate).toFixed(4);
-      const user: CurrentUserContext = {
-        userId,
-        orgId,
-        role: "system",
-        isOrgOwner: false,
-        tokenScopes: null,
-        sessionId: "",
-      };
+      const user = systemActor("invoices.payment.fx-posting", orgId, userId);
 
-      this.fx
-        .postRealizedGainLoss(user, {
-          sourceType: "invoice",
-          sourceId: String(invoice.id),
-          baseAmountBooked,
-          baseAmountSettled,
-          counterPurpose: "AR",
-        })
-        .catch((err: unknown) => {
-          this.classLogger.warn(
-            `FX gain/loss post failed for invoice ${invoice.id}: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        });
+      await this.fx.postRealizedGainLoss(user, {
+        sourceType: "invoice",
+        sourceId: String(invoice.id),
+        baseAmountBooked,
+        baseAmountSettled,
+        counterPurpose: "AR",
+      });
     } catch (err) {
       this.classLogger.warn(
         `No exchange rate for FX on invoice ${invoice.id}: ${err instanceof Error ? err.message : String(err)}`,

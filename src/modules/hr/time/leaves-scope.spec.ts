@@ -1,4 +1,5 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -27,6 +28,7 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     isOrgOwner: false,
     sessionId: "s1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...overrides,
   };
 }
@@ -81,11 +83,10 @@ describe("resolveLeavesViewScope", () => {
     expect(compiled.params).toEqual(["approver-1"]);
   });
 
-  it("requires both assignment and team visibility for team scope", () => {
+  it("requires approver assignment and falls back to own when no team members are resolved", () => {
     const compiled = new PgDialect().sqlToQuery(
       leaveApprovalScope("team", "o1", "approver-1"),
     );
-    expect(compiled.params).toContain("approver-1");
-    expect(compiled.params).toContain("o1");
+    expect(compiled.params).toEqual(["approver-1", "approver-1"]);
   });
 });

@@ -8,13 +8,17 @@ import {
 import { Test, type TestingModule } from "@nestjs/testing";
 import request from "supertest";
 import { HrAiController } from "../controllers/hr-ai.controller";
-import { HrAiService } from "../services/hr-ai.service";
+import { HrPerformanceAiService } from "../services/hr-performance-ai.service";
+import { HrRecruitmentAiService } from "../services/hr-recruitment-ai.service";
+import { HrPolicyAiService } from "../services/hr-policy-ai.service";
+import { HrHelpdeskAiService } from "../services/hr-helpdesk-ai.service";
 import { LlmService } from "../providers/llm.service";
 import { PlanLimitsService } from "../../../billing/core/plan-limits.service";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RateLimitGuard } from "../../../../common/ratelimit/rate-limit.guard";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
 
 const USER_CTX: CurrentUserContext = {
   userId: "user1",
@@ -23,6 +27,7 @@ const USER_CTX: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "sess1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 class PassAuthGuard implements CanActivate {
@@ -45,32 +50,55 @@ class PassGuard implements CanActivate {
   }
 }
 
-const makeMockHrAiService = () => ({
+const makeMockPerformanceService = () => ({
   analyzeAttritionRisk: jest.fn(),
   generateReview: jest.fn(),
+});
+
+const makeMockRecruitmentService = () => ({
   generateJd: jest.fn(),
   scoreCandidate: jest.fn(),
-  suggestHelpdeskReply: jest.fn(),
-  policyQa: jest.fn(),
   generateInterviewKit: jest.fn(),
-  draftLetter: jest.fn(),
   summarizeInterviewNotes: jest.fn(),
   acceptCandidateScore: jest.fn(),
+});
+
+const makeMockPolicyService = () => ({
+  policyQa: jest.fn(),
+  policyQaCapabilities: jest.fn(),
+});
+
+const makeMockHelpdeskService = () => ({
+  suggestHelpdeskReply: jest.fn(),
+  draftLetter: jest.fn(),
 });
 
 const mockLlmService = {
   isConfigured: jest.fn().mockReturnValue(true),
 };
 
+type MockServices = {
+  performance: ReturnType<typeof makeMockPerformanceService>;
+  recruitment: ReturnType<typeof makeMockRecruitmentService>;
+  policy: ReturnType<typeof makeMockPolicyService>;
+  helpdesk: ReturnType<typeof makeMockHelpdeskService>;
+};
+
 async function buildApp(options: {
   denyPermission?: boolean;
-}): Promise<{ app: INestApplication; hrService: ReturnType<typeof makeMockHrAiService> }> {
-  const hrService = makeMockHrAiService();
+}): Promise<{ app: INestApplication; mocks: MockServices }> {
+  const performance = makeMockPerformanceService();
+  const recruitment = makeMockRecruitmentService();
+  const policy = makeMockPolicyService();
+  const helpdesk = makeMockHelpdeskService();
 
   const moduleRef: TestingModule = await Test.createTestingModule({
     controllers: [HrAiController],
     providers: [
-      { provide: HrAiService, useValue: hrService },
+      { provide: HrPerformanceAiService, useValue: performance },
+      { provide: HrRecruitmentAiService, useValue: recruitment },
+      { provide: HrPolicyAiService, useValue: policy },
+      { provide: HrHelpdeskAiService, useValue: helpdesk },
       { provide: LlmService, useValue: mockLlmService },
       { provide: PlanLimitsService, useValue: { assertFeature: jest.fn().mockResolvedValue(undefined) } },
     ],
@@ -85,15 +113,15 @@ async function buildApp(options: {
 
   const app = moduleRef.createNestApplication();
   await app.init();
-  return { app, hrService };
+  return { app, mocks: { performance, recruitment, policy, helpdesk } };
 }
 
 describe("HrAiController — policy-qa", () => {
   let app: INestApplication;
-  let hrService: ReturnType<typeof makeMockHrAiService>;
+  let mocks: MockServices;
 
   beforeAll(async () => {
-    ({ app, hrService } = await buildApp({}));
+    ({ app, mocks } = await buildApp({}));
   });
 
   afterAll(() => app.close());
@@ -101,7 +129,7 @@ describe("HrAiController — policy-qa", () => {
   beforeEach(() => jest.clearAllMocks());
 
   it("returns answer with citations when policy found", async () => {
-    hrService.policyQa.mockResolvedValue({
+    mocks.policy.policyQa.mockResolvedValue({
       answer: "You get 12 days annual leave",
       confidence: "high",
       citations: [{ policyType: "LEAVE", policyId: 1, snippet: "Annual leave: 12 days" }],
@@ -121,7 +149,7 @@ describe("HrAiController — policy-qa", () => {
   });
 
   it("escalates and suggests ticket when no policy found", async () => {
-    hrService.policyQa.mockResolvedValue({
+    mocks.policy.policyQa.mockResolvedValue({
       answer: "I couldn't find a policy on this",
       confidence: "not_found",
       citations: [],
@@ -139,8 +167,8 @@ describe("HrAiController — policy-qa", () => {
     expect(res.body.suggestTicket).toBe(true);
   });
 
-  it("passes question to hr.policyQa (integration contract)", async () => {
-    hrService.policyQa.mockResolvedValue({
+  it("passes question to hrPolicy.policyQa (integration contract)", async () => {
+    mocks.policy.policyQa.mockResolvedValue({
       answer: "Test answer",
       confidence: "high",
       citations: [],
@@ -153,18 +181,18 @@ describe("HrAiController — policy-qa", () => {
       .post("/ai/hr/policy-qa")
       .send({ question });
 
-    expect(hrService.policyQa).toHaveBeenCalled();
-    const callArgs: unknown[] = hrService.policyQa.mock.calls[0] as unknown[];
+    expect(mocks.policy.policyQa).toHaveBeenCalled();
+    const callArgs: unknown[] = mocks.policy.policyQa.mock.calls[0] as unknown[];
     expect(callArgs).toContain(question);
   });
 });
 
 describe("HrAiController — score-candidate (advisory-only, D1 change)", () => {
   let app: INestApplication;
-  let hrService: ReturnType<typeof makeMockHrAiService>;
+  let mocks: MockServices;
 
   beforeAll(async () => {
-    ({ app, hrService } = await buildApp({}));
+    ({ app, mocks } = await buildApp({}));
   });
 
   afterAll(() => app.close());
@@ -172,7 +200,7 @@ describe("HrAiController — score-candidate (advisory-only, D1 change)", () => 
   beforeEach(() => jest.clearAllMocks());
 
   it("returns advisory=true with disclaimer and does NOT auto-call acceptCandidateScore", async () => {
-    hrService.scoreCandidate.mockResolvedValue({
+    mocks.recruitment.scoreCandidate.mockResolvedValue({
       score: 82,
       fitLevel: "good",
       reasoning: "Strong match",
@@ -190,24 +218,24 @@ describe("HrAiController — score-candidate (advisory-only, D1 change)", () => 
     expect(res.body).toHaveProperty("disclaimer");
     expect(typeof res.body.disclaimer).toBe("string");
     expect(res.body.score).toBe(82);
-    expect(hrService.acceptCandidateScore).not.toHaveBeenCalled();
+    expect(mocks.recruitment.acceptCandidateScore).not.toHaveBeenCalled();
   });
 });
 
 describe("HrAiController — accept-candidate-score", () => {
   let app: INestApplication;
-  let hrService: ReturnType<typeof makeMockHrAiService>;
+  let mocks: MockServices;
 
   beforeAll(async () => {
-    ({ app, hrService } = await buildApp({}));
+    ({ app, mocks } = await buildApp({}));
   });
 
   afterAll(() => app.close());
 
   beforeEach(() => jest.clearAllMocks());
 
-  it("explicit accept calls hr.acceptCandidateScore and returns accepted=true", async () => {
-    hrService.acceptCandidateScore.mockResolvedValue({ accepted: true });
+  it("explicit accept calls hrRecruitment.acceptCandidateScore and returns accepted=true", async () => {
+    mocks.recruitment.acceptCandidateScore.mockResolvedValue({ accepted: true });
 
     const res = await request(app.getHttpServer())
       .post("/ai/hr/accept-candidate-score")
@@ -215,7 +243,7 @@ describe("HrAiController — accept-candidate-score", () => {
 
     expect(res.status).toBe(201);
     expect(res.body).toHaveProperty("accepted", true);
-    expect(hrService.acceptCandidateScore).toHaveBeenCalledWith(
+    expect(mocks.recruitment.acceptCandidateScore).toHaveBeenCalledWith(
       USER_CTX.orgId,
       1,
       82,
@@ -225,10 +253,10 @@ describe("HrAiController — accept-candidate-score", () => {
 
 describe("HrAiController — interview-kit", () => {
   let app: INestApplication;
-  let hrService: ReturnType<typeof makeMockHrAiService>;
+  let mocks: MockServices;
 
   beforeAll(async () => {
-    ({ app, hrService } = await buildApp({}));
+    ({ app, mocks } = await buildApp({}));
   });
 
   afterAll(() => app.close());
@@ -236,7 +264,7 @@ describe("HrAiController — interview-kit", () => {
   beforeEach(() => jest.clearAllMocks());
 
   it("returns draft-only with advisory=true, disclaimer, and roundKits array", async () => {
-    hrService.generateInterviewKit.mockResolvedValue({
+    mocks.recruitment.generateInterviewKit.mockResolvedValue({
       roundKits: [
         {
           round: "Technical",
@@ -261,10 +289,10 @@ describe("HrAiController — interview-kit", () => {
 
 describe("HrAiController — interview-notes-summary", () => {
   let app: INestApplication;
-  let hrService: ReturnType<typeof makeMockHrAiService>;
+  let mocks: MockServices;
 
   beforeAll(async () => {
-    ({ app, hrService } = await buildApp({}));
+    ({ app, mocks } = await buildApp({}));
   });
 
   afterAll(() => app.close());
@@ -272,7 +300,7 @@ describe("HrAiController — interview-notes-summary", () => {
   beforeEach(() => jest.clearAllMocks());
 
   it("returns structured brief with advisory=true and overallRecommendation", async () => {
-    hrService.summarizeInterviewNotes.mockResolvedValue({
+    mocks.recruitment.summarizeInterviewNotes.mockResolvedValue({
       overallRecommendation: "Strong hire",
       confidence: "high",
       strengthsSummary: "Excellent communicator",

@@ -48,7 +48,6 @@ const mockCache = {
   cached: jest.fn(),
   cachedVersioned: jest.fn(),
   invalidateNamespace: jest.fn().mockResolvedValue(undefined),
-  invalidatePattern: jest.fn().mockResolvedValue(undefined),
 };
 
 const mockAudit = { log: jest.fn() };
@@ -81,7 +80,6 @@ const makeQuote = (overrides: Record<string, unknown> = {}): Record<string, unkn
 beforeEach(() => {
   jest.clearAllMocks();
   mockCache.invalidateNamespace.mockResolvedValue(undefined);
-  mockCache.invalidatePattern.mockResolvedValue(undefined);
   mockAudit.log.mockReturnValue(undefined);
   mockPlanLimits.assertWithinLimit.mockResolvedValue(undefined);
 });

@@ -12,6 +12,10 @@ import {
   kbResearchBriefListSchema,
   kbResearchBriefRateSchema,
 } from "./dto/kb-ai.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const briefIdParams = z.object({ briefId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -39,6 +43,7 @@ export class KbResearchBriefController {
 
   @Get("research-briefs/:briefId")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: briefIdParams })
   async getById(
     @Param("briefId", ParseIntPipe) briefId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -49,6 +54,7 @@ export class KbResearchBriefController {
   @Post("research-briefs/:briefId/rate")
   @HttpCode(200)
   @RequirePermission("kb:pages:view")
+  @Validate({ params: briefIdParams })
   async rateBrief(
     @Param("briefId", ParseIntPipe) briefId: number,
     @Body() body: unknown,

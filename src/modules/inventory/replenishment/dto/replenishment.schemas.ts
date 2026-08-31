@@ -1,12 +1,13 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 export const listRulesSchema = z.object({
   variantId: z.coerce.number().int().positive().optional(),
   warehouseId: z.coerce.number().int().positive().optional(),
   active: queryBoolean.optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 }).strict();
 export type ListRulesInput = z.infer<typeof listRulesSchema>;
 
@@ -75,14 +76,14 @@ export const generatePoSchema = z.object({
 export type GeneratePoInput = z.infer<typeof generatePoSchema>;
 
 export const suggestionsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 }).strict();
 export type SuggestionsQueryInput = z.infer<typeof suggestionsQuerySchema>;
 
 export const forecastingSchema = z.object({
   variantId: z.coerce.number().int().positive().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 }).strict();
 export type ForecastingInput = z.infer<typeof forecastingSchema>;

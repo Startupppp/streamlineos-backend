@@ -13,7 +13,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProjectsReportsService } from "./projects-reports.service";
 import { ProjectsAnalyticsService } from "./projects-analytics.service";
 import {
@@ -23,6 +22,10 @@ import {
   type CfdQuery,
 } from "./dto/projects.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -41,6 +44,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/analytics")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   getAnalytics(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -50,9 +54,10 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/burnup")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams, query: burnupQuerySchema })
   burnup(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(burnupQuerySchema)) query: BurnupQuery,
+    @Query() query: BurnupQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.burnup(u.orgId, projectId, query);
@@ -60,9 +65,10 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/cfd")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams, query: cfdQuerySchema })
   cfd(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(cfdQuerySchema)) query: CfdQuery,
+    @Query() query: CfdQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.cfd(u.orgId, projectId, query);
@@ -70,6 +76,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/critical-path")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   criticalPath(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -79,6 +86,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/velocity")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   velocity(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -88,6 +96,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/cycle-time")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   getCycleTime(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -97,6 +106,7 @@ export class ProjectsReportsController {
 
   @Get(":projectId/reports/lead-time")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   getLeadTime(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -107,6 +117,7 @@ export class ProjectsReportsController {
   @Post(":projectId/reports/snapshot")
   @RequirePermission("build:manage")
   @HttpCode(200)
+  @Validate({ params: projectIdParams })
   snapshot(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,

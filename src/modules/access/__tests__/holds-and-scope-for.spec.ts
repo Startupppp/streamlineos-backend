@@ -4,21 +4,31 @@ import type { Db } from "../../../db/drizzle.module";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { EntitlementsService } from "../entitlements.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import {
+  humanSessionPrincipal,
+  personalTokenPrincipal,
+} from "../../../common/auth/principal";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 
 const ORG = "org-1";
 const USER = "user-1";
 
 function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
-  return {
+  const merged = {
     userId: USER,
     orgId: ORG,
     role: "MEMBER",
     isOrgOwner: false,
     sessionId: "sess-1",
-    tokenScopes: null,
+    tokenScopes: null as string[] | null,
     ...overrides,
   };
+  const principal =
+    overrides.principal ??
+    (merged.tokenScopes === null
+      ? humanSessionPrincipal(1, merged.isOrgOwner)
+      : personalTokenPrincipal(1, merged.isOrgOwner, "pat-1", merged.tokenScopes));
+  return { ...merged, principal };
 }
 
 function buildService(resolved: Map<string, DataScope>): {

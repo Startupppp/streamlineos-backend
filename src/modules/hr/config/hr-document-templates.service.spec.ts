@@ -1,13 +1,40 @@
 import { HrDocumentTemplatesService } from "./hr-document-templates.service";
 import type { CreateTemplateInput, UpdateTemplateInput } from "./dto/document-templates.schemas";
 
+function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
+  if (
+    value === null ||
+    value === undefined ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return [value];
+  }
+  if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
+  if (typeof value !== "object" || seen.has(value)) return [];
+
+  seen.add(value);
+  const record = value as { queryChunks?: unknown[]; value?: unknown };
+  return [
+    ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
+    ...(Object.prototype.hasOwnProperty.call(record, "value")
+      ? sqlValues(record.value, seen)
+      : []),
+  ];
+}
+
 describe("HrDocumentTemplatesService — server-side HTML sanitization", () => {
-  function buildDb(insertedValues: Record<string, unknown>[], updatedSets: Record<string, unknown>[]) {
+  function buildDb(
+    insertedValues: Record<string, unknown>[],
+    updatedSets: Record<string, unknown>[],
+    selectedRows: Record<string, unknown>[] = [],
+  ) {
     return {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue([]),
+            limit: jest.fn().mockResolvedValue(selectedRows),
           }),
         }),
       }),
@@ -76,5 +103,21 @@ describe("HrDocumentTemplatesService — server-side HTML sanitization", () => {
     await service.updateVersion("user-1", existing, input);
 
     expect(updatedSets[0]?.htmlContent).toBe('<div><img src="x">Updated {{name}}</div>');
+  });
+
+  it("returns no template when a different org requests its id", async () => {
+    const where = jest.fn().mockReturnValue({
+      limit: jest.fn().mockResolvedValue([]),
+    });
+    const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({ where }),
+      }),
+    };
+    const service = new HrDocumentTemplatesService(db as never);
+
+    await expect(service.getById("org-b", 41)).resolves.toBeNull();
+    expect(where).toHaveBeenCalledTimes(1);
+    expect(sqlValues(where.mock.calls[0]?.[0])).toContain("org-b");
   });
 });

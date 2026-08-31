@@ -6,9 +6,9 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { SettingsService } from "./settings.service";
 import { updateCoreSettingsSchema, type UpdateCoreSettingsInput } from "./dto/settings.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("build")
 @Controller("timesheets/settings")
@@ -30,8 +30,9 @@ export class SettingsController {
 
   @Patch()
   @RequirePermission("timesheets:settings:manage")
+  @Validate({ body: updateCoreSettingsSchema })
   update(
-    @Body(new ZodValidationPipe(updateCoreSettingsSchema)) body: UpdateCoreSettingsInput,
+    @Body() body: UpdateCoreSettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.updateSettings(u, body);

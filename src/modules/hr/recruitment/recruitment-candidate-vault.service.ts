@@ -1,9 +1,11 @@
 import {
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
   UnsupportedMediaTypeException,
 } from "@nestjs/common";
+import { getObservabilityContext } from "../../../common/observability";
 import { and, desc, eq } from "drizzle-orm";
 import {
   auditLogs,
@@ -79,8 +81,15 @@ export class RecruitmentCandidateVaultService {
     orgId: string,
     candidateId: number,
     documentId: number,
+    actorUserId?: string,
   ) {
     await this.ensureCandidate(orgId, candidateId);
+
+    const accessedBy = actorUserId ?? getObservabilityContext()?.actorId;
+    if (!accessedBy)
+      throw new InternalServerErrorException(
+        "Cannot delete a vault document without an identified actor to record against.",
+      );
 
     const existing = await this.db.query.candidateDocumentsVault.findFirst({
       where: and(
@@ -88,19 +97,31 @@ export class RecruitmentCandidateVaultService {
         eq(candidateDocumentsVault.candidateId, candidateId),
         eq(candidateDocumentsVault.orgId, orgId),
       ),
-      columns: { id: true },
+      columns: { id: true, filename: true, documentType: true },
     });
     if (!existing) throw new NotFoundException("Vault document not found");
 
-    await this.db
-      .delete(candidateDocumentsVault)
-      .where(
-        and(
-          eq(candidateDocumentsVault.id, documentId),
-          eq(candidateDocumentsVault.candidateId, candidateId),
-          eq(candidateDocumentsVault.orgId, orgId),
-        ),
-      );
+    await this.db.transaction(async (tx) => {
+      await tx.insert(vaultAccessLogs).values({
+        orgId,
+        candidateId,
+        vaultDocumentId: documentId,
+        filename: existing.filename,
+        documentType: existing.documentType,
+        accessedBy,
+        action: "DELETE",
+      });
+
+      await tx
+        .delete(candidateDocumentsVault)
+        .where(
+          and(
+            eq(candidateDocumentsVault.id, documentId),
+            eq(candidateDocumentsVault.candidateId, candidateId),
+            eq(candidateDocumentsVault.orgId, orgId),
+          ),
+        );
+    });
 
     return { success: true };
   }
@@ -113,22 +134,18 @@ export class RecruitmentCandidateVaultService {
         id: vaultAccessLogs.id,
         action: vaultAccessLogs.action,
         accessedAt: vaultAccessLogs.accessedAt,
-        fileName: candidateDocumentsVault.filename,
-        documentType: candidateDocumentsVault.documentType,
+        fileName: vaultAccessLogs.filename,
+        documentType: vaultAccessLogs.documentType,
         accessorName: users.name,
         accessorFirstName: users.firstName,
         accessorLastName: users.lastName,
       })
       .from(vaultAccessLogs)
-      .innerJoin(
-        candidateDocumentsVault,
-        eq(vaultAccessLogs.vaultDocumentId, candidateDocumentsVault.id),
-      )
       .leftJoin(users, eq(vaultAccessLogs.accessedBy, users.id))
       .where(
         and(
-          eq(candidateDocumentsVault.candidateId, candidateId),
-          eq(candidateDocumentsVault.orgId, orgId),
+          eq(vaultAccessLogs.orgId, orgId),
+          eq(vaultAccessLogs.candidateId, candidateId),
         ),
       )
       .orderBy(desc(vaultAccessLogs.accessedAt))

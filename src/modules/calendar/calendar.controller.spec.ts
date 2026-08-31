@@ -3,6 +3,7 @@ jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
 import "reflect-metadata";
 import { CalendarController } from "./calendar.controller";
 import { REQUIRE_PERMISSION } from "../access/require-permission.decorator";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 
 function gateOf(method: keyof CalendarController): string | undefined {
   return Reflect.getMetadata(REQUIRE_PERMISSION, CalendarController.prototype[method]);
@@ -44,6 +45,7 @@ describe("CalendarController source preferences", () => {
     isOrgOwner: false,
     sessionId: "session-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
   };
 
   it("lists sources for the authenticated tenant identity", async () => {

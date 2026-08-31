@@ -9,6 +9,7 @@ import {
   type TenantContext,
 } from "../../../../common/tenant/tenant-context";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { OnboardingTaskService } from "./onboarding-task.service";
 
 const USER: CurrentUserContext = {
@@ -18,6 +19,7 @@ const USER: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 function selectOne(rows: unknown[]) {

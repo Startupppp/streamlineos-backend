@@ -17,7 +17,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ExceptionsService } from "./exceptions.service";
 import {
   resolveExceptionSchema,
@@ -27,6 +26,11 @@ import {
   type OverrideExceptionInput,
   type ExceptionFilterInput,
 } from "./dto/runs.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
+const runAndExceptionIdParams = z.object({ runId: z.coerce.number().int().positive(), exceptionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/runs/:runId/exceptions")
@@ -36,9 +40,10 @@ export class ExceptionsController {
 
   @Get()
   @RequirePermission("payroll:runs:view")
+  @Validate({ params: runIdParams, query: exceptionFilterSchema })
   async list(
     @Param("runId", ParseIntPipe) runId: number,
-    @Query(new ZodValidationPipe(exceptionFilterSchema)) query: ExceptionFilterInput,
+    @Query() query: ExceptionFilterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.exceptionsService.listExceptions(u.orgId, runId, query.severity, query.status);
@@ -48,10 +53,11 @@ export class ExceptionsController {
 
   @Patch(":exceptionId/resolve")
   @RequirePermission("payroll:runs:update")
+  @Validate({ params: runAndExceptionIdParams, body: resolveExceptionSchema })
   async resolve(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("exceptionId", ParseIntPipe) exceptionId: number,
-    @Body(new ZodValidationPipe(resolveExceptionSchema)) body: ResolveExceptionInput,
+    @Body() body: ResolveExceptionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.exceptionsService.resolveException(u.orgId, runId, exceptionId, u.userId, body);
@@ -66,10 +72,11 @@ export class ExceptionsController {
 
   @Patch(":exceptionId/override")
   @RequirePermission("payroll:runs:manage")
+  @Validate({ params: runAndExceptionIdParams, body: overrideExceptionSchema })
   async override(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("exceptionId", ParseIntPipe) exceptionId: number,
-    @Body(new ZodValidationPipe(overrideExceptionSchema)) body: OverrideExceptionInput,
+    @Body() body: OverrideExceptionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.exceptionsService.overrideException(u.orgId, runId, exceptionId, u.userId, body);

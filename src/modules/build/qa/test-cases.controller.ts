@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TestManagementService } from "./test-management.service";
 import {
   createTestCaseSchema,
@@ -27,6 +26,10 @@ import {
   type TestCaseListQuery,
   type UpdateTestCaseInput,
 } from "./dto/qa.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const caseIdParams = z.object({ caseId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/test-cases")
@@ -36,9 +39,10 @@ export class TestCasesController {
 
   @Get()
   @RequirePermission("build:qa:view")
+  @Validate({ query: testCaseListQuerySchema })
   listCases(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Query(new ZodValidationPipe(testCaseListQuerySchema)) query: TestCaseListQuery,
+    @Query() query: TestCaseListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listCases(u.orgId, projectId, query);
@@ -46,6 +50,7 @@ export class TestCasesController {
 
   @Get(":caseId")
   @RequirePermission("build:qa:view")
+  @Validate({ params: caseIdParams })
   getCase(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -57,9 +62,10 @@ export class TestCasesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:qa:manage")
+  @Validate({ body: createTestCaseSchema })
   createCase(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createTestCaseSchema)) body: CreateTestCaseInput,
+    @Body() body: CreateTestCaseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createCase(u.orgId, u.userId, projectId, body);
@@ -67,10 +73,11 @@ export class TestCasesController {
 
   @Patch(":caseId")
   @RequirePermission("build:qa:manage")
+  @Validate({ params: caseIdParams, body: updateTestCaseSchema })
   updateCase(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("caseId", ParseIntPipe) caseId: number,
-    @Body(new ZodValidationPipe(updateTestCaseSchema)) body: UpdateTestCaseInput,
+    @Body() body: UpdateTestCaseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateCase(u.orgId, projectId, caseId, body);
@@ -79,6 +86,7 @@ export class TestCasesController {
   @Delete(":caseId")
   @RequirePermission("build:qa:manage")
   @HttpCode(204)
+  @Validate({ params: caseIdParams })
   deleteCase(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("caseId", ParseIntPipe) caseId: number,

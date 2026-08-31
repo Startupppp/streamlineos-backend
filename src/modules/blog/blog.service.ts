@@ -16,6 +16,7 @@ import type {
 
 const POST_WITH = { category: true, author: true } as const;
 const ADMIN_POSTS_CACHE_NAMESPACE = "blog:admin:posts";
+const BLOG_ADMIN_LIST_CAP = 100;
 
 @Injectable()
 export class BlogService {
@@ -32,6 +33,7 @@ export class BlogService {
         this.db.query.blogPosts.findMany({
           with: POST_WITH,
           orderBy: [desc(blogPosts.updatedAt)],
+          limit: BLOG_ADMIN_LIST_CAP,
         }),
       CACHE_TTL.MEDIUM,
     );

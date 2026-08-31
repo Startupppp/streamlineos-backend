@@ -392,3 +392,20 @@ describe("ModuleAvailabilityResolver assembly guard", () => {
     expect(offenders.map((f) => path.relative(srcRoot, f))).toEqual([]);
   });
 });
+
+describe("module-availability key normalization", () => {
+  it("matches normalized persisted state when a caller supplies an uppercase key", async () => {
+    const resolver = moduleAvailabilityResolver(
+      {
+        isCoreModule: isCoreModuleKey,
+        getModuleMap: async () => ({ hr: true }),
+        getPlanLockedModules: async () => [],
+      },
+      { getUserDeniedModules: async () => new Set<string>() },
+    );
+
+    await expect(moduleAvailability(resolver, ORG, USER, "HR")).resolves.toEqual({
+      available: true,
+    });
+  });
+});

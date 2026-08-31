@@ -14,12 +14,13 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { AuthorizedInService } from "../../../common/auth/authorized-in-service.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrDocumentTypesService } from "./hr-document-types.service";
 import {
   createDocumentTypeSchema,
@@ -29,6 +30,10 @@ import {
   type ListDocumentTypesInput,
   type UpdateDocumentTypeInput,
 } from "./dto/document-types.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const documentTypeIdParams = z.object({ documentTypeId: z.coerce.number().int().positive() }).strict();
 
 @Controller("hr/document-types")
 @UseGuards(JwtAuthGuard)
@@ -39,8 +44,10 @@ export class HrDocumentTypesController {
   ) {}
 
   @Get()
+  @AuthorizedInService("a three-key check in the handler: hr:documents:manage, hr:documents:view or self:onboarding-docs")
+  @Validate({ query: listDocumentTypesSchema })
   async list(
-    @Query(new ZodValidationPipe(listDocumentTypesSchema)) query: ListDocumentTypesInput,
+    @Query() query: ListDocumentTypesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
@@ -55,14 +62,17 @@ export class HrDocumentTypesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:documents:manage")
   @HttpCode(201)
+  @Validate({ body: createDocumentTypeSchema })
   create(
-    @Body(new ZodValidationPipe(createDocumentTypeSchema)) body: CreateDocumentTypeInput,
+    @Body() body: CreateDocumentTypeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.documentTypes.create(u.orgId, body);
   }
 
   @Get(":documentTypeId")
+  @AuthorizedInService("a three-key check in the handler: hr:documents:manage, hr:documents:view or self:onboarding-docs")
+  @Validate({ params: documentTypeIdParams })
   async getOne(
     @Param("documentTypeId", ParseIntPipe) documentTypeId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -80,9 +90,10 @@ export class HrDocumentTypesController {
   @Patch(":documentTypeId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: documentTypeIdParams, body: updateDocumentTypeSchema })
   async update(
     @Param("documentTypeId", ParseIntPipe) documentTypeId: number,
-    @Body(new ZodValidationPipe(updateDocumentTypeSchema)) body: UpdateDocumentTypeInput,
+    @Body() body: UpdateDocumentTypeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const existing = await this.documentTypes.getById(u.orgId, documentTypeId);
@@ -94,6 +105,7 @@ export class HrDocumentTypesController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:documents:manage")
+  @Validate({ params: documentTypeIdParams })
   async remove(
     @Param("documentTypeId", ParseIntPipe) documentTypeId: number,
     @CurrentUser() u: CurrentUserContext,

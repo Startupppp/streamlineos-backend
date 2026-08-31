@@ -8,6 +8,7 @@ import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { IdempotencyInterceptor } from "../../../common/idempotency/idempotency.interceptor";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 class PassthroughIdempotencyInterceptor implements NestInterceptor {
   intercept(_ctx: ExecutionContext, next: CallHandler) {
@@ -23,6 +24,7 @@ const USER_CTX: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "sess1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 class HeaderCheckAuthGuard implements CanActivate {

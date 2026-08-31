@@ -22,7 +22,6 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Public } from "../../../common/auth/public.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { WhiteboardSharingService } from "./whiteboard-sharing.service";
 import {
@@ -33,6 +32,12 @@ import {
   type SetWhiteboardSharesInput,
   type UpdateWhiteboardSharingInput,
 } from "./dto/workspace.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const projectAndWhiteboardIdParams = z.object({ projectId: z.coerce.number().int().positive(), whiteboardId: z.coerce.number().int().positive() }).strict();
+const projectWhiteboardAndTargetUserParams = z.object({ projectId: z.coerce.number().int().positive(), whiteboardId: z.coerce.number().int().positive(), targetUserId: z.string().min(1) }).strict();
+const tokenParams = z.object({ token: z.string().min(1) }).strict();
 
 function clientIp(req: Request): string {
   const forwarded = req.headers["x-forwarded-for"];
@@ -48,10 +53,11 @@ export class WhiteboardSharingController {
 
   @Patch("sharing")
   @RequirePermission("build:whiteboards:manage")
+  @Validate({ params: projectAndWhiteboardIdParams, body: updateWhiteboardSharingSchema })
   updateSharing(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
-    @Body(new ZodValidationPipe(updateWhiteboardSharingSchema)) body: UpdateWhiteboardSharingInput,
+    @Body() body: UpdateWhiteboardSharingInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.sharing.updateSharing(u, projectId, whiteboardId, body);
@@ -60,6 +66,7 @@ export class WhiteboardSharingController {
   @Post("sharing/rotate-token")
   @RequirePermission("build:whiteboards:manage")
   @HttpCode(200)
+  @Validate({ params: projectAndWhiteboardIdParams })
   rotateShareToken(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
@@ -70,10 +77,11 @@ export class WhiteboardSharingController {
 
   @Put("shares")
   @RequirePermission("build:whiteboards:manage")
+  @Validate({ params: projectAndWhiteboardIdParams, body: setWhiteboardSharesSchema })
   setShares(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
-    @Body(new ZodValidationPipe(setWhiteboardSharesSchema)) body: SetWhiteboardSharesInput,
+    @Body() body: SetWhiteboardSharesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.sharing.setShares(u, projectId, whiteboardId, body);
@@ -82,6 +90,7 @@ export class WhiteboardSharingController {
   @Delete("shares/:targetUserId")
   @RequirePermission("build:whiteboards:manage")
   @HttpCode(204)
+  @Validate({ params: projectWhiteboardAndTargetUserParams })
   removeShare(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("whiteboardId", ParseIntPipe) whiteboardId: number,
@@ -101,6 +110,7 @@ export class PublicWhiteboardLinksController {
   ) {}
 
   @Get(":token")
+  @Validate({ params: tokenParams })
   async getByToken(@Param("token") token: string, @Req() req: Request) {
     const rl = await this.rateLimit.check("whiteboard:public-view", clientIp(req));
     if (!rl.allowed) {
@@ -113,9 +123,10 @@ export class PublicWhiteboardLinksController {
   }
 
   @Patch(":token")
+  @Validate({ params: tokenParams, body: publicWhiteboardUpdateSchema })
   async updateByToken(
     @Param("token") token: string,
-    @Body(new ZodValidationPipe(publicWhiteboardUpdateSchema)) body: PublicWhiteboardUpdateInput,
+    @Body() body: PublicWhiteboardUpdateInput,
     @Req() req: Request,
   ) {
     const rl = await this.rateLimit.check("whiteboard:public-edit", clientIp(req));

@@ -29,7 +29,6 @@ const mockCache = {
   cachedVersioned: jest.fn((_namespace, _hash, fn) => fn()),
   invalidate: jest.fn(),
   invalidateNamespace: jest.fn(),
-  invalidatePattern: jest.fn(),
 };
 
 const mockNumSeq = { next: jest.fn() };

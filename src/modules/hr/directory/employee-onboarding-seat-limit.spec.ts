@@ -14,6 +14,7 @@ describe("EmployeeOnboardingService member-seat reservation", () => {
       null as never,
       null as never,
       planLimits as never,
+      null as never,
     );
 
     await (

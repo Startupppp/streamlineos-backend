@@ -32,7 +32,9 @@ export type CreateBatchInput = z.infer<typeof createBatchSchema>;
 
 export const batchesQuerySchema = z.object({
   runId: z.coerce.number().int().positive().optional(),
-});
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional().default(50),
+}).strict();
 export type BatchesQueryInput = z.infer<typeof batchesQuerySchema>;
 
 export const markItemPaidSchema = z.object({

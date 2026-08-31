@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { pageVisibleTo } from "./kb-page-visibility";
 import { kbPages } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -11,6 +12,7 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     role: "member",
     sessionId: "sess-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...overrides,
   };
 }

@@ -10,13 +10,16 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { ticketAssignees, tickets } from "../../../db/schema";
+import { resolveOrganizationActorsByUserIds } from "../../../common/organization/organization-actor";
+import type { OrganizationActor } from "../../../common/organization/organization-actor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ProjectsEmailService } from "./projects-email.service";
+import { systemJobCovers } from "../../../common/auth/principal";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { ProjectsActivityService } from "./projects-activity.service";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
@@ -32,7 +35,7 @@ import { computeNextRunAt } from "./projects-recurrence.util";
 export class ProjectsTicketsUpdateService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly projectsEmail: ProjectsEmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly activity: ProjectsActivityService,
     private readonly query: ProjectsTicketsQueryService,
     private readonly read: ProjectsTicketsReadService,
@@ -113,8 +116,26 @@ export class ProjectsTicketsUpdateService {
     if (input.status) updateData.status = input.status;
     if (input.priority) updateData.priority = input.priority;
     const resolvedAssignee = resolveAssigneeId(input.assigneeId);
-    if (resolvedAssignee !== undefined)
+
+    const pendingActorIds = new Set<string>();
+    if (resolvedAssignee) pendingActorIds.add(resolvedAssignee);
+    if (input.assigneeIds) input.assigneeIds.forEach((uid) => pendingActorIds.add(uid));
+
+    let assigneeActors = new Map<string, OrganizationActor>();
+    if (pendingActorIds.size > 0) {
+      assigneeActors = await resolveOrganizationActorsByUserIds(this.db, orgId, [...pendingActorIds]);
+      for (const uid of pendingActorIds) {
+        if (!assigneeActors.has(uid))
+          throw new NotFoundException("Assignee is not a member of this organization");
+      }
+    }
+
+    if (resolvedAssignee !== undefined) {
       updateData.assigneeId = resolvedAssignee;
+      updateData.assigneeMembershipId = resolvedAssignee !== null
+        ? (assigneeActors.get(resolvedAssignee)?.membershipId ?? null)
+        : null;
+    }
     if (input.sprintId !== undefined) updateData.sprintId = input.sprintId;
     if (input.epicId !== undefined) updateData.epicId = input.epicId;
     if (input.moduleId !== undefined) updateData.moduleId = input.moduleId;
@@ -150,6 +171,7 @@ export class ProjectsTicketsUpdateService {
         sprintId: true,
         dueDate: true,
         projectId: true,
+        reporterId: true,
         updatedAt: true,
         points: true,
         type: true,
@@ -168,7 +190,7 @@ export class ProjectsTicketsUpdateService {
     }
 
     const accessResult =
-      u.isOrgOwner
+      u.isOrgOwner || systemJobCovers(u.principal, "build:tickets:update")
         ? { hasAccess: true, role: "OWNER" as string | null }
         : await this.read.checkProjectAccess(
             orgId,
@@ -268,7 +290,7 @@ export class ProjectsTicketsUpdateService {
     });
 
     await Promise.all([
-      this.syncAssignees(orgId, ticketId, actingUserId, input),
+      this.syncAssignees(orgId, ticketId, actingUserId, input, assigneeActors),
       this.activity
         .logTicketFieldChanges(orgId, ticketId, actingUserId, before, {
           title: input.title,
@@ -293,9 +315,23 @@ export class ProjectsTicketsUpdateService {
       );
 
     if (input.status === "IN_REVIEW" || input.status === "CHANGES_REQUESTED") {
-      void this.projectsEmail
-        .notifyStatusReview(ticketId, actingUserId, input.status)
-        .catch(logSideEffectFailure("review status email", { ticketId }));
+      const reviewTarget = input.status === "IN_REVIEW" ? before.reporterId : before.assigneeId;
+      if (reviewTarget) {
+        void this.dispatch.emit({
+          eventKey: input.status === "IN_REVIEW"
+            ? "build.ticket.review_requested"
+            : "build.ticket.changes_requested",
+          orgId,
+          actorUserId: actingUserId,
+          targetUserIds: [reviewTarget],
+          entityType: "ticket",
+          entityId: String(ticketId),
+          title: input.status === "IN_REVIEW" ? "Ticket ready for review" : "Changes requested on your ticket",
+          message: `Ticket "${before.title}" changed to ${input.status}.`,
+          link: `/projects/${before.projectId}/tickets/${ticketId}`,
+          variables: { ticketId, status: input.status, title: before.title },
+        }).catch(logSideEffectFailure("review notification", { ticketId }));
+      }
     }
 
     const ticketProjectId = before.projectId;
@@ -360,6 +396,7 @@ export class ProjectsTicketsUpdateService {
     ticketId: number,
     actingUserId: string,
     input: UpdateTicketInput,
+    actorMap: Map<string, OrganizationActor>,
   ): Promise<void> {
     if (input.assigneeIds !== undefined) {
       await this.db
@@ -374,6 +411,7 @@ export class ProjectsTicketsUpdateService {
             orgId,
             ticketId,
             userId,
+            membershipId: actorMap.get(userId)?.membershipId ?? null,
             assignedBy: actingUserId,
           })),
         );
@@ -391,6 +429,7 @@ export class ProjectsTicketsUpdateService {
           orgId,
           ticketId,
           userId: newAssigneeId,
+          membershipId: actorMap.get(newAssigneeId)?.membershipId ?? null,
           assignedBy: actingUserId,
         });
       }

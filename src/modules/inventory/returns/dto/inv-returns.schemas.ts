@@ -1,10 +1,11 @@
 import { positiveDecimalQuantity } from "../../stock-engine/dto/quantity.schemas";
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listReturnsSchema = z.object({
   status: z.enum(["DRAFT", "APPROVED", "POSTED", "CANCELLED"]).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 }).strict();
 export type ListReturnsInput = z.infer<typeof listReturnsSchema>;
 

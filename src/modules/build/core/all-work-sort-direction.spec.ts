@@ -44,18 +44,18 @@ describe("resolveWorkSort", () => {
   it("carries the sort column into the union under the alias the ORDER BY reads", () => {
     const sort = resolveWorkSort("dueDate", "desc");
     expect(render(sort.carry)).toContain("sort_col");
-    expect(render(sort.carry)).toContain("created_at");
     expect(render(sort.unionOrderBy)).toContain("u.sort_col");
-    expect(render(sort.unionOrderBy)).toContain("u.created_at");
+    expect(render(sort.unionOrderBy)).toContain("u.id");
   });
 
-  it("always ends on a unique tiebreaker so offset pagination is stable", () => {
+  it("ends on an id tiebreaker matching the sort direction so cursor predicates are stable", () => {
     for (const orderBy of ["rank", "dueDate", "priority", "created", "updated"] as WorkSortKey[]) {
       const sort = resolveWorkSort(orderBy);
       const last = sort.rows[sort.rows.length - 1];
       if (!last) throw new Error("expected a trailing sort expression");
       expect(render(last)).toContain('"id"');
-      expect(render(sort.unionOrderBy)).toContain("u.id ASC");
+      const expectedIdDir = sort.dir === "asc" ? "ASC" : "DESC";
+      expect(render(sort.unionOrderBy)).toContain(`u.id ${expectedIdDir}`);
     }
   });
 });

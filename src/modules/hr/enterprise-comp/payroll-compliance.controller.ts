@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PayrollComplianceService } from "./payroll-compliance.service";
 import {
   createVarianceApprovalSchema,
@@ -26,6 +25,12 @@ import {
   type ListComplianceTasksInput,
 } from "./dto/enterprise-comp.schemas";
 import { z } from "zod";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const seedPresetsSchema = z.object({ countryCode: z.string().length(2), periodKey: z.string().min(7) }).strict();
+const varianceIdParams = z.object({ varianceId: z.coerce.number().int().positive() }).strict();
+const arrearIdParams = z.object({ arrearId: z.coerce.number().int().positive() }).strict();
+const taskIdParams = z.object({ taskId: z.coerce.number().int().positive() }).strict();
 
 
 @RequireModule("hr")
@@ -37,8 +42,9 @@ export class PayrollComplianceController {
   @Get("variance")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
+  @Validate({ query: listVarianceApprovalsSchema })
   listVariance(
-    @Query(new ZodValidationPipe(listVarianceApprovalsSchema)) query: ListVarianceApprovalsInput,
+    @Query() query: ListVarianceApprovalsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listVarianceApprovals(u.orgId, query);
@@ -48,8 +54,9 @@ export class PayrollComplianceController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
   @HttpCode(201)
+  @Validate({ body: createVarianceApprovalSchema })
   createVariance(
-    @Body(new ZodValidationPipe(createVarianceApprovalSchema)) body: CreateVarianceApprovalInput,
+    @Body() body: CreateVarianceApprovalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createVarianceApproval(u.orgId, u.userId, body);
@@ -58,9 +65,10 @@ export class PayrollComplianceController {
   @Patch("variance/:varianceId/resolve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
+  @Validate({ params: varianceIdParams, body: resolveVarianceSchema })
   resolveVariance(
     @Param("varianceId", ParseIntPipe) varianceId: number,
-    @Body(new ZodValidationPipe(resolveVarianceSchema)) body: ResolveVarianceInput,
+    @Body() body: ResolveVarianceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.resolveVarianceApproval(u.orgId, varianceId, u.userId, body);
@@ -69,8 +77,9 @@ export class PayrollComplianceController {
   @Get("arrears")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
+  @Validate({ query: listArrearsSchema })
   listArrears(
-    @Query(new ZodValidationPipe(listArrearsSchema)) query: ListArrearsInput,
+    @Query() query: ListArrearsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listArrears(u.orgId, query);
@@ -80,8 +89,9 @@ export class PayrollComplianceController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
   @HttpCode(201)
+  @Validate({ body: createArrearsSchema })
   createArrears(
-    @Body(new ZodValidationPipe(createArrearsSchema)) body: CreateArrearsInput,
+    @Body() body: CreateArrearsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createArrears(u.orgId, u.userId, body);
@@ -90,6 +100,7 @@ export class PayrollComplianceController {
   @Patch("arrears/:arrearId/apply")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
+  @Validate({ params: arrearIdParams })
   applyArrears(
     @Param("arrearId", ParseIntPipe) arrearId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -100,8 +111,9 @@ export class PayrollComplianceController {
   @Get("tasks")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
+  @Validate({ query: listComplianceTasksSchema })
   listTasks(
-    @Query(new ZodValidationPipe(listComplianceTasksSchema)) query: ListComplianceTasksInput,
+    @Query() query: ListComplianceTasksInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listComplianceTasks(u.orgId, query);
@@ -111,8 +123,9 @@ export class PayrollComplianceController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
   @HttpCode(201)
+  @Validate({ body: createComplianceTaskSchema })
   createTask(
-    @Body(new ZodValidationPipe(createComplianceTaskSchema)) body: CreateComplianceTaskInput,
+    @Body() body: CreateComplianceTaskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createComplianceTask(u.orgId, u.userId, body);
@@ -121,9 +134,10 @@ export class PayrollComplianceController {
   @Patch("tasks/:taskId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
+  @Validate({ params: taskIdParams, body: updateComplianceTaskSchema })
   updateTask(
     @Param("taskId", ParseIntPipe) taskId: number,
-    @Body(new ZodValidationPipe(updateComplianceTaskSchema)) body: UpdateComplianceTaskInput,
+    @Body() body: UpdateComplianceTaskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateComplianceTask(u.orgId, taskId, u.userId, body);
@@ -133,8 +147,9 @@ export class PayrollComplianceController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:payroll:manage")
   @HttpCode(200)
+  @Validate({ body: seedPresetsSchema })
   seedPresets(
-    @Body(new ZodValidationPipe(z.object({ countryCode: z.string().length(2), periodKey: z.string().min(7) }))) body: { countryCode: string; periodKey: string },
+    @Body() body: { countryCode: string; periodKey: string },
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.seedCountryPresets(u.orgId, u.userId, body.countryCode, body.periodKey);

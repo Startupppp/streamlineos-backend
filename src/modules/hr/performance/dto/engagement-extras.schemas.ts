@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const moodCheckinSchema = z.object({
   mood: z.number().int().min(1).max(5),
@@ -36,7 +37,7 @@ export const createCommunitySchema = z.object({
 
 export const communityListSchema = z.object({
   cursor: z.string().max(500).optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(30),
+  limit: pageSizeField(30, 100),
 });
 
 export const createCampaignSchema = z.object({

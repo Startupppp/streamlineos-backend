@@ -29,6 +29,6 @@ describe("Platform auth (e2e)", () => {
       .post("/platform/visit")
       .send({ path: "x" });
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({ ok: false });
+    expect(res.body).toMatchObject({ code: "VALIDATION_FAILED" });
   });
 });

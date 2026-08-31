@@ -1,14 +1,37 @@
 import { z } from "zod";
 
-// Razorpay's webhook envelope is the same shape across all event types: a top-level `event`
-// name and a `payload` bag whose nested entity varies (payment.entity, refund.entity,
-// subscription.entity, ...). We only need `event` + a redacted summary, not the full nested
-// shape, so this stays intentionally loose rather than modeling every entity type.
+// Provider adapters parse their own envelope and emit this small, provider-neutral contract.
+// Billing must not learn provider field names such as Razorpay's `order_id`.
 export const webhookEnvelopeSchema = z.object({
   event: z.string().min(1),
   payload: z.record(z.string(), z.unknown()).default({}),
   created_at: z.number().optional(),
 });
+
+export const paymentWebhookPaymentSchema = z.object({
+  id: z.string().min(1),
+  orderId: z.string().optional(),
+  amount: z.number(),
+  fee: z.number().optional(),
+  currency: z.string(),
+  status: z.string(),
+  method: z.string().optional(),
+  email: z.string().optional(),
+  description: z.string().optional(),
+  notes: z.record(z.string(), z.string()).optional(),
+  invoiceId: z.string().optional(),
+  createdAt: z.number().optional(),
+});
+
+export const normalizedPaymentWebhookEventSchema = z.object({
+  event: z.string(),
+  payload: z.object({
+    payment: z.object({ entity: paymentWebhookPaymentSchema }).optional(),
+  }),
+});
+
+export type PaymentWebhookPayment = z.infer<typeof paymentWebhookPaymentSchema>;
+export type NormalizedPaymentWebhookEvent = z.infer<typeof normalizedPaymentWebhookEventSchema>;
 
 export const generateWebhookSchema = z.object({
   environment: z.enum(["test", "live"]),

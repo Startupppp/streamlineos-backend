@@ -8,18 +8,28 @@ import {
 } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, like, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { expenses, organizationMembers, organizations, users } from "../../db/schema";
+import { expenses, organizationMembers, organizations } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../common/organization/organization-actor";
 import { EmailService } from "../email/email.service";
-import { AutomationService } from "../automation/automation.service";
 import { AccessService } from "../access/access.service";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
-import { logSideEffectFailure } from "../../common/logger/side-effect";
+import { emitExpenseOutboxEvent } from "./expense-outbox-emitter";
+import {
+  EXPENSE_DECIDED_EVENT,
+  EXPENSE_SUBMITTED_EVENT,
+  expenseDecidedPayloadSchema,
+  expenseSubmittedPayloadSchema,
+} from "./dto/expense-outbox.schemas";
 import {
   updateExpenseDetailsSchema,
   updateExpenseStatusSchema,
@@ -35,6 +45,8 @@ const statusProbeSchema = z.object({ status: z.string().min(1) });
 const ALL_EXPENSE_STATUS_SET = new Set<string>([
   "DRAFT", "SUBMITTED", "PENDING", "APPROVED", "REJECTED", "REIMBURSEMENT_PENDING", "REIMBURSED", "PAID",
 ]);
+
+const MAX_EMAIL_REPORT_ROWS = 10_000;
 
 function isExpenseStatus(value: string): value is AllExpenseStatus {
   return ALL_EXPENSE_STATUS_SET.has(value);
@@ -65,35 +77,54 @@ export class ExpensesWriteService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly email: EmailService,
-    private readonly automation: AutomationService,
     private readonly access: AccessService,
   ) {}
 
   async create(orgId: string, userId: string, body: CreateExpenseInput) {
-    const [expense] = await this.db
-      .insert(expenses)
-      .values({
-        orgId,
-        userId,
-        category: body.category,
-        categoryId: body.categoryId,
-        amount: body.amount.toString(),
-        description: body.description,
-        receiptUrl: body.receiptUrl,
-        receiptFileName: body.receiptFileName,
-        merchant: body.merchant,
-        paymentMethod: body.paymentMethod,
-        projectId: body.projectId,
-        expenseDate: formatDateOnly(body.expenseDate),
-        status: "PENDING",
-        approverId: null,
-        approvedAt: null,
-      })
-      .returning();
+    const expense = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(expenses)
+        .values({
+          orgId,
+          userId,
+          category: body.category,
+          categoryId: body.categoryId,
+          amount: body.amount.toString(),
+          description: body.description,
+          receiptUrl: body.receiptUrl,
+          receiptFileName: body.receiptFileName,
+          merchant: body.merchant,
+          paymentMethod: body.paymentMethod,
+          projectId: body.projectId,
+          expenseDate: formatDateOnly(body.expenseDate),
+          status: "PENDING",
+          approverId: null,
+          approvedAt: null,
+        })
+        .returning();
 
-    if (!expense) {
-      throw new InternalServerErrorException("Failed to create expense.");
-    }
+      if (!row) {
+        throw new InternalServerErrorException("Failed to create expense.");
+      }
+
+      await emitExpenseOutboxEvent(tx, {
+        orgId,
+        expenseId: row.id,
+        eventType: EXPENSE_SUBMITTED_EVENT,
+        payload: expenseSubmittedPayloadSchema.parse({
+          expenseId: row.id,
+          orgId,
+          actorUserId: userId,
+          amount: body.amount.toString(),
+          category: body.category,
+          description: body.description ?? null,
+          recipients: { mode: "EXPENSE_APPROVERS" },
+          runAutomations: true,
+        }),
+      });
+
+      return row;
+    });
 
     this.audit.log({
       action: "expense.created",
@@ -103,8 +134,6 @@ export class ExpensesWriteService {
       targetType: "expense",
       metadata: { category: body.category, amount: body.amount },
     });
-
-    void this.dispatchExpenseSubmitted(orgId, userId, expense.id, body);
 
     await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(orgId));
 
@@ -213,6 +242,11 @@ export class ExpensesWriteService {
     }
     const body = parsed.data;
 
+    const statusActor = await assertOrganizationActor(this.db, u.orgId, { kind: "user", userId: u.userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     await this.db.transaction(async (tx) => {
       const [expense] = await tx
         .select()
@@ -226,15 +260,41 @@ export class ExpensesWriteService {
         throw new BadRequestException("Expense has already been processed.");
       }
 
-      await tx
+      const [updated] = await tx
         .update(expenses)
         .set({
           status: body.status,
           approverId: u.userId,
+          approverMembershipId: statusActor.membershipId,
           approvedAt: body.status === "APPROVED" || body.status === "PAID" ? new Date() : null,
           rejectionReason: body.rejectionReason ?? null,
+          updatedAt: new Date(),
         })
-        .where(eq(expenses.id, expenseId));
+        .where(eq(expenses.id, expenseId))
+        .returning({ id: expenses.id });
+
+      if (!updated) {
+        throw new InternalServerErrorException("Expense was concurrently modified.");
+      }
+
+      if (!expense.userId) return;
+
+      await emitExpenseOutboxEvent(tx, {
+        orgId: u.orgId,
+        expenseId,
+        eventType: EXPENSE_DECIDED_EVENT,
+        payload: expenseDecidedPayloadSchema.parse({
+          expenseId,
+          orgId: u.orgId,
+          actorUserId: u.userId,
+          recipientUserId: expense.userId,
+          status: body.status,
+          amount: expense.amount,
+          category: expense.category,
+          rejectionReason: body.rejectionReason ?? null,
+          journalEntryId: null,
+        }),
+      });
     });
 
     const auditAction =
@@ -251,8 +311,6 @@ export class ExpensesWriteService {
       targetType: "expense",
       metadata: { status: body.status, rejectionReason: body.rejectionReason },
     });
-
-    void this.dispatchExpenseDecision(u, expenseId, body.status, body.rejectionReason ?? null);
 
     await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
     return { success: true };
@@ -322,7 +380,8 @@ export class ExpensesWriteService {
       this.db.query.expenses.findMany({
         where: and(...conditions),
         with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } } },
-        orderBy: [desc(expenses.expenseDate)],
+        orderBy: [desc(expenses.expenseDate), desc(expenses.id)],
+        limit: MAX_EMAIL_REPORT_ROWS + 1,
       }),
       this.db
         .select({
@@ -335,6 +394,13 @@ export class ExpensesWriteService {
 
     if (expenseList.length === 0) {
       throw new BadRequestException("No expenses found for the selected filters");
+    }
+
+    const totalCount = Number(statsRow[0]?.totalCount ?? 0);
+    if (totalCount > MAX_EMAIL_REPORT_ROWS) {
+      throw new BadRequestException(
+        `The selected report contains ${totalCount} expenses. Narrow the filters to ${MAX_EMAIL_REPORT_ROWS} or fewer rows.`,
+      );
     }
 
     const [adminEmails, hrEmails] = await Promise.all([
@@ -390,111 +456,6 @@ export class ExpensesWriteService {
     );
 
     return { success: true };
-  }
-
-  private async dispatchExpenseSubmitted(
-    orgId: string,
-    userId: string,
-    expenseId: number,
-    body: CreateExpenseInput,
-  ): Promise<void> {
-    try {
-      const actor = await this.db.query.users.findFirst({
-        where: eq(users.id, userId),
-        columns: { name: true },
-      });
-      const actorName = actor?.name ?? null;
-
-      await this.automation.runAutomationsForEvent(orgId, "expense.submitted", {
-        expenseId,
-        userId,
-        employeeName: actorName ?? "",
-        amount: body.amount.toString(),
-        category: body.category,
-        submittedAt: new Date().toISOString(),
-      });
-
-      const approvers = await this.access.membersWithPermission(orgId, "hr:expenses:approve");
-      if (approvers.length === 0) return;
-
-      const hrUsers = await this.db.query.users.findMany({
-        where: (u, { inArray: inArr }) => inArr(u.id, approvers.map((m) => m.userId)),
-        columns: { email: true, name: true },
-      });
-
-      await Promise.all(
-        hrUsers
-          .filter((hr) => hr.email)
-          .map((hr) =>
-            this.email.sendExpenseSubmittedEmail(
-              hr.email,
-              hr.name ?? "HR",
-              actorName ?? "Employee",
-              body.category,
-              body.amount.toString(),
-              body.description ?? "",
-            ),
-          ),
-      );
-    } catch (err: unknown) {
-      logSideEffectFailure("expense submitted notification", { orgId, expenseId })(err);
-      return;
-    }
-  }
-
-  private async dispatchExpenseDecision(
-    u: CurrentUserContext,
-    expenseId: number,
-    status: "APPROVED" | "REJECTED" | "PAID",
-    rejectionReason: string | null,
-  ): Promise<void> {
-    try {
-      const expenseRow = await this.db.query.expenses.findFirst({
-        where: eq(expenses.id, expenseId),
-        columns: { userId: true, category: true, amount: true },
-      });
-      if (!expenseRow?.userId) return;
-
-      const [employee, approver] = await Promise.all([
-        this.db.query.users.findFirst({
-          where: eq(users.id, expenseRow.userId),
-          columns: { email: true, name: true },
-        }),
-        this.db.query.users.findFirst({
-          where: eq(users.id, u.userId),
-          columns: { name: true },
-        }),
-      ]);
-      if (!employee?.email) return;
-
-      const employeeName = employee.name ?? "Employee";
-      const approverName = approver?.name ?? "Admin";
-      const { amount, category } = expenseRow;
-
-      if (status === "APPROVED") {
-        await this.email.sendExpenseApprovedEmail(
-          employee.email,
-          employeeName,
-          category,
-          amount,
-          approverName,
-        );
-      } else if (status === "REJECTED") {
-        await this.email.sendExpenseRejectedEmail(
-          employee.email,
-          employeeName,
-          category,
-          amount,
-          approverName,
-          rejectionReason ?? "No reason provided",
-        );
-      } else if (status === "PAID") {
-        await this.email.sendExpensePaidEmail(employee.email, employeeName, category, amount);
-      }
-    } catch (err: unknown) {
-      logSideEffectFailure("expense decision notification", { orgId: u.orgId, expenseId })(err);
-      return;
-    }
   }
 
   private async fetchAdminEmails(orgId: string): Promise<string[]> {

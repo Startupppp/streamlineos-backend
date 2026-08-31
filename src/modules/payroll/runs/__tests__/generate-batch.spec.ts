@@ -4,7 +4,8 @@ import {
   buildLiveAttendanceInputs,
   type SectionMap,
 } from "../lib/input-puller";
-import { GeneratePipelineService, type RunBatchData } from "../generate-pipeline.service";
+import { GeneratePipelineService } from "../generate-pipeline.service";
+import type { RunBatchData } from "../run-types";
 import { DEFAULT_PAYROLL_TOGGLES } from "../../payroll.types";
 import type { PayrollToggles } from "../../payroll.types";
 
@@ -127,7 +128,7 @@ describe("buildLiveAttendanceInputs", () => {
 });
 
 describe("GeneratePipelineService batch builders", () => {
-  const service = new GeneratePipelineService({} as never);
+  const service = new GeneratePipelineService();
 
   it("prefers an existing run input row over snapshots and live pulls", () => {
     const batch = emptyBatch({

@@ -130,7 +130,7 @@ export class SignFieldsService {
     const field = await this.get(orgId, fieldId);
     await this.loadEditableEnvelope(orgId, field.envelopeId);
 
-    await this.db.delete(signFields).where(eq(signFields.id, fieldId));
+    await this.db.delete(signFields).where(and(eq(signFields.id, fieldId), eq(signFields.orgId, orgId)));
 
     await this.audit.record({
       orgId,

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
 
 const WAREHOUSE_NAME_RE = /^[\p{L}\p{N}\s\-&.,()'/]+$/u;
@@ -75,8 +76,8 @@ export const updateLocationSchema = createLocationSchema.partial();
 export type UpdateLocationInput = z.infer<typeof updateLocationSchema>;
 
 export const listWarehouseStockSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 }).strict();
 export type ListWarehouseStockInput = z.infer<typeof listWarehouseStockSchema>;
 
@@ -86,8 +87,8 @@ export const listWarehousesSchema = z.object({
   isDefault: queryBoolean.optional(),
   country: z.string().trim().max(100).optional(),
   city: z.string().trim().max(100).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(100),
+  page: pageNumberField,
+  limit: pageSizeField(100, 100),
 }).strict();
 export type ListWarehousesInput = z.infer<typeof listWarehousesSchema>;
 
@@ -111,8 +112,8 @@ export type GrantWarehouseUserInput = z.infer<typeof grantWarehouseUserSchema>;
 
 export const listWarehouseUsersSchema = z
   .object({
-    page: z.coerce.number().int().min(1).default(1),
-    limit: z.coerce.number().int().min(1).max(100).default(20),
+    page: pageNumberField,
+    limit: pageSizeField(20, 100),
   })
   .strict();
 export type ListWarehouseUsersInput = z.infer<typeof listWarehouseUsersSchema>;
@@ -120,7 +121,7 @@ export type ListWarehouseUsersInput = z.infer<typeof listWarehouseUsersSchema>;
 export const listAssignableUsersSchema = z
   .object({
     q: z.string().trim().max(100).optional(),
-    limit: z.coerce.number().int().min(1).max(50).default(50),
+    limit: pageSizeField(50, 50),
   })
   .strict();
 export type ListAssignableUsersInput = z.infer<typeof listAssignableUsersSchema>;

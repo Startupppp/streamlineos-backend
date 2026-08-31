@@ -4,14 +4,18 @@ import { OwnershipController } from "./ownership.controller";
 import { OwnershipService } from "./ownership.service";
 import { OwnershipTransfersService } from "./ownership-transfers.service";
 import { OwnershipTransferResponseService } from "./ownership-transfer-response.service";
+import { OwnershipTransferExpiryService } from "./ownership-transfer-expiry.service";
+import { OrganizationSagaService } from "../organization/core/lifecycle/organization-saga.service";
 
 @Module({
   imports: [NotificationsModule],
   controllers: [OwnershipController],
   providers: [
     OwnershipService,
+    OwnershipTransferExpiryService,
     OwnershipTransfersService,
     OwnershipTransferResponseService,
+    OrganizationSagaService,
   ],
   exports: [
     OwnershipService,

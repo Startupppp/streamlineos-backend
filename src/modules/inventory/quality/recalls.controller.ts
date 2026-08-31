@@ -4,8 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RecallsService } from "./quality-recalls.service";
@@ -14,6 +12,10 @@ import { listRecallsQuerySchema, createRecallSchema, updateRecallSchema } from "
 import type { ListRecallsQueryInput, CreateRecallInput, UpdateRecallInput } from "./dto/quality.schemas";
 import { simulateRecallSchema } from "./dto/recall-simulation.schemas";
 import type { SimulateRecallInput } from "./dto/recall-simulation.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const recallIdParams = z.object({ recallId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/quality/recalls")
@@ -27,8 +29,9 @@ export class RecallsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
+  @Validate({ query: listRecallsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listRecallsQuerySchema)) q: ListRecallsQueryInput,
+    @Query() q: ListRecallsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, u.userId, q);
@@ -37,6 +40,7 @@ export class RecallsController {
   @Get(":recallId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
+  @Validate({ params: recallIdParams })
   findOne(
     @Param("recallId", ParseIntPipe) id: number,
     @CurrentUser() u: CurrentUserContext,
@@ -60,8 +64,9 @@ export class RecallsController {
   @Post("simulate")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
+  @Validate({ body: simulateRecallSchema })
   simulate(
-    @Body(new ZodValidationPipe(simulateRecallSchema)) body: SimulateRecallInput,
+    @Body() body: SimulateRecallInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.simulation.simulate(u.orgId, u.userId, body.selection);
@@ -70,20 +75,21 @@ export class RecallsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:recall")
+  @Validate({ body: createRecallSchema })
   create(
-    @IdempotencyKey() idempotencyKey: string,
-    @Body(new ZodValidationPipe(createRecallSchema)) body: CreateRecallInput,
+    @Body() body: CreateRecallInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.create(u.orgId, u.userId, body, idempotencyKey);
+    return this.svc.create(u.orgId, u.userId, body);
   }
 
   @Patch(":recallId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:recall")
+  @Validate({ params: recallIdParams, body: updateRecallSchema })
   update(
     @Param("recallId", ParseIntPipe) id: number,
-    @Body(new ZodValidationPipe(updateRecallSchema)) body: UpdateRecallInput,
+    @Body() body: UpdateRecallInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.update(u.orgId, u.userId, id, body);

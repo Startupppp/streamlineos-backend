@@ -14,7 +14,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import {
   createDelegationSchema,
   listDelegationsQuerySchema,
@@ -22,6 +21,10 @@ import {
   type ListDelegationsQuery,
 } from "./dto/delegation.schemas";
 import { DelegationsService } from "./delegations.service";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const delegationIdParams = z.object({ delegationId: z.string().min(1) }).strict();
 
 @Controller("access/delegations")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -30,9 +33,9 @@ export class DelegationsController {
 
   @Get()
   @RequirePermission("settings:rbac:manage")
+  @Validate({ query: listDelegationsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listDelegationsQuerySchema))
-    query: ListDelegationsQuery,
+    @Query() query: ListDelegationsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.list(u.orgId, u.userId, query);
@@ -40,9 +43,9 @@ export class DelegationsController {
 
   @Get("given")
   @RequirePermission("settings:rbac:manage")
+  @Validate({ query: listDelegationsQuerySchema })
   listGiven(
-    @Query(new ZodValidationPipe(listDelegationsQuerySchema))
-    query: ListDelegationsQuery,
+    @Query() query: ListDelegationsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listGiven(u.orgId, u.userId, query);
@@ -51,9 +54,9 @@ export class DelegationsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ body: createDelegationSchema })
   create(
-    @Body(new ZodValidationPipe(createDelegationSchema))
-    body: CreateDelegationInput,
+    @Body() body: CreateDelegationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.create(u, body);
@@ -62,6 +65,7 @@ export class DelegationsController {
   @Delete(":delegationId")
   @HttpCode(204)
   @RequirePermission("settings:rbac:manage")
+  @Validate({ params: delegationIdParams })
   revoke(
     @Param("delegationId") delegationId: string,
     @CurrentUser() u: CurrentUserContext,

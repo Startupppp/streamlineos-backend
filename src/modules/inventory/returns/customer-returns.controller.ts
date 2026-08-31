@@ -1,11 +1,9 @@
-import { Controller, Get, Post, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus } from "@nestjs/common";
+import { Controller, Get, Post, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus, Headers } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
-import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { CustomerReturnsService } from "./customer-returns.service";
@@ -17,6 +15,10 @@ import {
   approveReturnSchema,
   type ApproveReturnInput,
 } from "./dto/inv-returns.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const returnIdParams = z.object({ returnId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/customer-returns")
@@ -27,8 +29,9 @@ export class CustomerReturnsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
+  @Validate({ query: listReturnsSchema })
   list(
-    @Query(new ZodValidationPipe(listReturnsSchema)) filters: ListReturnsInput,
+    @Query() filters: ListReturnsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.list(u.orgId, u.userId, filters);
@@ -37,6 +40,7 @@ export class CustomerReturnsController {
   @Get(":returnId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
+  @Validate({ params: returnIdParams })
   get(
     @Param("returnId", ParseIntPipe) returnId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -47,8 +51,9 @@ export class CustomerReturnsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
+  @Validate({ body: createCustomerReturnSchema })
   create(
-    @Body(new ZodValidationPipe(createCustomerReturnSchema)) body: CreateCustomerReturnInput,
+    @Body() body: CreateCustomerReturnInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.create(u.orgId, u.userId, body);
@@ -61,9 +66,10 @@ export class CustomerReturnsController {
   @Post(":returnId/inspect")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
+  @Validate({ params: returnIdParams, body: inspectReturnLineSchema })
   inspectLine(
     @Param("returnId", ParseIntPipe) returnId: number,
-    @Body(new ZodValidationPipe(inspectReturnLineSchema)) body: InspectReturnLineInput,
+    @Body() body: InspectReturnLineInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.inspectLine(u.orgId, u.userId, returnId, body);
@@ -78,9 +84,10 @@ export class CustomerReturnsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: returnIdParams, body: approveReturnSchema })
   approve(
     @Param("returnId", ParseIntPipe) returnId: number,
-    @Body(new ZodValidationPipe(approveReturnSchema)) body: ApproveReturnInput,
+    @Body() body: ApproveReturnInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.approve(u.orgId, returnId, u.userId, body);
@@ -90,10 +97,11 @@ export class CustomerReturnsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: returnIdParams, body: postCustomerReturnSchema })
   post(
     @Param("returnId", ParseIntPipe) returnId: number,
-    @Body(new ZodValidationPipe(postCustomerReturnSchema)) body: PostCustomerReturnInput,
-    @IdempotencyKey() idempotencyKeyHeader: string,
+    @Body() body: PostCustomerReturnInput,
+    @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {return this.service.post(u.orgId, returnId, u.userId, idempotencyKeyHeader, body);
   }
@@ -102,6 +110,7 @@ export class CustomerReturnsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: returnIdParams })
   cancel(
     @Param("returnId", ParseIntPipe) returnId: number,
     @CurrentUser() u: CurrentUserContext,

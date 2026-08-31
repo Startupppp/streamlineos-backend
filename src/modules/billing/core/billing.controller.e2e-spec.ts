@@ -2,11 +2,19 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "../../../../test/helpers/sign-token";
+import { BillingService } from "./billing.service";
+
+const stubBilling = {
+  handleRazorpayWebhook: jest.fn().mockResolvedValue({ status: 401, body: { ok: false } }),
+  handlePaymentProviderWebhook: jest.fn().mockResolvedValue({ status: 401, body: { ok: false } }),
+};
 
 describe("Billing auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
-    app = await createE2eApp();
+    app = await createE2eApp({
+      overrides: [{ provide: BillingService, useValue: stubBilling }],
+    });
   });
   afterAll(async () => app.close());
 
@@ -87,9 +95,9 @@ describe("Billing auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
   });
 
-  it("POST /webhooks/razorpay is public and rejects an invalid signature", async () => {
+  it("POST /webhooks/razorpay/:orgId is public and rejects an invalid signature", async () => {
     const res = await request(app.getHttpServer())
-      .post("/webhooks/razorpay")
+      .post("/webhooks/razorpay/org_1")
       .set("x-razorpay-signature", "invalid")
       .send({ event: "payment.captured", payload: {} });
     expect(res.status).toBe(401);

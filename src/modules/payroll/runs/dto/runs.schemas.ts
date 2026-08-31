@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const runTypeSchema = z.enum([
   "REGULAR",
@@ -33,22 +34,32 @@ export const createRunSchema = z
   });
 export type CreateRunInput = z.infer<typeof createRunSchema>;
 
+const RUNS_LIST_CAP = 100;
+const EMPLOYEES_LIST_CAP = 100;
+
 export const listRunsQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
-  /** Optional legal-entity filter for multi-entity orgs. */
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(RUNS_LIST_CAP).optional().default(20),
   entityId: z.coerce.number().int().positive().optional(),
-});
+}).strict();
 export type ListRunsQuery = z.infer<typeof listRunsQuerySchema>;
 
 export const listRunEmployeesQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(EMPLOYEES_LIST_CAP).optional().default(20),
   search: z.string().optional(),
   status: z.string().optional(),
   workerType: z.string().optional(),
-});
+}).strict();
 export type ListRunEmployeesQuery = z.infer<typeof listRunEmployeesQuerySchema>;
+
+export const exportRunsQuerySchema = z.object({
+  entityId: z.coerce.number().int().positive().optional(),
+  monthFrom: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  monthTo: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  runType: z.enum(["REGULAR", "BONUS", "OFF_CYCLE", "CORRECTION", "FINAL_SETTLEMENT"]).optional(),
+}).strict();
+export type ExportRunsQuery = z.infer<typeof exportRunsQuerySchema>;
 
 export const patchInputSchema = z.object({
   scheduledDays: z.string().optional(),
@@ -98,11 +109,11 @@ export const commandCenterQuerySchema = z.object({
 export type CommandCenterQuery = z.infer<typeof commandCenterQuerySchema>;
 
 export const listProfilesQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
   search: z.string().optional(),
-  workerType: z.string().optional(),
-  status: z.string().optional(),
+  workerType: z.enum(["EMPLOYEE", "CONTRACTOR", "CONSULTANT", "INTERN", "EOR"]).optional(),
+  status: z.enum(["UPCOMING", "ACTIVE", "SUPERSEDED"]).optional(),
   costCenter: z.string().optional(),
 });
 export type ListProfilesQuery = z.infer<typeof listProfilesQuerySchema>;

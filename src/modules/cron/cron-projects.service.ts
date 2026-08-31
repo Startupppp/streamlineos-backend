@@ -111,7 +111,7 @@ export class CronProjectsService {
             await innerTx.insert(ticketActivityLog).values({
               orgId: template.orgId,
               ticketId: child.id,
-              userId: template.assigneeId ?? undefined,
+              userMembershipId: null,
               action: "created",
             });
 

@@ -1,12 +1,13 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
-import type { LogLevel } from "@nestjs/common";
+import { VERSION_NEUTRAL, VersioningType, type LogLevel } from "@nestjs/common";
 import { setDefaultResultOrder } from "node:dns";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 
 import helmet from "helmet";
 import compression from "compression";
-import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
+import { SwaggerModule } from "@nestjs/swagger";
+import { buildOpenApiDocument } from "./common/openapi/build-openapi-document";
 
 import { AppModule } from "./app.module";
 import { validateEnv } from "./config/env.validation";
@@ -15,12 +16,16 @@ import { correlationIdMiddleware } from "./common/http/correlation-id.middleware
 import {
   LogErrorReporter,
   LogSpanExporter,
+  eventLoopDelayMonitor,
+  reportError,
   setErrorReporter,
   setSpanExporter,
   structuredNestLogger,
 } from "./common/observability";
 import { ResponseTransformInterceptor } from "./common/interceptors/response-transform.interceptor";
+import { resolveAdmissionConfig } from "./common/admission/admission.config";
 import { logger } from "./common/logger/logger.service";
+import { API_VERSION_CURRENT } from "./common/http/api-version";
 
 setDefaultResultOrder("ipv4first");
 
@@ -33,6 +38,11 @@ process.on("unhandledRejection", (reason: unknown) => {
   logger.error("Unhandled promise rejection — process kept alive", {
     error: describeError(reason),
   });
+  // Also through the reporter, so a rejection is fingerprinted and classified
+  // like any other failure. A dropped `void something(...)` is exactly how the
+  // tenant-context outage stayed invisible, and that is the classification
+  // (`errorClass: "tenant-context"`) that would have named it.
+  reportError(reason, { source: "unhandledRejection" });
 });
 
 async function bootstrap(): Promise<void> {
@@ -67,6 +77,12 @@ async function bootstrap(): Promise<void> {
   // computed from.
   setErrorReporter(new LogErrorReporter());
   setSpanExporter(new LogSpanExporter());
+  eventLoopDelayMonitor.start();
+
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: [API_VERSION_CURRENT, VERSION_NEUTRAL],
+  });
 
   app.use(helmet());
   app.use(compression());
@@ -82,21 +98,23 @@ async function bootstrap(): Promise<void> {
     credentials: true,
   });
 
-  app.useBodyParser("json", { limit: "3mb" });
+  const admission = resolveAdmissionConfig(process.env);
+
+  app.useBodyParser("json", { limit: admission.maxBodyBytes });
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new ResponseTransformInterceptor());
-  app.useBodyParser("urlencoded", { extended: true, limit: "1mb" });
+  app.useBodyParser("urlencoded", {
+    extended: true,
+    limit: Math.floor(admission.maxBodyBytes / 3),
+  });
 
   if (isDevelopment) {
-    const swaggerConfig = new DocumentBuilder()
-      .setTitle("StreamlineOS API")
-      .setDescription("StreamlineOS platform REST API")
-      .setVersion("1.0")
-      .addBearerAuth()
-      .build();
-
-    const document = SwaggerModule.createDocument(app, swaggerConfig);
-    SwaggerModule.setup("api/docs", app, document);
+    const built = buildOpenApiDocument(app);
+    logger.info(
+      `OpenAPI: exposure recorded on ${built.stamped} operation(s), ${built.undeclared} undeclared; ` +
+        `zod contracts on ${built.contractsApplied}, ${built.unconvertible.length} unconvertible`,
+    );
+    SwaggerModule.setup("api/docs", app, built.document);
   }
 
   await app.listen(config.PORT);

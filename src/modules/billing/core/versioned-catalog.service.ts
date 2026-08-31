@@ -12,6 +12,7 @@ import {
   subscriptionItems,
 } from "../../../db/schema";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 
 export interface ActivePriceVersion {
@@ -56,6 +57,39 @@ export class VersionedCatalogService {
       .where(
         and(
           eq(billingPriceVersions.planId, planId),
+          eq(billingPriceVersions.isActive, true),
+          lte(billingPriceVersions.effectiveFrom, now),
+          or(
+            isNull(billingPriceVersions.effectiveUntil),
+            sql`${billingPriceVersions.effectiveUntil} > ${now}`,
+          ),
+        ),
+      )
+      .orderBy(billingPriceVersions.effectiveFrom)
+      .limit(1);
+
+    return row ?? null;
+  }
+
+  /** Bridges the legacy `subscriptions.plan` tier to a commercial price version; null while the catalog is unseeded. */
+  async getActivePriceForPlanTier(planTier: string, now = new Date()): Promise<ActivePriceVersion | null> {
+    const [row] = await this.db
+      .select({
+        id: billingPriceVersions.id,
+        planId: billingPriceVersions.planId,
+        amountMinor: billingPriceVersions.amountMinor,
+        currency: billingPriceVersions.currency,
+        billingInterval: billingPriceVersions.billingInterval,
+        taxBehavior: billingPriceVersions.taxBehavior,
+        effectiveFrom: billingPriceVersions.effectiveFrom,
+        effectiveUntil: billingPriceVersions.effectiveUntil,
+      })
+      .from(billingPriceVersions)
+      .innerJoin(billingPlans, eq(billingPriceVersions.planId, billingPlans.id))
+      .where(
+        and(
+          eq(billingPlans.planTier, planTier),
+          eq(billingPlans.isActive, true),
           eq(billingPriceVersions.isActive, true),
           lte(billingPriceVersions.effectiveFrom, now),
           or(
@@ -166,7 +200,8 @@ export class VersionedCatalogService {
       if (pgErr.code === "23505") throw new ConflictException("Entitlement override already exists for this window");
       throw err;
     }
-    await this.bustOrgEntitlementCache(orgId);
+    const deferred = registerAfterCommit(() => this.bustOrgEntitlementCache(orgId));
+    if (!deferred) await this.bustOrgEntitlementCache(orgId);
   }
 
   async listProducts() {

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+
 export const createMilestoneSchema = z.object({
   name: z.string().min(1, "Name is required").trim().max(200),
   description: z.string().max(1000).optional(),
@@ -32,7 +34,7 @@ export const updateIntakeSchema = z.object({
 
 export const intakeListQuerySchema = z.object({
   status: z.enum(["pending", "accepted", "declined", "duplicate"]).optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  limit: pageSizeField(50),
   offset: z.coerce.number().int().nonnegative().default(0),
 });
 

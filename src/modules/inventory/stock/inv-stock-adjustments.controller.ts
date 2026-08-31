@@ -1,5 +1,4 @@
-import { Controller, Get, Param, ParseIntPipe, Post, Body, Query, UseGuards } from "@nestjs/common";
-import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import { BadRequestException, Controller, Get, Headers, Param, ParseIntPipe, Post, Body, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -7,7 +6,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { resolveInvStockScope } from "../stock-engine/inventory-scope";
 import { InvStockAdjustmentsService } from "./inv-stock-adjustments.service";
@@ -15,6 +13,10 @@ import {
   listAdjustmentsSchema, createAdjustmentSchema,
   type ListAdjustmentsInput, type CreateAdjustmentInput,
 } from "./dto/inv-stock.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const adjustmentIdParams = z.object({ adjustmentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/stock/adjustments")
@@ -28,8 +30,9 @@ export class InvStockAdjustmentsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ query: listAdjustmentsSchema })
   async listAdjustments(
-    @Query(new ZodValidationPipe(listAdjustmentsSchema)) filters: ListAdjustmentsInput,
+    @Query() filters: ListAdjustmentsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveInvStockScope(this.access, u);
@@ -39,16 +42,19 @@ export class InvStockAdjustmentsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
+  @Validate({ body: createAdjustmentSchema })
   createAdjustment(
-    @IdempotencyKey() idempotencyKey: string,
-    @Body(new ZodValidationPipe(createAdjustmentSchema)) body: CreateAdjustmentInput,
+    @Headers("idempotency-key") idempotencyKey: string,
+    @Body() body: CreateAdjustmentInput,
     @CurrentUser() u: CurrentUserContext,
-  ) {return this.adjustments.createAdjustment(u.orgId, u.userId, body, idempotencyKey);
+  ) {
+    return this.adjustments.createAdjustment(u.orgId, u.userId, body, idempotencyKey);
   }
 
   @Get(":adjustmentId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ params: adjustmentIdParams })
   getAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -59,8 +65,9 @@ export class InvStockAdjustmentsController {
   @Post(":adjustmentId/approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:adjustments:approve")
+  @Validate({ params: adjustmentIdParams })
   approveAdjustment(
-    @IdempotencyKey() idempotencyKey: string,
+    @Headers("idempotency-key") idempotencyKey: string,
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
@@ -70,16 +77,19 @@ export class InvStockAdjustmentsController {
   @Post(":adjustmentId/post")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:adjustments:post")
+  @Validate({ params: adjustmentIdParams })
   postAdjustment(
-    @IdempotencyKey() idempotencyKey: string,
+    @Headers("idempotency-key") idempotencyKey: string,
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {return this.adjustments.postAdjustment(u.orgId, u.userId, adjustmentId, idempotencyKey);
+  ) {
+    return this.adjustments.postAdjustment(u.orgId, u.userId, adjustmentId, idempotencyKey);
   }
 
   @Post(":adjustmentId/cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
+  @Validate({ params: adjustmentIdParams })
   cancelAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,

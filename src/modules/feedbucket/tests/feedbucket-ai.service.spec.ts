@@ -11,10 +11,15 @@ import type { RateLimitService } from "../../../common/ratelimit/rate-limit.serv
 import type { ProjectsTicketsService } from "../../build/core/projects-tickets.service";
 import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import type { FeedbackAnalysis } from "../feedbucket-ai.schemas";
+<<<<<<< HEAD
 import type {
   AiInvokeWithUsageResult,
   AiInvokeWithUsageSuccess,
 } from "../../ai/core/gateway/ai-gateway.types";
+=======
+import type { AiInvokeWithUsageResult } from "../../ai/core/gateway/ai-gateway.types";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+>>>>>>> origin/main
 
 const ORG_A = "org_a";
 const ORG_B = "org_b";
@@ -106,6 +111,7 @@ function makeUser(orgId = ORG_A) {
     isOrgOwner: false,
     sessionId: "sess_1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
   };
 }
 

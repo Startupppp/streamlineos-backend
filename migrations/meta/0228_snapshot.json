@@ -1,6 +1,6 @@
 {
-  "id": "1a05c353-6b97-54c4-927e-1d645be6452a",
-  "prevId": "3e554f7b-1b72-588f-82b4-1dc6d72fd44e",
+  "id": "9249045b-3cc0-4ab5-a949-d3a930deb46a",
+  "prevId": "ce8152d0-b60c-4058-ad8c-3fc0de04e462",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -135368,7 +135368,7 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false,
-          "default": "'Export prepared \u2014 external filing required'"
+          "default": "'Export prepared — external filing required'"
         },
         "submitted_at": {
           "name": "submitted_at",

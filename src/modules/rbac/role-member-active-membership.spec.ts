@@ -1,5 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -61,6 +62,7 @@ describe("RoleMemberService active membership enforcement", () => {
             isOrgOwner: true,
             tokenScopes: null,
             sessionId: "session",
+            principal: humanSessionPrincipal(1, true),
           },
           7,
           { principalType: "user", principalId: "member" },

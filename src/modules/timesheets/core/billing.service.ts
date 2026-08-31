@@ -6,7 +6,7 @@ import {
 import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheets, timesheetExports, projects } from "../../../db/schema";
+import { timesheets, timesheetExports, projects, organizationMembers } from "../../../db/schema";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { RateResolverService } from "./rate-resolver.service";
 import { FxService } from "./fx.service";
@@ -252,6 +252,12 @@ export class BillingService {
     });
 
     const exportId = await this.db.transaction(async (tx) => {
+      const [actorMember] = await tx
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
+        .limit(1);
+
       const [exported] = await tx
         .insert(timesheetExports)
         .values({
@@ -265,7 +271,7 @@ export class BillingService {
           snapshot: snapshot,
           entryCount: entries.length,
           totalHours: round2(totalHours).toString(),
-          createdBy: u.userId,
+          createdByMembershipId: actorMember?.id ?? null,
         })
         .returning({ id: timesheetExports.id });
 
@@ -379,6 +385,12 @@ export class BillingService {
     const entryIds = entries.map((e) => e.id);
 
     const exportId = await this.db.transaction(async (tx) => {
+      const [draftActorMember] = await tx
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
+        .limit(1);
+
       const [exported] = await tx
         .insert(timesheetExports)
         .values({
@@ -392,7 +404,7 @@ export class BillingService {
           snapshot: snapshot,
           entryCount: entries.length,
           totalHours: "0",
-          createdBy: u.userId,
+          createdByMembershipId: draftActorMember?.id ?? null,
         })
         .returning({ id: timesheetExports.id });
 

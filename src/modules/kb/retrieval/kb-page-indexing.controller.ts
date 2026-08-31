@@ -13,6 +13,10 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbIndexingService } from "./kb-indexing.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb/pages")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -22,6 +26,7 @@ export class KbPageIndexingController {
   @Post(":pageId/reindex")
   @RequirePermission("kb:pages:manage")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: pageIdParams })
   async reindexPage(
     @CurrentUser() user: CurrentUserContext,
     @Param("pageId", ParseIntPipe) pageId: number,

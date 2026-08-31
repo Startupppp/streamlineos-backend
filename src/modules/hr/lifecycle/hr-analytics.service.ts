@@ -1,6 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
+  hrEmployments,
+  hrPeople,
   organizationMembers,
   orgUnits,
   users,
@@ -64,11 +67,13 @@ export class HrAnalyticsService {
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
 
       this.db
-        .select({ orgDepartmentId: users.orgDepartmentId, count: count() })
+        .select({ departmentId: hrEmployments.departmentId, count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
-        .groupBy(users.orgDepartmentId),
+        .groupBy(hrEmployments.departmentId),
 
       this.db
         .select({ gender: users.gender, count: count() })
@@ -115,7 +120,9 @@ export class HrAnalyticsService {
         .select({ count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), gte(users.joiningDate, monthStart))),
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+        .where(and(eq(organizationMembers.orgId, orgId), gte(hrEmployments.joiningDate, monthStart))),
 
       this.db
         .select({ total: sql<string>`COALESCE(SUM(${expenses.amount}::numeric), 0)` })
@@ -124,15 +131,17 @@ export class HrAnalyticsService {
 
       this.db
         .select({
-          month: sql<string>`to_char(${users.joiningDate}::date, 'Mon')`,
-          monthNum: sql<number>`EXTRACT(MONTH FROM ${users.joiningDate}::date)`.mapWith(Number),
+          month: sql<string>`to_char(${hrEmployments.joiningDate}::date, 'Mon')`,
+          monthNum: sql<number>`EXTRACT(MONTH FROM ${hrEmployments.joiningDate}::date)`.mapWith(Number),
           joins: count(),
         })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), gte(users.joiningDate, yearStart), lte(users.joiningDate, yearEnd)))
-        .groupBy(sql`to_char(${users.joiningDate}::date, 'Mon')`, sql`EXTRACT(MONTH FROM ${users.joiningDate}::date)`)
-        .orderBy(sql`EXTRACT(MONTH FROM ${users.joiningDate}::date)`),
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+        .where(and(eq(organizationMembers.orgId, orgId), gte(hrEmployments.joiningDate, yearStart), lte(hrEmployments.joiningDate, yearEnd)))
+        .groupBy(sql`to_char(${hrEmployments.joiningDate}::date, 'Mon')`, sql`EXTRACT(MONTH FROM ${hrEmployments.joiningDate}::date)`)
+        .orderBy(sql`EXTRACT(MONTH FROM ${hrEmployments.joiningDate}::date)`),
 
       this.db
         .select({
@@ -170,7 +179,7 @@ export class HrAnalyticsService {
         newThisMonth: Number(recentJoinsResult[0]?.count ?? 0),
       },
       departments: deptDistribution.map((d) => ({
-        name: d.orgDepartmentId ? (deptMap.get(d.orgDepartmentId) ?? "Other") : "Unassigned",
+        name: d.departmentId ? (deptMap.get(d.departmentId) ?? "Other") : "Unassigned",
         count: Number(d.count),
       })),
       gender: genderDistribution.map((g) => ({
@@ -219,11 +228,13 @@ export class HrAnalyticsService {
 
     const [deptWise, dailySummary, totalPresent, allDepts] = await Promise.all([
       this.db
-        .select({ orgDepartmentId: users.orgDepartmentId, count: count() })
+        .select({ departmentId: hrEmployments.departmentId, count: count() })
         .from(attendance)
         .innerJoin(users, eq(attendance.userId, users.id))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(and(eq(attendance.orgId, orgId), gte(attendance.date, startDate), lte(attendance.date, endDate)))
-        .groupBy(users.orgDepartmentId),
+        .groupBy(hrEmployments.departmentId),
 
       this.db
         .select({ date: attendance.date, count: count() })
@@ -247,7 +258,7 @@ export class HrAnalyticsService {
       month,
       totalAttendanceLogs: Number(totalPresent[0]?.count ?? 0),
       byDepartment: deptWise.map((d) => ({
-        department: d.orgDepartmentId ? (deptMap.get(d.orgDepartmentId) ?? "Other") : "Unassigned",
+        department: d.departmentId ? (deptMap.get(d.departmentId) ?? "Other") : "Unassigned",
         count: Number(d.count),
       })),
       daily: dailySummary.map((d) => ({

@@ -12,7 +12,6 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { RequireModule } from "../../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { EventStreamService } from "./event-stream.service";
 import {
   listEventsSchema,
@@ -20,6 +19,7 @@ import {
   type ListEventsInput,
   type ExportEventsInput,
 } from "../dto/event-stream.schemas";
+import { Validate } from "../../../../common/validation/validate.decorator";
 
 @RequireModule("hr")
 @Controller("hr/enterprise/ops/event-stream")
@@ -29,9 +29,10 @@ export class EventStreamController {
 
   @Get("events")
   @RequirePermission("hr:eventstream:view")
+  @Validate({ query: listEventsSchema })
   listEvents(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listEventsSchema)) query: ListEventsInput,
+    @Query() query: ListEventsInput,
   ) {
     return this.svc.listEvents(user.orgId, query);
   }
@@ -50,9 +51,10 @@ export class EventStreamController {
 
   @Post("export")
   @RequirePermission("hr:analytics:read")
+  @Validate({ body: exportEventsSchema })
   export(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(exportEventsSchema)) body: ExportEventsInput,
+    @Body() body: ExportEventsInput,
   ) {
     return this.svc.exportEvents(user.orgId, body);
   }

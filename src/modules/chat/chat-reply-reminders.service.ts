@@ -6,13 +6,14 @@ import {
   chatMessages,
   chatReplyReminders,
   notificationPreferences,
+  organizationMembers,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant/for-each-org";
-import { EmailService } from "../email/email.service";
 import { getChatReplyReminderEmail } from "../email/templates/chat";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { logger } from "../../common/logger/logger.service";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
@@ -23,13 +24,25 @@ const REMINDER_INSERT_BATCH_SIZE = 500;
 export class ChatReplyRemindersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
     @Inject(APP_CONFIG) config: AppConfig,
   ) {
     this.replyReminderMs = (config.CHAT_REPLY_REMINDER_MINUTES ?? 15) * 60 * 1000;
   }
 
   private readonly replyReminderMs: number;
+
+  private async resolveMembershipId(orgId: string, userId: string): Promise<number | null> {
+    const row = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    return row?.id ?? null;
+  }
 
   async scheduleForMessage(
     orgId: string,
@@ -41,9 +54,11 @@ export class ChatReplyRemindersService {
 
     await this.cancelPendingForRecipientInChannel(senderId, channelId);
 
+    const senderMembershipId = await this.resolveMembershipId(orgId, senderId);
+
     const members = await this.db.query.chatChannelMembers.findMany({
-      where: eq(chatChannelMembers.channelId, channelId),
-      columns: { userId: true },
+      where: and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)),
+      columns: { userId: true, membershipId: true },
     });
 
     const reminders = members
@@ -53,7 +68,9 @@ export class ChatReplyRemindersService {
         channelId,
         messageId,
         recipientUserId: member.userId,
+        recipientMembershipId: member.membershipId ?? null,
         senderUserId: senderId,
+        senderMembershipId,
         remindAt,
       }));
 
@@ -199,10 +216,15 @@ export class ChatReplyRemindersService {
         ? sender?.name ?? "Direct message"
         : channel.name;
 
-    await this.email.sendEmail({
-      to: recipient.email,
-      subject: `${sender?.name ?? "Someone"} messaged you on StreamlineOS`,
-      html: getChatReplyReminderEmail(
+    await this.dispatch.emit({
+      eventKey: "chat.reply.reminder",
+      orgId: reminder.orgId,
+      targetUserIds: [recipient.id],
+      entityType: "chat_message",
+      entityId: String(message.id),
+      title: `${sender?.name ?? "Someone"} messaged you on StreamlineOS`,
+      message: `${sender?.name ?? "Someone"} sent you a message in ${channelLabel}.`,
+      emailHtml: getChatReplyReminderEmail(
         recipient.name ?? "there",
         sender?.name ?? "Someone",
         message.content ?? "",

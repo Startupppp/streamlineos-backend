@@ -7,7 +7,7 @@ import {
 import { and, desc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheetExceptions, users } from "../../../db/schema";
+import { timesheetExceptions, users, organizationMembers } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { applyScope } from "../../access/apply-scope";
 import { resolveEntriesScope } from "./timesheets-core-scope";
@@ -87,12 +87,19 @@ export class ExceptionsService {
       throw new ConflictException(`Only open exceptions can be ${verb}`);
     }
 
+    const [actorMember] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
+      .limit(1);
+    const resolvedByMembershipId = actorMember?.id ?? null;
+
     const [updated] = await this.db
       .update(timesheetExceptions)
       .set({
         status: toStatus,
         resolutionReason: reason,
-        resolvedBy: u.userId,
+        resolvedByMembershipId,
         resolvedAt: new Date(),
         updatedAt: new Date(),
       })

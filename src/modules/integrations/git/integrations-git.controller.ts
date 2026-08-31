@@ -8,9 +8,15 @@ import {
   Req,
 } from "@nestjs/common";
 import type { Request } from "express";
+import { z } from "zod";
 import { Public } from "../../../common/auth/public.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { logger } from "../../../common/logger/logger.service";
 import { IntegrationsGitService } from "./integrations-git.service";
+
+const gitWebhookQuerySchema = z.object({
+  connectionId: z.string().min(1).optional(),
+}).strict();
 
 @Public()
 @Controller("integrations/git")
@@ -19,6 +25,7 @@ export class IntegrationsGitController {
 
   @Post("webhook")
   @HttpCode(200)
+  @Validate({ query: gitWebhookQuerySchema })
   async webhook(
     @Req() req: RawBodyRequest<Request>,
     @Query("connectionId") connectionId: string | undefined,

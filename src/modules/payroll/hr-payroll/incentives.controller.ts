@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Get,
   HttpCode,
   NotFoundException,
@@ -19,8 +18,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
-import { AccessService } from "../../access/access.service";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { IncentivesService } from "./incentives.service";
 import {
   approveIncentiveSchema,
@@ -30,26 +28,22 @@ import {
   type CreateIncentiveConfigInput,
   type IncentivesQueryInput,
 } from "./dto/payroll.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const incentiveIdParams = z.object({ incentiveId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("hr/incentives")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class IncentivesController {
-  constructor(
-    private readonly incentives: IncentivesService,
-    private readonly access: AccessService,
-  ) {}
-
-  private async canApproveIncentives(u: CurrentUserContext): Promise<boolean> {
-    if (u.isOrgOwner) return true;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    return perms.has("crm:incentives:approve");
-  }
+  constructor(private readonly incentives: IncentivesService) {}
 
   @Get()
   @RequirePermission("hr:payroll:view")
+  @Validate({ query: incentivesQuerySchema })
   list(
-    @Query(new ZodValidationPipe(incentivesQuerySchema)) query: IncentivesQueryInput,
+    @Query() query: IncentivesQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.incentives.getIncentives(u.orgId, query);
@@ -63,15 +57,13 @@ export class IncentivesController {
 
   @Post("config")
   @HttpCode(201)
-  @RequirePermission("hr:payroll:view")
-  async createConfig(
-    @Body(new ZodValidationPipe(createIncentiveConfigSchema)) body: CreateIncentiveConfigInput,
+  @RequirePermission("hr:payroll:approve")
+  @Validate({ body: createIncentiveConfigSchema })
+  createConfig(
+    @Body() body: CreateIncentiveConfigInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!(await this.canApproveIncentives(u))) {
-      throw new ForbiddenException("Only admins can manage incentives.");
-    }
-    return this.incentives.createConfig(u.orgId, u.userId, body.incentiveRate);
+    return this.incentives.createConfig(u, body.incentiveRate);
   }
 
   @Get("stats")
@@ -81,30 +73,28 @@ export class IncentivesController {
   }
 
   @Patch(":incentiveId/approve")
-  @RequirePermission("hr:payroll:view")
+  @Idempotent("payroll.incentive.approve")
+  @RequirePermission("hr:payroll:approve")
+  @Validate({ params: incentiveIdParams, body: approveIncentiveSchema })
   async approve(
     @Param("incentiveId", ParseIntPipe) incentiveId: number,
-    @Body(new ZodValidationPipe(approveIncentiveSchema)) body: ApproveIncentiveInput,
+    @Body() body: ApproveIncentiveInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!(await this.canApproveIncentives(u))) {
-      throw new ForbiddenException("Only admins can manage incentives.");
-    }
-    const result = await this.incentives.approveIncentive(u.orgId, u.userId, incentiveId, body);
+    const result = await this.incentives.approveIncentive(u, incentiveId, body);
     if (!result.ok) throw new NotFoundException("Incentive not found.");
     return { success: true };
   }
 
   @Patch(":incentiveId/reject")
-  @RequirePermission("hr:payroll:view")
+  @Idempotent("payroll.incentive.reject")
+  @RequirePermission("hr:payroll:approve")
+  @Validate({ params: incentiveIdParams })
   async reject(
     @Param("incentiveId", ParseIntPipe) incentiveId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!(await this.canApproveIncentives(u))) {
-      throw new ForbiddenException("Only admins can manage incentives.");
-    }
-    const result = await this.incentives.rejectIncentive(u.orgId, incentiveId);
+    const result = await this.incentives.rejectIncentive(u, incentiveId);
     if (!result.ok) throw new NotFoundException("Incentive not found.");
     return { success: true };
   }

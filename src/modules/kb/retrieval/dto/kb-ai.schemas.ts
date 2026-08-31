@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const searchSchema = z.object({
   q: z.string().trim().min(1).max(200),
   spaceId: z.coerce.number().int().positive().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(50).default(20),
+  page: pageNumberField,
+  pageSize: pageSizeField(20, 50),
 });
 export type SearchInput = z.infer<typeof searchSchema>;
 
@@ -21,7 +22,7 @@ export const kbAiAskBodySchema = z.object({
 
 export const chatHistoryQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(30),
+  limit: pageSizeField(30, 100),
 });
 
 export const kbConversationCreateSchema = z.object({
@@ -34,19 +35,19 @@ export const kbConversationRenameSchema = z.object({
 
 export const kbConversationsListQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(20),
+  limit: pageSizeField(20, 50),
 });
 
 export const kbConversationMessagesQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(30),
+  limit: pageSizeField(30, 100),
 });
 
 export const kbAiFeedbackSchema = z.object({
   rating: z.enum(["helpful", "not_helpful", "missing_source"]),
   question: z.string().trim().min(3).max(1000),
   comment: z.string().trim().max(500).optional(),
-});
+}).strict();
 export type KbAiFeedbackInput = z.infer<typeof kbAiFeedbackSchema>;
 
 export const kbResearchBriefCreateSchema = z.object({
@@ -57,7 +58,7 @@ export type KbResearchBriefCreateInput = z.infer<typeof kbResearchBriefCreateSch
 
 export const kbResearchBriefListSchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  limit: pageSizeField(20, 100),
 });
 export type KbResearchBriefListInput = z.infer<typeof kbResearchBriefListSchema>;
 

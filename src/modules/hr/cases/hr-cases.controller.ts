@@ -19,7 +19,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrCasesService } from "./hr-cases.service";
 import {
   createCaseSchema,
@@ -36,6 +36,10 @@ import {
   type AddDocumentInput,
 } from "./dto/hr-cases.schemas";
 import { AccessService } from "../../access/access.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const caseIdParams = z.object({ caseId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/cases")
@@ -48,9 +52,10 @@ export class HrCasesController {
 
   @Get()
   @RequirePermission("hr:cases:view")
+  @Validate({ query: listCasesSchema })
   async list(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listCasesSchema)) query: ListCasesInput,
+    @Query() query: ListCasesInput,
   ) {
     const hasConfidential = await this.canConfidential(user);
     return this.cases.list(user.orgId, user.userId, hasConfidential, query);
@@ -64,6 +69,7 @@ export class HrCasesController {
 
   @Get(":caseId")
   @RequirePermission("hr:cases:view")
+  @Validate({ params: caseIdParams })
   async getById(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -75,9 +81,10 @@ export class HrCasesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:cases:manage")
+  @Validate({ body: createCaseSchema })
   async create(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createCaseSchema)) body: CreateCaseInput,
+    @Body() body: CreateCaseInput,
     @Req() req: Request,
   ) {
     return this.cases.create(user.orgId, user.userId, body, req.ip);
@@ -86,8 +93,9 @@ export class HrCasesController {
   @Post("anonymous")
   @HttpCode(201)
   @RequirePermission("hr:cases:view")
+  @Validate({ body: anonymousReportSchema })
   async createAnonymous(
-    @Body(new ZodValidationPipe(anonymousReportSchema)) body: AnonymousReportInput,
+    @Body() body: AnonymousReportInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.cases.createAnonymous(user.orgId, body);
@@ -95,10 +103,11 @@ export class HrCasesController {
 
   @Patch(":caseId")
   @RequirePermission("hr:cases:manage")
+  @Validate({ params: caseIdParams, body: updateCaseSchema })
   async update(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
-    @Body(new ZodValidationPipe(updateCaseSchema)) body: UpdateCaseInput,
+    @Body() body: UpdateCaseInput,
     @Req() req: Request,
   ) {
     const hasConfidential = await this.canConfidential(user);
@@ -108,6 +117,7 @@ export class HrCasesController {
   @Delete(":caseId")
   @RequirePermission("hr:cases:manage")
   @HttpCode(204)
+  @Validate({ params: caseIdParams })
   async delete(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -118,6 +128,7 @@ export class HrCasesController {
 
   @Post(":caseId/investigate")
   @RequirePermission("hr:cases:manage")
+  @Validate({ params: caseIdParams })
   async startInvestigation(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -129,6 +140,7 @@ export class HrCasesController {
 
   @Get(":caseId/notes")
   @RequirePermission("hr:cases:view")
+  @Validate({ params: caseIdParams })
   async listNotes(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -140,10 +152,11 @@ export class HrCasesController {
   @Post(":caseId/notes")
   @HttpCode(201)
   @RequirePermission("hr:cases:manage")
+  @Validate({ params: caseIdParams, body: createNoteSchema })
   async addNote(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
-    @Body(new ZodValidationPipe(createNoteSchema)) body: CreateNoteInput,
+    @Body() body: CreateNoteInput,
     @Req() req: Request,
   ) {
     const hasConfidential = await this.canConfidential(user);
@@ -152,6 +165,7 @@ export class HrCasesController {
 
   @Get(":caseId/documents")
   @RequirePermission("hr:cases:view")
+  @Validate({ params: caseIdParams })
   async listDocuments(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
@@ -163,10 +177,11 @@ export class HrCasesController {
   @Post(":caseId/documents")
   @HttpCode(201)
   @RequirePermission("hr:cases:manage")
+  @Validate({ params: caseIdParams, body: addDocumentSchema })
   async addDocument(
     @CurrentUser() user: CurrentUserContext,
     @Param("caseId", ParseIntPipe) caseId: number,
-    @Body(new ZodValidationPipe(addDocumentSchema)) body: AddDocumentInput,
+    @Body() body: AddDocumentInput,
     @Req() req: Request,
   ) {
     const hasConfidential = await this.canConfidential(user);

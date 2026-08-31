@@ -21,7 +21,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ContactsService } from "./contacts.service";
 import { buildVcard, vcardFilename } from "./vcard";
 import {
@@ -38,6 +37,10 @@ import {
 } from "./dto/contact.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { Deprecated } from "../../common/deprecation/deprecated.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const contactIdParams = z.object({ contactId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("contacts")
@@ -47,8 +50,9 @@ export class ContactsController {
 
   @Get()
   @RequirePermission("crm:contacts:view")
+  @Validate({ query: listSchema })
   list(
-    @Query(new ZodValidationPipe(listSchema)) filters: ListInput,
+    @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.contacts.list(u.orgId, filters);
@@ -58,8 +62,9 @@ export class ContactsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("crm:contacts:manage")
+  @Validate({ body: createSchema })
   create(
-    @Body(new ZodValidationPipe(createSchema)) body: CreateInput,
+    @Body() body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.contacts.create(u.orgId, body);
@@ -68,8 +73,9 @@ export class ContactsController {
   @Post("bulk-import")
   @HttpCode(201)
   @RequirePermission("crm:contacts:manage")
+  @Validate({ body: bulkImportContactsSchema })
   bulkImport(
-    @Body(new ZodValidationPipe(bulkImportContactsSchema)) body: BulkImportContactsInput,
+    @Body() body: BulkImportContactsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.contacts.bulkImport(u.orgId, body);
@@ -92,8 +98,9 @@ export class ContactsController {
 
   @Get("search")
   @RequirePermission("crm:contacts:view")
+  @Validate({ query: searchSchema })
   search(
-    @Query(new ZodValidationPipe(searchSchema)) query: SearchInput,
+    @Query() query: SearchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.contacts.search(u.orgId, query.q);
@@ -101,6 +108,7 @@ export class ContactsController {
 
   @Get(":contactId")
   @RequirePermission("crm:contacts:view")
+  @Validate({ params: contactIdParams })
   async get(
     @Param("contactId", ParseIntPipe) contactId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -113,9 +121,10 @@ export class ContactsController {
   @Deprecated({ sunset: "2026-10-25", link: "/party/contacts/:partyContactId" })
   @Patch(":contactId")
   @RequirePermission("crm:contacts:manage")
+  @Validate({ params: contactIdParams, body: updateSchema })
   async update(
     @Param("contactId", ParseIntPipe) contactId: number,
-    @Body(new ZodValidationPipe(updateSchema)) body: UpdateInput,
+    @Body() body: UpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.contacts.update(u.orgId, contactId, body);
@@ -127,6 +136,7 @@ export class ContactsController {
   @Delete(":contactId")
   @HttpCode(204)
   @RequirePermission("crm:contacts:manage")
+  @Validate({ params: contactIdParams })
   async remove(
     @Param("contactId", ParseIntPipe) contactId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -136,6 +146,7 @@ export class ContactsController {
 
   @Get(":contactId/vcard")
   @RequirePermission("crm:contacts:view")
+  @Validate({ params: contactIdParams })
   async vcard(
     @Param("contactId", ParseIntPipe) contactId: number,
     @CurrentUser() u: CurrentUserContext,

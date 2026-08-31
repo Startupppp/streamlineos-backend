@@ -3,6 +3,7 @@ import { TimesheetsService } from "./timesheets.service";
 import type { AccessService } from "../../access/access.service";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
 import type { EntriesPeriodService } from "../../timesheets/core/entries-period.service";
 
@@ -15,6 +16,7 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
   ...overrides,
 });
 
@@ -34,6 +36,7 @@ describe("TimesheetsService — approver cannot action their own entry", () => {
     } as unknown as Db;
     const access = {
       resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:timesheets:manage"])),
+      holds: jest.fn().mockResolvedValue(true),
     } as unknown as AccessService;
     const cache = { del: jest.fn(), get: jest.fn(), set: jest.fn() } as unknown as CacheService;
     const periods = {} as unknown as EntriesPeriodService;

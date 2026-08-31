@@ -138,7 +138,7 @@ export class SignDocumentsService {
   async delete(orgId: string, documentId: number) {
     const doc = await this.get(orgId, documentId);
     await this.loadEditableEnvelope(orgId, doc.envelopeId);
-    await this.db.delete(signDocuments).where(eq(signDocuments.id, documentId));
+    await this.db.delete(signDocuments).where(and(eq(signDocuments.id, documentId), eq(signDocuments.orgId, orgId)));
     await this.storage.deleteFile(orgId, doc.currentFileKey).catch(() => undefined);
   }
 

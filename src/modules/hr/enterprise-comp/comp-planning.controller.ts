@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CompPlanningService } from "./comp-planning.service";
 import {
   createCompCycleSchema,
@@ -27,6 +26,12 @@ import {
   type ApproveRecommendationInput,
   type CreateBudgetPoolInput,
 } from "./dto/enterprise-comp.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const cycleIdParams = z.object({ cycleId: z.coerce.number().int().positive() }).strict();
+const recIdParams = z.object({ recId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/enterprise/comp/planning")
@@ -37,8 +42,9 @@ export class CompPlanningController {
   @Get("cycles")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ query: listCompCyclesSchema })
   listCycles(
-    @Query(new ZodValidationPipe(listCompCyclesSchema)) query: ListCompCyclesInput,
+    @Query() query: ListCompCyclesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listCycles(u.orgId, query);
@@ -48,8 +54,9 @@ export class CompPlanningController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
   @HttpCode(201)
+  @Validate({ body: createCompCycleSchema })
   createCycle(
-    @Body(new ZodValidationPipe(createCompCycleSchema)) body: CreateCompCycleInput,
+    @Body() body: CreateCompCycleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createCycle(u.orgId, u.userId, body);
@@ -58,6 +65,7 @@ export class CompPlanningController {
   @Get("cycles/:cycleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ params: cycleIdParams })
   getCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -68,9 +76,10 @@ export class CompPlanningController {
   @Patch("cycles/:cycleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ params: cycleIdParams, body: updateCompCycleSchema })
   updateCycle(
     @Param("cycleId", ParseIntPipe) cycleId: number,
-    @Body(new ZodValidationPipe(updateCompCycleSchema)) body: UpdateCompCycleInput,
+    @Body() body: UpdateCompCycleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateCycle(u.orgId, cycleId, u.userId, body);
@@ -79,6 +88,7 @@ export class CompPlanningController {
   @Get("cycles/:cycleId/budget-pools")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ params: cycleIdParams })
   getBudgetPools(
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -90,9 +100,10 @@ export class CompPlanningController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
   @HttpCode(201)
+  @Validate({ params: cycleIdParams, body: createBudgetPoolSchema })
   createBudgetPool(
     @Param("cycleId", ParseIntPipe) cycleId: number,
-    @Body(new ZodValidationPipe(createBudgetPoolSchema)) body: CreateBudgetPoolInput,
+    @Body() body: CreateBudgetPoolInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createBudgetPool(u.orgId, u.userId, { ...body, cycleId });
@@ -101,8 +112,9 @@ export class CompPlanningController {
   @Get("recommendations")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ query: listRecommendationsSchema })
   listRecommendations(
-    @Query(new ZodValidationPipe(listRecommendationsSchema)) query: ListRecommendationsInput,
+    @Query() query: ListRecommendationsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listRecommendations(u.orgId, query);
@@ -112,8 +124,9 @@ export class CompPlanningController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
   @HttpCode(201)
+  @Validate({ body: createRecommendationSchema })
   createRecommendation(
-    @Body(new ZodValidationPipe(createRecommendationSchema)) body: CreateRecommendationInput,
+    @Body() body: CreateRecommendationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createRecommendation(u.orgId, u.userId, body);
@@ -122,17 +135,20 @@ export class CompPlanningController {
   @Patch("recommendations/:recId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ params: recIdParams, body: updateRecommendationSchema })
   updateRecommendation(
     @Param("recId", ParseIntPipe) recId: number,
-    @Body(new ZodValidationPipe(updateRecommendationSchema)) body: UpdateRecommendationInput,
+    @Body() body: UpdateRecommendationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateRecommendation(u.orgId, recId, u.userId, body);
   }
 
   @Patch("recommendations/:recId/submit")
+  @Idempotent("hr.comp-recommendation.submit")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ params: recIdParams })
   submitRecommendation(
     @Param("recId", ParseIntPipe) recId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -143,20 +159,23 @@ export class CompPlanningController {
   @Patch("recommendations/:recId/calibrate")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ params: recIdParams, body: calibrateRecommendationSchema })
   calibrateRecommendation(
     @Param("recId", ParseIntPipe) recId: number,
-    @Body(new ZodValidationPipe(calibrateRecommendationSchema)) body: CalibrateRecommendationInput,
+    @Body() body: CalibrateRecommendationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.calibrateRecommendation(u.orgId, recId, u.userId, body);
   }
 
   @Patch("recommendations/:recId/approve")
+  @Idempotent("hr.comp-recommendation.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compensation:manage")
+  @Validate({ params: recIdParams, body: approveRecommendationSchema })
   approveRecommendation(
     @Param("recId", ParseIntPipe) recId: number,
-    @Body(new ZodValidationPipe(approveRecommendationSchema)) body: ApproveRecommendationInput,
+    @Body() body: ApproveRecommendationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.approveRecommendation(u.orgId, recId, u.userId, body);

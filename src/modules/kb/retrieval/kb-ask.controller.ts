@@ -30,9 +30,15 @@ import {
   kbConversationRenameSchema,
   kbConversationsListQuerySchema,
 } from "./dto/kb-ai.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { z } from "zod";
+
+const conversationIdParams = z.object({ conversationId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@RequireModule("kb")
 export class KbAskController {
   constructor(
     private readonly ask: KbAskService,
@@ -115,6 +121,7 @@ export class KbAskController {
 
   @Patch("ask/conversations/:conversationId")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: conversationIdParams })
   async renameConversation(
     @Param("conversationId", ParseIntPipe) conversationId: number,
     @Body() body: unknown,
@@ -127,6 +134,7 @@ export class KbAskController {
 
   @Delete("ask/conversations/:conversationId")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: conversationIdParams })
   async deleteConversation(
     @Param("conversationId", ParseIntPipe) conversationId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -137,6 +145,7 @@ export class KbAskController {
 
   @Get("ask/conversations/:conversationId/messages")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: conversationIdParams })
   async getConversationMessages(
     @Param("conversationId", ParseIntPipe) conversationId: number,
     @Query() query: unknown,

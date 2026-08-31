@@ -12,7 +12,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { KbImportExportService } from "./kb-import-export.service";
 import {
@@ -21,6 +20,10 @@ import {
   type ExportPageInput,
   type ImportPagesInput,
 } from "./dto/kb-import-export.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -30,8 +33,9 @@ export class KbImportExportController {
   @Post("pages/import")
   @Idempotent("kb:pages.import")
   @RequirePermission("kb:pages:import")
+  @Validate({ body: importPagesSchema })
   async importPages(
-    @Body(new ZodValidationPipe(importPagesSchema)) body: ImportPagesInput,
+    @Body() body: ImportPagesInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.importExport.importPages(u, body);
@@ -45,9 +49,10 @@ export class KbImportExportController {
 
   @Post("pages/:pageId/export")
   @RequirePermission("kb:pages:export")
+  @Validate({ params: pageIdParams, body: exportPageSchema })
   async exportPage(
     @Param("pageId", ParseIntPipe) pageId: number,
-    @Body(new ZodValidationPipe(exportPageSchema)) body: ExportPageInput,
+    @Body() body: ExportPageInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.importExport.exportPage(u, pageId, body);

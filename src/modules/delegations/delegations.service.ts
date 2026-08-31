@@ -28,6 +28,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { CacheService } from "../../common/cache/cache.service";
@@ -119,8 +120,8 @@ export class DelegationsService {
     now: Date,
   ) {
     if (rows.length === 0) return [];
-    const participantIds = Array.from(
-      new Set(rows.flatMap((row) => [row.delegatorId, row.delegateeId])),
+    const participantMembershipIds = Array.from(
+      new Set(rows.flatMap((row) => [row.delegatorMembershipId, row.delegateeMembershipId])),
     );
     const [permissionRows, participantRows] = await Promise.all([
       this.db
@@ -144,14 +145,20 @@ export class DelegationsService {
         ),
       this.db
         .select({
-          id: users.id,
+          membershipId: organizationMembers.id,
           name: users.name,
           firstName: users.firstName,
           lastName: users.lastName,
           email: users.email,
         })
-        .from(users)
-        .where(inArray(users.id, participantIds)),
+        .from(organizationMembers)
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .where(
+          and(
+            eq(organizationMembers.orgId, rows[0]!.orgId),
+            inArray(organizationMembers.id, participantMembershipIds),
+          ),
+        ),
     ]);
     const byDelegation = new Map<string, string[]>();
     for (const row of permissionRows) {
@@ -159,19 +166,19 @@ export class DelegationsService {
       values.push(row.permissionKey);
       byDelegation.set(row.delegationId, values);
     }
-    const nameById = new Map(
-      participantRows.map((user) => {
-        const structuredName = [user.firstName, user.lastName]
+    const nameByMembershipId = new Map(
+      participantRows.map((member) => {
+        const structuredName = [member.firstName, member.lastName]
           .filter(Boolean)
           .join(" ");
-        return [user.id, user.name?.trim() || structuredName || user.email];
+        return [member.membershipId, member.name?.trim() || structuredName || member.email];
       }),
     );
     return rows.map((row) => ({
       ...row,
       permissions: byDelegation.get(row.id) ?? [],
-      delegatorName: nameById.get(row.delegatorId) ?? null,
-      delegateeName: nameById.get(row.delegateeId) ?? null,
+      delegatorName: nameByMembershipId.get(row.delegatorMembershipId) ?? null,
+      delegateeName: nameByMembershipId.get(row.delegateeMembershipId) ?? null,
       lifecycle: resolveLifecycle(row, now),
     }));
   }
@@ -183,14 +190,41 @@ export class DelegationsService {
     query: ListDelegationsQuery,
   ) {
     const now = new Date();
+    const actorMembership = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      )
+      .then((rows) => rows[0] ?? null);
+    if (!actorMembership) {
+      return {
+        data: [],
+        pagination: { page: query.page, limit: query.limit, total: 0, totalPages: 0 },
+      };
+    }
+    const actorMembershipId = actorMembership.id;
     const participantColumn =
       direction === "received"
+<<<<<<< HEAD
         ? delegatorMember.userId
         : delegateeMember.userId;
     const actorColumn =
       direction === "received"
         ? delegateeMember.userId
         : delegatorMember.userId;
+=======
+        ? userDelegations.delegatorMembershipId
+        : userDelegations.delegateeMembershipId;
+    const actorColumn =
+      direction === "received"
+        ? userDelegations.delegateeMembershipId
+        : userDelegations.delegatorMembershipId;
+>>>>>>> origin/main
     const search = query.search?.trim();
     const searchPattern = search ? `%${escapeLike(search)}%` : null;
     const participantSearch = searchPattern
@@ -198,8 +232,10 @@ export class DelegationsService {
           ilike(userDelegations.reason, searchPattern),
           sql`EXISTS (
             SELECT 1
-            FROM ${users}
-            WHERE ${users.id} = ${participantColumn}
+            FROM ${organizationMembers}
+            INNER JOIN ${users} ON ${users.id} = ${organizationMembers.userId}
+            WHERE ${organizationMembers.id} = ${participantColumn}
+              AND ${organizationMembers.orgId} = ${orgId}
               AND (
                 ${users.name} ILIKE ${searchPattern}
                 OR ${users.email} ILIKE ${searchPattern}
@@ -210,7 +246,7 @@ export class DelegationsService {
       : undefined;
     const conditions = and(
       eq(userDelegations.orgId, orgId),
-      eq(actorColumn, userId),
+      eq(actorColumn, actorMembershipId),
       direction === "received"
         ? and(
             eq(userDelegations.status, "ACTIVE"),
@@ -289,14 +325,27 @@ export class DelegationsService {
           endsAt,
           now,
         );
-        const delegatee = await tx.query.organizationMembers.findFirst({
-          where: and(
-            eq(organizationMembers.orgId, actor.orgId),
-            eq(organizationMembers.userId, body.delegateeId),
-            eq(organizationMembers.status, "ACTIVE"),
-          ),
-          columns: { id: true },
-        });
+        const [delegator, delegatee] = await Promise.all([
+          tx.query.organizationMembers.findFirst({
+            where: and(
+              eq(organizationMembers.orgId, actor.orgId),
+              eq(organizationMembers.userId, actor.userId),
+              eq(organizationMembers.status, "ACTIVE"),
+            ),
+            columns: { id: true },
+          }),
+          tx.query.organizationMembers.findFirst({
+            where: and(
+              eq(organizationMembers.orgId, actor.orgId),
+              eq(organizationMembers.userId, body.delegateeId),
+              eq(organizationMembers.status, "ACTIVE"),
+            ),
+            columns: { id: true },
+          }),
+        ]);
+        if (!delegator) {
+          throw new NotFoundException("Active delegator membership not found");
+        }
         if (!delegatee) {
           throw new NotFoundException("Active delegatee not found");
         }
@@ -340,6 +389,7 @@ export class DelegationsService {
           targetId: created.id,
           targetType: "user_delegation",
           metadata: {
+            delegatorId: actor.userId,
             delegateeId: body.delegateeId,
             permissions: body.permissions,
             startsAt: startsAt.toISOString(),
@@ -378,21 +428,42 @@ export class DelegationsService {
         if (!delegation) {
           throw new NotFoundException("Delegation not found");
         }
-        if (!actor.isOrgOwner && delegation.delegatorId !== actor.userId) {
+        const actorMemberId = actingMembershipId(actor.principal);
+        if (!actor.isOrgOwner && delegation.delegatorMembershipId !== actorMemberId) {
           throw new ForbiddenException(
             "Only the delegator or an org owner can revoke a delegation",
           );
         }
-        const permissionRows = await tx
-          .select({ permissionKey: userDelegationPermissions.permissionKey })
-          .from(userDelegationPermissions)
-          .where(
-            and(
-              eq(userDelegationPermissions.orgId, orgId),
-              eq(userDelegationPermissions.delegationId, id),
+        const [permissionRows, membershipRows] = await Promise.all([
+          tx
+            .select({ permissionKey: userDelegationPermissions.permissionKey })
+            .from(userDelegationPermissions)
+            .where(
+              and(
+                eq(userDelegationPermissions.orgId, orgId),
+                eq(userDelegationPermissions.delegationId, id),
+              ),
+            )
+            .orderBy(asc(userDelegationPermissions.permissionKey)),
+          tx
+            .select({
+              id: organizationMembers.id,
+              userId: organizationMembers.userId,
+            })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                inArray(organizationMembers.id, [
+                  delegation.delegatorMembershipId,
+                  delegation.delegateeMembershipId,
+                ]),
+              ),
             ),
-          )
-          .orderBy(asc(userDelegationPermissions.permissionKey));
+        ]);
+        const membershipUserMap = new Map(membershipRows.map((r) => [r.id, r.userId]));
+        const delegatorUserId = membershipUserMap.get(delegation.delegatorMembershipId) ?? null;
+        const delegateeUserId = membershipUserMap.get(delegation.delegateeMembershipId) ?? null;
         const [updated] = await tx
           .update(userDelegations)
           .set({
@@ -415,8 +486,8 @@ export class DelegationsService {
           targetId: id,
           targetType: "user_delegation",
           metadata: {
-            delegatorId: delegation.delegatorId,
-            delegateeId: delegation.delegateeId,
+            delegatorId: delegatorUserId,
+            delegateeId: delegateeUserId,
             permissions: permissionRows.map((row) => row.permissionKey),
           },
         });
@@ -427,12 +498,14 @@ export class DelegationsService {
             delegateeId: delegation.delegateeId,
             permissions: permissionRows.map((row) => row.permissionKey),
           },
-          delegateeId: delegation.delegateeId,
+          delegateeUserId,
         };
       },
       { orgId },
     );
-    await this.invalidateDelegateeSession(result.delegateeId);
+    if (result.delegateeUserId) {
+      await this.invalidateDelegateeSession(result.delegateeUserId);
+    }
     const { updated } = result;
     return updated;
   }

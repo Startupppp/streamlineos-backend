@@ -5,6 +5,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { ExportResponsesInput } from "./dto/survey-analytics.schemas";
 
+const SURVEY_EXPORT_CAP = 5_000;
+
 function csvEscape(value: unknown): string {
   const str = value === null || value === undefined ? "" : String(value);
   if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
@@ -23,7 +25,9 @@ export class SurveyExportService {
     const sessions = await this.db.query.surveyResponseSessions.findMany({
       where: and(...conditions),
       orderBy: [asc(surveyResponseSessions.startedAt)],
+      limit: SURVEY_EXPORT_CAP,
     });
+    const truncated = sessions.length === SURVEY_EXPORT_CAP;
 
     const questions = await this.db.query.surveyQuestions.findMany({
       where: and(eq(surveyQuestions.orgId, orgId), eq(surveyQuestions.surveyId, surveyId)),
@@ -70,6 +74,6 @@ export class SurveyExportService {
       }
     }
 
-    return rows.join("\n");
+    return { csv: rows.join("\n"), truncated, rowCount: sessions.length };
   }
 }

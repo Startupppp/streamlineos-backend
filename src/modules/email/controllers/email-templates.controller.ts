@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Post, UseGuards } from "@nestjs/common
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { EmailRoutesService } from "../email-routes.service";
 import { emailTemplateTestSchema, type EmailTemplateTestInput } from "../dto/email.schemas";
 
@@ -21,7 +21,8 @@ export class EmailTemplatesController {
   @Post("test")
   @HttpCode(200)
   @RequirePermission("settings:email-templates:manage")
-  test(@Body(new ZodValidationPipe(emailTemplateTestSchema)) body: EmailTemplateTestInput) {
+  @Validate({ body: emailTemplateTestSchema })
+  test(@Body() body: EmailTemplateTestInput) {
     return this.routes.sendTemplateTest(body.templateId, body.testEmail);
   }
 }

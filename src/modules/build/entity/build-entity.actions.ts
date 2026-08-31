@@ -322,7 +322,7 @@ export class BuildEntityActions {
     await tx.insert(ticketActivityLog).values({
       orgId: actor.orgId,
       ticketId,
-      userId: actor.userId,
+      userMembershipId: actor.membershipId ?? null,
       action,
       fromValue,
       toValue,

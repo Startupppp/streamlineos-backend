@@ -16,7 +16,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PmWorkspacesService } from "./pm-workspaces.service";
 import {
   addWorkspaceMemberSchema,
@@ -30,6 +29,11 @@ import {
   type ListWorkspacesQuery,
   type UpdateWorkspaceInput,
 } from "./dto/pm-workspaces.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const pmWorkspaceIdParams = z.object({ pmWorkspaceId: z.string().min(1) }).strict();
+const pmWorkspaceIdpmWorkspaceMembershipIdParams = z.object({ pmWorkspaceId: z.string().min(1), pmWorkspaceMembershipId: z.string().min(1) }).strict();
 
 @RequireModule("build")
 @Controller("product-management/workspaces")
@@ -39,8 +43,9 @@ export class PmWorkspacesController {
 
   @Get()
   @RequirePermission("build:workspaces:view")
+  @Validate({ query: listWorkspacesQuerySchema })
   listWorkspaces(
-    @Query(new ZodValidationPipe(listWorkspacesQuerySchema)) query: ListWorkspacesQuery,
+    @Query() query: ListWorkspacesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listWorkspaces(u.orgId, query);
@@ -48,6 +53,7 @@ export class PmWorkspacesController {
 
   @Get(":pmWorkspaceId")
   @RequirePermission("build:workspaces:view")
+  @Validate({ params: pmWorkspaceIdParams })
   getWorkspace(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -58,8 +64,9 @@ export class PmWorkspacesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:workspaces:create")
+  @Validate({ body: createWorkspaceSchema })
   createWorkspace(
-    @Body(new ZodValidationPipe(createWorkspaceSchema)) body: CreateWorkspaceInput,
+    @Body() body: CreateWorkspaceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createWorkspace(u.orgId, u.userId, body);
@@ -67,9 +74,10 @@ export class PmWorkspacesController {
 
   @Patch(":pmWorkspaceId")
   @RequirePermission("build:workspaces:update")
+  @Validate({ params: pmWorkspaceIdParams, body: updateWorkspaceSchema })
   updateWorkspace(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
-    @Body(new ZodValidationPipe(updateWorkspaceSchema)) body: UpdateWorkspaceInput,
+    @Body() body: UpdateWorkspaceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateWorkspace(u.orgId, u.userId, pmWorkspaceId, body);
@@ -78,6 +86,7 @@ export class PmWorkspacesController {
   @Delete(":pmWorkspaceId")
   @HttpCode(204)
   @RequirePermission("build:workspaces:delete")
+  @Validate({ params: pmWorkspaceIdParams })
   deleteWorkspace(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -87,9 +96,10 @@ export class PmWorkspacesController {
 
   @Get(":pmWorkspaceId/members")
   @RequirePermission("build:workspaces:members:view")
+  @Validate({ params: pmWorkspaceIdParams, query: listMembersQuerySchema })
   listMembers(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
-    @Query(new ZodValidationPipe(listMembersQuerySchema)) query: ListMembersQuery,
+    @Query() query: ListMembersQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listMembers(u.orgId, pmWorkspaceId, query);
@@ -98,9 +108,10 @@ export class PmWorkspacesController {
   @Post(":pmWorkspaceId/members")
   @HttpCode(201)
   @RequirePermission("build:workspaces:members:manage")
+  @Validate({ params: pmWorkspaceIdParams, body: addWorkspaceMemberSchema })
   addMember(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
-    @Body(new ZodValidationPipe(addWorkspaceMemberSchema)) body: AddWorkspaceMemberInput,
+    @Body() body: AddWorkspaceMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.addMember(u.orgId, u.userId, pmWorkspaceId, body);
@@ -109,6 +120,7 @@ export class PmWorkspacesController {
   @Delete(":pmWorkspaceId/members/:pmWorkspaceMembershipId")
   @HttpCode(200)
   @RequirePermission("build:workspaces:members:manage")
+  @Validate({ params: pmWorkspaceIdpmWorkspaceMembershipIdParams })
   removeMember(
     @Param("pmWorkspaceId") pmWorkspaceId: string,
     @Param("pmWorkspaceMembershipId") pmWorkspaceMembershipId: string,

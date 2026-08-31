@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, lt } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import {
   moduleOwnerships,
   organizationMembers,
@@ -18,19 +18,21 @@ import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { stableHash } from "../../common/cache/cache-hash";
-import { forEachOrg, registerAfterCommit } from "../../common/tenant";
+import { registerAfterCommit } from "../../common/tenant";
 import { logger } from "../../common/logger/logger.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import {
   fetchMembershipById,
   fetchMembershipByUser,
-  resolveMembershipUserIds,
 } from "./ownership-members.helper";
+import { OwnershipTransferExpiryService } from "./ownership-transfer-expiry.service";
 import type {
   InitiateModuleTransferInput,
   InitiateOrgTransferInput,
   ListTransfersInput,
 } from "./dto/ownership.schemas";
+import { canTransferModuleOwnership } from "../module-access/module-standing";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 @Injectable()
 export class OwnershipTransfersService {
@@ -39,6 +41,7 @@ export class OwnershipTransfersService {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly expiry: OwnershipTransferExpiryService,
   ) {}
 
   async initiateOrgTransfer(
@@ -87,6 +90,7 @@ export class OwnershipTransfersService {
           scope: "ORGANIZATION",
           moduleKey: null,
           fromMembershipId: actorMembership.id,
+          initiatedByMembershipId: actorMembership.id,
           toMembershipId: input.toMembershipId,
           status: "PENDING",
           expiresAt,
@@ -107,6 +111,7 @@ export class OwnershipTransfersService {
         targetType: "membership",
         metadata: {
           transferId: transfer.id,
+          initiatedByMembershipId: actorMembership.id,
           fromMembershipId: actorMembership.id,
           toMembershipId: input.toMembershipId,
           expiresAt,
@@ -148,7 +153,7 @@ export class OwnershipTransfersService {
     actorUserId: string,
     moduleKey: string,
     input: InitiateModuleTransferInput,
-    isOrgOwner: boolean,
+    actor: CurrentUserContext,
   ) {
     const actorMembership = await fetchMembershipByUser(
       this.db,
@@ -158,30 +163,31 @@ export class OwnershipTransfersService {
     if (!actorMembership)
       throw new ForbiddenException("Not a member of this organization");
 
-    if (!isOrgOwner) {
-      const [currentOwnership] = await this.db
-        .select({ ownerMembershipId: moduleOwnerships.ownerMembershipId })
-        .from(moduleOwnerships)
-        .where(
-          and(
-            eq(moduleOwnerships.orgId, orgId),
-            eq(moduleOwnerships.moduleKey, moduleKey),
-          ),
-        )
-        .limit(1);
-      if (!currentOwnership) {
-        throw new NotFoundException("Module ownership record not found");
-      }
-      if (currentOwnership.ownerMembershipId !== actorMembership.id) {
-        throw new ForbiddenException(
-          "Only the current module owner or an org owner may initiate a module ownership transfer",
-        );
-      }
+    const [currentOwnership] = await this.db
+      .select({ ownerMembershipId: moduleOwnerships.ownerMembershipId })
+      .from(moduleOwnerships)
+      .where(
+        and(
+          eq(moduleOwnerships.orgId, orgId),
+          eq(moduleOwnerships.moduleKey, moduleKey),
+        ),
+      )
+      .limit(1);
+
+    if (!currentOwnership) {
+      throw new NotFoundException("Module ownership record not found");
     }
 
-    if (actorMembership.id === input.toMembershipId) {
+    const canTransfer = await canTransferModuleOwnership(this.db, actor, moduleKey);
+    if (!canTransfer) {
+      throw new ForbiddenException(
+        "Only the module owner, an org admin, or the org owner may initiate a module ownership transfer",
+      );
+    }
+
+    if (currentOwnership.ownerMembershipId === input.toMembershipId) {
       throw new BadRequestException(
-        "Cannot transfer module ownership to yourself",
+        "Cannot transfer module ownership to the current owner; they already hold it",
       );
     }
 
@@ -209,7 +215,8 @@ export class OwnershipTransfersService {
           orgId,
           scope: "MODULE",
           moduleKey,
-          fromMembershipId: actorMembership.id,
+          fromMembershipId: currentOwnership.ownerMembershipId,
+          initiatedByMembershipId: actorMembership.id,
           toMembershipId: input.toMembershipId,
           status: "PENDING",
           expiresAt,
@@ -231,7 +238,8 @@ export class OwnershipTransfersService {
         metadata: {
           transferId: transfer.id,
           moduleKey,
-          fromMembershipId: actorMembership.id,
+          initiatedByMembershipId: actorMembership.id,
+          fromMembershipId: currentOwnership.ownerMembershipId,
           toMembershipId: input.toMembershipId,
           expiresAt,
         },
@@ -322,6 +330,7 @@ export class OwnershipTransfersService {
           scope: ownershipTransfers.scope,
           moduleKey: ownershipTransfers.moduleKey,
           fromMembershipId: ownershipTransfers.fromMembershipId,
+          initiatedByMembershipId: ownershipTransfers.initiatedByMembershipId,
           toMembershipId: ownershipTransfers.toMembershipId,
           status: ownershipTransfers.status,
           initiatedAt: ownershipTransfers.initiatedAt,
@@ -383,6 +392,7 @@ export class OwnershipTransfersService {
         scope: ownershipTransfers.scope,
         moduleKey: ownershipTransfers.moduleKey,
         fromMembershipId: ownershipTransfers.fromMembershipId,
+        initiatedByMembershipId: ownershipTransfers.initiatedByMembershipId,
         toMembershipId: ownershipTransfers.toMembershipId,
         status: ownershipTransfers.status,
         initiatedAt: ownershipTransfers.initiatedAt,
@@ -414,82 +424,6 @@ export class OwnershipTransfersService {
   }
 
   async expireStaleTransfers(): Promise<{ expired: number }> {
-    const now = new Date();
-    const expired: Array<{
-      orgId: string;
-      transferId: string;
-      targetUserIds: string[];
-    }> = [];
-
-    await forEachOrg(
-      this.db,
-      "ownership-transfer-expiry",
-      async (tx, orgId) => {
-        const rows = await tx
-          .update(ownershipTransfers)
-          .set({ status: "EXPIRED" })
-          .where(
-            and(
-              eq(ownershipTransfers.orgId, orgId),
-              eq(ownershipTransfers.status, "PENDING"),
-              lt(ownershipTransfers.expiresAt, now),
-            ),
-          )
-          .returning({
-            id: ownershipTransfers.id,
-            fromMembershipId: ownershipTransfers.fromMembershipId,
-            toMembershipId: ownershipTransfers.toMembershipId,
-            scope: ownershipTransfers.scope,
-            moduleKey: ownershipTransfers.moduleKey,
-          });
-        if (rows.length === 0) return;
-
-        const expiredModuleKeys: string[] = [];
-        for (const row of rows) {
-          expired.push({
-            orgId,
-            transferId: row.id,
-            targetUserIds: await resolveMembershipUserIds(tx, orgId, [
-              row.fromMembershipId,
-              row.toMembershipId,
-            ]),
-          });
-          if (row.scope === "MODULE" && row.moduleKey !== null)
-            expiredModuleKeys.push(row.moduleKey);
-        }
-
-        await Promise.all([
-          this.cache.invalidateNamespaceForOrg(orgId, "ownership:transfers"),
-          ...expiredModuleKeys.map((k) =>
-            this.cache.invalidateForOrg(orgId, `module-access:ownership:${k}`),
-          ),
-        ]);
-      },
-    );
-
-    for (const row of expired) {
-      if (row.targetUserIds.length === 0) continue;
-      void this.dispatch
-        .emit({
-          eventKey: "ownership.transfer.expired",
-          orgId: row.orgId,
-          targetUserIds: row.targetUserIds,
-          entityType: "ownership_transfer",
-          entityId: row.transferId,
-          title: "Ownership transfer expired",
-          message:
-            "An ownership transfer request expired before it was answered. Ownership is unchanged.",
-          link: "/settings/organization",
-        })
-        .catch((error: unknown) => {
-          logger.error("ownership transfer expiry notification failed", {
-            error,
-            transferId: row.transferId,
-            orgId: row.orgId,
-          });
-        });
-    }
-
-    return { expired: expired.length };
+    return this.expiry.expireStaleTransfers();
   }
 }

@@ -117,7 +117,7 @@ export class FeedbackService {
     await this.db.transaction(async (tx) => {
       await tx
         .insert(feedbackCycleResponses)
-        .values({ requestId, responses: data.responses, overallRating: data.overallRating });
+        .values({ requestId, orgId, responses: data.responses, overallRating: data.overallRating });
 
       await tx
         .update(feedbackCycleRequests)
@@ -147,7 +147,7 @@ export class FeedbackService {
     const responses = await this.db
       .select()
       .from(feedbackCycleResponses)
-      .where(inArray(feedbackCycleResponses.requestId, requestIds));
+      .where(and(eq(feedbackCycleResponses.orgId, orgId), inArray(feedbackCycleResponses.requestId, requestIds)));
 
     return { subjectId, requests, responses };
   }

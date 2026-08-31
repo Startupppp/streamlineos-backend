@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TimesheetsService } from "./timesheets.service";
 import {
   billingSummaryQuerySchema,
@@ -33,6 +32,12 @@ import {
   type UpdateEntryInput,
 } from "./dto/timesheets.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
+const projectAndTicketIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/time-entries")
@@ -42,8 +47,9 @@ export class TimeEntriesController {
 
   @Get()
   @RequirePermission("build:timesheets:view")
+  @Validate({ query: timeEntriesListQuerySchema })
   listTimeEntries(
-    @Query(new ZodValidationPipe(timeEntriesListQuerySchema)) query: TimeEntriesListQuery,
+    @Query() query: TimeEntriesListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.timesheets.listTimeEntries(u, query);
@@ -51,15 +57,18 @@ export class TimeEntriesController {
 
   @Get("team")
   @RequirePermission("build:timesheets:manage")
+  @Validate({ query: teamTimesheetsQuerySchema })
   teamTimesheets(
-    @Query(new ZodValidationPipe(teamTimesheetsQuerySchema)) query: TeamTimesheetsQuery,
+    @Query() query: TeamTimesheetsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.timesheets.teamTimesheets(u, query);
   }
 
   @Patch(":entryId/approve")
+  @Idempotent("build.timesheet.approve-entry")
   @RequirePermission("build:timesheets:manage")
+  @Validate({ params: entryIdParams })
   approveEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -68,10 +77,12 @@ export class TimeEntriesController {
   }
 
   @Patch(":entryId/reject")
+  @Idempotent("build.timesheet.reject-entry")
   @RequirePermission("build:timesheets:manage")
+  @Validate({ params: entryIdParams, body: rejectEntrySchema })
   rejectEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
-    @Body(new ZodValidationPipe(rejectEntrySchema)) body: RejectEntryInput,
+    @Body() body: RejectEntryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.timesheets.rejectEntry(u, entryId, body);
@@ -79,9 +90,10 @@ export class TimeEntriesController {
 
   @Patch(":entryId")
   @RequirePermission("build:timesheets:create")
+  @Validate({ params: entryIdParams, body: updateEntrySchema })
   updateEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
-    @Body(new ZodValidationPipe(updateEntrySchema)) body: UpdateEntryInput,
+    @Body() body: UpdateEntryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.timesheets.updateEntry(u, entryId, body);
@@ -90,6 +102,7 @@ export class TimeEntriesController {
   @Delete(":entryId")
   @RequirePermission("build:timesheets:create")
   @HttpCode(204)
+  @Validate({ params: entryIdParams })
   deleteEntry(
     @Param("entryId", ParseIntPipe) entryId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -106,8 +119,9 @@ export class BillingSummaryController {
 
   @Get()
   @RequirePermission("build:timesheets:view")
+  @Validate({ query: billingSummaryQuerySchema })
   billingSummary(
-    @Query(new ZodValidationPipe(billingSummaryQuerySchema)) query: BillingSummaryQuery,
+    @Query() query: BillingSummaryQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.timesheets.billingSummary(u, query);
@@ -122,6 +136,7 @@ export class TicketTimeEntriesController {
 
   @Get()
   @RequirePermission("build:timesheets:view")
+  @Validate({ params: projectAndTicketIdParams })
   listTicketTimeEntries(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -132,9 +147,10 @@ export class TicketTimeEntriesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:timesheets:create")
+  @Validate({ params: projectAndTicketIdParams, body: logTimeSchema })
   logTicketTime(
     @Param("ticketId", ParseIntPipe) ticketId: number,
-    @Body(new ZodValidationPipe(logTimeSchema)) body: LogTimeInput,
+    @Body() body: LogTimeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.timesheets.logTicketTime(u, ticketId, body);

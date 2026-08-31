@@ -1,11 +1,7 @@
 import { InvAiService } from "./inv-ai.service";
 
-const mockCache = { cached: jest.fn((_, fn) => fn()), invalidate: jest.fn(), invalidatePattern: jest.fn() };
-
-// F3. `null` is the org-wide scope, which is what these dedup and detector tests
-// are about — the gate itself is asserted in `__tests__/inv-anomaly-queue.spec.ts`
-// and in the eval suite, against a genuinely restricted fixture.
-const mockWarehouseScope = { resolve: jest.fn(async () => null) };
+const mockCache = { cached: jest.fn((_, fn) => fn()), invalidate: jest.fn(), invalidateNamespace: jest.fn() };
+const mockNumSeq = { next: jest.fn() };
 
 function buildAiService(db: object) {
   return new InvAiService(db as never, mockCache as never, mockWarehouseScope as never);

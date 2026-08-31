@@ -6,12 +6,12 @@ import {
 import { and, desc, eq, isNull, lt } from "drizzle-orm";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import {
+  organizationPeople,
   ticketActivityLog,
   ticketAttachments,
   ticketLabelMappings,
   tickets,
   ticketWatchers,
-  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -150,23 +150,25 @@ export class ProjectsTicketSubresourcesService {
         fromValue: ticketActivityLog.fromValue,
         toValue: ticketActivityLog.toValue,
         createdAt: ticketActivityLog.createdAt,
-        userId: ticketActivityLog.userId,
-        userName: users.name,
-        userFirstName: users.firstName,
-        userLastName: users.lastName,
-        userImage: users.image,
+        userMembershipId: ticketActivityLog.userMembershipId,
+        actorUserId: organizationPeople.userId,
+        displayName: organizationPeople.displayName,
+        firstName: organizationPeople.firstName,
+        lastName: organizationPeople.lastName,
+        avatarUrl: organizationPeople.avatarUrl,
       })
       .from(ticketActivityLog)
-      .leftJoin(users, eq(users.id, ticketActivityLog.userId))
+      .leftJoin(organizationPeople, and(
+        eq(organizationPeople.organizationId, ticketActivityLog.orgId),
+        eq(organizationPeople.organizationMembershipId, ticketActivityLog.userMembershipId),
+      ))
       .where(and(...conditions))
       .orderBy(desc(ticketActivityLog.id))
       .limit(opts.limit + 1);
 
     const mapped = rows.map((row) => {
-      const fallbackName =
-        `${row.userFirstName ?? ""} ${row.userLastName ?? ""}`.trim();
-      const resolvedName =
-        row.userName ?? (fallbackName.length > 0 ? fallbackName : null);
+      const fallbackName = `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim();
+      const resolvedName = row.displayName ?? (fallbackName.length > 0 ? fallbackName : null);
       return {
         id: row.id,
         action: row.action,
@@ -174,8 +176,8 @@ export class ProjectsTicketSubresourcesService {
         fromValue: row.fromValue,
         toValue: row.toValue,
         createdAt: row.createdAt,
-        user: row.userId
-          ? { id: row.userId, name: resolvedName, image: row.userImage }
+        user: row.userMembershipId !== null && row.userMembershipId !== undefined
+          ? { id: row.actorUserId ?? null, name: resolvedName ?? "Former Member", image: row.avatarUrl ?? null }
           : null,
       };
     });

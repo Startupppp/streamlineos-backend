@@ -89,7 +89,7 @@ async function seedProjects(orgId, workspaceId, count, users) {
 
   await sql`
     insert into build.project_statuses (org_id, project_id, name, "order", type, created_at)
-    select ${orgId}, p.id, s.name, s.ord, s.typ, now()
+    select ${orgId}, p.id, s.name, s.ord, s.typ::state_group, now()
     from unnest(${sql.array(ids)}::int[]) p(id)
     cross join (values
       ('TODO',0,'unstarted'),('IN_PROGRESS',1,'started'),
@@ -258,7 +258,7 @@ async function seedTimesheets(orgId, range, users) {
              (now() - ((g % 400) || ' days')::interval)::date,
              ((g % 8) + 1)::numeric,
              'Seeded work log ' || g,
-             (array['PENDING','APPROVED','APPROVED','APPROVED'])[1 + (g % 4)],
+             (array['PENDING','APPROVED','APPROVED','APPROVED'])[1 + (g % 4)]::timesheet_entry_status,
              (g % 3 <> 0),
              (75 + (g % 50))::numeric,
              'USD',

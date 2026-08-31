@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { HrWebhooksService } from "./hr-webhooks.service";
 import {
@@ -27,6 +26,11 @@ import {
   type UpdateHrWebhookInput,
   type ListDeliveriesInput,
 } from "./dto/hr-webhook.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const subscriptionIdParams = z.object({ subscriptionId: z.coerce.number().int().positive() }).strict();
+const subscriptionIddeliveryIdParams = z.object({ subscriptionId: z.coerce.number().int().positive(), deliveryId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/webhooks")
@@ -54,6 +58,7 @@ export class HrWebhooksController {
 
   @Get(":subscriptionId")
   @RequirePermission("hr:integrations:manage")
+  @Validate({ params: subscriptionIdParams })
   getOne(
     @Param("subscriptionId", ParseIntPipe) subscriptionId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -64,8 +69,9 @@ export class HrWebhooksController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:integrations:manage")
+  @Validate({ body: createHrWebhookSchema })
   create(
-    @Body(new ZodValidationPipe(createHrWebhookSchema)) body: CreateHrWebhookInput,
+    @Body() body: CreateHrWebhookInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.webhooks.createSubscription(u.orgId, u.userId, body);
@@ -73,9 +79,10 @@ export class HrWebhooksController {
 
   @Patch(":subscriptionId")
   @RequirePermission("hr:integrations:manage")
+  @Validate({ params: subscriptionIdParams, body: updateHrWebhookSchema })
   update(
     @Param("subscriptionId", ParseIntPipe) subscriptionId: number,
-    @Body(new ZodValidationPipe(updateHrWebhookSchema)) body: UpdateHrWebhookInput,
+    @Body() body: UpdateHrWebhookInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.webhooks.updateSubscription(u.orgId, subscriptionId, body);
@@ -84,6 +91,7 @@ export class HrWebhooksController {
   @Delete(":subscriptionId")
   @HttpCode(204)
   @RequirePermission("hr:integrations:manage")
+  @Validate({ params: subscriptionIdParams })
   async remove(
     @Param("subscriptionId", ParseIntPipe) subscriptionId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -94,6 +102,7 @@ export class HrWebhooksController {
   @Post(":subscriptionId/test")
   @HttpCode(200)
   @RequirePermission("hr:integrations:manage")
+  @Validate({ params: subscriptionIdParams })
   test(
     @Param("subscriptionId", ParseIntPipe) subscriptionId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -103,10 +112,11 @@ export class HrWebhooksController {
 
   @Get(":subscriptionId/deliveries")
   @RequirePermission("hr:integrations:manage")
+  @Validate({ params: subscriptionIdParams, query: listDeliveriesSchema })
   listDeliveries(
     @Param("subscriptionId", ParseIntPipe) subscriptionId: number,
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(listDeliveriesSchema)) query: ListDeliveriesInput,
+    @Query() query: ListDeliveriesInput,
   ) {
     return this.webhooks.listDeliveries(u.orgId, subscriptionId, query);
   }
@@ -114,6 +124,7 @@ export class HrWebhooksController {
   @Post(":subscriptionId/deliveries/:deliveryId/redeliver")
   @HttpCode(200)
   @RequirePermission("hr:integrations:manage")
+  @Validate({ params: subscriptionIddeliveryIdParams })
   redeliver(
     @Param("subscriptionId", ParseIntPipe) subscriptionId: number,
     @Param("deliveryId", ParseIntPipe) deliveryId: number,

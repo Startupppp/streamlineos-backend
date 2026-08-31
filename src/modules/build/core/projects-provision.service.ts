@@ -1,15 +1,13 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { deals, projectMembers, projects, projectStatuses } from "../../../db/schema";
 import { DEFAULT_PROJECT_STATUSES } from "./lib/default-statuses";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
-import { ProjectsEmailService } from "./projects-email.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CreateProjectInput, FromDealInput } from "./dto/projects.schemas";
 import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
@@ -32,7 +30,7 @@ export class ProjectsProvisionService {
     private readonly cache: CacheService,
     private readonly audit: AuditService,
     private readonly planLimits: PlanLimitsService,
-    private readonly projectsEmail: ProjectsEmailService,
+    private readonly dispatch: NotificationDispatchService,
     private readonly pmWorkspaces: PmWorkspacesService,
   ) {}
 
@@ -90,23 +88,6 @@ export class ProjectsProvisionService {
       ];
       await tx.insert(projectMembers).values(memberRows);
 
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "project",
-        aggregateId: String(created.id),
-        aggregateVersion: 1,
-        eventType: "build.project.created",
-        payload: {
-          projectId: created.id,
-          orgId,
-          name: created.name,
-          key: created.key,
-          createdBy: creatorUserId,
-        },
-        occurredAt: new Date(),
-      });
-
       return created;
     }).catch((err: unknown) => {
       if (isDuplicateKeyError(err)) {
@@ -117,9 +98,18 @@ export class ProjectsProvisionService {
 
     const additionalMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
     if (additionalMembers.length > 0) {
-      void this.projectsEmail
-        .notifyProjectMembers(creatorUserId, additionalMembers, input.name, projectKey, project.id)
-        .catch(logSideEffectFailure("project member notification email", { orgId }));
+      await this.dispatch.emit({
+        eventKey: "build.project.member_added",
+        orgId,
+        actorUserId: creatorUserId,
+        targetUserIds: additionalMembers,
+        entityType: "project",
+        entityId: String(project.id),
+        title: "You were added to a project",
+        message: `You were added to project "${input.name}" (${projectKey}).`,
+        link: `/projects/${project.id}`,
+        variables: { projectName: input.name, projectKey, projectId: project.id },
+      }).catch(logSideEffectFailure("project member notification", { orgId }));
     }
 
     this.audit.log({
@@ -186,24 +176,6 @@ export class ProjectsProvisionService {
       );
 
       await tx.insert(projectMembers).values({ orgId, projectId: created.id, userId, role: "OWNER" });
-
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "project",
-        aggregateId: String(created.id),
-        aggregateVersion: 1,
-        eventType: "build.project.created",
-        payload: {
-          projectId: created.id,
-          orgId,
-          name: created.name,
-          key: created.key,
-          createdBy: userId,
-          dealId: input.dealId,
-        },
-        occurredAt: new Date(),
-      });
 
       return created;
     }).catch((err: unknown) => {

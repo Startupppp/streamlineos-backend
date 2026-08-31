@@ -5,7 +5,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { ProjectsCustomersService } from "./projects-customers.service";
 import {
   listProjectCustomersSchema,
@@ -20,9 +20,9 @@ export class ProjectsCustomersController {
 
   @Get()
   @RequirePermission("build:customers:view")
+  @Validate({ query: listProjectCustomersSchema })
   list(
-    @Query(new ZodValidationPipe(listProjectCustomersSchema))
-    query: ListProjectCustomersInput,
+    @Query() query: ListProjectCustomersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.list(u.orgId, query);

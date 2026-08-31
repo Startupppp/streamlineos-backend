@@ -14,7 +14,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { WfhService } from "./wfh.service";
 import {
   createWfhSchema,
@@ -23,6 +23,10 @@ import {
   type UpdateWfhInput,
 } from "./dto/wfh.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const requestIdParams = z.object({ requestId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/wfh")
@@ -39,8 +43,9 @@ export class WfhController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:attendance:view")
+  @Validate({ body: createWfhSchema })
   create(
-    @Body(new ZodValidationPipe(createWfhSchema)) body: CreateWfhInput,
+    @Body() body: CreateWfhInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.wfh.create(u.orgId, u.userId, body);
@@ -54,9 +59,10 @@ export class WfhController {
 
   @Patch(":requestId")
   @RequirePermission("hr:attendance:manage")
+  @Validate({ params: requestIdParams, body: updateWfhSchema })
   update(
     @Param("requestId", ParseIntPipe) requestId: number,
-    @Body(new ZodValidationPipe(updateWfhSchema)) body: UpdateWfhInput,
+    @Body() body: UpdateWfhInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.wfh.update(u.orgId, u.userId, requestId, body);

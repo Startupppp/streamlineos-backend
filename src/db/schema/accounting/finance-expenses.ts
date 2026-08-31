@@ -2,7 +2,7 @@ import { boolean, date, decimal, index, integer, pgEnum, pgTable, serial, text, 
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { journalEntries } from "./accounting";
-import { expenseCategories } from "../hr/payroll";
+import { expenseCategories } from "../payroll/claims-and-settlements";
 import { finBankAccounts } from "./finance-banking";
 
 export const finReimbursementBatchStatusEnum = pgEnum("fin_reimbursement_batch_status", ["DRAFT", "APPROVED", "PAID"]);

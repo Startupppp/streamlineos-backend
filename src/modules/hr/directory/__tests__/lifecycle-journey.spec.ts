@@ -13,7 +13,9 @@ describe("Phase 2.1 lifecycle journey (contracts)", () => {
         from: jest.fn().mockReturnValue({
           innerJoin: jest.fn().mockReturnValue({
             where: jest.fn().mockReturnValue({
-              limit: jest.fn().mockResolvedValue([]),
+              limit: jest
+                .fn()
+                .mockResolvedValue([{ id: 7, userId: null, organizationPersonId: null }]),
             }),
           }),
           where: jest.fn().mockReturnValue({

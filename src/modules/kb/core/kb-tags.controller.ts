@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbTagsService } from "./kb-tags.service";
 import {
   createTagSchema,
@@ -23,9 +22,16 @@ import {
   type CreateTagInput,
   type SetArticleTagsInput,
 } from "./dto/kb-tags.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { z } from "zod";
+
+const tagIdParams = z.object({ tagId: z.coerce.number().int().positive() }).strict();
+const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@RequireModule("kb")
 export class KbTagsController {
   constructor(private readonly tags: KbTagsService) {}
 
@@ -38,8 +44,9 @@ export class KbTagsController {
   @Post("tags")
   @RequirePermission("kb:articles:manage")
   @HttpCode(201)
+  @Validate({ body: createTagSchema })
   async create(
-    @Body(new ZodValidationPipe(createTagSchema)) body: CreateTagInput,
+    @Body() body: CreateTagInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.tags.create(u.orgId, body);
@@ -47,6 +54,7 @@ export class KbTagsController {
 
   @Delete("tags/:tagId")
   @RequirePermission("kb:articles:manage")
+  @Validate({ params: tagIdParams })
   async remove(
     @Param("tagId", ParseIntPipe) tagId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -56,6 +64,7 @@ export class KbTagsController {
 
   @Get("articles/:articleId/tags")
   @RequirePermission("kb:articles:view")
+  @Validate({ params: articleIdParams })
   async getArticleTags(
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -65,9 +74,10 @@ export class KbTagsController {
 
   @Put("articles/:articleId/tags")
   @RequirePermission("kb:articles:update")
+  @Validate({ params: articleIdParams, body: setArticleTagsSchema })
   async setArticleTags(
     @Param("articleId", ParseIntPipe) articleId: number,
-    @Body(new ZodValidationPipe(setArticleTagsSchema)) body: SetArticleTagsInput,
+    @Body() body: SetArticleTagsInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.tags.setArticleTags(u.orgId, articleId, body);

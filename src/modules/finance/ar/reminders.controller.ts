@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RemindersService } from "./reminders.service";
 import {
   createReminderPolicySchema,
@@ -17,6 +16,10 @@ import {
   type ListReminderPoliciesQuery,
   type ListReminderLogQuery,
 } from "./dto/finance-ar.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/reminders")
@@ -26,8 +29,9 @@ export class RemindersController {
 
   @Get("policies")
   @RequirePermission("accounting:reminders:read")
+  @Validate({ query: listReminderPoliciesSchema })
   listPolicies(
-    @Query(new ZodValidationPipe(listReminderPoliciesSchema)) query: ListReminderPoliciesQuery,
+    @Query() query: ListReminderPoliciesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listPolicies(u.orgId, query);
@@ -36,8 +40,9 @@ export class RemindersController {
   @Post("policies")
   @HttpCode(201)
   @RequirePermission("accounting:reminders:manage")
+  @Validate({ body: createReminderPolicySchema })
   createPolicy(
-    @Body(new ZodValidationPipe(createReminderPolicySchema)) body: CreateReminderPolicyInput,
+    @Body() body: CreateReminderPolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createPolicy(u.orgId, body);
@@ -45,9 +50,10 @@ export class RemindersController {
 
   @Patch("policies/:policyId")
   @RequirePermission("accounting:reminders:manage")
+  @Validate({ params: policyIdParams, body: updateReminderPolicySchema })
   updatePolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
-    @Body(new ZodValidationPipe(updateReminderPolicySchema)) body: UpdateReminderPolicyInput,
+    @Body() body: UpdateReminderPolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updatePolicy(u.orgId, policyId, body);
@@ -55,6 +61,7 @@ export class RemindersController {
 
   @Delete("policies/:policyId")
   @RequirePermission("accounting:reminders:manage")
+  @Validate({ params: policyIdParams })
   deletePolicy(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -64,8 +71,9 @@ export class RemindersController {
 
   @Get("log")
   @RequirePermission("accounting:reminders:read")
+  @Validate({ query: listReminderLogSchema })
   listLog(
-    @Query(new ZodValidationPipe(listReminderLogSchema)) query: ListReminderLogQuery,
+    @Query() query: ListReminderLogQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listLog(u.orgId, query);

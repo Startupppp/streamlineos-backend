@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const surveyModeSchema = z.enum(["survey", "assessment", "live_session", "lead_qualification", "custom"]);
 export const surveyStatusSchema = z.enum(["draft", "testing", "published", "paused", "closed", "archived"]);
@@ -7,8 +8,8 @@ export const listSurveysSchema = z.object({
   status: surveyStatusSchema.optional(),
   mode: surveyModeSchema.optional(),
   search: z.string().trim().max(200).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  page: pageNumberField,
+  pageSize: pageSizeField(25, 100),
 });
 
 export const createSurveySchema = z.object({

@@ -4,6 +4,7 @@
   ForbiddenException,
   Inject,
   Injectable,
+  NotFoundException,
 } from "@nestjs/common";
 import { and, eq, lt } from "drizzle-orm";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
@@ -158,12 +159,12 @@ export class AiConfirmationService {
       const rows = await tx
         .select()
         .from(aiActionProposals)
-        .where(eq(aiActionProposals.id, proposalId))
+        .where(and(eq(aiActionProposals.id, proposalId), eq(aiActionProposals.orgId, input.actor.orgId)))
         .for("update")
         .limit(1);
 
       const row = rows[0];
-      if (!row) throw new ForbiddenException("Proposal not found");
+      if (!row) throw new NotFoundException("Proposal not found");
 
       if (row.status === "CONFIRMED" || row.status === "EXECUTED") {
         throw new ConflictException("Proposal already confirmed or executed");

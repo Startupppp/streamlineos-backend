@@ -13,7 +13,6 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import {
@@ -26,6 +25,10 @@ import {
 } from "./dto/expense.schemas";
 import { ExpensesService } from "./expenses.service";
 import { ExpensesWriteService } from "./expenses-write.service";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const expenseIdParams = z.object({ expenseId: z.coerce.number().int().positive() }).strict();
 
 @Controller("me/expenses")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -37,9 +40,9 @@ export class EmployeeExpensesController {
   ) {}
 
   @Get()
+  @Validate({ query: selfExpensePageDataSchema })
   pageData(
-    @Query(new ZodValidationPipe(selfExpensePageDataSchema))
-    filters: SelfExpensePageDataInput,
+    @Query() filters: SelfExpensePageDataInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.expenses.getPageData(
@@ -52,18 +55,19 @@ export class EmployeeExpensesController {
 
   @Post()
   @HttpCode(201)
+  @Validate({ body: createExpenseSchema })
   create(
-    @Body(new ZodValidationPipe(createExpenseSchema)) body: CreateExpenseInput,
+    @Body() body: CreateExpenseInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.expensesWrite.create(user.orgId, user.userId, body);
   }
 
   @Patch(":expenseId")
+  @Validate({ params: expenseIdParams, body: updateExpenseDetailsSchema })
   update(
     @Param("expenseId", ParseIntPipe) expenseId: number,
-    @Body(new ZodValidationPipe(updateExpenseDetailsSchema))
-    body: UpdateExpenseDetailsInput,
+    @Body() body: UpdateExpenseDetailsInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.expensesWrite.updateOwn(

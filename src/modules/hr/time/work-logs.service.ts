@@ -5,7 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
-import { EmailService } from "../../email/email.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { formatDateOnly, getTodayString } from "../../../common/date";
 import type {
@@ -22,7 +22,7 @@ export class WorkLogsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly access: AccessService,
-    private readonly email: EmailService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   async list(u: CurrentUserContext, query: ListWorkLogsQuery) {
@@ -189,22 +189,25 @@ export class WorkLogsService {
     rejectionReason?: string,
   ): Promise<void> {
     const [ownerRow, actorRow] = await Promise.all([
-      this.db.select({ email: users.email, name: users.name }).from(users).where(eq(users.id, log.userId)).limit(1),
+      this.db.select({ id: users.id, name: users.name }).from(users).where(eq(users.id, log.userId)).limit(1),
       this.db.select({ name: users.name }).from(users).where(eq(users.id, actorId)).limit(1),
     ]);
 
-    const ownerEmail = ownerRow[0]?.email;
     const ownerName = ownerRow[0]?.name ?? "Employee";
     const actorName = actorRow[0]?.name ?? "Manager";
     const dateLabel = String(log.date).slice(0, 10);
 
-    if (!ownerEmail) return;
-
-    if (status === "APPROVED") {
-      await this.email.sendWorkLogApprovedEmail(ownerEmail, ownerName, dateLabel, actorName);
-    } else {
-      await this.email.sendWorkLogRejectedEmail(ownerEmail, ownerName, dateLabel, actorName, rejectionReason);
-    }
+    if (!ownerRow[0]) return;
+    await this.dispatch.emit({
+      eventKey: status === "APPROVED" ? "hr.worklog.approved" : "hr.worklog.rejected",
+      orgId: log.orgId,
+      actorUserId: actorId,
+      targetUserIds: [ownerRow[0].id],
+      entityType: "work_log",
+      entityId: String(log.id),
+      message: status === "APPROVED" ? "Your work log was approved." : "Your work log was rejected.",
+      variables: { employeeName: ownerName, actorName, date: dateLabel, rejectionReason: rejectionReason ?? null },
+    });
   }
 
   async exportCsv(u: CurrentUserContext, query: ExportWorkLogsQuery): Promise<string> {

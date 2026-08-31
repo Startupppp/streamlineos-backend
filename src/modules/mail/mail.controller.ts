@@ -13,7 +13,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { AuditService } from "../../common/audit/audit.service";
@@ -43,6 +42,12 @@ import {
   type InboxSummaryInput,
   type ThreadSummaryInput,
 } from "./dto/mail-ai-schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const messageIdParams = z.object({ messageId: z.string().min(1) }).strict();
+const threadIdParams = z.object({ threadId: z.string().min(1) }).strict();
+const messageIdattachmentIdParams = z.object({ messageId: z.string().min(1), attachmentId: z.string().min(1) }).strict();
 
 @Controller("mail")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -61,8 +66,9 @@ export class MailController {
 
   @Get("messages")
   @RequirePermission("mail:inbox:view")
+  @Validate({ query: listMessagesQuerySchema })
   listMessages(
-    @Query(new ZodValidationPipe(listMessagesQuerySchema)) query: ListMessagesQuery,
+    @Query() query: ListMessagesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.mail.listMessages(
@@ -78,9 +84,10 @@ export class MailController {
 
   @Get("messages/:messageId")
   @RequirePermission("mail:inbox:view")
+  @Validate({ params: messageIdParams, query: getMessageQuerySchema })
   getMessage(
     @Param("messageId") messageId: string,
-    @Query(new ZodValidationPipe(getMessageQuerySchema)) query: GetMessageQuery,
+    @Query() query: GetMessageQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.mail.getMessage(u.orgId, u.userId, messageId, query.accountId);
@@ -88,9 +95,10 @@ export class MailController {
 
   @Get("threads/:threadId")
   @RequirePermission("mail:inbox:view")
+  @Validate({ params: threadIdParams, query: getThreadQuerySchema })
   getThread(
     @Param("threadId") threadId: string,
-    @Query(new ZodValidationPipe(getThreadQuerySchema)) query: GetThreadQuery,
+    @Query() query: GetThreadQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.mail.getThread(u.orgId, u.userId, threadId, query.accountId);
@@ -101,8 +109,9 @@ export class MailController {
   @RequirePermission("mail:messages:send")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("mail:send")
+  @Validate({ body: sendMailSchema })
   async sendMail(
-    @Body(new ZodValidationPipe(sendMailSchema)) body: SendMailInput,
+    @Body() body: SendMailInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.mail.sendMail(u.orgId, u.userId, body.accountId, body.to, body.subject, body.bodyHtml, body.cc, body.bcc);
@@ -115,8 +124,9 @@ export class MailController {
   @RequirePermission("mail:messages:send")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("mail:reply")
+  @Validate({ body: replyMailSchema })
   async replyMail(
-    @Body(new ZodValidationPipe(replyMailSchema)) body: ReplyMailInput,
+    @Body() body: ReplyMailInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.mail.replyMail(u.orgId, u.userId, body.accountId, body.messageId, body.threadId, body.bodyHtml, body.cc);
@@ -127,9 +137,10 @@ export class MailController {
   @Post("messages/:messageId/actions")
   @HttpCode(200)
   @RequirePermission("mail:messages:manage")
+  @Validate({ params: messageIdParams, body: mailActionSchema })
   performAction(
     @Param("messageId") messageId: string,
-    @Body(new ZodValidationPipe(mailActionSchema)) body: MailActionInput,
+    @Body() body: MailActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.mail.performAction(u.orgId, u.userId, messageId, body.accountId, body.action, body.threadId);
@@ -137,10 +148,11 @@ export class MailController {
 
   @Get("messages/:messageId/attachments/:attachmentId")
   @RequirePermission("mail:inbox:view")
+  @Validate({ params: messageIdattachmentIdParams, query: getAttachmentQuerySchema })
   getAttachment(
     @Param("messageId") messageId: string,
     @Param("attachmentId") attachmentId: string,
-    @Query(new ZodValidationPipe(getAttachmentQuerySchema)) query: GetAttachmentQuery,
+    @Query() query: GetAttachmentQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.mail.getAttachment(u.orgId, u.userId, messageId, attachmentId, query.accountId, query.fileName);
@@ -149,8 +161,9 @@ export class MailController {
   @Post("ai/inbox-summary")
   @HttpCode(200)
   @RequirePermission("mail:ai:use")
+  @Validate({ body: inboxSummaryBodySchema })
   async aiInboxSummary(
-    @Body(new ZodValidationPipe(inboxSummaryBodySchema)) body: InboxSummaryInput,
+    @Body() body: InboxSummaryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.mailAi.inboxSummary(u, body.accountId);
@@ -159,8 +172,9 @@ export class MailController {
   @Post("ai/thread-summary")
   @HttpCode(200)
   @RequirePermission("mail:ai:use")
+  @Validate({ body: threadSummaryBodySchema })
   async aiThreadSummary(
-    @Body(new ZodValidationPipe(threadSummaryBodySchema)) body: ThreadSummaryInput,
+    @Body() body: ThreadSummaryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.mailAi.threadSummary(u, body.accountId, body.threadId);
@@ -169,8 +183,9 @@ export class MailController {
   @Post("ai/draft")
   @HttpCode(200)
   @RequirePermission("mail:ai:use")
+  @Validate({ body: draftBodySchema })
   async aiDraft(
-    @Body(new ZodValidationPipe(draftBodySchema)) body: DraftInput,
+    @Body() body: DraftInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.mailAi.draft(u, body);

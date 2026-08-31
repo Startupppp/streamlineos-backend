@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus } from "@nestjs/common";
+import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus, Headers } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -6,17 +6,20 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { resolveInvPoScope } from "../stock-engine/inventory-scope";
 import { PoService } from "./po.service";
-import { GrnService } from "./grn.service";
+import { GrnReceiveService } from "./grn-receive.service";
 import {
   listPoSchema, createPoSchema, updatePoSchema, createGrnSchema,
   type ListPoInput, type CreatePoInput, type UpdatePoInput, type CreateGrnInput,
 } from "./dto/inv-purchase-orders.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const poIdParams = z.object({ poId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/purchase-orders")
@@ -24,15 +27,16 @@ import {
 export class InvPurchaseOrdersController {
   constructor(
     private readonly pos: PoService,
-    private readonly grns: GrnService,
+    private readonly grns: GrnReceiveService,
     private readonly access: AccessService,
   ) {}
 
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:read")
+  @Validate({ query: listPoSchema })
   async list(
-    @Query(new ZodValidationPipe(listPoSchema)) filters: ListPoInput,
+    @Query() filters: ListPoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveInvPoScope(this.access, u);
@@ -42,6 +46,7 @@ export class InvPurchaseOrdersController {
   @Get(":poId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:read")
+  @Validate({ params: poIdParams })
   get(
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -53,8 +58,9 @@ export class InvPurchaseOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:create")
   @Idempotent("inventory.purchase-order.create")
+  @Validate({ body: createPoSchema })
   create(
-    @Body(new ZodValidationPipe(createPoSchema)) body: CreatePoInput,
+    @Body() body: CreatePoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.pos.createPo(u.orgId, u.userId, body);
@@ -63,18 +69,21 @@ export class InvPurchaseOrdersController {
   @Patch(":poId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:update")
+  @Validate({ params: poIdParams, body: updatePoSchema })
   update(
     @Param("poId", ParseIntPipe) poId: number,
-    @Body(new ZodValidationPipe(updatePoSchema)) body: UpdatePoInput,
+    @Body() body: UpdatePoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.pos.updatePo(u.orgId, poId, u.userId, body);
   }
 
   @Post(":poId/approve")
+  @Idempotent("inventory.purchase-order.approve")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: poIdParams })
   approve(
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -87,6 +96,7 @@ export class InvPurchaseOrdersController {
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)
   @Idempotent("inventory.purchase-order.send")
+  @Validate({ params: poIdParams })
   send(
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -98,6 +108,7 @@ export class InvPurchaseOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: poIdParams })
   close(
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -109,6 +120,7 @@ export class InvPurchaseOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: poIdParams })
   cancel(
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -120,13 +132,13 @@ export class InvPurchaseOrdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.OK)
+  @Validate({ params: poIdParams, body: createGrnSchema })
   receiveGoods(
     @Param("poId", ParseIntPipe) poId: number,
-    @Body(new ZodValidationPipe(createGrnSchema)) body: CreateGrnInput,
-    @IdempotencyKey() idempotencyKeyHeader: string,
+    @Body() body: CreateGrnInput,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const idempotencyKey = idempotencyKeyHeader;
     return this.grns.receiveGoods(u.orgId, poId, u.userId, idempotencyKey, body);
   }
 }

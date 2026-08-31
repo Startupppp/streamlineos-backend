@@ -26,6 +26,10 @@ export class CalendarSourceRegistry {
   ) {}
 
   register(source: CalendarEventSource): void {
+    const existing = [...this.sources].find((candidate) => candidate.key === source.key);
+    if (existing && existing !== source) {
+      throw new Error(`Calendar source key already registered: ${source.key}`);
+    }
     this.sources.add(source);
   }
 
@@ -56,6 +60,18 @@ export class CalendarSourceRegistry {
       module: s.module,
       enabled: !disabledKeys.has(s.key),
     }));
+  }
+
+  async getOrgLevelSources(orgId: string): Promise<ReadonlyArray<{ key: string; label: string; module: string; moduleEnabled: boolean }>> {
+    const sources = [...this.sources];
+    return Promise.all(
+      sources.map(async (s) => ({
+        key: s.key,
+        label: s.label,
+        module: s.module,
+        moduleEnabled: await this.access.isModuleEnabled(orgId, s.module),
+      })),
+    );
   }
 
   async loadAll(ctx: CalendarSourceContext): Promise<CalendarSourceOutput> {

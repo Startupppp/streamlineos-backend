@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AlumniService } from "./alumni.service";
 import {
   alumniListSchema,
@@ -13,6 +12,7 @@ import {
   type AlumniCreateInput,
 } from "./dto/hr-lifecycle.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("hr")
 @Controller("hr/alumni")
@@ -22,8 +22,9 @@ export class AlumniController {
 
   @Get()
   @RequirePermission("hr:alumni:read")
+  @Validate({ query: alumniListSchema })
   list(
-    @Query(new ZodValidationPipe(alumniListSchema)) query: AlumniListInput,
+    @Query() query: AlumniListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.alumni.list(u.orgId, query.limit);
@@ -33,8 +34,9 @@ export class AlumniController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:alumni:write")
   @HttpCode(201)
+  @Validate({ body: alumniCreateSchema })
   create(
-    @Body(new ZodValidationPipe(alumniCreateSchema)) body: AlumniCreateInput,
+    @Body() body: AlumniCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.alumni.create(u.orgId, body);

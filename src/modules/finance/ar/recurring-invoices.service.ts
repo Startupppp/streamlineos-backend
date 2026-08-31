@@ -40,8 +40,21 @@ export class RecurringInvoicesService {
     const conditions = [eq(finRecurringInvoiceTemplates.orgId, orgId)];
     if (query.isActive !== undefined) conditions.push(eq(finRecurringInvoiceTemplates.isActive, query.isActive));
 
+    const projection = {
+      id: finRecurringInvoiceTemplates.id,
+      name: finRecurringInvoiceTemplates.name,
+      clientId: finRecurringInvoiceTemplates.clientId,
+      frequency: finRecurringInvoiceTemplates.frequency,
+      nextRunDate: finRecurringInvoiceTemplates.nextRunDate,
+      lastRunDate: finRecurringInvoiceTemplates.lastRunDate,
+      endDate: finRecurringInvoiceTemplates.endDate,
+      isActive: finRecurringInvoiceTemplates.isActive,
+      createdBy: finRecurringInvoiceTemplates.createdBy,
+      createdAt: finRecurringInvoiceTemplates.createdAt,
+      updatedAt: finRecurringInvoiceTemplates.updatedAt,
+    };
     const [rows, [{ count }]] = await Promise.all([
-      this.db.select().from(finRecurringInvoiceTemplates).where(and(...conditions)).orderBy(desc(finRecurringInvoiceTemplates.createdAt)).limit(limit).offset(offset),
+      this.db.select(projection).from(finRecurringInvoiceTemplates).where(and(...conditions)).orderBy(desc(finRecurringInvoiceTemplates.createdAt)).limit(limit).offset(offset),
       this.db.select({ count: sql<number>`count(*)::int` }).from(finRecurringInvoiceTemplates).where(and(...conditions)),
     ]);
     return buildListResponse(rows, count, query);

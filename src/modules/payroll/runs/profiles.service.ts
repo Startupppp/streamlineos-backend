@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, Inject } from "@nestjs/common";
-import { and, eq, desc, ilike, or, count, ne, isNull, gte, lte } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { getPostgresErrorCode } from "../../../common/db/postgres-error";
@@ -7,167 +7,30 @@ import { logger } from "../../../common/logger/logger.service";
 import {
   employeeSalaryProfiles,
   employeeSalaryProfileComponents,
-  salaryComponents,
-  organizationPeople,
-  workers,
 } from "../../../db/schema";
 import {
   assertPayrollPayeeEligible,
   assertPayrollWorkerPayeeEligible,
 } from "../lib/payroll-payee-eligibility";
-import { users } from "../../../db/schema";
 import type { DataScope } from "../../access/access.types";
-import { applyScope } from "../../access/apply-scope";
 import type { ListProfilesQuery, CreateProfileInput, PatchProfileInput } from "./dto/runs.schemas";
 import { AuditService } from "../../../common/audit/audit.service";
+import { SalaryProfilesRepository } from "./salary-profiles.repository";
 
 @Injectable()
 export class ProfilesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly profiles: SalaryProfilesRepository,
   ) {}
 
   async listProfiles(orgId: string, query: ListProfilesQuery, scope: DataScope, userId: string) {
-    const offset = (query.page - 1) * query.limit;
-    const scopeCondition = applyScope(scope, orgId, userId, { ownerColumn: employeeSalaryProfiles.userId });
-
-    const conditions = [
-      eq(employeeSalaryProfiles.orgId, orgId),
-      scopeCondition,
-    ];
-
-    if (query.status) {
-      conditions.push(eq(employeeSalaryProfiles.status, query.status as "UPCOMING" | "ACTIVE" | "SUPERSEDED"));
-    } else {
-      conditions.push(eq(employeeSalaryProfiles.status, "ACTIVE"));
-    }
-
-    if (query.workerType) conditions.push(eq(employeeSalaryProfiles.workerType, query.workerType as "EMPLOYEE" | "CONTRACTOR" | "CONSULTANT" | "INTERN" | "EOR"));
-    if (query.costCenter) conditions.push(eq(employeeSalaryProfiles.costCenter, query.costCenter));
-
-    const searchCondition = query.search
-      ? or(
-          ilike(users.name, `%${query.search}%`),
-          ilike(users.email, `%${query.search}%`),
-          ilike(organizationPeople.displayName, `%${query.search}%`),
-          ilike(organizationPeople.firstName, `%${query.search}%`),
-          ilike(organizationPeople.lastName, `%${query.search}%`),
-          ilike(organizationPeople.workEmail, `%${query.search}%`),
-        )
-      : undefined;
-
-    const finalConditions = searchCondition ? [...conditions, searchCondition] : conditions;
-
-    const [rows, [totRow]] = await Promise.all([
-      this.db
-        .select({
-          id: employeeSalaryProfiles.id,
-          userId: employeeSalaryProfiles.userId,
-          workerId: employeeSalaryProfiles.workerId,
-          workerType: employeeSalaryProfiles.workerType,
-          currency: employeeSalaryProfiles.currency,
-          annualCtc: employeeSalaryProfiles.annualCtc,
-          taxRegime: employeeSalaryProfiles.taxRegime,
-          costCenter: employeeSalaryProfiles.costCenter,
-          status: employeeSalaryProfiles.status,
-          effectiveFrom: employeeSalaryProfiles.effectiveFrom,
-          userName: users.name,
-          userEmail: users.email,
-          workerDisplayName: organizationPeople.displayName,
-          workerFirstName: organizationPeople.firstName,
-          workerLastName: organizationPeople.lastName,
-          workerEmail: organizationPeople.workEmail,
-        })
-        .from(employeeSalaryProfiles)
-        .leftJoin(users, eq(users.id, employeeSalaryProfiles.userId))
-        .leftJoin(workers, eq(workers.workerId, employeeSalaryProfiles.workerId))
-        .leftJoin(
-          organizationPeople,
-          and(
-            eq(organizationPeople.organizationPersonId, workers.organizationPersonId),
-            eq(organizationPeople.organizationId, workers.organizationId),
-          ),
-        )
-        .where(and(...finalConditions))
-        .orderBy(users.name, organizationPeople.displayName)
-        .limit(query.limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(employeeSalaryProfiles)
-        .leftJoin(users, eq(users.id, employeeSalaryProfiles.userId))
-        .leftJoin(workers, eq(workers.workerId, employeeSalaryProfiles.workerId))
-        .leftJoin(
-          organizationPeople,
-          and(
-            eq(organizationPeople.organizationPersonId, workers.organizationPersonId),
-            eq(organizationPeople.organizationId, workers.organizationId),
-          ),
-        )
-        .where(and(...finalConditions)),
-    ]);
-
-    const data = rows.map((row) => ({
-      id: row.id,
-      userId: row.userId,
-      workerId: row.workerId,
-      workerType: row.workerType,
-      currency: row.currency,
-      annualCtc: row.annualCtc,
-      taxRegime: row.taxRegime,
-      costCenter: row.costCenter,
-      status: row.status,
-      effectiveFrom: row.effectiveFrom,
-      userName:
-        row.userName ??
-        row.workerDisplayName ??
-        ([row.workerFirstName, row.workerLastName].filter(Boolean).join(" ") || null),
-      userEmail: row.userEmail ?? row.workerEmail,
-    }));
-
-    return { data, total: totRow?.total ?? 0, page: query.page, limit: query.limit };
+    return this.profiles.list(orgId, query, scope, userId);
   }
 
   async getProfile(orgId: string, employeeUserId: string) {
-    const [allProfiles, history] = await Promise.all([
-      this.db
-        .select()
-        .from(employeeSalaryProfiles)
-        .where(and(eq(employeeSalaryProfiles.orgId, orgId), eq(employeeSalaryProfiles.userId, employeeUserId), eq(employeeSalaryProfiles.status, "ACTIVE")))
-        .limit(1),
-      this.db
-        .select()
-        .from(employeeSalaryProfiles)
-        .where(and(eq(employeeSalaryProfiles.orgId, orgId), eq(employeeSalaryProfiles.userId, employeeUserId)))
-        .orderBy(desc(employeeSalaryProfiles.effectiveFrom)),
-    ]);
-
-    const activeProfile = allProfiles[0] ?? null;
-
-    const components = activeProfile
-      ? await this.db
-          .select({
-            id: employeeSalaryProfileComponents.id,
-            componentId: employeeSalaryProfileComponents.componentId,
-            calcMethodOverride: employeeSalaryProfileComponents.calcMethodOverride,
-            amount: employeeSalaryProfileComponents.amount,
-            percent: employeeSalaryProfileComponents.percent,
-            formulaOverride: employeeSalaryProfileComponents.formulaOverride,
-            sortOrder: employeeSalaryProfileComponents.sortOrder,
-            code: salaryComponents.code,
-            name: salaryComponents.name,
-            type: salaryComponents.type,
-            calcMethod: salaryComponents.calcMethod,
-            taxable: salaryComponents.taxable,
-          })
-          .from(employeeSalaryProfileComponents)
-          .innerJoin(salaryComponents, eq(salaryComponents.id, employeeSalaryProfileComponents.componentId))
-          .where(eq(employeeSalaryProfileComponents.profileId, activeProfile.id))
-          .orderBy(salaryComponents.sortOrder)
-      : [];
-
-    return { active: activeProfile, components, history };
+    return this.profiles.findByUser(orgId, employeeUserId);
   }
 
   private async assertNoDateOverlapForWorker(
@@ -318,55 +181,7 @@ export class ProfilesService {
   }
 
   async getProfileByWorker(orgId: string, workerId: string) {
-    const [allProfiles, history] = await Promise.all([
-      this.db
-        .select()
-        .from(employeeSalaryProfiles)
-        .where(
-          and(
-            eq(employeeSalaryProfiles.orgId, orgId),
-            eq(employeeSalaryProfiles.workerId, workerId),
-            eq(employeeSalaryProfiles.status, "ACTIVE"),
-          ),
-        )
-        .limit(1),
-      this.db
-        .select()
-        .from(employeeSalaryProfiles)
-        .where(
-          and(eq(employeeSalaryProfiles.orgId, orgId), eq(employeeSalaryProfiles.workerId, workerId)),
-        )
-        .orderBy(desc(employeeSalaryProfiles.effectiveFrom)),
-    ]);
-
-    const activeProfile = allProfiles[0] ?? null;
-    const components = activeProfile
-      ? await this.loadProfileComponents(activeProfile.id)
-      : [];
-
-    return { active: activeProfile, components, history };
-  }
-
-  private loadProfileComponents(profileId: number) {
-    return this.db
-      .select({
-        id: employeeSalaryProfileComponents.id,
-        componentId: employeeSalaryProfileComponents.componentId,
-        calcMethodOverride: employeeSalaryProfileComponents.calcMethodOverride,
-        amount: employeeSalaryProfileComponents.amount,
-        percent: employeeSalaryProfileComponents.percent,
-        formulaOverride: employeeSalaryProfileComponents.formulaOverride,
-        sortOrder: employeeSalaryProfileComponents.sortOrder,
-        code: salaryComponents.code,
-        name: salaryComponents.name,
-        type: salaryComponents.type,
-        calcMethod: salaryComponents.calcMethod,
-        taxable: salaryComponents.taxable,
-      })
-      .from(employeeSalaryProfileComponents)
-      .innerJoin(salaryComponents, eq(salaryComponents.id, employeeSalaryProfileComponents.componentId))
-      .where(eq(employeeSalaryProfileComponents.profileId, profileId))
-      .orderBy(salaryComponents.sortOrder);
+    return this.profiles.findByWorker(orgId, workerId);
   }
 
   private async assertNoDateOverlap(
@@ -376,49 +191,23 @@ export class ProfilesService {
     effectiveFrom: string,
     excludeProfileId?: number,
   ): Promise<void> {
-    const conditions = [
-      eq(employeeSalaryProfiles.orgId, orgId),
-      eq(employeeSalaryProfiles.userId, employeeUserId),
-      or(
-        eq(employeeSalaryProfiles.status, "ACTIVE"),
-        eq(employeeSalaryProfiles.status, "UPCOMING"),
-      ),
-      // existing.effectiveFrom <= new.effectiveFrom AND (existing.effectiveTo is null OR existing.effectiveTo >= new.effectiveFrom)
-      lte(employeeSalaryProfiles.effectiveFrom, effectiveFrom),
-      or(isNull(employeeSalaryProfiles.effectiveTo), gte(employeeSalaryProfiles.effectiveTo, effectiveFrom)),
-    ];
-    if (excludeProfileId != null) {
-      conditions.push(ne(employeeSalaryProfiles.id, excludeProfileId));
-    }
-
-    const clash = await tx
-      .select({ id: employeeSalaryProfiles.id, effectiveFrom: employeeSalaryProfiles.effectiveFrom })
-      .from(employeeSalaryProfiles)
-      .where(and(...conditions))
-      .limit(1);
-
     const sameDayConditions = [
       eq(employeeSalaryProfiles.orgId, orgId),
       eq(employeeSalaryProfiles.userId, employeeUserId),
       eq(employeeSalaryProfiles.effectiveFrom, effectiveFrom),
     ];
-    if (excludeProfileId != null) {
+    if (excludeProfileId != null)
       sameDayConditions.push(ne(employeeSalaryProfiles.id, excludeProfileId));
-    }
     const sameDay = await tx
       .select({ id: employeeSalaryProfiles.id })
       .from(employeeSalaryProfiles)
       .where(and(...sameDayConditions))
       .limit(1);
 
-    if (sameDay[0]) {
+    if (sameDay[0])
       throw new ConflictException(
         `A salary profile already exists for this employee effective ${effectiveFrom}`,
       );
-    }
-
-    // Clash used for future multi-active overlap hardening; supersede path still primary.
-    void clash;
   }
 
   async createProfile(orgId: string, employeeUserId: string, actorId: string, body: CreateProfileInput) {
@@ -500,13 +289,14 @@ export class ProfilesService {
       }
 
       if (!inserted) throw new Error("Failed to insert profile");
+      const profile = inserted;
 
       if (body.components && body.components.length > 0) {
         try {
           await tx.insert(employeeSalaryProfileComponents).values(
             body.components.map((c, idx) => ({
               orgId,
-              profileId: inserted!.id,
+              profileId: profile.id,
               componentId: c.componentId,
               calcMethodOverride: c.calcMethodOverride,
               amount: c.amount,
@@ -541,93 +331,15 @@ export class ProfilesService {
   }
 
   async patchProfile(orgId: string, employeeUserId: string, profileId: number, body: PatchProfileInput, actorId: string) {
-    const existing = await this.db
-      .select({
-        id: employeeSalaryProfiles.id,
-        status: employeeSalaryProfiles.status,
-        annualCtc: employeeSalaryProfiles.annualCtc,
-      })
-      .from(employeeSalaryProfiles)
-      .where(
-        and(
-          eq(employeeSalaryProfiles.id, profileId),
-          eq(employeeSalaryProfiles.orgId, orgId),
-          eq(employeeSalaryProfiles.userId, employeeUserId),
-        ),
-      )
-      .limit(1);
-
-    if (!existing[0]) return null;
-    if (existing[0].status === "SUPERSEDED") return { ok: false, reason: "superseded" };
-
-    const oldAnnualCtc = existing[0].annualCtc;
-
-    const updateData: Partial<typeof employeeSalaryProfiles.$inferInsert> = {};
-    if (body.annualCtc !== undefined) updateData.annualCtc = body.annualCtc;
-    if (body.workerType !== undefined) updateData.workerType = body.workerType;
-    if (body.currency !== undefined) updateData.currency = body.currency;
-    if (body.payoutCurrency !== undefined) updateData.payoutCurrency = body.payoutCurrency;
-    if (body.taxRegime !== undefined) updateData.taxRegime = body.taxRegime;
-    if (body.costCenter !== undefined) updateData.costCenter = body.costCenter;
-
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(employeeSalaryProfiles)
-        .set(updateData)
-        .where(and(eq(employeeSalaryProfiles.id, profileId), eq(employeeSalaryProfiles.orgId, orgId)));
-
-      if (body.components && body.components.length > 0) {
-        await tx
-          .delete(employeeSalaryProfileComponents)
-          .where(and(eq(employeeSalaryProfileComponents.profileId, profileId), eq(employeeSalaryProfileComponents.orgId, orgId)));
-
-        await tx.insert(employeeSalaryProfileComponents).values(
-          body.components.map((c, idx) => ({
-            orgId,
-            profileId,
-            componentId: c.componentId,
-            calcMethodOverride: c.calcMethodOverride,
-            amount: c.amount,
-            percent: c.percent,
-            formulaOverride: c.formulaOverride,
-            sortOrder: idx,
-          })),
-        );
-      }
-    });
-
-    this.audit.log({
-      action: "payroll.salary_profile_updated",
-      userId: actorId,
-      orgId,
-      targetId: employeeUserId,
-      targetType: "employee",
-      metadata: {
-        profileId,
-        oldAnnualCtc,
-        newAnnualCtc: body.annualCtc ?? oldAnnualCtc,
-      },
-    });
-
-    return { ok: true };
+    return this.patchProfileForSubject(orgId, employeeUserId, profileId, body, actorId, "employee");
   }
 
   async listHistory(orgId: string, employeeUserId: string) {
-    return this.db
-      .select()
-      .from(employeeSalaryProfiles)
-      .where(and(eq(employeeSalaryProfiles.orgId, orgId), eq(employeeSalaryProfiles.userId, employeeUserId)))
-      .orderBy(desc(employeeSalaryProfiles.effectiveFrom))
-      .limit(100);
+    return this.profiles.historyByUser(orgId, employeeUserId);
   }
 
   async listHistoryByWorker(orgId: string, workerId: string) {
-    return this.db
-      .select()
-      .from(employeeSalaryProfiles)
-      .where(and(eq(employeeSalaryProfiles.orgId, orgId), eq(employeeSalaryProfiles.workerId, workerId)))
-      .orderBy(desc(employeeSalaryProfiles.effectiveFrom))
-      .limit(100);
+    return this.profiles.historyByWorker(orgId, workerId);
   }
 
   async patchProfileByWorker(
@@ -637,6 +349,20 @@ export class ProfilesService {
     body: PatchProfileInput,
     actorId: string,
   ) {
+    return this.patchProfileForSubject(orgId, workerId, profileId, body, actorId, "worker");
+  }
+
+  private async patchProfileForSubject(
+    orgId: string,
+    subjectId: string,
+    profileId: number,
+    body: PatchProfileInput,
+    actorId: string,
+    subjectType: "employee" | "worker",
+  ) {
+    const subjectCondition = subjectType === "employee"
+      ? eq(employeeSalaryProfiles.userId, subjectId)
+      : eq(employeeSalaryProfiles.workerId, subjectId);
     const existing = await this.db
       .select({
         id: employeeSalaryProfiles.id,
@@ -648,7 +374,7 @@ export class ProfilesService {
         and(
           eq(employeeSalaryProfiles.id, profileId),
           eq(employeeSalaryProfiles.orgId, orgId),
-          eq(employeeSalaryProfiles.workerId, workerId),
+          subjectCondition,
         ),
       )
       .limit(1);
@@ -700,8 +426,8 @@ export class ProfilesService {
       action: "payroll.salary_profile_updated",
       userId: actorId,
       orgId,
-      targetId: workerId,
-      targetType: "worker",
+      targetId: subjectId,
+      targetType: subjectType,
       metadata: {
         profileId,
         oldAnnualCtc,

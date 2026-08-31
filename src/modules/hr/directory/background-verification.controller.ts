@@ -12,7 +12,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { BackgroundVerificationService } from "./background-verification.service";
 import {
   createBgvSchema,
@@ -37,8 +37,9 @@ export class BackgroundVerificationController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:sensitive:manage")
+  @Validate({ body: createBgvSchema })
   create(
-    @Body(new ZodValidationPipe(createBgvSchema)) body: CreateBgvInput,
+    @Body() body: CreateBgvInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.bgv.create(u.orgId, body);
@@ -46,8 +47,9 @@ export class BackgroundVerificationController {
 
   @Patch()
   @RequirePermission("hr:sensitive:manage")
+  @Validate({ body: updateBgvSchema })
   update(
-    @Body(new ZodValidationPipe(updateBgvSchema)) body: UpdateBgvInput,
+    @Body() body: UpdateBgvInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.bgv.update(u.orgId, body);

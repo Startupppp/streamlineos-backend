@@ -16,7 +16,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -35,6 +34,10 @@ import {
   type OnboardingDocsSummaryQueryInput,
   type ReviewOnboardingDocInput,
 } from "./dto/hr-lifecycle.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const docIdParams = z.object({ docId: z.coerce.number().int().positive() }).strict();
 
 @Controller("hr/onboarding-docs")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -54,8 +57,9 @@ export class OnboardingViewsController {
 
   @Get("summary")
   @RequirePermission("hr:onboarding:manage")
+  @Validate({ query: onboardingDocsSummaryQuerySchema })
   async summary(
-    @Query(new ZodValidationPipe(onboardingDocsSummaryQuerySchema)) query: OnboardingDocsSummaryQueryInput,
+    @Query() query: OnboardingDocsSummaryQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveOnboardingManageScope(this.access, currentUser);
@@ -64,8 +68,9 @@ export class OnboardingViewsController {
 
   @Get("me")
   @RequirePermission("self:onboarding-docs")
+  @Validate({ query: listOnboardingDocsQuerySchema })
   listMine(
-    @Query(new ZodValidationPipe(listOnboardingDocsQuerySchema)) query: ListOnboardingDocsQueryInput,
+    @Query() query: ListOnboardingDocsQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.onboardingViews.list(currentUser.orgId, currentUser.userId, false, query, "own");
@@ -74,8 +79,9 @@ export class OnboardingViewsController {
   @Post("me")
   @HttpCode(201)
   @RequirePermission("self:onboarding-docs")
+  @Validate({ body: createOwnOnboardingDocSchema })
   createMine(
-    @Body(new ZodValidationPipe(createOwnOnboardingDocSchema))
+    @Body()
     body: CreateOwnOnboardingDocInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
@@ -84,6 +90,7 @@ export class OnboardingViewsController {
 
   @Get("me/:docId/file")
   @RequirePermission("self:onboarding-docs")
+  @Validate({ params: docIdParams })
   getMyFile(
     @Param("docId", ParseIntPipe) docId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -93,8 +100,9 @@ export class OnboardingViewsController {
 
   @Get()
   @RequirePermission("hr:onboarding:manage")
+  @Validate({ query: listOnboardingDocsQuerySchema })
   async list(
-    @Query(new ZodValidationPipe(listOnboardingDocsQuerySchema)) query: ListOnboardingDocsQueryInput,
+    @Query() query: ListOnboardingDocsQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const isAdmin = await this.canManageOnboarding(currentUser);
@@ -105,8 +113,9 @@ export class OnboardingViewsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:onboarding:manage")
+  @Validate({ body: createOnboardingDocSchema })
   async create(
-    @Body(new ZodValidationPipe(createOnboardingDocSchema)) body: CreateOnboardingDocInput,
+    @Body() body: CreateOnboardingDocInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const canManage = await this.canManageOnboarding(currentUser);
@@ -116,6 +125,7 @@ export class OnboardingViewsController {
 
   @Get(":docId/file")
   @RequirePermission("hr:onboarding:manage")
+  @Validate({ params: docIdParams })
   async getFile(
     @Param("docId", ParseIntPipe) docId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -127,9 +137,10 @@ export class OnboardingViewsController {
   @Patch(":docId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:manage")
+  @Validate({ params: docIdParams, body: reviewOnboardingDocSchema })
   async review(
     @Param("docId", ParseIntPipe) docId: number,
-    @Body(new ZodValidationPipe(reviewOnboardingDocSchema)) body: ReviewOnboardingDocInput,
+    @Body() body: ReviewOnboardingDocInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveOnboardingManageScope(this.access, currentUser);

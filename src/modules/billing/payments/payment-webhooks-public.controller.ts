@@ -1,18 +1,19 @@
 import { Controller, Headers, Param, Post, RawBodyRequest, Req, Res } from "@nestjs/common";
 import type { Request, Response } from "express";
 import { Public } from "../../../common/auth/public.decorator";
-import { PaymentWebhookHealthService } from "./payment-webhook-health.service";
+import { PaymentWebhookReceiverService } from "./payment-webhook-receiver.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
 
-// Public, unauthenticated receiver — payment providers post here directly. Every request MUST
-// have its signature verified before any DB write or business effect (see
-// PaymentWebhookHealthService.processIncomingWebhook). orgId is embedded in the URL path so we
-// know which tenant's webhook secret to verify against without trusting any request field.
+const providerKeyenvironmentorgIdParams = z.object({ providerKey: z.string().min(1), environment: z.string().min(1), orgId: z.string().min(1) }).strict();
+
 @Public()
 @Controller("webhooks/payments")
 export class PaymentWebhooksPublicController {
-  constructor(private readonly webhooks: PaymentWebhookHealthService) {}
+  constructor(private readonly webhooks: PaymentWebhookReceiverService) {}
 
   @Post(":providerKey/:environment/:orgId")
+  @Validate({ params: providerKeyenvironmentorgIdParams })
   async handle(
     @Param("providerKey") providerKey: string,
     @Param("environment") environment: string,

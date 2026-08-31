@@ -1,4 +1,5 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import type { AccessResolver } from "../access/authorize";
 import type { DataScope } from "../access/access.types";
 import { moduleAvailabilityResolver } from "../../common/rbac/module-availability";
@@ -12,6 +13,7 @@ const user: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 describe("resolveSearchAccess", () => {

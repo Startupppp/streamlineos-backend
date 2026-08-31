@@ -8,12 +8,15 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { AssetsService } from "./assets.service";
 import {
   createAssetSchema, listAssetsQuerySchema, updateAssetSchema, disposeAssetSchema,
   type CreateAssetInput, type ListAssetsQuery, type UpdateAssetInput, type DisposeAssetInput,
 } from "./dto/assets.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const assetIdParams = z.object({ assetId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/assets")
@@ -24,8 +27,9 @@ export class AssetsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:read")
+  @Validate({ query: listAssetsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listAssetsQuerySchema)) query: ListAssetsQuery,
+    @Query() query: ListAssetsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.assets.list(u.orgId, query);
@@ -35,8 +39,9 @@ export class AssetsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:create")
   @HttpCode(201)
+  @Validate({ body: createAssetSchema })
   create(
-    @Body(new ZodValidationPipe(createAssetSchema)) body: CreateAssetInput,
+    @Body() body: CreateAssetInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.assets.create(u, body);
@@ -45,6 +50,7 @@ export class AssetsController {
   @Get(":assetId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:read")
+  @Validate({ params: assetIdParams })
   getOne(
     @Param("assetId", ParseIntPipe) assetId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -55,9 +61,10 @@ export class AssetsController {
   @Patch(":assetId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:update")
+  @Validate({ params: assetIdParams, body: updateAssetSchema })
   update(
     @Param("assetId", ParseIntPipe) assetId: number,
-    @Body(new ZodValidationPipe(updateAssetSchema)) body: UpdateAssetInput,
+    @Body() body: UpdateAssetInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.assets.update(u.orgId, assetId, body);
@@ -67,6 +74,7 @@ export class AssetsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:update")
   @HttpCode(200)
+  @Validate({ params: assetIdParams })
   activate(
     @Param("assetId", ParseIntPipe) assetId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -78,9 +86,10 @@ export class AssetsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:assets:manage")
   @HttpCode(200)
+  @Validate({ params: assetIdParams, body: disposeAssetSchema })
   dispose(
     @Param("assetId", ParseIntPipe) assetId: number,
-    @Body(new ZodValidationPipe(disposeAssetSchema)) body: DisposeAssetInput,
+    @Body() body: DisposeAssetInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.assets.dispose(u, assetId, body);

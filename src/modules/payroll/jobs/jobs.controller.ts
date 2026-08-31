@@ -17,9 +17,11 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PayrollJobsService, type PayrollJobType } from "./payroll-jobs.service";
 import { PayrollJobsWorkerService } from "./payroll-jobs-worker.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
 
 const listQuerySchema = z.object({
   failedOnly: z
@@ -31,12 +33,9 @@ const listQuerySchema = z.object({
 
 const enqueueSchema = z.object({
   jobType: z.enum([
-    "PREVIEW",
     "GENERATE",
     "RECALCULATE",
     "PDF_PUBLISH",
-    "EXPORT",
-    "RECONCILE",
     "FILING_EXPORT",
   ]),
   runId: z.number().int().positive().optional(),
@@ -55,9 +54,10 @@ export class PayrollJobsController {
 
   @Get()
   @RequirePermission("payroll:runs:view")
+  @Validate({ query: listQuerySchema })
   async list(
     @CurrentUser() u: CurrentUserContext,
-    @Query(new ZodValidationPipe(listQuerySchema)) query: z.infer<typeof listQuerySchema>,
+    @Query() query: z.infer<typeof listQuerySchema>,
   ) {
     if (query.runId) {
       return this.jobs.listForResource(u.orgId, "payroll_run", String(query.runId));
@@ -67,6 +67,7 @@ export class PayrollJobsController {
 
   @Get(":jobId")
   @RequirePermission("payroll:runs:view")
+  @Validate({ params: jobIdParams })
   get(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,
@@ -77,9 +78,10 @@ export class PayrollJobsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("payroll:runs:manage")
+  @Validate({ body: enqueueSchema })
   async enqueue(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(enqueueSchema)) body: z.infer<typeof enqueueSchema>,
+    @Body() body: z.infer<typeof enqueueSchema>,
   ) {
     const job = await this.jobs.enqueue({
       orgId: u.orgId,
@@ -103,6 +105,7 @@ export class PayrollJobsController {
   @Post(":jobId/retry")
   @HttpCode(200)
   @RequirePermission("payroll:runs:manage")
+  @Validate({ params: jobIdParams })
   async retry(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,

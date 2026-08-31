@@ -2,7 +2,9 @@ import { Module } from "@nestjs/common";
 import { CrmAutomationStudioModule } from "../crm/automation-studio/crm-automation-studio.module";
 import { BillingModule } from "../billing/core/billing.module";
 import { PublicController } from "./public.controller";
-import { RecruitmentService } from "./recruitment.service";
+import { PublicCareersService } from "./public-careers.service";
+import { PublicOffersService } from "./public-offers.service";
+import { PublicReferrersService } from "./public-referrers.service";
 import { RoadmapService } from "./roadmap.service";
 import { KbService } from "./kb.service";
 import { CrmService } from "./crm.service";
@@ -17,7 +19,9 @@ import { TurnstileService } from "../../common/security/turnstile.service";
   imports: [CrmAutomationStudioModule, BillingModule],
   controllers: [PublicController],
   providers: [
-    RecruitmentService,
+    PublicCareersService,
+    PublicOffersService,
+    PublicReferrersService,
     RoadmapService,
     KbService,
     CrmService,

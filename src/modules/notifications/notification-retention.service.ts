@@ -105,8 +105,15 @@ export class NotificationRetentionService {
 
     try {
       await this.db.execute(sql`SET lock_timeout = '5s'`);
+      // Postgres has no DETACH PARTITION IF EXISTS; IF EXISTS binds the table, so probe first.
+      const probe = await this.db.execute(
+        sql`SELECT to_regclass(${partition}) IS NOT NULL AS present`,
+      );
+      const rows = probe as unknown as Array<Record<string, unknown>>;
+      if (rows[0]?.["present"] !== true) return { detached: 0, dropped: 0 };
+
       await this.db.execute(
-        sql`ALTER TABLE IF EXISTS ${sql.raw(parentTable)} DETACH PARTITION IF EXISTS ${sql.raw(partition)} CONCURRENTLY`,
+        sql`ALTER TABLE IF EXISTS ${sql.raw(parentTable)} DETACH PARTITION ${sql.raw(partition)} CONCURRENTLY`,
       );
       detached = 1;
     } catch (err) {

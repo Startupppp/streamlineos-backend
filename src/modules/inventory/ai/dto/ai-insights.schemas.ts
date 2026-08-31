@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { INV_ANOMALY_TYPES } from "../anomalies/inv-anomaly-detectors";
 
 export const listInsightsSchema = z.object({
   status: z.enum(["NEW", "ACKNOWLEDGED", "DISMISSED"]).optional(),
   type: z.string().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  page: pageNumberField,
+  limit: pageSizeField(50, 100),
 }).strict();
 export type ListInsightsInput = z.infer<typeof listInsightsSchema>;
 

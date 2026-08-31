@@ -18,7 +18,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CrmProductsService } from "./crm-products.service";
 import {
   createProductSchema,
@@ -26,6 +25,10 @@ import {
   type CreateProductInput,
   type UpdateProductInput,
 } from "./dto/products.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const productIdParams = z.object({ productId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("crm")
@@ -45,8 +48,9 @@ export class CrmProductsController {
   @Post("products")
   @RequirePermission("crm:products:manage")
   @HttpCode(201)
+  @Validate({ body: createProductSchema })
   create(
-    @Body(new ZodValidationPipe(createProductSchema)) body: CreateProductInput,
+    @Body() body: CreateProductInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.products.create(u.orgId, body);
@@ -54,9 +58,10 @@ export class CrmProductsController {
 
   @Patch("products/:productId")
   @RequirePermission("crm:products:manage")
+  @Validate({ params: productIdParams, body: updateProductSchema })
   async update(
     @Param("productId", ParseIntPipe) productId: number,
-    @Body(new ZodValidationPipe(updateProductSchema)) body: UpdateProductInput,
+    @Body() body: UpdateProductInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const product = await this.products.update(u.orgId, productId, body);
@@ -65,12 +70,14 @@ export class CrmProductsController {
   }
 
   @Delete("products/:productId")
-  @HttpCode(204)
+  @HttpCode(200)
   @RequirePermission("crm:products:manage")
+  @Validate({ params: productIdParams })
   async remove(
     @Param("productId", ParseIntPipe) productId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {
+  ): Promise<{ success: true }> {
     await this.products.remove(u.orgId, productId);
+    return { success: true };
   }
 }

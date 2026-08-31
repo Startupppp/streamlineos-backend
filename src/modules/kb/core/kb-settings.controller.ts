@@ -5,8 +5,8 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbSettingsService } from "./kb-settings.service";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 const updateKbSettingsSchema = z.object({
   trashRetentionDays: z.number().int().min(1).max(365),
@@ -27,8 +27,9 @@ export class KbSettingsController {
 
   @Patch()
   @RequirePermission("kb:settings:manage")
+  @Validate({ body: updateKbSettingsSchema })
   async update(
-    @Body(new ZodValidationPipe(updateKbSettingsSchema)) body: UpdateKbSettingsInput,
+    @Body() body: UpdateKbSettingsInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.settings.upsertOrgSettings(u.orgId, body);

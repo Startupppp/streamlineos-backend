@@ -1,0 +1,223 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+import type { OrganizationPlacement, PlacementStatus } from "./placement";
+import { isPlacementStatus } from "./placement";
+
+const FORMAT = "pl1";
+const FIELD_SEPARATOR = String.fromCharCode(0);
+const ABSENT = `${FIELD_SEPARATOR}absent${FIELD_SEPARATOR}`;
+
+export interface PlacementSigningKey {
+  readonly keyId: string;
+  readonly secret: string;
+}
+
+export interface PlacementKeyring {
+  readonly current: PlacementSigningKey;
+  readonly previous: readonly PlacementSigningKey[];
+}
+
+export type SignedPlacementVerdict =
+  | { readonly ok: true; readonly placement: OrganizationPlacement }
+  | { readonly ok: false; readonly reason: SignedPlacementRejection };
+
+export type SignedPlacementRejection =
+  | "MALFORMED"
+  | "UNKNOWN_KEY"
+  | "BAD_SIGNATURE"
+  | "EXPIRED";
+
+export function resolvePlacementKeyring(
+  env: NodeJS.ProcessEnv,
+): PlacementKeyring | null {
+  const secret = env.PLACEMENT_SIGNING_KEY?.trim() || env.BACKEND_JWT_SECRET?.trim();
+  if (!secret) return null;
+
+  const previousSecret = env.PLACEMENT_SIGNING_KEY_PREVIOUS?.trim();
+  const previous: PlacementSigningKey[] = previousSecret
+    ? [
+        {
+          keyId: env.PLACEMENT_SIGNING_KEY_PREVIOUS_ID?.trim() || "cp-0",
+          secret: previousSecret,
+        },
+      ]
+    : [];
+
+  return {
+    current: {
+      keyId: env.PLACEMENT_SIGNING_KEY_ID?.trim() || "cp-1",
+      secret,
+    },
+    previous,
+  };
+}
+
+function canonical(
+  placement: OrganizationPlacement,
+  expiresAt: number,
+  keyId: string,
+): string {
+  return [
+    FORMAT,
+    keyId,
+    String(expiresAt),
+    placement.organizationId,
+    placement.region,
+    placement.cellId,
+    placement.databaseShard,
+    placement.objectStorageRegion,
+    placement.searchCluster,
+    String(placement.placementVersion),
+    placement.writeFenceToken ?? ABSENT,
+    placement.leaseExpiresAt === null ? ABSENT : String(placement.leaseExpiresAt),
+    placement.status,
+  ].join(FIELD_SEPARATOR);
+}
+
+function mac(secret: string, payload: string): string {
+  return createHmac("sha256", secret).update(payload).digest("base64url");
+}
+
+function encodeBody(
+  placement: OrganizationPlacement,
+  expiresAt: number,
+  keyId: string,
+): string {
+  return Buffer.from(
+    JSON.stringify({
+      o: placement.organizationId,
+      r: placement.region,
+      c: placement.cellId,
+      d: placement.databaseShard,
+      s: placement.objectStorageRegion,
+      x: placement.searchCluster,
+      v: placement.placementVersion,
+      f: placement.writeFenceToken,
+      l: placement.leaseExpiresAt,
+      t: placement.status,
+      e: expiresAt,
+      k: keyId,
+    }),
+    "utf8",
+  ).toString("base64url");
+}
+
+export function signPlacement(
+  placement: OrganizationPlacement,
+  expiresAt: number,
+  key: PlacementSigningKey,
+): string {
+  const body = encodeBody(placement, expiresAt, key.keyId);
+  const signature = mac(key.secret, canonical(placement, expiresAt, key.keyId));
+  return `${FORMAT}.${key.keyId}.${body}.${signature}`;
+}
+
+function equalMac(a: string, b: string): boolean {
+  const left = Buffer.from(a, "utf8");
+  const right = Buffer.from(b, "utf8");
+  if (left.length !== right.length) return false;
+  return timingSafeEqual(left, right);
+}
+
+function keyFor(keyring: PlacementKeyring, keyId: string): PlacementSigningKey | null {
+  if (keyring.current.keyId === keyId) return keyring.current;
+  return keyring.previous.find((key) => key.keyId === keyId) ?? null;
+}
+
+function decodeBody(body: string): {
+  placement: OrganizationPlacement;
+  expiresAt: number;
+  keyId: string;
+} | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed === null) return null;
+
+  const get = (name: string): unknown => Reflect.get(parsed, name);
+  const text = (name: string): string | null => {
+    const value = get(name);
+    return typeof value === "string" ? value : null;
+  };
+  const count = (name: string): number | null => {
+    const value = get(name);
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  };
+
+  const organizationId = text("o");
+  const region = text("r");
+  const cellId = text("c");
+  const databaseShard = text("d");
+  const objectStorageRegion = text("s");
+  const searchCluster = text("x");
+  const placementVersion = count("v");
+  const expiresAt = count("e");
+  const keyId = text("k");
+  const status: unknown = get("t");
+  const fence: unknown = get("f");
+  const lease: unknown = get("l");
+
+  if (
+    organizationId === null ||
+    region === null ||
+    cellId === null ||
+    databaseShard === null ||
+    objectStorageRegion === null ||
+    searchCluster === null ||
+    placementVersion === null ||
+    expiresAt === null ||
+    keyId === null ||
+    !isPlacementStatus(status)
+  )
+    return null;
+
+  const writeFenceToken = typeof fence === "string" ? fence : null;
+  const leaseExpiresAt =
+    typeof lease === "number" && Number.isFinite(lease) ? lease : null;
+
+  const placement: OrganizationPlacement = {
+    organizationId,
+    region,
+    cellId,
+    databaseShard,
+    objectStorageRegion,
+    searchCluster,
+    placementVersion,
+    writeFenceToken,
+    leaseExpiresAt,
+    status: status satisfies PlacementStatus,
+  };
+
+  return { placement, expiresAt, keyId };
+}
+
+export function verifyPlacement(
+  token: string,
+  keyring: PlacementKeyring,
+  now: number,
+): SignedPlacementVerdict {
+  const parts = token.split(".");
+  if (parts.length !== 4 || parts[0] !== FORMAT)
+    return { ok: false, reason: "MALFORMED" };
+
+  const [, keyId, body, signature] = parts;
+  if (!keyId || !body || !signature) return { ok: false, reason: "MALFORMED" };
+
+  const decoded = decodeBody(body);
+  if (!decoded || decoded.keyId !== keyId) return { ok: false, reason: "MALFORMED" };
+
+  const key = keyFor(keyring, keyId);
+  if (!key) return { ok: false, reason: "UNKNOWN_KEY" };
+
+  const expected = mac(
+    key.secret,
+    canonical(decoded.placement, decoded.expiresAt, keyId),
+  );
+  if (!equalMac(expected, signature)) return { ok: false, reason: "BAD_SIGNATURE" };
+
+  if (decoded.expiresAt <= now) return { ok: false, reason: "EXPIRED" };
+
+  return { ok: true, placement: decoded.placement };
+}

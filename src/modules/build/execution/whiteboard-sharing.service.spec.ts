@@ -3,6 +3,7 @@ import { WhiteboardSharingService } from "./whiteboard-sharing.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { DataScope } from "../../access/access.types";
 
 type MockChain = {
@@ -58,6 +59,7 @@ const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
   isOrgOwner: false,
   sessionId: "sess-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
   ...overrides,
 });
 
@@ -91,7 +93,13 @@ describe("WhiteboardSharingService", () => {
       transaction: dbTransaction,
     } as unknown as Db;
 
-    mockAccess = { resolveUserPermissions } as unknown as AccessService;
+    mockAccess = {
+      resolveUserPermissions,
+      holds: jest.fn(async (_user: unknown, key: string) => {
+        const resolved = await resolveUserPermissions();
+        return (resolved.get(key) ?? "none") !== "none";
+      }),
+    } as unknown as AccessService;
     svc = new WhiteboardSharingService(mockDb, mockAccess);
   });
 

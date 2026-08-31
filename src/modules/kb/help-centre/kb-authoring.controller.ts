@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbAuthoringService } from "./kb-authoring.service";
 import {
   draftSchema,
@@ -14,17 +13,21 @@ import {
   type ImproveInput,
   type SummarizeInput,
 } from "./dto/kb-authoring.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 
 @Controller("kb/ai")
 @UseGuards(JwtAuthGuard, PermissionGuard)
+@RequireModule("kb")
 export class KbAuthoringController {
   constructor(private readonly authoring: KbAuthoringService) {}
 
   @Post("draft")
   @HttpCode(200)
   @RequirePermission("kb:ai:generate")
+  @Validate({ body: draftSchema })
   async draft(
-    @Body(new ZodValidationPipe(draftSchema)) body: DraftInput,
+    @Body() body: DraftInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.authoring.draft(u.orgId, u.userId, body);
@@ -33,8 +36,9 @@ export class KbAuthoringController {
   @Post("improve")
   @HttpCode(200)
   @RequirePermission("kb:ai:generate")
+  @Validate({ body: improveSchema })
   async improve(
-    @Body(new ZodValidationPipe(improveSchema)) body: ImproveInput,
+    @Body() body: ImproveInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.authoring.improve(u.orgId, u.userId, body);
@@ -43,8 +47,9 @@ export class KbAuthoringController {
   @Post("summarize")
   @HttpCode(200)
   @RequirePermission("kb:ai:generate")
+  @Validate({ body: summarizeSchema })
   async summarize(
-    @Body(new ZodValidationPipe(summarizeSchema)) body: SummarizeInput,
+    @Body() body: SummarizeInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return await this.authoring.summarize(u.orgId, u.userId, body);

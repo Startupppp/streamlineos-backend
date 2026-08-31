@@ -2,6 +2,11 @@ import type { SQL } from "drizzle-orm";
 import { forEachOrg } from "../for-each-org";
 import { getTenantContext } from "../tenant-context";
 import type { Db } from "../../../db/drizzle.module";
+import {
+  clearRegionRegistry,
+  setRegionRegistry,
+  type RegionRegistry,
+} from "../../region/region-registry";
 
 interface ChainCapture {
   where?: SQL;
@@ -120,5 +125,126 @@ describe("forEachOrg", () => {
     await forEachOrg(db, "test-sweep", jest.fn());
 
     expect(getTenantContext()).toBeUndefined();
+  });
+});
+
+describe("forEachOrg — cell-aware enumeration", () => {
+  const savedCellId = process.env.CELL_ID;
+
+  afterEach(() => {
+    clearRegionRegistry();
+    if (savedCellId === undefined) delete process.env.CELL_ID;
+    else process.env.CELL_ID = savedCellId;
+  });
+
+  function makeRegistryWithCells(
+    fallbackDb: Db,
+    cellDb: Db,
+    activeCellId = "cell-2",
+  ): RegionRegistry {
+    const placement = (orgId: string) => ({
+      organizationId: orgId,
+      region: activeCellId === "cell-2" ? "cell-2" : "primary",
+      cellId: activeCellId,
+      databaseShard: activeCellId,
+      objectStorageRegion: "auto",
+      searchCluster: activeCellId,
+      placementVersion: 1,
+      writeFenceToken: null,
+      leaseExpiresAt: null,
+      status: "ACTIVE" as const,
+    });
+    return {
+      keys: ["primary", "cell-2"],
+      bindingFor: (key: string): ReturnType<RegionRegistry["bindingFor"]> => ({
+        definition: {
+          cell: { cellId: key === "cell-2" ? "cell-2" : "legacy-1" },
+        } as ReturnType<RegionRegistry["bindingFor"]>["definition"],
+        db: key === "cell-2" ? cellDb : fallbackDb,
+      }),
+      admittedPlacementForOrg: async (orgId: string) => placement(orgId),
+    } as unknown as RegionRegistry;
+  }
+
+  it("uses the cell-specific db when CELL_ID is set and a registry is available", async () => {
+    const fallbackDb = makeMockDb([]).db;
+    const { db: cellDb, capture } = makeMockDb(["org-cell-2-a", "org-cell-2-b"]);
+
+    process.env.CELL_ID = "cell-2";
+    setRegionRegistry(makeRegistryWithCells(fallbackDb, cellDb));
+
+    const seen: string[] = [];
+    const result = await forEachOrg(fallbackDb, "cell-sweep", async (_tx, orgId) => {
+      seen.push(orgId);
+    });
+
+    expect(seen).toEqual(["org-cell-2-a", "org-cell-2-b"]);
+    expect(result.organizations).toBe(2);
+    expect(capture.where).toBeDefined();
+  });
+
+  it("uses the fallback db when CELL_ID is not set (single-cell deployment)", async () => {
+    delete process.env.CELL_ID;
+    const { db: fallbackDb, capture } = makeMockDb(["org-primary-a"]);
+    const cellDb = makeMockDb([]).db;
+
+    setRegionRegistry(makeRegistryWithCells(fallbackDb, cellDb, "legacy-1"));
+
+    const seen: string[] = [];
+    await forEachOrg(fallbackDb, "primary-sweep", async (_tx, orgId) => {
+      seen.push(orgId);
+    });
+
+    expect(seen).toEqual(["org-primary-a"]);
+    expect(capture.where).toBeDefined();
+  });
+
+  it("uses the fallback db when no registry is configured (unit-test path)", async () => {
+    process.env.CELL_ID = "cell-2";
+
+    const { db: fallbackDb, capture } = makeMockDb(["org-from-fallback"]);
+
+    const seen: string[] = [];
+    await forEachOrg(fallbackDb, "no-registry-sweep", async (_tx, orgId) => {
+      seen.push(orgId);
+    });
+
+    expect(seen).toEqual(["org-from-fallback"]);
+    expect(capture.where).toBeDefined();
+  });
+
+  it("OUTAGE PROBE — cell-1 db faulted, cell-2 sweep is unaffected", async () => {
+    const faultedDb = makeMockDb([]).db;
+
+    const cell2Orgs = ["org-cell-2-x", "org-cell-2-y"];
+    const { db: cell2Db } = makeMockDb(cell2Orgs);
+
+    process.env.CELL_ID = "cell-2";
+    setRegionRegistry(makeRegistryWithCells(faultedDb, cell2Db));
+
+    const seen: string[] = [];
+    const result = await forEachOrg(faultedDb, "outage-probe", async (_tx, orgId) => {
+      seen.push(orgId);
+    });
+
+    expect(seen).toEqual(cell2Orgs);
+    expect(result.organizations).toBe(2);
+    expect(result.failed).toBe(0);
+  });
+
+  it("OUTAGE PROBE bites — cell-2 db faulted, cell-2 sweep returns 0 orgs", async () => {
+    const faultedCell2Db = makeMockDb([]).db;
+    const { db: cell1Db } = makeMockDb(["org-cell-1-a", "org-cell-1-b"]);
+
+    process.env.CELL_ID = "cell-2";
+    setRegionRegistry(makeRegistryWithCells(cell1Db, faultedCell2Db));
+
+    const seen: string[] = [];
+    const result = await forEachOrg(cell1Db, "outage-probe-bites", async (_tx, orgId) => {
+      seen.push(orgId);
+    });
+
+    expect(seen).toEqual([]);
+    expect(result.organizations).toBe(0);
   });
 });

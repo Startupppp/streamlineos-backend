@@ -3,6 +3,7 @@ import { Redis } from "@upstash/redis";
 import { randomUUID } from "node:crypto";
 import { REDIS } from "../../common/cache/cache.service";
 import { logger } from "../../common/logger/logger.service";
+import { PROCESS_CELL_ID } from "../../common/cell-resources/cell-id";
 
 export type LeaseOutcome<T> = { ran: true; result: T } | { ran: false };
 
@@ -16,11 +17,11 @@ export class CronLeaseService {
     fn: () => Promise<T>,
   ): Promise<LeaseOutcome<T>> {
     if (!this.redis) {
-      logger.warn(`[cron-lease] Redis unavailable; running ${jobKey} without dedup`);
+      logger.warn(`[cron-lease] Redis unavailable; running ${PROCESS_CELL_ID}:${jobKey} without dedup`);
       return { ran: true, result: await fn() };
     }
 
-    const leaseKey = `cron:lease:${jobKey}`;
+    const leaseKey = `cron:lease:${PROCESS_CELL_ID}:${jobKey}`;
     const token = randomUUID();
 
     let acquired: boolean;
@@ -33,7 +34,7 @@ export class CronLeaseService {
     }
 
     if (!acquired) {
-      logger.warn(`[cron-lease] ${jobKey} already running; skipping duplicate trigger`);
+      logger.warn(`[cron-lease] ${PROCESS_CELL_ID}:${jobKey} already running; skipping duplicate trigger`);
       return { ran: false };
     }
 
@@ -49,7 +50,7 @@ export class CronLeaseService {
         );
       } catch (err: unknown) {
         logger.warn(
-          `[cron-lease] failed to release ${jobKey}; it expires in ${windowSeconds}s`,
+          `[cron-lease] failed to release ${PROCESS_CELL_ID}:${jobKey}; it expires in ${windowSeconds}s`,
           { cause: err instanceof Error ? err.message : String(err) },
         );
       }

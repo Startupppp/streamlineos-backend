@@ -33,9 +33,29 @@ export class CreditNotesService {
     const conditions = [eq(creditNotes.orgId, orgId)];
     if (query.status) conditions.push(eq(creditNotes.status, query.status));
     if (query.clientId) conditions.push(eq(creditNotes.clientId, query.clientId));
+    if (query.invoiceId) conditions.push(eq(creditNotes.invoiceId, query.invoiceId));
 
+    const projection = {
+      id: creditNotes.id,
+      creditNoteNumber: creditNotes.creditNoteNumber,
+      clientId: creditNotes.clientId,
+      invoiceId: creditNotes.invoiceId,
+      status: creditNotes.status,
+      reason: creditNotes.reason,
+      subtotal: creditNotes.subtotal,
+      taxAmount: creditNotes.taxAmount,
+      total: creditNotes.total,
+      appliedAmount: creditNotes.appliedAmount,
+      currency: creditNotes.currency,
+      placeOfSupply: creditNotes.placeOfSupply,
+      customerGstin: creditNotes.customerGstin,
+      supplierGstin: creditNotes.supplierGstin,
+      createdBy: creditNotes.createdBy,
+      createdAt: creditNotes.createdAt,
+      updatedAt: creditNotes.updatedAt,
+    };
     const [rows, [{ count }]] = await Promise.all([
-      this.db.select().from(creditNotes).where(and(...conditions)).orderBy(desc(creditNotes.createdAt)).limit(limit).offset(offset),
+      this.db.select(projection).from(creditNotes).where(and(...conditions)).orderBy(desc(creditNotes.createdAt)).limit(limit).offset(offset),
       this.db.select({ count: sql<number>`count(*)::int` }).from(creditNotes).where(and(...conditions)),
     ]);
     return buildListResponse(rows, count, query);
@@ -93,6 +113,7 @@ export class CreditNotesService {
 
       await tx.insert(creditNoteItems).values(
         itemsWithAmounts.map((it) => ({
+          orgId,
           creditNoteId: inserted.id,
           description: it.description,
           hsnSacCode: it.hsnSacCode ?? null,

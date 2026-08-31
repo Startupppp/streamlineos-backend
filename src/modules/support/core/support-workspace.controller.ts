@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { SupportWorkspaceService } from "./support-workspace.service";
 import {
   createQueueSchema,
@@ -31,6 +30,13 @@ import {
 } from "./dto/support.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { z } from "zod";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const queueIdParams = z.object({ queueId: z.coerce.number().int().positive() }).strict();
+const viewIdParams = z.object({ viewId: z.coerce.number().int().positive() }).strict();
+const ticketIdParams = z.object({ supportTicketId: z.coerce.number().int().positive() }).strict();
+const ticketAndTagIdParams = z.object({ supportTicketId: z.coerce.number().int().positive(), tagId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("support")
 @Controller("support")
@@ -47,8 +53,9 @@ export class SupportWorkspaceController {
   @Post("queues")
   @RequirePermission("support:queues:manage")
   @HttpCode(201)
+  @Validate({ body: createQueueSchema })
   createQueue(
-    @Body(new ZodValidationPipe(createQueueSchema)) body: CreateQueueInput,
+    @Body() body: CreateQueueInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workspace.createQueue(u.orgId, u.userId, body);
@@ -56,9 +63,10 @@ export class SupportWorkspaceController {
 
   @Patch("queues/:queueId")
   @RequirePermission("support:queues:manage")
+  @Validate({ params: queueIdParams, body: updateQueueSchema })
   updateQueue(
     @Param("queueId", ParseIntPipe) queueId: number,
-    @Body(new ZodValidationPipe(updateQueueSchema)) body: UpdateQueueInput,
+    @Body() body: UpdateQueueInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workspace.updateQueue(u.orgId, queueId, body);
@@ -66,6 +74,7 @@ export class SupportWorkspaceController {
 
   @Delete("queues/:queueId")
   @RequirePermission("support:queues:manage")
+  @Validate({ params: queueIdParams })
   deleteQueue(@Param("queueId", ParseIntPipe) queueId: number, @CurrentUser() u: CurrentUserContext) {
     return this.workspace.deleteQueue(u.orgId, queueId);
   }
@@ -79,8 +88,9 @@ export class SupportWorkspaceController {
   @Post("views")
   @RequirePermission("support:tickets:view")
   @HttpCode(201)
+  @Validate({ body: createSavedViewSchema })
   createSavedView(
-    @Body(new ZodValidationPipe(createSavedViewSchema)) body: CreateSavedViewInput,
+    @Body() body: CreateSavedViewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workspace.createSavedView(u.orgId, u.userId, body);
@@ -88,9 +98,10 @@ export class SupportWorkspaceController {
 
   @Patch("views/:viewId")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: viewIdParams, body: updateSavedViewSchema })
   updateSavedView(
     @Param("viewId", ParseIntPipe) viewId: number,
-    @Body(new ZodValidationPipe(updateSavedViewSchema)) body: UpdateSavedViewInput,
+    @Body() body: UpdateSavedViewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workspace.updateSavedView(u.orgId, u.userId, viewId, body);
@@ -98,6 +109,7 @@ export class SupportWorkspaceController {
 
   @Delete("views/:viewId")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: viewIdParams })
   deleteSavedView(@Param("viewId", ParseIntPipe) viewId: number, @CurrentUser() u: CurrentUserContext) {
     return this.workspace.deleteSavedView(u.orgId, u.userId, viewId);
   }
@@ -111,8 +123,9 @@ export class SupportWorkspaceController {
   @Post("tags")
   @RequirePermission("support:tags:manage")
   @HttpCode(201)
+  @Validate({ body: createTagSchema })
   createTag(
-    @Body(new ZodValidationPipe(createTagSchema)) body: CreateTagInput,
+    @Body() body: CreateTagInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workspace.createTag(u.orgId, body);
@@ -120,6 +133,7 @@ export class SupportWorkspaceController {
 
   @Get(":supportTicketId/tags")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: ticketIdParams })
   listTicketTags(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -130,6 +144,7 @@ export class SupportWorkspaceController {
   @Post(":supportTicketId/tags/:tagId")
   @RequirePermission("support:tickets:manage")
   @HttpCode(200)
+  @Validate({ params: ticketAndTagIdParams })
   attachTag(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Param("tagId", ParseIntPipe) tagId: number,
@@ -140,6 +155,7 @@ export class SupportWorkspaceController {
 
   @Delete(":supportTicketId/tags/:tagId")
   @RequirePermission("support:tickets:manage")
+  @Validate({ params: ticketAndTagIdParams })
   detachTag(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Param("tagId", ParseIntPipe) tagId: number,
@@ -150,6 +166,7 @@ export class SupportWorkspaceController {
 
   @Get(":supportTicketId/watchers")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: ticketIdParams })
   listWatchers(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -160,12 +177,14 @@ export class SupportWorkspaceController {
   @Post(":supportTicketId/follow")
   @RequirePermission("support:tickets:view")
   @HttpCode(200)
+  @Validate({ params: ticketIdParams })
   follow(@Param("supportTicketId", ParseIntPipe) supportTicketId: number, @CurrentUser() u: CurrentUserContext) {
     return this.workspace.follow(u.orgId, supportTicketId, u.userId);
   }
 
   @Delete(":supportTicketId/follow")
   @RequirePermission("support:tickets:view")
+  @Validate({ params: ticketIdParams })
   unfollow(@Param("supportTicketId", ParseIntPipe) supportTicketId: number, @CurrentUser() u: CurrentUserContext) {
     return this.workspace.unfollow(u.orgId, supportTicketId, u.userId);
   }

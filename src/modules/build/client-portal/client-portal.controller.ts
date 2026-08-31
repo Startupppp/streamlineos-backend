@@ -14,9 +14,12 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ClientPortalService } from "./client-portal.service";
 import { createPortalCrSchema, type CreatePortalCrInput } from "./dto/client-portal.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/portal")
@@ -32,6 +35,7 @@ export class ClientPortalController {
 
   @Get("projects/:projectId/overview")
   @RequirePermission("build:portal:view")
+  @Validate({ params: projectIdParams })
   getProjectOverview(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -41,6 +45,7 @@ export class ClientPortalController {
 
   @Get("projects/:projectId/change-requests")
   @RequirePermission("build:changerequests:view")
+  @Validate({ params: projectIdParams })
   listPortalChangeRequests(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -51,9 +56,10 @@ export class ClientPortalController {
   @Post("projects/:projectId/change-requests")
   @HttpCode(201)
   @RequirePermission("build:changerequests:create")
+  @Validate({ params: projectIdParams, body: createPortalCrSchema })
   createPortalChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createPortalCrSchema)) body: CreatePortalCrInput,
+    @Body() body: CreatePortalCrInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createPortalChangeRequest(u.orgId, u.userId, projectId, body);

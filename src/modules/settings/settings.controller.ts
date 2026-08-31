@@ -16,8 +16,9 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { SettingsService } from "./settings.service";
+import { SettingsAutomationsService } from "./settings-automations.service";
+import { SettingsCustomFieldsService } from "./settings-custom-fields.service";
 import {
   createApiKeySchema,
   createAutomationSchema,
@@ -44,16 +45,29 @@ import {
   settingsProvenanceQuerySchema,
   type SettingsProvenanceQuery,
 } from "./dto/settings.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const keyIdParams = z.object({ keyId: z.string().min(1) }).strict();
+const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
+const fieldIdParams = z.object({ fieldId: z.coerce.number().int().positive() }).strict();
+const connectionIdParams = z.object({ connectionId: z.coerce.number().int().positive() }).strict();
+const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
 @Controller("settings")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class SettingsController {
-  constructor(private readonly settings: SettingsService) {}
+  constructor(
+    private readonly settings: SettingsService,
+    private readonly automations: SettingsAutomationsService,
+    private readonly customFields: SettingsCustomFieldsService,
+  ) {}
 
   @RequirePermission("settings:view")
   @Get("provenance")
+  @Validate({ query: settingsProvenanceQuerySchema })
   getProvenance(
-    @Query(new ZodValidationPipe(settingsProvenanceQuerySchema)) query: SettingsProvenanceQuery,
+    @Query() query: SettingsProvenanceQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.getSectionProvenance(u.orgId, query.sections);
@@ -80,8 +94,9 @@ export class SettingsController {
   @RequirePermission("settings:api-tokens:write")
   @Post("api-keys")
   @HttpCode(201)
+  @Validate({ body: createApiKeySchema })
   createApiKey(
-    @Body(new ZodValidationPipe(createApiKeySchema)) body: CreateApiKeyInput,
+    @Body() body: CreateApiKeyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.createApiKey(u, body);
@@ -89,6 +104,7 @@ export class SettingsController {
 
   @RequirePermission("settings:api-tokens:write")
   @Delete("api-keys/:keyId")
+  @Validate({ params: keyIdParams })
   revokeApiKey(
     @Param("keyId") keyId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -98,101 +114,106 @@ export class SettingsController {
 
   @Get("automations")
   @RequirePermission("settings:automations:view")
+  @Validate({ query: listAutomationsQuerySchema })
   listAutomations(
-    @Query(new ZodValidationPipe(listAutomationsQuerySchema)) query: ListAutomationsQueryInput,
+    @Query() query: ListAutomationsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.listAutomations(u.orgId, query);
+    return this.automations.listAutomations(u.orgId, query);
   }
 
   @Post("automations")
   @HttpCode(201)
   @RequirePermission("settings:automations:manage")
+  @Validate({ body: createAutomationSchema })
   createAutomation(
-    @Body(new ZodValidationPipe(createAutomationSchema))
-    body: CreateAutomationInput,
+    @Body() body: CreateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.createAutomation(u.orgId, u.userId, body);
+    return this.automations.createAutomation(u.orgId, u.userId, body);
   }
 
   @Get("automations/:ruleId")
   @RequirePermission("settings:automations:view")
+  @Validate({ params: ruleIdParams })
   getAutomation(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.getAutomation(u.orgId, ruleId);
+    return this.automations.getAutomation(u.orgId, ruleId);
   }
 
   @Patch("automations/:ruleId")
   @RequirePermission("settings:automations:manage")
+  @Validate({ params: ruleIdParams, body: updateAutomationSchema })
   updateAutomation(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Body(new ZodValidationPipe(updateAutomationSchema))
-    body: UpdateAutomationInput,
+    @Body() body: UpdateAutomationInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.updateAutomation(u.orgId, ruleId, body);
+    return this.automations.updateAutomation(u.orgId, ruleId, body);
   }
 
   @Delete("automations/:ruleId")
   @RequirePermission("settings:automations:manage")
+  @Validate({ params: ruleIdParams })
   deleteAutomation(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.deleteAutomation(u.orgId, ruleId);
+    return this.automations.deleteAutomation(u.orgId, ruleId);
   }
 
   @Get("automations/:ruleId/runs")
   @RequirePermission("settings:automations:view")
+  @Validate({ params: ruleIdParams })
   listAutomationRuns(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.listAutomationRuns(u.orgId, ruleId);
+    return this.automations.listAutomationRuns(u.orgId, ruleId);
   }
 
   @Get("custom-fields")
   @RequirePermission("settings:custom-fields:manage")
+  @Validate({ query: customFieldsListSchema })
   listCustomFields(
-    @Query(new ZodValidationPipe(customFieldsListSchema))
-    query: CustomFieldsListInput,
+    @Query() query: CustomFieldsListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.listCustomFields(u.orgId, query.entityType);
+    return this.customFields.listCustomFields(u.orgId, query.entityType);
   }
 
   @Post("custom-fields")
   @HttpCode(201)
   @RequirePermission("settings:custom-fields:manage")
+  @Validate({ body: createCustomFieldSchema })
   createCustomField(
-    @Body(new ZodValidationPipe(createCustomFieldSchema))
-    body: CreateCustomFieldInput,
+    @Body() body: CreateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.createCustomField(u.orgId, u.userId, body);
+    return this.customFields.createCustomField(u.orgId, u.userId, body);
   }
 
   @Patch("custom-fields/:fieldId")
   @RequirePermission("settings:custom-fields:manage")
+  @Validate({ params: fieldIdParams, body: updateCustomFieldSchema })
   updateCustomField(
     @Param("fieldId", ParseIntPipe) fieldId: number,
-    @Body(new ZodValidationPipe(updateCustomFieldSchema))
-    body: UpdateCustomFieldInput,
+    @Body() body: UpdateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.updateCustomField(u.orgId, fieldId, body);
+    return this.customFields.updateCustomField(u.orgId, fieldId, body);
   }
 
   @Delete("custom-fields/:fieldId")
   @RequirePermission("settings:custom-fields:manage")
+  @Validate({ params: fieldIdParams })
   deleteCustomField(
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.settings.deleteCustomField(u.orgId, fieldId);
+    return this.customFields.deleteCustomField(u.orgId, fieldId);
   }
 
   @RequirePermission("settings:view")
@@ -203,8 +224,9 @@ export class SettingsController {
 
   @RequirePermission("settings:manage")
   @Patch("feature-flags")
+  @Validate({ body: featureFlagSchema })
   updateFeatureFlag(
-    @Body(new ZodValidationPipe(featureFlagSchema)) body: FeatureFlagInput,
+    @Body() body: FeatureFlagInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.updateFeatureFlag(u, body);
@@ -219,9 +241,9 @@ export class SettingsController {
   @Post("integrations/git")
   @HttpCode(201)
   @RequirePermission("settings:manage")
+  @Validate({ body: createGitConnectionSchema })
   createGitConnection(
-    @Body(new ZodValidationPipe(createGitConnectionSchema))
-    body: CreateGitConnectionInput,
+    @Body() body: CreateGitConnectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.createGitConnection(u.orgId, u.userId, body);
@@ -229,10 +251,10 @@ export class SettingsController {
 
   @Patch("integrations/git/:connectionId")
   @RequirePermission("settings:manage")
+  @Validate({ params: connectionIdParams, body: updateGitConnectionSchema })
   updateGitConnection(
     @Param("connectionId", ParseIntPipe) connectionId: number,
-    @Body(new ZodValidationPipe(updateGitConnectionSchema))
-    body: UpdateGitConnectionInput,
+    @Body() body: UpdateGitConnectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.updateGitConnection(u.orgId, connectionId, body);
@@ -240,6 +262,7 @@ export class SettingsController {
 
   @Delete("integrations/git/:connectionId")
   @RequirePermission("settings:manage")
+  @Validate({ params: connectionIdParams })
   deleteGitConnection(
     @Param("connectionId", ParseIntPipe) connectionId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -249,10 +272,10 @@ export class SettingsController {
 
   @RequirePermission("settings:rbac:manage")
   @Post("users/:userId/role")
+  @Validate({ params: userIdParams, body: updateUserRoleSchema })
   updateUserRole(
     @Param("userId") userId: string,
-    @Body(new ZodValidationPipe(updateUserRoleSchema))
-    body: UpdateUserRoleInput,
+    @Body() body: UpdateUserRoleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.settings.updateUserRole(u, userId, body.role);

@@ -25,12 +25,14 @@ import { FnfController } from "./fnf.controller";
 import { FnfInsightsService } from "./fnf.service";
 import { EssController } from "./ess.controller";
 import { EssService } from "./ess.service";
+import { EssSelfServiceService } from "./ess-self-service.service";
 import { PayrollNotificationsService } from "./payroll-notifications.service";
 import { PayrollAiExplainController } from "./payroll-ai-explain.controller";
 import { PayrollAiExplainService } from "./payroll-ai-explain.service";
+import { EmploymentFactsModule } from "../../directory/employment-facts.module";
 
 @Module({
-  imports: [HrPayrollModule, NotificationsModule, AiModule],
+  imports: [EmploymentFactsModule, HrPayrollModule, NotificationsModule, AiModule],
   controllers: [
     ReportsController,
     JournalController,
@@ -58,6 +60,7 @@ import { PayrollAiExplainService } from "./payroll-ai-explain.service";
     TaxAdminService,
     FnfInsightsService,
     EssService,
+    EssSelfServiceService,
     PayrollNotificationsService,
     PayrollAiExplainService,
   ],

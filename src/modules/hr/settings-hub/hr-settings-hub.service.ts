@@ -131,6 +131,7 @@ export class HrSettingsHubService {
       where: and(
         eq(hrWorkflowDefinitions.id, workflowId),
         eq(hrWorkflowDefinitions.orgId, orgId),
+        isNull(hrWorkflowDefinitions.deletedAt),
       ),
     });
     if (!root) throw new NotFoundException("Workflow not found");

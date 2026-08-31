@@ -6,7 +6,6 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { DealsAnalyticsService } from "./deals-analytics.service";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import {
   forecastSnapshotsQuerySchema,
   type ForecastSnapshotsQueryInput,
@@ -17,6 +16,11 @@ import {
   overrideForecastSnapshotSchema,
   type OverrideForecastSnapshotInput,
 } from "./dto/deals.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
+const snapshotIdParams = z.object({ snapshotId: z.string().min(1) }).strict();
 
 @RequireModule("crm")
 @Controller("deals")
@@ -44,8 +48,9 @@ export class DealsAnalyticsController {
 
   @Get("forecast/snapshots")
   @RequirePermission("crm:deals:forecast")
+  @Validate({ query: forecastSnapshotsQuerySchema })
   getForecastSnapshots(
-    @Query(new ZodValidationPipe(forecastSnapshotsQuerySchema)) query: ForecastSnapshotsQueryInput,
+    @Query() query: ForecastSnapshotsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analytics.getForecastSnapshots(u.orgId, query);
@@ -54,8 +59,9 @@ export class DealsAnalyticsController {
   @Post("forecast/snapshot")
   @HttpCode(201)
   @RequirePermission("crm:deals:forecast")
+  @Validate({ body: createForecastSnapshotSchema })
   captureForecastSnapshot(
-    @Body(new ZodValidationPipe(createForecastSnapshotSchema)) body: CreateForecastSnapshotInput,
+    @Body() body: CreateForecastSnapshotInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analytics.createForecastSnapshot(u.orgId, u.userId, body);
@@ -63,8 +69,9 @@ export class DealsAnalyticsController {
 
   @Get("forecast/compare")
   @RequirePermission("crm:deals:forecast")
+  @Validate({ query: compareForecastSnapshotsSchema })
   compareForecastSnapshots(
-    @Query(new ZodValidationPipe(compareForecastSnapshotsSchema)) query: CompareForecastSnapshotsInput,
+    @Query() query: CompareForecastSnapshotsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analytics.compareForecastSnapshots(u.orgId, query);
@@ -78,6 +85,7 @@ export class DealsAnalyticsController {
 
   @Get(":dealId/health")
   @RequirePermission("crm:deals:read")
+  @Validate({ params: dealIdParams })
   getDealHealth(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -87,9 +95,10 @@ export class DealsAnalyticsController {
 
   @Patch("forecast/:snapshotId/override")
   @RequirePermission("crm:deals:manage")
+  @Validate({ params: snapshotIdParams, body: overrideForecastSnapshotSchema })
   overrideForecast(
     @Param("snapshotId") snapshotId: string,
-    @Body(new ZodValidationPipe(overrideForecastSnapshotSchema)) body: OverrideForecastSnapshotInput,
+    @Body() body: OverrideForecastSnapshotInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.analytics.overrideForecastSnapshot(u.orgId, u.userId, snapshotId, body);

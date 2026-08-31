@@ -375,7 +375,7 @@ export class WebhooksService {
         lastError: outcome.ok ? null : outcome.error,
       })
       .where(and(eq(invWebhookEvents.orgId, orgId), eq(invWebhookEvents.id, eventId)))
-      .returning(this.eventColumns);
+      .returning();
 
     await this.db
       .update(invWebhooks)

@@ -36,11 +36,13 @@ export const accTaxPayments = pgTable("acc_tax_payments", {
   journalEntryId: integer("journal_entry_id").references(() => journalEntries.id),
   notes: text("notes"),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_acc_tax_payments_org_id").on(table.orgId, table.id),
   index("idx_acc_tax_payments_org_type").on(table.orgId, table.taxType),
   index("idx_acc_tax_payments_org_period").on(table.orgId, table.periodStart, table.periodEnd),
+  index("idx_acc_tax_payments_org_paid_date_id").on(table.orgId, table.paidDate, table.id),
   index("uniq_acc_tax_payments_org_type_ref").on(table.orgId, table.taxType, table.reference),
 ]);
 

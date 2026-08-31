@@ -429,6 +429,7 @@ describe("Support auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .post("/support/1/messages")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "test-internal-note-probe-1")
       .send({ body: "internal note attempt", isInternal: true });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });

@@ -16,12 +16,12 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
+import { Universal } from "../../../../common/auth/universal.decorator";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
 import { AccessService } from "../../../access/access.service";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import {
   OnboardingService,
   isInitiateAlreadyDone,
@@ -63,6 +63,14 @@ import {
   type SessionPatchInput,
   type TourProgressInput,
 } from "../flow/dto/onboarding-flow.schemas";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const moduleKeyParams = z.object({ moduleKey: z.string().min(1) }).strict();
+const moduleKeyitemKeyParams = z.object({ moduleKey: z.string().min(1), itemKey: z.string().min(1) }).strict();
+const tourKeyParams = z.object({ tourKey: z.string().min(1) }).strict();
+const taskIdParams = z.object({ taskId: z.coerce.number().int().positive() }).strict();
+const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
 const HR_MODULE_KEY: ModuleKey = "hr";
 
@@ -100,6 +108,7 @@ export class OnboardingController {
   }
 
   @Get("session")
+  @Universal()
   getOnboardingSession(@CurrentUser() u: CurrentUserContext) {
     return this.sessions.getOrCreateSession(
       u.orgId,
@@ -109,8 +118,10 @@ export class OnboardingController {
   }
 
   @Patch("session")
+  @Universal()
+  @Validate({ body: sessionPatchSchema })
   patchOnboardingSession(
-    @Body(new ZodValidationPipe(sessionPatchSchema)) body: SessionPatchInput,
+    @Body() body: SessionPatchInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.sessions.patchSession(
@@ -132,6 +143,7 @@ export class OnboardingController {
   @Get("module-checklists/:moduleKey")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:view")
+  @Validate({ params: moduleKeyParams })
   async getModuleChecklist(
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -143,6 +155,7 @@ export class OnboardingController {
   @Post("module-checklists/:moduleKey/items/:itemKey/complete")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
+  @Validate({ params: moduleKeyitemKeyParams })
   async completeChecklistItem(
     @Param("moduleKey") moduleKey: string,
     @Param("itemKey") itemKey: string,
@@ -160,11 +173,11 @@ export class OnboardingController {
   @Post("module-checklists/:moduleKey/items/:itemKey/skip")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
+  @Validate({ params: moduleKeyitemKeyParams, body: checklistItemSkipSchema })
   async skipChecklistItem(
     @Param("moduleKey") moduleKey: string,
     @Param("itemKey") itemKey: string,
-    @Body(new ZodValidationPipe(checklistItemSkipSchema))
-    body: ChecklistItemSkipInput,
+    @Body() body: ChecklistItemSkipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (this.isHrModuleKey(moduleKey)) await this.assertHrChecklistAccess(u, "manage");
@@ -180,6 +193,7 @@ export class OnboardingController {
   @Post("module-checklists/:moduleKey/dismiss")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
+  @Validate({ params: moduleKeyParams })
   async dismissModuleChecklist(
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -195,6 +209,7 @@ export class OnboardingController {
   @Post("module-checklists/:moduleKey/restart")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:module-checklists:manage")
+  @Validate({ params: moduleKeyParams })
   async restartModuleChecklist(
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -207,11 +222,6 @@ export class OnboardingController {
     );
   }
 
-  /**
-   * The HR setup tour ("hr_setup") is the guided-tour analog of the HR module checklist and must
-   * be HR-only for the same reason (task requirement) — every other tour stays covered by the
-   * generic onboarding:tours:* baseline permission.
-   */
   private async assertTourAccess(
     tourKey: string,
     u: CurrentUserContext,
@@ -232,17 +242,13 @@ export class OnboardingController {
       : tours.filter((t) => t.tourKey !== HR_SETUP_TOUR_KEY);
   }
 
-  /**
-   * "view" mode, not "manage": unlike the module-checklist's org-wide dismiss/restart, a tour's
-   * progress/dismissal is a per-user row (userTourProgress) that never affects any other user or
-   * shared org data — an HR-view-only user must still be able to dismiss their own welcome popup.
-   */
   @Post("tours/:tourKey/progress")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
+  @Validate({ params: tourKeyParams, body: tourProgressSchema })
   async saveTourProgress(
     @Param("tourKey") tourKey: string,
-    @Body(new ZodValidationPipe(tourProgressSchema)) body: TourProgressInput,
+    @Body() body: TourProgressInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.assertTourAccess(tourKey, u, "view");
@@ -257,6 +263,7 @@ export class OnboardingController {
   @Post("tours/:tourKey/complete")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
+  @Validate({ params: tourKeyParams })
   async completeTour(
     @Param("tourKey") tourKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -268,6 +275,7 @@ export class OnboardingController {
   @Post("tours/:tourKey/dismiss")
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
+  @Validate({ params: tourKeyParams })
   async dismissTour(
     @Param("tourKey") tourKey: string,
     @CurrentUser() u: CurrentUserContext,
@@ -286,8 +294,9 @@ export class OnboardingController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:manage")
+  @Validate({ body: initiateSchema })
   async initiate(
-    @Body(new ZodValidationPipe(initiateSchema)) body: InitiateInput,
+    @Body() body: InitiateInput,
     @CurrentUser() u: CurrentUserContext,
     @Res({ passthrough: true }) res: Response,
   ) {
@@ -320,9 +329,9 @@ export class OnboardingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:manage")
   @HttpCode(201)
+  @Validate({ body: createTemplateSchema })
   createTemplate(
-    @Body(new ZodValidationPipe(createTemplateSchema))
-    body: CreateTemplateInput,
+    @Body() body: CreateTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.onboarding.createTemplate(u.orgId, u.userId, body);
@@ -340,33 +349,40 @@ export class OnboardingController {
   }
 
   @Patch("personal-details")
+  @Universal()
+  @Validate({ body: personalDetailsSchema })
   savePersonalDetails(
-    @Body(new ZodValidationPipe(personalDetailsSchema))
-    body: PersonalDetailsInput,
+    @Body() body: PersonalDetailsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.onboarding.savePersonalDetails(u.orgId, u.userId, body);
   }
 
   @Get("personal-details")
+  @Universal()
   getPersonalDetails(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.getPersonalDetails(u.orgId, u.userId);
   }
 
   @Patch("bank-details")
+  @Universal()
+  @Validate({ body: bankDetailsSchema })
   saveBankDetails(
-    @Body(new ZodValidationPipe(bankDetailsSchema)) body: BankDetailsInput,
+    @Body() body: BankDetailsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.onboarding.saveBankDetails(u.orgId, u.userId, body);
   }
 
   @Get("bank-details")
+  @Universal()
   getBankDetails(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.getBankDetails(u.orgId, u.userId);
   }
 
   @Post("submit")
+  @Idempotent("hr.onboarding.submit")
+  @Universal()
   submit(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.submit(u.orgId, u.userId);
   }
@@ -375,23 +391,26 @@ export class OnboardingController {
   @UseGuards(PermissionGuard)
   @RequireModule("hr")
   @RequirePermission("self:onboarding-tasks")
+  @Validate({ params: taskIdParams, body: updateTaskSchema })
   updateTask(
     @Param("taskId", ParseIntPipe) taskId: number,
-    @Body(new ZodValidationPipe(updateTaskSchema)) body: UpdateTaskInput,
+    @Body() body: UpdateTaskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.onboarding.updateTask(u, taskId, body);
   }
 
   @Get("status")
+  @Universal()
   getStatus(@CurrentUser() u: CurrentUserContext) {
     return this.onboarding.getStatus(u.userId, u.orgId);
   }
 
   @Get("requirements")
+  @Universal()
+  @Validate({ query: requirementsQuerySchema })
   getRequirements(
-    @Query(new ZodValidationPipe(requirementsQuerySchema))
-    query: RequirementsQueryInput,
+    @Query() query: RequirementsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.requirements.getRequirements(u.orgId, query.country);
@@ -402,9 +421,9 @@ export class OnboardingController {
   @RequireModule("hr")
   @RequirePermission("hr:onboarding:manage")
   @HttpCode(200)
+  @Validate({ body: ensureDocumentsSchema })
   ensureRequirementDocuments(
-    @Body(new ZodValidationPipe(ensureDocumentsSchema))
-    body: EnsureDocumentsInput,
+    @Body() body: EnsureDocumentsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.requirements.ensureDocumentTypes(u.orgId, body.country);
@@ -421,6 +440,7 @@ export class OnboardingController {
   @Get(":userId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:onboarding:tasks:view")
+  @Validate({ params: userIdParams })
   getUserTasks(
     @Param("userId") userId: string,
     @CurrentUser() u: CurrentUserContext,

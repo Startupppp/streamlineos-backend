@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalPageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const analyticsQuerySchema = z.object({
   dateFrom: z.string().optional(),
@@ -7,7 +8,7 @@ export const analyticsQuerySchema = z.object({
 
 export const followUpsQuerySchema = z.object({
   overdue: z.enum(["true", "false"]).optional(),
-  limit: z.coerce.number().min(1).max(50).optional(),
+  limit: optionalPageSizeField(50),
 });
 
 export const checkDuplicatesQuerySchema = z.object({

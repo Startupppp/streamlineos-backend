@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProgramsService } from "./programs.service";
 import {
   createProgramSchema,
@@ -29,6 +28,11 @@ import {
   type ListProgramsQuery,
   type UpdateProgramInput,
 } from "./dto/portfolios.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const programIdParams = z.object({ programId: z.coerce.number().int().positive() }).strict();
+const programIdprojectIdParams = z.object({ programId: z.coerce.number().int().positive(), projectId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -38,8 +42,9 @@ export class ProgramsController {
 
   @Get("programs")
   @RequirePermission("build:programs:view")
+  @Validate({ query: listProgramsQuerySchema })
   listPrograms(
-    @Query(new ZodValidationPipe(listProgramsQuerySchema)) query: ListProgramsQuery,
+    @Query() query: ListProgramsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listPrograms(u.orgId, query);
@@ -47,6 +52,7 @@ export class ProgramsController {
 
   @Get("programs/:programId")
   @RequirePermission("build:programs:view")
+  @Validate({ params: programIdParams })
   getProgram(
     @Param("programId", ParseIntPipe) programId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -57,8 +63,9 @@ export class ProgramsController {
   @Post("programs")
   @HttpCode(201)
   @RequirePermission("build:programs:manage")
+  @Validate({ body: createProgramSchema })
   createProgram(
-    @Body(new ZodValidationPipe(createProgramSchema)) body: CreateProgramInput,
+    @Body() body: CreateProgramInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createProgram(u.orgId, u.userId, body);
@@ -66,9 +73,10 @@ export class ProgramsController {
 
   @Patch("programs/:programId")
   @RequirePermission("build:programs:manage")
+  @Validate({ params: programIdParams, body: updateProgramSchema })
   updateProgram(
     @Param("programId", ParseIntPipe) programId: number,
-    @Body(new ZodValidationPipe(updateProgramSchema)) body: UpdateProgramInput,
+    @Body() body: UpdateProgramInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateProgram(u.orgId, u.userId, programId, body);
@@ -77,6 +85,7 @@ export class ProgramsController {
   @Delete("programs/:programId")
   @HttpCode(204)
   @RequirePermission("build:programs:manage")
+  @Validate({ params: programIdParams })
   deleteProgram(
     @Param("programId", ParseIntPipe) programId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -87,9 +96,10 @@ export class ProgramsController {
   @Post("programs/:programId/projects")
   @HttpCode(200)
   @RequirePermission("build:programs:manage")
+  @Validate({ params: programIdParams, body: linkProjectSchema })
   linkProject(
     @Param("programId", ParseIntPipe) programId: number,
-    @Body(new ZodValidationPipe(linkProjectSchema)) body: LinkProjectInput,
+    @Body() body: LinkProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.linkProject(u.orgId, u.userId, programId, body);
@@ -98,6 +108,7 @@ export class ProgramsController {
   @Delete("programs/:programId/projects/:projectId")
   @HttpCode(204)
   @RequirePermission("build:programs:manage")
+  @Validate({ params: programIdprojectIdParams })
   unlinkProject(
     @Param("programId", ParseIntPipe) programId: number,
     @Param("projectId", ParseIntPipe) projectId: number,

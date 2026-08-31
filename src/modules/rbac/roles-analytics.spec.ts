@@ -1,7 +1,7 @@
 import { auditLogs, roleAssignments, roles } from "../../db/schema";
-import { RolesService } from "./roles.service";
+import { RolesQueryService } from "./roles-query.service";
 
-describe("RolesService.getRoleAnalytics", () => {
+describe("RolesQueryService.getRoleAnalytics", () => {
   it("uses unbounded aggregates and counts distinct assigned memberships", async () => {
     const roleWhere = jest.fn().mockResolvedValue([
       {
@@ -19,7 +19,7 @@ describe("RolesService.getRoleAnalytics", () => {
       throw new Error("Unexpected analytics table");
     });
     const select = jest.fn().mockReturnValue({ from });
-    const service: RolesService = Object.create(RolesService.prototype);
+    const service: RolesQueryService = Object.create(RolesQueryService.prototype);
     Reflect.set(service, "db", { select });
 
     await expect(service.getRoleAnalytics("org-1")).resolves.toEqual({
@@ -42,7 +42,7 @@ describe("RolesService.getRoleAnalytics", () => {
         where: jest.fn().mockResolvedValue([]),
       }),
     });
-    const service: RolesService = Object.create(RolesService.prototype);
+    const service: RolesQueryService = Object.create(RolesQueryService.prototype);
     Reflect.set(service, "db", { select });
 
     await expect(service.getRoleAnalytics("org-1")).resolves.toEqual({

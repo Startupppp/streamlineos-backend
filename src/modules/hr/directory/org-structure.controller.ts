@@ -4,7 +4,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import {
   OrgStructureService,
   type OrgChartPage,
@@ -19,6 +19,10 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { AccessService } from "../../access/access.service";
 import { resolveEmployeesScope } from "./employees-scope";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const teamIdParams = z.object({ teamId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr")
@@ -46,8 +50,9 @@ export class OrgStructureController {
 
   @Get("org-chart")
   @RequirePermission("hr:employees:view")
+  @Validate({ query: orgChartQuerySchema })
   async orgChart(
-    @Query(new ZodValidationPipe(orgChartQuerySchema)) query: OrgChartQueryInput,
+    @Query() query: OrgChartQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ): Promise<OrgChartPage> {
     const scope = await resolveEmployeesScope(this.access, currentUser);
@@ -56,8 +61,9 @@ export class OrgStructureController {
 
   @Get("headcount")
   @RequirePermission("hr:headcount:read")
+  @Validate({ query: headcountSchema })
   headcount(
-    @Query(new ZodValidationPipe(headcountSchema)) query: HeadcountInput,
+    @Query() query: HeadcountInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.orgStructure.getHeadcount(currentUser.orgId, query);
@@ -65,6 +71,7 @@ export class OrgStructureController {
 
   @Get("teams/:teamId")
   @RequirePermission("hr:employees:view")
+  @Validate({ params: teamIdParams })
   async team(
     @Param("teamId") teamId: string,
     @CurrentUser() currentUser: CurrentUserContext,

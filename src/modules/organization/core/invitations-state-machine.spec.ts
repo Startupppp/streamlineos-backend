@@ -6,6 +6,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { AccessService } from "../../access/access.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -20,7 +21,6 @@ describe("InvitationsService state transitions", () => {
   const userFindFirst = jest.fn();
   const canManageOrganizationMembership = jest.fn().mockResolvedValue(true);
   const invalidate = jest.fn().mockResolvedValue(undefined);
-  const invalidatePattern = jest.fn().mockResolvedValue(undefined);
   const invalidateNamespace = jest.fn().mockResolvedValue(undefined);
   const updateReturning = jest.fn().mockResolvedValue([{ id: "invite-1" }]);
   const updateWhere = jest.fn().mockReturnValue({ returning: updateReturning });
@@ -64,7 +64,12 @@ describe("InvitationsService state transitions", () => {
         { provide: AuditService, useValue: { log: jest.fn() } },
         {
           provide: CacheService,
-          useValue: { invalidate, invalidatePattern, invalidateNamespace },
+          useValue: {
+            invalidate,
+            invalidateNamespace,
+            invalidateForOrg: (o: string, k: string) => invalidate(`${o}:${k}`),
+            invalidateNamespaceForOrg: (o: string, n: string) => invalidateNamespace(`${o}:${n}`),
+          },
         },
         {
           provide: EmailService,
@@ -74,6 +79,7 @@ describe("InvitationsService state transitions", () => {
           },
         },
         { provide: PlanLimitsService, useValue: {} },
+        { provide: SeatLedgerService, useValue: { recordSeatEvent: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: AccessService,
           useValue: { canManageOrganizationMembership },

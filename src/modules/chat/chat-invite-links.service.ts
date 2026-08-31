@@ -27,11 +27,11 @@ function newInviteToken() {
 export class ChatInviteLinksService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  private async assertAdmin(channelId: number, userId: string) {
+  private async assertAdmin(channelId: number, userId: string, orgId: string) {
     const member = await this.db.query.chatChannelMembers.findFirst({
-      where: and(eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.userId, userId)),
+      where: and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId), eq(chatChannelMembers.userId, userId)),
     });
-    if (!member) throw new ForbiddenException("You are not a member of this channel");
+    if (!member) throw new NotFoundException("Channel not found");
     if (member.role !== "ADMIN") throw new ForbiddenException("Only channel admins can manage the invite link");
     return member;
   }
@@ -45,8 +45,8 @@ export class ChatInviteLinksService {
     });
   }
 
-  async getOrCreateInviteLink(channelId: number, userId: string) {
-    const member = await this.assertAdmin(channelId, userId);
+  async getOrCreateInviteLink(channelId: number, userId: string, orgId: string) {
+    const member = await this.assertAdmin(channelId, userId, orgId);
 
     const existing = await this.findActiveLink(channelId);
     if (existing) {
@@ -61,13 +61,13 @@ export class ChatInviteLinksService {
       token: null,
       tokenHash: minted.tokenHash,
       tokenEncrypted: minted.tokenEncrypted,
-      createdBy: userId,
+      createdByMembershipId: member.membershipId ?? null,
     });
     return { token: minted.token };
   }
 
-  async regenerateInviteLink(channelId: number, userId: string) {
-    const member = await this.assertAdmin(channelId, userId);
+  async regenerateInviteLink(channelId: number, userId: string, orgId: string) {
+    const member = await this.assertAdmin(channelId, userId, orgId);
 
     await this.db
       .update(chatChannelInviteLinks)
@@ -86,7 +86,7 @@ export class ChatInviteLinksService {
       token: null,
       tokenHash: minted.tokenHash,
       tokenEncrypted: minted.tokenEncrypted,
-      createdBy: userId,
+      createdByMembershipId: member.membershipId ?? null,
     });
     return { token: minted.token };
   }

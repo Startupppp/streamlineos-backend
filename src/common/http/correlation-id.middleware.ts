@@ -7,6 +7,15 @@ import {
   runInSpan,
   startSpan,
 } from "../observability/tracing";
+import type { SeamKey } from "../observability/seam-budgets";
+import { PROCESS_CELL_ID } from "../cell-resources/cell-id";
+import { currentRelease } from "../observability/release";
+
+const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+function routeSeamFor(method: string): SeamKey {
+  return READ_METHODS.has(method.toUpperCase()) ? "route.cached.read" : "route.write";
+}
 
 const CORRELATION_HEADER = "x-correlation-id";
 const REQUEST_ID_HEADER = "x-request-id";
@@ -64,11 +73,11 @@ export function correlationIdMiddleware(
    * appearing as an orphan trace.
    */
   runWithObservabilityContext(
-    { correlationId, method: req.method, route: req.path },
+    { correlationId, method: req.method, route: req.path, cellId: PROCESS_CELL_ID, release: currentRelease() },
     () => {
       const open = startSpan(`${req.method} ${req.path}`, {
         parent: parseTraceparent(req.headers[TRACEPARENT_HEADER] as string | undefined),
-        attributes: { "http.method": req.method },
+        attributes: { "http.method": req.method, seam: routeSeamFor(req.method) },
       });
 
       res.setHeader(TRACEPARENT_HEADER, formatTraceparent(open.span));

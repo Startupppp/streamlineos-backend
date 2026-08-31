@@ -13,7 +13,10 @@ import {
 } from "../../../db/schema/hr/workflow-engine";
 import { users, organizationMembers } from "../../../db/schema/common/auth";
 import { orgUnits } from "../../../db/schema/common/organization";
+import { hrEmployments, hrPeople } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 
 type HrWorkflowObjectType = typeof hrWorkflowObjectTypeEnum.enumValues[number];
 
@@ -53,6 +56,7 @@ export class HrWorkflowEngineService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   async startWorkflow({ orgId, objectType, objectId, requestedByUserId, subjectEmployeeId, context = {}, tx }: StartWorkflowParams) {
@@ -235,26 +239,22 @@ export class HrWorkflowEngineService {
         return step.approverValue ? [step.approverValue] : [];
 
       case "direct_manager": {
-        const [employee] = await this.db.select({ reportingTo: users.reportingTo })
-          .from(users).where(eq(users.id, subjectEmployeeId)).limit(1);
-        return employee?.reportingTo ? [employee.reportingTo] : [];
+        const facts = await this.employment.getFacts(orgId, subjectEmployeeId);
+        return facts.managerUserId ? [facts.managerUserId] : [];
       }
 
       case "managers_manager": {
-        const [employee] = await this.db.select({ reportingTo: users.reportingTo })
-          .from(users).where(eq(users.id, subjectEmployeeId)).limit(1);
-        if (!employee?.reportingTo) return [];
-        const [manager] = await this.db.select({ reportingTo: users.reportingTo })
-          .from(users).where(eq(users.id, employee.reportingTo)).limit(1);
-        return manager?.reportingTo ? [manager.reportingTo] : [];
+        const facts = await this.employment.getFacts(orgId, subjectEmployeeId);
+        if (!facts.managerUserId) return [];
+        const managerFacts = await this.employment.getFacts(orgId, facts.managerUserId);
+        return managerFacts.managerUserId ? [managerFacts.managerUserId] : [];
       }
 
       case "department_head": {
-        const [employee] = await this.db.select({ orgDepartmentId: users.orgDepartmentId })
-          .from(users).where(eq(users.id, subjectEmployeeId)).limit(1);
-        if (!employee?.orgDepartmentId) return [];
+        const facts = await this.employment.getFacts(orgId, subjectEmployeeId);
+        if (!facts.departmentId) return [];
         const [dept] = await this.db.select({ headUserId: orgUnits.headUserId })
-          .from(orgUnits).where(eq(orgUnits.id, employee.orgDepartmentId)).limit(1);
+          .from(orgUnits).where(eq(orgUnits.id, facts.departmentId)).limit(1);
         return dept?.headUserId ? [dept.headUserId] : [];
       }
 
@@ -269,17 +269,18 @@ export class HrWorkflowEngineService {
       }
 
       case "location_hr": {
-        const [employee] = await this.db.select({ branchId: users.branchId })
-          .from(users).where(eq(users.id, subjectEmployeeId)).limit(1);
-        if (!employee?.branchId) return [];
+        const facts = await this.employment.getFacts(orgId, subjectEmployeeId);
+        if (!facts.locationId) return [];
         const hrApprovers = await this.access.membersWithPermission(orgId, "hr:leaves:approve");
         if (hrApprovers.length === 0) return [];
         const branchHr = await this.db
           .select({ id: users.id })
           .from(users)
+          .innerJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .innerJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
           .where(and(
             inArray(users.id, hrApprovers.map((m) => m.userId)),
-            eq(users.branchId, employee.branchId),
+            eq(hrEmployments.locationId, facts.locationId),
           ))
           .limit(10);
         return branchHr.map((u) => u.id);
@@ -296,16 +297,22 @@ export class HrWorkflowEngineService {
   }
 
   private async resolveDynamicExpression(expression: string, subjectEmployeeId: string, orgId: string): Promise<string[]> {
-    const [employee] = await this.db.select({
-      id: users.id,
-      reportingTo: users.reportingTo,
-      departmentId: users.orgDepartmentId,
-      branchId: users.branchId,
-      role: organizationMembers.role,
-    }).from(users)
-      .innerJoin(organizationMembers, and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)))
-      .where(eq(users.id, subjectEmployeeId)).limit(1);
-    if (!employee) return [];
+    const [[member], facts] = await Promise.all([
+      this.db.select({ role: organizationMembers.role })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.userId, subjectEmployeeId), eq(organizationMembers.orgId, orgId)))
+        .limit(1),
+      this.employment.getFacts(orgId, subjectEmployeeId),
+    ]);
+    if (!member) return [];
+
+    const employee: Record<string, unknown> = {
+      id: subjectEmployeeId,
+      reportingTo: facts.managerUserId,
+      departmentId: facts.departmentId,
+      branchId: facts.locationId,
+      role: member.role,
+    };
 
     const parts = expression.split(".");
     let value: unknown = employee;

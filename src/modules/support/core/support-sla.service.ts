@@ -335,7 +335,7 @@ export class SupportSlaService {
 
       if (ticket.assigneeId && (risk === "first_response_due_soon" || risk === "first_response_breached" || risk === "resolution_due_soon" || risk === "resolution_breached")) {
         try {
-          await this.notifications.sendEscalationEmail(ticket.assigneeId, ticket.title, ticket.id, risk);
+          await this.notifications.sendEscalationEmail(orgId, ticket.assigneeId, ticket.title, ticket.id, risk);
         } catch (error) {
           logger.error("Failed to send SLA escalation email", {
             orgId,
@@ -421,7 +421,7 @@ export class SupportSlaService {
     for (const manager of managers) {
       if (manager.userId === reassignedTo) continue;
       try {
-        await this.notifications.sendEscalationEmail(manager.userId, ticket.title, ticket.id, risk);
+        await this.notifications.sendEscalationEmail(orgId, manager.userId, ticket.title, ticket.id, risk);
       } catch (error) {
         logger.error("Failed to send SLA manager-tier escalation email", {
           orgId,

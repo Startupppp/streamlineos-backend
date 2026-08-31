@@ -10,19 +10,26 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import type { Request } from "express";
+import { AuthorizedInService } from "../../../common/auth/authorized-in-service.decorator";
 import { PortalJwtAuthGuard } from "../../../common/portal-auth/portal-jwt-auth.guard";
 import type { PortalUserContext } from "../../../common/portal-auth/portal-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PortalClientService } from "./portal-client.service";
 import {
   submitChangeRequestSchema,
   type SubmitChangeRequestInput,
 } from "./dto/portal-client.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 
 type PortalReq = Request & { portalUser: PortalUserContext };
 
 @Controller("portal/v1")
 @UseGuards(PortalJwtAuthGuard)
+@AuthorizedInService(
+  "PortalJwtAuthGuard, then PortalClientService scopes every read to the portal membership's granted projects",
+)
 export class PortalClientController {
   constructor(private readonly svc: PortalClientService) {}
 
@@ -36,6 +43,7 @@ export class PortalClientController {
   }
 
   @Get("projects/:projectId/overview")
+  @Validate({ params: projectIdParams })
   getProjectOverview(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Req() req: PortalReq,
@@ -50,10 +58,10 @@ export class PortalClientController {
 
   @Post("projects/:projectId/change-requests")
   @HttpCode(201)
+  @Validate({ params: projectIdParams, body: submitChangeRequestSchema })
   submitChangeRequest(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(submitChangeRequestSchema))
-    body: SubmitChangeRequestInput,
+    @Body() body: SubmitChangeRequestInput,
     @Req() req: PortalReq,
   ) {
     const ctx = req.portalUser;

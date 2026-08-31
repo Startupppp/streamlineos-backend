@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const documentTypeNameSchema = z
   .string()
@@ -15,8 +16,8 @@ const sortOrderSchema = z
   .optional();
 
 export const listDocumentTypesSchema = z.object({
-  page: z.coerce.number().int().min(1).optional().default(1),
-  limit: z.coerce.number().int().min(1).max(100).optional().default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20),
 });
 
 export const createDocumentTypeSchema = z.object({

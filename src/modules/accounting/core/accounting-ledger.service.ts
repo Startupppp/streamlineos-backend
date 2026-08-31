@@ -5,13 +5,13 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, desc, eq, getTableColumns, gte, ilike, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, gte, ilike, isNull, lt, lte, or } from "drizzle-orm";
 import { ledgerAccounts, journalEntries, journalLines, finApprovalPolicies, finApprovalRequests, users } from "../../../db/schema";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
@@ -58,7 +58,7 @@ export class AccountingLedgerService {
   ) {}
 
   async listAccounts(orgId: string, query: ListAccountsQuery) {
-    const { page, pageSize, q, type, activeOnly } = query;
+    const { cursor, limit, q, type, activeOnly } = query;
 
     await this.posting.seedChartOfAccountsForOrg(orgId);
 
@@ -67,28 +67,28 @@ export class AccountingLedgerService {
     if (activeOnly) conds.push(eq(ledgerAccounts.isActive, true));
     if (q) conds.push(ilike(ledgerAccounts.name, `%${escapeLike(q)}%`));
 
-    const where = and(...conds);
-    const { offset, limit } = paginateOffset({ page, pageSize });
-    const rows = await this.db
-      .select({ ...getTableColumns(ledgerAccounts), total: sql<string>`count(*) OVER ()` })
-      .from(ledgerAccounts)
-      .where(where)
-      .orderBy(asc(ledgerAccounts.code))
-      .offset(offset)
-      .limit(limit);
-
-    let totalCount: number;
-    if (rows[0]) {
-      totalCount = Number(rows[0].total);
-    } else if (offset === 0) {
-      totalCount = 0;
-    } else {
-      const fallback = await this.db.select({ c: count() }).from(ledgerAccounts).where(where);
-      totalCount = Number(fallback[0]?.c ?? 0);
+    const pos = decodeCursor(cursor);
+    if (pos) {
+      const cursorId = Number(pos.id);
+      conds.push(
+        or(
+          gt(ledgerAccounts.code, pos.sortValue),
+          and(eq(ledgerAccounts.code, pos.sortValue), gt(ledgerAccounts.id, cursorId))!,
+        )!,
+      );
     }
 
-    const items = rows.map(({ total: _total, ...rest }) => rest);
-    return buildListResponse(items, totalCount, { page, pageSize });
+    const rows = await this.db
+      .select(getTableColumns(ledgerAccounts))
+      .from(ledgerAccounts)
+      .where(and(...conds))
+      .orderBy(asc(ledgerAccounts.code), asc(ledgerAccounts.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.code,
+      id: String(row.id),
+    }));
   }
 
   async createAccount(orgId: string, input: CreateAccountInput) {
@@ -117,7 +117,7 @@ export class AccountingLedgerService {
   }
 
   async listJournal(orgId: string, query: ListJournalQuery, scope: DataScope, userId: string) {
-    const { page, pageSize, from, to, sourceType } = query;
+    const { cursor, limit, from, to, sourceType } = query;
     const fromStr = from ? from.toISOString().slice(0, 10) : undefined;
     const toStr = to ? to.toISOString().slice(0, 10) : undefined;
 
@@ -127,28 +127,28 @@ export class AccountingLedgerService {
     if (sourceType) conds.push(eq(journalEntries.sourceType, sourceType));
     conds.push(applyScope(scope, orgId, userId, { ownerColumn: journalEntries.createdBy }));
 
-    const where = and(...conds);
-    const { offset, limit } = paginateOffset({ page, pageSize });
-    const rows = await this.db
-      .select({ ...getTableColumns(journalEntries), total: sql<string>`count(*) OVER ()` })
-      .from(journalEntries)
-      .where(where)
-      .orderBy(desc(journalEntries.entryDate), asc(journalEntries.id))
-      .offset(offset)
-      .limit(limit);
-
-    let totalCount: number;
-    if (rows[0]) {
-      totalCount = Number(rows[0].total);
-    } else if (offset === 0) {
-      totalCount = 0;
-    } else {
-      const fallback = await this.db.select({ c: count() }).from(journalEntries).where(where);
-      totalCount = Number(fallback[0]?.c ?? 0);
+    const pos = decodeCursor(cursor);
+    if (pos) {
+      const cursorId = Number(pos.id);
+      conds.push(
+        or(
+          lt(journalEntries.entryDate, pos.sortValue),
+          and(eq(journalEntries.entryDate, pos.sortValue), gt(journalEntries.id, cursorId))!,
+        )!,
+      );
     }
 
-    const items = rows.map(({ total: _total, ...rest }) => rest);
-    return buildListResponse(items, totalCount, { page, pageSize });
+    const rows = await this.db
+      .select(getTableColumns(journalEntries))
+      .from(journalEntries)
+      .where(and(...conds))
+      .orderBy(desc(journalEntries.entryDate), asc(journalEntries.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.entryDate,
+      id: String(row.id),
+    }));
   }
 
   async createJournalEntry(orgId: string, userId: string, input: CreateJournalEntryInput) {
@@ -360,7 +360,16 @@ export class AccountingLedgerService {
     await this.finPosting.assertPeriodOpen(orgId, today);
 
     const headerRows = await this.db
-      .select()
+      .select({
+        id: journalEntries.id,
+        orgId: journalEntries.orgId,
+        entryNumber: journalEntries.entryNumber,
+        entryDate: journalEntries.entryDate,
+        sourceType: journalEntries.sourceType,
+        sourceId: journalEntries.sourceId,
+        sourceEvent: journalEntries.sourceEvent,
+        status: journalEntries.status,
+      })
       .from(journalEntries)
       .where(and(eq(journalEntries.id, entryId), eq(journalEntries.orgId, orgId)))
       .limit(1);

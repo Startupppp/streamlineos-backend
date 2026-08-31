@@ -9,9 +9,11 @@ import { JournalService } from "./journal.service";
 import { FnfInsightsService } from "./fnf.service";
 import { TaxWindowsService } from "./tax-windows.service";
 import { EssService } from "./ess.service";
+import { EssSelfServiceService } from "./ess-self-service.service";
 import { AccountingMappingsService } from "./accounting-mappings.service";
 import { CalendarService } from "./calendar.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { withAccessResolution } from "../../../../test/helpers/access-stub";
 
 const ALL_INSIGHTS_PERMS = new Map([
   ["payroll:reports:view", "all"],
@@ -26,15 +28,17 @@ const ALL_INSIGHTS_PERMS = new Map([
   ["self:payslips", "all"],
 ]);
 
-const permittedAccess = {
+const permittedAccess = withAccessResolution({
   resolveUserPermissions: jest.fn().mockResolvedValue(ALL_INSIGHTS_PERMS),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+});
 
-const forbiddenAccess = {
+const forbiddenAccess = withAccessResolution({
   resolveUserPermissions: jest.fn().mockResolvedValue(new Map()),
   isModuleEnabled: jest.fn().mockResolvedValue(true),
-};
+  moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+});
 
 const mockSummary = {
   run: { month: "2026-07", status: "DRAFT", employeeCount: 0, grossTotal: "0.00", deductionTotal: "0.00", netTotal: "0.00", employerCostTotal: "0.00", exceptionCount: 0 },
@@ -84,6 +88,18 @@ const mockEssService = {
   getOverview: jest.fn().mockResolvedValue({ balance: "0.00", ytdGross: "0.00" }),
   getPayslips: jest.fn().mockResolvedValue([]),
   getSalaryStructure: jest.fn().mockResolvedValue({ components: [] }),
+  getOwnFnf: jest.fn().mockResolvedValue(null),
+  getActiveToggles: jest.fn().mockResolvedValue({
+    essAllowLoanRequests: true,
+    essAllowTaxDeclarations: true,
+    essAllowBankUpdate: true,
+    essAllowReimbursements: true,
+    essShowSalaryStructure: true,
+  }),
+  getActiveWindow: jest.fn().mockResolvedValue(null),
+};
+
+const mockEssSelfServiceService = {
   listReimbursements: jest.fn().mockResolvedValue([]),
   createReimbursement: jest.fn().mockResolvedValue({ id: 1 }),
   listLoans: jest.fn().mockResolvedValue([]),
@@ -93,7 +109,6 @@ const mockEssService = {
   addTaxProof: jest.fn().mockResolvedValue({ id: 1 }),
   getBankDetails: jest.fn().mockResolvedValue({ accountNumber: "***1234", ifsc: "SBIN0001" }),
   updateBankDetails: jest.fn().mockResolvedValue({ ok: true }),
-  getOwnFnf: jest.fn().mockResolvedValue(null),
 };
 
 const mockAccountingMappingsService = {
@@ -111,6 +126,18 @@ const mockCalendarService = {
   remove: jest.fn().mockResolvedValue({ ok: true }),
 };
 
+const QUERY_CHAIN_METHODS = [
+  "from", "leftJoin", "innerJoin", "rightJoin", "fullJoin", "where",
+  "orderBy", "limit", "offset", "groupBy", "having", "for",
+] as const;
+
+function queryChain(rows: unknown[] = []): Record<string, unknown> {
+  const node: Record<string, unknown> = {};
+  for (const method of QUERY_CHAIN_METHODS) node[method] = jest.fn(() => node);
+  node["then"] = (resolve: (value: unknown) => unknown) => resolve(rows);
+  return node;
+}
+
 const mockDrizzle = {
   __client: { end: jest.fn().mockResolvedValue(undefined) },
   execute: jest.fn().mockResolvedValue([]),
@@ -118,16 +145,8 @@ const mockDrizzle = {
     async (fn: (tx: { execute: jest.Mock }) => Promise<unknown>) =>
       fn({ execute: jest.fn().mockResolvedValue([]) }),
   ),
-  select: jest.fn().mockReturnValue({
-    from: jest.fn().mockReturnValue({
-      leftJoin: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          limit: jest.fn().mockResolvedValue([]),
-        }),
-      }),
-      where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-    }),
-  }),
+  select: jest.fn(() => queryChain()),
+  selectDistinct: jest.fn(() => queryChain()),
   update: jest.fn().mockReturnValue({
     set: jest.fn().mockReturnValue({
       where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1, status: "VERIFIED" }]) }),
@@ -158,6 +177,7 @@ async function buildApp(accessMock: typeof permittedAccess): Promise<INestApplic
       { provide: FnfInsightsService, useValue: mockFnfService },
       { provide: TaxWindowsService, useValue: mockTaxWindowsService },
       { provide: EssService, useValue: mockEssService },
+      { provide: EssSelfServiceService, useValue: mockEssSelfServiceService },
       { provide: AccountingMappingsService, useValue: mockAccountingMappingsService },
       { provide: CalendarService, useValue: mockCalendarService },
       { provide: DRIZZLE, useValue: mockDrizzle },
@@ -354,12 +374,13 @@ describe("payroll-insights RBAC — 200 for permitted caller (e2e)", () => {
 describe("payroll-insights — export requires payroll:reports:export (e2e)", () => {
   let app: INestApplication;
 
-  const exportBlockedAccess = {
+  const exportBlockedAccess = withAccessResolution({
     resolveUserPermissions: jest.fn().mockResolvedValue(new Map([
       ["payroll:reports:view", "all"],
     ])),
     isModuleEnabled: jest.fn().mockResolvedValue(true),
-  };
+    moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+  });
 
   beforeAll(async () => { app = await buildApp(exportBlockedAccess); });
   afterAll(async () => app.close());
@@ -384,12 +405,13 @@ describe("payroll-insights — export requires payroll:reports:export (e2e)", ()
 describe("payroll-insights — FnF requires payroll:fnf:view (e2e)", () => {
   let app: INestApplication;
 
-  const noFnfAccess = {
+  const noFnfAccess = withAccessResolution({
     resolveUserPermissions: jest.fn().mockResolvedValue(new Map([
       ["payroll:reports:view", "all"],
     ])),
     isModuleEnabled: jest.fn().mockResolvedValue(true),
-  };
+    moduleAvailability: async (): Promise<{ available: true }> => ({ available: true }),
+  });
 
   beforeAll(async () => { app = await buildApp(noFnfAccess); });
   afterAll(async () => app.close());

@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { hrEmployments, hrPeople } from "../../../../db/schema";
+import { livePersonOfEmployment, liveEmployment } from "../../../directory/employment-query";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { HrPolicyEvaluationService } from "../../policies/hr-policy-evaluation.service";
@@ -28,15 +29,8 @@ export class OnboardingProbationService {
         lifecycleStatus: hrEmployments.lifecycleStatus,
       })
       .from(hrEmployments)
-      .innerJoin(hrPeople, eq(hrEmployments.personId, hrPeople.id))
-      .where(
-        and(
-          eq(hrEmployments.orgId, orgId),
-          eq(hrPeople.userId, userId),
-          eq(hrEmployments.isPrimary, true),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
+      .innerJoin(hrPeople, livePersonOfEmployment(orgId, hrEmployments, hrPeople))
+      .where(and(liveEmployment(orgId, hrEmployments), eq(hrEmployments.isPrimary, true), eq(hrPeople.userId, userId)))
       .limit(1);
     if (!employment) return { probationEndDate: null, lifecycleStatus: null };
 

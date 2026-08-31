@@ -6,11 +6,15 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import {
   upsertCalibrationEntrySchema,
   type UpsertCalibrationEntryInput,
 } from "./dto/calibration.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const cycleIdParams = z.object({ cycleId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/performance/calibration")
@@ -20,6 +24,7 @@ export class CalibrationController {
 
   @Get("cycles/:cycleId/entries")
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: cycleIdParams })
   listEntries(
     @CurrentUser() user: CurrentUserContext,
     @Param("cycleId", ParseIntPipe) cycleId: number,
@@ -30,10 +35,11 @@ export class CalibrationController {
   @Post("cycles/:cycleId/entries")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: cycleIdParams, body: upsertCalibrationEntrySchema })
   upsertEntry(
     @CurrentUser() user: CurrentUserContext,
     @Param("cycleId", ParseIntPipe) cycleId: number,
-    @Body(new ZodValidationPipe(upsertCalibrationEntrySchema)) body: UpsertCalibrationEntryInput,
+    @Body() body: UpsertCalibrationEntryInput,
   ) {
     return this.calibrationService.upsertEntry(
       user.orgId,

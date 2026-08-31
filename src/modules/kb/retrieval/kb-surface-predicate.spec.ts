@@ -1,4 +1,5 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const ACCESSIBLE = [42];
 
@@ -30,6 +31,7 @@ const USER: CurrentUserContext = {
   role: "member",
   sessionId: "sess-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 const page = { id: 7, createdById: "user-1", ownerUserId: "user-1", contentText: "x" };

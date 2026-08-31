@@ -1,6 +1,7 @@
-import { Injectable } from "@nestjs/common";
-import { Subject, Observable } from "rxjs";
-import { filter, map } from "rxjs/operators";
+import { Injectable, OnModuleDestroy } from "@nestjs/common";
+import type { MessageEvent } from "@nestjs/common";
+import { Subject, Observable, interval, merge } from "rxjs";
+import { filter, map, takeUntil } from "rxjs/operators";
 
 export interface NotifEventPayload {
   id: number;
@@ -25,25 +26,56 @@ interface StreamToken {
   expiresAt: number;
 }
 
+const HEARTBEAT_INTERVAL_MS = 15_000;
+const STREAM_TOKEN_TTL_MS = 120_000;
+
 @Injectable()
-export class NotificationEventService {
+export class NotificationEventService implements OnModuleDestroy {
   private readonly events$ = new Subject<NotifEvent>();
   private readonly streamTokens = new Map<string, StreamToken>();
+  private readonly closeSignals = new Map<string, Subject<void>>();
 
   emit(event: NotifEvent): void {
     this.events$.next(event);
   }
 
   stream(userId: string, orgId: string): Observable<MessageEvent> {
-    return this.events$.pipe(
+    const key = `${orgId}:${userId}`;
+    let close$ = this.closeSignals.get(key);
+    if (!close$) {
+      close$ = new Subject<void>();
+      this.closeSignals.set(key, close$);
+    }
+    const signal = close$;
+
+    const events$ = this.events$.pipe(
       filter((e) => e.userId === userId && e.orgId === orgId),
-      map((e) => ({ data: JSON.stringify({ type: e.type, notification: e.notification }) } as MessageEvent)),
+      map((e): MessageEvent => ({
+        data: JSON.stringify({ type: e.type, notification: e.notification }),
+        type: e.type,
+      })),
     );
+
+    const heartbeat$ = interval(HEARTBEAT_INTERVAL_MS).pipe(
+      map((): MessageEvent => ({ data: "", type: "heartbeat" })),
+    );
+
+    return merge(events$, heartbeat$).pipe(takeUntil(signal));
+  }
+
+  closeStream(userId: string, orgId: string): void {
+    const key = `${orgId}:${userId}`;
+    const signal = this.closeSignals.get(key);
+    if (signal) {
+      signal.next();
+      signal.complete();
+      this.closeSignals.delete(key);
+    }
   }
 
   generateToken(userId: string, orgId: string): string {
     const token = crypto.randomUUID();
-    this.streamTokens.set(token, { userId, orgId, expiresAt: Date.now() + 120_000 });
+    this.streamTokens.set(token, { userId, orgId, expiresAt: Date.now() + STREAM_TOKEN_TTL_MS });
     this.pruneTokens();
     return token;
   }
@@ -60,5 +92,12 @@ export class NotificationEventService {
     for (const [key, val] of this.streamTokens) {
       if (val.expiresAt < now) this.streamTokens.delete(key);
     }
+  }
+
+  onModuleDestroy(): void {
+    this.events$.complete();
+    for (const signal of this.closeSignals.values())
+      signal.complete();
+    this.closeSignals.clear();
   }
 }

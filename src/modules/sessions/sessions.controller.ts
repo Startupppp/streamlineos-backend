@@ -1,10 +1,15 @@
 import { Controller, Delete, Get, Param, Req, UseGuards } from "@nestjs/common";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { enrichUserAgent } from "../../common/http/parse-user-agent";
 import { SessionsService } from "./sessions.service";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const sessionIdParams = z.object({ sessionId: z.string().min(1) }).strict();
 
 function headerString(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
@@ -17,6 +22,7 @@ export class SessionsController {
   constructor(private readonly sessions: SessionsService) {}
 
   @Get()
+  @Universal()
   list(@Req() req: Request, @CurrentUser() u: CurrentUserContext) {
     const rawUa =
       headerString(req.headers["x-client-user-agent"]) ??
@@ -35,6 +41,8 @@ export class SessionsController {
   }
 
   @Delete(":sessionId")
+  @Universal()
+  @Validate({ params: sessionIdParams })
   revokeOne(
     @Param("sessionId") sessionId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -43,6 +51,7 @@ export class SessionsController {
   }
 
   @Delete()
+  @Universal()
   revokeAllOthers(@CurrentUser() u: CurrentUserContext) {
     return this.sessions.revokeAllOthers(u.userId, u.sessionId);
   }

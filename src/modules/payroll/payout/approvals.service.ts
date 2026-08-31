@@ -7,6 +7,11 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq, inArray } from "drizzle-orm";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -22,6 +27,7 @@ import {
 import { AccessService } from "../../access/access.service";
 import { ROLE_DEFAULT_PERMISSIONS } from "../../rbac/permissions";
 import { logger } from "../../../common/logger/logger.service";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import {
   DEFAULT_PAYROLL_TOGGLES,
   type PayrollApprovalStageDef,
@@ -42,7 +48,7 @@ export class ApprovalsService {
     private readonly generate: GenerateService,
   ) {}
 
-  async submitApproval(orgId: string, userId: string, runId: number) {
+  async submitApproval(orgId: string, userId: string, runId: number, requestId?: string | null) {
     const run = await this.db.query.payrollRuns.findFirst({
       where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
       with: { policyVersion: true },
@@ -81,10 +87,14 @@ export class ApprovalsService {
     const approvalWorkflow = toggles.approvalWorkflow !== false;
 
     if (!approvalWorkflow) {
+      const approverActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
+        if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+        throw e;
+      });
       const autoResult = await this.db.transaction(async (tx) => {
         await tx
           .update(payrollRuns)
-          .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId })
+          .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId, approvedByMembershipId: approverActor.membershipId })
           .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
         await tx.insert(payrollRunEvents).values([
@@ -99,13 +109,20 @@ export class ApprovalsService {
         action: "payroll.run_approval_submitted",
         userId,
         orgId,
+        actorMembershipId: approverActor.membershipId,
         targetId: String(runId),
         targetType: "payroll_run",
+        requestId: requestId ?? null,
         metadata: { runId, autoApproved: true },
       });
 
       return autoResult;
     }
+
+    const submitterActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
 
     const rawChain = policyConfig?.approvalChain;
     const chain: PayrollApprovalStageDef[] =
@@ -141,28 +158,34 @@ export class ApprovalsService {
         actorId: userId,
       });
 
-      if (firstStage && firstStageApprovers.length > 0) {
-        const { stageName } = firstStage;
-        void Promise.all(
+      return { autoApproved: false, runStatus: "PENDING_APPROVAL" as const, stagesCreated: chain.length };
+    });
+
+    if (firstStage && firstStageApprovers.length > 0) {
+      const { stageName } = firstStage;
+      const notifyPending = () =>
+        Promise.all(
           firstStageApprovers.map((approverId) =>
             this.notifications.notifyApprovalPending(orgId, approverId, runId, stageName),
           ),
         ).catch((e: unknown) => logger.error("notifyApprovalPending failed", { error: String(e) }));
-      }
+      if (!registerAfterCommit(notifyPending)) void notifyPending();
+    }
 
-      void this.notifications
+    const notifySubmitted = () =>
+      this.notifications
         .notifyApprovalSubmitted(orgId, userId, runId)
         .catch((e: unknown) => logger.error("notifyApprovalSubmitted failed", { error: String(e) }));
-
-      return { autoApproved: false, runStatus: "PENDING_APPROVAL" as const, stagesCreated: chain.length };
-    });
+    if (!registerAfterCommit(notifySubmitted)) void notifySubmitted();
 
     this.audit.log({
       action: "payroll.run_approval_submitted",
       userId,
       orgId,
+      actorMembershipId: submitterActor.membershipId,
       targetId: String(runId),
       targetType: "payroll_run",
+      requestId: requestId ?? null,
       metadata: { runId, autoApproved: false, stagesCreated: chain.length },
     });
 
@@ -210,6 +233,7 @@ export class ApprovalsService {
     runId: number,
     approvalId: number,
     comment?: string,
+    requestId?: string | null,
   ) {
     const [approval, run] = await Promise.all([
       this.db.query.payrollApprovals.findFirst({
@@ -275,6 +299,11 @@ export class ApprovalsService {
       );
     }
 
+    const stageActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     const isLastStage = allStages.every((s) => s.id === approvalId || s.status === "APPROVED");
     const rawRunToggles = run.policyVersion?.toggles;
     const runToggles: PayrollToggles = rawRunToggles && typeof rawRunToggles === "object"
@@ -293,7 +322,7 @@ export class ApprovalsService {
     const result = await this.db.transaction(async (tx) => {
       await tx
         .update(payrollApprovals)
-        .set({ status: "APPROVED", actedBy: userId, actedAt: new Date(), comment: comment ?? null })
+        .set({ status: "APPROVED", actedBy: userId, actedByMembershipId: stageActor.membershipId, actedAt: new Date(), comment: comment ?? null })
         .where(and(eq(payrollApprovals.id, approvalId), eq(payrollApprovals.orgId, orgId)));
 
       if (isLastStage) {
@@ -306,6 +335,7 @@ export class ApprovalsService {
               lockedBy: userId,
               approvedAt: new Date(),
               approvedBy: userId,
+              approvedByMembershipId: stageActor.membershipId,
             })
             .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
@@ -318,7 +348,7 @@ export class ApprovalsService {
         } else {
           await tx
             .update(payrollRuns)
-            .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId })
+            .set({ status: "APPROVED", approvedAt: new Date(), approvedBy: userId, approvedByMembershipId: stageActor.membershipId })
             .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
           await tx.insert(payrollRunEvents).values({
@@ -336,24 +366,28 @@ export class ApprovalsService {
           : "APPROVED"
         : "PENDING_APPROVAL";
 
-      if (nextStage && nextStageApprovers.length > 0) {
-        const { stageName } = nextStage;
-        void Promise.all(
+      return { success: true, runStatus };
+    });
+
+    if (nextStage && nextStageApprovers.length > 0) {
+      const { stageName } = nextStage;
+      const notifyNext = () =>
+        Promise.all(
           nextStageApprovers.map((approverId) =>
             this.notifications.notifyApprovalPending(orgId, approverId, runId, stageName),
           ),
         ).catch((e: unknown) => logger.error("notifyApprovalPending failed", { error: String(e) }));
-      }
-
-      return { success: true, runStatus };
-    });
+      if (!registerAfterCommit(notifyNext)) void notifyNext();
+    }
 
     this.audit.log({
       action: "payroll.run_approval_stage_approved",
       userId,
       orgId,
+      actorMembershipId: stageActor.membershipId,
       targetId: String(runId),
       targetType: "payroll_run",
+      requestId: requestId ?? null,
       metadata: { approvalId, stageName: approval.stageName, resultingStatus: result.runStatus },
     });
 
@@ -422,6 +456,7 @@ export class ApprovalsService {
     runId: number,
     approvalId: number,
     comment: string,
+    requestId?: string | null,
   ) {
     const [approval, run] = await Promise.all([
       this.db.query.payrollApprovals.findFirst({
@@ -467,6 +502,11 @@ export class ApprovalsService {
       );
     }
 
+    const rejectActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     const allStages = await this.db
       .select({
         id: payrollApprovals.id,
@@ -485,7 +525,7 @@ export class ApprovalsService {
     const result = await this.db.transaction(async (tx) => {
       await tx
         .update(payrollApprovals)
-        .set({ status: "REJECTED", actedBy: userId, actedAt: new Date(), comment })
+        .set({ status: "REJECTED", actedBy: userId, actedByMembershipId: rejectActor.membershipId, actedAt: new Date(), comment })
         .where(and(eq(payrollApprovals.id, approvalId), eq(payrollApprovals.orgId, orgId)));
 
       await tx
@@ -508,9 +548,11 @@ export class ApprovalsService {
       action: "payroll.run_approval_stage_rejected",
       userId,
       orgId,
+      actorMembershipId: rejectActor.membershipId,
       targetId: String(runId),
       targetType: "payroll_run",
-      metadata: { approvalId, stageName: approval.stageName, comment },
+      requestId: requestId ?? null,
+      metadata: { approvalId, stageName: approval.stageName, reason: comment },
     });
 
     return result;

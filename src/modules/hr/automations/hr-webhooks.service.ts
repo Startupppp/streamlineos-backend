@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -17,10 +18,10 @@ import type {
   UpdateHrWebhookInput,
   ListDeliveriesInput,
 } from "./dto/hr-webhook.schemas";
+import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 const MAX_ATTEMPTS = 5;
-const PRIVATE_IP_PATTERN = /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|169\.254\.|0\.0\.0\.0|::1|localhost)/i;
 
 function buildSignature(secret: string, body: string): string {
   return `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
@@ -63,7 +64,8 @@ export class HrWebhooksService {
   }
 
   async createSubscription(orgId: string, userId: string, input: CreateHrWebhookInput) {
-    this.assertSsrfSafe(input.url);
+    const createUrlCheck = await checkWebhookUrl(input.url);
+    if (!createUrlCheck.allowed) throw new BadRequestException(`SSRF: webhook URL blocked (${createUrlCheck.reason})`);
     const secret = randomBytes(32).toString("hex");
     try {
       const [row] = await this.db
@@ -88,7 +90,10 @@ export class HrWebhooksService {
   }
 
   async updateSubscription(orgId: string, id: number, input: UpdateHrWebhookInput) {
-    if (input.url) this.assertSsrfSafe(input.url);
+    if (input.url) {
+      const updateUrlCheck = await checkWebhookUrl(input.url);
+      if (!updateUrlCheck.allowed) throw new BadRequestException(`SSRF: webhook URL blocked (${updateUrlCheck.reason})`);
+    }
     try {
       const [updated] = await this.db
         .update(hrWebhookSubscriptions)
@@ -374,6 +379,7 @@ export class HrWebhooksService {
         inArray(hrWebhookSubscriptions.id, subIds),
         isNull(hrWebhookSubscriptions.deletedAt),
       ),
+      limit: 100,
     });
     const subMap = new Map(subs.map((s) => [s.id, s]));
 
@@ -404,15 +410,4 @@ export class HrWebhooksService {
       );
   }
 
-  private assertSsrfSafe(url: string): void {
-    try {
-      const parsed = new URL(url);
-      if (PRIVATE_IP_PATTERN.test(parsed.hostname)) {
-        throw new ConflictException("SSRF: private/internal URLs are not allowed");
-      }
-    } catch (err) {
-      if (err instanceof ConflictException) throw err;
-      throw new ConflictException("Invalid URL");
-    }
-  }
 }

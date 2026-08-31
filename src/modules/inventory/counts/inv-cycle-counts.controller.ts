@@ -6,13 +6,16 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvCycleCountsService } from "./inv-cycle-counts.service";
 import {
   listCountsSchema, createCycleCountSchema, updateCountLinesSchema,
   type ListCountsInput, type CreateCycleCountInput, type UpdateCountLinesInput,
 } from "./dto/inv-counts.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const countIdParams = z.object({ countId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("inventory")
 @Controller("inventory/cycle-counts")
@@ -23,8 +26,9 @@ export class InvCycleCountsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ query: listCountsSchema })
   list(
-    @Query(new ZodValidationPipe(listCountsSchema)) filters: ListCountsInput,
+    @Query() filters: ListCountsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.counts.listCycleCounts(u.orgId, u.userId, filters);
@@ -33,6 +37,7 @@ export class InvCycleCountsController {
   @Get(":countId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @Validate({ params: countIdParams })
   getOne(
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -43,8 +48,9 @@ export class InvCycleCountsController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ body: createCycleCountSchema })
   create(
-    @Body(new ZodValidationPipe(createCycleCountSchema)) body: CreateCycleCountInput,
+    @Body() body: CreateCycleCountInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.counts.createCycleCount(u.orgId, u.userId, body);
@@ -53,6 +59,7 @@ export class InvCycleCountsController {
   @Post(":countId/start")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: countIdParams })
   start(
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -63,9 +70,10 @@ export class InvCycleCountsController {
   @Patch(":countId/lines")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: countIdParams, body: updateCountLinesSchema })
   updateLines(
     @Param("countId", ParseIntPipe) countId: number,
-    @Body(new ZodValidationPipe(updateCountLinesSchema)) body: UpdateCountLinesInput,
+    @Body() body: UpdateCountLinesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.counts.updateLines(u.orgId, countId, body);
@@ -74,6 +82,7 @@ export class InvCycleCountsController {
   @Post(":countId/review")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: countIdParams })
   review(
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -84,6 +93,7 @@ export class InvCycleCountsController {
   @Post(":countId/post")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: countIdParams })
   post(
     @IdempotencyKey() idempotencyKey: string,
     @Param("countId", ParseIntPipe) countId: number,
@@ -94,6 +104,7 @@ export class InvCycleCountsController {
   @Post(":countId/cancel")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Validate({ params: countIdParams })
   cancel(
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,

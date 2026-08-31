@@ -6,10 +6,10 @@ import { ProjectsProvisionService } from "./projects-provision.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { ProjectsEmailService } from "./projects-email.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CreateProjectInput } from "./dto/projects.schemas";
 import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 
 const ORG_ID = "org-abc";
 const CREATOR_ID = "user-xyz";
@@ -49,10 +49,7 @@ describe("ProjectsProvisionService.createProject — plan limit enforcement", ()
         { provide: PlanLimitsService, useValue: mockPlanLimits },
         { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
         { provide: AuditService, useValue: { log: jest.fn() } },
-        {
-          provide: ProjectsEmailService,
-          useValue: { notifyProjectMembers: jest.fn().mockResolvedValue(undefined) },
-        },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: PmWorkspacesService,
           useValue: {

@@ -1,4 +1,5 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import type { CacheService } from "../../common/cache/cache.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
@@ -31,6 +32,7 @@ const actor = {
   isOrgOwner: true,
   sessionId: "session-1",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, true),
 } satisfies CurrentUserContext;
 
 describe("DelegationsService normalized permission grants", () => {
@@ -44,8 +46,8 @@ describe("DelegationsService normalized permission grants", () => {
     const created = {
       id: "delegation-1",
       orgId: actor.orgId,
-      delegatorId: actor.userId,
-      delegateeId: "delegatee-1",
+      delegatorMembershipId: "membership-1",
+      delegateeMembershipId: "membership-1",
       startsAt,
       endsAt,
       reason: null,
@@ -119,10 +121,15 @@ describe("DelegationsService normalized permission grants", () => {
     const row = {
       id: "delegation-1",
       orgId: actor.orgId,
+<<<<<<< HEAD
       delegatorMembershipId: 11,
       delegateeMembershipId: 12,
       delegatorId: actor.userId,
       delegateeId: "delegatee-1",
+=======
+      delegatorMembershipId: 1,
+      delegateeMembershipId: 2,
+>>>>>>> origin/main
       startsAt: new Date("2026-08-01T00:00:00.000Z"),
       endsAt: new Date("2026-08-08T00:00:00.000Z"),
       reason: null,
@@ -165,24 +172,33 @@ describe("DelegationsService normalized permission grants", () => {
           }),
         };
       }
+      if ("id" in selection) {
+        return {
+          from: () => ({
+            where: jest.fn().mockResolvedValue([{ id: 42 }]),
+          }),
+        };
+      }
       return {
         from: () => ({
-          where: jest.fn().mockResolvedValue([
-            {
-              id: actor.userId,
-              name: "Alex Admin",
-              firstName: null,
-              lastName: null,
-              email: "alex@example.com",
-            },
-            {
-              id: row.delegateeId,
-              name: null,
-              firstName: "Sam",
-              lastName: "Lee",
-              email: "sam@example.com",
-            },
-          ]),
+          innerJoin: () => ({
+            where: jest.fn().mockResolvedValue([
+              {
+                membershipId: 1,
+                name: "Alex Admin",
+                firstName: null,
+                lastName: null,
+                email: "alex@example.com",
+              },
+              {
+                membershipId: 2,
+                name: null,
+                firstName: "Sam",
+                lastName: "Lee",
+                email: "sam@example.com",
+              },
+            ]),
+          }),
         }),
       };
     });
@@ -222,7 +238,7 @@ describe("DelegationsService normalized permission grants", () => {
     expect(orderBy).toHaveBeenCalledTimes(1);
     expect(pageWhere).toHaveBeenCalledTimes(1);
     expect(countWhere).toHaveBeenCalledTimes(1);
-    expect(select).toHaveBeenCalledTimes(4);
+    expect(select).toHaveBeenCalledTimes(5);
     expect(select).toHaveBeenCalledWith({
       delegationId: userDelegationPermissions.delegationId,
       permissionKey: userDelegationPermissions.permissionKey,

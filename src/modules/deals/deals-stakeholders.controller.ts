@@ -5,7 +5,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { DealsStakeholdersService } from "./deals-stakeholders.service";
 import {
   createStakeholderSchema,
@@ -13,6 +12,11 @@ import {
   type CreateStakeholderInput,
   type UpdateStakeholderInput,
 } from "./dto/deals.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
+const dealAndStakeholderIdParams = z.object({ dealId: z.coerce.number().int().positive(), stakeholderId: z.string().min(1) }).strict();
 
 @RequireModule("crm")
 @Controller("deals/:dealId/stakeholders")
@@ -23,6 +27,7 @@ export class DealsStakeholdersController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:read")
+  @Validate({ params: dealIdParams })
   listStakeholders(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -34,9 +39,10 @@ export class DealsStakeholdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
   @HttpCode(201)
+  @Validate({ params: dealIdParams, body: createStakeholderSchema })
   createStakeholder(
     @Param("dealId", ParseIntPipe) dealId: number,
-    @Body(new ZodValidationPipe(createStakeholderSchema)) body: CreateStakeholderInput,
+    @Body() body: CreateStakeholderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.stakeholders.createStakeholder(u.orgId, dealId, body);
@@ -45,10 +51,11 @@ export class DealsStakeholdersController {
   @Patch(":stakeholderId")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
+  @Validate({ params: dealAndStakeholderIdParams, body: updateStakeholderSchema })
   updateStakeholder(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("stakeholderId") stakeholderId: string,
-    @Body(new ZodValidationPipe(updateStakeholderSchema)) body: UpdateStakeholderInput,
+    @Body() body: UpdateStakeholderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.stakeholders.updateStakeholder(u.orgId, dealId, stakeholderId, body);
@@ -58,6 +65,7 @@ export class DealsStakeholdersController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
+  @Validate({ params: dealAndStakeholderIdParams })
   async deleteStakeholder(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("stakeholderId") stakeholderId: string,

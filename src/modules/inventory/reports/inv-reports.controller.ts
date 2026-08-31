@@ -5,7 +5,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { InvReportsService } from "./inv-reports.service";
 import { InvReportsExtendedService } from "./inv-reports-extended.service";
 import {
@@ -31,6 +30,7 @@ import {
   type ThroughputQueryInput,
   type WorkAgingQueryInput,
 } from "./dto/operations-metrics.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("inventory")
 @Controller("inventory/reports")
@@ -50,8 +50,9 @@ export class InvReportsController {
   @Get("throughput")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
+  @Validate({ query: throughputQuerySchema })
   throughput(
-    @Query(new ZodValidationPipe(throughputQuerySchema)) query: ThroughputQueryInput,
+    @Query() query: ThroughputQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.operationsMetrics.throughput(u.orgId, u.userId, query);
@@ -67,8 +68,9 @@ export class InvReportsController {
   @Get("work-aging")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
+  @Validate({ query: workAgingQuerySchema })
   getWorkAging(
-    @Query(new ZodValidationPipe(workAgingQuerySchema)) query: WorkAgingQueryInput,
+    @Query() query: WorkAgingQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.workAging.workAging(u.orgId, u.userId, query);
@@ -84,8 +86,9 @@ export class InvReportsController {
   @Get("stock-summary")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
+  @Validate({ query: stockSummaryQuerySchema })
   getStockSummary(
-    @Query(new ZodValidationPipe(stockSummaryQuerySchema)) query: StockSummaryQueryInput,
+    @Query() query: StockSummaryQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.getStockSummary(u.orgId, u.userId, query);
@@ -94,8 +97,9 @@ export class InvReportsController {
   @Get("reorder")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
+  @Validate({ query: reorderQuerySchema })
   getReorderReport(
-    @Query(new ZodValidationPipe(reorderQuerySchema)) query: ReorderQueryInput,
+    @Query() query: ReorderQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.getReorderReport(u.orgId, query);
@@ -104,8 +108,9 @@ export class InvReportsController {
   @Get("movements")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
+  @Validate({ query: movementsQuerySchema })
   getMovements(
-    @Query(new ZodValidationPipe(movementsQuerySchema)) query: MovementsQueryInput,
+    @Query() query: MovementsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reports.getMovementsReport(u.orgId, u.userId, query);
@@ -114,8 +119,9 @@ export class InvReportsController {
   @Get("valuation")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:valuation:read")
+  @Validate({ query: valuationReportSchema })
   getValuationReport(
-    @Query(new ZodValidationPipe(valuationReportSchema)) query: ValuationReportInput,
+    @Query() query: ValuationReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.extended.getValuationReport(u.orgId, u.userId, query);
@@ -124,8 +130,9 @@ export class InvReportsController {
   @Get("slow-moving")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
+  @Validate({ query: slowMovingQuerySchema })
   getSlowMovingReport(
-    @Query(new ZodValidationPipe(slowMovingQuerySchema)) query: SlowMovingQueryInput,
+    @Query() query: SlowMovingQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.extended.getSlowMovingReport(u.orgId, u.userId, query);
@@ -134,8 +141,9 @@ export class InvReportsController {
   @Get("expiry")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
+  @Validate({ query: expiryReportSchema })
   getExpiryReport(
-    @Query(new ZodValidationPipe(expiryReportSchema)) query: ExpiryReportInput,
+    @Query() query: ExpiryReportInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.extended.getExpiryReport(u.orgId, u.userId, query);

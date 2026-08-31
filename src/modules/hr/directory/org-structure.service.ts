@@ -7,12 +7,16 @@ import {
   eq,
   gt,
   ilike,
+  inArray,
   isNull,
   or,
   sql,
 } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
+  hrEmployments,
+  hrPeople,
+  hrReportingLines,
   organizationMembers,
   orgUnitMembers,
   orgUnits,
@@ -32,6 +36,11 @@ import {
   decodeOrgChartCursor,
   encodeOrgChartCursor,
 } from "./org-chart-cursor";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../../directory/employment-query";
 
 export interface HeadcountGroup {
   label: string;
@@ -77,6 +86,18 @@ const orgChartManagerMembers = alias(
   "org_chart_manager_members",
 );
 
+const rlVis = alias(hrReportingLines, "rl_vis");
+const rlVisEmpEmp = alias(hrEmployments, "rl_vis_emp_emp");
+const rlVisEmpPpl = alias(hrPeople, "rl_vis_emp_ppl");
+const rlVisMgrEmp = alias(hrEmployments, "rl_vis_mgr_emp");
+const rlVisMgrPpl = alias(hrPeople, "rl_vis_mgr_ppl");
+
+const rlChild = alias(hrReportingLines, "rl_child");
+const rlChildMgrEmp = alias(hrEmployments, "rl_child_mgr_emp");
+const rlChildMgrPpl = alias(hrPeople, "rl_child_mgr_ppl");
+const rlChildEmpEmp = alias(hrEmployments, "rl_child_emp_emp");
+const rlChildEmpPpl = alias(hrPeople, "rl_child_emp_ppl");
+
 function escapeLikeValue(value: string): string {
   return value
     .replaceAll("\\", "\\\\")
@@ -89,6 +110,7 @@ export class OrgStructureService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   async getDirectory(orgId: string, actorUserId: string, scope: DataScope) {
@@ -112,12 +134,8 @@ export class OrgStructureService {
         lastName: users.lastName,
         email: users.email,
         image: users.image,
-        designation: users.designation,
         role: organizationMembers.role,
         phone: users.phone,
-        reportingTo: users.reportingTo,
-        orgDepartmentId: users.orgDepartmentId,
-        employeeId: users.employeeId,
         isActive: users.isActive,
       })
       .from(users)
@@ -135,16 +153,22 @@ export class OrgStructureService {
       )
       .limit(1000);
 
-    const orgDepts = await this.db.query.orgUnits.findMany({
-      where: and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT")),
-      columns: { id: true, name: true },
-    });
+    const memberIds = members.map((m) => m.id);
+    const [orgDepts, factsMap] = await Promise.all([
+      this.db.query.orgUnits.findMany({
+        where: and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT")),
+        columns: { id: true, name: true },
+      }),
+      this.employment.getFactsBatch(orgId, memberIds),
+    ]);
 
     const orgDeptById = new Map(orgDepts.map((d) => [d.id, d]));
-    const visibleUserIds = new Set(members.map((member) => member.id));
+    const visibleUserIds = new Set(memberIds);
 
     return members.map((m) => {
-      const orgDept = m.orgDepartmentId ? orgDeptById.get(m.orgDepartmentId) : null;
+      const facts = factsMap.get(m.id);
+      const deptId = facts?.departmentId ?? null;
+      const orgDept = deptId ? orgDeptById.get(deptId) : null;
       return {
         id: m.id,
         name: (m.name ?? [m.firstName, m.lastName].filter(Boolean).join(" ")) || m.email,
@@ -152,14 +176,14 @@ export class OrgStructureService {
         lastName: m.lastName,
         email: m.email,
         image: m.image,
-        designation: m.designation,
+        designation: facts?.designation ?? null,
         role: m.role,
         phone: m.phone,
         reportingTo:
-          m.reportingTo && visibleUserIds.has(m.reportingTo)
-            ? m.reportingTo
+          facts?.managerUserId && visibleUserIds.has(facts.managerUserId)
+            ? facts.managerUserId
             : null,
-        employeeId: m.employeeId,
+        employeeId: facts?.employeeNumber ?? null,
         department: orgDept ? { id: orgDept.id, name: orgDept.name } : null,
       };
     });
@@ -185,13 +209,36 @@ export class OrgStructureService {
     });
     const visibleManager = sql<boolean>`exists (
       select 1
-      from ${orgChartManagerMembers}
+      from ${rlVis}
+      inner join ${rlVisEmpEmp}
+        on ${eq(rlVisEmpEmp.id, rlVis.employmentId)}
+        and ${eq(rlVisEmpEmp.orgId, orgId)}
+        and ${eq(rlVisEmpEmp.isPrimary, true)}
+        and ${isNull(rlVisEmpEmp.deletedAt)}
+      inner join ${rlVisEmpPpl}
+        on ${eq(rlVisEmpPpl.id, rlVisEmpEmp.personId)}
+        and ${eq(rlVisEmpPpl.orgId, orgId)}
+        and ${isNull(rlVisEmpPpl.deletedAt)}
+      inner join ${rlVisMgrEmp}
+        on ${eq(rlVisMgrEmp.id, rlVis.managerEmploymentId)}
+        and ${eq(rlVisMgrEmp.orgId, orgId)}
+        and ${eq(rlVisMgrEmp.isPrimary, true)}
+        and ${isNull(rlVisMgrEmp.deletedAt)}
+      inner join ${rlVisMgrPpl}
+        on ${eq(rlVisMgrPpl.id, rlVisMgrEmp.personId)}
+        and ${eq(rlVisMgrPpl.orgId, orgId)}
+        and ${isNull(rlVisMgrPpl.deletedAt)}
+      inner join ${orgChartManagerMembers}
+        on ${eq(orgChartManagerMembers.userId, rlVisMgrPpl.userId)}
       inner join ${orgChartManagerUsers}
-        on ${eq(orgChartManagerUsers.id, orgChartManagerMembers.userId)}
+        on ${eq(orgChartManagerUsers.id, rlVisMgrPpl.userId)}
       where ${and(
+        eq(rlVis.orgId, orgId),
+        eq(rlVisEmpPpl.userId, users.id),
+        sql`${rlVis.effectiveFrom} <= CURRENT_DATE`,
+        sql`${rlVis.effectiveTo} >= CURRENT_DATE`,
         eq(orgChartManagerMembers.orgId, orgId),
         eq(orgChartManagerMembers.status, "ACTIVE"),
-        eq(orgChartManagerUsers.id, users.reportingTo),
         eq(orgChartManagerUsers.isActive, true),
         applyScope(scope, orgId, actorUserId, {
           ownerColumn: orgChartManagerMembers.userId,
@@ -200,13 +247,36 @@ export class OrgStructureService {
     )`;
     const hasDirectReports = sql<boolean>`exists (
       select 1
-      from ${orgChartChildMembers}
+      from ${rlChild}
+      inner join ${rlChildMgrEmp}
+        on ${eq(rlChildMgrEmp.id, rlChild.managerEmploymentId)}
+        and ${eq(rlChildMgrEmp.orgId, orgId)}
+        and ${eq(rlChildMgrEmp.isPrimary, true)}
+        and ${isNull(rlChildMgrEmp.deletedAt)}
+      inner join ${rlChildMgrPpl}
+        on ${eq(rlChildMgrPpl.id, rlChildMgrEmp.personId)}
+        and ${eq(rlChildMgrPpl.orgId, orgId)}
+        and ${isNull(rlChildMgrPpl.deletedAt)}
+      inner join ${rlChildEmpEmp}
+        on ${eq(rlChildEmpEmp.id, rlChild.employmentId)}
+        and ${eq(rlChildEmpEmp.orgId, orgId)}
+        and ${eq(rlChildEmpEmp.isPrimary, true)}
+        and ${isNull(rlChildEmpEmp.deletedAt)}
+      inner join ${rlChildEmpPpl}
+        on ${eq(rlChildEmpPpl.id, rlChildEmpEmp.personId)}
+        and ${eq(rlChildEmpPpl.orgId, orgId)}
+        and ${isNull(rlChildEmpPpl.deletedAt)}
+      inner join ${orgChartChildMembers}
+        on ${eq(orgChartChildMembers.userId, rlChildEmpPpl.userId)}
       inner join ${orgChartChildUsers}
-        on ${eq(orgChartChildUsers.id, orgChartChildMembers.userId)}
+        on ${eq(orgChartChildUsers.id, rlChildEmpPpl.userId)}
       where ${and(
+        eq(rlChild.orgId, orgId),
+        eq(rlChildMgrPpl.userId, users.id),
+        sql`${rlChild.effectiveFrom} <= CURRENT_DATE`,
+        sql`${rlChild.effectiveTo} >= CURRENT_DATE`,
         eq(orgChartChildMembers.orgId, orgId),
         eq(orgChartChildMembers.status, "ACTIVE"),
-        eq(orgChartChildUsers.reportingTo, users.id),
         eq(orgChartChildUsers.isActive, true),
         applyScope(scope, orgId, actorUserId, {
           ownerColumn: orgChartChildMembers.userId,
@@ -237,7 +307,13 @@ export class OrgStructureService {
           }),
         )}
       )`;
-      conditions.push(eq(users.reportingTo, query.parentId), visibleParent);
+      const directReportIds = await this.employment.getDirectReportUserIds(orgId, query.parentId);
+      conditions.push(
+        directReportIds.length > 0
+          ? inArray(organizationMembers.userId, directReportIds)
+          : sql<boolean>`FALSE`,
+        visibleParent,
+      );
     } else if (query.search) {
       const pattern = `%${escapeLikeValue(query.search)}%`;
       conditions.push(
@@ -245,14 +321,12 @@ export class OrgStructureService {
           ilike(users.name, pattern),
           ilike(users.firstName, pattern),
           ilike(users.lastName, pattern),
-          ilike(users.designation, pattern),
+          ilike(hrEmployments.designation, pattern),
           ilike(orgUnits.name, pattern),
         )!,
       );
     } else {
-      conditions.push(
-        or(isNull(users.reportingTo), sql<boolean>`not ${visibleManager}`)!,
-      );
+      conditions.push(sql<boolean>`not ${visibleManager}`);
     }
 
     if (cursor) {
@@ -273,7 +347,6 @@ export class OrgStructureService {
         cursorName: normalizedName,
         name: displayName,
         role: organizationMembers.role,
-        designation: users.designation,
         image: users.image,
         departmentId: orgUnits.id,
         departmentName: orgUnits.name,
@@ -281,10 +354,12 @@ export class OrgStructureService {
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .leftJoin(
         orgUnits,
         and(
-          eq(users.orgDepartmentId, orgUnits.id),
+          eq(hrEmployments.departmentId, orgUnits.id),
           eq(orgUnits.orgId, orgId),
           eq(orgUnits.kind, "DEPARTMENT"),
           isNull(orgUnits.deletedAt),
@@ -297,13 +372,14 @@ export class OrgStructureService {
     const hasMore = rows.length > query.limit;
     const pageRows = rows.slice(0, query.limit);
     const lastRow = pageRows.at(-1);
+    const factsMap = await this.employment.getFactsBatch(orgId, pageRows.map((r) => r.id));
 
     return {
       data: pageRows.map((row) => ({
         id: row.id,
         name: row.name,
         role: toTitleCase(row.role ?? "Employee"),
-        designation: row.designation,
+        designation: factsMap.get(row.id)?.designation ?? null,
         image: row.image,
         departmentId: row.departmentId,
         departmentName: row.departmentName,
@@ -338,7 +414,7 @@ export class OrgStructureService {
 
     if (groupBy === "department") {
       const departmentLabel = sql<string>`case
-        when ${users.orgDepartmentId} is null then 'Unassigned'
+        when ${hrEmployments.departmentId} is null then 'Unassigned'
         when ${orgUnits.id} is null then 'Other'
         else ${orgUnits.name}
       end`;
@@ -349,10 +425,12 @@ export class OrgStructureService {
         })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .leftJoin(
           orgUnits,
           and(
-            eq(users.orgDepartmentId, orgUnits.id),
+            eq(hrEmployments.departmentId, orgUnits.id),
             eq(orgUnits.orgId, orgId),
             eq(orgUnits.kind, "DEPARTMENT"),
             isNull(orgUnits.deletedAt),
@@ -387,10 +465,12 @@ export class OrgStructureService {
         .select({ branchName: orgUnits.name, count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .leftJoin(
           orgUnits,
           and(
-            eq(users.branchId, orgUnits.id),
+            eq(hrEmployments.locationId, orgUnits.id),
             eq(orgUnits.orgId, orgId),
             eq(orgUnits.kind, "BRANCH"),
             isNull(orgUnits.deletedAt),
@@ -426,7 +506,6 @@ export class OrgStructureService {
           id: users.id,
           name: users.name,
           image: users.image,
-          designation: users.designation,
           email: users.email,
           role: organizationMembers.role,
         })
@@ -448,6 +527,8 @@ export class OrgStructureService {
 
     if (!dept) throw new NotFoundException("Team not found");
 
+    const factsMap = await this.employment.getFactsBatch(orgId, memberships.map((m) => m.id));
+
     const visibleManager = dept.headUserId
       ? memberships.find((member) => member.id === dept.headUserId)
       : undefined;
@@ -457,7 +538,10 @@ export class OrgStructureService {
       name: dept.name,
       managerId: visibleManager?.id ?? null,
       managerName: visibleManager?.name ?? null,
-      members: memberships,
+      members: memberships.map((m) => ({
+        ...m,
+        designation: factsMap.get(m.id)?.designation ?? null,
+      })),
     };
   }
 }

@@ -16,7 +16,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ParseResourceIdPipe } from "../../../common/pipes/parse-resource-id.pipe";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { ProjectsService } from "./projects.service";
 import {
   linkManagedProductSchema,
@@ -24,6 +24,7 @@ import {
   type LinkManagedProductInput,
   type UpdateProjectInput,
 } from "./dto/projects.schemas";
+import { projectIdParams } from "./dto/build-params.schemas";
 
 @RequireModule("build")
 @Controller("build")
@@ -33,6 +34,7 @@ export class ProjectsByIdController {
 
   @Get(":projectId")
   @RequirePermission("build:view")
+  @Validate({ params: projectIdParams })
   getProject(
     @Param("projectId", ParseResourceIdPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -42,9 +44,10 @@ export class ProjectsByIdController {
 
   @Patch(":projectId")
   @RequirePermission("build:update")
+  @Validate({ params: projectIdParams, body: updateProjectSchema })
   updateProject(
     @Param("projectId", ParseResourceIdPipe) projectId: number,
-    @Body(new ZodValidationPipe(updateProjectSchema)) body: UpdateProjectInput,
+    @Body() body: UpdateProjectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.projects.updateProject(u, projectId, body);
@@ -53,6 +56,7 @@ export class ProjectsByIdController {
   @Delete(":projectId")
   @RequirePermission("build:delete")
   @HttpCode(204)
+  @Validate({ params: projectIdParams })
   deleteProject(
     @Param("projectId", ParseResourceIdPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -62,10 +66,10 @@ export class ProjectsByIdController {
 
   @Patch(":projectId/managed-product")
   @RequirePermission("build:managed-products:update")
+  @Validate({ params: projectIdParams, body: linkManagedProductSchema })
   linkManagedProduct(
     @Param("projectId", ParseResourceIdPipe) projectId: number,
-    @Body(new ZodValidationPipe(linkManagedProductSchema))
-    body: LinkManagedProductInput,
+    @Body() body: LinkManagedProductInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.projects.linkProjectToManagedProduct(u, projectId, body);

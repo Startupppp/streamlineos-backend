@@ -4,107 +4,23 @@ import { and, asc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.types";
 import { crmMailboxSync, userIntegrationConnections } from "../../../db/schema";
-import type { MailMessageSummary } from "../../mail/dto/mail-schemas";
 import type { NormalizerConnectionMeta } from "../../mail/providers/mail-normalizers";
 import { GmailMailProvider } from "../../mail/providers/gmail-mail.provider";
 import { OutlookMailProvider } from "../../mail/providers/outlook-mail.provider";
 import { InboundIngressService } from "../inbound-ingress.service";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import {
-  EXCLUDED_FOLDERS,
-  isPrivateMessage,
-  mailToInboundEvent,
-  PRIVATE_LABELS,
-  type MailMessageForIngress,
-  type PrivateLabelRule,
-} from "./mail-to-inbound-event";
+import { mailToInboundEvent, type MailMessageForIngress } from "./mail-to-inbound-event";
 import { advanceWatermark, planSweep } from "./mailbox-sync";
-
-/** One page from a provider. */
-const MAX_PER_PAGE = 100;
-
-/**
- * How many pages one sweep will follow before it stops.
- *
- * The sweep follows the provider's pagination to the floor of its window rather
- * than reading one page and moving the watermark past the rest — which is what
- * it used to do. Both providers return newest first, so a single page of a
- * 500-message window is the newest day of it; advancing the watermark to the
- * newest of those put the other 400 permanently below the floor, and the user
- * who had just connected their mailbox saw one day of history and never learned
- * the rest was not coming.
- *
- * This is the "follow the pages within the sweep" option rather than "persist a
- * cursor and resume next time". The cursor would drain a backlog of any size,
- * but it needs two columns on `crm_mailbox_sync` and a migration, and it has to
- * cope with a page token that expired between sweeps. The budget here covers
- * 2,500 messages in one window — a 7-day first sync of a mailbox taking over
- * 350 messages a day — and what happens past it is defined below rather than
- * silent.
- */
-const MAX_PAGES_PER_SWEEP = 25;
-
-/**
- * How many messages a sweep reads in full.
- *
- * A listing gives a ~160-character preview and no cc, and a timeline entry made
- * of previews is a poor record of a conversation and a worse input to anything
- * that reads the body afterwards. The full text is a call per message, though
- * (two, on Graph, which fetches the attachment list alongside), so the newest
- * are read in full and a backlog drain falls back to previews rather than
- * spending thousands of calls. A steady-state sweep is a handful of messages
- * and never reaches this.
- */
-const MAX_DETAIL_FETCHES_PER_SWEEP = 50;
-
-/** Enough failed detail reads to conclude the provider is not going to answer. */
-const MAX_DETAIL_FAILURES = 3;
-
-/**
- * The exclusions Gmail applies on our behalf.
- *
- * Built from the same lists the adapter checks messages against, because two
- * copies would drift apart the day somebody adds to one of them. Gmail's own
- * label syntax uses hyphens where a label has spaces (`Junk Email` is
- * `label:junk-email`).
- */
-const GMAIL_EXCLUSIONS = [...PRIVATE_LABELS, ...EXCLUDED_FOLDERS]
-  .map((label) => `-label:${label.replace(/\s+/g, "-")}`)
-  .join(" ");
-
-/** What one sweep read, and how much of the window it got through. */
-interface SweepRead {
-  readonly messages: readonly MailMessageForIngress[];
-  /** How the private-label rule was enforced for these messages. */
-  readonly privateLabelRule: PrivateLabelRule;
-  /** The page budget ran out before the window was read down to its floor. */
-  readonly truncated: boolean;
-}
-
-/**
- * A provider summary as the shape the seam's adapter takes.
- *
- * Written out field by field rather than cast. The cast that used to stand here
- * — `messages as unknown as MailMessageForIngress[]` — silenced the compiler
- * over a type that has no `labels`, no `cc` and no body at all, so the private
- * label check ran against `undefined` and returned "not private" for every
- * message ever swept.
- */
-function forIngress(
-  message: MailMessageSummary,
-  labels: readonly string[] | null,
-): MailMessageForIngress {
-  return {
-    id: message.id,
-    threadId: message.threadId,
-    from: message.from,
-    to: message.to,
-    subject: message.subject,
-    snippet: message.snippet,
-    date: message.date,
-    labels,
-  };
-}
+import {
+  forIngress,
+  sweepNote,
+  type SweepRead,
+} from "./crm-mailbox-sweep-types";
+import {
+  enrichWithDetail,
+  fetchGmailMessages,
+  fetchOutlookMessages,
+} from "./crm-mailbox-provider-fetch";
 
 /**
  * A mailbox feeding the CRM.
@@ -225,7 +141,6 @@ export class CrmMailboxService {
       )
       .limit(1);
 
-    // Another user's connection is indistinguishable from one that is not there.
     if (!connection) throw new NotFoundException("Mailbox not found");
 
     if (connection.toolkit !== "gmail" && connection.toolkit !== "outlook")
@@ -245,8 +160,6 @@ export class CrmMailboxService {
         provider: connection.toolkit,
         enabled: true,
       })
-      // Re-enabling a mailbox somebody turned off keeps its watermark, which is
-      // what stops a re-enable from re-importing a year of mail.
       .onConflictDoUpdate({
         target: [crmMailboxSync.organizationId, crmMailboxSync.connectionId],
         set: { enabled: true, lastError: null, consecutiveFailures: 0 },
@@ -360,7 +273,6 @@ export class CrmMailboxService {
 
       let delivered = 0;
       let skipped = 0;
-      /** Skipped for want of labels rather than on the merits — see below. */
       let unjudged = 0;
       let newest: Date | null = null;
 
@@ -373,8 +285,6 @@ export class CrmMailboxService {
         });
 
         if (result.ok) {
-          // Delivered one at a time so a single malformed message cannot lose
-          // the batch. The seam deduplicates, so the overlap costs nothing.
           await this.ingress.accept(result.event);
           delivered += 1;
         } else {
@@ -413,11 +323,6 @@ export class CrmMailboxService {
             ? row.syncedThrough
             : advanceWatermark(row.syncedThrough, newest),
           lastRunAt: new Date(),
-          /**
-           * `lastError` carries the truncation note as well as real errors: it
-           * is the one field the mailbox list surfaces, and a sweep that could
-           * not read its whole window has to be visible somewhere.
-           */
           lastError: sweepNote(read.truncated, plan.firstRun, read.messages.length, unjudged),
           consecutiveFailures: 0,
         })
@@ -435,10 +340,6 @@ export class CrmMailboxService {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`sweep failed for ${row.mailboxAddress}: ${message}`);
 
-      /**
-       * The watermark is deliberately NOT advanced on failure. Advancing it
-       * would skip whatever the failed sweep would have read, permanently.
-       */
       await this.db
         .update(crmMailboxSync)
         .set({
@@ -460,7 +361,6 @@ export class CrmMailboxService {
       .where(
         and(eq(crmMailboxSync.organizationId, organizationId), eq(crmMailboxSync.enabled, true)),
       )
-      // Nulls first: a mailbox that has never run is the most overdue.
       .orderBy(sql`${crmMailboxSync.lastRunAt} ASC NULLS FIRST`)
       .limit(50);
 
@@ -504,7 +404,6 @@ export class CrmMailboxService {
     return Number.isNaN(at.getTime()) ? null : at;
   }
 
-  /** The provider call, and the only place either provider is named. */
   private async fetch(
     provider: "gmail" | "outlook",
     userId: string,
@@ -520,190 +419,9 @@ export class CrmMailboxService {
 
     const read =
       provider === "gmail"
-        ? await this.fetchGmail(userId, conn, since)
-        : await this.fetchOutlook(userId, conn, since);
+        ? await fetchGmailMessages(this.gmail, userId, conn, since)
+        : await fetchOutlookMessages(this.outlook, userId, conn, since);
 
-    return { ...read, messages: await this.readInFull(provider, userId, conn, read.messages) };
+    return { ...read, messages: await enrichWithDetail(provider, this.gmail, this.outlook, userId, conn, read.messages, this.logger) };
   }
-
-  /**
-   * Gmail, which does both the date bound and the privacy rule itself.
-   *
-   * The query is Gmail's own search syntax and carries both: `after:` keeps the
-   * sweep bounded, and the `-label:` terms mean a message somebody marked
-   * private is never handed over in the first place. That is weaker than
-   * reading each message's labels and deciding here — it cannot be verified
-   * from what comes back — but it is a real exclusion rather than an
-   * assumption, and it is the same mechanism the date floor already depends on.
-   *
-   * The stronger version needs `normalizeGmailMessage` to carry `labelIds`
-   * through to `MailMessageSummary`; it already parses them, for `isRead` and
-   * `isStarred`, and then drops them.
-   */
-  private async fetchGmail(
-    userId: string,
-    conn: NormalizerConnectionMeta,
-    since: Date,
-  ): Promise<SweepRead> {
-    const query = `after:${Math.floor(since.getTime() / 1000)} ${GMAIL_EXCLUSIONS}`;
-
-    const messages: MailMessageForIngress[] = [];
-    let pageToken: string | undefined;
-    let pages = 0;
-
-    do {
-      const page = await this.gmail.listMessages(
-        userId,
-        conn,
-        "inbox",
-        MAX_PER_PAGE,
-        pageToken,
-        query,
-      );
-      for (const message of page.messages) messages.push(forIngress(message, null));
-      pageToken = page.nextPageToken ?? undefined;
-      pages += 1;
-    } while (pageToken && pages < MAX_PAGES_PER_SWEEP);
-
-    return { messages, privateLabelRule: "provider-query", truncated: Boolean(pageToken) };
-  }
-
-  /**
-   * Outlook, which bounds itself here rather than at the provider.
-   *
-   * There is no date filter on this path: `listMessagesForIngress` asks for the
-   * Inbox newest-first and the floor is applied to the `receivedDateTime` that
-   * comes back. That is a server-assigned timestamp — unlike a `Date:` header,
-   * which the sender writes — so filtering on it cannot be steered by somebody
-   * sending mail with a fabricated date.
-   *
-   * Crossing the floor ends the sweep: the order was requested descending, so
-   * the first message older than the floor means the rest of that page and
-   * every page after it is older too. The page budget is the backstop if the
-   * order is ever not honoured.
-   */
-  private async fetchOutlook(
-    userId: string,
-    conn: NormalizerConnectionMeta,
-    since: Date,
-  ): Promise<SweepRead> {
-    const messages: MailMessageForIngress[] = [];
-    let skip = 0;
-    let pages = 0;
-    let drained = false;
-
-    while (pages < MAX_PAGES_PER_SWEEP) {
-      const page = await this.outlook.listMessagesForIngress(
-        userId,
-        conn,
-        "inbox",
-        MAX_PER_PAGE,
-        skip,
-      );
-      pages += 1;
-
-      let crossedFloor = false;
-      for (const message of page.messages) {
-        const at = new Date(message.date).getTime();
-        if (!Number.isNaN(at) && at < since.getTime()) {
-          crossedFloor = true;
-          continue;
-        }
-        messages.push(forIngress(message, message.labels));
-      }
-
-      if (crossedFloor || page.nextSkip === null) {
-        drained = true;
-        break;
-      }
-      skip = page.nextSkip;
-    }
-
-    return { messages, privateLabelRule: "message-labels", truncated: !drained };
-  }
-
-  /**
-   * The newest messages again, in full.
-   *
-   * A listing carries a preview and the `to` line; the cc list and the actual
-   * text of the message need a second call each. One that fails is not fatal —
-   * the summary is still a usable event — but a run of failures means the
-   * provider is not going to answer and continuing would spend the rest of the
-   * budget finding that out fifty times.
-   *
-   * A message already marked private is never fetched: it is going to be
-   * refused, and pulling its body across first would be both waste and exactly
-   * the content nobody asked us to handle.
-   */
-  private async readInFull(
-    provider: "gmail" | "outlook",
-    userId: string,
-    conn: NormalizerConnectionMeta,
-    messages: readonly MailMessageForIngress[],
-  ): Promise<MailMessageForIngress[]> {
-    const enriched: MailMessageForIngress[] = [];
-    let fetched = 0;
-    let failures = 0;
-
-    for (const message of messages) {
-      if (
-        fetched >= MAX_DETAIL_FETCHES_PER_SWEEP ||
-        failures >= MAX_DETAIL_FAILURES ||
-        isPrivateMessage(message)
-      ) {
-        enriched.push(message);
-        continue;
-      }
-
-      try {
-        fetched += 1;
-        const detail =
-          provider === "gmail"
-            ? await this.gmail.getMessage(userId, conn, message.id)
-            : await this.outlook.getMessage(userId, conn, message.id);
-
-        // The labels stay the list's: a detail response does not carry them,
-        // and taking the detail's word for it would erase what we know.
-        enriched.push({
-          ...message,
-          cc: detail.cc,
-          bodyText: detail.bodyText,
-          bodyHtml: detail.bodyHtml,
-        });
-      } catch (error) {
-        failures += 1;
-        this.logger.warn(
-          `could not read ${message.id} in full: ${error instanceof Error ? error.message : String(error)}`,
-        );
-        enriched.push(message);
-      }
-    }
-
-    return enriched;
-  }
-}
-
-/**
- * What a sweep that succeeded but did not do its whole job leaves behind.
- *
- * A mailbox that reads mail and files none of it must not report itself
- * healthy — that is the shape of the bug this module has already had once,
- * where every sweep returned `delivered: 0`, reset the failure count, and left
- * somebody believing their mail was in the CRM.
- */
-function sweepNote(
-  truncated: boolean,
-  firstRun: boolean,
-  read: number,
-  unjudged: number,
-): string | null {
-  if (truncated)
-    return firstRun
-      ? `The first sweep read the ${read} most recent messages in the lookback window and there were more; older mail was left in the mailbox.`
-      : `Read ${read} messages and there are still more in the window. Nothing has been skipped — the watermark is held — but a backlog this size will not drain on its own.`;
-
-  if (unjudged > 0)
-    return `${unjudged} of ${read} messages were left alone because the provider did not say which labels they carry. Nothing is filed from this mailbox until it does — a message somebody marked private must not be guessed at.`;
-
-  return null;
 }

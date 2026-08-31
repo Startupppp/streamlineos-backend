@@ -78,6 +78,7 @@ describe("Chat entity actions (e2e, no DB required)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/entity-actions/submit")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "test-key-member-403")
       .send({ channelId: 1, reference: DEAL, actionId: "stage", input: {} });
 
     expect(res.status).toBe(403);
@@ -89,6 +90,7 @@ describe("Chat entity actions (e2e, no DB required)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/entity-actions/submit")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "test-key-no-build-perm")
       .send({ channelId: 1, reference: DEAL, actionId: "stage", input: {} });
 
     expect(res.status).toBe(201);
@@ -102,6 +104,7 @@ describe("Chat entity actions (e2e, no DB required)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/entity-actions/submit")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "test-key-adapter-forbidden")
       .send({ channelId: 1, reference: DEAL, actionId: "stage", input: {} });
 
     expect(res.status).toBe(403);
@@ -114,6 +117,7 @@ describe("Chat entity actions (e2e, no DB required)", () => {
     const res = await request(app.getHttpServer())
       .post("/chat/entity-actions/submit")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "test-key-not-found")
       .send({ channelId: 1, reference: DEAL, actionId: "stage", input: {} });
 
     expect(res.status).toBe(404);

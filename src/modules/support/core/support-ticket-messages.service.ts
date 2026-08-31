@@ -15,6 +15,7 @@ import { AutomationService } from "../../automation/automation.service";
 import { SupportTicketActivityService } from "./support-ticket-activity.service";
 import type { ReplyMessageInput } from "./dto/support.schemas";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 
 @Injectable()
 export class SupportTicketMessagesService {
@@ -136,34 +137,38 @@ export class SupportTicketMessagesService {
     void this.realtime.publishMessageCreated(orgId, ticketId, message.id).catch(logSideEffectFailure("support realtime message-created publish", { orgId, ticketId }));
 
     if (input.isInternal && userId) {
-      void this.db.query.users
-        .findFirst({ where: eq(users.id, userId), columns: { name: true, email: true } })
-        .then((author) =>
-          this.mentions.processMessageMentions({
-            orgId,
-            ticketId,
-            ticketTitle: ticket.title,
-            messageId: message.id,
-            content: input.body,
-            authorId: userId,
-            authorName: author?.name ?? author?.email ?? "A teammate",
-          }),
-        )
-        .catch(logSideEffectFailure("support message notification", { orgId, ticketId }));
+      const mentionTask = async () => {
+        const author = await this.db.query.users
+          .findFirst({ where: eq(users.id, userId), columns: { name: true, email: true } });
+        await this.mentions.processMessageMentions({
+          orgId,
+          ticketId,
+          ticketTitle: ticket.title,
+          messageId: message.id,
+          content: input.body,
+          authorId: userId,
+          authorName: author?.name ?? author?.email ?? "A teammate",
+        });
+      };
+      if (!registerAfterCommit(() => mentionTask().catch(logSideEffectFailure("support message notification", { orgId, ticketId }))))
+        void mentionTask().catch(logSideEffectFailure("support message notification", { orgId, ticketId }));
     }
 
-    void this.automations
-      .runAutomationsForEvent(orgId, "ticket.message_received", {
-        ticketId: ticket.id,
-        title: ticket.title,
-        status: ticket.status,
-        priority: ticket.priority,
-        category: ticket.category ?? null,
-        assigneeId: ticket.assigneeId ?? null,
-        isInternal: input.isInternal,
-        messageBody: input.body,
-      })
-      .catch(logSideEffectFailure("support message email", { orgId, ticketId }));
+    const automationPayload = {
+      ticketId: ticket.id,
+      title: ticket.title,
+      status: ticket.status,
+      priority: ticket.priority,
+      category: ticket.category ?? null,
+      assigneeId: ticket.assigneeId ?? null,
+      isInternal: input.isInternal,
+      messageBody: input.body,
+    };
+    const automationTask = () =>
+      this.automations
+        .runAutomationsForEvent(orgId, "ticket.message_received", automationPayload)
+        .catch(logSideEffectFailure("support message email", { orgId, ticketId }));
+    if (!registerAfterCommit(automationTask)) void automationTask();
 
     const isFirstAgentReply =
       !input.isInternal && !ticket.firstRespondedAt && userId !== null && userId !== ticket.createdBy;
@@ -179,14 +184,17 @@ export class SupportTicketMessagesService {
     }
 
     if (!input.isInternal && userId) {
-      void this.notifications
-        .sendReplyEmail(
-          { title: ticket.title, createdBy: ticket.createdBy, assigneeId: ticket.assigneeId },
-          ticketId,
-          userId,
-          input.body,
-        )
-        .catch(logSideEffectFailure("support automations on message", { orgId, ticketId }));
+      const replyTask = () =>
+        this.notifications
+          .sendReplyEmail(
+            orgId,
+            { title: ticket.title, createdBy: ticket.createdBy, assigneeId: ticket.assigneeId },
+            ticketId,
+            userId,
+            input.body,
+          )
+          .catch(logSideEffectFailure("support automations on message", { orgId, ticketId }));
+      if (!registerAfterCommit(replyTask)) void replyTask();
     }
 
     return message;

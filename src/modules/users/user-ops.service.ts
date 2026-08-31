@@ -43,6 +43,8 @@ import {
 import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-owner";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import { UserOperationsReporter } from "./user-operations.reporter";
+import { EmploymentFactsService } from "../directory/employment-facts.service";
+import { syncCanonicalReportingLine } from "../../common/hr/sync-canonical-reporting-line";
 
 @Injectable()
 export class UserOpsService {
@@ -56,11 +58,12 @@ export class UserOpsService {
     private readonly usersSvc: UsersService,
     private readonly access: AccessService,
     private readonly email: EmailService,
+    private readonly employment: EmploymentFactsService,
   ) {
-    this.reporter = new UserOperationsReporter(db, cache);
+    this.reporter = new UserOperationsReporter(db, cache, employment);
   }
 
-  async exportUsers(orgId: string): Promise<string> {
+  exportUsers(orgId: string) {
     return this.reporter.exportUsers(orgId);
   }
 
@@ -181,35 +184,50 @@ export class UserOpsService {
 
       if (tenantUserIds.length === 0) return [];
 
-      const userUpdate: Record<string, unknown> = {};
-      if (departmentId !== undefined) userUpdate.orgDepartmentId = departmentId;
-      if (branchId !== undefined) userUpdate.branchId = branchId;
-      if (managerUserId !== undefined) userUpdate.reportingTo = managerUserId;
-
-      if (Object.keys(userUpdate).length > 0) {
+      if (departmentId !== undefined) {
         await tx
-        .update(users)
-        .set(userUpdate)
-        .where(inArray(users.id, tenantUserIds));
+        .update(hrEmployments)
+        .set({ departmentId })
+        .where(
+          and(
+            eq(hrEmployments.orgId, orgId),
+            eq(hrEmployments.isPrimary, true),
+            isNull(hrEmployments.deletedAt),
+            sql`EXISTS (
+              SELECT 1 FROM ${hrPeople}
+              WHERE ${hrPeople.id} = ${hrEmployments.personId}
+                AND ${hrPeople.orgId} = ${orgId}
+                AND ${inArray(hrPeople.userId, tenantUserIds)}
+                AND ${hrPeople.deletedAt} IS NULL
+            )`,
+          ),
+        );
+      }
 
-        if (departmentId !== undefined) {
-          await tx
-          .update(hrEmployments)
-          .set({ departmentId })
-          .where(
-            and(
-              eq(hrEmployments.orgId, orgId),
-              eq(hrEmployments.isPrimary, true),
-              isNull(hrEmployments.deletedAt),
-              sql`EXISTS (
-                SELECT 1 FROM ${hrPeople}
-                WHERE ${hrPeople.id} = ${hrEmployments.personId}
-                  AND ${hrPeople.orgId} = ${orgId}
-                  AND ${inArray(hrPeople.userId, tenantUserIds)}
-                  AND ${hrPeople.deletedAt} IS NULL
-              )`,
-            ),
-          );
+      if (branchId !== undefined) {
+        await tx
+        .update(hrEmployments)
+        .set({ locationId: branchId })
+        .where(
+          and(
+            eq(hrEmployments.orgId, orgId),
+            eq(hrEmployments.isPrimary, true),
+            isNull(hrEmployments.deletedAt),
+            sql`EXISTS (
+              SELECT 1 FROM ${hrPeople}
+              WHERE ${hrPeople.id} = ${hrEmployments.personId}
+                AND ${hrPeople.orgId} = ${orgId}
+                AND ${inArray(hrPeople.userId, tenantUserIds)}
+                AND ${hrPeople.deletedAt} IS NULL
+            )`,
+          ),
+        );
+      }
+
+      if (managerUserId !== undefined) {
+        const today = new Date().toISOString().slice(0, 10);
+        for (const memberId of tenantUserIds) {
+          await syncCanonicalReportingLine(tx, orgId, memberId, managerUserId, today, actorUserId);
         }
       }
 

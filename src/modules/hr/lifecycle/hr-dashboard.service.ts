@@ -1,6 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
+  hrEmployeeSensitiveFields,
+  hrEmployments,
+  hrPeople,
   organizationMembers,
   users,
   leaveRequests,
@@ -83,7 +87,9 @@ export class HrDashboardService {
         .select({ count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), gte(users.joiningDate, monthStart), lte(users.joiningDate, monthEnd))),
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+        .where(and(eq(organizationMembers.orgId, orgId), gte(hrEmployments.joiningDate, monthStart), lte(hrEmployments.joiningDate, monthEnd))),
     ]);
 
     const windowDates = Array.from({ length: 8 }, (_, i) => {
@@ -155,13 +161,19 @@ export class HrDashboardService {
           .select({ count: count() })
           .from(organizationMembers)
           .innerJoin(users, eq(users.id, organizationMembers.userId))
-          .where(and(eq(organizationMembers.orgId, orgId), isNotNull(users.bankDetails))),
+          .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+          .leftJoin(hrEmployeeSensitiveFields, and(eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id), eq(hrEmployeeSensitiveFields.orgId, orgId)))
+          .where(and(eq(organizationMembers.orgId, orgId), isNotNull(hrEmployeeSensitiveFields.bankDetails))),
 
         this.db
           .select({ count: count() })
           .from(organizationMembers)
           .innerJoin(users, eq(users.id, organizationMembers.userId))
-          .where(and(eq(organizationMembers.orgId, orgId), isNotNull(users.taxId), sql`${users.taxId} <> ''`)),
+          .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+          .leftJoin(hrEmployeeSensitiveFields, and(eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id), eq(hrEmployeeSensitiveFields.orgId, orgId)))
+          .where(and(eq(organizationMembers.orgId, orgId), isNotNull(hrEmployeeSensitiveFields.taxId), sql`${hrEmployeeSensitiveFields.taxId} <> ''`)),
 
         this.db
           .select({ count: count() })
@@ -173,7 +185,9 @@ export class HrDashboardService {
           .select({ count: count() })
           .from(organizationMembers)
           .innerJoin(users, eq(users.id, organizationMembers.userId))
-          .where(and(eq(organizationMembers.orgId, orgId), isNotNull(users.joiningDate))),
+          .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+          .where(and(eq(organizationMembers.orgId, orgId), isNotNull(hrEmployments.joiningDate))),
 
         this.db
           .select({ count: count() })
@@ -185,14 +199,17 @@ export class HrDashboardService {
           .select({ count: count() })
           .from(organizationMembers)
           .innerJoin(users, eq(users.id, organizationMembers.userId))
+          .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+          .leftJoin(hrEmployeeSensitiveFields, and(eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id), eq(hrEmployeeSensitiveFields.orgId, orgId)))
           .where(
             and(
               eq(organizationMembers.orgId, orgId),
-              isNotNull(users.bankDetails),
-              isNotNull(users.taxId),
-              sql`${users.taxId} <> ''`,
+              isNotNull(hrEmployeeSensitiveFields.bankDetails),
+              isNotNull(hrEmployeeSensitiveFields.taxId),
+              sql`${hrEmployeeSensitiveFields.taxId} <> ''`,
               isNotNull(users.dateOfBirth),
-              isNotNull(users.joiningDate),
+              isNotNull(hrEmployments.joiningDate),
               isNotNull(users.gender),
             ),
           ),

@@ -2,13 +2,15 @@ import {
   pgTable,
   text,
   serial,
+  integer,
   timestamp,
   decimal,
   date,
   index,
   uniqueIndex,
+  foreignKey,
 } from "drizzle-orm/pg-core";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { timesheetPeriodStatusEnum } from "./enums";
 
 export const timesheetPeriods = pgTable("timesheet_periods", {
@@ -27,6 +29,7 @@ export const timesheetPeriods = pgTable("timesheet_periods", {
   lockedAt: timestamp("locked_at"),
   currentApproverId: text("current_approver_id").references(() => users.id, { onDelete: "set null" }),
   approvedBy: text("approved_by").references(() => users.id, { onDelete: "set null" }),
+  approvedByMembershipId: integer("approved_by_membership_id"),
   rejectionReason: text("rejection_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -35,4 +38,10 @@ export const timesheetPeriods = pgTable("timesheet_periods", {
   index("idx_timesheet_periods_user_start").on(t.orgId, t.userId, t.periodStart),
   index("idx_timesheet_periods_org_status").on(t.orgId, t.status, t.submittedAt),
   index("idx_timesheet_periods_current_approver").on(t.orgId, t.currentApproverId),
+  index("idx_timesheet_periods_org_approved_actor").on(t.orgId, t.approvedByMembershipId),
+  foreignKey({
+    columns: [t.orgId, t.approvedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_timesheet_periods_approved_actor",
+  }).onDelete("restrict"),
 ]);

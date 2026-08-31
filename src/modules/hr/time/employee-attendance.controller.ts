@@ -11,7 +11,6 @@ import {
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import {
@@ -33,6 +32,7 @@ import {
 import { AttendanceService } from "./attendance.service";
 import { AttendanceRegularizationService } from "./attendance-regularization.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @Controller("me/attendance")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -51,8 +51,9 @@ export class EmployeeAttendanceController {
   @Post("check-in")
   @HttpCode(200)
   @Idempotent("hr.attendance.check-in")
+  @Validate({ body: checkInSchema })
   checkIn(
-    @Body(new ZodValidationPipe(checkInSchema)) input: CheckInInput,
+    @Body() input: CheckInInput,
     @CurrentUser() currentUser: CurrentUserContext,
     @Headers("idempotency-key") idempotencyKey: string,
   ) {
@@ -67,8 +68,9 @@ export class EmployeeAttendanceController {
   @Post("check-out")
   @HttpCode(200)
   @Idempotent("hr.attendance.check-out")
+  @Validate({ body: checkOutSchema })
   checkOut(
-    @Body(new ZodValidationPipe(checkOutSchema)) _validatedInput: CheckOutInput,
+    @Body() _validatedInput: CheckOutInput,
     @CurrentUser() currentUser: CurrentUserContext,
     @Headers("idempotency-key") idempotencyKey: string,
   ) {
@@ -94,18 +96,18 @@ export class EmployeeAttendanceController {
   }
 
   @Get("logs")
+  @Validate({ query: selfAttendanceLogsQuerySchema })
   logs(
-    @Query(new ZodValidationPipe(selfAttendanceLogsQuerySchema))
-    query: SelfAttendanceLogsQuery,
+    @Query() query: SelfAttendanceLogsQuery,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.attendance.logs(user, undefined, query.year, query.month);
   }
 
   @Get("history")
+  @Validate({ query: selfAttendanceHistoryQuerySchema })
   history(
-    @Query(new ZodValidationPipe(selfAttendanceHistoryQuerySchema))
-    query: SelfAttendanceHistoryQuery,
+    @Query() query: SelfAttendanceHistoryQuery,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.attendance.history(
@@ -117,8 +119,9 @@ export class EmployeeAttendanceController {
   }
 
   @Get("monthly")
+  @Validate({ query: selfMonthlyQuerySchema })
   monthly(
-    @Query(new ZodValidationPipe(selfMonthlyQuerySchema)) query: SelfMonthlyQuery,
+    @Query() query: SelfMonthlyQuery,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.attendance.monthly(
@@ -130,8 +133,9 @@ export class EmployeeAttendanceController {
   }
 
   @Get("heatmap")
+  @Validate({ query: selfHeatmapQuerySchema })
   heatmap(
-    @Query(new ZodValidationPipe(selfHeatmapQuerySchema)) query: SelfHeatmapQuery,
+    @Query() query: SelfHeatmapQuery,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.attendance.heatmap(
@@ -148,9 +152,9 @@ export class EmployeeAttendanceController {
 
   @Post("regularizations")
   @HttpCode(201)
+  @Validate({ body: createAttendanceRegularizationSchema })
   createRegularization(
-    @Body(new ZodValidationPipe(createAttendanceRegularizationSchema))
-    body: CreateAttendanceRegularizationInput,
+    @Body() body: CreateAttendanceRegularizationInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.regularizations.create(user, body);

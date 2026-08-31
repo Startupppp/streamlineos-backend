@@ -1,8 +1,11 @@
 import { ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { SQL, aliasedTable, and, count, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
   documentAuditLogs,
   documentTypes,
+  hrEmployments,
+  hrPeople,
   onboardingDocuments,
   organizationMembers,
   users,
@@ -37,7 +40,7 @@ export class OnboardingViewsService {
     if (query.search) {
       const searchClause = or(
         ilike(users.name, `%${query.search}%`),
-        ilike(users.designation, `%${query.search}%`),
+        ilike(hrEmployments.designation, `%${query.search}%`),
       );
       if (searchClause) conditions.push(searchClause);
     }
@@ -114,8 +117,8 @@ export class OnboardingViewsService {
           userId: users.id,
           userName: users.name,
           userImage: users.image,
-          designation: users.designation,
-          employeeId: users.employeeId,
+          designation: hrEmployments.designation,
+          employeeId: hrEmployments.employeeNumber,
           onboardingDocStatus: derivedStatus,
           totalRequired: mandatoryTotals.total,
           totalSubmitted: sql<number>`coalesce(${documentStats.totalSubmitted}, 0)::int`,
@@ -127,6 +130,8 @@ export class OnboardingViewsService {
           organizationMembers,
           and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
         )
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .leftJoin(documentStats, eq(documentStats.userId, users.id))
         .innerJoin(mandatoryTotals, sql`true`)
         .where(and(...conditions))
@@ -140,6 +145,8 @@ export class OnboardingViewsService {
           organizationMembers,
           and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
         )
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .leftJoin(documentStats, eq(documentStats.userId, users.id))
         .innerJoin(mandatoryTotals, sql`true`)
         .where(and(...conditions)),

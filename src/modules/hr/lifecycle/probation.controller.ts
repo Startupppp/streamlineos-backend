@@ -15,7 +15,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ProbationService } from "./probation.service";
 import {
   startReviewSchema,
@@ -27,6 +26,11 @@ import {
   type ConfirmProbationInput,
   type ListProbationReviewsInput,
 } from "./dto/probation.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const employmentIdParams = z.object({ employmentId: z.coerce.number().int().positive() }).strict();
+const reviewIdParams = z.object({ reviewId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/probation")
@@ -36,9 +40,10 @@ export class ProbationController {
 
   @Get()
   @RequirePermission("hr:probation:view")
+  @Validate({ query: listProbationReviewsSchema })
   listDueForReview(
     @CurrentUser() currentUser: CurrentUserContext,
-    @Query(new ZodValidationPipe(listProbationReviewsSchema)) query: ListProbationReviewsInput,
+    @Query() query: ListProbationReviewsInput,
   ) {
     return this.probation.listDueForReview(currentUser.orgId, query);
   }
@@ -46,9 +51,10 @@ export class ProbationController {
   @Post(":employmentId/start-review")
   @HttpCode(200)
   @RequirePermission("hr:probation:manage")
+  @Validate({ params: employmentIdParams, body: startReviewSchema })
   startReview(
     @Param("employmentId", ParseIntPipe) employmentId: number,
-    @Body(new ZodValidationPipe(startReviewSchema)) body: StartReviewInput,
+    @Body() body: StartReviewInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.probation.startReview(currentUser.orgId, currentUser.userId, employmentId, body);
@@ -57,9 +63,10 @@ export class ProbationController {
   @Post(":reviewId/extend")
   @HttpCode(200)
   @RequirePermission("hr:probation:manage")
+  @Validate({ params: reviewIdParams, body: extendProbationSchema })
   extend(
     @Param("reviewId", ParseIntPipe) reviewId: number,
-    @Body(new ZodValidationPipe(extendProbationSchema)) body: ExtendProbationInput,
+    @Body() body: ExtendProbationInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.probation.extend(currentUser.orgId, currentUser.userId, reviewId, body);
@@ -68,9 +75,10 @@ export class ProbationController {
   @Post(":reviewId/confirm")
   @HttpCode(200)
   @RequirePermission("hr:probation:manage")
+  @Validate({ params: reviewIdParams, body: confirmProbationSchema })
   confirm(
     @Param("reviewId", ParseIntPipe) reviewId: number,
-    @Body(new ZodValidationPipe(confirmProbationSchema)) body: ConfirmProbationInput,
+    @Body() body: ConfirmProbationInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.probation.confirm(currentUser.orgId, currentUser.userId, reviewId, body);

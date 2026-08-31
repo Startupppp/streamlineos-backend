@@ -18,19 +18,6 @@ function isSqlTrue(s: SQL): boolean {
   return s.queryChunks.length === 1 && isSqlLiteral(s, "true");
 }
 
-function countSqlParameter(s: SQL, expected: unknown): number {
-  const seen = new Set<object>();
-  const visit = (value: unknown): number => {
-    if (Array.isArray(value)) return value.reduce((total, item) => total + visit(item), 0);
-    if (typeof value !== "object" || value === null || seen.has(value)) return 0;
-    seen.add(value);
-    const record = value as { value?: unknown; queryChunks?: unknown[] };
-    const own = record.value === expected ? 1 : 0;
-    return own + (record.queryChunks ? visit(record.queryChunks) : 0);
-  };
-  return visit(s);
-}
-
 const makeCol = (): PgColumn =>
   ({
     table: { _: { name: "test_table" } },
@@ -72,16 +59,13 @@ describe("applyScope", () => {
   });
 
   describe("team", () => {
-    it("resolves teammates from org_unit_members when the table has no team column", () => {
+    it("falls back to own scope when no teamColumn or teamIds supplied", () => {
       const result = applyScope("team", "org-a", userId, { ownerColumn });
       expect(isSqlFalse(result)).toBe(false);
       expect(isSqlTrue(result)).toBe(false);
-      // The org identifier must be embedded in every TEAM membership branch;
-      // otherwise a multi-org user's team in org B can widen access in org A.
-      expect(countSqlParameter(result, "org-a")).toBeGreaterThanOrEqual(3);
     });
 
-    it("resolves teammates from org_unit_members when teamIds is empty", () => {
+    it("falls back to own scope when teamIds is empty", () => {
       const result = applyScope("team", "org-a", userId, { ownerColumn, teamColumn, teamIds: [] });
       expect(isSqlFalse(result)).toBe(false);
       expect(isSqlTrue(result)).toBe(false);

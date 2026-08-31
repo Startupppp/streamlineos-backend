@@ -18,6 +18,11 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { leaveApprovalScope, resolveLeavesViewScope } from "./leaves-scope";
 import { AuditService } from "../../../common/audit/audit.service";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
 import { LeaveLedgerService } from "./leave-ledger.service";
 import type { ApproveLeaveInput, RejectLeaveInput, UpdateLeaveInput } from "./dto/leaves.schemas";
 import { LeaveDecisionEffectsService } from "./leave-decision-effects.service";
@@ -207,6 +212,19 @@ export class LeavesApprovalService {
     if (scope === "none") {
       throw new ForbiddenException("You do not have permission to approve leave requests.");
     }
+
+    let approverMembershipId: number;
+    try {
+      const actor = await assertOrganizationActor(this.db, currentUser.orgId, {
+        kind: "user",
+        userId: currentUser.userId,
+      });
+      approverMembershipId = actor.membershipId;
+    } catch (e) {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    }
+
     const comment = input.comment;
     let lopDaysApplied = 0;
 
@@ -236,6 +254,7 @@ export class LeavesApprovalService {
         .set({
           status: "APPROVED",
           approverId: currentUser.userId,
+          approverMembershipId,
           managerComment: comment ?? null,
           rowVersion: current.rowVersion + 1,
           updatedAt: new Date(),
@@ -352,6 +371,19 @@ export class LeavesApprovalService {
     if (scope === "none") {
       throw new ForbiddenException("You do not have permission to reject leave requests.");
     }
+
+    let approverMembershipId: number;
+    try {
+      const actor = await assertOrganizationActor(this.db, currentUser.orgId, {
+        kind: "user",
+        userId: currentUser.userId,
+      });
+      approverMembershipId = actor.membershipId;
+    } catch (e) {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    }
+
     const { reason, comment } = input;
 
     const existing = await this.db.transaction(async (tx) => {
@@ -380,6 +412,7 @@ export class LeavesApprovalService {
         .set({
           status: "REJECTED",
           approverId: currentUser.userId,
+          approverMembershipId,
           rejectionReason: reason,
           managerComment: comment ?? null,
           rowVersion: current.rowVersion + 1,

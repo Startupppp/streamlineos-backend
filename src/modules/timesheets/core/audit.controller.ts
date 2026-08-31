@@ -6,9 +6,9 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { auditQuerySchema, type AuditQuery } from "./dto/audit.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("build")
 @Controller("timesheets/audit")
@@ -24,8 +24,9 @@ export class AuditController {
 
   @Get()
   @RequirePermission("timesheets:audit:view")
+  @Validate({ query: auditQuerySchema })
   async list(
-    @Query(new ZodValidationPipe(auditQuerySchema)) query: AuditQuery,
+    @Query() query: AuditQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.auditService.listAuditEvents(u.orgId, query);

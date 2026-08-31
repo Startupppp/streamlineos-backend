@@ -20,7 +20,7 @@ import {
   intakeSourceEnum,
   viewLayoutEnum,
 } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
 
@@ -29,6 +29,7 @@ export const projectMembers = build.table("project_members", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  membershipId: integer("membership_id"),
   role: text("role").default("CONTRIBUTOR").notNull(),
   hourlyRate: decimal("hourly_rate", { precision: 10, scale: 2 }).default("0").notNull(),
   hourlyRateMinor: bigint("hourly_rate_minor", { mode: "number" }).default(0).notNull(),
@@ -38,7 +39,13 @@ export const projectMembers = build.table("project_members", {
   uniqueIndex("uniq_project_members_project_user").on(table.projectId, table.userId),
   index("idx_project_members_user").on(table.userId),
   index("idx_project_members_org_user").on(table.orgId, table.userId),
+  index("idx_project_members_org_member_membership").on(table.orgId, table.membershipId),
   unique("uniq_project_members_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.membershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_project_members_member_actor",
+  }).onDelete("restrict"),
 ]);
 
 export const projectViews = build.table("project_views", {

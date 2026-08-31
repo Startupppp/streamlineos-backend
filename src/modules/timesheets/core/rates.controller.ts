@@ -17,7 +17,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RatesService } from "./rates.service";
 import {
   createRateSchema,
@@ -25,6 +24,10 @@ import {
   type CreateRateInput,
   type UpdateRateInput,
 } from "./dto/rates.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const rateIdParams = z.object({ rateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("timesheets/rates")
@@ -41,8 +44,9 @@ export class RatesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("timesheets:rates:manage")
+  @Validate({ body: createRateSchema })
   create(
-    @Body(new ZodValidationPipe(createRateSchema)) body: CreateRateInput,
+    @Body() body: CreateRateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rates.createRate(u, body);
@@ -50,9 +54,10 @@ export class RatesController {
 
   @Patch(":rateId")
   @RequirePermission("timesheets:rates:manage")
+  @Validate({ params: rateIdParams, body: updateRateSchema })
   update(
     @Param("rateId", ParseIntPipe) rateId: number,
-    @Body(new ZodValidationPipe(updateRateSchema)) body: UpdateRateInput,
+    @Body() body: UpdateRateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.rates.updateRate(u, rateId, body);
@@ -61,6 +66,7 @@ export class RatesController {
   @Delete(":rateId")
   @HttpCode(204)
   @RequirePermission("timesheets:rates:manage")
+  @Validate({ params: rateIdParams })
   delete(
     @Param("rateId", ParseIntPipe) rateId: number,
     @CurrentUser() u: CurrentUserContext,

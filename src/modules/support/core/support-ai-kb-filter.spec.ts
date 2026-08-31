@@ -22,6 +22,10 @@ const makeEmbHelper = (): Partial<SupportAiEmbeddingsHelper> => ({
   getRootCauseThreshold: jest.fn().mockReturnValue(0.75),
 });
 const makeReportHelper = (): Partial<SupportAiReportHelper> => ({ getAiReport: jest.fn().mockResolvedValue({}) });
+const makeKbAccess = () => ({
+  getAccessibleSpaceIds: jest.fn().mockResolvedValue([1]),
+  getPrincipalIds: jest.fn().mockResolvedValue({ userId: "u1", roleSlugs: [] }),
+});
 
 const makeChain = (finalValue: unknown[] = []) => {
   const chain: Record<string, jest.Mock> = {};
@@ -54,9 +58,10 @@ describe("SupportAiService.suggestKbArticles — KB filter", () => {
       makeAiSettings() as never,
       makeEmbHelper() as never,
       makeReportHelper() as never,
+      makeKbAccess() as never,
     );
 
-    const result = await svc.suggestKbArticles("org-1", 1);
+    const result = await svc.suggestKbArticles("org-1", 1, "u1");
     expect(result).toBeNull();
   });
 
@@ -79,9 +84,10 @@ describe("SupportAiService.suggestKbArticles — KB filter", () => {
       makeAiSettings() as never,
       makeEmbHelper() as never,
       makeReportHelper() as never,
+      makeKbAccess() as never,
     );
 
-    await svc.suggestKbArticles("org-1", 1);
+    await svc.suggestKbArticles("org-1", 1, "u1");
 
     expect(chain.innerJoin).toHaveBeenCalledTimes(2);
   });
@@ -106,9 +112,10 @@ describe("SupportAiService.suggestKbArticles — KB filter", () => {
       makeAiSettings() as never,
       makeEmbHelper() as never,
       makeReportHelper() as never,
+      makeKbAccess() as never,
     );
 
-    const result = await svc.suggestKbArticles("org-1", 1);
+    const result = await svc.suggestKbArticles("org-1", 1, "u1");
     expect(result).toBeNull();
     expect(embeddings.embedQuery).not.toHaveBeenCalled();
   });

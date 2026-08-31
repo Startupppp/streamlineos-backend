@@ -14,6 +14,7 @@ import {
 import { PersonEmploymentSyncService } from "../../core/person-employment-sync.service";
 import type { InitiateInput } from "./dto/onboarding.schemas";
 import { OnboardingInitiationDispatchService } from "./onboarding-initiation-dispatch.service";
+import { EmploymentFactsService } from "../../../directory/employment-facts.service";
 
 type DefaultTask = {
   title: string;
@@ -56,9 +57,12 @@ export class OnboardingInitiationService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly employmentSync: PersonEmploymentSyncService,
     private readonly dispatch: OnboardingInitiationDispatchService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   async initiate(orgId: string, actorId: string, input: InitiateInput): Promise<InitiateResult> {
+    const prefetchedFacts = await this.employment.getFacts(orgId, input.userId);
+
     const outcome = await this.db.transaction(async (tx) => {
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${orgId}:${input.userId}:onboarding`}, 0))`,
@@ -77,19 +81,16 @@ export class OnboardingInitiationService {
         .limit(1);
       if (!membership) return { error: "user_not_found" } as const;
 
-      const [target] = await tx
+      const [userRow] = await tx
         .select({
           id: users.id,
-          joiningDate: users.joiningDate,
           email: users.email,
           name: users.name,
-          designation: users.designation,
-          orgDepartmentId: users.orgDepartmentId,
         })
         .from(users)
         .where(eq(users.id, input.userId))
         .limit(1);
-      if (!target) return { error: "user_not_found" } as const;
+      if (!userRow) return { error: "user_not_found" } as const;
 
       const [existing] = await tx
         .select({ id: onboardingTasks.id })
@@ -114,8 +115,8 @@ export class OnboardingInitiationService {
         tx,
         orgId,
         input.userId,
-        target.orgDepartmentId,
-        target.joiningDate,
+        prefetchedFacts.departmentId,
+        prefetchedFacts.joiningDate,
       );
       await tx.insert(onboardingTasks).values(taskValues.values);
 
@@ -123,7 +124,13 @@ export class OnboardingInitiationService {
         success: true,
         tasksCreated: taskValues.values.length,
         fromTemplate: taskValues.fromTemplate,
-        target,
+        target: {
+          id: userRow.id,
+          email: userRow.email,
+          name: userRow.name,
+          designation: prefetchedFacts.designation,
+          joiningDate: prefetchedFacts.joiningDate,
+        },
         ownerRoleCounts: this.ownerRoleCounts(taskValues.values),
       } as const;
     });

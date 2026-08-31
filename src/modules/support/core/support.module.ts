@@ -5,6 +5,7 @@ import { RealtimeModule } from "../../realtime/realtime.module";
 import { AutomationModule } from "../../automation/automation.module";
 import { AiModule } from "../../ai/core/ai.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { SupportKbController } from "./support-kb.controller";
 import { SupportMacrosController } from "./support-macros.controller";
 import { SupportWorkspaceController } from "./support-workspace.controller";
@@ -41,9 +42,10 @@ import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportMentionsService } from "./support-mentions.service";
 import { SupportDraftsService } from "./support-drafts.service";
 import { SupportIntegrationsService } from "./support-integrations.service";
+import { SupportTicketResolvedConsumer } from "./support-ticket-resolved-consumer.service";
 
 @Module({
-  imports: [BillingModule, KbModule, RealtimeModule, AutomationModule, AiModule, NotificationsModule],
+  imports: [BillingModule, KbModule, RealtimeModule, AutomationModule, AiModule, NotificationsModule, OutboxModule],
   controllers: [
     SupportKbController,
     SupportMacrosController,
@@ -83,6 +85,7 @@ import { SupportIntegrationsService } from "./support-integrations.service";
     SupportMentionsService,
     SupportDraftsService,
     SupportIntegrationsService,
+    SupportTicketResolvedConsumer,
   ],
   exports: [SupportSlaService, SupportTicketsService],
 })

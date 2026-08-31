@@ -17,7 +17,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ApprovalsService } from "./approvals.service";
 import { PayrollCommandReceiptsService } from "../command-receipts.service";
 import {
@@ -26,6 +25,11 @@ import {
   type ApprovalActionInput,
   type RejectActionInput,
 } from "./dto/payout.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
+const runAndApprovalIdParams = z.object({ runId: z.coerce.number().int().positive(), approvalId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/runs/:runId")
@@ -39,6 +43,7 @@ export class ApprovalsController {
   @Post("submit-approval")
   @HttpCode(200)
   @RequirePermission("payroll:runs:update")
+  @Validate({ params: runIdParams })
   async submitApproval(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -57,7 +62,7 @@ export class ApprovalsController {
       throw new ConflictException("Approval submission already in progress for this key");
     }
     try {
-      const result = await this.approvals.submitApproval(u.orgId, u.userId, runId);
+      const result = await this.approvals.submitApproval(u.orgId, u.userId, runId, begin.correlationId);
       const response = { ...result, correlationId: begin.correlationId };
       await this.receipts.succeed(begin.receiptId, response);
       return response;
@@ -69,6 +74,7 @@ export class ApprovalsController {
 
   @Get("approvals")
   @RequirePermission("payroll:runs:view")
+  @Validate({ params: runIdParams })
   listApprovals(
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -79,10 +85,11 @@ export class ApprovalsController {
   @Post("approvals/:approvalId/approve")
   @HttpCode(200)
   @RequirePermission("payroll:runs:approve")
+  @Validate({ params: runAndApprovalIdParams, body: approvalActionSchema })
   async approveStage(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
-    @Body(new ZodValidationPipe(approvalActionSchema)) body: ApprovalActionInput,
+    @Body() body: ApprovalActionInput,
     @CurrentUser() u: CurrentUserContext,
     @Headers("idempotency-key") idempotencyKey?: string,
   ) {
@@ -99,7 +106,7 @@ export class ApprovalsController {
       throw new ConflictException("Stage approval already in progress for this key");
     }
     try {
-      const result = await this.approvals.approveStage(u.orgId, u.userId, runId, approvalId, body.comment);
+      const result = await this.approvals.approveStage(u.orgId, u.userId, runId, approvalId, body.comment, begin.correlationId);
       const response = { ...result, correlationId: begin.correlationId };
       await this.receipts.succeed(begin.receiptId, response);
       return response;
@@ -112,10 +119,11 @@ export class ApprovalsController {
   @Post("approvals/:approvalId/reject")
   @HttpCode(200)
   @RequirePermission("payroll:runs:approve")
+  @Validate({ params: runAndApprovalIdParams, body: rejectActionSchema })
   async rejectStage(
     @Param("runId", ParseIntPipe) runId: number,
     @Param("approvalId", ParseIntPipe) approvalId: number,
-    @Body(new ZodValidationPipe(rejectActionSchema)) body: RejectActionInput,
+    @Body() body: RejectActionInput,
     @CurrentUser() u: CurrentUserContext,
     @Headers("idempotency-key") idempotencyKey?: string,
   ) {
@@ -132,7 +140,7 @@ export class ApprovalsController {
       throw new ConflictException("Stage rejection already in progress for this key");
     }
     try {
-      const result = await this.approvals.rejectStage(u.orgId, u.userId, runId, approvalId, body.comment);
+      const result = await this.approvals.rejectStage(u.orgId, u.userId, runId, approvalId, body.comment, begin.correlationId);
       const response = { ...result, correlationId: begin.correlationId };
       await this.receipts.succeed(begin.receiptId, response);
       return response;

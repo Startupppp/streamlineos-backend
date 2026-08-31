@@ -6,6 +6,7 @@ import { AutomationEmailService } from "./automation-email.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { automationRuns } from "../../db/schema";
 
 const mockDb = {
   query: {
@@ -247,20 +248,28 @@ describe("AutomationService — rule CRUD", () => {
 describe("AutomationService.runAutomationsForEvent() — batch writes", () => {
   let service: AutomationService;
   let insertedRuns: unknown[];
+  let insertedByActions: unknown[];
   let updatedRuleIds: number[];
 
   beforeEach(async () => {
     jest.clearAllMocks();
     insertedRuns = [];
+    insertedByActions = [];
     updatedRuleIds = [];
 
     mockDb.query.automationRules.findMany.mockResolvedValue([]);
     mockDb.query.automationRuns.findMany.mockResolvedValue([]);
 
-    mockDb.insert.mockImplementation(() => ({
+    // Capture by table. This used to push every insert into `insertedRuns`,
+    // which was accurate only while run records were the sole write. Actions
+    // now insert their own rows — a `create_task` action writes a task — so the
+    // undifferentiated array counted tasks as runs and every length assertion
+    // read one too many.
+    mockDb.insert.mockImplementation((table: unknown) => ({
       values: jest.fn().mockImplementation((rows: unknown) => {
         const arr = Array.isArray(rows) ? rows : [rows];
-        insertedRuns.push(...arr);
+        if (table === automationRuns) insertedRuns.push(...arr);
+        else insertedByActions.push(...arr);
         return Promise.resolve([{ id: 1 }]);
       }),
     }));
@@ -307,6 +316,12 @@ describe("AutomationService.runAutomationsForEvent() — batch writes", () => {
     expect((insertedRuns[0] as Record<string, unknown>)["status"]).toBe("success");
     expect((insertedRuns[0] as Record<string, unknown>)["ruleId"]).toBe(7);
     expect(mockDb.update).toHaveBeenCalled();
+
+    // Separating the captures must not lose the fact that the action ran: a
+    // 'success' run record beside no task at all would be the worse bug.
+    expect(insertedByActions).toContainEqual(
+      expect.objectContaining({ title: "Task A" }),
+    );
   });
 
   it("rule conditions don't match → run record inserted with status 'skipped', runCount NOT updated", async () => {

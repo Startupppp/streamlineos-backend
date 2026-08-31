@@ -17,7 +17,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ComplianceRequirementsService } from "./compliance-requirements.service";
 import {
   createComplianceRequirementSchema,
@@ -33,6 +32,11 @@ import {
   type MarkEventDoneInput,
   type SeedCountryPackInput,
 } from "./dto/hr-global.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const requirementIdParams = z.object({ requirementId: z.coerce.number().int().positive() }).strict();
+const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/global/compliance")
@@ -43,8 +47,9 @@ export class ComplianceController {
   @Get("requirements")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
+  @Validate({ query: listComplianceRequirementSchema })
   listRequirements(
-    @Query(new ZodValidationPipe(listComplianceRequirementSchema)) query: ListComplianceRequirementInput,
+    @Query() query: ListComplianceRequirementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listRequirements(u.orgId, query);
@@ -53,6 +58,7 @@ export class ComplianceController {
   @Get("requirements/:requirementId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
+  @Validate({ params: requirementIdParams })
   getRequirement(
     @Param("requirementId", ParseIntPipe) requirementId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -64,8 +70,9 @@ export class ComplianceController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
   @HttpCode(201)
+  @Validate({ body: createComplianceRequirementSchema })
   createRequirement(
-    @Body(new ZodValidationPipe(createComplianceRequirementSchema)) body: CreateComplianceRequirementInput,
+    @Body() body: CreateComplianceRequirementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createRequirement(u.orgId, u.userId, body);
@@ -74,9 +81,10 @@ export class ComplianceController {
   @Patch("requirements/:requirementId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
+  @Validate({ params: requirementIdParams, body: updateComplianceRequirementSchema })
   updateRequirement(
     @Param("requirementId", ParseIntPipe) requirementId: number,
-    @Body(new ZodValidationPipe(updateComplianceRequirementSchema)) body: UpdateComplianceRequirementInput,
+    @Body() body: UpdateComplianceRequirementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateRequirement(u.orgId, requirementId, u.userId, body);
@@ -85,6 +93,7 @@ export class ComplianceController {
   @Delete("requirements/:requirementId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
+  @Validate({ params: requirementIdParams })
   deleteRequirement(
     @Param("requirementId", ParseIntPipe) requirementId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -95,8 +104,9 @@ export class ComplianceController {
   @Get("events")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
+  @Validate({ query: listComplianceEventsSchema })
   listEvents(
-    @Query(new ZodValidationPipe(listComplianceEventsSchema)) query: ListComplianceEventsInput,
+    @Query() query: ListComplianceEventsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listEvents(u.orgId, query);
@@ -106,9 +116,10 @@ export class ComplianceController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
   @HttpCode(200)
+  @Validate({ params: eventIdParams, body: markEventDoneSchema })
   markEventDone(
     @Param("eventId", ParseIntPipe) eventId: number,
-    @Body(new ZodValidationPipe(markEventDoneSchema)) body: MarkEventDoneInput,
+    @Body() body: MarkEventDoneInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.markEventDone(u.orgId, eventId, u.userId, body);
@@ -130,8 +141,9 @@ export class ComplianceController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:compliance:manage")
   @HttpCode(200)
+  @Validate({ body: seedCountryPackSchema })
   seedCountryPack(
-    @Body(new ZodValidationPipe(seedCountryPackSchema)) body: SeedCountryPackInput,
+    @Body() body: SeedCountryPackInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.seedCountryPack(u.orgId, u.userId, body);

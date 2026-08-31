@@ -16,7 +16,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ExpensePoliciesService } from "./expense-policies.service";
 import {
   createPolicySchema,
@@ -24,6 +23,10 @@ import {
   type CreatePolicyInput,
   type UpdatePolicyInput,
 } from "./dto/finance-expenses.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/expenses/policies")
@@ -40,8 +43,9 @@ export class ExpensePoliciesController {
   @Post()
   @HttpCode(201)
   @RequirePermission("accounting:reimbursements:manage")
+  @Validate({ body: createPolicySchema })
   async create(
-    @Body(new ZodValidationPipe(createPolicySchema)) body: CreatePolicyInput,
+    @Body() body: CreatePolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.policies.create(u.orgId, u.userId, body);
@@ -49,9 +53,10 @@ export class ExpensePoliciesController {
 
   @Patch(":policyId")
   @RequirePermission("accounting:reimbursements:manage")
+  @Validate({ params: policyIdParams, body: updatePolicySchema })
   async update(
     @Param("policyId", ParseIntPipe) policyId: number,
-    @Body(new ZodValidationPipe(updatePolicySchema)) body: UpdatePolicyInput,
+    @Body() body: UpdatePolicyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.policies.update(u.orgId, u.userId, policyId, body);
@@ -59,6 +64,7 @@ export class ExpensePoliciesController {
 
   @Delete(":policyId")
   @RequirePermission("accounting:reimbursements:manage")
+  @Validate({ params: policyIdParams })
   async remove(
     @Param("policyId", ParseIntPipe) policyId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -5,6 +5,7 @@ import { MailController } from "./mail.controller";
 import { MailService } from "./mail.service";
 import { MailAccountsService } from "./mail-accounts.service";
 import { MailMetadataService } from "./mail-metadata.service";
+import { MailSyncCheckpointService } from "./mail-sync-checkpoint.service";
 import { MailAiService } from "./mail-ai.service";
 import { GmailMailProvider } from "./providers/gmail-mail.provider";
 import { OutlookMailProvider } from "./providers/outlook-mail.provider";
@@ -12,7 +13,7 @@ import { OutlookMailProvider } from "./providers/outlook-mail.provider";
 @Module({
   imports: [IntegrationsModule, AiGatewayModule],
   controllers: [MailController],
-  providers: [MailService, MailAccountsService, MailMetadataService, MailAiService, GmailMailProvider, OutlookMailProvider],
-  exports: [MailService, MailAccountsService, MailMetadataService, MailAiService, GmailMailProvider, OutlookMailProvider],
+  providers: [MailService, MailAccountsService, MailMetadataService, MailSyncCheckpointService, MailAiService, GmailMailProvider, OutlookMailProvider],
+  exports: [MailService, MailAccountsService, MailMetadataService, MailSyncCheckpointService, MailAiService, GmailMailProvider, OutlookMailProvider],
 })
 export class MailModule {}

@@ -15,9 +15,14 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { actingMembershipId } from "../../../common/auth/principal";
+
 import { HrSensitiveService } from "./hr-sensitive.service";
 import { updateSensitiveSchema, type UpdateSensitiveInput } from "./dto/hr-core.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const employeeIdParams = z.object({ employeeId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/employees")
@@ -27,24 +32,26 @@ export class HrSensitiveController {
 
   @Get(":employeeId/sensitive")
   @RequirePermission("hr:sensitive:view")
+  @Validate({ params: employeeIdParams })
   get(
     @Param("employeeId", ParseIntPipe) employeeId: number,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
     const ip = req.ip ?? req.socket?.remoteAddress;
-    return this.sensitive.get(u.orgId, employeeId, u.userId, ip);
+    return this.sensitive.get(u.orgId, employeeId, u.userId, actingMembershipId(u.principal), ip);
   }
 
   @Patch(":employeeId/sensitive")
   @RequirePermission("hr:sensitive:manage")
+  @Validate({ params: employeeIdParams, body: updateSensitiveSchema })
   update(
     @Param("employeeId", ParseIntPipe) employeeId: number,
-    @Body(new ZodValidationPipe(updateSensitiveSchema)) body: UpdateSensitiveInput,
+    @Body() body: UpdateSensitiveInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
     const ip = req.ip ?? req.socket?.remoteAddress;
-    return this.sensitive.update(u.orgId, employeeId, u.userId, body, ip);
+    return this.sensitive.update(u.orgId, employeeId, u.userId, actingMembershipId(u.principal), body, ip);
   }
 }

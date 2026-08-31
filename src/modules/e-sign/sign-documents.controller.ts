@@ -13,6 +13,7 @@ import {
   UseInterceptors,
   UploadedFile,
 } from "@nestjs/common";
+import { z } from "zod";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -22,7 +23,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../common/validation/validate.decorator";
 import { SignDocumentsService } from "./sign-documents.service";
 import { uploadDocumentMetaSchema, type UploadDocumentMetaInput } from "./dto/e-sign.schemas";
 
@@ -31,6 +32,9 @@ function clientIp(req: Request): string | undefined {
   const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
   return (raw?.split(",")[0]?.trim() || req.ip)?.slice(0, 100);
 }
+
+const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
+const documentIdParams = z.object({ documentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("sign")
 @Controller("sign")
@@ -42,10 +46,11 @@ export class SignDocumentsController {
   @HttpCode(201)
   @RequirePermission("sign:documents:upload")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 200 * 1024 * 1024 } }))
+  @Validate({ query: uploadDocumentMetaSchema })
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
     @Query("envelopeId", ParseIntPipe) envelopeId: number,
-    @Query(new ZodValidationPipe(uploadDocumentMetaSchema)) query: UploadDocumentMetaInput,
+    @Query() query: UploadDocumentMetaInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
@@ -60,18 +65,21 @@ export class SignDocumentsController {
 
   @Get("envelopes/:envelopeId/documents")
   @RequirePermission("sign:documents:view")
+  @Validate({ params: envelopeIdParams })
   list(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
     return this.documents.list(u.orgId, envelopeId);
   }
 
   @Get("documents/:documentId/preview")
   @RequirePermission("sign:documents:view")
+  @Validate({ params: documentIdParams })
   preview(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() u: CurrentUserContext) {
     return this.documents.getPreviewUrl(u.orgId, documentId);
   }
 
   @Delete("documents/:documentId")
   @RequirePermission("sign:documents:upload")
+  @Validate({ params: documentIdParams })
   async remove(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() u: CurrentUserContext) {
     await this.documents.delete(u.orgId, documentId);
     return { success: true };

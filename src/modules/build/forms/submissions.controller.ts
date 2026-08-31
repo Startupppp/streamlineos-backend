@@ -15,7 +15,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { SubmissionsService } from "./submissions.service";
 import {
   createSubmissionSchema,
@@ -23,6 +22,10 @@ import {
   type CreateSubmissionInput,
   type UpdateSubmissionInput,
 } from "./dto/forms.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const submissionIdParams = z.object({ submissionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/forms/:formId/submissions")
@@ -43,10 +46,11 @@ export class SubmissionsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("build:forms:view")
+  @Validate({ body: createSubmissionSchema })
   createSubmission(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("formId", ParseIntPipe) formId: number,
-    @Body(new ZodValidationPipe(createSubmissionSchema)) body: CreateSubmissionInput,
+    @Body() body: CreateSubmissionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.createSubmission(u.orgId, u.userId, projectId, formId, body);
@@ -54,11 +58,12 @@ export class SubmissionsController {
 
   @Patch(":submissionId")
   @RequirePermission("build:forms:manage")
+  @Validate({ params: submissionIdParams, body: updateSubmissionSchema })
   updateSubmission(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("formId", ParseIntPipe) formId: number,
     @Param("submissionId", ParseIntPipe) submissionId: number,
-    @Body(new ZodValidationPipe(updateSubmissionSchema)) body: UpdateSubmissionInput,
+    @Body() body: UpdateSubmissionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateSubmission(u.orgId, u.userId, projectId, formId, submissionId, body);

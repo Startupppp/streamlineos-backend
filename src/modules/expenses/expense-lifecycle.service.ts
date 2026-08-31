@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
@@ -19,10 +20,22 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
 import { compareDecimals, formatDecimal } from "../accounting/core/money.util";
-import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
+import { emitExpenseOutboxEvent } from "./expense-outbox-emitter";
+import {
+  EXPENSE_DECIDED_EVENT,
+  EXPENSE_SUBMITTED_EVENT,
+  expenseDecidedPayloadSchema,
+  expenseSubmittedPayloadSchema,
+} from "./dto/expense-outbox.schemas";
 import { FinancePostingService } from "../accounting/posting/finance-posting.service";
 import type { PostJournalLine } from "../accounting/core/finance-posting.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { holdsOwnerOnly } from "../../common/rbac/owner-only-operations";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../common/organization/organization-actor";
 
 function normalizeMerchant(merchant: string | null | undefined): string {
   if (!merchant) return "";
@@ -57,7 +70,6 @@ export class ExpenseLifecycleService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
-    private readonly dispatch: NotificationDispatchService,
     private readonly posting: FinancePostingService,
   ) {}
 
@@ -194,7 +206,7 @@ export class ExpenseLifecycleService {
     const approvalResult = await this.findApplicableApprovalPolicy(u.orgId, amount);
 
     await this.db.transaction(async (tx) => {
-      await tx
+      const [updated] = await tx
         .update(expenses)
         .set({
           status: "SUBMITTED",
@@ -202,7 +214,12 @@ export class ExpenseLifecycleService {
           policyFlag: policyResult.policyFlag,
           updatedAt: new Date(),
         })
-        .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)));
+        .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)))
+        .returning({ id: expenses.id });
+
+      if (!updated) {
+        throw new InternalServerErrorException("Expense was concurrently modified.");
+      }
 
       if (approvalResult.needsApproval) {
         await tx.insert(finApprovalRequests).values({
@@ -213,6 +230,24 @@ export class ExpenseLifecycleService {
           requestedBy: u.userId,
         });
       }
+
+      if (!approvalResult.approverUserId) return;
+
+      await emitExpenseOutboxEvent(tx, {
+        orgId: u.orgId,
+        expenseId,
+        eventType: EXPENSE_SUBMITTED_EVENT,
+        payload: expenseSubmittedPayloadSchema.parse({
+          expenseId,
+          orgId: u.orgId,
+          actorUserId: u.userId,
+          amount: expense.amount,
+          category: expense.category,
+          description: expense.description ?? null,
+          recipients: { mode: "EXPLICIT", userIds: [approvalResult.approverUserId] },
+          runAutomations: false,
+        }),
+      });
     });
 
     this.audit.log({
@@ -222,18 +257,6 @@ export class ExpenseLifecycleService {
       targetId: String(expenseId),
       targetType: "expense",
     });
-
-    if (approvalResult.approverUserId) {
-      await this.dispatch.emit({
-        eventKey: "accounting.expense.submitted",
-        orgId: u.orgId,
-        actorUserId: u.userId,
-        targetUserIds: [approvalResult.approverUserId],
-        entityType: "expense",
-        entityId: String(expenseId),
-        variables: { amount: expense.amount, category: expense.category },
-      });
-    }
 
     await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
 
@@ -249,6 +272,11 @@ export class ExpenseLifecycleService {
     u: CurrentUserContext,
     expenseId: number,
   ): Promise<{ success: boolean; entryId: number | null }> {
+    const approverActor = await assertOrganizationActor(this.db, u.orgId, { kind: "user", userId: u.userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     const expense = await this.db.query.expenses.findFirst({
       where: and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)),
     });
@@ -270,7 +298,7 @@ export class ExpenseLifecycleService {
     });
 
     if (openApprovalRequest) {
-      if (!u.isOrgOwner) {
+      if (!holdsOwnerOnly(u, "finance.expense.grant-without-approval")) {
         throw new BadRequestException("This expense requires a pending approval to be granted first");
       }
       await this.db
@@ -328,16 +356,41 @@ export class ExpenseLifecycleService {
       lines,
     });
 
-    await this.db
-      .update(expenses)
-      .set({
-        status: "REIMBURSEMENT_PENDING",
-        approverId: u.userId,
-        approvedAt: new Date(),
-        postedJournalEntryId: postResult.entryId,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)));
+    await this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(expenses)
+        .set({
+          status: "REIMBURSEMENT_PENDING",
+          approverId: u.userId,
+          approverMembershipId: approverActor.membershipId,
+          approvedAt: new Date(),
+          postedJournalEntryId: postResult.entryId,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)))
+        .returning({ id: expenses.id });
+
+      if (!updated) {
+        throw new InternalServerErrorException("Expense was concurrently modified.");
+      }
+
+      await emitExpenseOutboxEvent(tx, {
+        orgId: u.orgId,
+        expenseId,
+        eventType: EXPENSE_DECIDED_EVENT,
+        payload: expenseDecidedPayloadSchema.parse({
+          expenseId,
+          orgId: u.orgId,
+          actorUserId: u.userId,
+          recipientUserId: expense.userId,
+          status: "APPROVED",
+          amount: expense.amount,
+          category: expense.category,
+          rejectionReason: null,
+          journalEntryId: postResult.entryId,
+        }),
+      });
+    });
 
     this.audit.log({
       action: "expense.approved",
@@ -346,16 +399,6 @@ export class ExpenseLifecycleService {
       targetId: String(expenseId),
       targetType: "expense",
       metadata: { journalEntryId: postResult.entryId },
-    });
-
-    await this.dispatch.emit({
-      eventKey: "accounting.expense.approved",
-      orgId: u.orgId,
-      actorUserId: u.userId,
-      targetUserIds: [expense.userId],
-      entityType: "expense",
-      entityId: String(expenseId),
-      variables: { amount: expense.amount, category: expense.category },
     });
 
     await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
@@ -368,6 +411,11 @@ export class ExpenseLifecycleService {
     expenseId: number,
     rejectionReason: string,
   ): Promise<{ success: boolean }> {
+    const rejectActor = await assertOrganizationActor(this.db, u.orgId, { kind: "user", userId: u.userId }).catch((e: unknown) => {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    });
+
     const expense = await this.db.query.expenses.findFirst({
       where: and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)),
       columns: { id: true, status: true, userId: true, amount: true, category: true },
@@ -380,27 +428,52 @@ export class ExpenseLifecycleService {
       throw new BadRequestException(`Expense in status ${expense.status} cannot be rejected`);
     }
 
-    await this.db
-      .update(expenses)
-      .set({
-        status: "REJECTED",
-        rejectionReason,
-        approverId: u.userId,
-        updatedAt: new Date(),
-      })
-      .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)));
+    await this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(expenses)
+        .set({
+          status: "REJECTED",
+          rejectionReason,
+          approverId: u.userId,
+          approverMembershipId: rejectActor.membershipId,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)))
+        .returning({ id: expenses.id });
 
-    await this.db
-      .update(finApprovalRequests)
-      .set({ status: "REJECTED", decidedBy: u.userId, decidedAt: new Date(), decisionComment: rejectionReason })
-      .where(
-        and(
-          eq(finApprovalRequests.orgId, u.orgId),
-          eq(finApprovalRequests.recordType, "EXPENSE"),
-          eq(finApprovalRequests.recordId, expenseId),
-          eq(finApprovalRequests.status, "PENDING"),
-        ),
-      );
+      if (!updated) {
+        throw new InternalServerErrorException("Expense was concurrently modified.");
+      }
+
+      await tx
+        .update(finApprovalRequests)
+        .set({ status: "REJECTED", decidedBy: u.userId, decidedAt: new Date(), decisionComment: rejectionReason })
+        .where(
+          and(
+            eq(finApprovalRequests.orgId, u.orgId),
+            eq(finApprovalRequests.recordType, "EXPENSE"),
+            eq(finApprovalRequests.recordId, expenseId),
+            eq(finApprovalRequests.status, "PENDING"),
+          ),
+        );
+
+      await emitExpenseOutboxEvent(tx, {
+        orgId: u.orgId,
+        expenseId,
+        eventType: EXPENSE_DECIDED_EVENT,
+        payload: expenseDecidedPayloadSchema.parse({
+          expenseId,
+          orgId: u.orgId,
+          actorUserId: u.userId,
+          recipientUserId: expense.userId,
+          status: "REJECTED",
+          amount: expense.amount,
+          category: expense.category,
+          rejectionReason,
+          journalEntryId: null,
+        }),
+      });
+    });
 
     this.audit.log({
       action: "expense.rejected",
@@ -409,16 +482,6 @@ export class ExpenseLifecycleService {
       targetId: String(expenseId),
       targetType: "expense",
       metadata: { rejectionReason },
-    });
-
-    await this.dispatch.emit({
-      eventKey: "accounting.expense.rejected",
-      orgId: u.orgId,
-      actorUserId: u.userId,
-      targetUserIds: [expense.userId],
-      entityType: "expense",
-      entityId: String(expenseId),
-      variables: { amount: expense.amount, category: expense.category, reason: rejectionReason },
     });
 
     await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));

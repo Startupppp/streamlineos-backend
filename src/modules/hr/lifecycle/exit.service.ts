@@ -1,11 +1,15 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import {
+  hrEmployments,
+  hrPeople,
   resignations,
   users,
   organizations,
   organizationMembers,
 } from "../../../db/schema";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { formatDdMmmYyyy, formatDdMmmYyyyTime, subMonths } from "../../../common/date";
@@ -54,7 +58,10 @@ export interface TimelineStep {
 
 @Injectable()
 export class ExitService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly employment: EmploymentFactsService,
+  ) {}
 
   async list(orgId: string, userId: string, isAdmin: boolean, params: ListResignationsQueryInput) {
     const limit = Math.min(params.limit, 100);
@@ -68,7 +75,7 @@ export class ExitService {
       this.db.query.resignations.findMany({
         where,
         with: {
-          user: { columns: { id: true, name: true, email: true, image: true, designation: true, joiningDate: true } },
+          user: { columns: { id: true, name: true, email: true, image: true } },
           checklists: true,
           hrReviewer: { columns: { id: true, name: true } },
           finalReviewer: { columns: { id: true, name: true } },
@@ -84,9 +91,19 @@ export class ExitService {
     ]);
 
     const total = countRows[0]?.total ?? 0;
+    const userIds = data.flatMap((r) => (r.user ? [r.user.id] : []));
+    const factsMap = userIds.length > 0 ? await this.employment.getFactsBatch(orgId, userIds) : new Map();
 
     return {
-      data: data.map(protectResignationFile),
+      data: data.map((r) => {
+        const facts = r.user ? factsMap.get(r.user.id) : undefined;
+        return protectResignationFile({
+          ...r,
+          user: r.user
+            ? { ...r.user, designation: facts?.designation ?? null, joiningDate: facts?.joiningDate ?? null }
+            : r.user,
+        });
+      }),
       pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -95,7 +112,7 @@ export class ExitService {
     const data = await this.db.query.resignations.findFirst({
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
       with: {
-        user: { columns: { id: true, name: true, email: true, image: true, designation: true, joiningDate: true } },
+        user: { columns: { id: true, name: true, email: true, image: true } },
         checklists: true,
         hrReviewer: { columns: { id: true, name: true } },
         finalReviewer: { columns: { id: true, name: true } },
@@ -107,8 +124,13 @@ export class ExitService {
       throw new ForbiddenException("Forbidden");
     }
 
+    const facts = data.user ? await this.employment.getFacts(orgId, data.user.id) : undefined;
+    const enrichedUser = data.user
+      ? { ...data.user, designation: facts?.designation ?? null, joiningDate: facts?.joiningDate ?? null }
+      : data.user;
+
     return {
-      ...protectResignationFile(data),
+      ...protectResignationFile({ ...data, user: enrichedUser }),
       progress: this.buildTimeline(data),
     };
   }
@@ -186,7 +208,7 @@ export class ExitService {
   async getLetter(orgId: string, userId: string, isAdmin: boolean, resignationId: number) {
     const resignation = await this.db.query.resignations.findFirst({
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
-      with: { user: { columns: { id: true, name: true, designation: true, joiningDate: true } } },
+      with: { user: { columns: { id: true, name: true } } },
     });
     if (!resignation) throw new NotFoundException("Resignation not found.");
 
@@ -194,16 +216,17 @@ export class ExitService {
       throw new ForbiddenException("Forbidden");
     }
 
-    const org = await this.db.query.organizations.findFirst({
-      where: eq(organizations.id, orgId),
-    });
+    const [org, facts] = await Promise.all([
+      this.db.query.organizations.findFirst({ where: eq(organizations.id, orgId) }),
+      resignation.user ? this.employment.getFacts(orgId, resignation.user.id) : Promise.resolve(undefined),
+    ]);
 
     const employee = resignation.user;
     const letterHtml = generateResignationLetter({
       employeeName: employee?.name ?? "Employee",
-      designation: employee?.designation ?? "N/A",
+      designation: facts?.designation ?? "N/A",
       department: null,
-      joiningDate: employee?.joiningDate ? formatDdMmmYyyy(employee.joiningDate) : "N/A",
+      joiningDate: facts?.joiningDate ? formatDdMmmYyyy(facts.joiningDate) : "N/A",
       date: formatDdMmmYyyy(resignation.createdAt ?? new Date()),
       reason: resignation.reason ?? "",
       reasonCategory: resignation.reasonCategory ?? "",
@@ -345,13 +368,15 @@ export class ExitService {
       .select({
         avgMonths: sql<number>`
           AVG(
-            EXTRACT(EPOCH FROM (${resignations.createdAt} - ${users.joiningDate}::timestamp)) / 2592000
+            EXTRACT(EPOCH FROM (${resignations.createdAt} - ${hrEmployments.joiningDate}::timestamp)) / 2592000
           )::int
         `,
       })
       .from(resignations)
       .innerJoin(users, eq(resignations.userId, users.id))
-      .where(and(eq(resignations.orgId, orgId), sql`${users.joiningDate} IS NOT NULL`));
+      .innerJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .innerJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+      .where(and(eq(resignations.orgId, orgId), isNotNull(hrEmployments.joiningDate)));
 
     const statusCounts = await this.db
       .select({

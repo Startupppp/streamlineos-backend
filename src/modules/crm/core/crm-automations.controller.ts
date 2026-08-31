@@ -18,7 +18,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CrmAutomationsService } from "./crm-automations.service";
 import {
   createAutomationRuleSchema,
@@ -30,6 +29,10 @@ import {
   testAutomationRuleSchema,
   type TestAutomationRuleInput,
 } from "../automation-studio/dto/automation-studio.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("crm")
@@ -46,8 +49,9 @@ export class CrmAutomationsController {
   @Post("automations")
   @RequirePermission("crm:automations:manage")
   @HttpCode(201)
+  @Validate({ body: createAutomationRuleSchema })
   create(
-    @Body(new ZodValidationPipe(createAutomationRuleSchema)) body: CreateAutomationRuleInput,
+    @Body() body: CreateAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.create(u.orgId, body);
@@ -55,9 +59,10 @@ export class CrmAutomationsController {
 
   @Patch("automations/:ruleId")
   @RequirePermission("crm:automations:manage")
+  @Validate({ params: ruleIdParams, body: updateAutomationRuleSchema })
   async update(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Body(new ZodValidationPipe(updateAutomationRuleSchema)) body: UpdateAutomationRuleInput,
+    @Body() body: UpdateAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.automations.update(u.orgId, ruleId, body);
@@ -66,13 +71,15 @@ export class CrmAutomationsController {
   }
 
   @Delete("automations/:ruleId")
-  @HttpCode(204)
+  @HttpCode(200)
   @RequirePermission("crm:automations:manage")
+  @Validate({ params: ruleIdParams })
   async remove(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {
+  ): Promise<{ success: true }> {
     await this.automations.remove(u.orgId, ruleId);
+    return { success: true };
   }
 
   @Get("automation/events")
@@ -89,6 +96,7 @@ export class CrmAutomationsController {
 
   @Patch("automations/:ruleId/enable")
   @RequirePermission("crm:automations:manage")
+  @Validate({ params: ruleIdParams })
   enable(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -98,6 +106,7 @@ export class CrmAutomationsController {
 
   @Patch("automations/:ruleId/disable")
   @RequirePermission("crm:automations:manage")
+  @Validate({ params: ruleIdParams })
   disable(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -108,9 +117,10 @@ export class CrmAutomationsController {
   @Post("automations/:ruleId/test")
   @RequirePermission("crm:automations:manage")
   @HttpCode(200)
+  @Validate({ params: ruleIdParams, body: testAutomationRuleSchema })
   testRule(
     @Param("ruleId", ParseIntPipe) ruleId: number,
-    @Body(new ZodValidationPipe(testAutomationRuleSchema)) body: TestAutomationRuleInput,
+    @Body() body: TestAutomationRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.testRule(u.orgId, ruleId, body);
@@ -118,6 +128,7 @@ export class CrmAutomationsController {
 
   @Get("automations/:ruleId/runs")
   @RequirePermission("crm:automations:manage")
+  @Validate({ params: ruleIdParams })
   getRuns(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @Query("page") page = "1",

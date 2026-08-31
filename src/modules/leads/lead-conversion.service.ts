@@ -5,17 +5,14 @@ import {
   clientPartyMap,
   projects,
   tickets,
-  users,
 } from "../../db/schema";
+import { allocateTicketNumbers } from "../build/core/lib/allocate-ticket-number";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { TenantTx } from "../../db/drizzle.types";
 import { logger } from "../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { AccessService } from "../access/access.service";
-import { EmailService } from "../email/email.service";
-import { appUrl } from "../email/app-url";
-import { getLeadStatusChangeEmailTemplate } from "../email/templates/crm";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import type { TransitionLeadStatusInput } from "./dto/lead-mutations.schemas";
 import { updateMirroredLeads } from "../party/party-legacy-leads";
@@ -39,7 +36,6 @@ export class LeadConversionService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly dispatch: NotificationDispatchService,
-    private readonly email: EmailService,
     private readonly merges: PartyMergeService,
   ) {}
 
@@ -295,23 +291,30 @@ export class LeadConversionService {
         where: and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
       });
       if (firstProject) {
-        const ticketCountResult = await this.db
-          .select({ count: count() })
-          .from(tickets)
-          .where(eq(tickets.projectId, firstProject.id));
-        const nextTicketNumber = (ticketCountResult[0]?.count ?? 0) + 1;
-
-        await this.db.insert(tickets).values({
-          orgId,
-          title: `Onboard converted lead: ${lead.name}`,
-          description: `Lead "${lead.name}" has been converted.\nCompany: ${lead.company || "N/A"}\nEmail: ${lead.email || "N/A"}\nPhone: ${lead.phone || "N/A"}`,
-          type: "TASK",
-          status: "TODO",
-          priority: "HIGH",
-          projectId: firstProject.id,
-          ticketNumber: nextTicketNumber,
-          reporterId: userId,
+        const existingOnboardTicket = await this.db.query.tickets.findFirst({
+          where: and(
+            eq(tickets.projectId, firstProject.id),
+            eq(tickets.orgId, orgId),
+            eq(tickets.title, `Onboard converted lead: ${lead.name}`),
+          ),
+          columns: { id: true },
         });
+        if (!existingOnboardTicket) {
+          await this.db.transaction(async (tx) => {
+            const nextTicketNumber = await allocateTicketNumbers(tx, orgId, firstProject.id);
+            await tx.insert(tickets).values({
+              orgId,
+              title: `Onboard converted lead: ${lead.name}`,
+              description: `Lead "${lead.name}" has been converted.\nCompany: ${lead.company || "N/A"}\nEmail: ${lead.email || "N/A"}\nPhone: ${lead.phone || "N/A"}`,
+              type: "TASK",
+              status: "TODO",
+              priority: "HIGH",
+              projectId: firstProject.id,
+              ticketNumber: nextTicketNumber,
+              reporterId: userId,
+            });
+          });
+        }
       }
 
       await this.dispatch.emit({
@@ -339,39 +342,6 @@ export class LeadConversionService {
           link: `/crm/clients`,
         });
 
-      const salesRepId = lead.assignedToId || userId;
-      const idsToFetch = [...new Set([salesRepId, ...(crmAssigneeId ? [crmAssigneeId] : [])])];
-      const userRows = await this.db
-        .select({ id: users.id, email: users.email, name: users.name })
-        .from(users)
-        .where(inArray(users.id, idsToFetch));
-      const userMap = new Map(userRows.map((u) => [u.id, u]));
-
-      const salesRep = userMap.get(salesRepId);
-      if (salesRep?.email) {
-        const { subject, html } = getLeadStatusChangeEmailTemplate({
-          recipientName: salesRep.name ?? "Team Member",
-          leadName: lead.name,
-          fromStatus: null,
-          toStatus: "Converted",
-          leadUrl: `${appUrl()}/crm/clients`,
-        });
-        await this.email.sendEmail({ to: salesRep.email, subject, html });
-      }
-
-      if (crmAssigneeId) {
-        const crmUser = userMap.get(crmAssigneeId);
-        if (crmUser?.email) {
-          const { subject, html } = getLeadStatusChangeEmailTemplate({
-            recipientName: crmUser.name ?? "Team Member",
-            leadName: lead.name,
-            fromStatus: null,
-            toStatus: "Converted",
-            leadUrl: `${appUrl()}/crm/clients`,
-          });
-          await this.email.sendEmail({ to: crmUser.email, subject, html });
-        }
-      }
     } catch (err) {
       logSideEffectFailure("conversion notification emails", { orgId, leadId: lead.id })(err);
       return;

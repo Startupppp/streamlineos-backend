@@ -17,7 +17,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { SalaryStructureTemplatesService } from "./salary-structure-templates.service";
 import {
   createSalaryStructureTemplateSchema,
@@ -25,6 +24,10 @@ import {
   type CreateSalaryStructureTemplateInput,
   type UpdateSalaryStructureTemplateInput,
 } from "./dto/payroll.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @UseGuards(JwtAuthGuard, ModuleGuard)
@@ -43,9 +46,10 @@ export class SalaryStructureTemplatesController {
   @HttpCode(201)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
+  @Validate({ body: createSalaryStructureTemplateSchema })
   create(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createSalaryStructureTemplateSchema)) body: CreateSalaryStructureTemplateInput,
+    @Body() body: CreateSalaryStructureTemplateInput,
   ) {
     return this.service.create(u.orgId, body);
   }
@@ -53,10 +57,11 @@ export class SalaryStructureTemplatesController {
   @Patch(":templateId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
+  @Validate({ params: templateIdParams, body: updateSalaryStructureTemplateSchema })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(updateSalaryStructureTemplateSchema)) body: UpdateSalaryStructureTemplateInput,
+    @Body() body: UpdateSalaryStructureTemplateInput,
   ) {
     return this.service.update(u.orgId, templateId, body);
   }
@@ -65,6 +70,7 @@ export class SalaryStructureTemplatesController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:manage")
+  @Validate({ params: templateIdParams })
   remove(
     @CurrentUser() u: CurrentUserContext,
     @Param("templateId", ParseIntPipe) templateId: number,

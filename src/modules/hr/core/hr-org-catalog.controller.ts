@@ -17,9 +17,13 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrOrgCatalogService } from "./hr-org-catalog.service";
 import { z } from "zod";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const roleIdParams = z.object({ roleId: z.coerce.number().int().positive() }).strict();
+const levelIdParams = z.object({ levelId: z.coerce.number().int().positive() }).strict();
 
 const catalogNameSchema = z
   .string()
@@ -85,8 +89,9 @@ export class HrOrgCatalogController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @Validate({ body: createCatalogSchema })
   createJobRole(
-    @Body(new ZodValidationPipe(createCatalogSchema)) body: CreateCatalogInput,
+    @Body() body: CreateCatalogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.catalog.createJobRole(u.orgId, body);
@@ -95,9 +100,10 @@ export class HrOrgCatalogController {
   @Patch("roles/:roleId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: roleIdParams, body: updateCatalogSchema })
   updateJobRole(
     @Param("roleId", ParseIntPipe) roleId: number,
-    @Body(new ZodValidationPipe(updateCatalogSchema)) body: UpdateCatalogInput,
+    @Body() body: UpdateCatalogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.catalog.updateJobRole(u.orgId, roleId, body);
@@ -107,6 +113,7 @@ export class HrOrgCatalogController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: roleIdParams })
   deleteJobRole(
     @Param("roleId", ParseIntPipe) roleId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -125,8 +132,9 @@ export class HrOrgCatalogController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @Validate({ body: createCatalogSchema })
   createJobLevel(
-    @Body(new ZodValidationPipe(createCatalogSchema)) body: CreateCatalogInput,
+    @Body() body: CreateCatalogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.catalog.createJobLevel(u.orgId, body);
@@ -135,9 +143,10 @@ export class HrOrgCatalogController {
   @Patch("levels/:levelId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: levelIdParams, body: updateCatalogSchema })
   updateJobLevel(
     @Param("levelId", ParseIntPipe) levelId: number,
-    @Body(new ZodValidationPipe(updateCatalogSchema)) body: UpdateCatalogInput,
+    @Body() body: UpdateCatalogInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.catalog.updateJobLevel(u.orgId, levelId, body);
@@ -147,6 +156,7 @@ export class HrOrgCatalogController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: levelIdParams })
   deleteJobLevel(
     @Param("levelId", ParseIntPipe) levelId: number,
     @CurrentUser() u: CurrentUserContext,

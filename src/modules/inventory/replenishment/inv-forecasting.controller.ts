@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvReplenishmentService } from "./inv-replenishment.service";
@@ -28,6 +27,12 @@ import { ReorderProposalService } from "./forecast/reorder-proposal.service";
 import { ReplenishmentSimulatorService } from "./forecast/replenishment-simulator.service";
 import { ForecastPersistenceService } from "./forecast/forecast-persistence.service";
 import { simulateSchema, type SimulateInput } from "./dto/simulate.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const productVariantIdParams = z.object({ productVariantId: z.coerce.number().int().positive() }).strict();
+const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
+
 
 /**
  * C1 note on permissions. Every route here is gated on
@@ -64,9 +69,10 @@ export class InvForecastingController {
   @Post("versions/:productVariantId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
+  @Validate({ params: productVariantIdParams, body: generateForecastSchema })
   async generateVersion(
     @Param("productVariantId", ParseIntPipe) productVariantId: number,
-    @Body(new ZodValidationPipe(generateForecastSchema)) body: GenerateForecastBody,
+    @Body() body: GenerateForecastBody,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const warehouseId = await this.demandBaseline.scopeFor(u.orgId, u.userId, body.warehouseId);
@@ -92,8 +98,9 @@ export class InvForecastingController {
   @Post("versions/refresh")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
+  @Validate({ body: refreshForecastsSchema })
   async refreshVersions(
-    @Body(new ZodValidationPipe(refreshForecastsSchema)) body: RefreshForecastsBody,
+    @Body() body: RefreshForecastsBody,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const warehouseId = await this.demandBaseline.scopeFor(u.orgId, u.userId, body.warehouseId);
@@ -108,9 +115,10 @@ export class InvForecastingController {
   @Get("versions/:productVariantId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
+  @Validate({ params: productVariantIdParams, query: forecastVersionsQuerySchema })
   async listVersions(
     @Param("productVariantId", ParseIntPipe) productVariantId: number,
-    @Query(new ZodValidationPipe(forecastVersionsQuerySchema)) query: ForecastVersionsQuery,
+    @Query() query: ForecastVersionsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const warehouseId = await this.demandBaseline.scopeFor(u.orgId, u.userId, query.warehouseId);
@@ -124,9 +132,10 @@ export class InvForecastingController {
   @Get("versions/:productVariantId/latest")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
+  @Validate({ params: productVariantIdParams, query: forecastScopeSchema })
   async latestVersion(
     @Param("productVariantId", ParseIntPipe) productVariantId: number,
-    @Query(new ZodValidationPipe(forecastScopeSchema)) query: ForecastScopeInput,
+    @Query() query: ForecastScopeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const warehouseId = await this.demandBaseline.scopeFor(u.orgId, u.userId, query.warehouseId);
@@ -140,9 +149,10 @@ export class InvForecastingController {
   @Post("simulate/:productVariantId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
+  @Validate({ params: productVariantIdParams, body: simulateSchema })
   async simulate(
     @Param("productVariantId", ParseIntPipe) productVariantId: number,
-    @Body(new ZodValidationPipe(simulateSchema)) body: SimulateInput,
+    @Body() body: SimulateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const warehouseId = await this.demandBaseline.scopeFor(u.orgId, u.userId, body.warehouseId);
@@ -161,9 +171,10 @@ export class InvForecastingController {
   @Get("reorder-proposal/:productVariantId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
+  @Validate({ params: productVariantIdParams, query: forecastPolicyScopeSchema })
   async reorderProposalFor(
     @Param("productVariantId", ParseIntPipe) productVariantId: number,
-    @Query(new ZodValidationPipe(forecastPolicyScopeSchema)) query: ForecastPolicyScopeInput,
+    @Query() query: ForecastPolicyScopeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const warehouseId = await this.demandBaseline.scopeFor(u.orgId, u.userId, query.warehouseId);
@@ -178,6 +189,7 @@ export class InvForecastingController {
   @Get("lead-time/vendor/:vendorId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
+  @Validate({ params: vendorIdParams })
   vendorLeadTime(
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -192,9 +204,10 @@ export class InvForecastingController {
   @Get("safety-stock/:productVariantId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
+  @Validate({ params: productVariantIdParams, query: forecastPolicyScopeSchema })
   async safetyStockPolicyFor(
     @Param("productVariantId", ParseIntPipe) productVariantId: number,
-    @Query(new ZodValidationPipe(forecastPolicyScopeSchema)) query: ForecastPolicyScopeInput,
+    @Query() query: ForecastPolicyScopeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const warehouseId = await this.demandBaseline.scopeFor(u.orgId, u.userId, query.warehouseId);
@@ -213,9 +226,10 @@ export class InvForecastingController {
   @Get("baseline/:productVariantId")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
+  @Validate({ params: productVariantIdParams, query: forecastScopeSchema })
   async baseline(
     @Param("productVariantId", ParseIntPipe) productVariantId: number,
-    @Query(new ZodValidationPipe(forecastScopeSchema)) query: ForecastScopeInput,
+    @Query() query: ForecastScopeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const warehouseId = await this.demandBaseline.scopeFor(u.orgId, u.userId, query.warehouseId);
@@ -228,8 +242,9 @@ export class InvForecastingController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
+  @Validate({ query: forecastingSchema })
   getForecasting(
-    @Query(new ZodValidationPipe(forecastingSchema)) filters: ForecastingInput,
+    @Query() filters: ForecastingInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.replenishment.getForecasting(u.orgId, filters);

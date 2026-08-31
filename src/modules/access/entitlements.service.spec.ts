@@ -67,11 +67,28 @@ function buildMockCache(
   const cached = jest.fn().mockImplementation(
     cachedImpl ?? (async (_key: string, fn: () => Promise<unknown>) => fn()),
   );
+  const cachedForOrg = jest
+    .fn()
+    .mockImplementation(
+      (orgId: string, key: string, fn: () => Promise<unknown>, ttl?: number) =>
+        cached(`${orgId}:${key}`, fn, ttl),
+    );
   const invalidate = jest.fn().mockResolvedValue(undefined);
+  const invalidateForOrg = jest
+    .fn()
+    .mockImplementation((orgId: string, key: string) => invalidate(`${orgId}:${key}`));
 
-  const cache: DeepPartial<CacheService> = { cached, invalidate };
+  const cache: DeepPartial<CacheService> = {
+    cached,
+    cachedForOrg,
+    invalidate,
+    invalidateForOrg,
+  };
 
-  return { cache: cache as unknown as CacheService, mocks: { cached, invalidate } };
+  return {
+    cache: cache as unknown as CacheService,
+    mocks: { cached, cachedForOrg, invalidate, invalidateForOrg },
+  };
 }
 
 function buildService(
@@ -98,8 +115,9 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).isModuleEnabled("org-1", "hr");
 
-      expect(cacheMocks.cached).toHaveBeenCalledWith(
-        "entitlements:modules:org-1",
+      expect(cacheMocks.cachedForOrg).toHaveBeenCalledWith(
+        "org-1",
+        "entitlements:modules",
         expect.any(Function),
         30,
       );
@@ -307,8 +325,8 @@ describe("EntitlementsService", () => {
 
       await buildService(db, cache).setModuleEnabled("org-1", "hr", true, "user-1");
 
-      expect(cacheMocks.invalidate).toHaveBeenCalledWith("entitlements:module:org-1:hr");
-      expect(cacheMocks.invalidate).toHaveBeenCalledWith("entitlements:modules:org-1");
+      expect(cacheMocks.invalidate).toHaveBeenCalledWith("org-1:entitlements:module:hr");
+      expect(cacheMocks.invalidate).toHaveBeenCalledWith("org-1:entitlements:modules");
       expect(cacheMocks.invalidate).toHaveBeenCalledWith("user:session:user-1");
       expect(cacheMocks.invalidate).toHaveBeenCalledTimes(3);
     });

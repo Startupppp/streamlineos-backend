@@ -23,6 +23,7 @@ import {
 } from "./lib/bank-validation";
 
 import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 
 
 
@@ -70,7 +71,10 @@ function resolveBankCountry(bankCountry: string | undefined, currency: string): 
 
 export class PayoutValidationService {
 
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly efService: EmploymentFactsService,
+  ) {}
 
 
 
@@ -90,7 +94,7 @@ export class PayoutValidationService {
 
     const [payees, runEmployees] = await Promise.all([
 
-      loadRunEmployeePayees(this.db, orgId, runId),
+      loadRunEmployeePayees(this.db, orgId, runId, this.efService),
 
       this.db
 

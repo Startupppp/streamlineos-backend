@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { AccountingModule } from "../../accounting/core/accounting.module";
 import { InvoicesModule } from "../../invoices/invoices.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
@@ -14,9 +15,10 @@ import { CollectionsController } from "./collections.controller";
 import { CollectionsService } from "./collections.service";
 import { ArPaymentsController } from "./ar-payments.controller";
 import { ArPaymentsService } from "./ar-payments.service";
+import { ReminderOutboxConsumer } from "./reminder-outbox.consumer";
 
 @Module({
-  imports: [AccountingModule, InvoicesModule, NotificationsModule],
+  imports: [AccountingModule, InvoicesModule, NotificationsModule, OutboxModule],
   controllers: [
     CreditNotesController,
     RecurringInvoicesController,
@@ -32,6 +34,7 @@ import { ArPaymentsService } from "./ar-payments.service";
     StatementsService,
     CollectionsService,
     ArPaymentsService,
+    ReminderOutboxConsumer,
   ],
   exports: [RecurringInvoicesService, RemindersService],
 })

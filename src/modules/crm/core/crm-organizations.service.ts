@@ -7,19 +7,16 @@ import {
   createMirroredOrganization,
   softDeleteMirroredOrganizations,
   updateMirroredOrganization,
-  updateMirroredOrganizations,
 } from "../../party/party-legacy-orgs";
 import { PARTY_OF_CRM_ORG } from "../crm-party-reads";
 import { crmOrgIdsOfParties } from "../../party/party-legacy-employer";
 import { leadIdsOfParties, parentColumnOf } from "../../party/party-legacy-associations";
-import { PartyMergeService } from "../../party/party-merge.service";
 import { isLegacyResolved, resolveLegacyParty } from "../../party/party-legacy-seam";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import type {
-  MergeOrgsInput,
   OrgDuplicatesQueryInput,
   OrganizationCreateInput,
   OrganizationListInput,
@@ -79,7 +76,6 @@ export class CrmOrganizationsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
-    private readonly merges: PartyMergeService,
   ) {}
 
   /**
@@ -441,130 +437,4 @@ export class CrmOrganizationsService {
     return Boolean(removed);
   }
 
-  /**
-   * Two company records that are one company.
-   *
-   * Delegated to `PartyMergeService`, which is the one merge mechanism this
-   * codebase has: snapshotted, attributable and reversible. The service this
-   * replaced rewrote both rows in SQL, set `merged_into_id` and offered no way
-   * back — and `merged_into_id` is not written any more, for the same reason
-   * `leads.merged_into_id` stopped being written: `party_merges` is the record,
-   * and a second pointer nothing can revert is worse than none.
-   *
-   * **The survivor may not be the id the caller nominated.** `chooseSurvivor`
-   * keeps the older record, because a merge that discards the record with the
-   * longer history discards the history. So the response names the survivor the
-   * merge actually chose rather than echoing `primaryId` back; a caller that
-   * assumed those were the same thing now gets told otherwise.
-   */
-  async mergeOrganizations(orgId: string, input: MergeOrgsInput, actorId: string) {
-    const [primaryPartyId, duplicatePartyId] = await Promise.all([
-      this.partyOf(orgId, input.primaryId),
-      this.partyOf(orgId, input.duplicateId),
-    ]);
-
-    if (!primaryPartyId) throw new NotFoundException("Primary organization not found in this org");
-    if (!duplicatePartyId)
-      throw new NotFoundException("Duplicate organization not found in this org");
-
-    // The record the user picked survives. The dialog shows two company cards
-    // and asks which one to keep, and `planMerge` resolves every field conflict
-    // in the survivor's favour -- so letting `chooseSurvivor` overrule the
-    // choice would hand a stale stub's name, domain and industry to the record
-    // the user was looking at, and report success. The retired
-    // `crm-org-merge.service` kept `primaryId` too; this is that behaviour, not
-    // a new one.
-    const outcome = await this.merges.merge(orgId, {
-      leftPartyId: primaryPartyId,
-      rightPartyId: duplicatePartyId,
-      decidedBy: "USER",
-      userId: actorId,
-      preferSurvivorPartyId: primaryPartyId,
-    });
-
-    await this.reparentSubsidiaries(orgId, input.duplicateId, input.primaryId);
-
-    await this.invalidateOrgCaches(orgId);
-
-    return {
-      success: true,
-      survivorId: input.primaryId,
-      mergedId: input.duplicateId,
-      partyMergeId: outcome.partyMergeId,
-      conflicts: outcome.conflicts,
-    };
-  }
-
-  /**
-   * The subsidiaries of the company that lost, handed to the one that won.
-   *
-   * The account hierarchy is `business_parties.parent_party_id` since 0265 --
-   * a second link of the same shape as `employer_party_id` rather than a second
-   * meaning for it, because a subsidiary's parent is not its employer. The merge
-   * still has to move it explicitly, because a merge soft-deletes the loser and
-   * every child left pointing at it would silently drop out of
-   * `getAccountHierarchy`, which filters deleted parents out.
-   *
-   * Through the writer like every other legacy write, never a direct UPDATE.
-   *
-   * **Still the one part of an org merge a revert may not undo.** 0265 put the
-   * hierarchy on Party, so `parent_party_id` is now inside what a snapshot
-   * *could* capture -- but this re-parenting happens after `merge` has already
-   * taken its snapshot, so the children moved here are not in it. Reverting a
-   * merge restores both companies and leaves the subsidiaries on the survivor;
-   * re-parenting them is still a manual step. Stated here rather than discovered
-   * later; closing it means moving this inside the merge, which is its own ticket.
-   */
-  private async reparentSubsidiaries(
-    orgId: string,
-    mergedId: number,
-    survivorId: number,
-  ): Promise<void> {
-    const mergedPartyId = await this.partyOf(orgId, mergedId);
-    // The loser is soft-deleted by the time this runs, and `partyOf` refuses a
-    // deleted party — so the party is resolved through the map directly here.
-    const [mergedMap] = mergedPartyId
-      ? [{ partyId: mergedPartyId }]
-      : await this.db
-          .select({ partyId: crmOrgPartyMap.partyId })
-          .from(crmOrgPartyMap)
-          .where(
-            and(
-              eq(crmOrgPartyMap.organizationId, orgId),
-              eq(crmOrgPartyMap.crmOrganizationId, mergedId),
-            ),
-          )
-          .limit(1);
-    if (!mergedMap) return;
-
-    /*
-     * The children are parties whose `parent_party_id` is the loser, and every
-     * company id each of them answers to has to move: after an earlier merge one
-     * party legitimately carries several, and re-parenting only one of them would
-     * leave the rest pointing at a record the merge removed.
-     */
-    const children = await this.db
-      .select({ id: crmOrgPartyMap.crmOrganizationId })
-      .from(businessParties)
-      .innerJoin(
-        crmOrgPartyMap,
-        and(
-          eq(crmOrgPartyMap.partyId, businessParties.partyId),
-          eq(crmOrgPartyMap.organizationId, businessParties.organizationId),
-        ),
-      )
-      .where(
-        and(
-          eq(businessParties.organizationId, orgId),
-          eq(businessParties.parentPartyId, mergedMap.partyId),
-        ),
-      );
-    if (children.length === 0) return;
-    await updateMirroredOrganizations(
-      this.db,
-      orgId,
-      children.map((child) => child.id),
-      { parentId: survivorId },
-    );
-  }
 }

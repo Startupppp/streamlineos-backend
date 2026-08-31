@@ -41,6 +41,10 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const publicKeyParams = z.object({ publicKey: z.string().min(1) }).strict();
 
 const ALLOWED_IMAGE_MIMES = new Set([
   "image/jpeg",
@@ -121,6 +125,7 @@ export class FeedbucketPublicController {
   ) {}
 
   @Get(":publicKey/config")
+  @Validate({ params: publicKeyParams })
   async config(@Param("publicKey") publicKey: string, @Req() req: Request) {
     const widget = await this.publicService.resolveWidget(publicKey);
     if (!widget) throw new NotFoundException("Widget not found");
@@ -156,6 +161,7 @@ export class FeedbucketPublicController {
       { limits: { fileSize: MAX_RECORDING_BYTES } },
     ),
   )
+  @Validate({ params: publicKeyParams })
   async submit(
     @Param("publicKey") publicKey: string,
     @Body() rawBody: Record<string, unknown>,
@@ -310,6 +316,7 @@ export class FeedbucketPublicController {
       limits: { fileSize: MAX_SCREENSHOT_BYTES },
     }),
   )
+  @Validate({ params: publicKeyParams })
   async aiAssist(
     @Param("publicKey") publicKey: string,
     @Body() rawBody: Record<string, unknown>,

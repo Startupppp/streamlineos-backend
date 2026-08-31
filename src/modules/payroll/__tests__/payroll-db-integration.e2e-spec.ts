@@ -24,16 +24,21 @@ import {
   payrollBankBatchItems,
   payrollRunEvents,
   employeeSalaryProfiles,
+  hrPeople,
+  hrEmployments,
+  hrEmployeeSensitiveFields,
 } from '../../../db/schema';
-import { encryptBankDetails } from '../../hr/onboarding/core/crypto.helpers';
+import { sealBankDetails } from '../../../common/hr/canonical-bank-details';
+import { keyReferenceOf } from '../../../common/security/envelope-encryption';
 import { DEFAULT_PAYROLL_TOGGLES } from '../payroll.types';
 import { PayoutBatchesService } from '../payout/payout-batches.service';
+import { BatchCreatorService } from '../payout/batch-creator.service';
 import { validateEnv } from '../../../config/env.validation';
 import { ProfilesService } from '../runs/profiles.service';
 import { AuditService } from '../../../common/audit/audit.service';
 import { StorageService } from '../../storage/storage.service';
-import type { PayrollPostingService } from '../payroll-posting.service';
 import { ForbiddenException } from '@nestjs/common';
+import { EmploymentFactsService } from '../../directory/employment-facts.service';
 
 type TestDb = PostgresJsDatabase<typeof schema>;
 
@@ -122,18 +127,6 @@ d('Payroll DB Integration', () => {
 
     await cleanupStaleData(db);
 
-    const encryptedBank = encryptBankDetails({
-      accountNumber: '1234567890',
-      bankName: 'Test Bank',
-      branch: 'Main Branch',
-      ifsc: 'TEST0001234',
-      accountHolder: 'User A Test',
-    });
-
-    // organizations.owner_membership_id is NOT NULL behind a DEFERRABLE composite FK
-    // onto (organization_members.org_id, id), so the pointer must name a real
-    // membership by commit — allocate the ids first and write both in one
-    // transaction, exactly as registration does.
     const seqRows = await sql<{ id: string }[]>`
       SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id
       FROM generate_series(1, 2)
@@ -148,7 +141,7 @@ d('Payroll DB Integration', () => {
       ]);
 
       await tx.insert(users).values([
-        { id: USER_A, email: `${P}user-a@example.com`, bankDetails: encryptedBank },
+        { id: USER_A, email: `${P}user-a@example.com` },
         { id: USER_B, email: `${P}user-b@example.com` },
       ]);
 
@@ -156,6 +149,32 @@ d('Payroll DB Integration', () => {
         { id: ownerMembershipA, userId: USER_A, orgId: ORG_A, isOwner: true },
         { id: ownerMembershipB, userId: USER_B, orgId: ORG_B, isOwner: true },
       ]);
+    });
+
+    const [hrPersonA] = await db
+      .insert(hrPeople)
+      .values({ orgId: ORG_A, userId: USER_A })
+      .returning({ id: hrPeople.id });
+    if (!hrPersonA) throw new Error('hrPeople insert failed');
+
+    const [hrEmpA] = await db
+      .insert(hrEmployments)
+      .values({ orgId: ORG_A, personId: hrPersonA.id, employeeNumber: `${P}emp-001` })
+      .returning({ id: hrEmployments.id });
+    if (!hrEmpA) throw new Error('hrEmployments insert failed');
+
+    const sealedBank = sealBankDetails({
+      accountNumber: '1234567890',
+      bankName: 'Test Bank',
+      branch: 'Main Branch',
+      ifsc: 'TEST0001234',
+      accountHolder: 'User A Test',
+    });
+    await db.insert(hrEmployeeSensitiveFields).values({
+      orgId: ORG_A,
+      employmentId: hrEmpA.id,
+      bankDetails: sealedBank,
+      encryptionKeyRef: keyReferenceOf(sealedBank),
     });
 
     const [policy] = await db
@@ -322,7 +341,7 @@ describe('Scenario 1 — Idempotency replay', () => {
     it('returns the same batch on a second call with an identical idempotency key', async () => {
       const auditSvc = new AuditService(db);
       const storageSvc = new StorageService({} as unknown as MediaCompressionService, storageConfig);
-      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService);
+      const svc = new BatchCreatorService(db, auditSvc, storageSvc, new EmploymentFactsService(db));
 
       const idemKey = `${P}idem-key-001`;
 
@@ -448,7 +467,7 @@ describe('Scenario 1 — Idempotency replay', () => {
     it('rejects fetching another org member bank details for a user outside the caller org', async () => {
       const auditSvc = new AuditService(db);
       const storageSvc = new StorageService({} as unknown as MediaCompressionService, storageConfig);
-      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService);
+      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, new EmploymentFactsService(db));
 
       await expect(svc.getBankDetails(ORG_A, USER_B, USER_A)).rejects.toThrow(ForbiddenException);
     });
@@ -456,7 +475,7 @@ describe('Scenario 1 — Idempotency replay', () => {
     it('allows fetching bank details for a confirmed member of the caller org', async () => {
       const auditSvc = new AuditService(db);
       const storageSvc = new StorageService({} as unknown as MediaCompressionService, storageConfig);
-      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, { postFinalized: async () => undefined } as unknown as PayrollPostingService);
+      const svc = new PayoutBatchesService(db, auditSvc, storageSvc, new EmploymentFactsService(db));
 
       const result = await svc.getBankDetails(ORG_A, USER_A, USER_A);
       expect(result.accountNumber).toBe('1234567890');
@@ -464,7 +483,7 @@ describe('Scenario 1 — Idempotency replay', () => {
 
     it('rejects creating a salary profile for a user who is not a member of the caller org', async () => {
       const auditSvc = new AuditService(db);
-      const svc = new ProfilesService(db, auditSvc);
+      const svc = new ProfilesService(db, auditSvc, {} as never);
 
       await expect(
         svc.createProfile(ORG_A, USER_B, USER_A, {

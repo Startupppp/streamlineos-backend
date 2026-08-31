@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+
 const criteriaSchema = z.object({
   countries: z.array(z.string()).optional(),
   states: z.array(z.string()).optional(),
@@ -12,7 +14,7 @@ const criteriaSchema = z.object({
 }).optional().default({});
 
 export const territoryListSchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(50),
+  limit: pageSizeField(50),
 });
 
 export const territoryCreateSchema = z.object({

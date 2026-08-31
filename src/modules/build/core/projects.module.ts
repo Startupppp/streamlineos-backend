@@ -23,7 +23,6 @@ import { ProjectsService } from "./projects.service";
 import { ProjectsQueryService } from "./projects-query.service";
 import { ProjectsWriteService } from "./projects-write.service";
 import { ProjectsProvisionService } from "./projects-provision.service";
-import { ProjectsEmailService } from "./projects-email.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import { BuildDueSweepService } from "./build-due-sweep.service";
 import { BuildNotificationVisibility } from "./build-notification-visibility";
@@ -33,6 +32,7 @@ import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service"
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
+import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresources.service";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
@@ -84,7 +84,6 @@ import { BuildReleasePublishedConsumerService } from "./build-release-published-
     ProjectsQueryService,
     ProjectsWriteService,
     ProjectsProvisionService,
-    ProjectsEmailService,
     ProjectsMembersService,
     ProjectsTicketsService,
     ProjectsTicketsCreateService,
@@ -92,6 +91,7 @@ import { BuildReleasePublishedConsumerService } from "./build-release-published-
     ProjectsTicketsQueryService,
     ProjectsWorkQueryService,
     ProjectsTicketsReadService,
+    ProjectsTicketsDetailService,
     ProjectsTicketsTransferService,
     ProjectsTicketSubresourcesService,
     ProjectsTicketCommentsService,

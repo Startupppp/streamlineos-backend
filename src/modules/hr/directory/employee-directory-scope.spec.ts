@@ -41,7 +41,7 @@ describe("employee directory scope", () => {
     const chain = limitedSelect([]);
     const db = { select: jest.fn().mockReturnValue(chain) };
     const scopeSpy = jest.spyOn(applyScopeModule, "applyScope");
-    const service = new EmployeesService(db as never, undefined as never);
+    const service = new EmployeesService(db as never, undefined as never, undefined as never);
 
     await expect(
       service.assertEmployeeVisible("org-1", "actor-1", "target-1", "team"),
@@ -154,7 +154,8 @@ describe("employee directory scope", () => {
       query: { orgUnits: { findMany: jest.fn().mockResolvedValue([]) } },
     };
     const scopeSpy = jest.spyOn(applyScopeModule, "applyScope");
-    const service = new OrgStructureService(db as never, cache as never);
+    const employment = { getFactsBatch: jest.fn().mockResolvedValue(new Map()) };
+    const service = new OrgStructureService(db as never, cache as never, employment as never);
 
     await service.getDirectory("org-1", "actor-1", "none");
 

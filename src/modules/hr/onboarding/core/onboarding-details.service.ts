@@ -13,15 +13,21 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../../common/cache/cache-keys";
+import { organizationPeople } from "../../../../db/schema/directory/organization-people";
 import {
   decrypt,
-  decryptBankDetails,
   encrypt,
-  encryptBankDetails,
 } from "./crypto.helpers";
+import { sealSensitiveJson } from "../../../../common/security/sensitive-field";
+import { readBankDetails } from "../../../../common/hr/canonical-bank-details";
 import { resolveCountryRequirements } from "./onboarding-requirements.catalog";
 import type { BankDetailsInput, PersonalDetailsInput } from "./dto/onboarding.schemas";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import {
+  livePersonOfUser,
+  livePersonOfEmployment,
+  primaryEmploymentOfPerson,
+} from "../../../directory/employment-query";
 
 @Injectable()
 export class OnboardingDetailsService {
@@ -67,7 +73,7 @@ export class OnboardingDetailsService {
         .where(eq(users.id, userId));
 
       await tx
-        .update(hrPeople)
+        .update(organizationPeople)
         .set({
           phone: input.phone,
           ...(input.gender ? { gender: input.gender } : {}),
@@ -91,9 +97,9 @@ export class OnboardingDetailsService {
         })
         .where(
           and(
-            eq(hrPeople.orgId, orgId),
-            eq(hrPeople.userId, userId),
-            isNull(hrPeople.deletedAt),
+            eq(organizationPeople.organizationId, orgId),
+            eq(organizationPeople.userId, userId),
+            isNull(organizationPeople.deletedAt),
           ),
         );
     }, { orgId });
@@ -110,20 +116,20 @@ export class OnboardingDetailsService {
         userGender: users.gender,
         userDateOfBirth: users.dateOfBirth,
         userEmergencyContact: users.emergencyContact,
-        personPhone: hrPeople.phone,
-        personGender: hrPeople.gender,
-        personDateOfBirth: hrPeople.dateOfBirth,
-        personAddress: hrPeople.address,
-        personEmergencyContact: hrPeople.emergencyContact,
+        personPhone: organizationPeople.phone,
+        personGender: organizationPeople.gender,
+        personDateOfBirth: organizationPeople.dateOfBirth,
+        personAddress: organizationPeople.address,
+        personEmergencyContact: organizationPeople.emergencyContact,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .leftJoin(hrPeople, livePersonOfUser(orgId, organizationMembers.userId))
       .leftJoin(
-        hrPeople,
+        organizationPeople,
         and(
-          eq(hrPeople.orgId, organizationMembers.orgId),
-          eq(hrPeople.userId, organizationMembers.userId),
-          isNull(hrPeople.deletedAt),
+          eq(organizationPeople.organizationId, hrPeople.orgId),
+          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
         ),
       )
       .where(
@@ -199,30 +205,11 @@ export class OnboardingDetailsService {
         throw new NotFoundException("User not found in this organization");
       }
 
-      await tx.update(users).set({
-        bankDetails: encryptBankDetails(bankDetails),
-        ...(encryptedTaxId ? { taxId: encryptedTaxId } : {}),
-      }).where(eq(users.id, userId));
-
       const [employment] = await tx
         .select({ id: hrEmployments.id })
         .from(hrEmployments)
-        .innerJoin(
-          hrPeople,
-          and(
-            eq(hrPeople.id, hrEmployments.personId),
-            eq(hrPeople.orgId, hrEmployments.orgId),
-          ),
-        )
-        .where(
-          and(
-            eq(hrEmployments.orgId, orgId),
-            eq(hrEmployments.isPrimary, true),
-            isNull(hrEmployments.deletedAt),
-            eq(hrPeople.userId, userId),
-            isNull(hrPeople.deletedAt),
-          ),
-        )
+        .innerJoin(hrPeople, livePersonOfEmployment(orgId, hrEmployments, hrPeople))
+        .where(and(primaryEmploymentOfPerson(orgId, hrPeople, hrEmployments), eq(hrPeople.userId, userId)))
         .limit(1);
 
       if (employment) {
@@ -238,18 +225,19 @@ export class OnboardingDetailsService {
           iban: bankDetails.iban,
           routingNumber: bankDetails.routingCode,
         };
+        const sealedBankDetails = sealSensitiveJson(sensitiveBankDetails);
         await tx
           .insert(hrEmployeeSensitiveFields)
           .values({
             orgId,
             employmentId: employment.id,
-            bankDetails: sensitiveBankDetails,
+            bankDetails: sealedBankDetails,
             taxId: encryptedTaxId ?? null,
           })
           .onConflictDoUpdate({
             target: hrEmployeeSensitiveFields.employmentId,
             set: {
-              bankDetails: sensitiveBankDetails,
+              bankDetails: sealedBankDetails,
               ...(encryptedTaxId ? { taxId: encryptedTaxId } : {}),
               updatedAt: new Date(),
             },
@@ -265,31 +253,14 @@ export class OnboardingDetailsService {
   async getBankDetails(orgId: string, userId: string) {
     const [user] = await this.db
       .select({
-        bankDetails: users.bankDetails,
-        taxId: users.taxId,
         sensitiveBankDetails: hrEmployeeSensitiveFields.bankDetails,
         sensitiveTaxId: hrEmployeeSensitiveFields.taxId,
         sensitivePanNumber: hrEmployeeSensitiveFields.panNumber,
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .leftJoin(
-        hrPeople,
-        and(
-          eq(hrPeople.orgId, organizationMembers.orgId),
-          eq(hrPeople.userId, organizationMembers.userId),
-          isNull(hrPeople.deletedAt),
-        ),
-      )
-      .leftJoin(
-        hrEmployments,
-        and(
-          eq(hrEmployments.orgId, organizationMembers.orgId),
-          eq(hrEmployments.personId, hrPeople.id),
-          eq(hrEmployments.isPrimary, true),
-          isNull(hrEmployments.deletedAt),
-        ),
-      )
+      .leftJoin(hrPeople, livePersonOfUser(orgId, organizationMembers.userId))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId, hrPeople, hrEmployments))
       .leftJoin(
         hrEmployeeSensitiveFields,
         and(
@@ -309,28 +280,12 @@ export class OnboardingDetailsService {
       throw new NotFoundException("User not found in this organization");
     }
 
-    const userBank = decryptBankDetails(user.bankDetails);
-    const sensitiveBank = user.sensitiveBankDetails;
-    const bank = userBank ?? (sensitiveBank
-      ? {
-          accountNumber: sensitiveBank.accountNumber ?? "",
-          bankName: sensitiveBank.bankName ?? "",
-          branch: sensitiveBank.branch ?? "",
-          ifsc: sensitiveBank.ifsc ?? "",
-          accountHolder: sensitiveBank.accountHolder ?? "",
-          pfUanNumber: sensitiveBank.pfUanNumber,
-          esiIpNumber: sensitiveBank.esiIpNumber,
-          iban: sensitiveBank.iban,
-          swift: sensitiveBank.swift,
-          routingCode: sensitiveBank.routingNumber,
-          statutory: undefined,
-        }
-      : null);
-    const countryCode = userBank?.bankCountry ?? "IN";
+    const bank = user.sensitiveBankDetails ? readBankDetails(user.sensitiveBankDetails) : null;
+    const countryCode = bank?.bankCountry ?? "IN";
     const requirements = resolveCountryRequirements(countryCode);
     const statutory = { ...(bank?.statutory ?? {}) };
     const primaryStatutoryKey = requirements.statutoryFields[0]?.key;
-    const encryptedTaxId = user.taxId ?? user.sensitiveTaxId ?? user.sensitivePanNumber;
+    const encryptedTaxId = user.sensitiveTaxId ?? user.sensitivePanNumber;
     if (encryptedTaxId && primaryStatutoryKey) {
       statutory[primaryStatutoryKey] ??= decrypt(encryptedTaxId);
     }

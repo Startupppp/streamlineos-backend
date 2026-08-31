@@ -27,21 +27,25 @@ function cursorQueryDb(records: Array<{ id: number }>) {
 function legacyPeoplePageDb() {
   const dataQuery = {
     from: jest.fn(),
+    innerJoin: jest.fn(),
     where: jest.fn(),
     orderBy: jest.fn(),
     limit: jest.fn(),
     offset: jest.fn().mockResolvedValue([{ id: 44 }]),
   };
   dataQuery.from.mockReturnValue(dataQuery);
+  dataQuery.innerJoin.mockReturnValue(dataQuery);
   dataQuery.where.mockReturnValue(dataQuery);
   dataQuery.orderBy.mockReturnValue(dataQuery);
   dataQuery.limit.mockReturnValue(dataQuery);
 
   const totalQuery = {
     from: jest.fn(),
+    innerJoin: jest.fn(),
     where: jest.fn().mockResolvedValue([{ total: 21 }]),
   };
   totalQuery.from.mockReturnValue(totalQuery);
+  totalQuery.innerJoin.mockReturnValue(totalQuery);
 
   return {
     db: {

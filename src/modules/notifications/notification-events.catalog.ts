@@ -2,166 +2,41 @@ import type {
   NotificationChannel,
   NotificationEventDefinition,
 } from "./notification-event-definition.types";
-import type { NotificationCategoryValue } from "./notifications.types";
+import {
+  BUILD_TICKET_RESOURCE,
+  DEFAULT_ALLOWED_CHANNELS,
+  IN_APP,
+  IN_APP_EMAIL,
+  IN_APP_PUSH,
+  IN_APP_PUSH_EMAIL,
+  KNOWLEDGE_PAGE_RESOURCE,
+  URGENT_ALLOWED_CHANNELS,
+} from "./notification-event-channel-policy";
+import { notificationEvent } from "./notification-event-factory";
+import { CHAT_NOTIFICATION_EVENTS } from "./notification-events-chat.catalog";
+import { BUILD_NOTIFICATION_EVENTS } from "./notification-events-build.catalog";
 
-type EventOverrides = Partial<
-  Omit<
-    NotificationEventDefinition,
-    "eventKey" | "sourceModule" | "category" | "displayName"
-  >
->;
+const IA = IN_APP;
+const IA_EMAIL = IN_APP_EMAIL;
+const IA_PUSH = IN_APP_PUSH;
+const IA_PUSH_EMAIL = IN_APP_PUSH_EMAIL;
+const KB_PAGE = KNOWLEDGE_PAGE_RESOURCE;
+const BUILD_TICKET = BUILD_TICKET_RESOURCE;
+const ALLOWED_DEFAULT = DEFAULT_ALLOWED_CHANNELS;
+const ALLOWED_URGENT = URGENT_ALLOWED_CHANNELS;
 
-const IA: NotificationChannel[] = ["IN_APP"];
-const IA_EMAIL: NotificationChannel[] = ["IN_APP", "EMAIL"];
-const IA_PUSH: NotificationChannel[] = ["IN_APP", "PUSH"];
-const IA_PUSH_EMAIL: NotificationChannel[] = ["IN_APP", "PUSH", "EMAIL"];
 /**
  * PIPE-003 resource kinds. An event carrying one is delivered only to recipients
  * who can still see the record, re-checked per recipient immediately before render.
  * The owning module registers the resolver; a declared kind with no resolver denies.
  */
-const KB_PAGE = "kb.page";
-const BUILD_TICKET = "build.ticket";
-
-const ALLOWED_DEFAULT: NotificationChannel[] = ["IN_APP", "EMAIL", "PUSH"];
-const ALLOWED_URGENT: NotificationChannel[] = [
-  "IN_APP",
-  "EMAIL",
-  "PUSH",
-  "SMS",
-  "WHATSAPP",
-];
 
 // REG-005: generic on the key so every entry keeps its literal type, which is what
 // makes NotificationEventKey below a real union instead of `string`.
-function e<K extends string>(
-  eventKey: K,
-  sourceModule: string,
-  category: NotificationCategoryValue,
-  displayName: string,
-  overrides: EventOverrides = {},
-): NotificationEventDefinition & { eventKey: K } {
-  return {
-    eventKey,
-    sourceModule,
-    category,
-    displayName,
-    description: overrides.description ?? displayName,
-    defaultPriority: overrides.defaultPriority ?? "NORMAL",
-    defaultType: overrides.defaultType ?? "INFO",
-    defaultChannels: overrides.defaultChannels ?? IA,
-    allowedChannels: overrides.allowedChannels ?? ALLOWED_DEFAULT,
-    mandatory: overrides.mandatory ?? false,
-    userConfigurable: overrides.userConfigurable ?? true,
-    adminConfigurable: overrides.adminConfigurable ?? true,
-    quietHoursBehavior: overrides.quietHoursBehavior ?? "respect",
-    dedupeWindowSeconds: overrides.dedupeWindowSeconds ?? 60,
-    rateLimitWindowSeconds: overrides.rateLimitWindowSeconds ?? 0,
-    rateLimitMax: overrides.rateLimitMax ?? 0,
-    templateKey: overrides.templateKey,
-    audienceResolver: overrides.audienceResolver,
-    visibilityResourceKind: overrides.visibilityResourceKind,
-    ttlSeconds: overrides.ttlSeconds,
-  };
-}
+const e = notificationEvent;
+const CHAT = CHAT_NOTIFICATION_EVENTS;
 
-const CHAT = [
-  e("chat.message.direct", "chat", "CHAT", "Direct message", {
-    defaultChannels: IA_PUSH,
-    dedupeWindowSeconds: 0,
-    ttlSeconds: 3600,
-      rateLimitWindowSeconds: 3600,
-    rateLimitMax: 60,
-  }),
-  e("chat.message.mention", "chat", "CHAT", "You were mentioned", {
-    defaultPriority: "HIGH",
-    defaultChannels: IA_PUSH_EMAIL,
-    dedupeWindowSeconds: 0,
-    ttlSeconds: 3600,
-      rateLimitWindowSeconds: 3600,
-    rateLimitMax: 60,
-  }),
-  e("chat.thread.reply", "chat", "CHAT", "New thread reply", {
-    defaultChannels: IA_PUSH,
-    ttlSeconds: 3600,
-      rateLimitWindowSeconds: 3600,
-    rateLimitMax: 60,
-  }),
-  e("chat.channel.invited", "chat", "CHAT", "Added to a channel", {
-    defaultChannels: IA_EMAIL,
-  }),
-  e("chat.huddle.invite", "chat", "CHAT", "Huddle invitation", {
-    defaultPriority: "HIGH",
-    defaultChannels: IA_PUSH,
-    quietHoursBehavior: "bypass_if_high",
-    dedupeWindowSeconds: 0,
-    ttlSeconds: 300,
-  }),
-  e("chat.reply.reminder", "chat", "CHAT", "Reply reminder", {
-    defaultChannels: IA,
-    ttlSeconds: 3600,
-      rateLimitWindowSeconds: 86400,
-    rateLimitMax: 5,
-  }),
-];
-
-const PROJECTS = [
-  e("build.ticket.assigned", "build", "PROJECTS", "Task assigned to you", {
-    defaultPriority: "HIGH",
-    defaultChannels: IA_PUSH_EMAIL,
-    visibilityResourceKind: BUILD_TICKET,
-      rateLimitWindowSeconds: 3600,
-    rateLimitMax: 50,
-  }),
-  e("build.ticket.due_soon", "build", "PROJECTS", "Task due soon", {
-    defaultChannels: IA_EMAIL,
-    ttlSeconds: 86400,
-  }),
-  e("build.ticket.overdue", "build", "PROJECTS", "Task overdue", {
-    defaultPriority: "HIGH",
-    defaultType: "WARNING",
-    defaultChannels: IA_EMAIL,
-  }),
-  e("build.comment.mention", "build", "PROJECTS", "Mentioned in a comment", {
-    defaultPriority: "HIGH",
-    defaultChannels: IA_PUSH_EMAIL,
-    dedupeWindowSeconds: 0,
-    visibilityResourceKind: BUILD_TICKET,
-      rateLimitWindowSeconds: 3600,
-    rateLimitMax: 60,
-  }),
-  e("build.ticket.status_changed", "build", "PROJECTS", "Task status changed", {
-    defaultPriority: "LOW",
-    defaultChannels: IA,
-      rateLimitWindowSeconds: 3600,
-    rateLimitMax: 100,
-  }),
-  e("build.sprint.started", "build", "PROJECTS", "Sprint started", {
-    defaultChannels: IA,
-  }),
-  e("build.sprint.ending", "build", "PROJECTS", "Sprint ending soon", {
-    defaultChannels: IA_EMAIL,
-    ttlSeconds: 86400,
-  }),
-  e("build.sprint.completed", "build", "PROJECTS", "Sprint completed", {
-    defaultType: "SUCCESS",
-    defaultChannels: IA,
-  }),
-  e("build.release.published", "build", "PROJECTS", "Release published", {
-    defaultPriority: "LOW",
-    defaultType: "SUCCESS",
-    defaultChannels: IA,
-  }),
-  e("build.blocker.created", "build", "PROJECTS", "Blocker reported", {
-    defaultPriority: "HIGH",
-    defaultType: "WARNING",
-    defaultChannels: IA_EMAIL,
-  }),
-  e("build.approval.requested", "build", "WORKFLOW", "Approval requested", {
-    defaultPriority: "HIGH",
-    defaultChannels: IA_EMAIL,
-  }),
-];
+const PROJECTS = BUILD_NOTIFICATION_EVENTS;
 
 const CRM = [
   e("crm.lead.assigned", "crm", "CRM", "Lead assigned to you", {
@@ -215,6 +90,50 @@ const CRM = [
 ];
 
 const HR = [
+  e("hr.holiday.announced", "hr", "HRMS", "Holiday announced", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.asset.assigned", "hr", "HRMS", "Asset assigned", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.helpdesk.ticket_created", "hr", "WORKFLOW", "HR helpdesk ticket created", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.helpdesk.ticket_assigned", "hr", "WORKFLOW", "HR helpdesk ticket assigned", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.helpdesk.ticket_status_changed", "hr", "WORKFLOW", "HR helpdesk ticket status changed", {
+    defaultChannels: IA,
+  }),
+  e("hr.resignation.submitted", "hr", "WORKFLOW", "Resignation submitted", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.resignation.approved", "hr", "WORKFLOW", "Resignation approved", {
+    defaultType: "SUCCESS",
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.onboarding.started", "hr", "WORKFLOW", "Onboarding started", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.onboarding.completed", "hr", "WORKFLOW", "Onboarding completed", {
+    defaultType: "SUCCESS",
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.performance.review_assigned", "hr", "HRMS", "Performance review assigned", {
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.leave.cancelled", "hr", "HRMS", "Leave cancelled", {
+    defaultType: "WARNING",
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.worklog.approved", "hr", "HRMS", "Work log approved", {
+    defaultType: "SUCCESS",
+    defaultChannels: IA_EMAIL,
+  }),
+  e("hr.worklog.rejected", "hr", "HRMS", "Work log rejected", {
+    defaultType: "WARNING",
+    defaultChannels: IA_EMAIL,
+  }),
   e("hr.leave.requested", "hr", "WORKFLOW", "Leave request submitted", {
     defaultChannels: IA_EMAIL,
   }),
@@ -595,6 +514,10 @@ const CALENDAR = [
 ];
 
 const BILLING = [
+  e("billing.trial.expiring", "billing", "BILLING", "Trial ending soon", {
+    defaultPriority: "HIGH",
+    defaultChannels: IA_EMAIL,
+  }),
   e("billing.invoice.created", "billing", "BILLING", "Invoice created", {
     defaultChannels: IA_EMAIL,
   }),
@@ -694,6 +617,9 @@ const SUPPORT = [
     defaultPriority: "HIGH",
     defaultChannels: IA_EMAIL,
   }),
+  e("support.ticket.updated", "support", "SUPPORT", "Support ticket updated", {
+    defaultChannels: IA_EMAIL,
+  }),
   e(
     "support.ticket.customer_replied",
     "support",
@@ -762,6 +688,14 @@ const BROADCASTS = [
 ];
 
 const SYSTEM = [
+  e("system.weekly_recap", "system", "SYSTEM", "Weekly executive recap", {
+    defaultChannels: IA_EMAIL,
+    dedupeWindowSeconds: 86400,
+  }),
+  e("tasks.task.assigned", "tasks", "SYSTEM", "Task assigned to you", {
+    defaultPriority: "HIGH",
+    defaultChannels: IA_EMAIL,
+  }),
   e(
     "compliance.policy.updated",
     "system",
@@ -864,6 +798,13 @@ const OWNERSHIP = [
 ];
 
 const ORGANIZATION = [
+  e(
+    "organization.setup.completed",
+    "organization",
+    "SYSTEM",
+    "Organization setup completed",
+    { defaultChannels: IA_EMAIL },
+  ),
   e(
     "organization.invitation.accepted",
     "organization",

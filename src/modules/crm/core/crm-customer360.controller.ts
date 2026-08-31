@@ -14,8 +14,11 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CrmCustomer360Service } from "./crm-customer360.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const companyIdParams = z.object({ companyId: z.coerce.number().int().positive() }).strict();
+const clientIdParams = z.object({ clientId: z.coerce.number().int().positive() }).strict();
 
 const timelineQuerySchema = z.object({
   cursor: z.string().optional(),
@@ -30,6 +33,7 @@ export class CrmCustomer360Controller {
 
   @Get("company/:companyId")
   @RequirePermission("crm:customer360:view")
+  @Validate({ params: companyIdParams })
   async getCompany360(
     @Param("companyId", ParseIntPipe) companyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -41,6 +45,7 @@ export class CrmCustomer360Controller {
 
   @Get("client/:clientId")
   @RequirePermission("crm:customer360:view")
+  @Validate({ params: clientIdParams })
   async getClient360(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -52,9 +57,10 @@ export class CrmCustomer360Controller {
 
   @Get("company/:companyId/timeline")
   @RequirePermission("crm:customer360:view")
+  @Validate({ params: companyIdParams, query: timelineQuerySchema })
   async getCompanyTimeline(
     @Param("companyId", ParseIntPipe) companyId: number,
-    @Query(new ZodValidationPipe(timelineQuerySchema)) query: TimelineQuery,
+    @Query() query: TimelineQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.getCompanyTimeline(u.orgId, companyId, query.cursor);

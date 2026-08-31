@@ -1,11 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
 import { and, asc, eq, lte, sql } from "drizzle-orm";
 import { invoices, invoiceItems } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
-import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
@@ -166,25 +164,6 @@ export class InvoicesWriteService {
           },
           tx,
         );
-        await OutboxWriter.emit(tx, {
-          eventId: randomUUID(),
-          organizationId: orgId,
-          aggregateType: "invoice",
-          aggregateId: String(inserted.id),
-          aggregateVersion: inserted.createdAt
-            ? new Date(inserted.createdAt).getTime()
-            : Date.now(),
-          eventType: "accounting.invoice.issued",
-          payload: {
-            organization_id: orgId,
-            invoice_id: inserted.id,
-            invoice_number: inserted.invoiceNumber,
-            total_cents: Math.round(total * 100),
-            client_id: inserted.clientId ?? null,
-            actor_user_id: userId,
-          },
-          occurredAt: new Date(),
-        });
       }
 
       return inserted;

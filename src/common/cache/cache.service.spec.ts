@@ -146,9 +146,10 @@ describe("tenant-aware wrappers", () => {
     expect(fetchC).toHaveBeenCalledTimes(1);
     expect(fetchD).toHaveBeenCalledTimes(1);
 
-    const versionKeys = [...store.keys()].filter((k) => k.includes(":version"));
-    expect(versionKeys.some((k) => k.startsWith("cache:namespace:org-c:"))).toBe(true);
-    expect(versionKeys.some((k) => k.startsWith("cache:namespace:org-d:"))).toBe(true);
+    const dataKeys = [...store.keys()].filter((k) => !k.startsWith("cache:lease:"));
+    expect(dataKeys.some((k) => k.startsWith("org-c:contacts:list:"))).toBe(true);
+    expect(dataKeys.some((k) => k.startsWith("org-d:contacts:list:"))).toBe(true);
+    expect(dataKeys.some((k) => k.startsWith("org-c:")) && dataKeys.some((k) => k.startsWith("org-d:"))).toBe(true);
   });
 
   it("invalidateNamespaceForOrg — invalidates only the specified org namespace", async () => {
@@ -176,5 +177,33 @@ describe("tenant-aware wrappers", () => {
       ttls.add(result);
     }
     expect(ttls.size).toBeGreaterThan(1);
+  });
+  it("distinct keys filled together get spread expiries, so they cannot re-stampede in lockstep", async () => {
+    const captured: number[] = [];
+    const redis = {
+      get: jest.fn(async () => null),
+      set: jest.fn(async (_key: string, _value: unknown, options?: { nx?: boolean; ex?: number }) => {
+        if (options?.ex !== undefined && !options.nx) captured.push(options.ex);
+        return "OK";
+      }),
+      incr: jest.fn(async () => 1),
+      eval: jest.fn(async () => 1),
+    } as unknown as Redis;
+
+    const cache = new CacheService(redis);
+    const base = 300;
+
+    await Promise.all(
+      Array.from({ length: 40 }, (_unused, i) =>
+        cache.cachedForOrg("org-stampede", `report:${i}`, async () => ({ i }), base),
+      ),
+    );
+
+    expect(captured).toHaveLength(40);
+    for (const ttl of captured) {
+      expect(ttl).toBeGreaterThanOrEqual(Math.floor(base * 0.85));
+      expect(ttl).toBeLessThanOrEqual(Math.ceil(base * 1.15));
+    }
+    expect(new Set(captured).size).toBeGreaterThan(1);
   });
 });

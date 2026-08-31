@@ -1,11 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { projectMembers, projects, sprints, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
-import { resolveEmployeesDashboardScope } from "./dashboard-scope";
+import { resolveBuildDashboardScope } from "./dashboard-scope";
 
 @Injectable()
 export class DashboardProjectService {
@@ -29,12 +29,13 @@ export class DashboardProjectService {
     const memberOf = await this.db
       .select({ projectId: projectMembers.projectId })
       .from(projectMembers)
-      .where(eq(projectMembers.userId, userId));
+      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.userId, userId)));
     return memberOf.map((m) => m.projectId);
   }
 
   async getRecentProjects(orgId: string, u: CurrentUserContext) {
-    const scope = await resolveEmployeesDashboardScope(this.access, u);
+    const scope = await resolveBuildDashboardScope(this.access, u);
+    if (scope === "none") return [];
 
     if (scope === "all") {
       return this.db.query.projects.findMany({
@@ -52,7 +53,7 @@ export class DashboardProjectService {
     const memberOf = await this.db
       .select({ projectId: projectMembers.projectId })
       .from(projectMembers)
-      .where(eq(projectMembers.userId, u.userId));
+      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.userId, u.userId)));
 
     const projectIds = memberOf.map((m) => m.projectId);
 
@@ -109,7 +110,8 @@ export class DashboardProjectService {
   }
 
   async getActiveSprintSummary(orgId: string, u: CurrentUserContext) {
-    const scope = await resolveEmployeesDashboardScope(this.access, u);
+    const scope = await resolveBuildDashboardScope(this.access, u);
+    if (scope === "none") return null;
     const projectIds = await this.resolveProjectIds(orgId, u.userId, scope === "all");
     if (projectIds.length === 0) return null;
 
@@ -122,23 +124,37 @@ export class DashboardProjectService {
       ),
       with: {
         project: { columns: { id: true, name: true } },
-        tickets: { where: isNull(tickets.deletedAt), columns: { id: true, status: true, points: true } },
       },
     });
 
     if (!activeSprint) return null;
 
-    const sprintTickets = activeSprint.tickets || [];
-    const totalTickets = sprintTickets.length;
-    const doneTickets = sprintTickets.filter((t) => t.status === "DONE").length;
-    const inProgressTickets = sprintTickets.filter(
-      (t) => t.status === "IN_PROGRESS" || t.status === "IN_REVIEW",
-    ).length;
+    const statsRows = await this.db
+      .select({
+        total: sql<number>`count(*)::int`,
+        done: sql<number>`(count(*) filter (where ${tickets.status} = 'DONE'))::int`,
+        inProgress: sql<number>`(count(*) filter (where ${tickets.status} in ('IN_PROGRESS', 'IN_REVIEW')))::int`,
+        totalPoints: sql<number>`coalesce(sum(${tickets.points}), 0)::int`,
+        completedPoints: sql<number>`(coalesce(sum(${tickets.points}) filter (where ${tickets.status} = 'DONE'), 0))::int`,
+      })
+      .from(tickets)
+      .where(
+        and(
+          eq(tickets.orgId, orgId),
+          eq(tickets.sprintId, activeSprint.id),
+          isNull(tickets.deletedAt),
+        ),
+      );
+
+    const stats = statsRows[0];
+    if (!stats) return null;
+
+    const totalTickets = Number(stats.total);
+    const doneTickets = Number(stats.done);
+    const inProgressTickets = Number(stats.inProgress);
     const todoTickets = totalTickets - doneTickets - inProgressTickets;
-    const totalPoints = sprintTickets.reduce((acc, t) => acc + (t.points || 0), 0);
-    const completedPoints = sprintTickets
-      .filter((t) => t.status === "DONE")
-      .reduce((acc, t) => acc + (t.points || 0), 0);
+    const totalPoints = Number(stats.totalPoints);
+    const completedPoints = Number(stats.completedPoints);
     const progress =
       totalPoints > 0
         ? Math.round((completedPoints / totalPoints) * 100)
@@ -169,7 +185,8 @@ export class DashboardProjectService {
   }
 
   async getRecentActivity(orgId: string, u: CurrentUserContext) {
-    const scope = await resolveEmployeesDashboardScope(this.access, u);
+    const scope = await resolveBuildDashboardScope(this.access, u);
+    if (scope === "none") return [];
     const projectIds = await this.resolveProjectIds(orgId, u.userId, scope === "all");
     if (projectIds.length === 0) return [];
 

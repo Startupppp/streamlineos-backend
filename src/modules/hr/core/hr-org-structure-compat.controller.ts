@@ -12,7 +12,7 @@ import {
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import {
@@ -26,6 +26,11 @@ import {
   type UpdateOrgTeamInput,
 } from "../../organization/hierarchy/dto/org-hierarchy.schemas";
 import { HrOrgCatalogService } from "./hr-org-catalog.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const locationIdParams = z.object({ locationId: z.string().min(1) }).strict();
+const teamIdParams = z.object({ teamId: z.string().min(1) }).strict();
 
 @Controller("hr/org")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -41,9 +46,9 @@ export class HrOrgStructureCompatController {
   @Post("locations")
   @RequirePermission("settings:organization:manage")
   @HttpCode(201)
+  @Validate({ body: createOrgLocationSchema })
   createLocation(
-    @Body(new ZodValidationPipe(createOrgLocationSchema))
-    body: CreateOrgLocationInput,
+    @Body() body: CreateOrgLocationInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.catalog.createLocation(user.orgId, user.userId, body);
@@ -51,10 +56,10 @@ export class HrOrgStructureCompatController {
 
   @Patch("locations/:locationId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: locationIdParams, body: updateOrgLocationSchema })
   updateLocation(
     @Param("locationId") locationId: string,
-    @Body(new ZodValidationPipe(updateOrgLocationSchema))
-    body: UpdateOrgLocationInput,
+    @Body() body: UpdateOrgLocationInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.catalog.updateLocation(
@@ -68,6 +73,7 @@ export class HrOrgStructureCompatController {
   @Delete("locations/:locationId")
   @HttpCode(204)
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: locationIdParams })
   deleteLocation(
     @Param("locationId") locationId: string,
     @CurrentUser() user: CurrentUserContext,
@@ -84,8 +90,9 @@ export class HrOrgStructureCompatController {
   @Post("teams")
   @RequirePermission("settings:organization:manage")
   @HttpCode(201)
+  @Validate({ body: createOrgTeamSchema })
   createTeam(
-    @Body(new ZodValidationPipe(createOrgTeamSchema)) body: CreateOrgTeamInput,
+    @Body() body: CreateOrgTeamInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.catalog.createTeam(user.orgId, user.userId, body);
@@ -93,9 +100,10 @@ export class HrOrgStructureCompatController {
 
   @Patch("teams/:teamId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: teamIdParams, body: updateOrgTeamSchema })
   updateTeam(
     @Param("teamId") teamId: string,
-    @Body(new ZodValidationPipe(updateOrgTeamSchema)) body: UpdateOrgTeamInput,
+    @Body() body: UpdateOrgTeamInput,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.catalog.updateTeam(user.orgId, user.userId, teamId, body);
@@ -104,6 +112,7 @@ export class HrOrgStructureCompatController {
   @Delete("teams/:teamId")
   @HttpCode(204)
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: teamIdParams })
   deleteTeam(
     @Param("teamId") teamId: string,
     @CurrentUser() user: CurrentUserContext,

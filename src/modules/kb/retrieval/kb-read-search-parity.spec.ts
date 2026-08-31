@@ -1,6 +1,7 @@
 import { isPageIndexable } from "./kb-indexing.service";
 import { pageVisibleTo } from "./kb-page-visibility";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const ORG_ID = "org-1";
 const AUTHOR_ID = "author-1";
@@ -34,6 +35,7 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     role: "member",
     sessionId: "sess-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...overrides,
   };
 }

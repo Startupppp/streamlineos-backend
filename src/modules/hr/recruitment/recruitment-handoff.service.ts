@@ -84,6 +84,7 @@ export class RecruitmentHandoffService {
               firstName: candidate.firstName,
               lastName: candidate.lastName,
               workEmail,
+              phone: candidate.phone ?? null,
             })
             .returning({ organizationPersonId: organizationPeople.organizationPersonId })
             .then((rows) => {
@@ -103,14 +104,28 @@ export class RecruitmentHandoffService {
           })
         : null;
 
-      const existingByEmail = await tx.query.hrPeople.findFirst({
-        where: and(
-          eq(hrPeople.orgId, orgId),
-          eq(hrPeople.workEmail, workEmail),
-          isNull(hrPeople.deletedAt),
-        ),
-        columns: { id: true, userId: true, organizationPersonId: true },
-      });
+      const [existingByEmail] = await tx
+        .select({
+          id: hrPeople.id,
+          userId: hrPeople.userId,
+          organizationPersonId: hrPeople.organizationPersonId,
+        })
+        .from(hrPeople)
+        .innerJoin(
+          organizationPeople,
+          and(
+            eq(organizationPeople.organizationId, hrPeople.orgId),
+            eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+          ),
+        )
+        .where(
+          and(
+            eq(hrPeople.orgId, orgId),
+            eq(organizationPeople.workEmail, workEmail),
+            isNull(hrPeople.deletedAt),
+          ),
+        )
+        .limit(1);
 
       let personId: number;
 
@@ -157,10 +172,6 @@ export class RecruitmentHandoffService {
             orgId,
             userId: matchedUser?.id ?? null,
             organizationPersonId: resolvedOrgPersonId,
-            firstName: candidate.firstName,
-            lastName: candidate.lastName,
-            workEmail,
-            phone: candidate.phone ?? null,
           })
           .returning({ id: hrPeople.id })
           .catch((err: unknown) => {
@@ -185,14 +196,7 @@ export class RecruitmentHandoffService {
       let employmentId = primaryEmployment?.id;
 
       if (!employmentId) {
-        const employeeNumber = matchedUser
-          ? (
-              await tx.query.users.findFirst({
-                where: eq(users.id, matchedUser.id),
-                columns: { employeeId: true },
-              })
-            )?.employeeId?.trim() || `CAND-${candidateId}`
-          : `CAND-${candidateId}`;
+        const employeeNumber = `CAND-${candidateId}`;
 
         const existingByNumber = await tx.query.hrEmployments.findFirst({
           where: and(

@@ -27,6 +27,7 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import { logger } from "../../../common/logger/logger.service";
 import { SupportKnowledgeGapStatus } from "../../../db/schema/support/support-kb-gap";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ACCOUNT_ONLY_PRINCIPAL } from "../../../common/auth/principal";
 import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
 
 type GapRow = typeof supportKnowledgeGaps.$inferSelect;
@@ -141,6 +142,7 @@ export class SupportKbGapService {
       isOrgOwner: false,
       tokenScopes: null,
       sessionId: "",
+      principal: ACCOUNT_ONLY_PRINCIPAL,
     };
     const article = await this.kbArticles.create(ctx, {
       spaceId: space.id,

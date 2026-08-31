@@ -14,6 +14,7 @@ import {
 } from "./providers/mail-normalizers";
 import { MailAccountsService, type MailAccount } from "./mail-accounts.service";
 import { MailMetadataService } from "./mail-metadata.service";
+import { MailSyncCheckpointService } from "./mail-sync-checkpoint.service";
 import type {
   MailDownloadResponse,
   MailFolder,
@@ -32,6 +33,7 @@ export class MailService {
     private readonly outlook: OutlookMailProvider,
     private readonly cache: CacheService,
     private readonly metadata: MailMetadataService,
+    private readonly checkpoints: MailSyncCheckpointService,
   ) {}
 
   async listAccounts(orgId: string, userId: string) {
@@ -84,7 +86,7 @@ export class MailService {
       }
     }
 
-    const parsedCursor = cursor ? decodeCursor(cursor) : {};
+    const parsedCursor = cursor ? decodeCursor(cursor, userId) : {};
     const skipCache = Boolean(query);
 
     const settled = await Promise.allSettled(
@@ -120,7 +122,7 @@ export class MailService {
         const message = err instanceof Error ? err.message : "Failed to load messages";
         accountErrors.push({ accountId: acc.id, accountEmail: acc.accountEmail, message });
         if (err instanceof ComposioToolError && err.isAuthError) {
-          void this.accounts.markNeedsReauth(acc.id);
+          void this.accounts.markNeedsReauth(acc.id, orgId);
         }
       }
     });
@@ -130,16 +132,22 @@ export class MailService {
 
     const nextCursorMap: OpaqueCursor = {};
     for (const fetch of accountFetches) {
+      // Exhausted stays exhausted. Writing `undefined` here would be dropped by
+      // JSON on the way out and read back as "no position yet".
+      if (fetch.currentCursorValue === null) {
+        nextCursorMap[fetch.accId] = null;
+        continue;
+      }
       const consumed = fetch.messages.filter((m) => mergedIds.has(`${m.accountId}:${m.id}`)).length;
       if (fetch.provider === "outlook") {
         if (!fetch.outlookHasMore && consumed === fetch.messages.length) {
-          nextCursorMap[fetch.accId] = undefined;
+          nextCursorMap[fetch.accId] = null;
         } else {
           const prevSkip = typeof fetch.currentCursorValue === "number" ? fetch.currentCursorValue : 0;
           nextCursorMap[fetch.accId] = prevSkip + consumed;
         }
       } else if (consumed === fetch.messages.length) {
-        nextCursorMap[fetch.accId] = fetch.nextPageToken;
+        nextCursorMap[fetch.accId] = fetch.nextPageToken ?? null;
       } else {
         const prevToken = isPartialGmailCursor(fetch.currentCursorValue)
           ? fetch.currentCursorValue.token
@@ -154,7 +162,7 @@ export class MailService {
     }
 
     const hasMore = Object.values(nextCursorMap).some((v) => v !== undefined && v !== null);
-    const nextCursor = hasMore ? encodeCursor(nextCursorMap) : null;
+    const nextCursor = hasMore ? encodeCursor(nextCursorMap, userId) : null;
 
     return { messages: merged, nextCursor, accountErrors };
   }
@@ -171,6 +179,7 @@ export class MailService {
   ): Promise<{ messages: ReturnType<typeof mergeMessagesByDate>; nextPageToken: string | undefined; outlookHasMore: boolean }> {
     const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
     const cursorValue = parsedCursor[acc.id];
+    if (cursorValue === null) return { messages: [], nextPageToken: undefined, outlookHasMore: false };
     const cacheKey = `${folder}:${JSON.stringify(cursorValue ?? "")}:${query ?? ""}`;
 
     const fetcher = async () => {
@@ -194,6 +203,7 @@ export class MailService {
 
       if (!query && result.messages.length > 0) {
         this.metadata.deferUpsertBatch(acc.id, userId, orgId, folder, result.messages);
+        void this.checkpoints.savePosition(orgId, acc.id, folder, result.nextPageToken ?? null);
       }
 
       return result;
@@ -220,7 +230,7 @@ export class MailService {
       if (acc.provider === "gmail") return await this.gmail.getMessage(userId, conn, messageId);
       return await this.outlook.getMessage(userId, conn, messageId);
     } catch (err) {
-      if (err instanceof ComposioToolError && err.isAuthError) void this.accounts.markNeedsReauth(acc.id);
+      if (err instanceof ComposioToolError && err.isAuthError) void this.accounts.markNeedsReauth(acc.id, orgId);
       throw err;
     }
   }
@@ -237,7 +247,7 @@ export class MailService {
       if (acc.provider === "gmail") return await this.gmail.getThread(userId, conn, threadId);
       return await this.outlook.getThread(userId, conn, threadId);
     } catch (err) {
-      if (err instanceof ComposioToolError && err.isAuthError) void this.accounts.markNeedsReauth(acc.id);
+      if (err instanceof ComposioToolError && err.isAuthError) void this.accounts.markNeedsReauth(acc.id, orgId);
       throw err;
     }
   }

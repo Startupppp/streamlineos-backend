@@ -1,3 +1,8 @@
+jest.mock("../../../common/relocation/relocation-traffic-tracker", () => ({
+  refreshRelocationTargets: jest.fn().mockResolvedValue(undefined),
+  isRelocationTarget: jest.fn().mockReturnValue(false),
+}));
+
 import { ForbiddenException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 
@@ -17,7 +22,9 @@ import { moduleAvailabilityResolver } from "../../../common/rbac/module-availabi
 import { CATALOG_MODULES } from "../access-policy";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { OwnershipTransfersService } from "../../ownership/ownership-transfers.service";
+import { OwnershipTransferExpiryService } from "../../ownership/ownership-transfer-expiry.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -107,6 +114,13 @@ function buildService(db: unknown): AccessService {
   const cache = {
     cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
     invalidate: jest.fn().mockResolvedValue(undefined),
+    cachedForOrg(o: string, k: string, fn: () => Promise<unknown>, ttl?: number) {
+      return this.cached(`${o}:${k}`, fn, ttl);
+    },
+    cachedForOrgWith<T>(o: string, k: string, fn: () => Promise<T>) {
+      return this.cached(`${o}:${k}`, fn);
+    },
+    invalidateForOrg: jest.fn().mockResolvedValue(undefined),
   };
   const allEnabled: Record<string, boolean> = {};
   for (const key of CATALOG_MODULES) allEnabled[key] = true;
@@ -151,12 +165,14 @@ describe("AccessService.resolveUserPermissions — org owner receives every cata
 
     const result = new Map(
       Object.entries(
-        await (buildService(db) as unknown as {
+        (await (buildService(db) as unknown as {
           computeUserPermissions: (
             orgId: string,
             userId: string,
-          ) => Promise<Record<string, "all" | "team" | "own" | "none">>;
-        }).computeUserPermissions(ORG_A, USER),
+          ) => Promise<{
+            perms: Record<string, "all" | "team" | "own" | "none">;
+          }>;
+        }).computeUserPermissions(ORG_A, USER)).perms,
       ),
     );
 
@@ -192,6 +208,7 @@ describe("AccessService.getAccessSnapshot — org owner receives every catalog p
       isOrgOwner: true,
       sessionId: "session-owner",
       tokenScopes: null,
+      principal: humanSessionPrincipal(1, true),
     };
 
     const svc = buildService(db);
@@ -238,12 +255,14 @@ describe("AccessService.resolveUserPermissions — ORG_ADMIN role grants every c
 
     const result = new Map(
       Object.entries(
-        await (buildService(db) as unknown as {
+        (await (buildService(db) as unknown as {
           computeUserPermissions: (
             orgId: string,
             userId: string,
-          ) => Promise<Record<string, "all" | "team" | "own" | "none">>;
-        }).computeUserPermissions(ORG_A, USER),
+          ) => Promise<{
+            perms: Record<string, "all" | "team" | "own" | "none">;
+          }>;
+        }).computeUserPermissions(ORG_A, USER)).perms,
       ),
     );
 
@@ -487,6 +506,10 @@ describe("OwnershipTransfersService.initiateOrgTransfer — org admin (isOwner=f
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined), invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+        {
+          provide: OwnershipTransferExpiryService,
+          useValue: { expireStaleTransfers: jest.fn().mockResolvedValue({ expired: 0 }) },
+        },
       ],
     }).compile();
 

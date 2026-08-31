@@ -9,13 +9,15 @@ import {
   organizationMembers,
   users,
 } from "../../../db/schema";
+import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { resolveLeavesViewScope } from "./leaves-scope";
+import { leaveApprovalScope, resolveLeavesViewScope } from "./leaves-scope";
+import type { DataScope } from "../../access/access.types";
 import { LeaveLedgerService } from "./leave-ledger.service";
 
 const TEAM_LEAVES_CAP = 500;
@@ -50,6 +52,7 @@ export class LeavesService {
     private readonly cache: CacheService,
     private readonly access: AccessService,
     @Optional() private readonly ledger: LeaveLedgerService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   balance(orgId: string, userId: string) {
@@ -137,22 +140,9 @@ export class LeavesService {
 
     if (isAll) return base;
 
-    const reportingUsers = await this.db
-      .select({ id: users.id })
-      .from(users)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.userId, users.id),
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      )
-      .where(eq(users.reportingTo, userId));
+    const reportingUserIds = await this.employment.getDirectReportUserIds(orgId, userId);
 
-    if (reportingUsers.length === 0) return base;
-
-    const reportingUserIds = reportingUsers.map((r) => r.id);
+    if (reportingUserIds.length === 0) return base;
     const alreadyFetchedIds = new Set(base.map((r) => r.id));
 
     const reporteeRequests = await this.db.query.leaveRequests.findMany({
@@ -171,7 +161,7 @@ export class LeavesService {
     return [...base, ...extra];
   }
 
-  thisWeek(orgId: string) {
+  async thisWeek(orgId: string) {
     const now = new Date();
     const dayOfWeek = now.getDay();
     const weekStart = new Date(now);
@@ -182,7 +172,7 @@ export class LeavesService {
     weekEnd.setDate(weekStart.getDate() + 6);
     weekEnd.setHours(23, 59, 59, 999);
 
-    return this.db.query.leaveRequests.findMany({
+    const rows = await this.db.query.leaveRequests.findMany({
       where: and(
         eq(leaveRequests.orgId, orgId),
         eq(leaveRequests.status, "APPROVED"),
@@ -198,7 +188,6 @@ export class LeavesService {
             lastName: true,
             email: true,
             image: true,
-            designation: true,
           },
         },
         leaveType: { columns: { id: true, name: true } },
@@ -206,6 +195,18 @@ export class LeavesService {
       orderBy: [desc(leaveRequests.startDate)],
       limit: 100,
     });
+
+    const facts = await this.employment.getFactsBatch(
+      orgId,
+      rows.map((row) => row.user?.id).filter((id): id is string => Boolean(id)),
+    );
+
+    return rows.map((row) => ({
+      ...row,
+      user: row.user
+        ? { ...row.user, designation: facts.get(row.user.id)?.designation ?? null }
+        : row.user,
+    }));
   }
 
   async analytics(u: CurrentUserContext, year: number) {
@@ -214,15 +215,21 @@ export class LeavesService {
 
     return this.cache.cachedVersioned(
       CACHE_KEYS.leaveAnalyticsNamespace(u.orgId),
-      `${scope}:${year}`,
-      () => this.queryAnalytics(u.orgId, year),
+      scope === "all" ? `${scope}:${year}` : `${scope}:${u.userId}:${year}`,
+      () => this.queryAnalytics(u.orgId, u.userId, scope, year),
       CACHE_TTL.MEDIUM,
     );
   }
 
-  private async queryAnalytics(orgId: string, year: number) {
+  private async queryAnalytics(
+    orgId: string,
+    actorUserId: string,
+    scope: DataScope,
+    year: number,
+  ) {
     const yearStart = `${year}-01-01`;
     const yearEnd = `${year}-12-31`;
+    const visible = leaveApprovalScope(scope, orgId, actorUserId);
 
     const [byDept, monthly, byType, deptAvgDays] = await Promise.all([
       this.db
@@ -239,6 +246,7 @@ export class LeavesService {
         .where(
           and(
             eq(leaveRequests.orgId, orgId),
+            visible,
             gte(leaveRequests.startDate, yearStart),
             lte(leaveRequests.startDate, yearEnd),
             eq(orgUnits.kind, "DEPARTMENT"),
@@ -256,6 +264,7 @@ export class LeavesService {
         .where(
           and(
             eq(leaveRequests.orgId, orgId),
+            visible,
             eq(leaveRequests.status, "APPROVED"),
             gte(leaveRequests.startDate, yearStart),
             lte(leaveRequests.startDate, yearEnd),
@@ -277,6 +286,7 @@ export class LeavesService {
         .where(
           and(
             eq(leaveRequests.orgId, orgId),
+            visible,
             eq(leaveRequests.status, "APPROVED"),
             gte(leaveRequests.startDate, yearStart),
             lte(leaveRequests.startDate, yearEnd),
@@ -297,6 +307,7 @@ export class LeavesService {
         .where(
           and(
             eq(leaveRequests.orgId, orgId),
+            visible,
             eq(leaveRequests.status, "APPROVED"),
             gte(leaveRequests.startDate, yearStart),
             lte(leaveRequests.startDate, yearEnd),

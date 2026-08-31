@@ -6,5 +6,15 @@ coverage
 !.env.example
 *.log
 
+<<<<<<< HEAD
 # agent scratch space
 .scratch/
+=======
+# Cell operations artifacts. cell:backup writes real table data (base64 COPY output of
+# users, organizations and members), so it must never be committed; the history and
+# load-driver files are per-machine measurement state, not source.
+backups/
+.cell-capacity-history.json
+.cell-cost-history.json
+.load-driver-results.json
+>>>>>>> origin/main

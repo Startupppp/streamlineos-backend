@@ -4,6 +4,7 @@ import {
 } from "../module-standing";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const ORG = "org-1";
 const MODULE = "hr";
@@ -42,7 +43,15 @@ function createDb(options: Options): Db {
 }
 
 function actor(isOrgOwner = false): CurrentUserContext {
-  return { orgId: ORG, userId: "user-1", isOrgOwner } as CurrentUserContext;
+  return {
+    orgId: ORG,
+    userId: "user-1",
+    role: isOrgOwner ? "OWNER" : "MEMBER",
+    isOrgOwner,
+    sessionId: "sess-1",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, isOrgOwner),
+  };
 }
 
 describe("resolveModuleManagementStanding", () => {
@@ -119,14 +128,14 @@ describe("resolveModuleManagementStanding", () => {
     ).toBeNull();
   });
 
-  it("keeps ownership transfer away from every admin standing", async () => {
+  it("grants ownership transfer to org admin but not to module admin", async () => {
     const orgAdmin = await resolveModuleManagementStanding(
       createDb({ orgMember: { isOwner: false, role: "ORG_ADMIN" } }),
       actor(),
       MODULE,
     );
     expect(orgAdmin?.canManageAccess).toBe(true);
-    expect(orgAdmin?.canTransferOwnership).toBe(false);
+    expect(orgAdmin?.canTransferOwnership).toBe(true);
 
     const moduleAdmin = await resolveModuleManagementStanding(
       createDb({
@@ -164,14 +173,14 @@ describe("canTransferModuleOwnership", () => {
     ).toBe(true);
   });
 
-  it("refuses an organisation admin and a module admin alike", async () => {
+  it("allows an organisation admin but refuses a module admin", async () => {
     expect(
       await canTransferModuleOwnership(
         createDb({ orgMember: { isOwner: false, role: "ORG_ADMIN" }, ownerUserId: "other" }),
         actor(),
         MODULE,
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       await canTransferModuleOwnership(
         createDb({ ownerUserId: "other", moduleAdmin: true }),

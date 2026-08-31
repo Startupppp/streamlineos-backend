@@ -16,7 +16,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrScorecardsService } from "./hr-scorecards.service";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import {
@@ -27,6 +27,10 @@ import {
   type ScorecardAnalyticsQueryInput,
   type UpdateScorecardTemplateInput,
 } from "./dto/hr-interviews.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment")
@@ -43,8 +47,9 @@ export class HrScorecardsController {
   @Post("scorecard-templates")
   @HttpCode(201)
   @RequirePermission("hr:interviews:manage")
+  @Validate({ body: createScorecardTemplateSchema })
   createTemplate(
-    @Body(new ZodValidationPipe(createScorecardTemplateSchema)) body: CreateScorecardTemplateInput,
+    @Body() body: CreateScorecardTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.scorecards.createTemplate(u.orgId, u.userId, body);
@@ -52,9 +57,10 @@ export class HrScorecardsController {
 
   @Patch("scorecard-templates/:templateId")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: templateIdParams, body: updateScorecardTemplateSchema })
   updateTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(updateScorecardTemplateSchema)) body: UpdateScorecardTemplateInput,
+    @Body() body: UpdateScorecardTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.scorecards.updateTemplate(u.orgId, templateId, body);
@@ -62,6 +68,7 @@ export class HrScorecardsController {
 
   @Delete("scorecard-templates/:templateId")
   @RequirePermission("hr:interviews:manage")
+  @Validate({ params: templateIdParams })
   deleteTemplate(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -71,8 +78,9 @@ export class HrScorecardsController {
 
   @Get("scorecard-analytics")
   @RequirePermission("hr:interviews:view")
+  @Validate({ query: scorecardAnalyticsQuerySchema })
   analytics(
-    @Query(new ZodValidationPipe(scorecardAnalyticsQuerySchema)) query: ScorecardAnalyticsQueryInput,
+    @Query() query: ScorecardAnalyticsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.scorecards.analytics(u.orgId, query);

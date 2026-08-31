@@ -6,10 +6,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 describe("CronLeaveService policy-driven accrual (Phase 3.1)", () => {
-  const source = readFileSync(
-    join(__dirname, "../cron-leave.service.ts"),
-    "utf8",
-  );
+  const source =
+    readFileSync(join(__dirname, "../cron-leave.service.ts"), "utf8") +
+    readFileSync(join(__dirname, "../cron-leave-reset.service.ts"), "utf8");
 
   it("implements monthly accrual from leave_policies", () => {
     expect(source).toContain("accrueMonthlyLeaves");

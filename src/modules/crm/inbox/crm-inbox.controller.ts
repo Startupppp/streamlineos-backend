@@ -6,7 +6,6 @@ import {
   Post,
   Req,
   UseGuards,
-  UsePipes,
   Body,
 } from "@nestjs/common";
 import type { Request } from "express";
@@ -15,11 +14,14 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { readRequestScope } from "../../organization/core/read-request-scope";
 import { CrmInboxService } from "./crm-inbox.service";
 import { snoozeTaskSchema, type SnoozeTaskInput } from "./crm-inbox.dto";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const taskIdParams = z.object({ taskId: z.coerce.number().int().positive() }).strict();
 
 @Controller("crm/inbox")
 @RequireModule("crm")
@@ -41,7 +43,7 @@ export class CrmInboxController {
 
   @Post("tasks/:taskId/snooze")
   @RequirePermission("crm:tasks:update")
-  @UsePipes(new ZodValidationPipe(snoozeTaskSchema))
+  @Validate({ params: taskIdParams, body: snoozeTaskSchema })
   async snoozeTask(
     @Param("taskId", ParseIntPipe) taskId: number,
     @Body() body: SnoozeTaskInput,
@@ -54,6 +56,7 @@ export class CrmInboxController {
 
   @Post("tasks/:taskId/complete")
   @RequirePermission("crm:tasks:update")
+  @Validate({ params: taskIdParams })
   async completeTask(
     @Param("taskId", ParseIntPipe) taskId: number,
     @Req() req: Request,

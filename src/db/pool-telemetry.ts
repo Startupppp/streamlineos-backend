@@ -1,8 +1,11 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { startSpan } from "../common/observability/tracing";
+import { SEAM_BUDGETS } from "../common/observability/seam-budgets";
 import { logger } from "../common/logger/logger.service";
+import { BoundedReservoir, RESERVOIR_CAP } from "./query-telemetry";
 
 const SATURATION_LOG_INTERVAL_MS = 30_000;
-const FALLBACK_SLOW_ACQUIRE_MS = 250;
+const FALLBACK_SLOW_ACQUIRE_MS = SEAM_BUDGETS['db.pool.wait'].thresholdMs;
 
 export interface PoolTelemetrySnapshot {
   max: number;
@@ -17,6 +20,7 @@ export interface PoolTelemetrySnapshot {
   failedAcquires: number;
   saturationEvents: number;
   lastSaturationAt: string | null;
+  p95WaitMs: number;
 }
 
 export interface PoolBorrow {
@@ -29,13 +33,6 @@ const NOOP_BORROW: PoolBorrow = {
   release: () => {},
 };
 
-/**
- * postgres-js keeps its queues in a closure and exposes only `options`, so pool
- * depth is unreadable from the driver. The equivalent is observable from outside:
- * every authenticated request runs inside one tenant transaction, so in-flight
- * tenant transactions are checked-out connections, and the gap between asking for
- * a transaction and entering its callback is the time spent queueing for one.
- */
 class PoolTelemetry {
   private max = 0;
   private waiting = 0;
@@ -51,6 +48,7 @@ class PoolTelemetry {
   private lastSaturationLogAt = 0;
   private lastSaturationAt: string | null = null;
   private slowAcquireMs = FALLBACK_SLOW_ACQUIRE_MS;
+  private readonly waitReservoir = new BoundedReservoir(RESERVOIR_CAP);
 
   configure(options: { max: number; slowAcquireMs: number }): void {
     this.max = options.max;
@@ -60,6 +58,7 @@ class PoolTelemetry {
   begin(): PoolBorrow {
     const startedAt = Date.now();
     let state: "waiting" | "held" | "done" = "waiting";
+    const waitSpan = startSpan('db.pool.wait', { attributes: { seam: 'db.pool.wait' } });
 
     this.waiting += 1;
     if (this.waiting > this.peakWaiting) this.peakWaiting = this.waiting;
@@ -79,12 +78,22 @@ class PoolTelemetry {
         this.totalWaitMs += waitMs;
         if (waitMs > this.maxWaitMs) this.maxWaitMs = waitMs;
         if (waitMs >= this.slowAcquireMs) this.slowAcquires += 1;
+        this.waitReservoir.record(waitMs);
+
+        try {
+          waitSpan.end('ok');
+        } catch {
+        }
       },
       release: () => {
         if (state === "done") return;
         if (state === "waiting") {
           this.waiting -= 1;
           this.failedAcquires += 1;
+          try {
+            waitSpan.end('error');
+          } catch {
+          }
         } else {
           this.inFlight -= 1;
         }
@@ -108,6 +117,7 @@ class PoolTelemetry {
         this.borrows === 0 ? 0 : Math.round(this.totalWaitMs / this.borrows),
       maxWaitMs: this.maxWaitMs,
       lastSaturationAt: this.lastSaturationAt,
+      p95WaitMs: this.waitReservoir.p95(),
     };
   }
 
@@ -149,11 +159,6 @@ export const poolTelemetry = new PoolTelemetry();
 
 const activeBorrow = new AsyncLocalStorage<true>();
 
-/**
- * A savepoint opened on an already-borrowed connection must not be counted
- * again, or `inFlight` drifts past `max` and every nested write reads as
- * saturation.
- */
 export function withPoolBorrow<T>(
   run: (borrow: PoolBorrow) => Promise<T>,
 ): Promise<T> {

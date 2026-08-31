@@ -4,7 +4,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvValuationService } from "./inv-valuation.service";
@@ -16,6 +15,7 @@ import {
   type ValuationLayersInput,
   type ValuationConsumptionsInput,
 } from "./dto/valuation.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("inventory")
 @Controller("inventory/valuation")
@@ -26,8 +26,9 @@ export class InvValuationController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:valuation:read")
+  @Validate({ query: valuationSummarySchema })
   getValuationSummary(
-    @Query(new ZodValidationPipe(valuationSummarySchema)) filters: ValuationSummaryInput,
+    @Query() filters: ValuationSummaryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.valuation.getValuationSummary(u.orgId, u.userId, filters);
@@ -44,8 +45,9 @@ export class InvValuationController {
   @Get("layers")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:valuation:read")
+  @Validate({ query: valuationLayersSchema })
   getValuationLayers(
-    @Query(new ZodValidationPipe(valuationLayersSchema)) filters: ValuationLayersInput,
+    @Query() filters: ValuationLayersInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.valuation.getValuationLayers(u.orgId, u.userId, filters);

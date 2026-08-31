@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, Inject } from "@nestjs/common";
-import { and, eq, desc, ilike, or, count, lt, sql, inArray, isNull, type SQL } from "drizzle-orm";
+import { and, count, eq, desc, asc, gt, ilike, lt, or, isNull, type SQL } from "drizzle-orm";
+import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -23,6 +24,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { PayrollEntitiesService } from "../entities/entities.service";
 import { describeCountryPack } from "../../hr/global/lib/country-pack-registry";
 import { getIndiaBundleForMonth } from "./lib/statutory-registry";
+import { PayrollRunVarianceService } from "./payroll-run-variance.service";
 
 @Injectable()
 export class RunsService {
@@ -30,6 +32,7 @@ export class RunsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly entities: PayrollEntitiesService,
+    private readonly variance: PayrollRunVarianceService,
   ) {}
 
   async setEmployeeHold(
@@ -282,41 +285,41 @@ export class RunsService {
     return { ok: true, runId };
   }
 
-  async listRuns(orgId: string, query: ListRunsQuery) {
-    const offset = (query.page - 1) * query.limit;
+  async listRuns(orgId: string, query: ListRunsQuery): Promise<CursorPage<{
+    id: number; month: string; status: string; runType: string; entityId: number | null;
+    statutoryRuleVersion: string | null; grossTotal: string | null; netTotal: string | null;
+    employeeCount: number | null; exceptionCount: number | null; createdAt: Date;
+  }>> {
+    const pageLimit = Math.min(query.limit, 100);
+    const pos = decodeCursor(query.cursor);
     const conditions: SQL[] = [eq(payrollRuns.orgId, orgId)];
-    if (query.entityId != null) {
-      conditions.push(eq(payrollRuns.entityId, query.entityId));
-    }
-    const where = and(...conditions);
-
-    const [rows, [totRow]] = await Promise.all([
-      this.db
-        .select({
-          id: payrollRuns.id,
-          month: payrollRuns.month,
-          status: payrollRuns.status,
-          runType: payrollRuns.runType,
-          entityId: payrollRuns.entityId,
-          statutoryRuleVersion: payrollRuns.statutoryRuleVersion,
-          grossTotal: payrollRuns.grossTotal,
-          netTotal: payrollRuns.netTotal,
-          employeeCount: payrollRuns.employeeCount,
-          exceptionCount: payrollRuns.exceptionCount,
-          createdAt: payrollRuns.createdAt,
-        })
-        .from(payrollRuns)
-        .where(where)
-        .orderBy(desc(payrollRuns.month))
-        .limit(query.limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(payrollRuns)
-        .where(where),
-    ]);
-
-    return { data: rows, total: totRow?.total ?? 0, page: query.page, limit: query.limit };
+    if (query.entityId != null) conditions.push(eq(payrollRuns.entityId, query.entityId));
+    const cursorCondition = pos
+      ? or(
+          lt(payrollRuns.month, pos.sortValue),
+          and(eq(payrollRuns.month, pos.sortValue), lt(payrollRuns.id, Number(pos.id))),
+        )
+      : undefined;
+    if (cursorCondition) conditions.push(cursorCondition);
+    const rows = await this.db
+      .select({
+        id: payrollRuns.id,
+        month: payrollRuns.month,
+        status: payrollRuns.status,
+        runType: payrollRuns.runType,
+        entityId: payrollRuns.entityId,
+        statutoryRuleVersion: payrollRuns.statutoryRuleVersion,
+        grossTotal: payrollRuns.grossTotal,
+        netTotal: payrollRuns.netTotal,
+        employeeCount: payrollRuns.employeeCount,
+        exceptionCount: payrollRuns.exceptionCount,
+        createdAt: payrollRuns.createdAt,
+      })
+      .from(payrollRuns)
+      .where(and(...conditions))
+      .orderBy(desc(payrollRuns.month), desc(payrollRuns.id))
+      .limit(pageLimit + 1);
+    return buildCursorPage(rows, pageLimit, (row) => ({ sortValue: row.month, id: String(row.id) }));
   }
 
   async getRunById(
@@ -338,7 +341,7 @@ export class RunsService {
 
     const [toggles, varianceSummary, payoutHealth] = await Promise.all([
       this.getTogglesForRun(orgId, run[0].policyVersionId),
-      this.buildVarianceSummary(orgId, run[0].id, run[0].month, run[0].netTotal),
+      this.variance.buildSummary(orgId, run[0].id, run[0].month, run[0].netTotal),
       this.getPayoutHealth(orgId, run[0].id, run[0].status),
     ]);
 
@@ -378,7 +381,11 @@ export class RunsService {
     query: ListRunEmployeesQuery,
     scope: DataScope,
     userId: string,
-  ) {
+  ): Promise<CursorPage<{
+    id: number; userId: string | null; workerType: string; currency: string;
+    gross: string; totalDeductions: string; net: string; status: string;
+    holdReason: string | null; userName: string | null; userEmail: string;
+  }> | null> {
     const runCheck = await this.db
       .select({ id: payrollRuns.id })
       .from(payrollRuns)
@@ -387,56 +394,57 @@ export class RunsService {
 
     if (!runCheck[0]) return null;
 
-    const offset = (query.page - 1) * query.limit;
+    const pageLimit = Math.min(query.limit, 100);
+    const pos = decodeCursor(query.cursor);
     const scopeCondition = applyScope(scope, orgId, userId, { ownerColumn: payrollRunEmployees.userId });
 
-    const conditions = [
+    const conditions: SQL[] = [
       eq(payrollRunEmployees.orgId, orgId),
       eq(payrollRunEmployees.runId, runId),
       scopeCondition,
     ];
 
     if (query.status) conditions.push(eq(payrollRunEmployees.status, query.status));
-    if (query.workerType) conditions.push(eq(payrollRunEmployees.workerType, query.workerType as "EMPLOYEE" | "CONTRACTOR" | "CONSULTANT" | "INTERN" | "EOR"));
+    if (query.workerType) {
+      conditions.push(eq(payrollRunEmployees.workerType, query.workerType as "EMPLOYEE" | "CONTRACTOR" | "CONSULTANT" | "INTERN" | "EOR"));
+    }
 
-    const searchConditions = query.search
+    const searchCondition = query.search
+      ? or(ilike(users.name, `%${query.search}%`), ilike(users.email, `%${query.search}%`))
+      : undefined;
+
+    if (searchCondition) conditions.push(searchCondition);
+
+    const cursorCondition = pos
       ? or(
-          ilike(users.name, `%${query.search}%`),
-          ilike(users.email, `%${query.search}%`),
+          gt(users.name, pos.sortValue),
+          and(eq(users.name, pos.sortValue), gt(payrollRunEmployees.id, Number(pos.id))),
         )
       : undefined;
 
-    const finalConditions = searchConditions ? [...conditions, searchConditions] : conditions;
+    if (cursorCondition) conditions.push(cursorCondition);
 
-    const [rows, [totRow]] = await Promise.all([
-      this.db
-        .select({
-          id: payrollRunEmployees.id,
-          userId: payrollRunEmployees.userId,
-          workerType: payrollRunEmployees.workerType,
-          currency: payrollRunEmployees.currency,
-          gross: payrollRunEmployees.gross,
-          totalDeductions: payrollRunEmployees.totalDeductions,
-          net: payrollRunEmployees.net,
-          status: payrollRunEmployees.status,
-          holdReason: payrollRunEmployees.holdReason,
-          userName: users.name,
-          userEmail: users.email,
-        })
-        .from(payrollRunEmployees)
-        .innerJoin(users, eq(users.id, payrollRunEmployees.userId))
-        .where(and(...finalConditions))
-        .orderBy(users.name)
-        .limit(query.limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(payrollRunEmployees)
-        .innerJoin(users, eq(users.id, payrollRunEmployees.userId))
-        .where(and(...finalConditions)),
-    ]);
+    const rows = await this.db
+      .select({
+        id: payrollRunEmployees.id,
+        userId: payrollRunEmployees.userId,
+        workerType: payrollRunEmployees.workerType,
+        currency: payrollRunEmployees.currency,
+        gross: payrollRunEmployees.gross,
+        totalDeductions: payrollRunEmployees.totalDeductions,
+        net: payrollRunEmployees.net,
+        status: payrollRunEmployees.status,
+        holdReason: payrollRunEmployees.holdReason,
+        userName: users.name,
+        userEmail: users.email,
+      })
+      .from(payrollRunEmployees)
+      .innerJoin(users, eq(users.id, payrollRunEmployees.userId))
+      .where(and(...conditions))
+      .orderBy(asc(users.name), asc(payrollRunEmployees.id))
+      .limit(pageLimit + 1);
 
-    return { data: rows, total: totRow?.total ?? 0, page: query.page, limit: query.limit };
+    return buildCursorPage(rows, pageLimit, (row) => ({ sortValue: row.userName ?? "", id: String(row.id) }));
   }
 
   async getRunEmployee(orgId: string, runId: number, runEmployeeId: number) {
@@ -472,75 +480,7 @@ export class RunsService {
   }
 
   async getVariance(orgId: string, runId: number) {
-    const run = await this.db
-      .select({ id: payrollRuns.id, month: payrollRuns.month, grossTotal: payrollRuns.grossTotal, netTotal: payrollRuns.netTotal })
-      .from(payrollRuns)
-      .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)))
-      .limit(1);
-
-    if (!run[0]) return null;
-
-    const prevRun = await this.db
-      .select({ id: payrollRuns.id, month: payrollRuns.month, grossTotal: payrollRuns.grossTotal, netTotal: payrollRuns.netTotal })
-      .from(payrollRuns)
-      .where(and(
-        eq(payrollRuns.orgId, orgId),
-        sql`${payrollRuns.month} < ${run[0].month}`,
-        inArray(payrollRuns.status, [...PAYROLL_LOCKED_STATUSES]),
-      ))
-      .orderBy(desc(payrollRuns.month))
-      .limit(1);
-
-    const topMovers = await this.db
-      .select({
-        userId: payrollRunEmployees.userId,
-        net: payrollRunEmployees.net,
-        userName: users.name,
-        calculationSnapshot: payrollRunEmployees.calculationSnapshot,
-        paidDays: payrollRunEmployees.paidDays,
-        lopDays: payrollRunEmployees.lopDays,
-      })
-      .from(payrollRunEmployees)
-      .innerJoin(users, eq(users.id, payrollRunEmployees.userId))
-      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
-      .orderBy(desc(payrollRunEmployees.net))
-      .limit(10);
-
-    const withBaselines = topMovers.map((m) => {
-      const snap = m.calculationSnapshot as {
-        variance?: {
-          baselineSource?: string | null;
-          inputBaseline?: {
-            lockedPaidDays: string | null;
-            lockedLopDays: string | null;
-            paidDaysDelta: number | null;
-            lopDaysDelta: number | null;
-          } | null;
-          netDeltaPercent?: number | null;
-        } | null;
-      } | null;
-      return {
-        userId: m.userId,
-        net: m.net,
-        userName: m.userName,
-        paidDays: m.paidDays,
-        lopDays: m.lopDays,
-        baselineSource: snap?.variance?.baselineSource ?? (prevRun[0] ? "PREVIOUS_RUN" : null),
-        inputBaseline: snap?.variance?.inputBaseline ?? null,
-        netDeltaPercent: snap?.variance?.netDeltaPercent ?? null,
-      };
-    });
-
-    return {
-      currentRun: run[0],
-      previousRun: prevRun[0] ?? null,
-      topMovers: withBaselines,
-      lockedInputBaselinesUsed: withBaselines.some(
-        (m) =>
-          m.baselineSource === "LOCKED_INPUT_SNAPSHOT" ||
-          m.baselineSource === "PREVIOUS_RUN_AND_LOCKED_INPUTS",
-      ),
-    };
+    return this.variance.getVariance(orgId, runId);
   }
 
   async buildVarianceSummary(
@@ -549,55 +489,7 @@ export class RunsService {
     currentMonth: string,
     currentNetTotal: string | null,
   ): Promise<VarianceSummary | null> {
-    const [[prevRun], currentEmps] = await Promise.all([
-      this.db
-        .select({ id: payrollRuns.id, month: payrollRuns.month, netTotal: payrollRuns.netTotal })
-        .from(payrollRuns)
-        .where(and(
-          eq(payrollRuns.orgId, orgId),
-          lt(payrollRuns.month, currentMonth),
-          inArray(payrollRuns.status, [...PAYROLL_LOCKED_STATUSES]),
-        ))
-        .orderBy(desc(payrollRuns.month))
-        .limit(1),
-      this.db
-        .select({ userId: payrollRunEmployees.userId, net: payrollRunEmployees.net })
-        .from(payrollRunEmployees)
-        .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId))),
-    ]);
-
-    if (!prevRun) return null;
-
-    const prevEmps = await this.db
-      .select({ userId: payrollRunEmployees.userId, net: payrollRunEmployees.net })
-      .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, prevRun.id), eq(payrollRunEmployees.orgId, orgId)));
-
-    const currentUserIds = new Set(currentEmps.map(e => e.userId));
-    const prevNetMap = new Map(prevEmps.map(e => [e.userId, e.net]));
-
-    const newJoiners = currentEmps.filter(e => !prevNetMap.has(e.userId)).length;
-    const exited = prevEmps.filter(e => !currentUserIds.has(e.userId)).length;
-    const changedEmployees = currentEmps.filter(e => {
-      const prevNet = prevNetMap.get(e.userId);
-      return prevNet != null && prevNet !== e.net;
-    }).length;
-
-    const currentNetPaise = toPaise(currentNetTotal ?? "0");
-    const prevNetPaise = toPaise(prevRun.netTotal ?? "0");
-    const netDeltaPaise = currentNetPaise - prevNetPaise;
-    const netDeltaPercent = prevNetPaise !== 0 ? (netDeltaPaise / prevNetPaise) * 100 : 0;
-
-    return {
-      previousMonth: prevRun.month,
-      currentNet: (currentNetPaise / 100).toFixed(2),
-      previousNet: (prevNetPaise / 100).toFixed(2),
-      netDelta: fromPaise(netDeltaPaise),
-      netDeltaPercent: Math.round(netDeltaPercent * 100) / 100,
-      newJoiners,
-      exited,
-      changedEmployees,
-    };
+    return this.variance.buildSummary(orgId, runId, currentMonth, currentNetTotal);
   }
 
   private async getTogglesForRun(orgId: string, policyVersionId: number | null): Promise<PayrollToggles | null> {

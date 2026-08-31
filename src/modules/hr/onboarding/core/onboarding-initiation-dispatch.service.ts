@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { logger } from "../../../../common/logger/logger.service";
 import {
   registerAfterCommit,
@@ -9,8 +9,9 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { users } from "../../../../db/schema";
 import { AccessService } from "../../../access/access.service";
-import { EmailService } from "../../../email/email.service";
+import { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 import { HrAutomationEngineService } from "../../automations/hr-automation-engine.service";
+import { EmploymentFactsService } from "../../../directory/employment-facts.service";
 
 export type OnboardingInitiationRecipient = {
   id: string;
@@ -24,9 +25,10 @@ export type OnboardingInitiationRecipient = {
 export class OnboardingInitiationDispatchService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly email: EmailService,
+    private readonly notifications: NotificationDispatchService,
     private readonly access: AccessService,
     private readonly automation: HrAutomationEngineService,
+    private readonly employment: EmploymentFactsService,
   ) {}
 
   schedule(
@@ -54,18 +56,16 @@ export class OnboardingInitiationDispatchService {
     taskCount: number,
     ownerRoleCounts: ReadonlyMap<string, number>,
   ): Promise<void> {
-    const deliveries: Array<Promise<void>> = [];
-    if (target.email) {
-      deliveries.push(
-        this.email.sendOnboardingWelcomeEmail(
-          target.email,
-          target.name ?? "there",
-          target.designation ?? "Employee",
-          this.joiningDateLabel(target.joiningDate),
-          taskCount,
-        ),
-      );
-    }
+    const deliveries: Array<Promise<unknown>> = [];
+    deliveries.push(this.notifications.emit({
+      eventKey: "hr.onboarding.started",
+      orgId,
+      targetUserIds: [target.id],
+      entityType: "employee",
+      entityId: target.id,
+      message: "Your onboarding has started.",
+      variables: { employeeName: target.name ?? "there", designation: target.designation ?? "Employee", joiningDate: this.joiningDateLabel(target.joiningDate), taskCount },
+    }));
 
     const hrTaskCount = ownerRoleCounts.get("HR") ?? 0;
     if (hrTaskCount > 0) {
@@ -78,45 +78,31 @@ export class OnboardingInitiationDispatchService {
           .select({ id: users.id, email: users.email, name: users.name })
           .from(users)
           .where(inArray(users.id, userIds));
-        for (const recipient of recipients) {
-          if (!recipient.email) continue;
-          deliveries.push(
-            this.email.sendOnboardingTaskEmail(
-              recipient.email,
-              recipient.name ?? "there",
-              target.name ?? "the new joiner",
-              "HR",
-              hrTaskCount,
-            ),
-          );
-        }
+        deliveries.push(this.notifications.emit({
+          eventKey: "hr.onboarding.started",
+          orgId,
+          targetUserIds: recipients.map((r) => r.id),
+          entityType: "employee",
+          entityId: target.id,
+          message: `${target.name ?? "A new joiner"} has onboarding tasks assigned to HR.`,
+          variables: { employeeName: target.name ?? "the new joiner", ownerRole: "HR", taskCount: hrTaskCount },
+        }));
       }
     }
 
     const managerTaskCount = ownerRoleCounts.get("MANAGER") ?? 0;
     if (managerTaskCount > 0) {
-      const [employee] = await this.db
-        .select({ managerId: users.reportingTo })
-        .from(users)
-        .where(eq(users.id, target.id))
-        .limit(1);
-      if (employee?.managerId) {
-        const [manager] = await this.db
-          .select({ email: users.email, name: users.name })
-          .from(users)
-          .where(eq(users.id, employee.managerId))
-          .limit(1);
-        if (manager?.email) {
-          deliveries.push(
-            this.email.sendOnboardingTaskEmail(
-              manager.email,
-              manager.name ?? "there",
-              target.name ?? "the new joiner",
-              "Manager",
-              managerTaskCount,
-            ),
-          );
-        }
+      const facts = await this.employment.getFacts(orgId, target.id);
+      if (facts.managerUserId) {
+        deliveries.push(this.notifications.emit({
+          eventKey: "hr.onboarding.started",
+          orgId,
+          targetUserIds: [facts.managerUserId],
+          entityType: "employee",
+          entityId: target.id,
+          message: `${target.name ?? "A new joiner"} has onboarding tasks assigned to you.`,
+          variables: { employeeName: target.name ?? "the new joiner", ownerRole: "Manager", taskCount: managerTaskCount },
+        }));
       }
     }
 

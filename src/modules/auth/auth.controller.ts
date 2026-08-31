@@ -11,13 +11,13 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { Public } from "../../common/auth/public.decorator";
 import { AllowWithoutMfa } from "../../common/auth/allow-without-mfa.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { AuthService } from "./auth.service";
 import { AuthTokensService } from "./auth-tokens.service";
@@ -39,6 +39,10 @@ import {
   type VerifyEmailOtpInput,
 } from "./dto/auth.schemas";
 import { enrichUserAgent } from "../../common/http/parse-user-agent";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
 @Controller("auth")
 @UseGuards(JwtAuthGuard)
@@ -84,8 +88,9 @@ export class AuthController {
   @Post("register")
   @Public()
   @HttpCode(201)
+  @Validate({ body: registerSchema })
   async register(
-    @Body(new ZodValidationPipe(registerSchema)) body: RegisterInput,
+    @Body() body: RegisterInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:register", this.getIp(req));
@@ -93,6 +98,7 @@ export class AuthController {
   }
 
   @Post("logout")
+  @Universal()
   @HttpCode(200)
   @AllowWithoutMfa()
   logout(@CurrentUser() u: CurrentUserContext) {
@@ -102,8 +108,9 @@ export class AuthController {
   @Post("verify-email")
   @Public()
   @HttpCode(200)
+  @Validate({ body: verifyEmailSchema })
   async verifyEmail(
-    @Body(new ZodValidationPipe(verifyEmailSchema)) body: VerifyEmailInput,
+    @Body() body: VerifyEmailInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:verify-email", this.getIp(req));
@@ -113,8 +120,9 @@ export class AuthController {
   @Post("resend-verification")
   @Public()
   @HttpCode(200)
+  @Validate({ body: resendVerificationSchema })
   async resendVerification(
-    @Body(new ZodValidationPipe(resendVerificationSchema)) body: { email: string },
+    @Body() body: { email: string },
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:resend-verification", this.getIp(req));
@@ -131,6 +139,7 @@ export class AuthController {
   @Public()
   @Get("session-data/:userId")
   @HttpCode(200)
+  @Validate({ params: userIdParams })
   async getSessionData(
     @Param("userId") userId: string,
     @Request() req: { headers: Record<string, string> },
@@ -145,8 +154,9 @@ export class AuthController {
   @Post("magic-link")
   @Public()
   @HttpCode(200)
+  @Validate({ body: magicLinkRequestSchema })
   async requestMagicLink(
-    @Body(new ZodValidationPipe(magicLinkRequestSchema)) body: MagicLinkRequestInput,
+    @Body() body: MagicLinkRequestInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:magic-link", this.getIp(req));
@@ -157,8 +167,9 @@ export class AuthController {
   @Post("magic-link/verify")
   @Public()
   @HttpCode(200)
+  @Validate({ body: magicLinkVerifySchema })
   async verifyMagicLink(
-    @Body(new ZodValidationPipe(magicLinkVerifySchema)) body: MagicLinkVerifyInput,
+    @Body() body: MagicLinkVerifyInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:magic-link-verify", this.getIp(req));
@@ -168,8 +179,9 @@ export class AuthController {
   @Post("google")
   @Public()
   @HttpCode(200)
+  @Validate({ body: googleOAuthSchema })
   async googleOAuth(
-    @Body(new ZodValidationPipe(googleOAuthSchema)) body: GoogleOAuthInput,
+    @Body() body: GoogleOAuthInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     const secret = process.env.INTERNAL_API_SECRET;
@@ -182,8 +194,9 @@ export class AuthController {
   @Post("email-otp")
   @Public()
   @HttpCode(200)
+  @Validate({ body: requestEmailOtpSchema })
   async requestEmailOtp(
-    @Body(new ZodValidationPipe(requestEmailOtpSchema)) body: RequestEmailOtpInput,
+    @Body() body: RequestEmailOtpInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:email-otp", this.getIp(req));
@@ -194,8 +207,9 @@ export class AuthController {
   @Post("email-otp/verify")
   @Public()
   @HttpCode(200)
+  @Validate({ body: verifyEmailOtpSchema })
   async verifyEmailOtp(
-    @Body(new ZodValidationPipe(verifyEmailOtpSchema)) body: VerifyEmailOtpInput,
+    @Body() body: VerifyEmailOtpInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:email-otp-verify", this.getIp(req));

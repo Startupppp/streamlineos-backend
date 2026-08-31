@@ -4,9 +4,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { randomUUID } from "node:crypto";
+import { resolveOrganizationActorsByUserIds } from "../../../common/organization/organization-actor";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import {
   projects,
   ticketActivityLog,
@@ -73,6 +72,24 @@ export class ProjectsTicketsCreateService {
         throw new BadRequestException("Epic ticket not found in this project");
     }
 
+    const reporterUserId = body.reporterId ?? u.userId;
+    const allAssigneeIds = new Set<string>();
+    if (body.assigneeId) allAssigneeIds.add(body.assigneeId);
+    if (body.assigneeIds) body.assigneeIds.forEach((uid) => allAssigneeIds.add(uid));
+
+    const batchIds = new Set<string>([u.userId, reporterUserId, ...allAssigneeIds]);
+    const actorMap = await resolveOrganizationActorsByUserIds(this.db, u.orgId, [...batchIds]);
+
+    for (const uid of allAssigneeIds) {
+      if (!actorMap.has(uid))
+        throw new NotFoundException("Assignee is not a member of this organization");
+    }
+
+    const assigneeMembershipId = body.assigneeId
+      ? (actorMap.get(body.assigneeId)?.membershipId ?? null)
+      : null;
+    const reporterMembershipId = actorMap.get(reporterUserId)?.membershipId ?? null;
+
     const [ticket] = await this.db.transaction(async (tx) => {
       const nextTicketNumber = await allocateTicketNumbers(tx, u.orgId, projectId);
 
@@ -94,7 +111,9 @@ export class ProjectsTicketsCreateService {
           type: normalizeTicketType(body.type),
           priority: body.priority ?? "MEDIUM",
           assigneeId: body.assigneeId,
-          reporterId: body.reporterId ?? u.userId,
+          assigneeMembershipId,
+          reporterId: reporterUserId,
+          reporterMembershipId,
           sprintId: body.sprintId,
           epicId: body.epicId,
           cycleId: body.cycleId,
@@ -109,17 +128,13 @@ export class ProjectsTicketsCreateService {
         })
         .returning();
 
-      const allAssigneeIds = new Set<string>();
-      if (body.assigneeId) allAssigneeIds.add(body.assigneeId);
-      if (body.assigneeIds)
-        body.assigneeIds.forEach((uid) => allAssigneeIds.add(uid));
-
       if (allAssigneeIds.size > 0) {
         await tx.insert(ticketAssignees).values(
           Array.from(allAssigneeIds).map((userId) => ({
             orgId: u.orgId,
             ticketId: created.id,
             userId,
+            membershipId: actorMap.get(userId)?.membershipId ?? null,
             assignedBy: u.userId,
           })),
         );
@@ -138,28 +153,8 @@ export class ProjectsTicketsCreateService {
       await tx.insert(ticketActivityLog).values({
         orgId: u.orgId,
         ticketId: created.id,
-        userId: u.userId,
+        userMembershipId: actorMap.get(u.userId)?.membershipId ?? null,
         action: "created",
-      });
-
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: u.orgId,
-        aggregateType: "ticket",
-        aggregateId: String(created.id),
-        aggregateVersion: 1,
-        eventType: "build.ticket.created",
-        payload: {
-          ticketId: created.id,
-          projectId,
-          orgId: u.orgId,
-          title: created.title,
-          type: created.type,
-          status: created.status,
-          assigneeId: created.assigneeId ?? null,
-          createdBy: u.userId,
-        },
-        occurredAt: new Date(),
       });
 
       return [created];
@@ -185,9 +180,6 @@ export class ProjectsTicketsCreateService {
         : String(ticket.ticketNumber);
       const ticketLink = `/projects/${projectId}/tickets/${encodeURIComponent(ticketKey)}`;
 
-      // REG-004: was a raw notifications.create() per target, which bypassed
-      // routing, preferences, dedupe and the PIPE-003 visibility check. One emit
-      // for the whole target set also batches routing instead of N round trips.
       await this.dispatch
         .emit({
           eventKey: "build.ticket.assigned",
@@ -248,6 +240,8 @@ export class ProjectsTicketsCreateService {
     projectId: number,
     input: { title: string; description: string; type?: string },
   ): Promise<{ id: number }> {
+    const feedbackActorMap = await resolveOrganizationActorsByUserIds(this.db, orgId, [actingUserId]);
+    const feedbackActorMembershipId = feedbackActorMap.get(actingUserId)?.membershipId ?? null;
     const [ticket] = await this.db.transaction(async (tx) => {
       const nextNum = await allocateTicketNumbers(tx, orgId, projectId);
 
@@ -272,7 +266,7 @@ export class ProjectsTicketsCreateService {
       await tx.insert(ticketActivityLog).values({
         orgId,
         ticketId: created.id,
-        userId: actingUserId,
+        userMembershipId: feedbackActorMembershipId,
         action: "created",
       });
 

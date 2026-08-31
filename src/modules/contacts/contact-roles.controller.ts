@@ -16,7 +16,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ContactRolesService } from "./contact-roles.service";
 import {
   contactRoleCreateSchema,
@@ -28,6 +27,11 @@ import {
   type MergeContactsInput,
   type DuplicatesQueryInput,
 } from "./dto/contact-roles.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const contactIdParams = z.object({ contactId: z.coerce.number().int().positive() }).strict();
+const contactIdroleIdParams = z.object({ contactId: z.coerce.number().int().positive(), roleId: z.string().min(1) }).strict();
 
 @RequireModule("crm")
 @Controller("contacts")
@@ -37,8 +41,9 @@ export class ContactRolesController {
 
   @Get("duplicates")
   @RequirePermission("crm:contacts:view")
+  @Validate({ query: duplicatesQuerySchema })
   getDuplicates(
-    @Query(new ZodValidationPipe(duplicatesQuerySchema)) query: DuplicatesQueryInput,
+    @Query() query: DuplicatesQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.getDuplicateContacts(u.orgId, query);
@@ -47,8 +52,9 @@ export class ContactRolesController {
   @Post("merge")
   @HttpCode(200)
   @RequirePermission("crm:contacts:merge")
+  @Validate({ body: mergeContactsSchema })
   mergeContacts(
-    @Body(new ZodValidationPipe(mergeContactsSchema)) body: MergeContactsInput,
+    @Body() body: MergeContactsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.mergeContacts(u.orgId, body, u.userId);
@@ -56,9 +62,10 @@ export class ContactRolesController {
 
   @Get(":contactId/roles")
   @RequirePermission("crm:contacts:view")
+  @Validate({ params: contactIdParams, query: contactRoleListSchema })
   listRoles(
     @Param("contactId", ParseIntPipe) contactId: number,
-    @Query(new ZodValidationPipe(contactRoleListSchema)) query: ContactRoleListInput,
+    @Query() query: ContactRoleListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listRoles(u.orgId, contactId, query);
@@ -67,9 +74,10 @@ export class ContactRolesController {
   @Post(":contactId/roles")
   @HttpCode(201)
   @RequirePermission("crm:contacts:manage")
+  @Validate({ params: contactIdParams, body: contactRoleCreateSchema })
   addRole(
     @Param("contactId", ParseIntPipe) contactId: number,
-    @Body(new ZodValidationPipe(contactRoleCreateSchema)) body: ContactRoleCreateInput,
+    @Body() body: ContactRoleCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.addRole(u.orgId, contactId, body, u.userId);
@@ -78,6 +86,7 @@ export class ContactRolesController {
   @Delete(":contactId/roles/:roleId")
   @HttpCode(204)
   @RequirePermission("crm:contacts:manage")
+  @Validate({ params: contactIdroleIdParams })
   async removeRole(
     @Param("contactId", ParseIntPipe) contactId: number,
     @Param("roleId") roleId: string,

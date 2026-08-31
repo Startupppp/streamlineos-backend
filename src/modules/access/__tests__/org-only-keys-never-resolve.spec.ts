@@ -16,7 +16,7 @@ const USER = "u-1";
 type Options = {
   personalGrants?: { permissionKey: string; scope: string }[];
   roleGrants?: { roleId: number; permissionKey: string; scope: string }[];
-  delegated?: { permissionKey: string }[];
+  delegated?: { permissionKey: string; startsAt: Date; endsAt: Date }[];
   isOwner?: boolean;
   memberRole?: string;
 };
@@ -75,7 +75,7 @@ describe("an org-only key never resolves from a grant table", () => {
         { roleId: 1, permissionKey: NORMAL_KEY, scope: "all" },
       ],
     });
-    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
+    const resolved = (await resolver.computeUserPermissions(ORG, USER, 1)).perms;
 
     expect(resolved[ORG_ONLY_KEY]).toBeUndefined();
     expect(resolved[NORMAL_KEY]).toBe("all");
@@ -85,15 +85,21 @@ describe("an org-only key never resolves from a grant table", () => {
     const resolver = buildResolver({
       personalGrants: [{ permissionKey: ORG_ONLY_KEY, scope: "all" }],
     });
-    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
+    const resolved = (await resolver.computeUserPermissions(ORG, USER, 1)).perms;
     expect(resolved[ORG_ONLY_KEY]).toBeUndefined();
   });
 
   it("drops it when a delegation carries it", async () => {
     const resolver = buildResolver({
-      delegated: [{ permissionKey: ORG_ONLY_KEY }],
+      delegated: [
+        {
+          permissionKey: ORG_ONLY_KEY,
+          startsAt: new Date(Date.now() - 60_000),
+          endsAt: new Date(Date.now() + 60_000),
+        },
+      ],
     });
-    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
+    const resolved = (await resolver.computeUserPermissions(ORG, USER, 1)).perms;
     expect(resolved[ORG_ONLY_KEY]).toBeUndefined();
   });
 
@@ -101,19 +107,19 @@ describe("an org-only key never resolves from a grant table", () => {
     const resolver = buildResolver({
       personalGrants: [{ permissionKey: BILLING_KEY, scope: "all" }],
     });
-    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
+    const resolved = (await resolver.computeUserPermissions(ORG, USER, 1)).perms;
     expect(resolved[BILLING_KEY]).toBeUndefined();
   });
 
   it("still gives the org owner the key, who holds the catalog structurally", async () => {
     const resolver = buildResolver({ isOwner: true });
-    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
+    const resolved = (await resolver.computeUserPermissions(ORG, USER, 1)).perms;
     expect(resolved[ORG_ONLY_KEY]).toBe("all");
   });
 
   it("still gives an org admin the key", async () => {
     const resolver = buildResolver({ memberRole: "ORG_ADMIN" });
-    const resolved = await resolver.computeUserPermissions(ORG, USER, 1);
+    const resolved = (await resolver.computeUserPermissions(ORG, USER, 1)).perms;
     expect(resolved[ORG_ONLY_KEY]).toBe("all");
   });
 });

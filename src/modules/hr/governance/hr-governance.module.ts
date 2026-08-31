@@ -4,11 +4,13 @@ import { LegalHoldsController } from "./legal-holds/legal-holds.controller";
 import { RetentionController } from "./retention/retention.controller";
 import { DelegationsController } from "./delegations/delegations.controller";
 import { PositionsController } from "./positions/positions.controller";
+import { PositionsTaxonomyController } from "./positions/positions-taxonomy.controller";
 import { LaborController } from "./labor/labor.controller";
 import { LegalHoldsService } from "./legal-holds/legal-holds.service";
 import { RetentionService } from "./retention/retention.service";
 import { DelegationsService } from "./delegations/delegations.service";
 import { PositionsService } from "./positions/positions.service";
+import { PositionsTaxonomyService } from "./positions/positions-taxonomy.service";
 import { LaborService } from "./labor/labor.service";
 
 @Module({
@@ -18,6 +20,7 @@ import { LaborService } from "./labor/labor.service";
     RetentionController,
     DelegationsController,
     PositionsController,
+    PositionsTaxonomyController,
     LaborController,
   ],
   providers: [
@@ -25,6 +28,7 @@ import { LaborService } from "./labor/labor.service";
     RetentionService,
     DelegationsService,
     PositionsService,
+    PositionsTaxonomyService,
     LaborService,
   ],
   exports: [LegalHoldsService],

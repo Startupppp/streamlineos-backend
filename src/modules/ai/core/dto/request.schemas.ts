@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const scoreLeadSingleSchema = z.object({
   leadId: z.number().int().positive(),
@@ -140,7 +141,8 @@ export type HelpdeskReplyInput = z.infer<typeof helpdeskReplySchema>;
 export const kbAskSchema = z.object({
   org: z.string().trim().min(1),
   question: z.string().trim().min(3, "Question is too short").max(1000),
-});
+}).strict();
+export type KbAskInput = z.infer<typeof kbAskSchema>;
 export const chatRequestSchema = z.object({
   messages: z
     .array(
@@ -157,7 +159,7 @@ export const chatRequestSchema = z.object({
 
 export const chatHistoryQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(30),
+  limit: pageSizeField(30, 100),
 });
 
 export const conversationCreateSchema = z.object({
@@ -170,12 +172,12 @@ export const conversationRenameSchema = z.object({
 
 export const conversationsListQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(20),
+  limit: pageSizeField(20, 50),
 });
 
 export const conversationMessagesQuerySchema = z.object({
   cursor: z.coerce.number().int().positive().optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(30),
+  limit: pageSizeField(30, 100),
 });
 
 export const policyQaSchema = z.object({

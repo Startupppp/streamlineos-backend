@@ -4,10 +4,12 @@ import type { CallHandler, NestInterceptor } from "@nestjs/common";
 import request from "supertest";
 import { PaymentRunsController } from "./payment-runs.controller";
 import { PaymentRunsService } from "./payment-runs.service";
+import { PaymentRunExecutorService } from "./payment-run-executor.service";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { IdempotencyInterceptor } from "../../../common/idempotency/idempotency.interceptor";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 class PassthroughIdempotencyInterceptor implements NestInterceptor {
   intercept(_ctx: ExecutionContext, next: CallHandler) {
@@ -23,6 +25,7 @@ const USER_CTX: CurrentUserContext = {
   isOrgOwner: false,
   sessionId: "sess2",
   tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
 };
 
 class HeaderCheckAuthGuard implements CanActivate {
@@ -55,15 +58,21 @@ const mockPaymentRunsService = {
   getRun: jest.fn().mockResolvedValue(MOCK_RUN),
   createRun: jest.fn().mockResolvedValue(MOCK_RUN),
   approveRun: jest.fn().mockResolvedValue({ ...MOCK_RUN, status: "APPROVED" }),
-  executeRun: jest.fn().mockResolvedValue({ ...MOCK_RUN, status: "EXECUTED" }),
   cancelRun: jest.fn().mockResolvedValue({ ...MOCK_RUN, status: "CANCELLED" }),
   updateRunItem: jest.fn().mockResolvedValue({}),
+};
+
+const mockPaymentRunExecutorService = {
+  executeRun: jest.fn().mockResolvedValue({ id: 1, status: "COMPLETED" }),
 };
 
 async function buildApp(options: { allowPermission: boolean }): Promise<INestApplication> {
   const moduleRef: TestingModule = await Test.createTestingModule({
     controllers: [PaymentRunsController],
-    providers: [{ provide: PaymentRunsService, useValue: mockPaymentRunsService }],
+    providers: [
+      { provide: PaymentRunsService, useValue: mockPaymentRunsService },
+      { provide: PaymentRunExecutorService, useValue: mockPaymentRunExecutorService },
+    ],
   })
     .overrideGuard(JwtAuthGuard)
     .useClass(HeaderCheckAuthGuard)

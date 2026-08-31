@@ -15,9 +15,11 @@ import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decora
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { NoTenantTransaction } from "../../../../common/tenant/no-tenant-transaction.decorator";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { LlmService } from "../providers/llm.service";
 import { BlogAiService } from "../services/blog-ai.service";
+import { Validate } from "../../../../common/validation/validate.decorator";
+
+const postIdParams = z.object({ postId: z.string().min(1) }).strict();
 
 const improveWritingSchema = z.object({ content: z.string().min(1).max(10000) });
 const suggestTitleSchema = z.object({
@@ -46,9 +48,10 @@ export class BlogAiController {
 
   @Post("blog/posts/:postId/improve-writing")
   @RequirePermission("blog:ai:use")
+  @Validate({ params: postIdParams, body: improveWritingSchema })
   async improveWriting(
     @Param("postId") postId: string,
-    @Body(new ZodValidationPipe(improveWritingSchema)) body: ImproveWritingInput,
+    @Body() body: ImproveWritingInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm();
@@ -57,9 +60,10 @@ export class BlogAiController {
 
   @Post("blog/posts/:postId/suggest-title")
   @RequirePermission("blog:ai:use")
+  @Validate({ params: postIdParams, body: suggestTitleSchema })
   async suggestTitle(
     @Param("postId") postId: string,
-    @Body(new ZodValidationPipe(suggestTitleSchema)) body: SuggestTitleInput,
+    @Body() body: SuggestTitleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm();
@@ -68,9 +72,10 @@ export class BlogAiController {
 
   @Post("blog/posts/:postId/summarize")
   @RequirePermission("blog:ai:use")
+  @Validate({ params: postIdParams, body: summarizeSchema })
   async summarize(
     @Param("postId") postId: string,
-    @Body(new ZodValidationPipe(summarizeSchema)) body: SummarizeInput,
+    @Body() body: SummarizeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     this.ensureLlm();

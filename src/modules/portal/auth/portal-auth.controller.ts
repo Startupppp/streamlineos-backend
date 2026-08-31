@@ -1,6 +1,6 @@
 import { Body, Controller, HttpCode, Post } from "@nestjs/common";
 import { Public } from "../../../common/auth/public.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import { PortalAuthService } from "./portal-auth.service";
 import {
   acceptInvitationSchema,
@@ -14,10 +14,8 @@ export class PortalAuthController {
 
   @Post("accept-invitation")
   @HttpCode(200)
-  acceptInvitation(
-    @Body(new ZodValidationPipe(acceptInvitationSchema))
-    body: AcceptInvitationInput,
-  ) {
+  @Validate({ body: acceptInvitationSchema })
+  acceptInvitation(@Body() body: AcceptInvitationInput) {
     return this.svc.acceptInvitation(body.token);
   }
 }

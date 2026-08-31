@@ -17,7 +17,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrPeopleService } from "./hr-people.service";
 import { HrEmployeeRecordListsService } from "./hr-employee-record-lists.service";
 import { PersonEmploymentSyncService } from "./person-employment-sync.service";
@@ -34,6 +34,10 @@ import {
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const personIdParams = z.object({ personId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/people")
@@ -49,8 +53,9 @@ export class HrPeopleController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
+  @Validate({ query: listPeopleSchema })
   async list(
-    @Query(new ZodValidationPipe(listPeopleSchema)) query: ListPeopleInput,
+    @Query() query: ListPeopleInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveEmployeesScope(this.access, currentUser);
@@ -87,6 +92,7 @@ export class HrPeopleController {
   @Get(":personId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
+  @Validate({ params: personIdParams })
   async getOne(
     @Param("personId", ParseIntPipe) personId: number,
     @CurrentUser() currentUser: CurrentUserContext,
@@ -104,8 +110,9 @@ export class HrPeopleController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
   @HttpCode(201)
+  @Validate({ body: createPersonSchema })
   create(
-    @Body(new ZodValidationPipe(createPersonSchema)) body: CreatePersonInput,
+    @Body() body: CreatePersonInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.people.create(currentUser.orgId, currentUser.userId, body);
@@ -114,9 +121,10 @@ export class HrPeopleController {
   @Patch(":personId")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: personIdParams, body: updatePersonSchema })
   update(
     @Param("personId", ParseIntPipe) personId: number,
-    @Body(new ZodValidationPipe(updatePersonSchema)) body: UpdatePersonInput,
+    @Body() body: UpdatePersonInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.people.update(
@@ -131,6 +139,7 @@ export class HrPeopleController {
   @HttpCode(204)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: personIdParams })
   remove(
     @Param("personId", ParseIntPipe) personId: number,
     @CurrentUser() currentUser: CurrentUserContext,

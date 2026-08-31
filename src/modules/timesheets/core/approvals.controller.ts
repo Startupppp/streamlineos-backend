@@ -16,8 +16,8 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ApprovalsService } from "./approvals.service";
+import { ApprovalsBulkService } from "./approvals-bulk.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   approvalsQuerySchema,
@@ -29,17 +29,25 @@ import {
   type BulkRejectInput,
   type RejectPeriodInput,
 } from "./dto/approvals.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("timesheets/approvals")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class ApprovalsController {
-  constructor(private readonly approvals: ApprovalsService) {}
+  constructor(
+    private readonly approvals: ApprovalsService,
+    private readonly approvalsBulk: ApprovalsBulkService,
+  ) {}
 
   @Get()
   @RequirePermission("timesheets:approvals:view")
+  @Validate({ query: approvalsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(approvalsQuerySchema)) query: ApprovalsQuery,
+    @Query() query: ApprovalsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.approvals.listApprovals(u, query);
@@ -49,28 +57,31 @@ export class ApprovalsController {
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Idempotent("timesheets.approval.bulk_approve")
+  @Validate({ body: bulkApproveSchema })
   bulkApprove(
-    @Body(new ZodValidationPipe(bulkApproveSchema)) body: BulkApproveInput,
+    @Body() body: BulkApproveInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.approvals.bulkApprove(u, body);
+    return this.approvalsBulk.bulkApprove(u, body);
   }
 
   @Post("bulk-reject")
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Idempotent("timesheets.approval.bulk_reject")
+  @Validate({ body: bulkRejectSchema })
   bulkReject(
-    @Body(new ZodValidationPipe(bulkRejectSchema)) body: BulkRejectInput,
+    @Body() body: BulkRejectInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.approvals.bulkReject(u, body);
+    return this.approvalsBulk.bulkReject(u, body);
   }
 
   @Post(":periodId/approve")
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Idempotent("timesheets.approval.approve")
+  @Validate({ params: periodIdParams })
   approve(
     @Param("periodId", ParseIntPipe) periodId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -82,11 +93,12 @@ export class ApprovalsController {
   @HttpCode(200)
   @RequirePermission("timesheets:approvals:manage")
   @Idempotent("timesheets.approval.reject")
+  @Validate({ params: periodIdParams, body: rejectPeriodSchema })
   reject(
     @Param("periodId", ParseIntPipe) periodId: number,
-    @Body(new ZodValidationPipe(rejectPeriodSchema)) body: RejectPeriodInput,
+    @Body() body: RejectPeriodInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.approvals.rejectPeriod(u, periodId, body);
+    return this.approvalsBulk.rejectPeriod(u, periodId, body);
   }
 }

@@ -17,7 +17,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import {
   accountingMappingCreateSchema,
   accountingMappingUpdateSchema,
@@ -25,6 +24,10 @@ import {
   type AccountingMappingUpdate,
 } from "./dto/insights.schemas";
 import { AccountingMappingsService } from "./accounting-mappings.service";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const mappingIdParams = z.object({ mappingId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/accounting-mappings")
@@ -40,17 +43,19 @@ export class AccountingMappingsController {
 
   @Post()
   @HttpCode(201)
+  @Validate({ body: accountingMappingCreateSchema })
   async create(
-    @Body(new ZodValidationPipe(accountingMappingCreateSchema)) body: AccountingMappingCreate,
+    @Body() body: AccountingMappingCreate,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.accountingMappingsService.create(u.orgId, body);
   }
 
   @Patch(":mappingId")
+  @Validate({ params: mappingIdParams, body: accountingMappingUpdateSchema })
   async update(
     @Param("mappingId", ParseIntPipe) mappingId: number,
-    @Body(new ZodValidationPipe(accountingMappingUpdateSchema)) body: AccountingMappingUpdate,
+    @Body() body: AccountingMappingUpdate,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.accountingMappingsService.update(u.orgId, mappingId, body);
@@ -58,6 +63,7 @@ export class AccountingMappingsController {
 
   @Delete(":mappingId")
   @HttpCode(204)
+  @Validate({ params: mappingIdParams })
   async remove(
     @Param("mappingId", ParseIntPipe) mappingId: number,
     @CurrentUser() u: CurrentUserContext,

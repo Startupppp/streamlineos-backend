@@ -5,9 +5,9 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TaxDashboardService } from "./tax-dashboard.service";
 import { taxDashboardQuerySchema, type TaxDashboardQuery } from "./dto/tax-reports.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("accounting")
 @Controller("accounting/taxes")
@@ -18,8 +18,9 @@ export class TaxDashboardController {
   @Get("dashboard")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:read")
+  @Validate({ query: taxDashboardQuerySchema })
   getDashboard(
-    @Query(new ZodValidationPipe(taxDashboardQuerySchema)) query: TaxDashboardQuery,
+    @Query() query: TaxDashboardQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.dashboard.getDashboard(u.orgId, query);

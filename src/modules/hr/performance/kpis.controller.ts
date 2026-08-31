@@ -5,7 +5,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { KpisService } from "./kpis.service";
 import {
   createKpiSchema,
@@ -19,6 +19,11 @@ import {
   type UpdateFrameworkInput,
   type CreateCompetencyInput,
 } from "./dto/kpis.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const kpiIdParams = z.object({ kpiId: z.coerce.number().int().positive() }).strict();
+const frameworkIdParams = z.object({ frameworkId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -35,19 +40,21 @@ export class KpisController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: createKpiSchema })
   createKpi(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createKpiSchema)) body: CreateKpiInput,
+    @Body() body: CreateKpiInput,
   ) {
     return this.service.createKpi(u.orgId, body);
   }
 
   @Patch(":kpiId")
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: kpiIdParams, body: updateKpiSchema })
   updateKpi(
     @CurrentUser() u: CurrentUserContext,
     @Param("kpiId", ParseIntPipe) kpiId: number,
-    @Body(new ZodValidationPipe(updateKpiSchema)) body: UpdateKpiInput,
+    @Body() body: UpdateKpiInput,
   ) {
     return this.service.updateKpi(u.orgId, kpiId, body);
   }
@@ -55,6 +62,7 @@ export class KpisController {
   @Delete(":kpiId")
   @HttpCode(204)
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: kpiIdParams })
   async deleteKpi(@CurrentUser() u: CurrentUserContext, @Param("kpiId", ParseIntPipe) kpiId: number) {
     await this.service.deleteKpi(u.orgId, kpiId);
   }
@@ -68,25 +76,28 @@ export class KpisController {
   @Post("frameworks")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
+  @Validate({ body: createFrameworkSchema })
   createFramework(
     @CurrentUser() u: CurrentUserContext,
-    @Body(new ZodValidationPipe(createFrameworkSchema)) body: CreateFrameworkInput,
+    @Body() body: CreateFrameworkInput,
   ) {
     return this.service.createFramework(u.orgId, body);
   }
 
   @Patch("frameworks/:frameworkId")
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: frameworkIdParams, body: updateFrameworkSchema })
   updateFramework(
     @CurrentUser() u: CurrentUserContext,
     @Param("frameworkId", ParseIntPipe) frameworkId: number,
-    @Body(new ZodValidationPipe(updateFrameworkSchema)) body: UpdateFrameworkInput,
+    @Body() body: UpdateFrameworkInput,
   ) {
     return this.service.updateFramework(u.orgId, frameworkId, body);
   }
 
   @Get("frameworks/:frameworkId/competencies")
   @RequirePermission("hr:performance:view")
+  @Validate({ params: frameworkIdParams })
   listCompetencies(@Param("frameworkId", ParseIntPipe) frameworkId: number, @CurrentUser() u: CurrentUserContext) {
     return this.service.listCompetencies(u.orgId, frameworkId);
   }
@@ -94,9 +105,10 @@ export class KpisController {
   @Post("frameworks/:frameworkId/competencies")
   @HttpCode(201)
   @RequirePermission("hr:performance:manage")
+  @Validate({ params: frameworkIdParams, body: createCompetencySchema })
   createCompetency(
     @Param("frameworkId", ParseIntPipe) frameworkId: number,
-    @Body(new ZodValidationPipe(createCompetencySchema)) body: CreateCompetencyInput,
+    @Body() body: CreateCompetencyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createCompetency(u.orgId, frameworkId, body);

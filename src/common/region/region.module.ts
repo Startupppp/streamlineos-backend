@@ -6,7 +6,6 @@ import {
   type OnApplicationBootstrap,
   type OnApplicationShutdown,
 } from "@nestjs/common";
-import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -18,13 +17,12 @@ import { resolvePoolConfig } from "../../db/pool.config";
 // leads/clients/contacts/crmOrganizations, which this does not.
 // eslint-disable-next-line no-restricted-imports -- see above
 import * as schema from "../../db/schema";
-import { organizations } from "../../db/schema";
-import { runOutsideTenantContext } from "../tenant/tenant-context";
+import { orgPlacementLookup } from "./placement-lookup";
+import { resolvePlacementKeyring } from "./placement-signature";
 import { resolveRegionTopology, type RegionTopology } from "./region.config";
 import {
   RegionRegistry,
   setRegionRegistry,
-  type OrgRegionLookup,
   type RegionBinding,
 } from "./region-registry";
 
@@ -37,27 +35,6 @@ interface SecondaryClient {
 }
 
 const secondaryClients: SecondaryClient[] = [];
-
-/**
- * Reads an organisation's placement from the control plane.
- *
- * Deliberately outside any ambient tenant transaction: this runs *before* one is
- * opened, and letting the proxy route it into a caller's transaction would tie
- * the control-plane read to a tenant's connection — which is the wrong database
- * the moment a second region exists.
- */
-function orgRegionLookup(primaryDb: Db): OrgRegionLookup {
-  return async (orgId: string) =>
-    runOutsideTenantContext(async () => {
-      const rows = await primaryDb
-        .select({ region: organizations.region })
-        .from(organizations)
-        .where(eq(organizations.id, orgId))
-        .limit(1);
-
-      return rows[0]?.region ?? null;
-    });
-}
 
 function buildRegistry(topology: RegionTopology, primaryDb: Db): RegionRegistry {
   const logger = new Logger("Region");
@@ -81,10 +58,24 @@ function buildRegistry(topology: RegionTopology, primaryDb: Db): RegionRegistry 
   }
 
   logger.log(
-    `Regions ready — ${Object.keys(topology.regions).join(", ")} (primary: ${topology.primary})`,
+    `Regions ready — ${Object.keys(topology.regions)
+      .map((key) => `${key}/${topology.regions[key]?.cell.cellId ?? "?"}`)
+      .join(", ")} (primary: ${topology.primary})`,
   );
 
-  return new RegionRegistry(topology, bindings, orgRegionLookup(primaryDb));
+  const keyring = resolvePlacementKeyring(process.env);
+  if (!keyring)
+    throw new Error(
+      "[region] no placement signing key. Set PLACEMENT_SIGNING_KEY or BACKEND_JWT_SECRET.",
+    );
+
+  return new RegionRegistry(
+    topology,
+    bindings,
+    orgPlacementLookup(primaryDb, topology),
+    () => Date.now(),
+    keyring,
+  );
 }
 
 @Global()

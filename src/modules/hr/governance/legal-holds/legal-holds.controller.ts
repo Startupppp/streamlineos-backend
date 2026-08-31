@@ -19,7 +19,6 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { RequireModule } from "../../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { LegalHoldsService } from "./legal-holds.service";
 import {
   createLegalHoldSchema,
@@ -31,6 +30,11 @@ import {
   type ListLegalHoldsInput,
   type AttachHoldItemInput,
 } from "./legal-holds.dto";
+import { Validate } from "../../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const holdIdParams = z.object({ holdId: z.coerce.number().int().positive() }).strict();
+const holdIditemIdParams = z.object({ holdId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/governance/legal-holds")
@@ -40,18 +44,20 @@ export class LegalHoldsController {
 
   @Get()
   @RequirePermission("hr:legalhold:view")
+  @Validate({ query: listLegalHoldsSchema })
   async list(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listLegalHoldsSchema)) query: ListLegalHoldsInput,
+    @Query() query: ListLegalHoldsInput,
   ) {
     return this.service.list(user.orgId, query);
   }
 
   @Post()
   @RequirePermission("hr:legalhold:manage")
+  @Validate({ body: createLegalHoldSchema })
   async create(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(createLegalHoldSchema)) body: CreateLegalHoldInput,
+    @Body() body: CreateLegalHoldInput,
     @Req() req: Request,
   ) {
     return this.service.create(user.orgId, user.userId, body, req.ip);
@@ -59,6 +65,7 @@ export class LegalHoldsController {
 
   @Get(":holdId")
   @RequirePermission("hr:legalhold:view")
+  @Validate({ params: holdIdParams })
   async getById(
     @CurrentUser() user: CurrentUserContext,
     @Param("holdId", ParseIntPipe) holdId: number,
@@ -68,10 +75,11 @@ export class LegalHoldsController {
 
   @Patch(":holdId")
   @RequirePermission("hr:legalhold:manage")
+  @Validate({ params: holdIdParams, body: updateLegalHoldSchema })
   async update(
     @CurrentUser() user: CurrentUserContext,
     @Param("holdId", ParseIntPipe) holdId: number,
-    @Body(new ZodValidationPipe(updateLegalHoldSchema)) body: UpdateLegalHoldInput,
+    @Body() body: UpdateLegalHoldInput,
     @Req() req: Request,
   ) {
     return this.service.update(user.orgId, holdId, user.userId, body, req.ip);
@@ -79,6 +87,7 @@ export class LegalHoldsController {
 
   @Post(":holdId/release")
   @RequirePermission("hr:legalhold:manage")
+  @Validate({ params: holdIdParams })
   async release(
     @CurrentUser() user: CurrentUserContext,
     @Param("holdId", ParseIntPipe) holdId: number,
@@ -90,6 +99,7 @@ export class LegalHoldsController {
   @Delete(":holdId")
   @RequirePermission("hr:legalhold:manage")
   @HttpCode(204)
+  @Validate({ params: holdIdParams })
   async softDelete(
     @CurrentUser() user: CurrentUserContext,
     @Param("holdId", ParseIntPipe) holdId: number,
@@ -100,6 +110,7 @@ export class LegalHoldsController {
 
   @Get(":holdId/items")
   @RequirePermission("hr:legalhold:view")
+  @Validate({ params: holdIdParams })
   async listItems(
     @CurrentUser() user: CurrentUserContext,
     @Param("holdId", ParseIntPipe) holdId: number,
@@ -109,10 +120,11 @@ export class LegalHoldsController {
 
   @Post(":holdId/items")
   @RequirePermission("hr:legalhold:manage")
+  @Validate({ params: holdIdParams, body: attachHoldItemSchema })
   async attachItem(
     @CurrentUser() user: CurrentUserContext,
     @Param("holdId", ParseIntPipe) holdId: number,
-    @Body(new ZodValidationPipe(attachHoldItemSchema)) body: AttachHoldItemInput,
+    @Body() body: AttachHoldItemInput,
     @Req() req: Request,
   ) {
     return this.service.attachItem(user.orgId, holdId, user.userId, body, req.ip);
@@ -121,6 +133,7 @@ export class LegalHoldsController {
   @Delete(":holdId/items/:itemId")
   @RequirePermission("hr:legalhold:manage")
   @HttpCode(204)
+  @Validate({ params: holdIditemIdParams })
   async detachItem(
     @CurrentUser() user: CurrentUserContext,
     @Param("holdId", ParseIntPipe) holdId: number,

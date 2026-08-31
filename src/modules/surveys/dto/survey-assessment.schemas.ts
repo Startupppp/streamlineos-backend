@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const createAttemptSchema = z.object({
   participantId: z.number().int().positive().optional(),
@@ -7,8 +8,8 @@ export const createAttemptSchema = z.object({
 
 export const listAttemptsSchema = z.object({
   status: z.enum(["not_started", "in_progress", "submitted", "passed", "failed", "expired"]).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  page: pageNumberField,
+  pageSize: pageSizeField(25, 100),
 });
 
 export type CreateAttemptInput = z.infer<typeof createAttemptSchema>;

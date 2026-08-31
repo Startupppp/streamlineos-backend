@@ -26,7 +26,25 @@ export class HrSalaryStructuresService {
 
     return this.db.query.employeeSalaryProfiles.findMany({
       where: and(...conditions),
+      columns: {
+        id: true,
+        orgId: true,
+        userId: true,
+        annualCtc: true,
+        basicSalary: true,
+        hraPercentage: true,
+        allowances: true,
+        deductions: true,
+        status: true,
+        effectiveFrom: true,
+        effectiveTo: true,
+        currency: true,
+        payFrequency: true,
+        createdAt: true,
+        updatedAt: true,
+      },
       orderBy: [desc(employeeSalaryProfiles.effectiveFrom)],
+      limit: 100,
     });
   }
 

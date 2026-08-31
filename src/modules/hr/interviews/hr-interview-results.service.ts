@@ -37,7 +37,7 @@ export class HrInterviewResultsService {
     if (input.recordingUrl !== undefined) updateFields.recordingUrl = input.recordingUrl || null;
     if (input.recordingPlatform !== undefined) updateFields.recordingPlatform = input.recordingPlatform || null;
 
-    await this.db.update(interviews).set(updateFields).where(eq(interviews.id, interviewId));
+    await this.db.update(interviews).set(updateFields).where(and(eq(interviews.id, interviewId), eq(interviews.orgId, orgId)));
 
     if (input.result !== undefined && input.result !== "PENDING" && existing.result !== input.result) {
       const result = input.result;

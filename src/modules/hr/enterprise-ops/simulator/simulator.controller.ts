@@ -13,7 +13,6 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { RequireModule } from "../../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { AccessService } from "../../../access/access.service";
 import { SimulatorService } from "./simulator.service";
 import {
@@ -30,6 +29,7 @@ import {
   type CompareInput,
   type ListSimulationsInput,
 } from "../dto/simulator.schemas";
+import { Validate } from "../../../../common/validation/validate.decorator";
 
 @RequireModule("hr")
 @Controller("hr/enterprise/ops/simulator")
@@ -48,36 +48,40 @@ export class SimulatorController {
 
   @Post("simulate/policy")
   @RequirePermission("hr:policies:manage")
+  @Validate({ body: simulatePolicySchema })
   simulatePolicy(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(simulatePolicySchema)) body: SimulatePolicyInput,
+    @Body() body: SimulatePolicyInput,
   ) {
     return this.svc.simulatePolicy(user.orgId, user.userId, body);
   }
 
   @Post("simulate/leave-balance")
   @RequirePermission("hr:policies:manage")
+  @Validate({ body: simulateLeaveBalanceSchema })
   simulateLeaveBalance(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(simulateLeaveBalanceSchema)) body: SimulateLeaveBalanceInput,
+    @Body() body: SimulateLeaveBalanceInput,
   ) {
     return this.svc.simulateLeaveBalance(user.orgId, user.userId, body);
   }
 
   @Post("simulate/approval-routing")
   @RequirePermission("hr:policies:manage")
+  @Validate({ body: simulateApprovalRoutingSchema })
   simulateApprovalRouting(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(simulateApprovalRoutingSchema)) body: SimulateApprovalRoutingInput,
+    @Body() body: SimulateApprovalRoutingInput,
   ) {
     return this.svc.simulateApprovalRouting(user.orgId, user.userId, body);
   }
 
   @Post("simulate/payroll-impact")
   @RequirePermission("hr:policies:manage")
+  @Validate({ body: simulatePayrollImpactSchema })
   async simulatePayrollImpact(
     @CurrentUser() user: CurrentUserContext,
-    @Body(new ZodValidationPipe(simulatePayrollImpactSchema)) body: SimulatePayrollImpactInput,
+    @Body() body: SimulatePayrollImpactInput,
   ) {
     const hasSalary = await this.canViewSalary(user);
     if (!hasSalary) {
@@ -88,18 +92,20 @@ export class SimulatorController {
 
   @Get("compare")
   @RequirePermission("hr:policies:manage")
+  @Validate({ query: compareSchema })
   compare(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(compareSchema)) query: CompareInput,
+    @Query() query: CompareInput,
   ) {
     return this.svc.compare(user.orgId, user.userId, query);
   }
 
   @Get("history")
   @RequirePermission("hr:policies:manage")
+  @Validate({ query: listSimulationsSchema })
   listHistory(
     @CurrentUser() user: CurrentUserContext,
-    @Query(new ZodValidationPipe(listSimulationsSchema)) query: ListSimulationsInput,
+    @Query() query: ListSimulationsInput,
   ) {
     return this.svc.listHistory(user.orgId, query);
   }

@@ -4,12 +4,17 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { createWebhookSchema, type CreateWebhookInput } from "./dto/webhook.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
+const projectIdwebhookIdParams = z.object({ projectId: z.string().min(1), webhookId: z.coerce.number().int().positive() }).strict();
+const projectIdwebhookIdParams_ = z.object({ projectId: z.coerce.number().int().positive(), webhookId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -22,6 +27,7 @@ export class ProjectsWebhooksController {
 
   @Get(":projectId/webhooks")
   @RequirePermission("build:manage")
+  @Validate({ params: projectIdParams })
   listWebhooks(
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -33,9 +39,10 @@ export class ProjectsWebhooksController {
   @RequirePermission("build:manage")
   @HttpCode(201)
   @Idempotent("build.webhook.register")
+  @Validate({ params: projectIdParams, body: createWebhookSchema })
   createWebhook(
     @Param("projectId", ParseIntPipe) projectId: number,
-    @Body(new ZodValidationPipe(createWebhookSchema)) body: CreateWebhookInput,
+    @Body() body: CreateWebhookInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.webhooks.createWebhook(u.orgId, projectId, u.userId, body);
@@ -44,6 +51,7 @@ export class ProjectsWebhooksController {
   @Delete(":projectId/webhooks/:webhookId")
   @RequirePermission("build:manage")
   @HttpCode(204)
+  @Validate({ params: projectIdwebhookIdParams })
   deleteWebhook(
     @Param("webhookId", ParseIntPipe) webhookId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -53,6 +61,7 @@ export class ProjectsWebhooksController {
 
   @Get(":projectId/webhooks/:webhookId/deliveries")
   @RequirePermission("build:manage")
+  @Validate({ params: projectIdwebhookIdParams_ })
   listDeliveries(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("webhookId", ParseIntPipe) webhookId: number,
@@ -64,6 +73,7 @@ export class ProjectsWebhooksController {
   @Post(":projectId/webhooks/:webhookId/test")
   @RequirePermission("build:manage")
   @HttpCode(200)
+  @Validate({ params: projectIdwebhookIdParams_ })
   async sendTest(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("webhookId", ParseIntPipe) webhookId: number,

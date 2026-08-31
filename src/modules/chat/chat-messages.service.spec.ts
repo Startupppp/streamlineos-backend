@@ -3,16 +3,16 @@ import { BadRequestException, ForbiddenException, NotFoundException } from "@nes
 import { ChatMessagesService } from "./chat-messages.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AblyService } from "../realtime/ably.service";
-import { WebPushService } from "../realtime/web-push.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
-import { ChatNotificationsService } from "./chat-notifications.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { CacheService } from "../../common/cache/cache.service";
+import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
 
 const mockDb = {
   query: {
-    chatChannelMembers: { findFirst: jest.fn() },
+    organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 10 }) },
+    chatChannelMembers: { findFirst: jest.fn().mockResolvedValue({ id: 10 }) },
     chatMessages: { findFirst: jest.fn() },
     chatChannels: { findFirst: jest.fn() },
     users: { findFirst: jest.fn() },
@@ -34,7 +34,6 @@ const mockCache = {
   cached: jest.fn().mockImplementation((_key: string, fetcher: () => Promise<unknown>) => fetcher()),
   invalidate: jest.fn().mockResolvedValue(undefined),
   invalidateNamespace: jest.fn().mockResolvedValue(undefined),
-  invalidatePattern: jest.fn().mockResolvedValue(undefined),
   set: jest.fn().mockResolvedValue(undefined),
   get: jest.fn().mockResolvedValue(null),
 };
@@ -44,12 +43,7 @@ const mockAbly = {
   publishChatEvent: jest.fn().mockResolvedValue(undefined),
   publishChatMessage: jest.fn().mockResolvedValue(undefined),
 };
-const mockWebPush = { sendToUser: jest.fn().mockResolvedValue(undefined) };
 const mockReplyReminders = { scheduleForMessage: jest.fn().mockResolvedValue(undefined) };
-const mockNotifications = {
-  publishNewMessageNotification: jest.fn().mockResolvedValue(undefined),
-  publishMentionNotification: jest.fn().mockResolvedValue(undefined),
-};
 const mockEntities = {
   resolve: jest.fn().mockResolvedValue([]),
   actionsFor: jest.fn().mockResolvedValue([]),
@@ -59,6 +53,11 @@ const mockEntities = {
 
 const mockOrgSettings = {
   getSettings: jest.fn().mockResolvedValue({ maxAttachmentSizeMb: 25 }),
+};
+
+const mockFanout = {
+  dispatchRealtime: jest.fn().mockResolvedValue(undefined),
+  dispatchDeferred: jest.fn().mockResolvedValue(undefined),
 };
 
 describe("ChatMessagesService", () => {
@@ -73,11 +72,10 @@ describe("ChatMessagesService", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: mockCache },
         { provide: AblyService, useValue: mockAbly },
-        { provide: WebPushService, useValue: mockWebPush },
-        { provide: ChatNotificationsService, useValue: mockNotifications },
         { provide: ChatReplyRemindersService, useValue: mockReplyReminders },
         { provide: ChatOrgSettingsService, useValue: mockOrgSettings },
         { provide: EntityReferenceService, useValue: mockEntities },
+        { provide: MESSAGE_FANOUT_PROVIDER, useValue: mockFanout },
       ],
     }).compile();
     service = module.get(ChatMessagesService);

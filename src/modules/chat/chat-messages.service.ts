@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, gt, lt } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import {
   chatAttachments,
@@ -13,6 +13,7 @@ import {
   chatChannelMembers,
   chatMessages,
   users,
+  organizationMembers,
 } from "../../db/schema";
 import type { ChatAttachmentPayload, PersistedMessage } from "./chat-message.types";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -25,24 +26,13 @@ import { CacheService } from "../../common/cache/cache.service";
 import { AblyService } from "../realtime/ably.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
-import { nextReactions } from "./chat-reactions";
 import type { SendMessageInput } from "./dto/chat.schemas";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
-import type {
-  EntityActor,
-  EntityReference,
-} from "../entity-reference/entity-reference.types";
+import type { EntityActor } from "../entity-reference/entity-reference.types";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { CHAT_MESSAGE_FANOUT_EVENT } from "./chat-fanout-outbox";
 import { MESSAGE_FANOUT_PROVIDER, type MessageFanoutProvider } from "./message-fanout.interface";
 
-
-/**
- * A realtime publish reaches every channel member at once, so it cannot resolve
- * references per reader the way the REST paths do. It therefore carries only the
- * type and id; each client resolves the card over its own authenticated request,
- * which is where the permission check happens.
- */
 function strippedReferenceMetadata(
   metadata: Record<string, unknown> | null,
 ): Record<string, unknown> | null {
@@ -68,109 +58,72 @@ export class ChatMessagesService {
     @Inject(MESSAGE_FANOUT_PROVIDER) private readonly fanout: MessageFanoutProvider,
   ) {}
 
-  private async isMember(channelId: number, userId: string): Promise<boolean> {
-    const member = await this.db.query.chatChannelMembers.findFirst({
+  private async resolveMembershipId(orgId: string, userId: string): Promise<number | null> {
+    const row = await this.db.query.organizationMembers.findFirst({
       where: and(
-        eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.userId, userId),
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
       ),
+      columns: { id: true },
     });
-    return Boolean(member);
+    return row?.id ?? null;
   }
 
-  async list(
+  private async isMember(
     channelId: number,
-    actor: EntityActor,
-    cursor: number | undefined,
-    limit: number,
-  ) {
-    const userId = actor.userId;
-    if (!(await this.isMember(channelId, userId))) {
-      throw new ForbiddenException("You are not a member of this channel");
+    orgId: string,
+    membershipId?: number | null,
+    userId?: string,
+  ): Promise<boolean> {
+    if (membershipId) {
+      const m = await this.db.query.chatChannelMembers.findFirst({
+        where: and(
+          eq(chatChannelMembers.orgId, orgId),
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.membershipId, membershipId),
+        ),
+        columns: { id: true },
+      });
+      if (m) return true;
     }
-
-    const safeLimit = Math.min(Math.max(1, limit), 100);
-
-    const conditions = [eq(chatMessages.channelId, channelId)];
-    if (cursor) conditions.push(lt(chatMessages.id, cursor));
-
-    const messages = await this.db.query.chatMessages.findMany({
-      where: and(...conditions),
-      orderBy: [desc(chatMessages.id)],
-      limit: safeLimit + 1,
-      with: {
-        sender: { columns: { id: true, name: true, image: true } },
-        attachments: true,
-        replyTo: { with: { sender: { columns: { id: true, name: true } } } },
-      },
-    });
-
-    let nextCursor: number | undefined;
-    if (messages.length > safeLimit) {
-      messages.pop();
-      nextCursor = messages[messages.length - 1]?.id;
+    if (userId) {
+      const m = await this.db.query.chatChannelMembers.findFirst({
+        where: and(
+          eq(chatChannelMembers.orgId, orgId),
+          eq(chatChannelMembers.channelId, channelId),
+          eq(chatChannelMembers.userId, userId),
+        ),
+        columns: { id: true },
+      });
+      return Boolean(m);
     }
-
-    return {
-      messages: await this.withResolvedReferences(actor, messages.reverse()),
-      nextCursor,
-    };
-  }
-
-  /**
-   * References are resolved for the reader, now — not read back from the copy
-   * taken when the message was sent. A reader who never had, or has lost, access
-   * to the record gets the reference back with no card.
-   */
-  private async withResolvedReferences<
-    T extends { metadata: Record<string, unknown> | null },
-  >(actor: EntityActor, messages: T[]): Promise<T[]> {
-    return this.entities.withResolvedReferences(actor, messages);
-  }
-
-  async poll(channelId: number, actor: EntityActor, since: Date) {
-    const userId = actor.userId;
-    if (!(await this.isMember(channelId, userId))) {
-      throw new ForbiddenException("You are not a member of this channel");
-    }
-
-    const newMessages = await this.db.query.chatMessages.findMany({
-      where: and(
-        eq(chatMessages.channelId, channelId),
-        gt(chatMessages.createdAt, since),
-      ),
-      orderBy: [desc(chatMessages.createdAt)],
-      limit: 100,
-      with: {
-        sender: { columns: { id: true, name: true, image: true } },
-        attachments: true,
-        replyTo: { with: { sender: { columns: { id: true, name: true } } } },
-      },
-    });
-
-    return this.withResolvedReferences(actor, newMessages.reverse());
+    return false;
   }
 
   async send(channelId: number, userId: string, orgId: string, body: SendMessageInput) {
-    if (!(await this.isMember(channelId, userId))) {
+    const senderMembershipId = await this.resolveMembershipId(orgId, userId);
+    if (
+      senderMembershipId === null ||
+      !(await this.isMember(channelId, orgId, senderMembershipId, userId))
+    )
       throw new ForbiddenException("You are not a member of this channel");
-    }
 
-    const sanitizedContent = body.content ? body.content.replace(/<[^>]+>/g, "").slice(0, 10000) : null;
+    const sanitizedContent = body.content
+      ? body.content.replace(/<[^>]+>/g, "").slice(0, 10000)
+      : null;
 
-    if (!sanitizedContent?.trim() && (!body.attachments || body.attachments.length === 0)) {
+    if (!sanitizedContent?.trim() && (!body.attachments || body.attachments.length === 0))
       throw new BadRequestException("Message must have content or attachments");
-    }
 
     if (body.attachments && body.attachments.length > 0) {
       const { maxAttachmentSizeMb } = await this.orgSettings.getSettings(orgId);
       const maxBytes = maxAttachmentSizeMb * 1024 * 1024;
       const oversized = body.attachments.find((a) => a.fileSize > maxBytes);
-      if (oversized) {
+      if (oversized)
         throw new BadRequestException(
           `Attachment "${oversized.fileName}" exceeds the ${maxAttachmentSizeMb}MB limit for this organization`,
         );
-      }
     }
 
     const mentionedUserIds = await resolveMentionedUserIds(this.db, {
@@ -182,92 +135,98 @@ export class ChatMessagesService {
     });
 
     const fanoutEventId = randomUUID();
-    const { message, insertedAttachments, senderName, senderImage, channelType } = await this.db.transaction(async (tx) => {
-      const [channel] = await tx
-        .select({ id: chatChannels.id, type: chatChannels.type })
-        .from(chatChannels)
-        .where(and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)))
-        .limit(1);
+    const { message, insertedAttachments, senderName, senderImage, channelType } =
+      await this.db.transaction(async (tx) => {
+        const [channel] = await tx
+          .select({ id: chatChannels.id, type: chatChannels.type })
+          .from(chatChannels)
+          .where(and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)))
+          .limit(1);
 
-      if (!channel) throw new NotFoundException("Channel not found");
+        if (!channel) throw new NotFoundException("Channel not found");
 
-      const [senderRow] = await tx
-        .select({ name: users.name, image: users.image })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
+        const [senderRow] = await tx
+          .select({ name: users.name, image: users.image })
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
 
-      const [created] = await tx
-        .insert(chatMessages)
-        .values({
-          orgId,
-          channelId,
-          senderId: userId,
-          content: sanitizedContent?.trim() || null,
-          replyToId: body.replyToId,
-          metadata: body.metadata ?? null,
-        })
-        .returning();
-
-      let attachmentRows: ChatAttachmentPayload[] = [];
-      if (body.attachments && body.attachments.length > 0) {
-        attachmentRows = await tx.insert(chatAttachments).values(
-          body.attachments.map((a) => ({
+        const [created] = await tx
+          .insert(chatMessages)
+          .values({
             orgId,
-            messageId: created.id,
-            fileName: a.fileName,
-            fileUrl: a.fileUrl,
-            fileKey: a.fileKey,
-            fileSize: a.fileSize,
-            mimeType: a.mimeType,
-          })),
-        ).returning();
-      }
+            channelId,
+            senderId: userId,
+            senderMembershipId,
+            content: sanitizedContent?.trim() || null,
+            replyToId: body.replyToId,
+            metadata: body.metadata ?? null,
+          })
+          .returning();
 
-      await tx
-        .update(chatChannels)
-        .set({ lastMessageAt: new Date(), updatedAt: new Date() })
-        .where(eq(chatChannels.id, channelId));
+        let attachmentRows: ChatAttachmentPayload[] = [];
+        if (body.attachments && body.attachments.length > 0) {
+          attachmentRows = await tx
+            .insert(chatAttachments)
+            .values(
+              body.attachments.map((a) => ({
+                orgId,
+                messageId: created.id,
+                fileName: a.fileName,
+                fileUrl: a.fileUrl,
+                fileKey: a.fileKey,
+                fileSize: a.fileSize,
+                mimeType: a.mimeType,
+              })),
+            )
+            .returning();
+        }
 
-      await tx
-        .update(chatChannelMembers)
-        .set({ archivedAt: null })
-        .where(eq(chatChannelMembers.channelId, channelId));
+        await tx
+          .update(chatChannels)
+          .set({ lastMessageAt: new Date(), updatedAt: new Date() })
+          .where(eq(chatChannels.id, channelId));
 
-      await OutboxWriter.emit(tx, {
-        eventId: fanoutEventId,
-        organizationId: orgId,
-        aggregateType: "chat.message",
-        aggregateId: String(created.id),
-        aggregateVersion: created.id,
-        eventType: CHAT_MESSAGE_FANOUT_EVENT,
-        occurredAt: created.createdAt,
-        payload: {
-          orgId,
-          channelId,
-          channelType: channel.type ?? null,
+        await tx
+          .update(chatChannelMembers)
+          .set({ archivedAt: null })
+          .where(eq(chatChannelMembers.channelId, channelId));
+
+        await OutboxWriter.emit(tx, {
+          eventId: fanoutEventId,
+          organizationId: orgId,
+          aggregateType: "chat.message",
+          aggregateId: String(created.id),
+          aggregateVersion: created.id,
+          eventType: CHAT_MESSAGE_FANOUT_EVENT,
+          occurredAt: created.createdAt,
+          payload: {
+            orgId,
+            channelId,
+            channelType: channel.type ?? null,
+            message: created,
+            content: body?.content ?? null,
+            mentionedUserIds,
+            attachments: attachmentRows,
+            strippedMetadata: strippedReferenceMetadata(created.metadata),
+            senderName: senderRow?.name ?? null,
+            senderImage: senderRow?.image ?? null,
+          },
+        });
+
+        return {
           message: created,
-          content: body?.content ?? null,
-          mentionedUserIds,
-          attachments: attachmentRows,
-          strippedMetadata: strippedReferenceMetadata(created.metadata),
+          insertedAttachments: attachmentRows,
           senderName: senderRow?.name ?? null,
           senderImage: senderRow?.image ?? null,
-        },
+          channelType: channel.type ?? null,
+        };
       });
-
-      return { message: created, insertedAttachments: attachmentRows, senderName: senderRow?.name ?? null, senderImage: senderRow?.image ?? null, channelType: channel.type ?? null };
-    });
 
     const deferred = () =>
       runInNewTenantTransaction(this.db, orgId, async () => {
         await this.cache.invalidateNamespace(`chat:unread:${orgId}`);
-        await this.replyReminders.scheduleForMessage(
-          orgId,
-          channelId,
-          message.id,
-          userId,
-        );
+        await this.replyReminders.scheduleForMessage(orgId, channelId, message.id, userId);
       }).catch((error: unknown) => {
         logger.error("chat message side effects failed", {
           orgId,
@@ -278,21 +237,25 @@ export class ChatMessagesService {
       });
 
     const realtime = () =>
-      this.fanout.dispatchRealtime({
-          orgId,
-          channelId,
-          channelType,
-          message,
-          content: body?.content ?? null,
-          mentionedUserIds,
-          attachments: insertedAttachments,
-          strippedMetadata: strippedReferenceMetadata(message.metadata),
-          senderName,
-          senderImage,
-        }, {
-          producerEventId: fanoutEventId,
-          idempotencyKey: `outbox:${fanoutEventId}:chat-message:${orgId}:${message.id}`,
-        })
+      this.fanout
+        .dispatchRealtime(
+          {
+            orgId,
+            channelId,
+            channelType,
+            message,
+            content: body?.content ?? null,
+            mentionedUserIds,
+            attachments: insertedAttachments,
+            strippedMetadata: strippedReferenceMetadata(message.metadata),
+            senderName,
+            senderImage,
+          },
+          {
+            producerEventId: fanoutEventId,
+            idempotencyKey: `outbox:${fanoutEventId}:chat-message:${orgId}:${message.id}`,
+          },
+        )
         .catch((error: unknown) => {
           logger.error("chat realtime publish failed", {
             orgId,
@@ -310,21 +273,36 @@ export class ChatMessagesService {
 
   async edit(messageId: number, userId: string, orgId: string, content: string) {
     const message = await this.db.query.chatMessages.findFirst({
-      where: and(eq(chatMessages.id, messageId), eq(chatMessages.isDeleted, false)),
+      where: and(eq(chatMessages.id, messageId), eq(chatMessages.orgId, orgId), eq(chatMessages.isDeleted, false)),
     });
     if (!message) throw new NotFoundException("Message not found");
-    if (!(await this.isMember(message.channelId, userId))) {
+
+    const membershipId = await this.resolveMembershipId(orgId, userId);
+    if (
+      membershipId === null ||
+      !(await this.isMember(message.channelId, orgId, membershipId, userId))
+    )
       throw new ForbiddenException("You are not a member of this channel");
-    }
-    if (message.senderId !== userId) {
+
+    if (
+      message.senderMembershipId !== null && message.senderMembershipId !== undefined
+        ? message.senderMembershipId !== membershipId
+        : message.senderId !== userId
+    )
       throw new ForbiddenException("You can only edit your own messages");
-    }
 
     const updatedAt = new Date();
     await this.db
       .update(chatMessages)
       .set({ content: content.trim(), isEdited: true, updatedAt })
-      .where(and(eq(chatMessages.id, messageId), eq(chatMessages.senderId, userId)));
+      .where(
+        and(
+          eq(chatMessages.id, messageId),
+          membershipId !== null && membershipId !== undefined
+            ? eq(chatMessages.senderMembershipId, membershipId)
+            : eq(chatMessages.senderId, userId),
+        ),
+      );
 
     void this.ably.publishChatEvent(orgId, message.channelId, "message:updated", {
       id: messageId,
@@ -339,21 +317,34 @@ export class ChatMessagesService {
 
   async remove(messageId: number, userId: string, isOrgAdmin: boolean, orgId: string) {
     const message = await this.db.query.chatMessages.findFirst({
-      where: and(eq(chatMessages.id, messageId), eq(chatMessages.isDeleted, false)),
+      where: and(eq(chatMessages.id, messageId), eq(chatMessages.orgId, orgId), eq(chatMessages.isDeleted, false)),
     });
     if (!message) throw new NotFoundException("Message not found");
-    if (!(await this.isMember(message.channelId, userId))) {
-      throw new ForbiddenException("You are not a member of this channel");
-    }
 
-    if (!isOrgAdmin && message.senderId !== userId) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
+    if (
+      membershipId === null ||
+      !(await this.isMember(message.channelId, orgId, membershipId, userId))
+    )
+      throw new ForbiddenException("You are not a member of this channel");
+
+    if (
+      !isOrgAdmin &&
+      (message.senderMembershipId !== null && message.senderMembershipId !== undefined
+        ? message.senderMembershipId !== membershipId
+        : message.senderId !== userId)
+    )
       throw new ForbiddenException("You can only delete your own messages");
-    }
 
     await this.db
       .update(chatMessages)
       .set({ isDeleted: true, content: null, updatedAt: new Date() })
-      .where(and(eq(chatMessages.id, messageId), eq(chatMessages.channelId, message.channelId)));
+      .where(
+        and(
+          eq(chatMessages.id, messageId),
+          eq(chatMessages.channelId, message.channelId),
+        ),
+      );
 
     void this.ably.publishChatEvent(orgId, message.channelId, "message:deleted", {
       id: messageId,
@@ -361,58 +352,6 @@ export class ChatMessagesService {
     });
 
     return { ok: true };
-  }
-
-  async listThreadReplies(
-    parentMessageId: number,
-    actor: EntityActor,
-    cursor: number | undefined,
-    limit: number,
-  ) {
-    const userId = actor.userId;
-    const parentMessage = await this.db.query.chatMessages.findFirst({
-      where: eq(chatMessages.id, parentMessageId),
-      with: {
-        sender: { columns: { id: true, name: true, image: true } },
-        attachments: true,
-        replyTo: { with: { sender: { columns: { id: true, name: true } } } },
-      },
-    });
-
-    if (!parentMessage) throw new NotFoundException("Message not found");
-
-    if (!(await this.isMember(parentMessage.channelId, userId))) {
-      throw new ForbiddenException("You are not a member of this channel");
-    }
-
-    const safeLimit = Math.min(Math.max(1, limit), 100);
-
-    const conditions = [eq(chatMessages.replyToId, parentMessageId)];
-    if (cursor) conditions.push(lt(chatMessages.id, cursor));
-
-    const replies = await this.db.query.chatMessages.findMany({
-      where: and(...conditions),
-      orderBy: [desc(chatMessages.id)],
-      limit: safeLimit + 1,
-      with: {
-        sender: { columns: { id: true, name: true, image: true } },
-        attachments: true,
-        replyTo: { with: { sender: { columns: { id: true, name: true } } } },
-      },
-    });
-
-    let nextCursor: number | undefined;
-    if (replies.length > safeLimit) {
-      replies.pop();
-      nextCursor = replies[replies.length - 1]?.id;
-    }
-
-    const [resolvedParent] = await this.withResolvedReferences(actor, [parentMessage]);
-    return {
-      parentMessage: resolvedParent ?? parentMessage,
-      replies: await this.withResolvedReferences(actor, replies.reverse()),
-      nextCursor,
-    };
   }
 
   async sendThreadReply(
@@ -448,6 +387,7 @@ export class ChatMessagesService {
       .where(
         and(
           eq(chatMessages.id, messageId),
+          eq(chatMessages.orgId, orgId),
           eq(chatMessages.channelId, channelId),
           eq(chatChannels.orgId, orgId),
           eq(chatMessages.isDeleted, false),
@@ -486,6 +426,7 @@ export class ChatMessagesService {
           orgId,
           channelId,
           senderId,
+          senderMembershipId: await this.resolveMembershipId(orgId, senderId),
           content,
           messageType: "system",
           metadata,
@@ -520,49 +461,11 @@ export class ChatMessagesService {
           channelId,
           messageId: message.id,
           error: error instanceof Error ? error.message : String(error),
-          cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
+          cause:
+            error instanceof Error && error.cause instanceof Error
+              ? error.cause.message
+              : undefined,
         });
       });
-  }
-
-  async react(channelId: number, messageId: number, userId: string, orgId: string, emoji: string) {
-    const membership = await this.db.query.chatChannelMembers.findFirst({
-      where: and(
-        eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.userId, userId),
-      ),
-    });
-    if (!membership) throw new ForbiddenException("You are not a member of this channel");
-
-    // Locked for the rest of the request transaction: without it two reactors read the
-    // same snapshot and the second write erases the first.
-    const [message] = await this.db
-      .select({ id: chatMessages.id, reactions: chatMessages.reactions })
-      .from(chatMessages)
-      .where(
-        and(
-          eq(chatMessages.id, messageId),
-          eq(chatMessages.channelId, channelId),
-          eq(chatMessages.isDeleted, false),
-        ),
-      )
-      .for("update")
-      .limit(1);
-    if (!message) throw new NotFoundException("Message not found");
-
-    const updated = nextReactions(message.reactions ?? {}, userId, emoji);
-
-    await this.db
-      .update(chatMessages)
-      .set({ reactions: updated, updatedAt: new Date() })
-      .where(eq(chatMessages.id, messageId));
-
-    void this.ably.publishChatEvent(orgId, channelId, "reaction:updated", {
-      messageId,
-      channelId,
-      reactions: updated,
-    });
-
-    return { reactions: updated };
   }
 }

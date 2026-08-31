@@ -4,40 +4,41 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { RequirePermission } from "./require-permission.decorator";
 import { PermissionGuard } from "./permission.guard";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
-import { AccessService } from "./access.service";
+import { UserModuleAccessService } from "./user-module-access.service";
 import {
   setUserModuleAccessSchema,
-  userModuleAccessParamsSchema,
   type SetUserModuleAccessInput,
   type UserModuleAccessParams,
 } from "./dto/user-module-access.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
 @Controller("access/user-module-access")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class UserModuleAccessController {
-  constructor(private readonly access: AccessService) {}
+  constructor(private readonly userModuleAccess: UserModuleAccessService) {}
 
   @Get(":userId")
   @RequirePermission("settings:view")
+  @Validate({ params: userIdParams })
   getModuleAccess(
-    @Param(new ZodValidationPipe(userModuleAccessParamsSchema))
-    params: UserModuleAccessParams,
+    @Param() params: UserModuleAccessParams,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.access.getUserModuleAccess(u.orgId, params.userId);
+    return this.userModuleAccess.getUserModuleAccess(u.orgId, params.userId);
   }
 
   @Patch(":userId")
   @RequirePermission("settings:organization:manage")
+  @Validate({ params: userIdParams, body: setUserModuleAccessSchema })
   setModuleAccess(
-    @Param(new ZodValidationPipe(userModuleAccessParamsSchema))
-    params: UserModuleAccessParams,
-    @Body(new ZodValidationPipe(setUserModuleAccessSchema))
-    body: SetUserModuleAccessInput,
+    @Param() params: UserModuleAccessParams,
+    @Body() body: SetUserModuleAccessInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.access.setUserModuleAccess(
+    return this.userModuleAccess.setUserModuleAccess(
       u.orgId,
       params.userId,
       body.moduleKey,

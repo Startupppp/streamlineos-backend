@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lt, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { accTaxPayments } from "../../../db/schema/accounting/finance-tax";
@@ -9,10 +9,11 @@ import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type { CreateTaxPaymentInput, ListTaxPaymentsQuery } from "./dto/tax-payments.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -29,23 +30,35 @@ export class TaxPaymentsService {
   ) {}
 
   async list(orgId: string, query: ListTaxPaymentsQuery) {
-    const cacheKey = `${query.page}:${query.pageSize}:${query.taxType ?? ""}:${query.from ?? ""}:${query.to ?? ""}`;
+    const pageLimit = Math.min(query.limit, 100);
+    const cacheKey = `cursor:${query.cursor ?? "first"}:${pageLimit}:${query.taxType ?? ""}:${query.from ?? ""}:${query.to ?? ""}`;
     return this.cache.cachedVersioned(CACHE_KEYS.finTaxPaymentsNamespace(orgId), cacheKey, async () => {
-      const { limit, offset } = paginateOffset(query);
-      const conditions = [eq(accTaxPayments.orgId, orgId)];
+      const conditions = [eq(accTaxPayments.orgId, orgId), isNull(accTaxPayments.archivedAt)];
       if (query.taxType) conditions.push(eq(accTaxPayments.taxType, query.taxType));
       if (query.from) conditions.push(gte(accTaxPayments.paidDate, query.from));
       if (query.to) conditions.push(lte(accTaxPayments.paidDate, query.to));
-      const where = and(...conditions);
-      const [items, totals] = await Promise.all([
-        this.db.select().from(accTaxPayments).where(where).orderBy(desc(accTaxPayments.createdAt)).limit(limit).offset(offset),
-        this.db.select({ c: count() }).from(accTaxPayments).where(where),
-      ]);
-      return buildListResponse(items, Number(totals[0]?.c ?? 0), query);
+      if (query.cursor) conditions.push(lt(accTaxPayments.id, query.cursor));
+      const projection = {
+        id: accTaxPayments.id,
+        taxType: accTaxPayments.taxType,
+        periodStart: accTaxPayments.periodStart,
+        periodEnd: accTaxPayments.periodEnd,
+        amount: accTaxPayments.amount,
+        paidDate: accTaxPayments.paidDate,
+        reference: accTaxPayments.reference,
+        journalEntryId: accTaxPayments.journalEntryId,
+        notes: accTaxPayments.notes,
+        createdBy: accTaxPayments.createdBy,
+        createdAt: accTaxPayments.createdAt,
+      };
+      const rows = await this.db.select(projection).from(accTaxPayments).where(and(...conditions)).orderBy(desc(accTaxPayments.id)).limit(pageLimit + 1);
+      const result = buildIdCursorPage(rows, pageLimit, (row) => row.id);
+      return { items: result.data, pagination: { limit: pageLimit, hasMore: result.hasMore, nextCursor: result.nextCursor } };
     }, 120);
   }
 
   async create(u: CurrentUserContext, input: CreateTaxPaymentInput) {
+    const actor = await assertOrganizationActor(this.db, u.orgId, { kind: "user", userId: u.userId });
     const { orgId, userId } = u;
 
     const taxPayableAccountId = await this.posting.resolveSystemAccount(orgId, "TAX_PAYABLE");
@@ -95,6 +108,7 @@ export class TaxPaymentsService {
       action: "accounting.tax_payment.create",
       userId,
       orgId,
+      actorMembershipId: actor.membershipId,
       resourceType: "tax_payment",
       resourceId: String(payment?.id),
       metadata: { taxType: input.taxType, amount: input.amount, reference: input.reference },
@@ -115,11 +129,18 @@ export class TaxPaymentsService {
   }
 
   async delete(u: CurrentUserContext, paymentId: number) {
+    const actor = await assertOrganizationActor(this.db, u.orgId, { kind: "user", userId: u.userId });
     const { orgId, userId } = u;
     const today = todayIso();
 
     const [payment] = await this.db
-      .select()
+      .select({
+        id: accTaxPayments.id,
+        paidDate: accTaxPayments.paidDate,
+        journalEntryId: accTaxPayments.journalEntryId,
+        reference: accTaxPayments.reference,
+        amount: accTaxPayments.amount,
+      })
       .from(accTaxPayments)
       .where(and(eq(accTaxPayments.id, paymentId), eq(accTaxPayments.orgId, orgId)))
       .limit(1);
@@ -136,7 +157,7 @@ export class TaxPaymentsService {
       await this.posting.reverseJournal(u, payment.journalEntryId, `Reversal of tax payment ${payment.reference}`);
     }
 
-    await this.db.delete(accTaxPayments).where(and(eq(accTaxPayments.id, paymentId), eq(accTaxPayments.orgId, orgId)));
+    await this.db.update(accTaxPayments).set({ archivedAt: new Date() }).where(and(eq(accTaxPayments.id, paymentId), eq(accTaxPayments.orgId, orgId), isNull(accTaxPayments.archivedAt)));
 
     await this.cache.invalidateNamespace(CACHE_KEYS.finTaxPaymentsNamespace(orgId));
     await this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId));
@@ -145,13 +166,14 @@ export class TaxPaymentsService {
       action: "accounting.tax_payment.delete",
       userId,
       orgId,
+      actorMembershipId: actor.membershipId,
       resourceType: "tax_payment",
       resourceId: String(paymentId),
       metadata: { reference: payment.reference, amount: payment.amount },
       result: "SUCCESS",
     });
 
-    return { deleted: true };
+    return { archived: true };
   }
 
   private async assertOpenPeriod(orgId: string, date: string): Promise<void> {

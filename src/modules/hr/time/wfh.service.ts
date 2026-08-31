@@ -6,6 +6,11 @@ import { type Db } from "../../../db/drizzle.module";
 import { formatDateOnly } from "../../../common/date";
 import type { CreateWfhInput, UpdateWfhInput } from "./dto/wfh.schemas";
 import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.service";
+import {
+  assertOrganizationActor,
+  OrganizationActorError,
+  organizationActorHttpError,
+} from "../../../common/organization/organization-actor";
 
 @Injectable()
 export class WfhService {
@@ -49,6 +54,18 @@ export class WfhService {
       );
     }
 
+    let approverMembershipId: number;
+    try {
+      const actor = await assertOrganizationActor(this.db, orgId, {
+        kind: "user",
+        userId: body.approverId,
+      });
+      approverMembershipId = actor.membershipId;
+    } catch (e) {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    }
+
     await this.db
       .insert(wfhRequests)
       .values({
@@ -57,6 +74,7 @@ export class WfhService {
         date: formatDateOnly(body.date),
         reason: body.reason,
         approverId: body.approverId,
+        approverMembershipId,
         status: "PENDING",
       })
       .returning();
@@ -114,12 +132,25 @@ export class WfhService {
 
     if (!existing) throw new NotFoundException("WFH request not found.");
 
+    let approverMembershipId: number;
+    try {
+      const actor = await assertOrganizationActor(this.db, orgId, {
+        kind: "user",
+        userId: approverId,
+      });
+      approverMembershipId = actor.membershipId;
+    } catch (e) {
+      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
+      throw e;
+    }
+
     await this.db
       .update(wfhRequests)
       .set({
         status: body.status,
         rejectionReason: body.status === "REJECTED" ? (body.rejectionReason ?? null) : null,
         approverId,
+        approverMembershipId,
       })
       .where(and(eq(wfhRequests.id, requestId), eq(wfhRequests.orgId, orgId)));
 

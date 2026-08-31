@@ -1,6 +1,7 @@
 import { chunkVisibleTo } from "./kb-chunk-visibility";
 import { pageVisibleTo } from "./kb-page-visibility";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
@@ -10,6 +11,7 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
     role: "member",
     sessionId: "sess-1",
     tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
     ...overrides,
   };
 }
@@ -34,6 +36,7 @@ describe("chunkVisibleTo", () => {
     expect(built).toContain("page_visibility");
     expect(built).toContain("page_project_id");
     expect(built).toContain("page_created_by_id");
+    expect(built).toContain("page_created_by_membership_id");
   });
 
   it("does not read the page table, so retrieval needs no join", () => {
@@ -44,10 +47,12 @@ describe("chunkVisibleTo", () => {
 
   it("is the same rule as the page predicate, only over different columns", () => {
     const asChunk = shape(chunkVisibleTo(makeUser(), [42]))
+      .replace(/page_created_by_membership_id/g, "M")
       .replace(/page_visibility/g, "V")
       .replace(/page_project_id/g, "P")
       .replace(/page_created_by_id/g, "C");
     const asPage = shape(pageVisibleTo(makeUser(), [42]))
+      .replace(/created_by_membership_id/g, "M")
       .replace(/visibility/g, "V")
       .replace(/project_id/g, "P")
       .replace(/created_by_id/g, "C");

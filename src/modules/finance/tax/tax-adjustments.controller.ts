@@ -5,9 +5,9 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { TaxAdjustmentsService } from "./tax-adjustments.service";
 import { createTaxAdjustmentSchema, type CreateTaxAdjustmentInput } from "./dto/tax-adjustments.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("accounting")
 @Controller("accounting/taxes/adjustments")
@@ -19,8 +19,9 @@ export class TaxAdjustmentsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:manage")
   @HttpCode(201)
+  @Validate({ body: createTaxAdjustmentSchema })
   create(
-    @Body(new ZodValidationPipe(createTaxAdjustmentSchema)) body: CreateTaxAdjustmentInput,
+    @Body() body: CreateTaxAdjustmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.adjustments.createAdjustment(u, body);

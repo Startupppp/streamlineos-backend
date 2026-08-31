@@ -18,15 +18,15 @@ import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { InvAiExplainService } from "./inv-ai-explain.service";
 import { InvAiProposalService } from "./proposals/inv-ai-proposal.service";
 import {
-  invAiConfirmProposalSchema,
-  invAiReorderProposalSchema,
-  type InvAiConfirmProposalInput,
-  type InvAiReorderProposalInput,
+  invAiConfirmProposalSchema as confirmProposalBodySchema,
+  invAiReorderProposalSchema as reorderProposalBodySchema,
 } from "./proposals/dto/inv-ai-proposal.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+
+const insightIdParams = z.object({ insightId: z.coerce.number().int().positive() }).strict();
 
 const digestQuerySchema = z.object({ narrate: z.enum(["true", "false"]).optional() });
 const supplierDelayQuerySchema = z.object({ vendorId: z.coerce.number().int().positive().optional() });
@@ -45,7 +45,8 @@ export class InvAiExplainController {
   @Post("insights/:insightId/explain")
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
-  @RequirePermission("inventory:ai:read")
+  @RequirePermission("inventory:reports:read")
+  @Validate({ params: insightIdParams })
   explainInsight(
     @Param("insightId", ParseIntPipe) insightId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -79,9 +80,10 @@ export class InvAiExplainController {
   @Get("digest")
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
-  @RequirePermission("inventory:ai:read")
+  @RequirePermission("inventory:reports:read")
+  @Validate({ query: digestQuerySchema })
   getDigest(
-    @Query(new ZodValidationPipe(digestQuerySchema)) query: DigestQueryInput,
+    @Query() query: DigestQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.explainService.getDigest(u.orgId, u.userId, query.narrate === "true");
@@ -96,12 +98,13 @@ export class InvAiExplainController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
+  @Validate({ body: reorderProposalBodySchema })
   getReorderProposal(
-    @Body(new ZodValidationPipe(invAiReorderProposalSchema))
-    body: InvAiReorderProposalInput,
+    @Body() body: z.infer<typeof reorderProposalBodySchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.proposals.propose(u, body);
+    return this.explainService.getReorderProposal(u.orgId, u.userId, body.variantId, body.warehouseId);
+  }
   }
 
   /**
@@ -117,20 +120,22 @@ export class InvAiExplainController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
+  @Validate({ body: confirmProposalBodySchema })
   confirmReorderProposal(
-    @Body(new ZodValidationPipe(invAiConfirmProposalSchema))
-    body: InvAiConfirmProposalInput,
+    @Body() body: z.infer<typeof confirmProposalBodySchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.proposals.confirm(u, body);
+    return this.explainService.confirmReorderProposal(u.orgId, u.userId, body.proposalId, body.token);
+  }
   }
 
   @Get("supplier-delay")
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
-  @RequirePermission("inventory:ai:read")
+  @RequirePermission("inventory:reports:read")
+  @Validate({ query: supplierDelayQuerySchema })
   getSupplierDelayBriefing(
-    @Query(new ZodValidationPipe(supplierDelayQuerySchema)) query: SupplierDelayQueryInput,
+    @Query() query: SupplierDelayQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.explainService.getSupplierDelayBriefing(u.orgId, u.userId, query.vendorId);

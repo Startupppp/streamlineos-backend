@@ -18,6 +18,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { AuditService } from "../../../common/audit/audit.service";
 import { withTenant } from "../../../common/tenant";
 import type { FileStreamResult } from "../../storage/storage.service";
@@ -196,6 +197,7 @@ export class HrExportJobsService {
       async (tx) => {
         const rows = await tx
           .select({
+            membershipId: organizationMembers.id,
             role: organizationMembers.role,
             isOwner: organizationMembers.isOwner,
             status: organizationMembers.status,
@@ -225,6 +227,7 @@ export class HrExportJobsService {
       isOrgOwner: member.isOwner,
       sessionId: "hr-export-worker",
       tokenScopes: null,
+      principal: humanSessionPrincipal(member.membershipId, member.isOwner),
     };
     const [exportAccess, employeeAccess] = await Promise.all([
       authorize(this.access, context, "hr:export:manage"),

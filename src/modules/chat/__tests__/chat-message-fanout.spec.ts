@@ -34,6 +34,7 @@ function makeDb() {
       ]),
     },
     chatChannels: { findFirst: jest.fn().mockResolvedValue({ type: "PUBLIC" }) },
+    organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
   };
   chain.execute = jest.fn().mockResolvedValue([]);
   chain.transaction = jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(chain));

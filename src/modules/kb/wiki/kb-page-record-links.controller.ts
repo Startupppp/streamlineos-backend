@@ -16,7 +16,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { KbPageRecordLinksService } from "./kb-page-record-links.service";
 import {
   createRecordLinkSchema,
@@ -24,6 +23,11 @@ import {
   type CreateRecordLinkDto,
   type RecordLinkByRecordQuery,
 } from "./dto/kb-page-record-links.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
+const linkIdParams = z.object({ linkId: z.coerce.number().int().positive() }).strict();
 
 @Controller("kb")
 @RequireModule("kb")
@@ -33,6 +37,7 @@ export class KbPageRecordLinksController {
 
   @Get("pages/:pageId/record-links")
   @RequirePermission("kb:pages:view")
+  @Validate({ params: pageIdParams })
   list(
     @Param("pageId", ParseIntPipe) pageId: number,
     @CurrentUser() user: CurrentUserContext,
@@ -43,9 +48,10 @@ export class KbPageRecordLinksController {
   @Post("pages/:pageId/record-links")
   @RequirePermission("kb:pages:update")
   @HttpCode(201)
+  @Validate({ params: pageIdParams, body: createRecordLinkSchema })
   add(
     @Param("pageId", ParseIntPipe) pageId: number,
-    @Body(new ZodValidationPipe(createRecordLinkSchema)) dto: CreateRecordLinkDto,
+    @Body() dto: CreateRecordLinkDto,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.service.add(user, pageId, dto);
@@ -53,6 +59,7 @@ export class KbPageRecordLinksController {
 
   @Delete("record-links/:linkId")
   @RequirePermission("kb:pages:update")
+  @Validate({ params: linkIdParams })
   remove(
     @Param("linkId", ParseIntPipe) linkId: number,
     @CurrentUser() user: CurrentUserContext,
@@ -62,8 +69,9 @@ export class KbPageRecordLinksController {
 
   @Get("record-links/by-record")
   @RequirePermission("kb:pages:view")
+  @Validate({ query: recordLinkByRecordQuerySchema })
   listByRecord(
-    @Query(new ZodValidationPipe(recordLinkByRecordQuerySchema)) query: RecordLinkByRecordQuery,
+    @Query() query: RecordLinkByRecordQuery,
     @CurrentUser() user: CurrentUserContext,
   ) {
     return this.service.listByRecord(user, query);

@@ -17,7 +17,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { RecurringBillsService } from "./recurring-bills.service";
 import {
   createRecurringBillSchema,
@@ -27,6 +27,10 @@ import {
   type UpdateRecurringBillInput,
   type ListRecurringBillsQuery,
 } from "./dto/finance-ap.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("accounting")
 @Controller("accounting/recurring-bills")
@@ -37,8 +41,9 @@ export class RecurringBillsController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:read")
+  @Validate({ query: listRecurringBillsQuerySchema })
   list(
-    @Query(new ZodValidationPipe(listRecurringBillsQuerySchema)) query: ListRecurringBillsQuery,
+    @Query() query: ListRecurringBillsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.listTemplates(u.orgId, query);
@@ -47,6 +52,7 @@ export class RecurringBillsController {
   @Get(":templateId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:read")
+  @Validate({ params: templateIdParams })
   getOne(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -58,8 +64,9 @@ export class RecurringBillsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
   @HttpCode(201)
+  @Validate({ body: createRecurringBillSchema })
   create(
-    @Body(new ZodValidationPipe(createRecurringBillSchema)) body: CreateRecurringBillInput,
+    @Body() body: CreateRecurringBillInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.createTemplate(u.orgId, u.userId, body);
@@ -68,9 +75,10 @@ export class RecurringBillsController {
   @Patch(":templateId")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
+  @Validate({ params: templateIdParams, body: updateRecurringBillSchema })
   update(
     @Param("templateId", ParseIntPipe) templateId: number,
-    @Body(new ZodValidationPipe(updateRecurringBillSchema)) body: UpdateRecurringBillInput,
+    @Body() body: UpdateRecurringBillInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.updateTemplate(u.orgId, u.userId, templateId, body);
@@ -80,6 +88,7 @@ export class RecurringBillsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
   @HttpCode(200)
+  @Validate({ params: templateIdParams })
   remove(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -88,9 +97,11 @@ export class RecurringBillsController {
   }
 
   @Post(":templateId/run-now")
+  @Idempotent("finance.recurring-bill.run-now")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:recurring:manage")
   @HttpCode(200)
+  @Validate({ params: templateIdParams })
   runNow(
     @Param("templateId", ParseIntPipe) templateId: number,
     @CurrentUser() u: CurrentUserContext,

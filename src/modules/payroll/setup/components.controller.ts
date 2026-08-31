@@ -18,7 +18,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { PayrollComponentsService } from "./components.service";
 import {
   listComponentsSchema,
@@ -28,6 +27,10 @@ import {
   type CreateComponentInput,
   type UpdateComponentInput,
 } from "./dto/setup.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const componentIdParams = z.object({ componentId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/components")
@@ -37,8 +40,9 @@ export class PayrollComponentsController {
 
   @Get()
   @RequirePermission("payroll:components:view")
+  @Validate({ query: listComponentsSchema })
   async list(
-    @Query(new ZodValidationPipe(listComponentsSchema)) query: ListComponentsInput,
+    @Query() query: ListComponentsInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.list(u.orgId, query);
@@ -47,8 +51,9 @@ export class PayrollComponentsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("payroll:components:manage")
+  @Validate({ body: createComponentSchema })
   async create(
-    @Body(new ZodValidationPipe(createComponentSchema)) body: CreateComponentInput,
+    @Body() body: CreateComponentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.create(u, body);
@@ -56,9 +61,10 @@ export class PayrollComponentsController {
 
   @Patch(":componentId")
   @RequirePermission("payroll:components:manage")
+  @Validate({ params: componentIdParams, body: updateComponentSchema })
   async update(
     @Param("componentId", ParseIntPipe) componentId: number,
-    @Body(new ZodValidationPipe(updateComponentSchema)) body: UpdateComponentInput,
+    @Body() body: UpdateComponentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
     return this.service.update(u, componentId, body);
@@ -67,6 +73,7 @@ export class PayrollComponentsController {
   @Delete(":componentId")
   @HttpCode(204)
   @RequirePermission("payroll:components:manage")
+  @Validate({ params: componentIdParams })
   async remove(
     @Param("componentId", ParseIntPipe) componentId: number,
     @CurrentUser() u: CurrentUserContext,

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { INestApplication } from "@nestjs/common";
+import { VERSION_NEUTRAL, VersioningType } from "@nestjs/common";
 import { Test, type TestingModuleBuilder } from "@nestjs/testing";
 import { decodeJwt } from "jose";
 import type { NextFunction, Request, Response } from "express";
@@ -8,12 +9,24 @@ import { AllExceptionsFilter } from "src/common/http/all-exceptions.filter";
 import { MembershipStateService } from "src/common/auth/membership-state.service";
 import { EntitlementsService } from "src/modules/access/entitlements.service";
 import { AccessService } from "src/modules/access/access.service";
+import { MfaPolicyService } from "src/modules/access/mfa-policy.service";
 import type { DataScope } from "src/modules/access/access.types";
 import { moduleAvailabilityResolver } from "src/common/rbac/module-availability";
+import { isCoreModuleKey } from "src/common/rbac/module-registry";
 import { RegionRegistry, setRegionRegistry } from "src/common/region/region-registry";
+import {
+  DEFAULT_DATABASE_SHARD,
+  DEFAULT_SEARCH_CLUSTER,
+  LEGACY_CELL_ID,
+} from "src/common/region/placement";
 import type { RegionDefinition } from "src/common/region/region.config";
 import type { Db } from "src/db/drizzle.types";
 import { DRIZZLE } from "src/db/drizzle.constants";
+import { API_VERSION_CURRENT } from "src/common/http/api-version";
+import {
+  COMMAND_FENCE_STORE,
+  InMemoryCommandFenceStore,
+} from "src/common/idempotency/command-fence-store";
 
 /**
  * Controller e2e specs assert the guard chain — 401 / 402 / 403 — and every one
@@ -71,10 +84,24 @@ function fixtureFromToken(header: string | undefined): E2eFixture {
 
 const membershipStub = {
   isAccountActive: async (): Promise<boolean> => true,
-  resolve: async (): Promise<{ active: boolean; isOwner: boolean; role: string }> => {
+  resolve: async (): Promise<{ active: boolean; isOwner: boolean; role: string; membershipId: number | null }> => {
     const fixture = current();
-    return { active: true, isOwner: fixture.isOrgOwner, role: fixture.role };
+    return { active: true, isOwner: fixture.isOrgOwner, role: fixture.role, membershipId: 1 };
   },
+};
+
+/**
+ * MFA policy: no org enforces MFA in the e2e harness. Without this stub the
+ * MfaGuard queries a local DB that has no `users` table, catches the error and
+ * returns the safe-fail `UNDETERMINED` state (`enforced: true, satisfied: false`),
+ * which throws MFA_REQUIRED 403 BEFORE PermissionGuard can answer — every
+ * permission-tier test reports the wrong status code.
+ */
+const mfaPolicyStub = {
+  resolve: async (): Promise<{ enforced: boolean; satisfied: boolean }> =>
+    ({ enforced: false, satisfied: true }),
+  invalidateOrg: async (): Promise<void> => undefined,
+  invalidateUser: async (): Promise<void> => undefined,
 };
 
 const entitlementsStub = {
@@ -92,7 +119,7 @@ const entitlementsStub = {
   getPlanLockedModules: async (): Promise<readonly string[]> => [],
 };
 
-const accessStub = {
+export const accessStub = {
   resolveUserPermissions: async (): Promise<Map<string, DataScope>> =>
     new Map(current().permissions.map((key) => [key, "all" as DataScope])),
   isModuleEnabled: entitlementsStub.isModuleEnabled,
@@ -100,24 +127,34 @@ const accessStub = {
   // Keep the E2E fixture on AccessService's canonical resolver surface. The
   // calendar source registry and PermissionGuard both consume these methods;
   // resolving them from the token preserves the fixture's existing semantics.
-  getModuleState: async (_orgId: string, moduleKey: string): Promise<boolean | undefined> =>
-    current().enabledModules.includes(moduleKey.toLowerCase()) ? true : undefined,
-  scopeFor: async (_user: unknown, permissionKey: string): Promise<DataScope> =>
-    current().permissions.includes(permissionKey) ? "all" : "none",
-  holds: async (_user: unknown, permissionKey: string): Promise<boolean> =>
-    current().permissions.includes(permissionKey),
-  moduleAvailability: async (_user: unknown, moduleKey: string) =>
-    current().enabledModules.includes(moduleKey.toLowerCase())
+  getModuleState: async (_orgId: string, moduleKey: string): Promise<boolean | undefined> => {
+    if (isCoreModuleKey(moduleKey)) return true;
+    return current().enabledModules.includes(moduleKey.toLowerCase()) ? true : undefined;
+  },
+  scopeFor: async (_user: unknown, permissionKey: string): Promise<DataScope> => {
+    const f = current();
+    if (f.isOrgOwner) return "all";
+    return f.permissions.includes(permissionKey) ? "all" : "none";
+  },
+  holds: async (_user: unknown, permissionKey: string): Promise<boolean> => {
+    const f = current();
+    if (f.isOrgOwner) return true;
+    return f.permissions.includes(permissionKey);
+  },
+  moduleAvailability: async (_user: unknown, moduleKey: string) => {
+    return current().enabledModules.includes(moduleKey.toLowerCase())
       ? { available: true as const }
-      : { available: false as const, reason: "org-disabled" as const },
+      : { available: false as const, reason: "org-disabled" as const };
+  },
   moduleAvailabilityFor: async (
     _orgId: string,
     _userId: string,
     moduleKey: string,
-  ) =>
-    current().enabledModules.includes(moduleKey.toLowerCase())
+  ) => {
+    return current().enabledModules.includes(moduleKey.toLowerCase())
       ? { available: true as const }
-      : { available: false as const, reason: "org-disabled" as const },
+      : { available: false as const, reason: "org-disabled" as const };
+  },
   buildModuleAvailabilityResolver: (
     getModuleMap: (orgId: string) => Promise<Record<string, boolean>>,
   ) =>
@@ -146,10 +183,18 @@ const accessStub = {
  * membership, entitlements and access: production keeps failing closed for an
  * unplaced tenant, which is the behaviour ticket 03 exists to guarantee.
  */
-function installFixtureRegionRegistry(db: Db): void {
+export function installFixtureRegionRegistry(db: Db): void {
   const definition: RegionDefinition = {
     key: "primary",
     databaseUrl: process.env.DATABASE_URL ?? "",
+    cell: {
+      cellId: LEGACY_CELL_ID,
+      databaseShard: DEFAULT_DATABASE_SHARD,
+      searchCluster: DEFAULT_SEARCH_CLUSTER,
+      acceptedTenantClasses: ["SHARED"],
+      complianceZones: [],
+      cache: {},
+    },
     storage: {
       region: "auto",
       bucket: "fixture",
@@ -176,6 +221,12 @@ export interface E2eAppOptions {
 export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestApplication> {
   process.env.DATABASE_URL ??= "postgres://u:p@localhost:5432/db";
   process.env.BACKEND_JWT_SECRET ??= "x".repeat(44);
+  // Admission control leaks in-flight counters when a downstream guard rejects
+  // (the interceptor that releases never runs). After orgMaxConcurrent (50)
+  // leaked requests for the same org, AdmissionGuard starts returning 503 for
+  // every subsequent request regardless of the actual test intent. Disable it
+  // here so every e2e suite starts with a clean counter state.
+  process.env.ADMISSION_ENABLED = "false";
 
   let builder: TestingModuleBuilder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(MembershipStateService)
@@ -183,7 +234,11 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
     .overrideProvider(EntitlementsService)
     .useValue(entitlementsStub)
     .overrideProvider(AccessService)
-    .useValue(accessStub);
+    .useValue(accessStub)
+    .overrideProvider(MfaPolicyService)
+    .useValue(mfaPolicyStub)
+    .overrideProvider(COMMAND_FENCE_STORE)
+    .useValue(new InMemoryCommandFenceStore());
 
   for (const override of options.overrides ?? [])
     builder = builder.overrideProvider(override.provide).useValue(override.useValue);
@@ -191,6 +246,10 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
   const ref = await builder.compile();
   installFixtureRegionRegistry(ref.get<Db>(DRIZZLE));
   const app = ref.createNestApplication();
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: [API_VERSION_CURRENT, VERSION_NEUTRAL],
+  });
   app.use((req: Request, _res: Response, next: NextFunction) =>
     storage.run(fixtureFromToken(req.headers.authorization), next),
   );

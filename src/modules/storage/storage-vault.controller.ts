@@ -1,6 +1,5 @@
 import {
   Controller,
-  Delete,
   ForbiddenException,
   HttpCode,
   Inject,
@@ -13,12 +12,17 @@ import {
 import { and, eq } from "drizzle-orm";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { candidateDocumentsVault, vaultAccessLogs } from "../../db/schema";
 import { AccessService } from "../access/access.service";
 import { StorageService } from "./storage.service";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const candidateAndDocumentIdParams = z.object({ candidateId: z.coerce.number().int().positive(), documentId: z.coerce.number().int().positive() }).strict();
 
 const SIGNED_URL_EXPIRY_SECONDS = 900;
 
@@ -32,7 +36,9 @@ export class StorageVaultController {
   ) {}
 
   @Post(":documentId/url")
+  @AuthorizedInService("resolveUserPermissions(hr:documents:manage) + org-scoped lookup")
   @HttpCode(200)
+  @Validate({ params: candidateAndDocumentIdParams })
   async download(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @Param("documentId", ParseIntPipe) documentId: number,
@@ -55,7 +61,11 @@ export class StorageVaultController {
     if (!doc) throw new NotFoundException("Document not found.");
 
     await this.db.insert(vaultAccessLogs).values({
+      orgId: u.orgId,
+      candidateId,
       vaultDocumentId: documentId,
+      filename: doc.filename,
+      documentType: doc.documentType,
       accessedBy: u.userId,
       action: "VIEW",
     });
@@ -70,39 +80,5 @@ export class StorageVaultController {
     }
 
     return { ...doc, signedUrl };
-  }
-
-  @Delete(":documentId")
-  async remove(
-    @Param("candidateId", ParseIntPipe) candidateId: number,
-    @Param("documentId", ParseIntPipe) documentId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ): Promise<{ success: boolean }> {
-    if (!u.isOrgOwner) {
-      const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-      if (!perms.has("hr:documents:manage")) {
-        throw new ForbiddenException("Forbidden");
-      }
-    }
-
-    const doc = await this.db.query.candidateDocumentsVault.findFirst({
-      where: and(
-        eq(candidateDocumentsVault.id, documentId),
-        eq(candidateDocumentsVault.candidateId, candidateId),
-        eq(candidateDocumentsVault.orgId, u.orgId),
-      ),
-    });
-    if (!doc) throw new NotFoundException("Document not found.");
-
-    await this.db.transaction(async (tx) => {
-      await tx.insert(vaultAccessLogs).values({
-        vaultDocumentId: documentId,
-        accessedBy: u.userId,
-        action: "DELETE",
-      });
-      await tx.delete(candidateDocumentsVault).where(eq(candidateDocumentsVault.id, documentId));
-    });
-
-    return { success: true };
   }
 }

@@ -8,7 +8,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { randomUUID, randomBytes } from "node:crypto";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lte, sql } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -23,6 +23,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { EmailService } from "../../email/email.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import {
   invitationEvents,
   invitations,
@@ -57,6 +58,7 @@ export class InvitationsService {
     private readonly cache: CacheService,
     private readonly email: EmailService,
     private readonly planLimits: PlanLimitsService,
+    private readonly seatLedger: SeatLedgerService,
     private readonly access: AccessService,
   ) {}
 
@@ -96,7 +98,7 @@ export class InvitationsService {
     role: string,
   ): Promise<InvitationMutationResult> {
     await assertMayGrantRole(this.access, orgId, actor, role);
-    return this.inviteAuthorized(orgId, actor.userId, email, role);
+    return this.inviteAuthorized(orgId, actor.userId, email.trim().toLowerCase(), role);
   }
 
   private async inviteAuthorized(
@@ -160,6 +162,7 @@ export class InvitationsService {
             and(
               eq(invitations.email, email),
               eq(invitations.orgId, orgId),
+              eq(invitations.status, "PENDING"),
               gt(invitations.expiresAt, now),
               isNull(invitations.acceptedAt),
             ),
@@ -237,11 +240,14 @@ export class InvitationsService {
           );
           await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
           await tx
-            .delete(invitations)
+            .update(invitations)
+            .set({ status: "EXPIRED" })
             .where(
               and(
                 eq(invitations.email, email),
                 eq(invitations.orgId, orgId),
+                eq(invitations.status, "PENDING"),
+                lte(invitations.expiresAt, now),
                 isNull(invitations.acceptedAt),
               ),
             );
@@ -262,6 +268,18 @@ export class InvitationsService {
             event: "CREATED",
             actorMembershipId: null,
           });
+
+          await this.seatLedger.recordSeatEvent(
+            {
+              orgId,
+              eventType: "INVITE_SENT",
+              subjectId: invitationId,
+              actorId: actorUserId,
+              reason: "invitation sent",
+              idempotencyKey: `invite-sent:${invitationId}`,
+            },
+            tx,
+          );
         },
         { orgId },
       );
@@ -322,21 +340,22 @@ export class InvitationsService {
     }> = [];
 
     for (const email of emails) {
+      const canonicalEmail = email.trim().toLowerCase();
       try {
         const result = await this.inviteAuthorized(
           orgId,
           actor.userId,
-          email,
+          canonicalEmail,
           role,
         );
         results.push({
-          email,
+          email: canonicalEmail,
           success: true,
           invitationId: result.invitationId,
         });
       } catch (err) {
         results.push({
-          email,
+          email: canonicalEmail,
           success: false,
           error: err instanceof Error ? err.message : "Unknown error",
         });
@@ -358,6 +377,7 @@ export class InvitationsService {
       where: and(
         eq(invitations.id, invitationId),
         eq(invitations.orgId, orgId),
+        eq(invitations.status, "PENDING"),
         isNull(invitations.acceptedAt),
       ),
     });
@@ -536,6 +556,18 @@ export class InvitationsService {
           event: "REVOKED",
           actorMembershipId: actorMembership?.id ?? null,
         });
+
+        await this.seatLedger.recordSeatEvent(
+          {
+            orgId,
+            eventType: "INVITE_CANCELLED",
+            subjectId: invitationId,
+            actorId: actorUserId,
+            reason: "invitation cancelled",
+            idempotencyKey: `invite-cancelled:${invitationId}`,
+          },
+          tx,
+        );
       },
       { orgId },
     );

@@ -17,7 +17,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+
 import { HrLeaveBlackoutService } from "./hr-leave-blackout.service";
 import {
   blackoutListQuerySchema,
@@ -26,6 +26,10 @@ import {
   type CreateBlackoutInput,
 } from "./dto/leave-blackout.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const blackoutIdParams = z.object({ blackoutId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/leaves/blackout")
@@ -35,8 +39,9 @@ export class HrLeaveBlackoutController {
   constructor(private readonly blackout: HrLeaveBlackoutService) {}
 
   @Get()
+  @Validate({ query: blackoutListQuerySchema })
   list(
-    @Query(new ZodValidationPipe(blackoutListQuerySchema)) query: BlackoutListQuery,
+    @Query() query: BlackoutListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.blackout.list(u.orgId, query);
@@ -44,8 +49,9 @@ export class HrLeaveBlackoutController {
 
   @Post()
   @HttpCode(201)
+  @Validate({ body: createBlackoutSchema })
   create(
-    @Body(new ZodValidationPipe(createBlackoutSchema)) body: CreateBlackoutInput,
+    @Body() body: CreateBlackoutInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     if (body.startDate > body.endDate) {
@@ -56,6 +62,7 @@ export class HrLeaveBlackoutController {
 
   @Delete(":blackoutId")
   @HttpCode(204)
+  @Validate({ params: blackoutIdParams })
   async remove(
     @Param("blackoutId", ParseIntPipe) blackoutId: number,
     @CurrentUser() u: CurrentUserContext,

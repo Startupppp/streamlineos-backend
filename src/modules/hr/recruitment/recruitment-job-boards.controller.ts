@@ -5,7 +5,6 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RecruitmentJobBoardsService } from "./recruitment-job-boards.service";
 import {
   createJobBoardPostingSchema,
@@ -13,6 +12,11 @@ import {
   type CreateJobBoardPostingInput,
   type UpdateJobBoardPostingInput,
 } from "./dto/job-boards.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
+const jobAndPostingIdParams = z.object({ jobId: z.coerce.number().int().positive(), postingId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
 @Controller("hr/recruitment/jobs/:jobId/board-postings")
@@ -22,6 +26,7 @@ export class RecruitmentJobBoardsController {
 
   @Get()
   @RequirePermission("hr:employees:view")
+  @Validate({ params: jobIdParams })
   list(@CurrentUser() u: CurrentUserContext, @Param("jobId", ParseIntPipe) jobId: number) {
     return this.service.list(u.orgId, jobId);
   }
@@ -29,21 +34,23 @@ export class RecruitmentJobBoardsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: jobIdParams, body: createJobBoardPostingSchema })
   create(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,
-    @Body(new ZodValidationPipe(createJobBoardPostingSchema)) body: CreateJobBoardPostingInput,
+    @Body() body: CreateJobBoardPostingInput,
   ) {
     return this.service.create(u.orgId, u.userId, jobId, body);
   }
 
   @Patch(":postingId")
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: jobAndPostingIdParams, body: updateJobBoardPostingSchema })
   update(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,
     @Param("postingId", ParseIntPipe) postingId: number,
-    @Body(new ZodValidationPipe(updateJobBoardPostingSchema)) body: UpdateJobBoardPostingInput,
+    @Body() body: UpdateJobBoardPostingInput,
   ) {
     return this.service.update(u.orgId, jobId, postingId, body);
   }
@@ -51,6 +58,7 @@ export class RecruitmentJobBoardsController {
   @Delete(":postingId")
   @HttpCode(204)
   @RequirePermission("hr:employees:manage")
+  @Validate({ params: jobAndPostingIdParams })
   remove(
     @CurrentUser() u: CurrentUserContext,
     @Param("jobId", ParseIntPipe) jobId: number,

@@ -30,29 +30,20 @@
  *   Namespace version counters carry NO TTL by design — volatile-lru never
  *   evicts them, which is correct (evicting a counter would silently reset the
  *   version and allow stale entries to resurface).
- *   Session-revocation tombstones also carry TTL (SESSION_TTL_SECONDS).
+ *   Session-revocation tombstones also carry NO TTL, for the same reason.
  *
  * Session-revocation safety:
- *   The tombstone at revoked:session:<id> has a TTL matching the JWT lifetime,
- *   so an LRU eviction before expiry cannot be distinguished from "never
- *   revoked" in the current guard (jwt-auth.guard.ts) — it falls back to
- *   isRevokedInDatabase only on a Redis *error*, not on a null result, because
- *   a null result is also what every non-revoked session produces on every
- *   request. Falling back to the database on null was tried (2026-08-26) and
- *   reverted: JwtAuthGuard is a global APP_GUARD, so it turned into a
- *   mandatory database round trip on every request whose 5-second in-process
- *   cache (REVOCATION_CACHE_TTL_MS) had gone stale, for the entire platform's
- *   traffic — not just the rare evicted-tombstone case.
- *   The residual risk is bounded, not zero: an active session refreshes its
- *   tombstone's LRU position on every read, so a revoked session still being
- *   probed stays hot; the exposure is a revoked session that goes idle right
- *   as Redis is under memory pressure.
- *   The structurally correct fix is to stop relying on TTL-based eviction
- *   safety for tombstones at all: give them no TTL (matching how namespace
- *   version counters are protected from volatile-lru above) and clean them up
- *   with an explicit scheduled sweep instead of letting Redis expire them —
- *   not done here; recorded as the real follow-up rather than the null-check
- *   that was tried and reverted.
+ *   Tombstones at revoked:session:<id> carry NO TTL, so volatile-lru — which
+ *   only evicts keys that have one — can never drop a live revocation. This is
+ *   the same protection namespace version counters get above. They are reclaimed
+ *   by SessionsService.pruneExpiredRevocations, driven by the companion sorted
+ *   set revoked:sessions:index (scored by expiry), via the
+ *   POST /cron/session-revocation-prune sweep rather than by Redis expiry.
+ *
+ *   Do NOT "fix" this by falling back to the database on a null lookup: null is
+ *   also what every non-revoked session returns, and JwtAuthGuard is a global
+ *   APP_GUARD, so that turns a rare edge case into a database round trip on
+ *   effectively all traffic. That was tried on 2026-08-26 and reverted.
  */
 
 export type InvalidationTrigger =

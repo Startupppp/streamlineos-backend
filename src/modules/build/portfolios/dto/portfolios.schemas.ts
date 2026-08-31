@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { portfolioHealthEnum, portfolioStatusEnum } from "../../../../db/schema";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listPortfoliosQuerySchema = z.object({
-  page: z.coerce.number().int().positive().default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20),
   status: z.enum(portfolioStatusEnum.enumValues).optional(),
 });
 

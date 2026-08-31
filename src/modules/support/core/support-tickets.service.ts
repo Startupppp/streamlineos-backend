@@ -14,12 +14,12 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { logger } from "../../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportRealtimeService } from "./support-realtime.service";
 import { SupportSlaService } from "./support-sla.service";
-import { SupportCsatService } from "./support-csat.service";
 import { SupportAiService } from "./support-ai.service";
 import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import { AutomationService } from "../../automation/automation.service";
@@ -59,7 +59,6 @@ export class SupportTicketsService {
     private readonly realtime: SupportRealtimeService,
     private readonly sla: SupportSlaService,
     private readonly automations: AutomationService,
-    private readonly csat: SupportCsatService,
     private readonly ai: SupportAiService,
     private readonly customFields: SupportCustomFieldsService,
     private readonly activity: SupportTicketActivityService,
@@ -207,23 +206,6 @@ export class SupportTicketsService {
           requesterName: source?.requesterName ?? null,
         })
         .returning();
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
-        organizationId: orgId,
-        aggregateType: "support_ticket",
-        aggregateId: String(row.id),
-        aggregateVersion: 1,
-        eventType: "support.ticket.created",
-        payload: {
-          ticketId: row.id,
-          orgId,
-          title: row.title,
-          priority: row.priority,
-          assigneeId: row.assigneeId ?? null,
-          actorUserId: userId,
-        },
-        occurredAt: new Date(),
-      });
       return row;
     });
 
@@ -233,16 +215,23 @@ export class SupportTicketsService {
     );
     await this.customFields.setFieldValues(orgId, ticket.id, input.customFields ?? [], true);
 
-    void this.automations
-      .runAutomationsForEvent(orgId, "ticket.created", this.buildAutomationPayload(ticket))
-      .catch(logSideEffectFailure("support automations on ticket.created", { orgId, ticketId: ticket.id }));
+    const ticketAutomationPayload = this.buildAutomationPayload(ticket);
+    const createdAutomationTask = () =>
+      this.automations
+        .runAutomationsForEvent(orgId, "ticket.created", ticketAutomationPayload)
+        .catch(logSideEffectFailure("support automations on ticket.created", { orgId, ticketId: ticket.id }));
+    if (!registerAfterCommit(createdAutomationTask)) void createdAutomationTask();
 
-    void this.ai.runFullAnalysis(orgId, ticket.id).catch(logSideEffectFailure("support AI analysis", { orgId, ticketId: ticket.id }));
+    const aiTask = () =>
+      this.ai.runFullAnalysis(orgId, ticket.id, userId).catch(logSideEffectFailure("support AI analysis", { orgId, ticketId: ticket.id }));
+    if (!registerAfterCommit(aiTask)) void aiTask();
 
     if (finalAssigneeId) {
-      void this.notifications
-        .sendAssignmentEmail(finalAssigneeId, userId, input.title, finalPriority, ticket.id, "User")
-        .catch(logSideEffectFailure("support assignment email", { orgId, ticketId: ticket.id }));
+      const assignTask = () =>
+        this.notifications
+          .sendAssignmentEmail(orgId, finalAssigneeId, userId, input.title, finalPriority, ticket.id, "User")
+          .catch(logSideEffectFailure("support assignment email", { orgId, ticketId: ticket.id }));
+      if (!registerAfterCommit(assignTask)) void assignTask();
     }
 
     return {
@@ -350,37 +339,42 @@ export class SupportTicketsService {
     };
 
     if (input.status && input.status !== ticket.status) {
-      void this.automations
-        .runAutomationsForEvent(orgId, "ticket.status_changed", this.buildAutomationPayload(updatedTicketForPayload))
-        .catch(logSideEffectFailure("support automations on ticket.updated", { orgId, ticketId }));
+      const statusAutomationTask = () =>
+        this.automations
+          .runAutomationsForEvent(orgId, "ticket.status_changed", this.buildAutomationPayload(updatedTicketForPayload))
+          .catch(logSideEffectFailure("support automations on ticket.updated", { orgId, ticketId }));
+      if (!registerAfterCommit(statusAutomationTask)) void statusAutomationTask();
     }
     if (input.priority && input.priority !== ticket.priority) {
-      void this.automations
-        .runAutomationsForEvent(orgId, "ticket.priority_changed", this.buildAutomationPayload(updatedTicketForPayload))
-        .catch(logSideEffectFailure("support status-change notification", { orgId, ticketId }));
-    }
-
-    if (input.status === "RESOLVED" && ticket.status !== "RESOLVED") {
-      void this.csat.createRequestForTicket(orgId, ticketId).catch(logSideEffectFailure("support CSAT request", { orgId, ticketId }));
+      const priorityAutomationTask = () =>
+        this.automations
+          .runAutomationsForEvent(orgId, "ticket.priority_changed", this.buildAutomationPayload(updatedTicketForPayload))
+          .catch(logSideEffectFailure("support status-change notification", { orgId, ticketId }));
+      if (!registerAfterCommit(priorityAutomationTask)) void priorityAutomationTask();
     }
 
     if (input.status) {
-      void this.notifications
-        .sendStatusEmail(ticket.createdBy, userId, ticket.title, ticketId, input.status)
-        .catch(logSideEffectFailure("support assignment notification", { orgId, ticketId }));
+      const statusNotifTask = () =>
+        this.notifications
+          .sendStatusEmail(orgId, ticket.createdBy, userId, ticket.title, ticketId, input.status!)
+          .catch(logSideEffectFailure("support assignment notification", { orgId, ticketId }));
+      if (!registerAfterCommit(statusNotifTask)) void statusNotifTask();
     }
 
     if (input.assigneeId && input.assigneeId !== ticket.assigneeId) {
-      void this.notifications
-        .sendAssignmentEmail(
-          input.assigneeId,
-          userId,
-          ticket.title,
-          ticket.priority ?? "MEDIUM",
-          ticketId,
-          "Support",
-        )
-        .catch(logSideEffectFailure("support SLA recalculation", { orgId, ticketId }));
+      const assignNotifTask = () =>
+        this.notifications
+          .sendAssignmentEmail(
+            orgId,
+            input.assigneeId!,
+            userId,
+            ticket.title,
+            ticket.priority ?? "MEDIUM",
+            ticketId,
+            "Support",
+          )
+          .catch(logSideEffectFailure("support SLA recalculation", { orgId, ticketId }));
+      if (!registerAfterCommit(assignNotifTask)) void assignNotifTask();
     }
 
     return { success: true, updatedAt: updateData.updatedAt };

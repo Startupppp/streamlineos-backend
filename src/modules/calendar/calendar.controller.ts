@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -17,11 +16,11 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { CalendarService } from "./calendar.service";
 import { ExternalCalendarEventsService } from "./external-calendar-events.service";
 import { CalendarSourceRegistry } from "./calendar-source.registry";
@@ -49,6 +48,12 @@ import {
   upsertOccurrenceExceptionSchema,
   type UpsertOccurrenceExceptionInput,
 } from "./dto/occurrence-exception.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
+const eventIdoccurrenceStartParams = z.object({ eventId: z.coerce.number().int().positive(), occurrenceStart: z.string().min(1) }).strict();
+const sourceKeyParams = z.object({ sourceKey: z.string().min(1) }).strict();
 
 function pad(value: number): string {
   return value < 10 ? `0${value}` : String(value);
@@ -80,8 +85,10 @@ export class CalendarController {
   ) {}
 
   @Get("events")
+  @Universal()
+  @Validate({ query: listEventsSchema })
   getEvents(
-    @Query(new ZodValidationPipe(listEventsSchema)) query: ListEventsInput,
+    @Query() query: ListEventsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.calendar.getEvents(
@@ -93,9 +100,10 @@ export class CalendarController {
   }
 
   @Get("external-events")
+  @Universal()
+  @Validate({ query: externalEventsQuerySchema })
   getExternalEvents(
-    @Query(new ZodValidationPipe(externalEventsQuerySchema))
-    query: ExternalEventsQueryInput,
+    @Query() query: ExternalEventsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.externalEvents.getExternalEvents(
@@ -107,18 +115,22 @@ export class CalendarController {
   }
 
   @Post("events")
+  @Universal()
   @HttpCode(201)
+  @Validate({ body: createEventSchema })
   createEvent(
-    @Body(new ZodValidationPipe(createEventSchema)) body: CreateEventInput,
+    @Body() body: CreateEventInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.calendar.createEvent(u.orgId, u.userId, body);
   }
 
   @Put("events/:eventId")
+  @Universal()
+  @Validate({ params: eventIdParams, body: updateEventSchema })
   async updateEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
-    @Body(new ZodValidationPipe(updateEventSchema)) body: UpdateEventInput,
+    @Body() body: UpdateEventInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const event = await this.calendar.updateEvent(
@@ -133,6 +145,8 @@ export class CalendarController {
   }
 
   @Delete("events/:eventId")
+  @Universal()
+  @Validate({ params: eventIdParams })
   removeEvent(
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -141,10 +155,12 @@ export class CalendarController {
   }
 
   @Post("events/:eventId/rsvp")
+  @Universal()
   @HttpCode(200)
+  @Validate({ params: eventIdParams, body: rsvpSchema })
   async rsvp(
     @Param("eventId", ParseIntPipe) eventId: number,
-    @Body(new ZodValidationPipe(rsvpSchema)) body: RsvpInput,
+    @Body() body: RsvpInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const attendee = await this.calendar.rsvp(u.orgId, u.userId, eventId, body);
@@ -153,12 +169,13 @@ export class CalendarController {
   }
 
   @Patch("events/:eventId/occurrences/:occurrenceStart")
+  @Universal()
   @HttpCode(200)
+  @Validate({ params: eventIdoccurrenceStartParams, body: upsertOccurrenceExceptionSchema })
   async upsertOccurrenceException(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Param("occurrenceStart") occurrenceStart: string,
-    @Body(new ZodValidationPipe(upsertOccurrenceExceptionSchema))
-    body: UpsertOccurrenceExceptionInput,
+    @Body() body: UpsertOccurrenceExceptionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const row = await this.calendar.upsertOccurrenceException(
@@ -173,7 +190,9 @@ export class CalendarController {
   }
 
   @Delete("events/:eventId/occurrences/:occurrenceStart")
+  @Universal()
   @HttpCode(200)
+  @Validate({ params: eventIdoccurrenceStartParams })
   async cancelOccurrence(
     @Param("eventId", ParseIntPipe) eventId: number,
     @Param("occurrenceStart") occurrenceStart: string,
@@ -192,6 +211,7 @@ export class CalendarController {
   @Get("events/:eventId/rsvp")
   @UseGuards(PermissionGuard)
   @RequirePermission("calendar:read")
+  @Validate({ params: eventIdParams })
   async listAttendees(
     @Param("eventId", ParseIntPipe) eventId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -204,16 +224,14 @@ export class CalendarController {
   @Get("export")
   @UseGuards(PermissionGuard)
   @RequirePermission("calendar:events:export")
+  @Validate({ query: exportSchema })
   async exportEvents(
-    @Query(new ZodValidationPipe(exportSchema)) query: ExportInput,
+    @Query() query: ExportInput,
     @CurrentUser() u: CurrentUserContext,
     @Res() res: Response,
   ) {
     const fromDate = new Date(query.from);
     const toDate = new Date(query.to);
-    if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
-      throw new BadRequestException("Invalid date format: use YYYY-MM-DD");
-    }
 
     const events = await this.calendar.exportEvents(u.orgId, fromDate, toDate);
 
@@ -251,6 +269,7 @@ export class CalendarController {
   }
 
   @Get("sources")
+  @Universal()
   getSources(@CurrentUser() u: CurrentUserContext) {
     const now = new Date();
     const ctx: CalendarSourceContext = {
@@ -264,10 +283,12 @@ export class CalendarController {
   }
 
   @Put("sources/:sourceKey")
+  @Universal()
   @HttpCode(200)
+  @Validate({ params: sourceKeyParams, body: setSourcePreferenceSchema })
   async setSourcePreference(
     @Param("sourceKey") sourceKey: string,
-    @Body(new ZodValidationPipe(setSourcePreferenceSchema)) body: SetSourcePreferenceInput,
+    @Body() body: SetSourcePreferenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.sourcePreferences.setPreference(u.orgId, u.userId, sourceKey, body.enabled);

@@ -16,7 +16,6 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { CsHealthService } from "./cs-health.service";
 import { CustomerExecutiveService } from "./customer-executive.service";
 import {
@@ -28,6 +27,10 @@ import {
   type UpdateSurveyInput,
 } from "./dto/customer-executive.schemas";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
+import { Validate } from "../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("crm")
 @Controller("customer-executive")
@@ -52,8 +55,9 @@ export class CustomerExecutiveController {
 
   @Put("health/config")
   @RequirePermission("crm:clients:update")
+  @Validate({ body: updateHealthConfigSchema })
   updateHealthConfig(
-    @Body(new ZodValidationPipe(updateHealthConfigSchema)) body: UpdateHealthConfigInput,
+    @Body() body: UpdateHealthConfigInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.health.upsertOrgHealthConfig(u.orgId, u.userId, body.weights, body.thresholds);
@@ -79,8 +83,9 @@ export class CustomerExecutiveController {
 
   @Post("nps")
   @RequirePermission("crm:clients:manage")
+  @Validate({ body: createSurveySchema })
   createSurvey(
-    @Body(new ZodValidationPipe(createSurveySchema)) body: CreateSurveyInput,
+    @Body() body: CreateSurveyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.customerExecutive.createSurvey(u.orgId, u.userId, body);
@@ -94,6 +99,7 @@ export class CustomerExecutiveController {
 
   @Get("nps/:surveyId")
   @RequirePermission("crm:clients:read")
+  @Validate({ params: surveyIdParams })
   async getSurvey(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -105,9 +111,10 @@ export class CustomerExecutiveController {
 
   @Patch("nps/:surveyId")
   @RequirePermission("crm:clients:manage")
+  @Validate({ params: surveyIdParams, body: updateSurveySchema })
   async updateSurvey(
     @Param("surveyId", ParseIntPipe) surveyId: number,
-    @Body(new ZodValidationPipe(updateSurveySchema)) body: UpdateSurveyInput,
+    @Body() body: UpdateSurveyInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     const updated = await this.customerExecutive.updateSurvey(u.orgId, surveyId, body);
@@ -117,6 +124,7 @@ export class CustomerExecutiveController {
 
   @Delete("nps/:surveyId")
   @RequirePermission("crm:clients:manage")
+  @Validate({ params: surveyIdParams })
   async deleteSurvey(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @CurrentUser() u: CurrentUserContext,

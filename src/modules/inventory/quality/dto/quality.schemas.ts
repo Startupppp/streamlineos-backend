@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { recallSelectionSchema } from "./recall-simulation.schemas";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listInspectionsQuerySchema = z.object({
   status: z.enum(["PENDING", "IN_PROGRESS", "PASSED", "FAILED", "DISPOSITION_REQUIRED", "COMPLETED", "CANCELLED"]).optional(),
   sourceType: z.string().optional(),
   productVariantId: z.coerce.number().int().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 }).strict();
 export type ListInspectionsQueryInput = z.infer<typeof listInspectionsQuerySchema>;
 
@@ -58,8 +59,8 @@ export type FailInspectionInput = z.infer<typeof failInspectionSchema>;
 export const listHoldsQuerySchema = z.object({
   status: z.enum(["ACTIVE", "RELEASED"]).optional(),
   productVariantId: z.coerce.number().int().optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 }).strict();
 export type ListHoldsQueryInput = z.infer<typeof listHoldsQuerySchema>;
 
@@ -75,8 +76,8 @@ export type CreateHoldInput = z.infer<typeof createHoldSchema>;
 
 export const listRecallsQuerySchema = z.object({
   status: z.enum(["OPEN", "IN_PROGRESS", "CLOSED"]).optional(),
-  page: z.coerce.number().int().min(1).default(1),
-  limit: z.coerce.number().int().min(1).max(100).default(20),
+  page: pageNumberField,
+  limit: pageSizeField(20, 100),
 }).strict();
 export type ListRecallsQueryInput = z.infer<typeof listRecallsQuerySchema>;
 

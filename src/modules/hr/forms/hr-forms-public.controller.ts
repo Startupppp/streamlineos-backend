@@ -11,10 +11,13 @@ import {
   Request,
 } from "@nestjs/common";
 import { Public } from "../../../common/auth/public.decorator";
-import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { HrFormsSubmissionsService } from "./hr-forms-submissions.service";
 import { submitHrFormSchema, type SubmitHrFormInput } from "./dto/hr-forms.schemas";
+import { Validate } from "../../../common/validation/validate.decorator";
+import { z } from "zod";
+
+const orgIdslugParams = z.object({ orgId: z.string().min(1), slug: z.string().min(1) }).strict();
 
 @Controller("public/hr-forms")
 export class HrFormsPublicController {
@@ -39,6 +42,7 @@ export class HrFormsPublicController {
 
   @Public()
   @Get(":orgId/:slug")
+  @Validate({ params: orgIdslugParams })
   async getPublicForm(
     @Param("orgId") orgId: string,
     @Param("slug") slug: string,
@@ -60,10 +64,11 @@ export class HrFormsPublicController {
   @Public()
   @Post(":orgId/:slug/submit")
   @HttpCode(201)
+  @Validate({ params: orgIdslugParams, body: submitHrFormSchema })
   async submitPublicForm(
     @Param("orgId") orgId: string,
     @Param("slug") slug: string,
-    @Body(new ZodValidationPipe(submitHrFormSchema)) body: SubmitHrFormInput,
+    @Body() body: SubmitHrFormInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("hr-form:public-submit", this.getIp(req));

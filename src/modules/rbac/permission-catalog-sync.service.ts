@@ -3,14 +3,14 @@ import { inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
+  modulesCatalog,
   permissions,
   permissionSupportedScopes,
   rolePermissionGrants,
   userDelegationPermissions,
 } from "../../db/schema";
 import { PERMISSIONS } from "./permissions";
-import { isDelegablePermission } from "../../common/rbac/grantability";
-import { administeringModuleOf } from "../../common/rbac/module-vocabulary";
+import { buildPermissionCatalogRows } from "./permission-catalog-rows";
 
 type SupportedScope = "all" | "team" | "own";
 
@@ -65,18 +65,14 @@ export class PermissionCatalogSyncService implements OnModuleInit {
       };
     }
 
+    const catalogModules = new Set(
+      (await this.db.select({ moduleKey: modulesCatalog.moduleKey }).from(modulesCatalog))
+        .map((row) => row.moduleKey),
+    );
+
     await this.db
       .insert(permissions)
-      .values(
-        PERMISSIONS.map((permission) => ({
-          name: permission.name,
-          resource: permission.resource,
-          action: permission.action,
-          description: permission.description ?? null,
-          moduleKey: administeringModuleOf(permission.name),
-          isDelegable: isDelegablePermission(permission.name),
-        })),
-      )
+      .values(buildPermissionCatalogRows(catalogModules))
       .onConflictDoUpdate({
         target: permissions.name,
         set: {
@@ -84,6 +80,7 @@ export class PermissionCatalogSyncService implements OnModuleInit {
           action: sqlExcluded("action"),
           description: sqlExcluded("description"),
           moduleKey: sqlExcluded("module_key"),
+          administeringModuleKey: sqlExcluded("administering_module_key"),
           isDelegable: sqlExcluded("is_delegable"),
         },
       });
