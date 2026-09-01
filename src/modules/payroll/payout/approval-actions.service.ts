@@ -79,7 +79,12 @@ export class ApprovalActionsService {
       })
       .from(payrollApprovals)
       .where(and(eq(payrollApprovals.runId, runId), eq(payrollApprovals.orgId, orgId)))
-      .orderBy(asc(payrollApprovals.stage));
+      .orderBy(asc(payrollApprovals.stage))
+      .limit(21);
+
+    if (allStages.length > 20) {
+      throw new ConflictException("Payroll approval workflow exceeds the supported 20-stage bound");
+    }
 
     const nextPending = allStages.find((s) => s.status === "PENDING");
 
@@ -273,7 +278,12 @@ export class ApprovalActionsService {
       })
       .from(payrollApprovals)
       .where(and(eq(payrollApprovals.runId, runId), eq(payrollApprovals.orgId, orgId)))
-      .orderBy(asc(payrollApprovals.stage));
+      .orderBy(asc(payrollApprovals.stage))
+      .limit(21);
+
+    if (allStages.length > 20) {
+      throw new ConflictException("Payroll approval workflow exceeds the supported 20-stage bound");
+    }
 
     const nextPending = allStages.find((s) => s.status === "PENDING");
 

@@ -2465,8 +2465,8 @@
       "note": "FNF list is capped and the unique mutation lookup uses LIMIT 1"
     },
     "/payroll/hr-payroll/tax.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane â€” paired service+frontend migration required"
+      "verdict": "BOUNDED",
+      "note": "Declaration lists are capped, unique lookups use LIMIT 1, and proof history probes one overflow row before failing visibly above 500"
     },
     "/payroll/insights/accounting-mappings.service.ts": {
       "verdict": "BOUNDED",
@@ -2521,20 +2521,20 @@
       "note": "History fails visibly above 100 rows; unique create, update, and active-window lookups use LIMIT 1"
     },
     "/payroll/insights/team-rewards.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane â€” paired service+frontend migration required"
+      "verdict": "BOUNDED",
+      "note": "Direct-report reads are input-bounded with explicit overflow guards; organization compression probes one row above its supported 10000-profile bound"
     },
     "/payroll/lib/payroll-run-payee.ts": {
       "verdict": "ACTIONABLE",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/approval-actions.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane â€” paired service+frontend migration required"
+      "verdict": "BOUNDED",
+      "note": "Approval-stage action reads probe one row above the supported 20-stage workflow bound and fail visibly on overflow"
     },
     "/payroll/payout/approvals.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane â€” paired service+frontend migration required"
+      "verdict": "BOUNDED",
+      "note": "Blocker detection uses a one-row aggregate and approval listing probes one row above the supported 20-stage workflow bound"
     },
     "/payroll/payout/batch-creator.service.ts": {
       "verdict": "ACTIONABLE",
@@ -2569,8 +2569,8 @@
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/command-center.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane â€” paired service+frontend migration required"
+      "verdict": "BOUNDED",
+      "note": "Command-center lookups are tenant-scoped and bounded; calendar and pending-stage panels probe one overflow row and fail visibly"
     },
     "/payroll/runs/inputs.service.ts": {
       "verdict": "ACTIONABLE",

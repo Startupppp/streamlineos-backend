@@ -115,7 +115,7 @@ export class SupportAiTriageService {
         WHERE ${kar.articleId} = ${kbArticles.id}
           AND ${kar.orgId} = ${user.orgId}
           AND ${kar.level} = 'view'
-          AND (${kar.userId} = ${principal.userId} OR ${
+          AND (${principal.membershipId !== null ? sql`${kar.membershipId} = ${principal.membershipId} OR ` : sql``}${
             principal.roleSlugs.length > 0
               ? sql`${kar.role} = ANY(${principal.roleSlugs})`
               : sql`false`

@@ -1,5 +1,5 @@
-import { Injectable, Inject } from "@nestjs/common";
-import { and, eq, gte, lte, count } from "drizzle-orm";
+import { ConflictException, Injectable, Inject } from "@nestjs/common";
+import { and, asc, eq, gte, lte, count } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -64,8 +64,13 @@ export class CommandCenterService {
             lte(payrollCalendarEvents.date, in14DaysStr),
           ),
         )
-        .orderBy(payrollCalendarEvents.date),
+        .orderBy(payrollCalendarEvents.date)
+        .limit(101),
     ]);
+
+    if (upcomingCalendarEvents.length > 100) {
+      throw new ConflictException("Upcoming payroll calendar exceeds the supported 100-event window bound");
+    }
 
     const toggles = versionData?.toggles ?? null;
     const packComplianceChecklist = this.buildPackComplianceChecklist(
@@ -93,7 +98,13 @@ export class CommandCenterService {
               status: payrollExceptions.status,
             })
             .from(payrollExceptions)
-            .where(and(eq(payrollExceptions.runId, run.id), eq(payrollExceptions.status, "OPEN")))
+            .where(
+              and(
+                eq(payrollExceptions.orgId, orgId),
+                eq(payrollExceptions.runId, run.id),
+                eq(payrollExceptions.status, "OPEN"),
+              ),
+            )
             .orderBy(payrollExceptions.severity)
             .limit(5)
         : Promise.resolve([]),
@@ -105,9 +116,21 @@ export class CommandCenterService {
               status: payrollApprovals.status,
             })
             .from(payrollApprovals)
-            .where(and(eq(payrollApprovals.runId, run.id), eq(payrollApprovals.status, "PENDING")))
+            .where(
+              and(
+                eq(payrollApprovals.orgId, orgId),
+                eq(payrollApprovals.runId, run.id),
+                eq(payrollApprovals.status, "PENDING"),
+              ),
+            )
+            .orderBy(asc(payrollApprovals.stage))
+            .limit(21)
         : Promise.resolve([]),
     ]);
+
+    if (pendingApprovals.length > 20) {
+      throw new ConflictException("Payroll approval workflow exceeds the supported 20-stage bound");
+    }
 
     const header = run
       ? {

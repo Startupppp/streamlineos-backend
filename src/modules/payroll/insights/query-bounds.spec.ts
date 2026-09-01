@@ -64,4 +64,38 @@ describe("Payroll insights query bounds", () => {
     expect(source).toContain("asc(payslipPublications.userId)");
     expect(source).toContain("asc(taxDeclarations.userId)");
   });
+
+  it("bounds payroll proof, approval, command-center, and team-reward whole-set reads", () => {
+    const tax = readFileSync(require.resolve("../hr-payroll/tax.service"), "utf8");
+    expect(tax).toContain(".limit(501)");
+    expect(tax).toContain("Investment proofs exceed the supported 500-row declaration bound");
+
+    const approvalActions = readFileSync(require.resolve("../payout/approval-actions.service"), "utf8");
+    expect(approvalActions.match(/\.limit\(21\)/g)).toHaveLength(2);
+    expect(approvalActions.match(/exceeds the supported 20-stage bound/g)).toHaveLength(2);
+
+    const approvals = readFileSync(require.resolve("../payout/approvals.service"), "utf8");
+    expect(approvals).toContain("select({ total: count() })");
+    expect(approvals).toContain(".limit(21)");
+    expect(approvals).toContain("if (rows.length > 20)");
+
+    const commandCenter = readFileSync(require.resolve("../runs/command-center.service"), "utf8");
+    expect(commandCenter).toContain(".limit(101)");
+    expect(commandCenter).toContain(".limit(21)");
+    expect(commandCenter).toContain("if (upcomingCalendarEvents.length > 100)");
+    expect(commandCenter).toContain("if (pendingApprovals.length > 20)");
+
+    const teamRewards = readFileSync(require.resolve("./team-rewards.service"), "utf8");
+    expect(teamRewards).toContain(".limit(reportIds.length + 1)");
+    expect(teamRewards).toContain(".limit(reportIds.length * MAX_BENEFIT_ENROLLMENTS_PER_REPORT + 1)");
+    expect(teamRewards).toContain(".limit(reportIds.length * MAX_EQUITY_GRANTS_PER_REPORT + 1)");
+    expect(teamRewards).toContain(".limit(MAX_ORG_PAY_COMPRESSION_PROFILES + 1)");
+    expect(teamRewards).toContain(".limit(reportIds.length)");
+  });
+
+  it("calendar month generation derives the lookup set from the always-defined event definitions", () => {
+    const source = readFileSync(require.resolve("./calendar.service"), "utf8");
+    expect(source).toContain("inArray(payrollCalendarEvents.type, eventDefs.map((event) => event.type))");
+    expect(source).not.toContain("events.map((event) => event.type)");
+  });
 });

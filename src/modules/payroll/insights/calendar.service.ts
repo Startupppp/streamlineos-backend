@@ -240,7 +240,7 @@ export class CalendarService {
           and(
             eq(payrollCalendarEvents.orgId, orgId),
             eq(payrollCalendarEvents.month, month),
-            inArray(payrollCalendarEvents.type, events.map((event) => event.type)),
+            inArray(payrollCalendarEvents.type, eventDefs.map((event) => event.type)),
           ),
         );
 

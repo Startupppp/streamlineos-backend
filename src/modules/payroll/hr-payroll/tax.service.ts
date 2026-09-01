@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import { taxDeclarations, investmentProofs } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -93,10 +93,16 @@ export class TaxService {
       .where(and(eq(taxDeclarations.id, declarationId), eq(taxDeclarations.orgId, orgId)))
       .limit(1);
     if (!declaration) throw new NotFoundException("Tax declaration not found");
-    return this.db
+    const proofs = await this.db
       .select()
       .from(investmentProofs)
       .where(and(eq(investmentProofs.declarationId, declarationId), eq(investmentProofs.orgId, orgId)))
-      .orderBy(desc(investmentProofs.createdAt));
+      .orderBy(desc(investmentProofs.createdAt))
+      .limit(501);
+
+    if (proofs.length > 500) {
+      throw new ConflictException("Investment proofs exceed the supported 500-row declaration bound");
+    }
+    return proofs;
   }
 }
