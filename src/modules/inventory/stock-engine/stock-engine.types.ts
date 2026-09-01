@@ -204,6 +204,8 @@ export type InvNearExpiryPolicy = "ALLOW" | "DEPRIORITIZE" | "BLOCK";
 export interface InvPackFlags {
   warehouse: boolean;
   kirana: boolean;
+  /** B1 — construction and interior materials: catalogue attributes, dark stores, projects. */
+  materials: boolean;
   pharmacy: boolean;
   /**
    * NEO-2. Platform purchase orders, ASNs and fill-rate. Off by default like the

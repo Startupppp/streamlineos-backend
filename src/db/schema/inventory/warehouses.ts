@@ -1,6 +1,6 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, integer, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
-import { invLocationTypeEnum } from "../common/enums";
+import { pgTable, text, serial, timestamp, boolean, decimal, integer, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
+import { invFacilityTypeEnum, invLocationTypeEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
 
@@ -16,6 +16,35 @@ export const invWarehouses = pgTable("inv_warehouses", {
   country: text("country"),
   managerUserId: text("manager_user_id").references(() => users.id, { onDelete: "set null" }),
   managerMembershipId: integer("manager_membership_id"),
+  /**
+   * B1 — what kind of facility this is, behind the `materials` pack.
+   *
+   * `WAREHOUSE` for everything that was here before, so the column is inert until
+   * an organisation deliberately marks a site as a dark store. A dark store is
+   * picked from inside a promise measured in minutes, which is why its stockouts
+   * and its transfers are ranked differently from a mother warehouse's.
+   */
+  facilityType: invFacilityTypeEnum("facility_type").default("WAREHOUSE").notNull(),
+  /**
+   * B1 — the delivery zone this facility serves.
+   *
+   * Free text and not an enum: a zone is a business's own carve-up of a city, and
+   * the next city has different ones. Hyderabad's four are seeded, never baked
+   * into the type system. `zoneLabel` is what a human reads; `zone` is what
+   * `inv_projects.zone` is matched against, so a site and the stores that can
+   * serve it line up without a geocoder.
+   */
+  zone: text("zone"),
+  zoneLabel: text("zone_label"),
+  /**
+   * B1 — the promise this facility is expected to keep, in minutes. It is what
+   * makes a stockout here urgent rather than merely noteworthy: 90 minutes is a
+   * customer waiting, not a planning cycle.
+   */
+  deliveryPromiseMinutes: integer("delivery_promise_minutes"),
+  serviceRadiusKm: decimal("service_radius_km", { precision: 6, scale: 2 }),
+  latitude: decimal("latitude", { precision: 9, scale: 6 }),
+  longitude: decimal("longitude", { precision: 9, scale: 6 }),
   isDefault: boolean("is_default").default(false).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   createdBy: text("created_by").references(() => users.id).notNull(),
@@ -27,6 +56,12 @@ export const invWarehouses = pgTable("inv_warehouses", {
   unique("uniq_inv_warehouses_org_id").on(table.orgId, table.id),
   index("idx_inv_warehouses_org").on(table.orgId),
   index("idx_inv_warehouses_branch").on(table.branchId),
+  // B1. "Which stores serve the north zone" is the query behind every transfer
+  // suggestion and every alternative-store prompt on a shortage. Partial,
+  // because outside the materials pack no row carries a zone at all.
+  index("idx_inv_warehouses_org_zone").on(table.orgId, table.zone).where(sql`zone IS NOT NULL`),
+  index("idx_inv_warehouses_org_facility").on(table.orgId, table.facilityType),
+  check("chk_inv_warehouses_promise_positive", sql`delivery_promise_minutes IS NULL OR delivery_promise_minutes > 0`),
 ]);
 
 export const invLocations = pgTable("inv_locations", {

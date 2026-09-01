@@ -1,4 +1,4 @@
-import { Inject, Injectable, ConflictException, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, gt, ilike, inArray, or, sql } from "drizzle-orm";
 import { invWarehouses, invLocations, invStockLevels, invProductVariants, invProducts } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -6,6 +6,8 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService, type WarehouseScope } from "../stock-engine/warehouse-scope.service";
+import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
+import { WAREHOUSE_MATERIALS_FIELD_KEYS } from "./dto/inv-warehouses.schemas";
 import type { CreateWarehouseInput, UpdateWarehouseInput, CreateLocationInput, UpdateLocationInput, ListWarehousesInput } from "./dto/inv-warehouses.schemas";
 
 function escapeLike(value: string): string {
@@ -14,20 +16,49 @@ function escapeLike(value: string): string {
 
 const MAX_PAGE_LIMIT = 100;
 
+/**
+ * B1. The dark-store columns, as a set, so the gate and the projection agree.
+ * A gate that only hides the field leaves the column writable by anyone who has
+ * read the network tab — the same reasoning as the product packs.
+ */
+const WAREHOUSE_MATERIALS_KEYS: ReadonlySet<string> = new Set(WAREHOUSE_MATERIALS_FIELD_KEYS);
+
 @Injectable()
 export class InvWarehousesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly settings: InventorySettingsService,
   ) {}
+
+  /**
+   * B1 — the dark-store fields are refused while the `materials` pack is off.
+   *
+   * Same shape as `InvProductCrudService.assertPacksForFields`, and for the same
+   * reason: hiding a field in the UI is not a gate, and an organisation that
+   * cannot see a column must not end up holding data in it.
+   */
+  private async assertMaterialsPackForFields(
+    orgId: string,
+    data: CreateWarehouseInput | UpdateWarehouseInput,
+  ): Promise<void> {
+    const supplied = [...WAREHOUSE_MATERIALS_KEYS].filter((key) => key in data);
+    if (supplied.length === 0) return;
+    const settings = await this.settings.get(orgId);
+    if (settings.packs.materials) return;
+    throw new BadRequestException({
+      code: "MATERIALS_PACK_DISABLED",
+      message: `The materials pack is not enabled for this organisation, so ${supplied.join(", ")} cannot be set. Enable it in inventory settings first.`,
+    });
+  }
 
   async listWarehouses(orgId: string, userId: string, filters?: ListWarehousesInput) {
     const scope = await this.warehouseScope.resolve(orgId, userId);
     // The unfiltered list is cached per org, so the caller's scope has to be part
     // of the key or one operator's warehouses would be served to the next.
     const scopeKey = scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none");
-    const hasFilters = filters && (filters.q || filters.status || filters.isDefault !== undefined || filters.country || filters.city);
+    const hasFilters = filters && (filters.q || filters.status || filters.isDefault !== undefined || filters.country || filters.city || filters.zone || filters.facilityType);
     if (!hasFilters) {
       return this.cache.cachedVersionedForOrg(orgId, "inv:warehouses", scopeKey, () =>
         this.queryWarehouses(orgId, {}, scope),
@@ -59,6 +90,8 @@ export class InvWarehousesService {
     if (filters.isDefault !== undefined) conds.push(eq(invWarehouses.isDefault, filters.isDefault));
     if (filters.country) conds.push(ilike(invWarehouses.country, filters.country));
     if (filters.city) conds.push(ilike(invWarehouses.city, filters.city));
+    if (filters.zone) conds.push(eq(invWarehouses.zone, filters.zone));
+    if (filters.facilityType) conds.push(eq(invWarehouses.facilityType, filters.facilityType));
 
     const page = filters.page ?? 1;
     const limit = Math.min(filters.limit ?? MAX_PAGE_LIMIT, MAX_PAGE_LIMIT);
@@ -78,6 +111,13 @@ export class InvWarehousesService {
         isActive: invWarehouses.isActive,
         branchId: invWarehouses.branchId,
         managerUserId: invWarehouses.managerUserId,
+        facilityType: invWarehouses.facilityType,
+        zone: invWarehouses.zone,
+        zoneLabel: invWarehouses.zoneLabel,
+        deliveryPromiseMinutes: invWarehouses.deliveryPromiseMinutes,
+        serviceRadiusKm: invWarehouses.serviceRadiusKm,
+        latitude: invWarehouses.latitude,
+        longitude: invWarehouses.longitude,
         createdBy: invWarehouses.createdBy,
         createdAt: invWarehouses.createdAt,
         updatedAt: invWarehouses.updatedAt,
@@ -109,6 +149,7 @@ export class InvWarehousesService {
   }
 
   async createWarehouse(orgId: string, userId: string, data: CreateWarehouseInput) {
+    await this.assertMaterialsPackForFields(orgId, data);
     const [existingCode, existingName] = await Promise.all([
       this.db.query.invWarehouses.findFirst({
         where: and(eq(invWarehouses.orgId, orgId), eq(invWarehouses.code, data.code)),
@@ -145,6 +186,7 @@ export class InvWarehousesService {
   // B1-01 BOLA: pre-deactivation stock check now includes eq(invLocations.orgId, orgId).
   // B1-12: stock check + isDefault reset + update wrapped in one transaction.
   async updateWarehouse(orgId: string, warehouseId: number, data: UpdateWarehouseInput) {
+    await this.assertMaterialsPackForFields(orgId, data);
     const updated = await this.db.transaction(async (tx) => {
       if (data.isActive === false) {
         const locations = await tx

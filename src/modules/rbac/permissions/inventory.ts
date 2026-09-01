@@ -386,6 +386,21 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     description: "Propose AI-generated reorder draft POs and confirm them",
   },
   {
+    name: "inventory:projects:read",
+    resource: "inventory:projects",
+    action: "read",
+    description:
+      "View construction projects and the material each site still needs, including what is at risk of missing its date",
+    scopable: true,
+  },
+  {
+    name: "inventory:projects:manage",
+    resource: "inventory:projects",
+    action: "manage",
+    description:
+      "Create and edit construction projects and their material requirements. Reserving stock against a line is a separate key (inventory:stock:reserve)",
+  },
+  {
     name: "inventory:ai:manage",
     resource: "inventory:ai",
     action: "manage",

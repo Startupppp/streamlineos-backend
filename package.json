@@ -109,6 +109,7 @@
     "seed:demo-coupons": "node --env-file=.env -r ts-node/register src/db/seeds/demo-coupons.seed.ts",
     "seed:ai-credit-packs": "node --env-file=.env -r ts-node/register src/db/seeds/ai-credit-packs.seed.ts",
     "seed:demo": "node --env-file=.env -r ts-node/register src/scripts/seed-demo.ts",
+    "seed:buildmart": "node --env-file=.env -r ts-node/register src/scripts/seed-buildmart.ts",
     "seed:permissions": "node --env-file=.env -r ts-node/register src/scripts/seed-permissions.ts",
     "mcp": "node scripts/mcp-server.mjs",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",

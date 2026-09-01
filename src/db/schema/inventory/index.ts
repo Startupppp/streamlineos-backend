@@ -21,3 +21,4 @@ export * from "./slotting";
 export * from "./labor";
 export * from "./kitting";
 export * from "./dock";
+export * from "./projects";

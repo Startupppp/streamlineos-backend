@@ -43,6 +43,13 @@ interface ReorderRow extends Record<string, unknown> {
   productId: number;
   productName: string;
   productSku: string;
+  /** B4. Which bin and store are short — the row was always per stock level. */
+  locationId: number;
+  locationName: string;
+  locationCode: string;
+  warehouseId: number;
+  warehouseName: string;
+  warehouseCode: string;
   onHand: number;
   onHandDec: string;
   onOrder: number;
@@ -55,6 +62,14 @@ interface ReorderRow extends Record<string, unknown> {
   minQty: number | null;
   maxQty: number | null;
   reorderQty: number | null;
+  /** B4. Outstanding on sent/part-received purchase orders bound for this warehouse. */
+  onPurchaseOrderQty: number;
+  onPurchaseOrderQtyDec: string;
+  /** B4. Outstanding on transfers already dispatched to this warehouse. */
+  inTransitQty: number;
+  inTransitQtyDec: string;
+  /** What the policy alone asks for, before inbound stock is deducted. */
+  rawSuggestedQty: number;
   suggestedQty: number;
   suggestedQtyDec: string;
   vendorId: number | null;
@@ -399,22 +414,90 @@ export class InvReportsExtendedService {
           p.reorder_point::numeric   AS reorder_point,
           p.min_stock_level::numeric AS min_stock_level,
           p.default_vendor_id,
+          -- B4. Which store this row is about.
+          --
+          -- The report has always been one row **per stock level**, so a SKU low
+          -- at two dark stores produced two rows that were identical on every
+          -- projected column. The frontend keyed its list on
+          -- productId + variantSku, and React silently dropped one of them --
+          -- an operator reading the low-stock list saw fewer stores than were
+          -- actually short. Projecting the warehouse fixes the key and answers
+          -- the question the row was always about: low *where*.
+          -- The row's true identity: one row per stock level, and a SKU can sit
+          -- in two bins of the same store. Keying on the warehouse alone still
+          -- collided, so the bin is projected as well.
+          sl.location_id     AS location_id,
+          loc.name           AS location_name,
+          loc.code           AS location_code,
+          loc.warehouse_id   AS warehouse_id,
+          wh.name            AS warehouse_name,
+          wh.code            AS warehouse_code,
+          p.lead_time_days   AS product_lead_time_days,
+          (SELECT ven.lead_time_days FROM inv_vendors ven
+            WHERE ven.id = p.default_vendor_id AND ven.org_id = ${orgId}) AS vendor_lead_time_days,
           rule.id            AS rule_id,
           rule.min_qty       AS rule_min_qty,
           rule.max_qty       AS rule_max_qty,
           rule.reorder_qty   AS rule_reorder_qty,
           rule.vendor_id     AS rule_vendor_id,
           rule.lead_time_days AS rule_lead_time_days,
+          -- B4. What is already coming, so the suggestion does not buy it twice.
+          --
+          -- What is inbound is the outstanding quantity on purchase orders that have
+          -- been sent (or part-received) plus the quantity sitting in a van
+          -- between two dark stores. Both are stock this warehouse is going to
+          -- get without anybody ordering anything, and a suggestion that ignores
+          -- them is how a business ends up with three months of cement.
+          --
+          -- Scoped to the *warehouse this stock row is in*: a purchase order
+          -- headed for Kompally does not cover an Uppal stockout, which is
+          -- exactly the case the transfer board exists for.
+          COALESCE((
+            SELECT SUM(GREATEST(pol.quantity::numeric - pol.quantity_received::numeric, 0))
+            FROM inv_po_lines pol
+            JOIN inv_purchase_orders po
+              ON po.id = pol.po_id AND po.org_id = pol.org_id
+            WHERE pol.org_id = ${orgId}
+              AND pol.product_variant_id = sl.product_variant_id
+              AND po.status IN ('SENT', 'PARTIAL')
+              AND (po.warehouse_id IS NULL OR po.warehouse_id = (
+                SELECT loc.warehouse_id FROM inv_locations loc WHERE loc.id = sl.location_id
+              ))
+          ), 0) AS on_po_qty,
+          COALESCE((
+            SELECT SUM(GREATEST(tl.quantity::numeric - tl.quantity_received::numeric, 0))
+            FROM inv_stock_transfer_lines tl
+            JOIN inv_stock_transfers t
+              ON t.id = tl.transfer_id AND t.org_id = tl.org_id
+            WHERE tl.org_id = ${orgId}
+              AND tl.product_variant_id = sl.product_variant_id
+              AND t.status = 'IN_TRANSIT'
+              AND t.to_warehouse_id = (
+                SELECT loc.warehouse_id FROM inv_locations loc WHERE loc.id = sl.location_id
+              )
+          ), 0) AS in_transit_qty,
+          -- B4. The order policy, most specific first.
+          --
+          -- A per-warehouse reorder rule wins, then the SKU's own
+          -- reorder_quantity, then the deficit to the reorder point. The middle
+          -- term is new: reorder_point has always answered *when* to buy, and
+          -- until now nothing answered *how much*, so every suggestion for a SKU
+          -- without a rule proposed the bare deficit — which puts stock exactly
+          -- back on the reorder point and triggers the same suggestion tomorrow.
           CASE
             WHEN rule.id IS NOT NULL AND rule.max_qty IS NOT NULL
               THEN GREATEST(rule.max_qty - sl.on_hand::numeric, 0)
-            WHEN rule.id IS NOT NULL
-              THEN COALESCE(rule.reorder_qty, 0)
+            WHEN rule.id IS NOT NULL AND rule.reorder_qty IS NOT NULL
+              THEN rule.reorder_qty
+            WHEN p.reorder_quantity IS NOT NULL
+              THEN p.reorder_quantity::numeric
             ELSE GREATEST(p.reorder_point::numeric - sl.on_hand::numeric, 0)
-          END AS suggested_qty
+          END AS raw_suggested_qty
         FROM inv_stock_levels sl
         JOIN inv_product_variants v ON v.id = sl.product_variant_id
         JOIN inv_products p         ON p.id = v.product_id
+        JOIN inv_locations loc      ON loc.id = sl.location_id AND loc.org_id = sl.org_id
+        JOIN inv_warehouses wh      ON wh.id = loc.warehouse_id AND wh.org_id = sl.org_id
         LEFT JOIN LATERAL (
           SELECT rr.id, rr.min_qty::numeric AS min_qty, rr.max_qty::numeric AS max_qty,
                  rr.reorder_qty::numeric AS reorder_qty, rr.vendor_id, rr.lead_time_days
@@ -439,6 +522,12 @@ export class InvReportsExtendedService {
         r.product_id              AS "productId",
         r.product_name            AS "productName",
         r.product_sku             AS "productSku",
+        r.location_id             AS "locationId",
+        r.location_name           AS "locationName",
+        r.location_code           AS "locationCode",
+        r.warehouse_id            AS "warehouseId",
+        r.warehouse_name          AS "warehouseName",
+        r.warehouse_code          AS "warehouseCode",
         r.on_hand::float8         AS "onHand",
         r.on_hand::text           AS "onHandDec",
         r.on_order::float8        AS "onOrder",
@@ -451,13 +540,24 @@ export class InvReportsExtendedService {
         r.rule_min_qty::float8    AS "minQty",
         r.rule_max_qty::float8    AS "maxQty",
         r.rule_reorder_qty::float8 AS "reorderQty",
-        r.suggested_qty::float8   AS "suggestedQty",
-        r.suggested_qty::text     AS "suggestedQtyDec",
+        r.on_po_qty::float8       AS "onPurchaseOrderQty",
+        r.on_po_qty::text         AS "onPurchaseOrderQtyDec",
+        r.in_transit_qty::float8  AS "inTransitQty",
+        r.in_transit_qty::text    AS "inTransitQtyDec",
+        r.raw_suggested_qty::float8 AS "rawSuggestedQty",
+        -- What is left to buy once what is already coming is counted. Floored at
+        -- zero: a SKU whose inbound already covers the gap needs no order, and a
+        -- negative "suggestion" is not something anybody can act on.
+        GREATEST(r.raw_suggested_qty - r.on_po_qty - r.in_transit_qty, 0)::float8 AS "suggestedQty",
+        GREATEST(r.raw_suggested_qty - r.on_po_qty - r.in_transit_qty, 0)::text   AS "suggestedQtyDec",
         COALESCE(r.rule_vendor_id, r.default_vendor_id) AS "vendorId",
-        r.rule_lead_time_days     AS "leadTimeDays",
+        -- B4. Rule first, then the SKU's catalogue lead time, then the default
+        -- vendor's. A null here used to be the norm, which made every "will it
+        -- arrive in time" question unanswerable.
+        COALESCE(r.rule_lead_time_days, r.product_lead_time_days, r.vendor_lead_time_days) AS "leadTimeDays",
         count(*) OVER ()::int     AS "totalRows"
       FROM r
-      ORDER BY r.variant_sku, r.product_variant_id
+      ORDER BY r.variant_sku, r.product_variant_id, r.warehouse_id, r.location_id
       LIMIT ${limit} OFFSET ${offset}
     `);
 

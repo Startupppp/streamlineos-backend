@@ -59,14 +59,18 @@ export class SettingsService {
       kirana: input.packKirana ?? current.packs.kirana,
       pharmacy: input.packPharmacy ?? current.packs.pharmacy,
       gst: input.packGst ?? current.packs.gst,
+      materials: input.packMaterials ?? current.packs.materials,
     };
     // E1. Every pack off leaves an inventory module with no domain rules and no
     // fields beyond the bare ledger — reachable through the API, indistinguishable
     // from a broken deployment from the operator's side. Refuse it here rather
     // than discover it in support.
-    if (!nextPacks.warehouse && !nextPacks.kirana && !nextPacks.pharmacy && !nextPacks.gst) {
+    if (
+      !nextPacks.warehouse && !nextPacks.kirana && !nextPacks.pharmacy &&
+      !nextPacks.gst && !nextPacks.materials
+    ) {
       throw new BadRequestException(
-        "At least one inventory pack must stay enabled — warehouse, kirana, pharmacy or gst",
+        "At least one inventory pack must stay enabled — warehouse, kirana, pharmacy, gst or materials",
       );
     }
     // E2. `COMPOSITION` decides whether an outward document may show a tax split

@@ -273,15 +273,20 @@ export class OutboxPublisherService {
   }
 
   private async deliver(event: OutboxEventRow): Promise<void> {
-    const consumer = this.registry.get(event.eventType);
-    if (!consumer) {
+    const consumers = this.registry.getAll(event.eventType);
+    if (consumers.length === 0) {
       throw new Error(
         `no dispatch handler for event type '${event.eventType}' — register a consumer via OutboxConsumerRegistry`,
       );
     }
-    await runInNewTenantTransaction(this.db, event.organizationId, async () => {
-      await consumer.handle(event);
-    });
+    // Each consumer gets its own tenant transaction rather than sharing one:
+    // a rollback in the second must not undo the first's work, and one long
+    // consumer must not hold a pooled connection open for the others.
+    for (const consumer of consumers) {
+      await runInNewTenantTransaction(this.db, event.organizationId, async () => {
+        await consumer.handle(event);
+      });
+    }
   }
 
   private async handleFailure(

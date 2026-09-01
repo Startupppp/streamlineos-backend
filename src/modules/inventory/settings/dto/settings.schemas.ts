@@ -33,6 +33,11 @@ export const updateSettingsSchema = z.object({
   packPharmacy: z.boolean().optional(),
   packGst: z.boolean().optional(),
   /**
+   * B1. Construction and interior materials — catalogue attributes, dark stores
+   * with a delivery zone, and the projects that consume them.
+   */
+  packMaterials: z.boolean().optional(),
+  /**
    * E2. The organisation's GST registration. Only meaningful while the `gst`
    * pack is on, and the service refuses `COMPOSITION` without it — a composition
    * rule that silently does nothing is worse than one that will not save.

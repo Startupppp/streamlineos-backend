@@ -32,6 +32,7 @@ import {
   PRODUCT_TAX_FIELD_KEYS,
   PRODUCT_PHARMACY_FIELD_KEYS,
   PRODUCT_KIRANA_FIELD_KEYS,
+  PRODUCT_MATERIALS_FIELD_KEYS,
 } from "./dto/inv-products.schemas";
 import { assertCaptureRulesCoherent, assertUnitConvertible, PACKED_WHOLE } from "./lib/quantity-capture";
 import type {
@@ -64,6 +65,7 @@ function isUniqueViolation(err: unknown): boolean {
 const TAX_FIELD_SET: ReadonlySet<string> = new Set(PRODUCT_TAX_FIELD_KEYS);
 const PHARMACY_FIELD_SET: ReadonlySet<string> = new Set(PRODUCT_PHARMACY_FIELD_KEYS);
 const KIRANA_FIELD_SET: ReadonlySet<string> = new Set(PRODUCT_KIRANA_FIELD_KEYS);
+const MATERIALS_FIELD_SET: ReadonlySet<string> = new Set(PRODUCT_MATERIALS_FIELD_KEYS);
 
 /**
  * E1/E2/E3/E4. Removes a pack's fields from a payload, at any nesting depth.
@@ -96,6 +98,7 @@ export interface ProductPackVisibility {
   gst: boolean;
   pharmacy: boolean;
   kirana: boolean;
+  materials: boolean;
 }
 
 export function stripProductPackFields<T>(payload: T, visible: ProductPackVisibility): T {
@@ -103,6 +106,7 @@ export function stripProductPackFields<T>(payload: T, visible: ProductPackVisibi
   if (!visible.gst) out = stripKeys(out, TAX_FIELD_SET, 0) as T;
   if (!visible.pharmacy) out = stripKeys(out, PHARMACY_FIELD_SET, 0) as T;
   if (!visible.kirana) out = stripKeys(out, KIRANA_FIELD_SET, 0) as T;
+  if (!visible.materials) out = stripKeys(out, MATERIALS_FIELD_SET, 0) as T;
   return out;
 }
 
@@ -133,6 +137,7 @@ export class InvProductCrudService {
       { keys: PRODUCT_TAX_FIELD_KEYS, on: "gst", code: "GST_PACK_DISABLED", label: "GST" },
       { keys: PRODUCT_PHARMACY_FIELD_KEYS, on: "pharmacy", code: "PHARMACY_PACK_DISABLED", label: "pharmacy" },
       { keys: PRODUCT_KIRANA_FIELD_KEYS, on: "kirana", code: "KIRANA_PACK_DISABLED", label: "kirana" },
+      { keys: PRODUCT_MATERIALS_FIELD_KEYS, on: "materials", code: "MATERIALS_PACK_DISABLED", label: "materials" },
     ] as const;
     const touched = gates
       .map((gate) => ({ gate, supplied: gate.keys.filter((key) => key in data) }))
@@ -155,6 +160,7 @@ export class InvProductCrudService {
       gst: settings.packs.gst,
       pharmacy: settings.packs.pharmacy,
       kirana: settings.packs.kirana,
+      materials: settings.packs.materials,
     };
   }
 
@@ -280,6 +286,11 @@ export class InvProductCrudService {
       return { items: [], total: 0, page: filters.page, totalPages: 0 };
 
     const { status, productType, categoryId, search, page, limit, includeDeleted } = filters;
+    // B1. Ignored rather than refused while the pack is off: a stale bookmark
+    // carrying `?brand=…` should show the catalogue, not an error, and with the
+    // pack off no row carries a brand so the filter would empty the list.
+    const brand = filters.brand;
+    const materialFamily = filters.materialFamily;
     const offset = (page - 1) * limit;
     // Cost visibility is part of the key: this list is cached per org, so a
     // masked payload must not be served to a cost-permitted caller or vice versa.
@@ -293,9 +304,12 @@ export class InvProductCrudService {
     // carries HSN and the version that does not. Keying them also means turning a
     // pack on needs no cross-module cache invalidation from settings.
     const packs = await this.packVisibility(orgId);
-    const packKey = `${packs.gst ? "gst" : "nogst"}:${packs.pharmacy ? "rx" : "norx"}:${packs.kirana ? "kir" : "nokir"}`;
+    const packKey = `${packs.gst ? "gst" : "nogst"}:${packs.pharmacy ? "rx" : "norx"}:${packs.kirana ? "kir" : "nokir"}:${packs.materials ? "mat" : "nomat"}`;
     const scopeSuffix = scope !== "all" ? `:${scope}:${userId ?? ""}` : "";
-    const hash = `${showCost ? "cost" : "nocost"}:${packKey}:${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${includeDeleted ? "withdeleted" : "live"}:${limit}:${offset}${scopeSuffix}`;
+    // §6: every filter that changes the result is in the key, or one caller's
+    // narrowed page is served to the next as if it were the whole catalogue.
+    const materialsKey = packs.materials ? `${brand ?? ""}:${materialFamily ?? ""}` : "";
+    const hash = `${showCost ? "cost" : "nocost"}:${packKey}:${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${materialsKey}:${includeDeleted ? "withdeleted" : "live"}:${limit}:${offset}${scopeSuffix}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.invProductsNamespace(orgId),
       hash,
@@ -309,6 +323,9 @@ export class InvProductCrudService {
         if (productType)
           conditions.push(eq(invProducts.productType, productType));
         if (categoryId) conditions.push(eq(invProducts.categoryId, categoryId));
+        if (packs.materials && brand) conditions.push(eq(invProducts.brand, brand));
+        if (packs.materials && materialFamily)
+          conditions.push(eq(invProducts.materialFamily, materialFamily));
         if (search) {
           conditions.push(
             or(

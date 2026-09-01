@@ -81,25 +81,31 @@ export const INVENTORY_WEBHOOK_ROUTES: Readonly<Record<string, WebhookEventType 
    * dead-lettered, so "no subscriber yet" has to be written down.
    */
   "inventory.stock.transfer.completed": "inventory.transfer.completed",
-  "inventory.reservation.created": null,
-  "inventory.reservation.released": null,
-  "inventory.reservation.consumed": null,
+  // B3. These six had producers and nowhere to go. `WEBHOOK_EVENTS` now
+  // carries a name for each, so the routing that said "deliberately nowhere"
+  // has become a route. `inventory.stock.transfer.reserved` stays null: a
+  // transfer holding its own source stock is an internal step of a transfer a
+  // subscriber already hears about at creation and dispatch, and announcing it
+  // separately delivers three webhooks for one movement of goods.
+  "inventory.reservation.created": "inventory.stock.reserved",
+  "inventory.reservation.released": "inventory.stock.released",
+  "inventory.reservation.consumed": "inventory.reservation.fulfilled",
   "inventory.stock.transfer.reserved": null,
-  "inventory.stock.transfer.dispatched": null,
-  // Not routed to `inventory.po.received` as well: that name already carries
-  // `inventory.purchase_order.received`, and mapping both would deliver two
-  // webhooks for one delivery.
-  "inventory.receiving.posted": null,
-  "inventory.return.posted": null,
-  "inventory.quality.hold.created": null,
-  "inventory.quality.hold.released": null,
-  "inventory.count.posted": null,
-  // B4. Routed to nothing on purpose. Giving a completed pick wave a
-  // subscriber-facing name means adding to `WEBHOOK_EVENTS`, which changes what
-  // a customer may register for — a contract decision, not a side effect of
-  // adding a producer. Written down rather than omitted: an unrouted type is
-  // retried and dead-lettered rather than ignored.
-  "inventory.pick.completed": null,
+  "inventory.stock.transfer.dispatched": "inventory.transfer.dispatched",
+  // Its own name rather than `inventory.po.received`: that one already carries
+  // `inventory.purchase_order.received` (the order is closed), and this is the
+  // physical receipt of goods into a bin. Mapping both to one name would deliver
+  // two identical webhooks for one delivery and lose the distinction.
+  "inventory.receiving.posted": "inventory.stock.received",
+  "inventory.return.posted": "inventory.return.received",
+  "inventory.quality.hold.created": "inventory.quality.hold.created",
+  "inventory.quality.hold.released": "inventory.quality.hold.released",
+  "inventory.count.posted": "inventory.count.posted",
+  "inventory.pick.completed": "inventory.picklist.completed",
+  // B3. On-hand reaching zero, emitted beside `inventory.stock.low` by the
+  // costing service. A separate name because the two are different jobs: low
+  // is "start buying", out is "we are refusing orders now".
+  "inventory.stock.out": "inventory.stock.out",
 };
 
 @Injectable()

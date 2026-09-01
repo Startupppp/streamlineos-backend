@@ -118,6 +118,8 @@ export const ROLE_TEMPLATES: readonly RoleTemplate[] = [
       "inventory:purchase-orders:update",
       "inventory:stock:reserve",
       "inventory:stock:reconcile",
+      "inventory:projects:read",
+      "inventory:projects:manage",
       "inventory:quality:read",
       "inventory:quality:inspect",
       "inventory:quality:release",

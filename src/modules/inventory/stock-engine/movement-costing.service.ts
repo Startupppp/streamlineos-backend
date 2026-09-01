@@ -13,6 +13,7 @@ import {
 } from "./valuation.service";
 import { costingFor, type CostingLookup } from "./costing-context";
 import { type StockEngineResult } from "./stock-engine.types";
+import { INVENTORY_COMMAND_EVENTS } from "./command-events";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -189,16 +190,38 @@ export class MovementCostingService {
         onHandByVariant.set(level.productVariantId, level.onHand);
 
     for (const variant of variants) {
-      if (cmpDec(variant.reorderPoint ?? "0", "0") <= 0) continue;
       const onHand = onHandByVariant.get(variant.id) ?? "0";
-      if (cmpDec(onHand, variant.reorderPoint ?? "0") > 0) continue;
+      const reorderPoint = variant.reorderPoint ?? "0";
+      /**
+       * B3 — out of stock and low on stock are different jobs, and exactly one
+       * event is emitted per variant per movement.
+       *
+       * Low says "start buying"; out says "we are refusing orders right now".
+       * A stockout used to be announced as `inventory.stock.low`, which is true
+       * and useless: the buyer and the person telling a customer no need
+       * different signals, and only one of them can act on a reorder report.
+       *
+       * One event, not both, because the outbox is unique on
+       * `(org, aggregate_type, aggregate_id, aggregate_version)` and
+       * `aggregateVersion` is a millisecond clock — two emits for one variant in
+       * one transaction would collide on that index and roll the whole stock
+       * movement back. `InvStockLowConsumerService` is registered for both names
+       * so the buyer's notification is unaffected by which one is emitted.
+       *
+       * A stockout is announced whatever the reorder point says: zero is zero
+       * even on a SKU nobody has configured a reorder point for, which is the
+       * case for most of a catalogue on its first day.
+       */
+      const isOut = cmpDec(onHand, "0") <= 0;
+      const isLow = cmpDec(reorderPoint, "0") > 0 && cmpDec(onHand, reorderPoint) <= 0;
+      if (!isOut && !isLow) continue;
       await OutboxWriter.emit(tx, {
         eventId: randomUUID(),
         organizationId: orgId,
         aggregateType: "inv_product_variant",
         aggregateId: String(variant.id),
         aggregateVersion: Date.now(),
-        eventType: "inventory.stock.low",
+        eventType: isOut ? INVENTORY_COMMAND_EVENTS.STOCK_OUT : INVENTORY_COMMAND_EVENTS.STOCK_LOW,
         payload: {
           productVariantId: variant.id,
           onHand,

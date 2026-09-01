@@ -55,6 +55,17 @@ export const invSettings = pgTable("inv_settings", {
   packPharmacy: boolean("pack_pharmacy").default(false).notNull(),
   packGst: boolean("pack_gst").default(false).notNull(),
   /**
+   * B1 — the materials pack: construction and interior goods, dark stores with a
+   * delivery zone, and the construction projects that consume them.
+   *
+   * Off by default like every other optional pack. Off means the catalogue
+   * attributes are stripped from every response and refused on every write, the
+   * project surfaces 404, and the dark-store fields on a warehouse are not
+   * offered — a grade and a finish are the first two questions a tile buyer asks
+   * and complete noise to a pharmacy.
+   */
+  packMaterials: boolean("pack_materials").default(false).notNull(),
+  /**
    * NEO-2 — the quick-commerce pack: platform purchase orders, ASNs and
    * fill-rate. Off by default like every other optional pack, and off means the
    * ingest endpoint refuses before it parses anything.

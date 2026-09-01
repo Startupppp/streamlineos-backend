@@ -1,6 +1,6 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, bigint, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { invProductStatusEnum, invProductTypeEnum, invTrackingMethodEnum, invCostingMethodEnum, invBarcodeTypeEnum, invTaxTreatmentEnum, invDrugScheduleEnum, invSaleModeEnum, invQtyInputModeEnum, invMeasureModeEnum } from "../common/enums";
+import { invProductStatusEnum, invProductTypeEnum, invTrackingMethodEnum, invCostingMethodEnum, invBarcodeTypeEnum, invTaxTreatmentEnum, invDrugScheduleEnum, invSaleModeEnum, invQtyInputModeEnum, invMeasureModeEnum, invMaterialFamilyEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 
 export const invUom = pgTable("inv_uom", {
@@ -155,6 +155,55 @@ export const invProducts = pgTable("inv_products", {
   saleMode: invSaleModeEnum("sale_mode").default("PACKED").notNull(),
   quantityInputMode: invQtyInputModeEnum("quantity_input_mode").default("WHOLE").notNull(),
   quantityPrecision: integer("quantity_precision").default(0).notNull(),
+  /**
+   * B1 — the construction and interior-materials inputs, behind the `materials`
+   * pack.
+   *
+   * These are the eight things a materials buyer actually selects on, and none
+   * of them is a variant axis. Two grades of cement are two products with two
+   * reorder points, not two sizes of one product; two finishes of the same tile
+   * are two SKUs a picker must not confuse. Putting them on the product rather
+   * than in `attributeValues` is what lets the catalogue be filtered and indexed
+   * by them instead of scanned.
+   *
+   * `dimensionLabel` is the nominal size as the trade writes it — "600x600 mm",
+   * "12 mm", "8 ft x 4 ft" — and is deliberately a label rather than three
+   * numbers. `inv_product_variants` already holds real millimetres for the
+   * packer; the two answer different questions, and a picker matching a printed
+   * carton needs the trade's own string.
+   *
+   * All nullable: an organisation that never turns the pack on must not be made
+   * to invent a finish for a bag of cement.
+   */
+  brand: text("brand"),
+  materialGrade: text("material_grade"),
+  finish: text("finish"),
+  colour: text("colour"),
+  dimensionLabel: text("dimension_label"),
+  materialFamily: invMaterialFamilyEnum("material_family"),
+  /**
+   * B1 — how many stock units are in one selling pack: 12 tiles per box, 20 kg
+   * per bag. A count, so it multiplies against the ledger quantity without a
+   * unit conversion; the unit itself is the product's own `uomId`.
+   */
+  packSize: decimal("pack_size", { precision: 18, scale: 4 }),
+  /**
+   * B1 — the supplier's own code for this item, which is what appears on their
+   * invoice and is therefore what a receiving clerk has in front of them.
+   */
+  supplierCode: text("supplier_code"),
+  /**
+   * B1 — days from placing an order to the goods arriving.
+   * `inv_reorder_rules` holds a per-warehouse override; this is the catalogue
+   * default for a SKU with no rule yet, which is most of them on day one.
+   */
+  leadTimeDays: integer("lead_time_days"),
+  /**
+   * B1 — how much to buy when the reorder point is crossed. `reorderPoint` has
+   * been here since the beginning and answers *when*; nothing answered *how
+   * much*, so every suggestion had to invent a quantity.
+   */
+  reorderQuantity: decimal("reorder_quantity", { precision: 18, scale: 4 }),
   imageUrl: text("image_url"),
   customFields: jsonb("custom_fields").$type<Record<string, unknown>>(),
   createdBy: text("created_by").references(() => users.id).notNull(),
@@ -201,6 +250,20 @@ export const invProducts = pgTable("inv_products", {
     sql`(${table.quantityInputMode} = 'WHOLE' AND ${table.quantityPrecision} = 0)
         OR (${table.quantityInputMode} <> 'WHOLE' AND ${table.quantityPrecision} BETWEEN 1 AND 4)`,
   ),
+  // B1. Brand and family are the two filters a materials catalogue is browsed
+  // by. Partial, because outside the materials pack no row carries either.
+  index("idx_inv_products_org_brand").on(table.orgId, table.brand).where(sql`brand IS NOT NULL`),
+  index("idx_inv_products_org_material_family").on(table.orgId, table.materialFamily).where(sql`material_family IS NOT NULL`),
+  // B1. Receiving clerks search by the code on the supplier's invoice, and
+  // buyers by brand. Trigram rather than a leading-wildcard ILIKE, per §3.
+  index("idx_inv_products_supplier_code_trgm").using("gin", table.supplierCode.op("gin_trgm_ops")),
+  index("idx_inv_products_brand_trgm").using("gin", table.brand.op("gin_trgm_ops")),
+  // B1. A pack of zero divides by zero in the conversion; a negative lead time
+  // is a delivery before the order. Neither is a value anyone can explain
+  // afterwards, so both are constraints rather than service checks.
+  check("chk_inv_products_pack_size_positive", sql`${table.packSize} IS NULL OR ${table.packSize} > 0`),
+  check("chk_inv_products_lead_time_nonneg", sql`${table.leadTimeDays} IS NULL OR ${table.leadTimeDays} >= 0`),
+  check("chk_inv_products_reorder_quantity_positive", sql`${table.reorderQuantity} IS NULL OR ${table.reorderQuantity} > 0`),
 ]);
 
 export const invProductVariants = pgTable("inv_product_variants", {

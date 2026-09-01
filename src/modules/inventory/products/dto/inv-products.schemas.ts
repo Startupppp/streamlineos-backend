@@ -90,6 +90,58 @@ export const PRODUCT_KIRANA_FIELD_KEYS = [
   "saleMode", "quantityInputMode", "quantityPrecision",
 ] as const;
 
+export const MATERIAL_FAMILIES = [
+  "CEMENT_AGGREGATE", "STEEL_REBAR", "BRICK_BLOCK", "TILE_STONE", "PAINT_COATING",
+  "PLUMBING", "ELECTRICAL", "SANITARYWARE", "WOOD_PANEL", "GLASS_MIRROR",
+  "HARDWARE_FASTENER", "ADHESIVE_CHEMICAL", "FALSE_CEILING", "LIGHTING", "OTHER",
+] as const;
+
+/**
+ * B1 — the construction and interior-materials inputs, accepted only while the
+ * `materials` pack is on. The service refuses them otherwise rather than writing
+ * a column the organisation cannot see. `null` clears, `undefined` leaves alone.
+ *
+ * `packSize`, `leadTimeDays` and `reorderQuantity` carry their own bounds here
+ * as well as in the database CHECKs: the constraint is what makes the bad value
+ * impossible, the schema is what turns it into a message a person can act on
+ * instead of a 500 from a constraint name.
+ */
+export const productMaterialsFields = {
+  brand: z.string().trim().min(1).max(120).nullable().optional(),
+  materialGrade: z.string().trim().min(1).max(60).nullable().optional(),
+  finish: z.string().trim().min(1).max(60).nullable().optional(),
+  colour: z.string().trim().min(1).max(60).nullable().optional(),
+  dimensionLabel: z.string().trim().min(1).max(80).nullable().optional(),
+  materialFamily: z.enum(MATERIAL_FAMILIES).nullable().optional(),
+  packSize: z
+    .string()
+    .trim()
+    .regex(DECIMAL_PATTERN, "Pack size must be a decimal with up to 4 places")
+    .refine((v) => Number(v) > 0, "Pack size must be greater than zero — leave it unset if the item is not packed")
+    .nullable()
+    .optional(),
+  supplierCode: z.string().trim().min(1).max(100).nullable().optional(),
+  leadTimeDays: z
+    .number()
+    .int("Lead time must be a whole number of days")
+    .min(0, "Lead time cannot be negative")
+    .max(365, "Lead time longer than a year is almost always a typo")
+    .nullable()
+    .optional(),
+  reorderQuantity: z
+    .string()
+    .trim()
+    .regex(DECIMAL_PATTERN, "Reorder quantity must be a decimal with up to 4 places")
+    .refine((v) => Number(v) > 0, "Reorder quantity must be greater than zero — leave it unset to decide each time")
+    .nullable()
+    .optional(),
+};
+
+export const PRODUCT_MATERIALS_FIELD_KEYS = [
+  "brand", "materialGrade", "finish", "colour", "dimensionLabel",
+  "materialFamily", "packSize", "supplierCode", "leadTimeDays", "reorderQuantity",
+] as const;
+
 export const listProductsSchema = z.object({
   status: z.enum(["ACTIVE", "INACTIVE", "DISCONTINUED"]).optional(),
   /**
@@ -103,6 +155,14 @@ export const listProductsSchema = z.object({
   includeDeleted: z.coerce.boolean().optional(),
   productType: z.enum(["STOCKABLE", "CONSUMABLE", "SERVICE"]).optional(),
   categoryId: z.coerce.number().int().positive().optional(),
+  /**
+   * B1 — the two axes a materials catalogue is actually browsed by. Both are
+   * indexed (partial, on `org_id`), so they narrow the scan rather than filtering
+   * a full one. Ignored, not refused, while the `materials` pack is off: a stale
+   * bookmark should show the catalogue, not an error.
+   */
+  brand: z.string().trim().max(120).optional(),
+  materialFamily: z.enum(MATERIAL_FAMILIES).optional(),
   search: z.string().trim().max(200).optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
@@ -147,6 +207,7 @@ export const createProductSchema = z.object({
   ...productTaxFields,
   ...productPharmacyFields,
   ...productKiranaFields,
+  ...productMaterialsFields,
 }).strict();
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 

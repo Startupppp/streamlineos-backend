@@ -4145,6 +4145,13 @@
       "when": 1700000591000,
       "tag": "0819_drop_resurrected_sku_uniques_third_time",
       "breakpoints": true
+    },
+    {
+      "idx": 592,
+      "version": "7",
+      "when": 1700000592000,
+      "tag": "0820_buildmart_materials_pack",
+      "breakpoints": true
     }
   ]
 }

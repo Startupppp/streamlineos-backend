@@ -46,6 +46,24 @@ import type { DbOrTx } from "../../../common/rbac/access-invalidate";
  * if one is missing.
  */
 export const INVENTORY_COMMAND_EVENTS = {
+  /**
+   * B3 — the two shelf-state signals, named here rather than as literals at the
+   * emit site.
+   *
+   * They are emitted by `MovementCostingService`, not by a command, so they sat
+   * outside this map as string literals for a long time. Moving them in is not
+   * tidying: `inventory-outbox-coverage.spec.ts` scans for `eventType: "…"` keys
+   * and for this map, and the emit is now a ternary between the two — a shape
+   * the literal scan cannot see. A guard that silently stops guarding is the
+   * exact failure it was written to catch.
+   *
+   * `STOCK_LOW` says "start buying"; `STOCK_OUT` says "we are refusing orders
+   * now". Exactly one is emitted per variant per movement, because the outbox is
+   * unique on `(org, aggregate_type, aggregate_id, aggregate_version)` and that
+   * version is a millisecond clock.
+   */
+  STOCK_LOW: "inventory.stock.low",
+  STOCK_OUT: "inventory.stock.out",
   RESERVATION_CREATED: "inventory.reservation.created",
   RESERVATION_RELEASED: "inventory.reservation.released",
   RESERVATION_CONSUMED: "inventory.reservation.consumed",
