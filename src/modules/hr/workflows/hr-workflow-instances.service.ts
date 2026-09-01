@@ -13,6 +13,8 @@ import { users, organizationMembers } from "../../../db/schema/common/auth";
 import { hrEmployments, hrPeople } from "../../../db/schema";
 import { orgUnits } from "../../../db/schema/common/organization";
 import type { WorkflowInstanceQueryDto } from "./dto/workflow.schemas";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
 import { AccessService } from "../../access/access.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
@@ -139,16 +141,20 @@ export class HrWorkflowInstancesService {
     };
   }
 
-  async getMyActed(orgId: string, userId: string, page: number, limit: number) {
+  async getMyActed(u: CurrentUserContext, page: number, limit: number) {
     const offset = (page - 1) * limit;
+    const membershipId = actingMembershipId(u.principal);
+    const actorPredicate = membershipId != null
+      ? or(eq(hrWorkflowStepActions.actedByMembershipId, membershipId), eq(hrWorkflowStepActions.actedByUserId, u.userId))!
+      : eq(hrWorkflowStepActions.actedByUserId, u.userId);
 
     const distinctRows = await this.db
       .selectDistinct({ instanceId: hrWorkflowStepActions.instanceId })
       .from(hrWorkflowStepActions)
       .where(
         and(
-          eq(hrWorkflowStepActions.orgId, orgId),
-          eq(hrWorkflowStepActions.actedByUserId, userId),
+          eq(hrWorkflowStepActions.orgId, u.orgId),
+          actorPredicate,
           inArray(hrWorkflowStepActions.action, ["approved", "rejected"]),
         ),
       )
@@ -165,7 +171,7 @@ export class HrWorkflowInstancesService {
         .from(hrWorkflowInstances)
         .where(
           and(
-            eq(hrWorkflowInstances.orgId, orgId),
+            eq(hrWorkflowInstances.orgId, u.orgId),
             inArray(hrWorkflowInstances.id, instanceIds),
           ),
         )
@@ -177,8 +183,8 @@ export class HrWorkflowInstancesService {
         .from(hrWorkflowStepActions)
         .where(
           and(
-            eq(hrWorkflowStepActions.orgId, orgId),
-            eq(hrWorkflowStepActions.actedByUserId, userId),
+            eq(hrWorkflowStepActions.orgId, u.orgId),
+            actorPredicate,
             inArray(hrWorkflowStepActions.action, ["approved", "rejected"]),
           ),
         ),

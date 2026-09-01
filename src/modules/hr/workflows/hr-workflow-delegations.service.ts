@@ -1,16 +1,22 @@
 import { Inject, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, or } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrWorkflowDelegations } from "../../../db/schema/hr/workflow-engine";
 import { users } from "../../../db/schema";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import type { CreateDelegationDto, UpdateDelegationDto } from "./dto/workflow.schemas";
 
 @Injectable()
 export class HrWorkflowDelegationsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async myDelegations(orgId: string, userId: string) {
+  async myDelegations(u: CurrentUserContext) {
+    const membershipId = actingMembershipId(u.principal);
+    const delegatorPredicate = membershipId != null
+      ? or(eq(hrWorkflowDelegations.delegatorMembershipId, membershipId), eq(hrWorkflowDelegations.delegatorUserId, u.userId))!
+      : eq(hrWorkflowDelegations.delegatorUserId, u.userId);
     return this.db
       .select({
         id: hrWorkflowDelegations.id,
@@ -28,12 +34,7 @@ export class HrWorkflowDelegationsService {
       })
       .from(hrWorkflowDelegations)
       .leftJoin(users, eq(users.id, hrWorkflowDelegations.delegateUserId))
-      .where(
-        and(
-          eq(hrWorkflowDelegations.orgId, orgId),
-          eq(hrWorkflowDelegations.delegatorUserId, userId),
-        ),
-      )
+      .where(and(eq(hrWorkflowDelegations.orgId, u.orgId), delegatorPredicate))
       .orderBy(desc(hrWorkflowDelegations.createdAt))
       .limit(50);
   }
@@ -61,16 +62,18 @@ export class HrWorkflowDelegationsService {
       .limit(100);
   }
 
-  async create(orgId: string, userId: string, dto: CreateDelegationDto) {
+  async create(u: CurrentUserContext, dto: CreateDelegationDto) {
     const startsAt = new Date(dto.startsAt);
     const endsAt = new Date(dto.endsAt);
 
     if (endsAt <= startsAt) throw new BadRequestException("endsAt must be after startsAt");
-    if (dto.delegateUserId === userId) throw new BadRequestException("Cannot delegate to yourself");
+    if (dto.delegateUserId === u.userId) throw new BadRequestException("Cannot delegate to yourself");
 
+    const membershipId = actingMembershipId(u.principal);
     const [delegation] = await this.db.insert(hrWorkflowDelegations).values({
-      orgId,
-      delegatorUserId: userId,
+      orgId: u.orgId,
+      delegatorUserId: u.userId,
+      delegatorMembershipId: membershipId,
       delegateUserId: dto.delegateUserId,
       objectType: dto.objectType ?? null,
       startsAt,

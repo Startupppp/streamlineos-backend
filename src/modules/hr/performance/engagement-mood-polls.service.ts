@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
 import {
   hrMoodCheckins,
   hrPollVotes,
@@ -13,6 +13,8 @@ import {
 } from "../../../db/schema/hr/engagement-extras";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import type {
   CreatePollInput,
   MoodCheckinInput,
@@ -26,26 +28,36 @@ const MIN_GROUP_SIZE = 5;
 export class EngagementMoodPollsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async moodCheckin(orgId: string, userId: string, input: MoodCheckinInput) {
+  async moodCheckin(u: CurrentUserContext, input: MoodCheckinInput) {
     const today = input.date ?? new Date().toISOString().slice(0, 10);
+    const membershipId = actingMembershipId(u.principal);
     const [row] = await this.db
       .insert(hrMoodCheckins)
       .values({
-        orgId,
-        userId,
+        orgId: u.orgId,
+        userId: u.userId,
+        userMembershipId: membershipId,
         date: today,
         mood: input.mood,
         note: input.note ?? null,
       })
       .onConflictDoUpdate({
         target: [hrMoodCheckins.orgId, hrMoodCheckins.userId, hrMoodCheckins.date],
-        set: { mood: input.mood, note: input.note ?? null },
+        set: {
+          mood: input.mood,
+          note: input.note ?? null,
+          ...(membershipId != null && { userMembershipId: membershipId }),
+        },
       })
       .returning();
     return row;
   }
 
-  myMoodHistory(orgId: string, userId: string, limit = 30) {
+  myMoodHistory(u: CurrentUserContext, limit = 30) {
+    const membershipId = actingMembershipId(u.principal);
+    const ownerPredicate = membershipId != null
+      ? or(eq(hrMoodCheckins.userMembershipId, membershipId), eq(hrMoodCheckins.userId, u.userId))!
+      : eq(hrMoodCheckins.userId, u.userId);
     return this.db
       .select({
         id: hrMoodCheckins.id,
@@ -54,12 +66,7 @@ export class EngagementMoodPollsService {
         note: hrMoodCheckins.note,
       })
       .from(hrMoodCheckins)
-      .where(
-        and(
-          eq(hrMoodCheckins.orgId, orgId),
-          eq(hrMoodCheckins.userId, userId),
-        ),
-      )
+      .where(and(eq(hrMoodCheckins.orgId, u.orgId), ownerPredicate))
       .orderBy(desc(hrMoodCheckins.createdAt))
       .limit(limit);
   }

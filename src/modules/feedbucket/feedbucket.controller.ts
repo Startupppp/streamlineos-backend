@@ -24,6 +24,7 @@ import { FeedbucketSubmissionsService } from "./feedbucket-submissions.service";
 import { FeedbucketAiService } from "./feedbucket-ai.service";
 import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import {
   createWidgetSchema,
   listSubmissionsQuerySchema,
@@ -122,7 +123,7 @@ export class FeedbucketController {
     @Req() req: Request,
   ) {
     const scope = readRequestScope(req);
-    return this.submissions.list(user.orgId, user.userId, query, scope);
+    return this.submissions.list(user.orgId, user.userId, query, scope, actingMembershipId(user.principal));
   }
 
   @Get("submissions/:submissionId")
@@ -196,6 +197,6 @@ export class FeedbucketController {
   @RequirePermission("feedbucket:submissions:view")
   getStats(@CurrentUser() user: CurrentUserContext, @Req() req: Request) {
     const scope = readRequestScope(req);
-    return this.submissions.stats(user.orgId, user.userId, scope);
+    return this.submissions.stats(user.orgId, user.userId, scope, actingMembershipId(user.principal));
   }
 }

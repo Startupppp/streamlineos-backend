@@ -63,6 +63,7 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "hr_employments.updated_by_membership_id",
   "hr_people.archived_by_membership_id",
   "hr_people.updated_by_membership_id",
+  "hr_workflow_step_actions.acted_by_membership_id",
   "incentive_config.created_by_membership_id",
   "incentives.approved_by_membership_id",
   "inv_audit_events.actor_membership_id",

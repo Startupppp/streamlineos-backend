@@ -36,7 +36,7 @@ describe("BuildApprovalsInboxService — cross-tenant isolation (BOLA)", () => {
   it("getInboxPage returns empty array for an org with no approvals — DENY for wrong org", async () => {
     const db = makeDb([]);
     const svc = new BuildApprovalsInboxService(db);
-    const result = await svc.getInboxPage(ATTACKER_ORG, APPROVER_USER, 20, null);
+    const result = await svc.getInboxPage(ATTACKER_ORG, APPROVER_USER, null, 20, null);
     expect(result).toHaveLength(0);
   });
 
@@ -44,7 +44,7 @@ describe("BuildApprovalsInboxService — cross-tenant isolation (BOLA)", () => {
     const whereCalls: unknown[] = [];
     const db = makeDb([], whereCalls);
     const svc = new BuildApprovalsInboxService(db);
-    await svc.getInboxPage(ATTACKER_ORG, APPROVER_USER, 20, null);
+    await svc.getInboxPage(ATTACKER_ORG, APPROVER_USER, null, 20, null);
     expect(whereCalls.length).toBeGreaterThan(0);
     const allValues = whereCalls.flatMap((w) => sqlValues(w));
     expect(allValues).toContain(ATTACKER_ORG);
@@ -54,7 +54,7 @@ describe("BuildApprovalsInboxService — cross-tenant isolation (BOLA)", () => {
     const whereCalls: unknown[] = [];
     const db = makeDb([], whereCalls);
     const svc = new BuildApprovalsInboxService(db);
-    await svc.getInboxPage(OWNER_ORG, "user-other", 20, null);
+    await svc.getInboxPage(OWNER_ORG, "user-other", null, 20, null);
     const allValues = whereCalls.flatMap((w) => sqlValues(w));
     expect(allValues).toContain("user-other");
   });

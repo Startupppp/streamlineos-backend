@@ -12,7 +12,7 @@ import type { ProjectsTicketsService } from "../build/core/projects-tickets.serv
 export class FeedbucketSubmissionsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async list(orgId: string, userId: string, query: ListSubmissionsQuery, scope: DataScope) {
+  async list(orgId: string, userId: string, query: ListSubmissionsQuery, scope: DataScope, membershipId: number | null) {
     const { page, limit, widgetId, type, status, assigneeId, search } = query;
     const offset = (page - 1) * limit;
 
@@ -21,7 +21,7 @@ export class FeedbucketSubmissionsService {
       isNull(feedbucketSubmissions.deletedAt),
     ];
 
-    const scopeFilter = applyFeedbucketScope(scope, orgId, userId);
+    const scopeFilter = applyFeedbucketScope(scope, orgId, userId, membershipId);
     conditions.push(scopeFilter);
 
     if (widgetId !== undefined) conditions.push(eq(feedbucketSubmissions.widgetId, widgetId));
@@ -111,11 +111,11 @@ export class FeedbucketSubmissionsService {
       .where(and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, orgId)));
   }
 
-  async stats(orgId: string, userId: string, scope: DataScope) {
+  async stats(orgId: string, userId: string, scope: DataScope, membershipId: number | null) {
     const conditions = [
       eq(feedbucketSubmissions.orgId, orgId),
       isNull(feedbucketSubmissions.deletedAt),
-      applyFeedbucketScope(scope, orgId, userId),
+      applyFeedbucketScope(scope, orgId, userId, membershipId),
     ];
 
     const rows = await this.db

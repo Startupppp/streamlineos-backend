@@ -46,7 +46,7 @@ export class HrGovernanceDelegationsController {
     @CurrentUser() user: CurrentUserContext,
     @Query() query: ListProxiesInput,
   ) {
-    return this.service.listMy(user.orgId, user.userId, query);
+    return this.service.listMy(user, query);
   }
 
   @Get()
@@ -67,7 +67,7 @@ export class HrGovernanceDelegationsController {
     @Body() body: CreateProxyInput,
     @Req() req: Request,
   ) {
-    return this.service.create(user.orgId, user.userId, body, req.ip);
+    return this.service.create(user, body, req.ip);
   }
 
   @Patch(":proxyId")

@@ -21,18 +21,18 @@ describe("applyFeedbucketScope", () => {
   const userId = "user-abc";
 
   it("returns sql`false` for none scope", () => {
-    expect(isSqlFalse(applyFeedbucketScope("none", "org-a", userId))).toBe(true);
+    expect(isSqlFalse(applyFeedbucketScope("none", "org-a", userId, null))).toBe(true);
   });
 
   it("returns sql`true` for all scope", () => {
-    expect(isSqlTrue(applyFeedbucketScope("all", "org-a", userId))).toBe(true);
+    expect(isSqlTrue(applyFeedbucketScope("all", "org-a", userId, null))).toBe(true);
   });
 
   it("does not widen team scope to every row", () => {
-    expect(isSqlTrue(applyFeedbucketScope("team", "org-a", userId))).toBe(false);
+    expect(isSqlTrue(applyFeedbucketScope("team", "org-a", userId, null))).toBe(false);
   });
 
   it("does not widen own scope to every row", () => {
-    expect(isSqlTrue(applyFeedbucketScope("own", "org-a", userId))).toBe(false);
+    expect(isSqlTrue(applyFeedbucketScope("own", "org-a", userId, null))).toBe(false);
   });
 });

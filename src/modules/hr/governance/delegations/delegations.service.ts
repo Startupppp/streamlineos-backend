@@ -10,6 +10,8 @@ import { keysetBeforeId } from "../../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { hrProxyAccess } from "../../../../db/schema/hr/governance";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../../common/auth/principal";
 import { HrAuditService } from "../../core/hr-audit.service";
 import type { CreateProxyInput, UpdateProxyInput, ListProxiesInput } from "./delegations.dto";
 
@@ -20,14 +22,23 @@ export class DelegationsService {
     private readonly audit: HrAuditService,
   ) {}
 
-  async listMy(orgId: string, userId: string, input: ListProxiesInput) {
+  async listMy(u: CurrentUserContext, input: ListProxiesInput) {
     const { cursor, limit, scope } = input;
     const pos = decodeCursor(cursor);
     const now = new Date();
+    const membershipId = actingMembershipId(u.principal);
+    const actorPredicate = membershipId != null
+      ? or(
+          eq(hrProxyAccess.grantorMembershipId, membershipId),
+          eq(hrProxyAccess.proxyMembershipId, membershipId),
+          eq(hrProxyAccess.grantorUserId, u.userId),
+          eq(hrProxyAccess.proxyUserId, u.userId),
+        )!
+      : or(eq(hrProxyAccess.grantorUserId, u.userId), eq(hrProxyAccess.proxyUserId, u.userId))!;
 
     const conditions = [
-      eq(hrProxyAccess.orgId, orgId),
-      or(eq(hrProxyAccess.grantorUserId, userId), eq(hrProxyAccess.proxyUserId, userId)),
+      eq(hrProxyAccess.orgId, u.orgId),
+      actorPredicate,
       gt(hrProxyAccess.endsAt, now),
     ];
     if (scope) conditions.push(eq(hrProxyAccess.scope, scope));
@@ -70,26 +81,28 @@ export class DelegationsService {
     }));
   }
 
-  async create(orgId: string, userId: string, input: CreateProxyInput, ipAddress?: string) {
+  async create(u: CurrentUserContext, input: CreateProxyInput, ipAddress?: string) {
+    const membershipId = actingMembershipId(u.principal);
     const [proxy] = await this.db
       .insert(hrProxyAccess)
       .values({
-        orgId,
-        grantorUserId: userId,
+        orgId: u.orgId,
+        grantorUserId: u.userId,
+        grantorMembershipId: membershipId,
         proxyUserId: input.proxyUserId,
         scope: input.scope,
         startsAt: new Date(input.startsAt),
         endsAt: new Date(input.endsAt),
         reason: input.reason ?? null,
         disallowSensitive: input.disallowSensitive ?? false,
-        createdBy: userId,
+        createdBy: u.userId,
         active: true,
       })
       .returning();
 
     await this.audit.log({
-      orgId,
-      actorId: userId,
+      orgId: u.orgId,
+      actorId: u.userId,
       entityType: "hr_proxy_access",
       entityId: String(proxy!.id),
       action: "proxy.granted",

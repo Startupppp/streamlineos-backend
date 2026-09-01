@@ -205,7 +205,9 @@ export const recognitions = pgTable("recognitions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   fromUserId: text("from_user_id").references(() => users.id).notNull(),
+  fromMembershipId: integer("from_membership_id"),
   toUserId: text("to_user_id").references(() => users.id).notNull(),
+  toMembershipId: integer("to_membership_id"),
   message: text("message").notNull(),
   category: text("category").default("KUDOS").notNull(),
   isPublic: boolean("is_public").default(true).notNull(),
@@ -214,6 +216,8 @@ export const recognitions = pgTable("recognitions", {
   unique("uniq_recognitions_org_id").on(table.orgId, table.id),
   index("idx_recognitions_org").on(table.orgId),
   index("idx_recognitions_to_user").on(table.toUserId),
+  index("idx_recognitions_org_from_membership").on(table.orgId, table.fromMembershipId),
+  index("idx_recognitions_org_to_membership").on(table.orgId, table.toMembershipId),
 ]);
 
 export const employeeSkills = pgTable("employee_skills", {

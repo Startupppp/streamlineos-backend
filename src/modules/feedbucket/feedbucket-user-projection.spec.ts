@@ -16,6 +16,7 @@ describe("FeedbucketSubmissionsService user projection", () => {
       "user-1",
       { page: 1, limit: 25 },
       "all",
+      null,
     );
 
     const columns = findMany.mock.calls[0]?.[0]?.with?.assignee?.columns;

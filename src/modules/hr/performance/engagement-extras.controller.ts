@@ -80,13 +80,13 @@ export class EngagementExtrasController {
     @Body() body: MoodCheckinInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.moodPolls.moodCheckin(u.orgId, u.userId, body);
+    return this.moodPolls.moodCheckin(u, body);
   }
 
   @Get("mood/history")
   @RequirePermission("hr:engagement:view")
   myMoodHistory(@CurrentUser() u: CurrentUserContext) {
-    return this.moodPolls.myMoodHistory(u.orgId, u.userId);
+    return this.moodPolls.myMoodHistory(u);
   }
 
   @Get("mood/aggregate")

@@ -165,7 +165,7 @@ export class UnifiedInboxService {
               nextMailCursor: null as string | null,
             },
         wantsBuildApprovals && canViewBuildApprovals
-          ? this.fetchBuildApprovals(orgId, userId, limit + 1, cursorState.a)
+          ? this.fetchBuildApprovals(orgId, userId, actingMembershipId(user.principal), limit + 1, cursorState.a)
           : ([] as BuildApprovalInboxItem[]),
       ]);
 
@@ -430,12 +430,14 @@ export class UnifiedInboxService {
   private async fetchBuildApprovals(
     orgId: string,
     userId: string,
+    membershipId: number | null,
     fetchLimit: number,
     cursor: number | null,
   ): Promise<BuildApprovalInboxItem[]> {
     const rows = await this.buildApprovals.getInboxPage(
       orgId,
       userId,
+      membershipId,
       fetchLimit,
       cursor,
     );

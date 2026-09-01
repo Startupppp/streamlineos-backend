@@ -16,7 +16,7 @@ export class AffiliateService {
     const [existing] = await this.db
       .select()
       .from(affiliates)
-      .where(eq(affiliates.userId, userId));
+      .where(and(eq(affiliates.orgId, orgId), eq(affiliates.userMembershipId, membershipId)));
     if (existing) throw new ConflictException("Already registered as affiliate");
 
     const referralCode = generateCode();

@@ -30,6 +30,8 @@ import {
   hrSafetyIncidents,
   hrWellnessCheckins,
 } from "../../../db/schema/hr/safety";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { HrAuditService } from "../core/hr-audit.service";
 import type {
   CreateIncidentInput,
@@ -261,12 +263,14 @@ export class HrSafetyService {
     });
   }
 
-  async upsertCheckin(orgId: string, userId: string, input: CheckinInput) {
+  async upsertCheckin(u: CurrentUserContext, input: CheckinInput) {
+    const membershipId = actingMembershipId(u.principal);
     const [row] = await this.db
       .insert(hrWellnessCheckins)
       .values({
-        orgId,
-        userId,
+        orgId: u.orgId,
+        userId: u.userId,
+        userMembershipId: membershipId,
         date: input.date,
         score: input.score,
         flags: input.flags ?? null,
@@ -280,6 +284,7 @@ export class HrSafetyService {
         set: {
           score: input.score,
           flags: input.flags ?? null,
+          ...(membershipId != null && { userMembershipId: membershipId }),
         },
       })
       .returning();
@@ -288,14 +293,17 @@ export class HrSafetyService {
   }
 
   async myCheckins(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     fromDate?: string,
     toDate?: string,
   ) {
+    const membershipId = actingMembershipId(u.principal);
+    const ownerPredicate = membershipId != null
+      ? or(eq(hrWellnessCheckins.userMembershipId, membershipId), eq(hrWellnessCheckins.userId, u.userId))!
+      : eq(hrWellnessCheckins.userId, u.userId);
     const conditions = [
-      eq(hrWellnessCheckins.orgId, orgId),
-      eq(hrWellnessCheckins.userId, userId),
+      eq(hrWellnessCheckins.orgId, u.orgId),
+      ownerPredicate,
     ];
 
     if (fromDate) conditions.push(gte(hrWellnessCheckins.date, fromDate));

@@ -98,8 +98,9 @@ export class ProjectsTicketSubresourcesService {
     userId: string,
     orgId: string,
     emoji: string,
+    membershipId: number | null,
   ) {
-    return this.comments.addReaction(commentId, userId, orgId, emoji);
+    return this.comments.addReaction(commentId, userId, orgId, emoji, membershipId);
   }
 
   removeReaction(
@@ -107,8 +108,9 @@ export class ProjectsTicketSubresourcesService {
     userId: string,
     orgId: string,
     emoji: string,
+    membershipId: number | null,
   ) {
-    return this.comments.removeReaction(commentId, userId, orgId, emoji);
+    return this.comments.removeReaction(commentId, userId, orgId, emoji, membershipId);
   }
 
   getCommentReactions(commentId: number, orgId: string) {

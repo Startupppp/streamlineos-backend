@@ -65,6 +65,7 @@ export const hrWellnessCheckins = pgTable("hr_wellness_checkins", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  userMembershipId: integer("user_membership_id"),
   date: text("date").notNull(),
   score: integer("score").notNull(),
   flags: jsonb("flags").$type<string[]>(),
@@ -74,6 +75,7 @@ export const hrWellnessCheckins = pgTable("hr_wellness_checkins", {
   uniqueIndex("uniq_hr_wellness_org_user_date").on(table.orgId, table.userId, table.date),
   index("idx_hr_wellness_org_date").on(table.orgId, table.date),
   index("idx_hr_wellness_org_user").on(table.orgId, table.userId),
+  index("idx_hr_wellness_org_user_membership").on(table.orgId, table.userMembershipId),
 ]);
 
 export const hrSafetyIncidentsRelations = relations(hrSafetyIncidents, ({ one }) => ({

@@ -7,12 +7,13 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, gte, or } from "drizzle-orm";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import {
   assessmentAttempts,
   enpsScores,
   feedbackRequests,
   hrAuditLogs,
-  organizationMembers,
   pulseSurveys,
   recognitions,
   skillAssessments,
@@ -208,19 +209,22 @@ export class EngagementService {
   }
 
   async createRecognition(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     input: CreateRecognitionInput,
   ) {
-    if (input.toUserId === userId) {
+    const membershipId = actingMembershipId(u.principal);
+    if (input.toUserId === u.userId) {
       throw new BadRequestException("You cannot send kudos to yourself.");
     }
 
     const windowStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const senderPredicate = membershipId != null
+      ? or(eq(recognitions.fromMembershipId, membershipId), eq(recognitions.fromUserId, u.userId))!
+      : eq(recognitions.fromUserId, u.userId);
     const existing = await this.db.query.recognitions.findFirst({
       where: and(
-        eq(recognitions.orgId, orgId),
-        eq(recognitions.fromUserId, userId),
+        eq(recognitions.orgId, u.orgId),
+        senderPredicate,
         eq(recognitions.toUserId, input.toUserId),
         gte(recognitions.createdAt, windowStart),
       ),
@@ -235,23 +239,18 @@ export class EngagementService {
     const [recognition] = await this.db
       .insert(recognitions)
       .values({
-        orgId,
-        fromUserId: userId,
+        orgId: u.orgId,
+        fromUserId: u.userId,
+        fromMembershipId: membershipId,
         toUserId: input.toUserId,
         message: input.message,
         category: input.category,
       })
       .returning();
 
-    const [actorMember] = await this.db
-      .select({ id: organizationMembers.id })
-      .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
-      .limit(1);
-
     await this.db.insert(hrAuditLogs).values({
-      orgId,
-      actorMembershipId: actorMember?.id ?? null,
+      orgId: u.orgId,
+      actorMembershipId: membershipId,
       entityType: "hr_recognition",
       entityId: String(recognition.id),
       action: "kudos_given",
@@ -263,7 +262,7 @@ export class EngagementService {
     });
 
     this.engagementBadges
-      .grantKudosPoints(orgId, input.toUserId, String(recognition.id))
+      .grantKudosPoints(u.orgId, input.toUserId, String(recognition.id))
       .catch(() => undefined);
 
     return recognition;

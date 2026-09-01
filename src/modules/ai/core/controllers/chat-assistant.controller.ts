@@ -348,7 +348,7 @@ export class ChatAssistantController {
           message: String(payload["message"]),
           category: pickCategory(payload["category"]),
         };
-        const recognition = await engSvc.createRecognition(u.orgId, u.userId, recognitionInput);
+        const recognition = await engSvc.createRecognition(u, recognitionInput);
         result = { recognitionId: recognition.id };
         summary = `Recognition sent`;
         break;

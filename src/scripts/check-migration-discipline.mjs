@@ -345,6 +345,16 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   // and 0666 create policies on it on a cold replay.
   "journal-order:0677_rls_fix_guc_key.sql",
   "insert-order:0676b_inv_compliance_documents_chain_repair.sql",
+  // 0677b inserted between 0677 and 0678 so tenant_isolation is dropped before 0678 tries
+  // to CREATE POLICY on feedback_cycle_responses. 0320_recon_phase_a_orgid dynamically
+  // adds org_id, then 0378_rls_remaining_tenant_tables creates the policy, so 0678's
+  // CREATE POLICY fails on a cold replay. 0677b drops it; 0678b recreates and completes.
+  "journal-order:0678_rls_fix_feedback_cycle_responses.sql",
+  "insert-order:0677b_feedback_cycle_responses_policy_repair.sql",
+  // 0678b inserted immediately after 0678 to recreate the policy and index that 0678
+  // commits on cold replay (no-op) and that production never got (0678 also failed there).
+  "journal-order:0680_kb_versions_author_membership.sql",
+  "insert-order:0678b_feedback_cycle_responses_rls_complete.sql",
 ]);
 
 // ─── check functions ──────────────────────────────────────────────────────────

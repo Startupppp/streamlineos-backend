@@ -5,10 +5,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, isNull, or } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrDisciplinaryActions } from "../../../db/schema/hr/cases";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { HrAuditService } from "../core/hr-audit.service";
@@ -53,7 +55,11 @@ export class HrDisciplinaryService {
   }
 
   /** Employee: actions issued against me. */
-  async listMine(orgId: string, employeeId: string) {
+  async listMine(u: CurrentUserContext) {
+    const membershipId = actingMembershipId(u.principal);
+    const employeePredicate = membershipId != null
+      ? or(eq(hrDisciplinaryActions.employeeMembershipId, membershipId), eq(hrDisciplinaryActions.employeeId, u.userId))!
+      : eq(hrDisciplinaryActions.employeeId, u.userId);
     return this.db
       .select({
         id: hrDisciplinaryActions.id,
@@ -65,12 +71,7 @@ export class HrDisciplinaryService {
         createdAt: hrDisciplinaryActions.createdAt,
       })
       .from(hrDisciplinaryActions)
-      .where(
-        and(
-          eq(hrDisciplinaryActions.orgId, orgId),
-          eq(hrDisciplinaryActions.employeeId, employeeId),
-        ),
-      )
+      .where(and(eq(hrDisciplinaryActions.orgId, u.orgId), employeePredicate))
       .orderBy(desc(hrDisciplinaryActions.createdAt))
       .limit(50);
   }
@@ -225,17 +226,15 @@ export class HrDisciplinaryService {
     return updated ?? row;
   }
 
-  async listUnacknowledgedCount(orgId: string, employeeId: string) {
+  async listUnacknowledgedCount(u: CurrentUserContext) {
+    const membershipId = actingMembershipId(u.principal);
+    const employeePredicate = membershipId != null
+      ? or(eq(hrDisciplinaryActions.employeeMembershipId, membershipId), eq(hrDisciplinaryActions.employeeId, u.userId))!
+      : eq(hrDisciplinaryActions.employeeId, u.userId);
     const [row] = await this.db
       .select({ total: count() })
       .from(hrDisciplinaryActions)
-      .where(
-        and(
-          eq(hrDisciplinaryActions.orgId, orgId),
-          eq(hrDisciplinaryActions.employeeId, employeeId),
-          isNull(hrDisciplinaryActions.acknowledgedAt),
-        ),
-      );
+      .where(and(eq(hrDisciplinaryActions.orgId, u.orgId), employeePredicate, isNull(hrDisciplinaryActions.acknowledgedAt)));
     return { unacknowledged: row?.total ?? 0 };
   }
 

@@ -25,6 +25,7 @@ interface ActParams {
   orgId: string;
   instanceId: number;
   actorUserId: string;
+  actorMembershipId?: number | null;
   action: "approved" | "rejected" | "cancelled" | "reopened" | "commented";
   comment?: string;
   attachments?: { url: string; name: string }[];
@@ -102,7 +103,7 @@ export class HrWorkflowEngineService {
     return instance;
   }
 
-  async act({ orgId, instanceId, actorUserId, action, comment, attachments }: ActParams) {
+  async act({ orgId, instanceId, actorUserId, actorMembershipId, action, comment, attachments }: ActParams) {
     const instance = await this.getInstanceOrThrow(orgId, instanceId);
 
     if (instance.status === "approved" || instance.status === "rejected" || instance.status === "cancelled") {
@@ -118,7 +119,7 @@ export class HrWorkflowEngineService {
         .set({ status: newStatus, updatedAt: new Date() })
         .where(and(eq(hrWorkflowInstances.id, instanceId), eq(hrWorkflowInstances.orgId, orgId)));
 
-      await this.stepRunner.recordAction(orgId, instanceId, currentStep?.stepOrder ?? instance.currentStepOrder, actorUserId, actorUserId, action, comment, attachments);
+      await this.stepRunner.recordAction(orgId, instanceId, currentStep?.stepOrder ?? instance.currentStepOrder, actorUserId, actorUserId, action, comment, attachments, actorMembershipId);
       return this.getInstanceOrThrow(orgId, instanceId);
     }
 
@@ -144,7 +145,7 @@ export class HrWorkflowEngineService {
       throw new BadRequestException("Rejection comment is required");
     }
 
-    await this.stepRunner.recordAction(orgId, instanceId, currentStep.stepOrder, resolvedApprovers[0] ?? actorUserId, actorUserId, action, comment, attachments);
+    await this.stepRunner.recordAction(orgId, instanceId, currentStep.stepOrder, resolvedApprovers[0] ?? actorUserId, actorUserId, action, comment, attachments, actorMembershipId);
 
     if (action === "rejected") {
       await this.db.update(hrWorkflowInstances)

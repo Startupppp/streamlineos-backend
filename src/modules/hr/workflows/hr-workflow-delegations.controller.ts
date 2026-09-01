@@ -27,7 +27,7 @@ export class HrWorkflowDelegationsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:view")
   myDelegations(@CurrentUser() u: CurrentUserContext) {
-    return this.delegationsService.myDelegations(u.orgId, u.userId);
+    return this.delegationsService.myDelegations(u);
   }
 
   @Get()
@@ -45,7 +45,7 @@ export class HrWorkflowDelegationsController {
     @CurrentUser() u: CurrentUserContext,
     @Body() body: CreateDelegationDto,
   ) {
-    return this.delegationsService.create(u.orgId, u.userId, body);
+    return this.delegationsService.create(u, body);
   }
 
   @Patch(":delegationId")

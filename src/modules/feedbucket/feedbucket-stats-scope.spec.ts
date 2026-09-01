@@ -21,10 +21,10 @@ describe("feedbucket stats scope adapter", () => {
   const userId = "user-stats";
 
   it("stats aggregate must not use unscoped all when team is granted", () => {
-    expect(isSqlTrue(applyFeedbucketScope("team", "org-a", userId))).toBe(false);
+    expect(isSqlTrue(applyFeedbucketScope("team", "org-a", userId, null))).toBe(false);
   });
 
   it("stats aggregate must deny none scope", () => {
-    expect(isSqlFalse(applyFeedbucketScope("none", "org-a", userId))).toBe(true);
+    expect(isSqlFalse(applyFeedbucketScope("none", "org-a", userId, null))).toBe(true);
   });
 });
