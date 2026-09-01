@@ -23,6 +23,8 @@ import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { formatDateOnly } from "../../../common/date";
 import type { AssignRecruiterInput, CreateJobInput, InternalApplyInput, JobListInput, PublishJobInput, UpdateJobInput } from "./dto/jobs.schemas";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 type PublishStatus = "PUBLISHED" | "NO_INTEGRATION" | "INACTIVE" | "NO_TOKEN";
 
@@ -41,36 +43,42 @@ export class RecruitmentJobsService {
   ) {}
 
   async list(orgId: string, input: JobListInput) {
-    const key = `${input.status ?? ""}:${input.page}:${input.pageSize}`;
+    const key = `${input.status ?? ""}:${input.cursor ?? ""}:${input.pageSize}`;
     return this.cache.cachedVersioned(
       `hr:jobs:list:${orgId}`,
       key,
       async () => {
         const conditions = [eq(jobPostings.orgId, orgId)];
         if (input.status) conditions.push(eq(jobPostings.status, input.status));
-        const where = and(...conditions);
+        const baseWhere = and(...conditions);
+        const position = decodeCursor(input.cursor);
+        const where = and(
+          baseWhere,
+          position ? keysetBeforeId(jobPostings.createdAt, jobPostings.id, position) : undefined,
+        );
 
         const [items, totalRow] = await Promise.all([
           this.db.query.jobPostings.findMany({
             where,
-            orderBy: [desc(jobPostings.createdAt)],
-            limit: input.limit,
-            offset: input.offset,
+            orderBy: [desc(jobPostings.createdAt), desc(jobPostings.id)],
+            limit: input.limit + 1,
           }),
           this.db
             .select({ total: sql<number>`count(*)::int` })
             .from(jobPostings)
-            .where(where)
+            .where(baseWhere)
             .then((rows) => rows[0] ?? { total: 0 }),
         ]);
 
         const total = Number(totalRow.total);
+        const page = buildCursorPage(items, input.pageSize, (job) => ({
+          sortValue: job.createdAt.toISOString(),
+          id: String(job.id),
+        }));
         return {
-          items,
+          items: page.data,
           total,
-          page: input.page,
-          pageSize: input.pageSize,
-          totalPages: input.pageSize > 0 ? Math.ceil(total / input.pageSize) : 0,
+          pagination: page.pagination,
         };
       },
       CACHE_TTL.MEDIUM,

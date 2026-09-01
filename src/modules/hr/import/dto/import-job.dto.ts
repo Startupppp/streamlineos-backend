@@ -19,7 +19,7 @@ export const createImportJobSchema = z.object({
 export type CreateImportJobInput = z.infer<typeof createImportJobSchema>;
 
 export const listImportJobsSchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   entity: z.enum(hrImportEntityValues).optional(),
 });

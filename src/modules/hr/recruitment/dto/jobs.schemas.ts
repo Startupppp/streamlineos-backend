@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageSizeField, optionalPageNumberField, optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField, optionalPageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const JOB_STATUSES = ["DRAFT", "OPEN", "PAUSED", "CLOSED", "FILLED"] as const;
 const VALID_JOB_TYPES = [
@@ -28,23 +28,17 @@ export const screeningQuestionSchema = z.object({
 export const jobListSchema = z
   .object({
     status: z.enum(JOB_STATUSES).optional(),
-    page: optionalPageNumberField(),
+    cursor: z.string().optional(),
     pageSize: optionalPageSizeField(),
-    /** @deprecated prefer page/pageSize */
     limit: optionalPageSizeField(),
-    /** @deprecated prefer page/pageSize */
-    offset: z.coerce.number().int().min(0).optional(),
   })
   .transform((q) => {
     const pageSize = q.pageSize ?? q.limit ?? 20;
-    const page =
-      q.page ?? (q.offset != null ? Math.floor(q.offset / pageSize) + 1 : 1);
     return {
       status: q.status,
-      page,
+      cursor: q.cursor,
       pageSize,
       limit: pageSize,
-      offset: (page - 1) * pageSize,
     };
   });
 export type JobListInput = z.output<typeof jobListSchema>;

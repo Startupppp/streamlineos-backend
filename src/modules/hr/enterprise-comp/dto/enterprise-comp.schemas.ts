@@ -175,7 +175,9 @@ export const updateEquityGrantSchema = z.object({
   boardApprovedAt: z.string().optional(),
 });
 
-export const listEquityGrantsSchema = paginationSchema.extend({
+export const listEquityGrantsSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   userId: z.string().optional(),
   status: z.enum(["active", "exercised", "cancelled", "expired"]).optional(),
   grantType: z.enum(["ISO", "NSO", "RSU", "other"]).optional(),

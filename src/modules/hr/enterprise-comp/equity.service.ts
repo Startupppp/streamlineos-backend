@@ -14,6 +14,8 @@ import type {
   ListEquityGrantsInput,
   CreateExerciseInput,
 } from "./dto/enterprise-comp.schemas";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 function addMonths(date: Date, months: number): Date {
   const d = new Date(date);
@@ -93,20 +95,28 @@ export class EquityService {
   }
 
   async listGrants(orgId: string, input: ListEquityGrantsInput) {
-    const { page, limit, userId, status, grantType } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, userId, status, grantType } = input;
     const conditions = [eq(hrEquityGrants.orgId, orgId)];
     if (userId) conditions.push(eq(hrEquityGrants.userId, userId));
     if (status) conditions.push(eq(hrEquityGrants.status, status));
     if (grantType) conditions.push(eq(hrEquityGrants.grantType, grantType));
-    const where = and(...conditions);
+    const baseWhere = and(...conditions);
+    const position = decodeCursor(cursor);
+    const where = and(
+      baseWhere,
+      position ? keysetBeforeId(hrEquityGrants.createdAt, hrEquityGrants.id, position) : undefined,
+    );
 
     const [data, totalResult] = await Promise.all([
-      this.db.select().from(hrEquityGrants).where(where).orderBy(desc(hrEquityGrants.createdAt)).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(hrEquityGrants).where(where),
+      this.db.select().from(hrEquityGrants).where(where).orderBy(desc(hrEquityGrants.createdAt), desc(hrEquityGrants.id)).limit(limit + 1),
+      this.db.select({ total: count() }).from(hrEquityGrants).where(baseWhere),
     ]);
     const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    const page = buildCursorPage(data, limit, (grant) => ({
+      sortValue: grant.createdAt.toISOString(),
+      id: String(grant.id),
+    }));
+    return { data: page.data, total, pagination: page.pagination };
   }
 
   async getGrant(orgId: string, grantId: number) {

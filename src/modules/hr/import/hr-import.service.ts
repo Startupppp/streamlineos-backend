@@ -23,6 +23,8 @@ import type {
   HrImportEntity,
   ListImportJobsInput,
 } from "./dto/import-job.dto";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeUuid } from "../../../common/pagination/keyset";
 
 @Injectable()
 export class HrImportService {
@@ -98,28 +100,36 @@ export class HrImportService {
   }
 
   async listJobs(orgId: string, input: ListImportJobsInput) {
-    const { page, limit, entity } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, entity } = input;
 
     const conditions = [eq(hrImportJobs.orgId, orgId)];
     if (entity) conditions.push(eq(hrImportJobs.entity, entity));
-    const where = and(...conditions);
+    const baseWhere = and(...conditions);
+    const position = decodeCursor(cursor);
+    const where = and(
+      baseWhere,
+      position ? keysetBeforeUuid(hrImportJobs.createdAt, hrImportJobs.id, position) : undefined,
+    );
 
     const [data, totalResult] = await Promise.all([
       this.db
         .select()
         .from(hrImportJobs)
         .where(where)
-        .orderBy(desc(hrImportJobs.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrImportJobs).where(where),
+        .orderBy(desc(hrImportJobs.createdAt), desc(hrImportJobs.id))
+        .limit(limit + 1),
+      this.db.select({ total: count() }).from(hrImportJobs).where(baseWhere),
     ]);
 
     const total = totalResult[0]?.total ?? 0;
+    const page = buildCursorPage(data, limit, (job) => ({
+      sortValue: job.createdAt.toISOString(),
+      id: job.id,
+    }));
     return {
-      data,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      data: page.data,
+      total,
+      pagination: page.pagination,
     };
   }
 
