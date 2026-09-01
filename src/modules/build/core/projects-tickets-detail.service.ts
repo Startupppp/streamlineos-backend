@@ -44,14 +44,14 @@ export class ProjectsTicketsDetailService {
         sprint: {
           columns: { id: true, name: true },
         },
-        assignee: { columns: USER_COLS },
+        assignee: { with: { user: { with: { user: { columns: USER_COLS } } } } },
         reporter: { columns: USER_COLS },
         assignees: {
-          with: { user: { columns: USER_COLS } },
+          with: { user: { with: { user: { columns: USER_COLS } } } },
         },
         comments: {
           where: isNull(ticketComments.deletedAt),
-          with: { user: { columns: USER_COLS } },
+          with: { user: { with: { user: { columns: USER_COLS } } } },
           orderBy: [desc(ticketComments.createdAt)],
           limit: 50,
         },
@@ -74,8 +74,8 @@ export class ProjectsTicketsDetailService {
     const scope = await resolveTicketsScope(this.access, u);
     if (scope !== "all") {
       const isAssignee =
-        ticket.assigneeId === u.userId ||
-        ticket.assignees.some((a) => a.userId === u.userId);
+        ticket.assignee?.user?.id === u.userId ||
+        ticket.assignees.some((a) => a.user?.userId === u.userId);
       const isReporter = ticket.reporterId === u.userId;
       if (!isAssignee && !isReporter) {
         this.audit.log({
@@ -108,14 +108,14 @@ export class ProjectsTicketsDetailService {
         sprint: {
           columns: { id: true, name: true },
         },
-        assignee: { columns: USER_COLS },
+        assignee: { with: { user: { with: { user: { columns: USER_COLS } } } } },
         reporter: { columns: USER_COLS },
         assignees: {
-          with: { user: { columns: USER_COLS } },
+          with: { user: { with: { user: { columns: USER_COLS } } } },
         },
         comments: {
           where: isNull(ticketComments.deletedAt),
-          with: { user: { columns: USER_COLS } },
+          with: { user: { with: { user: { columns: USER_COLS } } } },
           orderBy: [desc(ticketComments.createdAt)],
           limit: 50,
         },
@@ -138,8 +138,8 @@ export class ProjectsTicketsDetailService {
     const scope = await resolveTicketsScope(this.access, u);
     if (scope !== "all") {
       const isAssignee =
-        ticket.assigneeId === u.userId ||
-        ticket.assignees.some((a) => a.userId === u.userId);
+        ticket.assignee?.user?.id === u.userId ||
+        ticket.assignees.some((a) => a.user?.userId === u.userId);
       const isReporter = ticket.reporterId === u.userId;
       if (!isAssignee && !isReporter) {
         this.audit.log({

@@ -350,10 +350,10 @@ export class HrImportService {
       }));
     }
     if (entity === "leave_balances") {
-      const cursorId = position ? Number(position.id) : null;
+      const cursorId = position ? Number(position.id) : undefined;
       if (
         position &&
-        (!Number.isSafeInteger(cursorId) ||
+        (typeof cursorId !== "number" || !Number.isSafeInteger(cursorId) ||
           cursorId <= 0 ||
           position.sortValue !== position.id)
       ) {
@@ -365,7 +365,7 @@ export class HrImportService {
         .where(
           and(
             eq(leaveBalances.orgId, orgId),
-            cursorId !== null ? gt(leaveBalances.id, cursorId) : undefined,
+            cursorId !== undefined ? gt(leaveBalances.id, cursorId) : undefined,
           ),
         )
         .orderBy(asc(leaveBalances.id))

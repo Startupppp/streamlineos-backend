@@ -43,7 +43,7 @@ describe("RolesService.getRoles", () => {
 
     await expect(
       service.getRoles("org-1", {
-        page: 2,
+        cursor: undefined,
         limit: 20,
         search: "manager",
       }),
@@ -67,7 +67,7 @@ describe("RolesService.getRoles", () => {
         },
       ],
       pagination: {
-        page: 2,
+        cursor: undefined,
         limit: 20,
         total: 41,
         totalPages: 3,
@@ -110,7 +110,7 @@ describe("RolesService.getRoles", () => {
     Reflect.set(service, "db", { select });
 
     await expect(
-      service.getRoles("org-1", { page: 1, limit: 10 }),
+      service.getRoles("org-1", { limit: 10 }),
     ).resolves.toEqual({
       data: [],
       pagination: {
@@ -169,7 +169,7 @@ describe("RolesService.getRoles", () => {
       ...(ROLE_DEFAULT_PERMISSIONS.MEMBER ?? []),
     ]).size;
 
-    const result = await service.getRoles("org-1", { page: 1, limit: 10 });
+    const result = await service.getRoles("org-1", { limit: 10 });
 
     expect(result.data).toEqual([
       expect.objectContaining({

@@ -1,20 +1,21 @@
 {
   "failure_class": "CELL_DB_FAILURE",
   "rpo_seconds": 0,
-  "rto_seconds": 1175,
+  "rto_seconds": 4,
   "rpo_target_seconds": 300,
   "rto_target_seconds": 3600,
+  "rpo_operational_seconds": 21600,
+  "rpo_basis": "rpo_seconds is the drill's best case — the backup precedes the disaster by seconds, so it proves the restore loses nothing. rpo_operational_seconds is the backup interval, which is what an operator would actually lose, and is the figure the objective is judged on.",
   "rpo_met": false,
+  "rpo_restore_lossless": true,
   "rto_met": true,
-  "unhealthy_after_recovery": [
-    "RLS enabled on public.chat_message_reactions  — tenant table has no RLS — add a policy or register in PLATFORM_GLOBAL_TABLES",
-    "RLS enabled on public.communication_backfill_issues  — tenant table has no RLS — add a policy or register in PLATFORM_GLOBAL_TABLES"
-  ],
+  "recovered_cell_healthy": true,
+  "unhealthy_after_recovery": [],
   "phases": {
-    "backup_ms": 94000,
-    "bootstrap_ms": 1170649,
-    "restore_ms": 2744,
-    "verify_ms": 1537
+    "backup_ms": 102479,
+    "bootstrap_ms": 0,
+    "restore_ms": 2837,
+    "verify_ms": 1402
   },
   "integrity": {
     "ok": true,
@@ -23,10 +24,10 @@
     "failures": []
   },
   "timestamps": {
-    "drill_started_iso": "2026-08-29T05:23:28.487Z",
-    "backup_completed_iso": "2026-08-29T05:25:02.490Z",
-    "disaster_declared_iso": "2026-08-29T05:25:02.490Z",
-    "cell_verified_iso": "2026-08-29T05:44:37.421Z"
+    "drill_started_iso": "2026-09-01T16:01:38.867Z",
+    "backup_completed_iso": "2026-09-01T16:03:21.347Z",
+    "disaster_declared_iso": "2026-09-01T16:03:21.347Z",
+    "cell_verified_iso": "2026-09-01T16:03:25.587Z"
   },
   "control_plane_during_recovery": {
     "placement_cache_served_known_org": true,
@@ -39,14 +40,10 @@
   "notes": [
     "REGIONAL_DISASTER RPO target (<= 5m): UNVERIFIED. Neon PITR provides this guarantee at the control-plane layer, but no NEON_API_KEY and no scripted branch-restore exercise exist. Gap recorded in CELL-RUNBOOK.md.",
     "CELL_DB_FAILURE RPO (0s): time between backup completion and disaster declaration in this drill. Real-world RPO = backup run frequency; to meet the 5-minute target, schedule backups every <= 5 minutes.",
-    "CELL_DB_FAILURE RTO (1175s vs 3600s target).",
+    "CELL_DB_FAILURE RTO (4s vs 3600s target).",
     "cell2 is also used by migration-chain work. If the bootstrap was disturbed, re-run the drill and report the clean run.",
     "No physical read replica is provisioned. Replica routing seam is built and tested at pool-selection level only. Lag-simulation tests are skipped pending Neon replica provisioning."
   ],
   "disturbed": false,
-  "disturbed_reason": null,
-  "rpo_operational_seconds": 21600,
-  "rpo_basis": "rpo_seconds is the drill's best case — the backup precedes the disaster by seconds, so it proves the restore loses nothing. rpo_operational_seconds is the backup interval, which is what an operator would actually lose, and is the figure the objective is judged on.",
-  "rpo_restore_lossless": true,
-  "recovered_cell_healthy": false
+  "disturbed_reason": null
 }

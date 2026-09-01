@@ -114,10 +114,6 @@ export class CronHrRetentionService {
       result.onboardingDocumentsRedacted += counts.redacted;
       result.protectedDocumentRecords += counts.protected;
       await this.auditLog(tx, orgId, "hr_document_batch", "retention_sweep.document", action, policyId, counts.deleted + counts.redacted, cutoff);
-      this.logger.warn("[hr-retention] document retention policy skipped — no standalone hr_documents table", {
-        orgId,
-        policyId,
-      });
       return;
     }
     if (recordType === "payroll") {

@@ -17,7 +17,6 @@ import { RecruitmentRequisitionsService } from "./recruitment-requisitions.servi
 import { RecruitmentSourcingService } from "./recruitment-sourcing.service";
 import { RecruitmentTalentPoolsService } from "./recruitment-talent-pools.service";
 import { RecruitmentVendorSourcingService } from "./recruitment-vendor-sourcing.service";
-import { RecruitmentVendorSourcingService } from "./recruitment-vendor-sourcing.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean")
@@ -39,13 +38,13 @@ type ChainBuilder = {
   then: <T>(resolve: (rows: unknown[]) => T) => Promise<T>;
 };
 
-function makeChainBuilder(rows: unknown[]): { builder: ChainBuilder; where: jest.Mock } {
+function makeChainBuilder(rows: unknown[], visibleRows = rows): { builder: ChainBuilder; where: jest.Mock } {
   const where = jest.fn();
   const builder: ChainBuilder = {
     from: jest.fn(), leftJoin: jest.fn(), innerJoin: jest.fn(), where,
     orderBy: jest.fn(), groupBy: jest.fn(), limit: jest.fn(), offset: jest.fn(),
     having: jest.fn(), as: jest.fn().mockReturnValue({}),
-    then: <T>(resolve: (rows: unknown[]) => T) => Promise.resolve(rows).then(resolve),
+    then: <T>(resolve: (rows: unknown[]) => T) => Promise.resolve(visibleRows).then(resolve),
   };
   builder.from.mockReturnValue(builder);
   builder.leftJoin.mockReturnValue(builder);
@@ -59,8 +58,8 @@ function makeChainBuilder(rows: unknown[]): { builder: ChainBuilder; where: jest
   return { builder, where };
 }
 
-function makeDb(rows: unknown[]): { db: Db; where: jest.Mock; findMany: jest.Mock; findFirst: jest.Mock } {
-  const { builder, where } = makeChainBuilder(rows);
+function makeDb(rows: unknown[], visibleRows = rows): { db: Db; where: jest.Mock; findMany: jest.Mock; findFirst: jest.Mock } {
+  const { builder, where } = makeChainBuilder(rows, visibleRows);
   const findMany = jest.fn().mockResolvedValue(rows);
   const findFirst = jest.fn().mockResolvedValue(rows[0] ?? null);
   const db = {
@@ -119,12 +118,14 @@ const ATTACKER = "org-attacker";
 
 describe("HR Recruitment services — cross-tenant isolation", () => {
   describe("RecruitmentVendorSourcingService", () => {
-    it("scopes vendor listing to the requesting org (DENY — cross-tenant isolation)", async () => {
-      const { db, where } = makeDb([]);
+    it("hides a vendor owned by another org from the requesting org (DENY — cross-tenant isolation)", async () => {
+      const foreignVendor = { id: 17, orgId: OWNER, name: "Owner-only vendor" };
+      const { db, where } = makeDb([foreignVendor], []);
       const svc = new RecruitmentVendorSourcingService(db);
 
       const result = await svc.listVendors(ATTACKER);
 
+      expect(foreignVendor.orgId).toBe(OWNER);
       expect(result).toHaveLength(0);
       expect(where).toHaveBeenCalled();
       expect(where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg))).toContain(ATTACKER);

@@ -64,8 +64,7 @@ export class PayrollInputsService {
           hrPayrollInputPeriods.id,
           position,
         ),
-      )
-      .limit(1000);
+      );
     }
 
     const rows = await this.db

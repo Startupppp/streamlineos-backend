@@ -27,16 +27,7 @@ export class EpicsService {
         recurrenceNextRunAt: false,
       },
       with: {
-        assignee: {
-          columns: {
-            id: true,
-            name: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            image: true,
-          },
-        },
+        assignee: { with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } } } },
       },
       orderBy: [desc(tickets.createdAt)],
       limit: 100,
@@ -58,7 +49,7 @@ export class EpicsService {
           description: input.description,
           type: "EPIC",
           priority: input.priority ?? "MEDIUM",
-          assigneeId: input.assigneeId,
+          assigneeMembershipId: undefined,
           reporterId: userId,
           points: input.points,
           startDate: input.startDate ?? null,

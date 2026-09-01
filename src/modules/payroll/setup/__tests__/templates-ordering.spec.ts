@@ -58,7 +58,7 @@ describe("PayrollTemplatesService.list — deterministic ORDER BY before paging"
 
     const svc = new PayrollTemplatesService(db as never);
 
-    await svc.list("org-1", { page: 2, pageSize: 20 });
+    await svc.list("org-1", { limit: 20, cursor: undefined });
 
     const orderByCalledAt = globalOrder.indexOf("orderBy");
     const offsetCalledAt = globalOrder.indexOf("offset");

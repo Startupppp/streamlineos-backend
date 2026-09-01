@@ -27,14 +27,14 @@ export const BUDGETS = [
     ceiling: 5_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => (f.projectId ? [f.orgId, f.projectId, f.userId] : null),
+    params: (f) => (f.projectId && f.membershipId ? [f.orgId, f.projectId, f.membershipId] : null),
     sql: `
       SELECT t.id, count(*) OVER () total
       FROM build.tickets t
       WHERE t.org_id = $1 AND t.project_id = $2 AND t.deleted_at IS NULL
-        AND (t.assignee_id = $3 OR t.reporter_id = $3
+        AND (t.assignee_membership_id = $3 OR t.reporter_membership_id = $3
              OR EXISTS (SELECT 1 FROM build.ticket_assignees ta
-                        WHERE ta.org_id = $1 AND ta.user_id = $3 AND ta.ticket_id = t.id))
+                        WHERE ta.org_id = $1 AND ta.membership_id = $3 AND ta.ticket_id = t.id))
       ORDER BY t.rank ASC, t.created_at DESC, t.id ASC
       LIMIT 50 OFFSET 0`,
     // ticket_assignees is accessed via a hashed SubPlan (one-time materialization of the user's
@@ -49,16 +49,16 @@ export const BUDGETS = [
     ceiling: 30_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM build.ticket_assignees WHERE org_id = $1`,
-    params: (f) => [f.orgId, f.userId],
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT u.id, count(*) OVER () total FROM (
         (SELECT t.id, t.due_date, t.priority
          FROM build.tickets t INNER JOIN build.projects p ON p.id = t.project_id
-         WHERE t.org_id = $1 AND p.status <> 'ARCHIVED' AND t.deleted_at IS NULL AND t.assignee_id = $2)
+         WHERE t.org_id = $1 AND p.status <> 'ARCHIVED' AND t.deleted_at IS NULL AND t.assignee_membership_id = $2)
         UNION
         (SELECT t.id, t.due_date, t.priority
          FROM build.tickets t INNER JOIN build.projects p ON p.id = t.project_id
-         INNER JOIN build.ticket_assignees ta ON ta.ticket_id = t.id AND ta.org_id = $1 AND ta.user_id = $2
+         INNER JOIN build.ticket_assignees ta ON ta.ticket_id = t.id AND ta.org_id = $1 AND ta.membership_id = $2
          WHERE t.org_id = $1 AND p.status <> 'ARCHIVED' AND t.deleted_at IS NULL)
       ) u
       ORDER BY u.due_date ASC NULLS LAST,
@@ -77,7 +77,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
     params: (f) => (f.projectId ? [f.orgId, f.projectId] : null),
     sql: `
-      SELECT t.id, t.title, t.status, t.priority, t.assignee_id, t.rank,
+      SELECT t.id, t.title, t.status, t.priority, t.assignee_membership_id, t.rank,
              count(*) OVER () total
       FROM build.tickets t
       WHERE t.org_id = $1 AND t.project_id = $2 AND t.deleted_at IS NULL
@@ -92,17 +92,17 @@ export const BUDGETS = [
     ceiling: 20_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => [f.orgId, f.userId],
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT t.id, t.title, t.status, t.priority, t.due_date,
              count(*) OVER () total
       FROM build.tickets t
       INNER JOIN build.projects p ON p.id = t.project_id
-      WHERE t.org_id = $1 AND t.assignee_id = $2
+      WHERE t.org_id = $1 AND t.assignee_membership_id = $2
         AND t.deleted_at IS NULL AND p.status <> 'ARCHIVED'
       ORDER BY t.due_date ASC NULLS LAST, t.created_at DESC
       LIMIT 50 OFFSET 0`,
-    // idx_tickets_org_assignee_status (org_id, assignee_id, status) exists for production use.
+    // idx_tickets_org_assignee_status (org_id, assignee_membership_id, status) exists for production use.
     // Seed data has only 2 users sharing 20 000 tickets, so each user has ~34% of all rows and
     // the planner correctly prefers a seq scan. The block ceiling (20 000) guards correctness;
     // the index assertion fires naturally once realistic data exists.
@@ -773,7 +773,7 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM support_tickets WHERE org_id = $1`,
     params: (f) => [f.orgId],
     sql: `
-      SELECT id, title, status, priority, assignee_id, sla_deadline, created_at,
+      SELECT id, title, status, priority, assignee_membership_id, sla_deadline, created_at,
              count(*) OVER () total
       FROM support_tickets
       WHERE org_id = $1 AND status IN ('OPEN', 'IN_PROGRESS', 'WAITING')
@@ -786,12 +786,12 @@ export const BUDGETS = [
     ceiling: 8_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM support_tickets WHERE org_id = $1`,
-    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT id, title, status, priority, sla_deadline, created_at,
              count(*) OVER () total
       FROM support_tickets
-      WHERE org_id = $1 AND assignee_id = $2
+      WHERE org_id = $1 AND assignee_membership_id = $2
         AND status NOT IN ('RESOLVED', 'CLOSED')
       ORDER BY sla_deadline ASC NULLS LAST, created_at DESC
       LIMIT 50 OFFSET 0`,
@@ -844,12 +844,12 @@ export const BUDGETS = [
     ceiling: 5_000,
     minRows: 10,
     rowCountSql: `SELECT count(*)::int FROM mail_message_metadata WHERE org_id = $1`,
-    params: (f) => (f.hasMailMessages && f.userId ? [f.orgId, f.userId] : null),
+    params: (f) => (f.hasMailMessages && f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT message_id, thread_id, account_id, subject, sender_email, sender_name,
              date, is_read, is_starred, has_attachment, labels, folder, synced_at
       FROM mail_message_metadata
-      WHERE org_id = $1 AND user_id = $2 AND folder = 'inbox'
+      WHERE org_id = $1 AND user_membership_id = $2 AND folder = 'inbox'
       ORDER BY date DESC
       LIMIT 50`,
     planAssertions: [
@@ -862,7 +862,7 @@ export const BUDGETS = [
     //   (scope != 'mine'). Two queries: member project lookup + ticket page. Budget combines
     //   them into one subquery IN so the planner sees the full cost.
     // SQL verified against getAllWork + pageFilteredWork with default sort (rank ASC, id ASC).
-    // idx_project_members_org_user on (org_id, user_id) covers the subquery.
+    // idx_project_members_org_member_membership on (org_id, membership_id) covers the subquery.
     // idx_tickets_org_project_rank on (org_id, project_id, rank) covers the outer scan,
     //   executed as BitmapOr across member projects.
     // PROVISIONAL ceiling — measure with actual seed data at realistic member project count.
@@ -870,7 +870,7 @@ export const BUDGETS = [
     ceiling: 30_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT t.id, t.title, t.status, t.priority, t.type, t.due_date, t.rank,
              t.created_at, t.updated_at,
@@ -880,7 +880,7 @@ export const BUDGETS = [
       WHERE t.org_id = $1
         AND t.project_id IN (
           SELECT pm.project_id FROM build.project_members pm
-          WHERE pm.org_id = $1 AND pm.user_id = $2
+          WHERE pm.org_id = $1 AND pm.membership_id = $2
         )
         AND p.status <> 'ARCHIVED'
         AND t.deleted_at IS NULL
@@ -1029,13 +1029,13 @@ export const BUDGETS = [
     minRows: 50,
     maxScanRows: 1_000,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT t.id, t.title, t.status, t.priority, t.updated_at,
              p.id AS project_id, p.name AS project_name
       FROM build.tickets t
       LEFT JOIN build.projects p ON p.id = t.project_id
-      WHERE t.org_id = $1 AND t.assignee_id = $2 AND t.deleted_at IS NULL
+      WHERE t.org_id = $1 AND t.assignee_membership_id = $2 AND t.deleted_at IS NULL
         AND t.status IN ('TODO', 'IN_PROGRESS', 'IN_REVIEW')
       ORDER BY t.updated_at DESC
       LIMIT 10`,
@@ -1048,15 +1048,17 @@ export const BUDGETS = [
     ceiling: 2_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
-    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT t.id, t.title, t.status, t.priority, t.type, t.ticket_number, t.updated_at,
              p.id AS project_id, p.name AS project_name, p.key AS project_key,
-             u.id AS assignee_id, u.first_name, u.last_name, u.image
+             om.user_id AS assignee_id, u.first_name, u.last_name, u.image
       FROM build.tickets t
       LEFT JOIN build.projects p ON p.id = t.project_id
-      LEFT JOIN users u ON u.id = t.assignee_id
-      WHERE t.org_id = $1 AND t.assignee_id = $2 AND t.deleted_at IS NULL
+      LEFT JOIN organization_members om
+        ON om.org_id = t.org_id AND om.id = t.assignee_membership_id
+      LEFT JOIN users u ON u.id = om.user_id
+      WHERE t.org_id = $1 AND t.assignee_membership_id = $2 AND t.deleted_at IS NULL
       ORDER BY t.updated_at DESC
       LIMIT 10`,
     planAssertions: [
@@ -1196,12 +1198,12 @@ export const BUDGETS = [
     ceiling: 2_000,
     minRows: 1,
     rowCountSql: `SELECT count(*)::int FROM build.project_members WHERE org_id = $1`,
-    params: (f) => (f.userId ? [f.orgId, f.userId] : null),
+    params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
       SELECT p.id, p.name, p.status, p.created_at
       FROM build.projects p
       INNER JOIN build.project_members pm
-        ON pm.project_id = p.id AND pm.org_id = $1 AND pm.user_id = $2
+        ON pm.project_id = p.id AND pm.org_id = $1 AND pm.membership_id = $2
       WHERE p.org_id = $1 AND p.deleted_at IS NULL
       ORDER BY p.id DESC
       LIMIT 5`,

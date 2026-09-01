@@ -71,6 +71,8 @@ import { OutboxModule } from "../../common/outbox/outbox.module";
 import { SessionsModule } from "../sessions/sessions.module";
 import { EmploymentFactsModule } from "../directory/employment-facts.module";
 import { CalendarModule } from "../calendar/calendar.module";
+import { PlatformModule } from "../platform/platform.module";
+import { CronOperatorAccessService } from "./cron-operator-access.service";
 
 @Module({
   imports: [
@@ -107,6 +109,7 @@ import { CalendarModule } from "../calendar/calendar.module";
     CrmModule,
     OutboxModule,
     SessionsModule,
+    PlatformModule,
   ],
   controllers: [
     CronBillingController,
@@ -150,6 +153,7 @@ import { CalendarModule } from "../calendar/calendar.module";
     CronOrgPurgeWorkerService,
     CronLeaseService,
     CronAiUsageRetentionService,
+    CronOperatorAccessService,
   ],
 })
 export class CronModule {}

@@ -150,10 +150,10 @@ export class HrWorkflowInstancesService {
     if (query.cursor !== undefined && !position) {
       throw new BadRequestException("Invalid pagination cursor");
     }
-    const cursorInstanceId = position ? Number(position.id) : null;
+    const cursorInstanceId = position ? Number(position.id) : undefined;
     if (
       position &&
-      (!Number.isSafeInteger(cursorInstanceId) ||
+      (typeof cursorInstanceId !== "number" || !Number.isSafeInteger(cursorInstanceId) ||
         cursorInstanceId <= 0 ||
         position.sortValue !== position.id)
     ) {
@@ -169,7 +169,7 @@ export class HrWorkflowInstancesService {
       actorPredicate,
       inArray(hrWorkflowStepActions.action, ["approved", "rejected"]),
     ];
-    if (cursorInstanceId !== null) {
+    if (cursorInstanceId !== undefined) {
       actionConditions.push(gt(hrWorkflowStepActions.instanceId, cursorInstanceId));
     }
 

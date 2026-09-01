@@ -66,6 +66,7 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "hr_badge_awards.awarded_by_membership_id",
   "hr_campaigns.created_by_membership_id",
   "hr_cases.reported_by_membership_id",
+  "hr_communities.created_by_membership_id",
   "hr_effective_dated_changes.approved_by_membership_id",
   "hr_effective_dated_changes.created_by_membership_id",
   "hr_employment_history.created_by_membership_id",
@@ -210,7 +211,7 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "workers.created_by_membership_id",
   "workers.updated_by_membership_id",
   "workflow_transitions.created_by_membership_id",
-];
+].sort();
 
 interface DiscoveredTable {
   table: string;

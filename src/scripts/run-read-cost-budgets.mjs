@@ -252,8 +252,12 @@ async function main() {
         GROUP BY project_id ORDER BY n DESC LIMIT 1`)) ?? [null];
 
     const [participant] = (await tryFixture((tx) => tx`
-        SELECT user_id, count(*)::int n FROM build.ticket_assignees
-        WHERE org_id = ${ORG} GROUP BY user_id ORDER BY n DESC LIMIT 1`)) ?? [null];
+        SELECT ta.membership_id, om.user_id, count(*)::int n
+        FROM build.ticket_assignees ta
+        INNER JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id
+        WHERE ta.org_id = ${ORG}
+        GROUP BY ta.membership_id, om.user_id
+        ORDER BY n DESC LIMIT 1`)) ?? [null];
 
     const [channel] = (await tryFixture((tx) => tx`
         SELECT channel_id, count(*)::int n FROM chat_messages
@@ -317,6 +321,7 @@ async function main() {
         projectId: project?.project_id ?? null,
         projectTickets: project?.n ?? 0,
         userId: participant?.user_id ?? null,
+        membershipId: participant?.membership_id ?? null,
         participationOrgWide: participant?.n ?? 0,
         channelId: channel?.channel_id ?? null,
         channelMessages: channel?.n ?? 0,

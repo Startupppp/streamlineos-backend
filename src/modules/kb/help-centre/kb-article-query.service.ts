@@ -1,7 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { kbArticles, kbArticleVersions } from "../../../db/schema";
-import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -10,6 +9,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ListArticlesInput } from "../core/dto/kb.schemas";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
+import { actingMembershipId } from "../../../common/auth/principal";
 
 type ArticleRow = typeof kbArticles.$inferSelect;
 
@@ -23,7 +23,7 @@ type ArticleListItem = Pick<
   | "excerpt"
   | "status"
   | "visibility"
-  | "ownerId"
+  | "ownerMembershipId"
   | "helpfulCount"
   | "notHelpfulCount"
   | "lastVerifiedAt"
@@ -53,8 +53,14 @@ export class KbArticleQueryService {
       return { items: [], nextCursor: null, hasMore: false, limit: query.limit };
 
     const conditions: SQL[] = [eq(kbArticles.orgId, user.orgId), inArray(kbArticles.spaceId, ids)];
-    if (scope && scope !== "all")
-      conditions.push(applyScope(scope, user.orgId, user.userId, { ownerColumn: kbArticles.ownerId }));
+    if (scope && scope !== "all") {
+      const membershipId = actingMembershipId(user.principal);
+      conditions.push(
+        membershipId === null
+          ? sql`false`
+          : eq(kbArticles.ownerMembershipId, membershipId),
+      );
+    }
     if (query.spaceId) conditions.push(eq(kbArticles.spaceId, query.spaceId));
     if (query.categoryId) conditions.push(eq(kbArticles.categoryId, query.categoryId));
     if (query.status) conditions.push(eq(kbArticles.status, query.status));
@@ -83,7 +89,7 @@ export class KbArticleQueryService {
           WHERE kat.article_id = ${kbArticles.id}
           ORDER BY kt.name
         )`,
-        ownerId: kbArticles.ownerId,
+        ownerMembershipId: kbArticles.ownerMembershipId,
         helpfulCount: kbArticles.helpfulCount,
         notHelpfulCount: kbArticles.notHelpfulCount,
         lastVerifiedAt: kbArticles.lastVerifiedAt,

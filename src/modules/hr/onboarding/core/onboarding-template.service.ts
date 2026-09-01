@@ -26,12 +26,12 @@ export class OnboardingTemplateService {
               eq(orgUnits.kind, "DEPARTMENT"),
               isNull(orgUnits.deletedAt),
               eq(orgUnits.status, "ACTIVE"),
-              afterId ? gt(orgUnits.id, afterId) : undefined,
+              afterId ? gt(orgUnits.id, String(afterId)) : undefined,
             ),
           )
           .orderBy(asc(orgUnits.id))
           .limit(batchSize),
-      (department) => department.id,
+      (department) => Number(department.id),
     );
   }
 

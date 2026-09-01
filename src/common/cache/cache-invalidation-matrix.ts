@@ -150,7 +150,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
   },
   {
     namespace: "org:units:<orgId>",
-    description: "Org unit list by kind (cachedForOrg; actual key: <orgId>:org:units:<kind>). CACHE_KEYS.orgUnits factory produces org:units:<orgId>:…, so factory key format diverges from actual key. Factory is dead code.",
+    description: "Org unit list by kind (cachedForOrg; actual key: <orgId>:org:units:<kind>). The canonical key is owned by cachedForOrg; no parallel factory exists.",
     invalidation: {
       kind: "write",
       events: [
@@ -162,7 +162,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
   },
   {
     namespace: "branches:list:<orgId>",
-    description: "Branch list (cachedForOrg; actual key: <orgId>:branches:list). CACHE_KEYS.branchesList factory produces branches:list:<orgId> — format diverges. Factory is dead code.",
+    description: "Branch list (cachedForOrg; actual key: <orgId>:branches:list). The canonical key is owned by cachedForOrg; no parallel factory exists.",
     invalidation: {
       kind: "write",
       events: [
@@ -173,7 +173,7 @@ export const CACHE_INVALIDATION_MATRIX: readonly CacheNamespaceEntry[] = [
   },
   {
     namespace: "tasks:list:<orgId>",
-    description: "Task list. CACHE_KEYS.tasksList factory is dead code — never called in any service.",
+    description: "Task list. The list key is built at the owning read seam; no parallel factory exists.",
     invalidation: { kind: "ttl-only", reason: "Dead factory — key never produced or consumed" },
   },
   {

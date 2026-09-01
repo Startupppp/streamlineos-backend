@@ -35,6 +35,7 @@ describeWithDb(
       outsider: "u_ta_outsider",
     };
     const ids = { projectId: 0, teamId: 0 };
+    const membershipIds = { owner: 0, teamMember: 0, outsider: 0 };
 
     async function cleanup(): Promise<void> {
       await runInNewTenantTransaction(db, ORG_ID, async (tx) => {
@@ -70,14 +71,20 @@ describeWithDb(
           .values({ id: ORG_ID, name: "Team Access E2E", slug: ORG_ID, ownerMembershipId })
           .onConflictDoNothing();
 
-        await tx
+        const insertedMembers = await tx
           .insert(organizationMembers)
           .values([
             { id: ownerMembershipId, userId: U.owner, orgId: ORG_ID, isOwner: true },
             { userId: U.teamMember, orgId: ORG_ID, isOwner: false },
             { userId: U.outsider, orgId: ORG_ID, isOwner: false },
           ])
-          .onConflictDoNothing();
+          .onConflictDoNothing()
+          .returning({ id: organizationMembers.id, userId: organizationMembers.userId });
+        for (const member of insertedMembers) {
+          if (member.userId === U.owner) membershipIds.owner = member.id;
+          if (member.userId === U.teamMember) membershipIds.teamMember = member.id;
+          if (member.userId === U.outsider) membershipIds.outsider = member.id;
+        }
 
         const [ws] = await tx
           .insert(pmWorkspaces)
@@ -87,7 +94,7 @@ describeWithDb(
 
         const [project] = await tx
           .insert(projects)
-          .values({ orgId: ORG_ID, name: "Team Project", key: "TAP", managerId: U.owner, pmWorkspaceId })
+          .values({ orgId: ORG_ID, name: "Team Project", key: "TAP", managerMembershipId: membershipIds.owner, pmWorkspaceId })
           .returning({ id: projects.id });
         ids.projectId = project.id;
 
@@ -99,7 +106,7 @@ describeWithDb(
 
         await tx
           .insert(projectTeamMembers)
-          .values({ orgId: ORG_ID, teamId: ids.teamId, userId: U.teamMember })
+          .values({ orgId: ORG_ID, teamId: ids.teamId, membershipId: membershipIds.teamMember })
           .onConflictDoNothing();
         await tx
           .insert(projectTeamAssignments)

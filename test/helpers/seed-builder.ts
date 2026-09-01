@@ -206,7 +206,7 @@ export class SeedBuilder {
         for (const { memberAlias, role } of entry.memberEntries) {
           const member = members[memberAlias];
           if (!member) throw new Error(`seed: project member alias "${memberAlias}" not found for project "${projectAlias}"`);
-          await tx.insert(projectMembers).values({ orgId, projectId, userId: member.userId, role });
+          await tx.insert(projectMembers).values({ orgId, projectId, membershipId: member.membershipId, role });
         }
       }
     });

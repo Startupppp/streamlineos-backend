@@ -29,7 +29,7 @@ export class CronProjectsService {
           type: tickets.type,
           priority: tickets.priority,
           points: tickets.points,
-          assigneeId: tickets.assigneeId,
+          assigneeMembershipId: tickets.assigneeMembershipId,
           recurrenceRule: tickets.recurrenceRule,
           recurrenceNextRunAt: tickets.recurrenceNextRunAt,
         })
@@ -94,17 +94,17 @@ export class CronProjectsService {
                 type: template.type,
                 priority: template.priority,
                 points: template.points ?? undefined,
-                assigneeId: template.assigneeId ?? undefined,
+                assigneeMembershipId: template.assigneeMembershipId ?? undefined,
                 status: initialStatus,
                 recurrenceParentId: template.id,
                 isRecurring: false,
               })
               .returning({ id: tickets.id });
 
-            if (template.assigneeId) {
+            if (template.assigneeMembershipId != null) {
               await innerTx
                 .insert(ticketWatchers)
-                .values({ orgId: template.orgId, ticketId: child.id, userId: template.assigneeId })
+                .values({ orgId: template.orgId, ticketId: child.id, membershipId: template.assigneeMembershipId })
                 .onConflictDoNothing();
             }
 

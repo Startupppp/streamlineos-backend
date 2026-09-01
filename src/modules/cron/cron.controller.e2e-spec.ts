@@ -26,6 +26,8 @@ describe("Cron auth (e2e)", () => {
     ["post", "/cron/interview-no-shows"],
     ["get", "/cron/support-sla-escalations"],
     ["post", "/cron/support-sla-escalations"],
+    ["get", "/cron/operator-grant-expiry"],
+    ["post", "/cron/operator-grant-expiry"],
   ];
 
   function callRoute(method: Method, path: string): request.Test {

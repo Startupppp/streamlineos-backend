@@ -100,7 +100,7 @@ export class PortalAccessService {
         )
         .where(conditions)
         .orderBy(desc(portalMemberships.createdAt), desc(portalMemberships.portalMembershipId))
-        .limit(limit + 1),
+        .limit(limit + 1);
     return buildCursorPage(rows, limit, (row) => ({ sortValue: row.createdAt.toISOString(), id: row.portalMembershipId }));
   }
 
@@ -236,7 +236,7 @@ export class PortalAccessService {
         )
         .where(conditions)
         .orderBy(desc(projectClientGrants.createdAt), desc(projectClientGrants.projectClientGrantId))
-        .limit(limit + 1),
+        .limit(limit + 1);
     return buildCursorPage(rows, limit, (row) => ({ sortValue: row.createdAt.toISOString(), id: row.projectClientGrantId }));
   }
 

@@ -50,6 +50,7 @@ export class DashboardPersonalService {
     weekEnd.setHours(23, 59, 59, 999);
 
     const degraded: string[] = [];
+    const selfMember = await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)), columns: { id: true } });
     const settle = async <T>(
       source: string,
       run: () => Promise<T>,
@@ -81,7 +82,7 @@ export class DashboardPersonalService {
               this.db.query.tickets.findMany({
                 where: and(
                   eq(tickets.orgId, orgId),
-                  eq(tickets.assigneeId, userId),
+                  eq(tickets.assigneeMembershipId, selfMember?.id ?? -1),
                   isNull(tickets.deletedAt),
                   or(
                     eq(tickets.status, "TODO"),

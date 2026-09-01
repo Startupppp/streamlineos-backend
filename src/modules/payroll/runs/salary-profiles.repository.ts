@@ -110,9 +110,10 @@ export class SalaryProfilesRepository {
       .orderBy(asc(profileSortName), asc(employeeSalaryProfiles.id))
       .limit(query.limit + 1);
 
-    const page = buildCursorPage(rows, query.limit, (row) =>
-      payrollCursorPosition(cursorScope, [String(row.sortName ?? "")], row.id),
-    );
+    const page = buildCursorPage(rows, query.limit, (row) => {
+      if (typeof row.id !== "number") throw new Error("Salary profile cursor requires a numeric id");
+      return payrollCursorPosition(cursorScope, [String(row.sortName ?? "")], row.id);
+    });
 
     return {
       data: page.data.map((row) => ({

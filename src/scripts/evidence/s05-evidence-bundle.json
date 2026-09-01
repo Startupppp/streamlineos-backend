@@ -1,0 +1,1309 @@
+{
+  "schemaVersion": 1,
+  "evidenceId": "S05",
+  "evidenceStatus": "repository-only",
+  "deployedEvidenceClaim": false,
+  "claimRefusal": "The current checks are repository/self-tests. A marker records environment identity but cannot create deployed evidence; run real disposable-environment drills and attach their redacted output.",
+  "deployment": {
+    "requested": false,
+    "markerPresent": false,
+    "environment": null
+  },
+  "datasetShape": {
+    "mode": "repository-self-tests",
+    "syntheticRecordsCreated": false,
+    "piiCaptured": false,
+    "note": "This bundle records check outputs and metadata only; it does not export application data."
+  },
+  "execution": {
+    "startedAt": "2026-09-01T15:58:51.830Z",
+    "endedAt": "2026-09-01T15:59:02.619Z"
+  },
+  "commit": {
+    "sha": "c8c9cbde433868941be9991de8789f410cd7563a",
+    "branch": "main",
+    "dirty": true
+  },
+  "environment": {
+    "node": "v24.15.0",
+    "platform": "win32",
+    "release": "10.0.26200",
+    "arch": "x64",
+    "user": "Aditya_Lappy",
+    "cwd": "D:\\projects\\personal\\Streamlineos\\backend",
+    "envVarPresence": {
+      "DATABASE_URL": false,
+      "APP_DATABASE_URL": false,
+      "S05_DEPLOYED_ENVIRONMENT": false
+    }
+  },
+  "checks": [
+    {
+      "id": "compliance",
+      "command": "node compliance-drill-e2e --self-test",
+      "startedAt": "2026-09-01T15:58:51.832Z",
+      "endedAt": "2026-09-01T15:58:52.406Z",
+      "exitCode": 0,
+      "output": "compliance-drill-e2e --self-test\nProving each assertion bites when the invariant is violated.\n\n=== Self-test 1: hold_must_block_erasure ===\n  PASS  assertion fires when hold is absent (hold_must_block_erasure)\n\n=== Self-test 2: erasure_refused_while_held ===\n  PASS  assertion fires when erasure is not refused (erasure_refused_while_held)\n\n=== Self-test 3: release_enables_erasure ===\n  PASS  assertion fires when hold persists after release (release_enables_erasure)\n\n=== Self-test 4: residual_rows_after_erasure ===\n  PASS  assertion fires when rows remain after erasure (residual_rows_after_erasure)\n\n=== Self-test 5: export_blocked_by_active_hold ===\n  PASS  assertion fires when export proceeds despite active hold (export_blocked_by_active_hold)\n\n=== Self-test 6: compliance_audit_trail_exit_code ===\n  PASS  assertion fires when compliance-drill exits non-zero (compliance_audit_trail_exit_code)\n  PASS  assertion fires when required phrase is absent from output\n\n=== Self-test 7: storage assertion self-test (delegates to drill-storage-purge.mjs) ===\n  PASS  drill-storage-purge --self-test: all assertions bite correctly\n\n=== SELF-TEST RESULT: PASS — all 8 assertion bite proofs confirmed ==="
+    },
+    {
+      "id": "purge-erasure",
+      "command": "node drill-erasure --self-test",
+      "startedAt": "2026-09-01T15:58:52.407Z",
+      "endedAt": "2026-09-01T15:58:52.586Z",
+      "exitCode": 0,
+      "output": "self-test: verifying FK enumeration helpers\n\n  PASS  no cyclic tables in test graph\n  PASS  notifications (1) ordered before organization_members (3)\n  PASS  organization_members (3) ordered before users (4)\n  PASS  hr_employments (0) ordered before hr_people (2)\n\nself-test PASS — FK enumeration and deletion ordering correct"
+    },
+    {
+      "id": "purge-storage",
+      "command": "node drill-storage-purge --self-test",
+      "startedAt": "2026-09-01T15:58:52.586Z",
+      "endedAt": "2026-09-01T15:58:52.957Z",
+      "exitCode": 0,
+      "output": "[self-test] Verifying each assertion bites when the invariant is broken…\n[self-test] ✓ assertion 1 (zero-remaining) bites correctly\n[self-test] ✓ assertion 2 (idempotent second run) bites correctly\n[self-test] ✓ assertion 3 (partial-failure separation) bites correctly\n[self-test] ✓ assertion 4 (zero-failures on clean data) bites correctly\n[self-test] All assertions verified. PASS."
+    },
+    {
+      "id": "retention",
+      "command": "node check-retention-coverage --self-test",
+      "startedAt": "2026-09-01T15:58:52.957Z",
+      "endedAt": "2026-09-01T15:58:53.153Z",
+      "exitCode": 0,
+      "output": "◇ injected env (51) from .env // tip: ⌘ suppress logs { quiet: true }\n{\"selfTest\":true,\"pass\":true,\"checks\":{\"auditLogsIsKeepForever\":true,\"payrollRunsIsKeepForever\":true,\"aiUsageLogsHasWorker\":true,\"chatMessagesHasWorker\":true,\"kbChunksHasWorker\":true,\"auditLogsHasNoWorker\":true,\"classifyUnknownIsUncovered\":true,\"classifyAuditLogsIsKeepForever\":true,\"partitionUsesParentDecision\":true,\"reportingLinesHaveDecision\":true,\"invalidThresholdsFailClosed\":true,\"decimalThresholdIsAccepted\":true,\"everyMatrixEntryHasDecision\":true,\"everyMatrixEntryHasNotes\":true,\"keepForeverEntriesHaveNoWorker\":true,\"boundedEntriesHaveWorker\":true}}"
+    },
+    {
+      "id": "immutability",
+      "command": "node jest audit-log-immutability + journal-immutability",
+      "startedAt": "2026-09-01T15:58:53.153Z",
+      "endedAt": "2026-09-01T15:59:01.178Z",
+      "exitCode": 0,
+      "output": "PASS src/modules/accounting/posting/journal-immutability.spec.ts\nPASS src/modules/platform/audit-log-immutability.spec.ts\n\nTest Suites: 2 passed, 2 total\nTests:       14 passed, 14 total\nSnapshots:   0 total\nTime:        6.293 s\nRan all test suites matching /src\\\\modules\\\\platform\\\\audit-log-immutability.spec.ts|src\\\\modules\\\\accounting\\\\posting\\\\journal-immutability.spec.ts/i.\nForce exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?"
+    },
+    {
+      "id": "audit-log-privileges-contract",
+      "command": "node verify-audit-log-privileges --self-test",
+      "startedAt": "2026-09-01T15:59:01.178Z",
+      "endedAt": "2026-09-01T15:59:01.392Z",
+      "exitCode": 0,
+      "output": "{\"selfTest\":true,\"pass\":true,\"safe\":{\"role\":\"streamline_app\",\"updateRevoked\":true,\"deleteRevoked\":true,\"triggerPresent\":true},\"unsafe\":{\"role\":\"streamline_app\",\"updateRevoked\":false,\"deleteRevoked\":true,\"triggerPresent\":true}}"
+    },
+    {
+      "id": "migration-chain",
+      "command": "node verify-migration-chain --self-test",
+      "startedAt": "2026-09-01T15:59:01.392Z",
+      "endedAt": "2026-09-01T15:59:01.685Z",
+      "exitCode": 0,
+      "output": "Self-test: (a) unjournalled file\n  PASS  unjournalled non-allowlisted file caught\nSelf-test: (b) duplicate numeric prefix\n  PASS  duplicate prefix caught\nSelf-test: (c) timestamp regression\n  PASS  timestamp regression caught\nSelf-test: (d) orphan journal entry\n  PASS  orphan entry caught\nSelf-test: (f) applied watermark ahead of the journal\n  PASS  watermark ahead of journal caught\n  PASS  a watermark equal to the newest entry is not reported\n  PASS  check (f) is skipped when no database is reachable\nSelf-test: (e) chain gaps marker\n  PASS  chain gaps caught\n  PASS  unparseable gap count caught\n  PASS  zero gaps is not reported as a failure\n\nSelf-test: 10 passed, 0 failed"
+    },
+    {
+      "id": "migration-discipline",
+      "command": "node check-migration-discipline --self-test",
+      "startedAt": "2026-09-01T15:59:01.685Z",
+      "endedAt": "2026-09-01T15:59:02.011Z",
+      "exitCode": 0,
+      "output": "check-migration-discipline self-test\n=====================================\n\nCheck 1: lock_timeout\n  PASS  missing lock_timeout is caught\n  PASS  present lock_timeout passes\n  PASS  lowercase SET lock_timeout passes\n\nCheck 2: FK NOT VALID\n  PASS  FK without NOT VALID is caught\n  PASS  FK with NOT VALID passes\n  PASS  NOT VALID on same statement passes\n\nCheck 3: SET NOT NULL two-step\n  PASS  SET NOT NULL without CHECK NOT VALID is caught\n  PASS  full two-step SET NOT NULL passes\n  PASS  migration without SET NOT NULL passes check 3\n\nCheck 4: validate-before-backfill\n  PASS  VALIDATE before backfill is caught\n  PASS  backfill before VALIDATE passes\n  PASS  VALIDATE with no backfill (FK two-step) passes check 4\n  PASS  a header comment naming VALIDATE CONSTRAINT does not fake a violation\n  PASS  a real VALIDATE before the backfill is still caught once comments are stripped\n  PASS  stripSqlComments preserves the statement-breakpoint marker it must split on\n\nCheck 5: DO-block breakpoint\n  PASS  statement-breakpoint inside DO block is caught\n  PASS  breakpoint outside DO block passes\n  PASS  no DO block at all passes check 5\n\nCheck 6: journal entry\n  PASS  file missing from journal is caught\n  PASS  file present in journal passes\n  PASS  second journalled file passes\n\nCheck 7: CONCURRENTLY\n  PASS  CREATE INDEX CONCURRENTLY in SQL body is caught\n  PASS  CREATE UNIQUE INDEX CONCURRENTLY in SQL body is caught\n  PASS  CREATE INDEX without CONCURRENTLY passes\n  PASS  CONCURRENTLY only in a comment does not trigger check 7\n\nAnti-vacuity: checks must never silently pass on unparseable input\n  PASS  file with binary noise but lock_timeout still passes check 1\n  PASS  unparseable file with no lock_timeout is caught (not silently passed)\n\nSelf-test results: 27 passed, 0 failed\nSELF-TEST PASSED — all seven check shapes are caught"
+    },
+    {
+      "id": "migration-ledger",
+      "command": "node check-migration-ledger --self-test",
+      "startedAt": "2026-09-01T15:59:02.011Z",
+      "endedAt": "2026-09-01T15:59:02.236Z",
+      "exitCode": 0,
+      "output": "Self-tests passed."
+    },
+    {
+      "id": "migration-rollback",
+      "command": "node check-migration-rollback --self-test",
+      "startedAt": "2026-09-01T15:59:02.236Z",
+      "endedAt": "2026-09-01T15:59:02.439Z",
+      "exitCode": 0,
+      "output": "check-migration-rollback self-test\n===================================\n\nFailure mode (a): migration above cutoff with no rollback and no declaration\n  PASS  missing rollback and no declaration is caught (above cutoff)\n\nFailure mode (a): migration below cutoff with no rollback → grandfathered, no violation\n  PASS  migration below cutoff is grandfathered\n\nClean case: migration above cutoff with -- @irreversible declaration\n  PASS  @irreversible declaration satisfies the gate\n\nClean case: migration above cutoff with -- @data-loss declaration\n  PASS  @data-loss declaration satisfies the gate\n\nClean case: migration above cutoff with matching rollback (no CREATE TYPE)\n  PASS  rollback present with no CREATE TYPE passes\n\nFailure mode (b): rollback exists but DROP TYPE name mismatches CREATE TYPE name\n  PASS  rollback with mismatched DROP TYPE name is caught (0143-class defect)\n\nClean case: rollback with correct DROP TYPE name\n  PASS  rollback with correct DROP TYPE name passes\n\nType-mismatch check applies to historical migrations too (below cutoff)\n  PASS  type-mismatch caught for historical migration that has a rollback\n\nInjection: unjournalled file above cutoff is exempt\n  PASS  unjournalled file above cutoff is not flagged (no journal = never applies)\n\nSelf-test: 9 passed, 0 failed\nSELF-TEST PASSED"
+    },
+    {
+      "id": "artifact-contract",
+      "command": "node check-s05-artifact-contract",
+      "startedAt": "2026-09-01T15:59:02.439Z",
+      "endedAt": "2026-09-01T15:59:02.619Z",
+      "exitCode": 0,
+      "output": "S05 approval/evidence artifact contract passed."
+    }
+  ],
+  "summary": {
+    "total": 11,
+    "passed": 11,
+    "failed": 0
+  },
+  "artifactHashes": [
+    {
+      "path": "backend/migrations/meta/_journal.json",
+      "sha256": "2a92575eeb83e1f4050bf37fb512f123727ac6fd2c0fc73760dd31853394d1f9"
+    },
+    {
+      "path": "backend/package.json",
+      "sha256": "016dd1d38230399168c196887682eca6597815977410b1c1d4981fae341ceea7"
+    },
+    {
+      "path": "backend/src/scripts/__coldboot-prep.mjs",
+      "sha256": "8ff25892c585591edd22726430b0bef935cd7f042e2bba6794f52fa0578c867e"
+    },
+    {
+      "path": "backend/src/scripts/__tests__/cell-capacity.test.mjs",
+      "sha256": "eb69c997e8666bd1d8ffdffbf361fcb2991efeabffbc41aa7ae3802adaf8f3cd"
+    },
+    {
+      "path": "backend/src/scripts/__tests__/cell-unit-cost.test.mjs",
+      "sha256": "a105bfeb5a1644d61dd41943dfabb5875d9449969875aa6b4c66494997cb4002"
+    },
+    {
+      "path": "backend/src/scripts/__tests__/chain-repair.test.mjs",
+      "sha256": "203011ffcdfaa321eb930ff251ac17039014fa868fb91f061a04f43f2f01e96a"
+    },
+    {
+      "path": "backend/src/scripts/__tests__/envelope-profile.test.mjs",
+      "sha256": "e8d902bc84b4d6d44c62d9d369c0338c2d34c168cf89399a21e4b7c09225aae2"
+    },
+    {
+      "path": "backend/src/scripts/__tests__/load-driver.test.mjs",
+      "sha256": "12bb17bc1ddc616967043beb2932c43c03540c945712df6ec0714ff574641849"
+    },
+    {
+      "path": "backend/src/scripts/__tests__/plan-walker-fixture.json",
+      "sha256": "19aa89443e8f798c1e7c8713aa3a892b3a309c8bf96d0a532b36f5912eaca241"
+    },
+    {
+      "path": "backend/src/scripts/__tests__/plan-walker.test.mjs",
+      "sha256": "c2130e730adc97486e781ea5246a32fc500e83a2ce5a5626f62c9b1b03b91605"
+    },
+    {
+      "path": "backend/src/scripts/actor-classification-allowlist.json",
+      "sha256": "9219ae16493ead0a6a93bf7e984cc79d8dbaeac879a8a238ccfb30b107ba03e0"
+    },
+    {
+      "path": "backend/src/scripts/alert-cell-recovery.mjs",
+      "sha256": "6970ec6a87eea5ecd6b9c1d70d4cde5aa81334b18433936f5f861145d52165fb"
+    },
+    {
+      "path": "backend/src/scripts/alert-dead-delivery.mjs",
+      "sha256": "2c65bbb8f8dca9125f3c63cb32073a483a88109eae046bd93eac91d946f1a229"
+    },
+    {
+      "path": "backend/src/scripts/alert-dead-outbox.mjs",
+      "sha256": "8b110afc47c8d5f1d8ef44c7f2998163b6db17f5306f4ebf8803888ed6b61a1c"
+    },
+    {
+      "path": "backend/src/scripts/alert-delivery.spec.ts",
+      "sha256": "b6e16191a98c63f00b05a360778cfd03bba839ac1b6565940803ed1a8fcc3409"
+    },
+    {
+      "path": "backend/src/scripts/alert-dispatch.mjs",
+      "sha256": "c4cfd53b3248ff0f3f0ab0e05e607912c1bad3b1b253c2d2cd1a642155b95bef"
+    },
+    {
+      "path": "backend/src/scripts/alert-job-queue-age.mjs",
+      "sha256": "583ce08156d3291a56c29b4401a67bd0c30d5580b16491ff5359b0193dcc04cd"
+    },
+    {
+      "path": "backend/src/scripts/alert-p95.mjs",
+      "sha256": "655f88fed74dc630c61dcb8bbd7f5d11465fd47c58acd5af5316062556308ba8"
+    },
+    {
+      "path": "backend/src/scripts/alert-pool-saturation.mjs",
+      "sha256": "ed69d794e37f6672bd941df545deab43ae1ae0a75b833000272d27968e38e2bd"
+    },
+    {
+      "path": "backend/src/scripts/alert-queue-age.mjs",
+      "sha256": "0941b880e009225e30d4846976fe46ea7a8aaf26fb2fc3f409371dad22cbee98"
+    },
+    {
+      "path": "backend/src/scripts/alert-seam-latency.mjs",
+      "sha256": "e1c4e7cf35287b66b17370f51d8586123948e6b44c00d3977f435c3e58ce14aa"
+    },
+    {
+      "path": "backend/src/scripts/alert-seam-parity.spec.ts",
+      "sha256": "ac6b863d68fea02272639f753178055d884f82b8e1b59e71473c5368c9c275ed"
+    },
+    {
+      "path": "backend/src/scripts/alert-sig-failures.mjs",
+      "sha256": "6edd5f9858a41dc5d01c251e3dd7588a6beb94cc2f94541d6b1c6612a4d92d6b"
+    },
+    {
+      "path": "backend/src/scripts/alert-tenant-cost.mjs",
+      "sha256": "35692a5dcd645b1e4200a121ad20ab127bdaac75cc64229f9eb4b71149bbd363"
+    },
+    {
+      "path": "backend/src/scripts/alert-tenant-ctx-errors.mjs",
+      "sha256": "83e7bfb483e87e957d44e55bdbd81f787850ec9fa7b592adc70f4f17e00aebd2"
+    },
+    {
+      "path": "backend/src/scripts/apply-chain-cold.mjs",
+      "sha256": "8dd02cb0fc96514b223608bd0168befd4a50bd8902abc4d816ede23c31ac4b0d"
+    },
+    {
+      "path": "backend/src/scripts/apply-journalled-migration.mjs",
+      "sha256": "599e5d7eac6d3ca24d5fd322685a75592466256f2b2da049dc16513a89ad1b31"
+    },
+    {
+      "path": "backend/src/scripts/apply-repair-sql.mjs",
+      "sha256": "552a8d0b51f30008a67d24b9e90a4f32a053bcfe54da1f860a0f1bc49a3591df"
+    },
+    {
+      "path": "backend/src/scripts/architecture-evidence.module.ts",
+      "sha256": "10052f5cf9ac9f519c0058b5e8d2277d87faa34e986cc9be2721821386740d31"
+    },
+    {
+      "path": "backend/src/scripts/audit-storage-keys.mjs",
+      "sha256": "ef20b1fec420bab55f8847a6602efdfcfdf0c80ed9f283f0c4f794167c4a3136"
+    },
+    {
+      "path": "backend/src/scripts/backfill-chat-saved-messages-membership.ts",
+      "sha256": "1e2611cece236a81600e298cc726ef3271b14d381299440a09c06d2a8791db46"
+    },
+    {
+      "path": "backend/src/scripts/backfill-crm-metadata.ts",
+      "sha256": "32b4705bf68b252e6cefd169015a0b4750677d38c3f5d27a187fb9ebc35d42ac"
+    },
+    {
+      "path": "backend/src/scripts/backfill-financial-actors.ts",
+      "sha256": "b769ab37a558f0227d56c5ade3e24f7e322dd90782957dfa7fae238b2af5c741"
+    },
+    {
+      "path": "backend/src/scripts/backfill-kb-pages.spec.ts",
+      "sha256": "d322c07befd65a36470ba4da1e0030a291feb2df880acfcd257588ce5823c485"
+    },
+    {
+      "path": "backend/src/scripts/backfill-kb-pages.ts",
+      "sha256": "85fb9a536cc3585c78f43eca3637892bc6dc85a7487f76b62198b83675c33ed8"
+    },
+    {
+      "path": "backend/src/scripts/backfill-member-role-assignments.mjs",
+      "sha256": "79a2f6911c41c2f6f719645cebac8f030d95be93010f2778134d4c0666e96f4a"
+    },
+    {
+      "path": "backend/src/scripts/backfill-person-employment.ts",
+      "sha256": "a45c0c6d397440b1e2a7f427e69cb7670238457294b61deaeee965b41e587589"
+    },
+    {
+      "path": "backend/src/scripts/backfill-system-roles.ts",
+      "sha256": "3c654770d55f4a380e0be2e69685236d0831f795bdb9b81dc9326d18c5d4bd41"
+    },
+    {
+      "path": "backend/src/scripts/backfill-users-admin-permissions.mjs",
+      "sha256": "19cbe549cad68388ff15a74765ed1da1b0cbc6bb67a871892506a387884579b3"
+    },
+    {
+      "path": "backend/src/scripts/backfill-workflow-secrets.ts",
+      "sha256": "2e0a61b4828c2fa2985e1c264a7efd869cbde1c488fe61d190187fce1ecd88f5"
+    },
+    {
+      "path": "backend/src/scripts/baselines/unbounded-reads-baseline.json",
+      "sha256": "19d1738f71c094f943347c3123cd316f6e5f0d2de509a5a5aeeeed961ceb025b"
+    },
+    {
+      "path": "backend/src/scripts/baselines/unbounded-reads-classification.json",
+      "sha256": "784f8f5a93efea1074c8cf195b51355a80948621dd2f56c58bdd9e6abbe6301f"
+    },
+    {
+      "path": "backend/src/scripts/benchmark-access-service.ts",
+      "sha256": "2bbdc1087078b1901888221bca18c58c8d03fae0d631db048b90ef7e4edfadb4"
+    },
+    {
+      "path": "backend/src/scripts/bootstrap-cell.mjs",
+      "sha256": "1cde4ad19e6b45a3d94f7d4b150e30eae09e76de8474d6f3f4580d74ee8c8201"
+    },
+    {
+      "path": "backend/src/scripts/browser-driver.mjs",
+      "sha256": "73cdc58a0aa5bd2c8c6dc59a12a6f74fb9c06797b9b5da7b8fc7d2e1e04b25d8"
+    },
+    {
+      "path": "backend/src/scripts/capture-build-baseline.mjs",
+      "sha256": "995ac410708d0a3931a72f9985aae435e84d9f28010ea81519c0b9e43a3e42a8"
+    },
+    {
+      "path": "backend/src/scripts/cell-backup.mjs",
+      "sha256": "0a3e15a80a5efa813dced3401b5ecddd607abe70c996ba95d28203ec391b3d6a"
+    },
+    {
+      "path": "backend/src/scripts/cell-capacity-budgets.mjs",
+      "sha256": "ba119556b0e1c52e5e7a95a7ad16371a89a685ab933b9304920d5f5dd2c52597"
+    },
+    {
+      "path": "backend/src/scripts/cell-cost/load-driver-reader.mjs",
+      "sha256": "c60e3249aac2250cf26c6c4c8676f0fa00343bc3e36389eaaaaed6861f15cef2"
+    },
+    {
+      "path": "backend/src/scripts/cell-cost/span-log-reader.mjs",
+      "sha256": "7a45e535f520299c20d299d01d875008ea05ec0d6b7f428f4691f161da9a7f1e"
+    },
+    {
+      "path": "backend/src/scripts/cell-cost/vendor-costs.mjs",
+      "sha256": "0cb700ac8bdf08c7f1c2c8c8a3969743e7f7b3369f4a86ef534b8549e7c45caf"
+    },
+    {
+      "path": "backend/src/scripts/cell-forecast-status.mjs",
+      "sha256": "edc18ced1eaae11701bd0a6389514e8b1ab77677f551ef5be7ba2fdb8c4fd476"
+    },
+    {
+      "path": "backend/src/scripts/cell-topology.mjs",
+      "sha256": "4ce6cf0333888d7e0058b52c7aba08e739be40f5cffef9dcde7638fc97353280"
+    },
+    {
+      "path": "backend/src/scripts/cell-unit-costs.mjs",
+      "sha256": "4cd5b555f9bf4f98c5324f43abbf20e4b0d34cd27e4e25f7500ef7e311b299e6"
+    },
+    {
+      "path": "backend/src/scripts/chain-repair/catalog-read.mjs",
+      "sha256": "362f8d811eb6ae05591347fa1a5c7a476de8e93945f48238120d6b94bebb0360"
+    },
+    {
+      "path": "backend/src/scripts/chain-repair/decisions.mjs",
+      "sha256": "5ce39fc1e6d64e380b58b0dd9c8080a535afd4cd29cd7a0ae42f178c367f8a45"
+    },
+    {
+      "path": "backend/src/scripts/chain-repair/emit-ddl.mjs",
+      "sha256": "68c997e6867aa846c7c3a1b16892f87f1331e107ae8c1ff48e6e65bc3c9c9733"
+    },
+    {
+      "path": "backend/src/scripts/check-ai-charge-declared.mjs",
+      "sha256": "1bc49c9be520cf1b97f993205218d0c4de6253c2ce9fea5c0f47bf8dcddbac1a"
+    },
+    {
+      "path": "backend/src/scripts/check-alert-ack.mjs",
+      "sha256": "abbb8eb18a5fa83f22579d3ca524fb66086f065f60a12a4a05fdc3f134162ded"
+    },
+    {
+      "path": "backend/src/scripts/check-alert-system.mjs",
+      "sha256": "8d6dddbc9a518fda0ef0e376384a461c41d06fb7ac5854895990833807a9d0b3"
+    },
+    {
+      "path": "backend/src/scripts/check-bodyless-conflicts.mjs",
+      "sha256": "ba6f3467dfe6294777ff9242edd33d3b5b50760ae0ca7b9f4c697824f9ab69d1"
+    },
+    {
+      "path": "backend/src/scripts/check-build-read-cost.mjs",
+      "sha256": "c8cf9c522b067ebfc4f69eb979c71b7a5c6d63a1fdc4ee484eda5b182b6c4153"
+    },
+    {
+      "path": "backend/src/scripts/check-cache-invalidation.mjs",
+      "sha256": "cdc85084eee4c1fa3ad5a7d3f7bd4f3b605d1dae27e38c81c440189477b67ff2"
+    },
+    {
+      "path": "backend/src/scripts/check-cell-load-headroom.mjs",
+      "sha256": "8770cbbf81890f3d8116b52f648f5b66af58496b2be0d26da1e63f7bc7be0774"
+    },
+    {
+      "path": "backend/src/scripts/check-drop-column-safety.mjs",
+      "sha256": "d3b062bc399ef3d2bed9445afbec8ae3832be183ffbb4ad69837751649363d74"
+    },
+    {
+      "path": "backend/src/scripts/check-feature-flag-governance.mjs",
+      "sha256": "18c161b0538c87867aab4e4c074dfb5a86e51fed530a67fb0b1fc686b3a546b8"
+    },
+    {
+      "path": "backend/src/scripts/check-file-sizes.mjs",
+      "sha256": "c3fe35d5d4bc6cb32cdf1abc69b7f3e5d6d54a6e81a8037902787f5fb74630d4"
+    },
+    {
+      "path": "backend/src/scripts/check-hr-list-read-cost.mjs",
+      "sha256": "bb8490dd5d9beb75e51cfdc6199d0287166c5b3cdd262d7fa467ac28ee80e26e"
+    },
+    {
+      "path": "backend/src/scripts/check-hr-pagination-gate.mjs",
+      "sha256": "f4880cb290d3e043e93f50c35c4a720a36c45f79312edbf4fff75df88d3b4852"
+    },
+    {
+      "path": "backend/src/scripts/check-hr-table-freeze.mjs",
+      "sha256": "53ed035fd6f0fcb844ec4c15708561fe2f2dee000ab37ece9f7a6e56b9dcd98b"
+    },
+    {
+      "path": "backend/src/scripts/check-idempotent-commands.mjs",
+      "sha256": "0b5f99653f5bb4808e20b2232443b625a7a229a3186e48b0a426bee51207c7be"
+    },
+    {
+      "path": "backend/src/scripts/check-licenses.mjs",
+      "sha256": "4d0398a61511ab60a9533694f5c9197f881fb7520a1f7eb3b624b97dc01808d7"
+    },
+    {
+      "path": "backend/src/scripts/check-log-secrets.mjs",
+      "sha256": "37227ad19cc1add802ea73a476f8ef2dea905db02cf3ab37176238abbec5c048"
+    },
+    {
+      "path": "backend/src/scripts/check-migration-discipline.mjs",
+      "sha256": "cb86eb99e873bc52f6d82c1f551e44c78aa5694293b12a7219cbdbbed8d091e2"
+    },
+    {
+      "path": "backend/src/scripts/check-migration-ledger.mjs",
+      "sha256": "0c32bdcdec05ab85a401113425ac6cba094e051b1a9bf38dd2cfd9490ec68472"
+    },
+    {
+      "path": "backend/src/scripts/check-migration-rollback.mjs",
+      "sha256": "fc4547a2707a5ee78cd49744015f73472725d7020829c5508c9fb75ecd846455"
+    },
+    {
+      "path": "backend/src/scripts/check-mock-surface.mjs",
+      "sha256": "199e1a31d273860176dbbb4ecfc6664750414411d423cc32350babfb5b08e02a"
+    },
+    {
+      "path": "backend/src/scripts/check-module-di.mjs",
+      "sha256": "8fd3e6a3f7494b4bbc45dc1672726a8a19227379fd211decc21ac0470d3c3b97"
+    },
+    {
+      "path": "backend/src/scripts/check-module-entitlement.mjs",
+      "sha256": "67deae1a294260425aeeb24f3180a0cd7b601cff3b66104c51ed4125b38becb9"
+    },
+    {
+      "path": "backend/src/scripts/check-module-gate.mjs",
+      "sha256": "c5b82f31c6f6ef430180495d76b3de61854000c649849188f8e01f162fef06aa"
+    },
+    {
+      "path": "backend/src/scripts/check-module-lifecycle.mjs",
+      "sha256": "c6dfdf5c3101ffe5a93c4acc315e33f81b6e06e08b3021f3e20b977e1128c31a"
+    },
+    {
+      "path": "backend/src/scripts/check-multipart-contracts.mjs",
+      "sha256": "de729c5790d7151465f1632739c2164fa9fad3ffe0e74eb6d0e7c51d87ae587f"
+    },
+    {
+      "path": "backend/src/scripts/check-namespace-coverage.mjs",
+      "sha256": "41ac215a18ef8b7bbfd77bc6d393ec5bc494a7caffef5f13c0c733fb094133ba"
+    },
+    {
+      "path": "backend/src/scripts/check-navigation-permissions.mjs",
+      "sha256": "f6780cc5af4eedc50182b4a4e8f24b253187eed23f41fb471ba5460b94265e9d"
+    },
+    {
+      "path": "backend/src/scripts/check-openapi-coverage.mjs",
+      "sha256": "5e260834f3f6f599eaefe12e6d1cac69cdba61c992c699c19c0c529cb51cda01"
+    },
+    {
+      "path": "backend/src/scripts/check-openapi-fresh.ts",
+      "sha256": "3ec15ca766bae4cdfc3aded01448f220f5b5420890594562e54e8f0d542dcd06"
+    },
+    {
+      "path": "backend/src/scripts/check-openapi-path-params.mjs",
+      "sha256": "27c4108c35dea66fc968d94be4ba6be2826eb6e3402f352df11db2cb5b8a2fb7"
+    },
+    {
+      "path": "backend/src/scripts/check-operation-ids.mjs",
+      "sha256": "d14f19e719ff06d49d7850920e2549a34f7cd110b5d2689268fa69649968eda3"
+    },
+    {
+      "path": "backend/src/scripts/check-outbox-consumers.mjs",
+      "sha256": "1dd90e6d1c577a79e3ac7c11d96ef5854e531dae50ba7da8414b90d4eed91b95"
+    },
+    {
+      "path": "backend/src/scripts/check-over-300.mjs",
+      "sha256": "e8b3648d040bdfaa4305ba38a306a6a5897d7acd39e11be634ec84921b403f7d"
+    },
+    {
+      "path": "backend/src/scripts/check-owner-authority.mjs",
+      "sha256": "e15ae4316d1a7f21cb67f9d900b6e3694abf96d6658dcd163a61f363b4e437f7"
+    },
+    {
+      "path": "backend/src/scripts/check-permission-keys.mjs",
+      "sha256": "08419c4fd91d66464ad9d0a1f1e27fe0b513fdcb558b0071b74cdf006cdfd752"
+    },
+    {
+      "path": "backend/src/scripts/check-placement-bypass.mjs",
+      "sha256": "f80f5ea323137181def266d810e40f97fae861a15b36b6f2a3a35a964f35e7c1"
+    },
+    {
+      "path": "backend/src/scripts/check-record-access.mjs",
+      "sha256": "e0549930bf145dbc4570ab23680725f83042168a899bdcecc8c2c67cdcada397"
+    },
+    {
+      "path": "backend/src/scripts/check-request-transaction-cost.mjs",
+      "sha256": "3fa93affd9c90a3123cb1e3d023862d5f3ab8a265ea44cb585f8c22736c803e9"
+    },
+    {
+      "path": "backend/src/scripts/check-restrict-fks.mjs",
+      "sha256": "27d0120336c6ff7353160146ac652d3e559f791b3af9a43253ef53d042fbe270"
+    },
+    {
+      "path": "backend/src/scripts/check-retention-coverage.mjs",
+      "sha256": "2ea19ac86daa6f12ad49969756adac359373e988bcc5bc8a7feebdd607af39dc"
+    },
+    {
+      "path": "backend/src/scripts/check-s05-artifact-contract.mjs",
+      "sha256": "7bdf7efea458b4309100b547c8c7ac20684316adac66ba36e90cf4ea70f6a294"
+    },
+    {
+      "path": "backend/src/scripts/check-scope-application.mjs",
+      "sha256": "b219696dc246c03736f148a1d3fb5fd056b740c069f0faa125df2af312548f40"
+    },
+    {
+      "path": "backend/src/scripts/check-spec-typecheck.mjs",
+      "sha256": "b39f586341f730a4933eddcb5eeef04da8588b3ada087dcee6c2ec4711d643f3"
+    },
+    {
+      "path": "backend/src/scripts/check-tenant-indexes.mjs",
+      "sha256": "3525beeab1b7de74cc64c4c4addf7bdc1aefcb359f704776f9b2b15c5bc3d4a5"
+    },
+    {
+      "path": "backend/src/scripts/check-tenant-isolation-coverage.mjs",
+      "sha256": "d95603385b43a6cfb9c6cd3ca93f1961f5dc1bde8a80717ea76090f1ec937d26"
+    },
+    {
+      "path": "backend/src/scripts/check-unbounded-reads.mjs",
+      "sha256": "4b5b1202459de3ab791cbae93ff909511e0d2fdc9b1c673a0efbdef1f06d3855"
+    },
+    {
+      "path": "backend/src/scripts/check-vulnerabilities.mjs",
+      "sha256": "6019e0503b40edfb5c0aaf69bb3e26479a3de6a5c0a360f3635a2760f586f978"
+    },
+    {
+      "path": "backend/src/scripts/collect-s05-evidence.mjs",
+      "sha256": "09756e3e5e0e61321a6999eccede82afdd78e42336edb0d8f286687b794cb10e"
+    },
+    {
+      "path": "backend/src/scripts/collect-s7-evidence.mjs",
+      "sha256": "6e4ade6a70dfc60b056340a2cd387ec7c69c5149832c3be4543d3539275b11e9"
+    },
+    {
+      "path": "backend/src/scripts/compare-cell-schema.mjs",
+      "sha256": "61ee16603c08a93f085ce256050901d767170d6180a08d12488b619762030780"
+    },
+    {
+      "path": "backend/src/scripts/compliance-drill-e2e.mjs",
+      "sha256": "033ee8915d75830d5bf0e0dc19c420c89ac6644461062bf17de0289564c51bb8"
+    },
+    {
+      "path": "backend/src/scripts/compliance-drill.mjs",
+      "sha256": "9694affa7bbc1a366a1ebda483d62aa7da3dfecf92e2095efbafab1b9122d7f2"
+    },
+    {
+      "path": "backend/src/scripts/convert-kb-articles.spec.ts",
+      "sha256": "073e9ea04704b6267c6f5f19dd2bcfbb436479b934088b70a995e1c80f21836d"
+    },
+    {
+      "path": "backend/src/scripts/convert-kb-articles.ts",
+      "sha256": "d86418fda54425e2609760fc23790c047e25183559bb0c62c25447c4c57346b1"
+    },
+    {
+      "path": "backend/src/scripts/db-bootstrap-app-role.mjs",
+      "sha256": "e2cdf64f40e8045b853eb9b1c72678d2d3ffcbaf329d36e2b3d38c9e9851b2d3"
+    },
+    {
+      "path": "backend/src/scripts/db-bootstrap.mjs",
+      "sha256": "e001d046555af40e38329f70b280266f0f1ca18d14a7b23fae959fc1f5e7fb06"
+    },
+    {
+      "path": "backend/src/scripts/db-setup.mjs",
+      "sha256": "3af7653638bd77865358f6dd1b4421eb48a7ba7283cff623e20d8853b6876ead"
+    },
+    {
+      "path": "backend/src/scripts/db-verify-rls.mjs",
+      "sha256": "85c035c60d7b18007e5b6ef42d799504bf973b779045e20c0373b7b1169c6887"
+    },
+    {
+      "path": "backend/src/scripts/drill-alert-system.mjs",
+      "sha256": "ca3a05325f19d780f78ea015977151578685d76810c031a7f74c66e65660a72c"
+    },
+    {
+      "path": "backend/src/scripts/drill-erasure.mjs",
+      "sha256": "6768887a30035bf1ed74ada5998e180e47e9febe8aa123bec8146758f218e5e2"
+    },
+    {
+      "path": "backend/src/scripts/drill-export.mjs",
+      "sha256": "d7fb27742499f80412af49e8b372e1292421352d05bd1a5c34881efbaf125cc5"
+    },
+    {
+      "path": "backend/src/scripts/drill-legal-hold.mjs",
+      "sha256": "bdce345a30d1becdef21b2f77164bed5c5a6960546649db75000fc42651c5aad"
+    },
+    {
+      "path": "backend/src/scripts/drill-pitr-restore.mjs",
+      "sha256": "ec4db3a161ab2af0f97842187f53416bccb436f9c69f52fd7523a5a00a571fba"
+    },
+    {
+      "path": "backend/src/scripts/drill-storage-purge.mjs",
+      "sha256": "d90ce6cd0e15a5bf372ccb966cb59aff1d444a9f72fba004d818b8580b43719b"
+    },
+    {
+      "path": "backend/src/scripts/dump-module-manifest.ts",
+      "sha256": "48c4f6392f32b1282f8f54bb24ada6ee4cb68cb5ca79ae7b7b2fd3367ba3edb3"
+    },
+    {
+      "path": "backend/src/scripts/dump-permission-catalog.ts",
+      "sha256": "4d8745df33cee43abf9b93585d46e88bf49c1d226767b233ec916f552af4ace1"
+    },
+    {
+      "path": "backend/src/scripts/e2e-smoke.mjs",
+      "sha256": "eb5a000ea504d4cde06f70edbf64f3377c79d95d099219852ef2a4723bf437d9"
+    },
+    {
+      "path": "backend/src/scripts/emit-inv-tables.mjs",
+      "sha256": "596739f792863c407b17d010c1b73fb505035b9628f12e142d6dfd881c6ec084"
+    },
+    {
+      "path": "backend/src/scripts/employment-verification-context.ts",
+      "sha256": "c3298f582327def43c7b1776d14d24765680f54fefe477a00c9dc2738b76b346"
+    },
+    {
+      "path": "backend/src/scripts/envelope-fixtures.mjs",
+      "sha256": "2f69fb7e94397167c9b4d0e478dc8e8a62f9197a53b4ac83b0388fa7deac29fc"
+    },
+    {
+      "path": "backend/src/scripts/envelope-profile.mjs",
+      "sha256": "e2d9280eaa3c6e78f50e1f03c0a57fdb997308bf5abb0b11238a0200f0a0a4e6"
+    },
+    {
+      "path": "backend/src/scripts/export-module-manifest.ts",
+      "sha256": "4d9032caffaa94ff196cd54d71634b41a8479d43348cadded554358ca0d0ba46"
+    },
+    {
+      "path": "backend/src/scripts/failure-drill.mjs",
+      "sha256": "f022bc2ce4b4c786892f99d51d4a36fe1c261f371456938f7a9e643cd0c5d31e"
+    },
+    {
+      "path": "backend/src/scripts/generate-chain-repair.mjs",
+      "sha256": "ab045ab4cf3e727f2db9a5ef293d5274130d9b45aa5abb2ac4f5ba80eb869a91"
+    },
+    {
+      "path": "backend/src/scripts/generate-openapi.ts",
+      "sha256": "84dfaca9bad1e82a2d96cf6ed2dc3569483023786af082bc62f14ece8c98ae64"
+    },
+    {
+      "path": "backend/src/scripts/generate-sbom.mjs",
+      "sha256": "df3b080320aec04516255abb084001aed7e55becde4652cfda13e024f3424932"
+    },
+    {
+      "path": "backend/src/scripts/hrms-leave-opening-backfill/README.md",
+      "sha256": "8568d266f1703361d202e172fcbcfc63d3856accc185212df7ca05ff8b9511f0"
+    },
+    {
+      "path": "backend/src/scripts/hrms-leave-opening-backfill/backfill-error.ts",
+      "sha256": "5f5dfb635650f4e11af7dfe1bd6ebb58c973027322842eb56bf04280140b2e91"
+    },
+    {
+      "path": "backend/src/scripts/hrms-leave-opening-backfill/backfill-manifest.spec.ts",
+      "sha256": "d2f3e5970506f898dc5fa92c57f8b2598ad9fbb84e5716ec58279971f1f9959f"
+    },
+    {
+      "path": "backend/src/scripts/hrms-leave-opening-backfill/backfill-manifest.ts",
+      "sha256": "784dc750a471e20f24c3986c76d3d1071fe7566b8067bdf66c440aa1244a5008"
+    },
+    {
+      "path": "backend/src/scripts/hrms-leave-opening-backfill/backfill-options.spec.ts",
+      "sha256": "7982be75bea1810cf9fc412f46be3a2d0836ac6380ec5b6f6bb6671f44e87e65"
+    },
+    {
+      "path": "backend/src/scripts/hrms-leave-opening-backfill/backfill-options.ts",
+      "sha256": "ab4b98160336eacda4d8a4bc82129533dbcfe2d49f571181da1c0ce4d5bf3947"
+    },
+    {
+      "path": "backend/src/scripts/hrms-leave-opening-backfill/backfill-plan.spec.ts",
+      "sha256": "f3b14897db5b63e816860a0682f5a2d7e82f38bbe1bf67c168a6d516985a93de"
+    },
+    {
+      "path": "backend/src/scripts/hrms-leave-opening-backfill/backfill-plan.ts",
+      "sha256": "48d336f114a12b67dd7adc74ecfffdf74f76a97e673978e37fd7cfa323d50538"
+    },
+    {
+      "path": "backend/src/scripts/hrms-leave-opening-backfill/backfill-test-fixture.ts",
+      "sha256": "ff376788b22739a155a0491e8399b74c453eb8062cfd6e003df2dc03d67c2d3f"
+    },
+    {
+      "path": "backend/src/scripts/hrms-leave-opening-backfill/hrms-leave-opening-backfill.ts",
+      "sha256": "50de3f369519084a5b025e23f65f5938511a63eb67a8deebede066c9947ffc6b"
+    },
+    {
+      "path": "backend/src/scripts/hrms-leave-opening-backfill/jest.config.json",
+      "sha256": "9c4f8fb1f7895e34b2144f6b17e07a46bb45dea26010a3bd03a1615dd5f7dca0"
+    },
+    {
+      "path": "backend/src/scripts/hrms-leave-opening-backfill/preflight-contract.spec.ts",
+      "sha256": "5e02c1d12a795a30f38758d0eb25c941fb828099b4ed24e81818033bde992ea7"
+    },
+    {
+      "path": "backend/src/scripts/hrms-leave-opening-backfill/tsconfig.json",
+      "sha256": "a1aac66b107d8151e93afb5d4befe8b46cd4744a9ec4a531adaa1405124005f5"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/attendance-security-verification.ts",
+      "sha256": "1a947e216ddf189f624654b48e1d42e23e6c6aed092ca5be97626a3b390017eb"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/hrms-partitions.ts",
+      "sha256": "7eafb14d1d5c3f9a2a5b507d0fd393400b2194ced3cbfc51071ef3abc9faa457"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-catalog.ts",
+      "sha256": "6a7dc4f83608ee7cedcf3066c9be6b662a47c342547117c3b8970d9ee28f6124"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-config.spec.ts",
+      "sha256": "b69d3ae96561888a7857bb5ff0a6700870184942e362234d53bfec3fe4af813d"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-config.ts",
+      "sha256": "6a6a0102cf07fb5fadd95dbcf43968c1509a23c3ae91aea61496312b76dced38"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-dependencies.spec.ts",
+      "sha256": "e8f9a7b67c2bad82b17674f0bd7ada34973b4c604b6cba6b01e7d9471c7018f2"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-dependencies.ts",
+      "sha256": "629c80cb9fe7e3474c27adebaccfebcdf1f3ebe72637a9a550b2109b454b32aa"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-error.ts",
+      "sha256": "9e56b545e2ce1a74eda108453a5f65119167c9443df73cea9879cf6103e460b5"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-executor.ts",
+      "sha256": "9783b27a6ecf9eda94f11dd82b1630d53e5d2caef3355622ee47072b524b6cd0"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-manifest.spec.ts",
+      "sha256": "f1e0f2b88c272660ebc8437ca60a95abf8710ccbf4ca9f7eb6aea64e8b8299e8"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-manifest.ts",
+      "sha256": "d66bdd2c0e3fa4f04bf8a8f602c73acf3cbf972feaca255fb61cc40461d6ab69"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-operation-identity.spec.ts",
+      "sha256": "d0d5649d5708a2d7a0803b8d31c0f676fd6a5d1b826a13c4d9ccf2693bf43e48"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-operation-identity.ts",
+      "sha256": "a15589b42fd272d767ca3c97033043b5fccac3844d4af4dd0e24ce18495c2c1d"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-operation-ledger-readiness.ts",
+      "sha256": "2b5cbfe8ded523b07b9dabea63c537a3b5d832f0bdd35adcb0a12175b5859bdc"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-operation-ledger.ts",
+      "sha256": "55ec016c6a579b2b6b91c5da2a56496385afd5d75c180a7783cb71b6c23f0b58"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-operation-lifecycle.spec.ts",
+      "sha256": "fe96111c81497a1912509b3136d9a73588ea26803f07111c0cd837d2efb32187"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-options.spec.ts",
+      "sha256": "0465084479ba7e62128b2b9a24cc5c6b2a8e4e33f94f3c60403033943980d9c8"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-options.ts",
+      "sha256": "4050c7677adc91709cbbb31720d45c8e3e99c6ef9c4cb2e09d496bcba4984b97"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-plan.spec.ts",
+      "sha256": "310801061331a488c2530a89792dd1f5db27c8cebbbb280bfeec749aba3df2c0"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-plan.ts",
+      "sha256": "bfcb00e5294c5b92e86526f15e3e02b421452063b1aae3b6c48a7ef5b66cc7ca"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-provenance.ts",
+      "sha256": "3ff4a2ede1ab2406660da118e070ac93c3adb6cdd80ee1f01ce85a119dc630a7"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-security.spec.ts",
+      "sha256": "e333b81332db657c6915874adde2dee5799939d9990ac17092a474fb184ddd96"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-security.ts",
+      "sha256": "9522a1e1879dc4838cc7fe6e6e770745cc5215a366bad633170a0888b95bcd8e"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-set-verification.spec.ts",
+      "sha256": "f27d176c659a4e80494473639c54e1beac11ae8ad0bbc4b88a3fea078f9967de"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-set-verification.ts",
+      "sha256": "0e0251e240c150a3467be6c998ebf3ac6da3632a41c27a8acaa252cf37d170e7"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-sql.ts",
+      "sha256": "d521d03a53d613a27bca0c01ed7d7e132bd8e78fab3469af9249c1306deebb36"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-trigger-install.ts",
+      "sha256": "05d4ef2ba13ddc4f4ea3758fba3a466d167d6c34b39063ba6e81eb5855bbb0c9"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-trigger-verification.ts",
+      "sha256": "bd9bffc8da7d26f1a5e083e1bf260801fc85e87c8086c467403c75261df29e0e"
+    },
+    {
+      "path": "backend/src/scripts/hrms-partition-planner/partition-verification.ts",
+      "sha256": "9d79106ccd828315344179f63a61514bd910c49a81b3506c83b46dfb2819a144"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-catalog-query.ts",
+      "sha256": "6ea1ae9ed9586cb42233a452f273337236069556e2b8b48b929d0cf22e31f0f3"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-catalog-recipes.ts",
+      "sha256": "106bdd04ac95f86d078afa8ce6ef114e5131d07d4ad7cb0c6fd7d6b34c29a04d"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-catalog-registry.spec.ts",
+      "sha256": "3d948698e68e6985fa9c36ec75d173026de76dabeab2756e2b07d45917ced298"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-catalog-registry.ts",
+      "sha256": "fea9cf5cf027b7044379f28fb9ddc5842d37e63842b6ce14bd45655cc84c6a46"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-catalog-schema.ts",
+      "sha256": "6f85ca984773dfb738b3a1097c974ee6b4d91846d5dca535308c52bb5814fcb4"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-catalog.ts",
+      "sha256": "e8830c67cbfa37fde299d96799704f8a7384cfbbb33787d23334a5b2045e59f7"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-columns-0000.ts",
+      "sha256": "8497ee1627795b3450cfd80625db4822138db25b82957692004efc365252d703"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-columns-0001.ts",
+      "sha256": "01ea11ea2ee0327db18488525bb7b8861faf1863c4ffa97b54addee1f9882d89"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-columns-0002.ts",
+      "sha256": "df8c61b8289c710cf7c0f13e4e6155375c179c64e61a31c2c476ee3095e7b091"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-columns-0003.ts",
+      "sha256": "e28d3f0fae1acb4b7ca88694d4374ee41c180955c3b7c59dd02bddfbfd284df9"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-columns-0004.ts",
+      "sha256": "13678fce113a78dd47de99b6640e602d1dbe0abb9cd0bc743f096a75470850d2"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-config.ts",
+      "sha256": "73d47f9930a3e6159d23beac7ab1dd393346698d549007c86a68a9848aad3e90"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-database.ts",
+      "sha256": "f291d7817408152eeb05fc48e59f3ccf0402fa625cc3eaf4a352c2aceb62e77b"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-definition-assertions.ts",
+      "sha256": "c8f12964d19e31a515417c3d5f6980623ace2a0d7beeb3aa89f524bd97d0dbf9"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-definition-query.ts",
+      "sha256": "4ec3341b052badc90a03be86b6a799f5a14a2b832afef8241952352fcb1845bb"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-definition-registry.ts",
+      "sha256": "533eb0471a41ce4dcfd32c8e399abee7e8c78db88584ad9888e2e2b2b1a824ba"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-definition-schema.ts",
+      "sha256": "a704e0d1763b49638c9a00367e1c6a9d09405c8e9c3b7f3c1fb69713773dde07"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-definition-set-query.ts",
+      "sha256": "c4140070b48319661b6c7c7a08a09167623717c5177b0de3b42099ecc78acc2e"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-definition-shape.ts",
+      "sha256": "a8d5f24136fcb5fd33299a3a8aaaec852af50b438dbb344e0c971073141852df"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-definition-subset.ts",
+      "sha256": "cc4a1ca6c41082848ec51de37692c7c9ca7c9e54945f144644f462ac013d1bf3"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-definition-types.ts",
+      "sha256": "6497c166122d44dfac3e5ecb64418e2eeb5bad63710b97937b5b03c9c96c4c58"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-definition-verifier.spec.ts",
+      "sha256": "679a71d30825afdf7e54b4cc86f77bae2caa113d48ae26077a1bf25529214715"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-definition-verifier.ts",
+      "sha256": "39035ad85248db941f155f19c321214ffe4db61fc42cb6e8bf4f4bd0dda38513"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-definitions-0000.ts",
+      "sha256": "4fae7697db2066518a448406d311358551cf231641b977f6b159d03b5c154358"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-definitions-0001.ts",
+      "sha256": "11d1c3a4bbb509d2abc2e3172dd1fd02998cf81d00788b14b80e783784be1a78"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-definitions-0002.ts",
+      "sha256": "4a6db598ae1c594947bc8b89e14302c3ae91e762e8653a8bdeddbeca7eb1b48e"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-definitions-0003.ts",
+      "sha256": "3334321bf5cdae4ad314a6659d70ad22450ca902783fa009bb180f2a5e8c19ae"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-definitions-0004.ts",
+      "sha256": "3d303d8c1234ba530a3b13baa84244ee7014b4164f93d6a5867546e76c059639"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-environment-schema.ts",
+      "sha256": "2286c28f2b9950b2c298b9d09a500ee0bfdc35cd505da5d70a9a3525ce1069c1"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-error.ts",
+      "sha256": "3af67d7d4e90a7858fad4f5d82d8db9492ec347a51631b9889eecac4da989048"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-executor.spec.ts",
+      "sha256": "3e5d537c5f90a59c81b8f5d2b1fee881fa6f6a3285d5e54d22c18a7a87fa7841"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-executor.ts",
+      "sha256": "2ea45e805321bbc3368499c46f328de673d8b4c24f0fa8fb520b79e3b745b2c1"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-files.ts",
+      "sha256": "71f732e6fc2906e1074a1937584349f195920f52a2f41afe74736c20a4597c9b"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-function-hashes.ts",
+      "sha256": "eef37284ae2063ddc9f553d04803ab2cf987c8ba6e35f38ce424da9d667b8f5b"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-ledger-access.ts",
+      "sha256": "0eaeb7e4c19922aae7e13cde96030fa64dd6e812f53cb636ff0903d5b03b1c07"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-ledger-lifecycle.spec.ts",
+      "sha256": "57297ecb53ef94a927cbe340fa6ff3cf6dedae8b76f36639532639f4ea8c4a11"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-ledger-schema.ts",
+      "sha256": "b7ebe23ce10bb39c97ae4fa612fa068340ae5c56a9dbd24b20053d6d1ed72ac9"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-ledger-write.ts",
+      "sha256": "e604bcb4bc5b0116312fef7446f414462dcb2eefc6009f6dfb30e0ccb90b167d"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-ledger.spec.ts",
+      "sha256": "a92cb02a4c9e8c17ee89b7ced4d1e1b65563be9103b7f968b7542b0bf88080aa"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-ledger.ts",
+      "sha256": "a571fa6f15cd02e18fc400ecb0f79da29b262bc038a67daf820d49ce472b088e"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-maintain-privilege.spec.ts",
+      "sha256": "5967931038c7d816e618689fc945a2952b9e33a98929702066c4741099f8338c"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-maintain-privilege.ts",
+      "sha256": "26bad5dc5f8dc1bc38eb552715f6610ed71a651a19b0d9bc3d4576877bf477d1"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-manifest-schema.spec.ts",
+      "sha256": "df1dcf79cc3e561ab2d2d41d21a609baa4c22bfe28af71fdc2c134c547ccdefa"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-manifest-schema.ts",
+      "sha256": "489173de232ecde628a8d4ac48510c3928eb4276c285f5897cb37fbd8536181b"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-options.spec.ts",
+      "sha256": "05ebc55a90bd6710fb70f8ee3da0949cc4815e697816c548bcc663a659eccdbf"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-options.ts",
+      "sha256": "559b7535849bdb67d2dde83ae660c396c23a8a802613068c4286b9a6776486d7"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-owner-only-relation.ts",
+      "sha256": "55ed6cce87e1f377d0e902cbed5bbecd1e94d17451aa5918b110448744792bd9"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-partition-shape.ts",
+      "sha256": "25c64c89cf13520a549a8ca4e4337297c950e6499c05a80da6d12d6f91cf93e6"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-retained-ledger.ts",
+      "sha256": "6ba399e16e9ceefbf17b14e7e4ee41078651046161658f0abf60a24b2f43beb9"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-rollback-catalog.ts",
+      "sha256": "78f8e199bdf53701f1c054a10bf323a1d9d30d3e16f0f0a79896bf073259790c"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-rollback-executor.spec.ts",
+      "sha256": "d29b18a1c9b6277ce17981dce590cb97773caabb5692f4ecaf2186d708562328"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-rollback-executor.ts",
+      "sha256": "95078ee0ccebcb5b40a0e4c63b7742ad7b7103ca67e95e38a5c7f2774476902e"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-rollback-manifest-schema.spec.ts",
+      "sha256": "0360c25fc7551fd5ea6f44f48c86b690eaa7235579b7479e2c27b8f84dbbc955"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-rollback-manifest-schema.ts",
+      "sha256": "557264b21ab80ca9c8c928afa3547320ce4bf2d8a25360050b5d55d433581cf1"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/bundle-sequence-verifier.ts",
+      "sha256": "4defba8d4ecefc8e45eff3641be0c51e05c7b68f08713dffeabb5899abe1bac3"
+    },
+    {
+      "path": "backend/src/scripts/hrms-schema-bundle/hrms-schema-bundle.ts",
+      "sha256": "8eb8f3a50ff602797366b9ecf2003852e25a736bb57690245ed127799771a45a"
+    },
+    {
+      "path": "backend/src/scripts/load-driver/load-profile.mjs",
+      "sha256": "d6e4ff0d4f652ad2bca01a31435e086e65ae699e01bb0d50e50b54707ba2ebdb"
+    },
+    {
+      "path": "backend/src/scripts/load-driver/percentiles.mjs",
+      "sha256": "99456e034030e2687714fff367d6ab1b8ec2060e26c2a5a05c44c681bfb1be72"
+    },
+    {
+      "path": "backend/src/scripts/load-driver/workloads.mjs",
+      "sha256": "c184efac8ff22af042a7b23d918063a0fe734c39cdb76d6c61332f5a1b1a0a85"
+    },
+    {
+      "path": "backend/src/scripts/migration-proof-focused.mjs",
+      "sha256": "655d80d5d1ac1452fed2d02742fe80688057209e584303cf6b65c2e923cc21c9"
+    },
+    {
+      "path": "backend/src/scripts/migration-proof.mjs",
+      "sha256": "bb7bb784eee62b1fc73a2e3788d1a59bbe71f91a66fb0d8e93eeda0272671eba"
+    },
+    {
+      "path": "backend/src/scripts/openapi-env.ts",
+      "sha256": "e40802d88249c6a28d2f7f0cb1b9a30dfbbb8c52377eafc7a1be3a3401541e73"
+    },
+    {
+      "path": "backend/src/scripts/permission-key-extractors.mjs",
+      "sha256": "14f1e751d09e5c4129432374b504451a7034f674f78199004fdc17e67e1dc202"
+    },
+    {
+      "path": "backend/src/scripts/place-cell-org.mjs",
+      "sha256": "e023f22cd9480ca89a567af7027e8786b28ca8dc955ff0b05b8aef13724412c7"
+    },
+    {
+      "path": "backend/src/scripts/production-ops-evidence.mjs",
+      "sha256": "78a949c5610e01f4691b53c5083c12ad5fd04dba637b69785928d107972c67f8"
+    },
+    {
+      "path": "backend/src/scripts/purge-user.mjs",
+      "sha256": "a0a5ac7d9244475bfc1f9f370ddbcb6a757dce27eb1f5e1cd7a55e9f906fa127"
+    },
+    {
+      "path": "backend/src/scripts/read-cell-logs.mjs",
+      "sha256": "330135ae359499eb1bcb7d2e1bb3b3e3c7622389f17e22d13e1b696dc1875cbf"
+    },
+    {
+      "path": "backend/src/scripts/read-cost-budgets.mjs",
+      "sha256": "01c7a4193173e8bf15df965710d08834cc538db9c96abaf260a37dd7ea08aaca"
+    },
+    {
+      "path": "backend/src/scripts/record-artifact-hashes.mjs",
+      "sha256": "f7164f02393bda0a2bc9d545e2b62298140a8f5dbaa0e25bf1d0252b7e0aaf44"
+    },
+    {
+      "path": "backend/src/scripts/relocate-org-data.ts",
+      "sha256": "f54e51471b03cb84fc87fe2ea6974ec603bc98a8f9905a88defceb5b03859fb8"
+    },
+    {
+      "path": "backend/src/scripts/relocate-org.mjs",
+      "sha256": "d967bf9ee42012489cd93684dd17807c7985d55c81f0985955488be0d62bce8c"
+    },
+    {
+      "path": "backend/src/scripts/relocation/catalog-tables.ts",
+      "sha256": "7f8807dfbc67938e4d38dc6bff7acf06a0276922923c7d1df6a7037b10c7b6a4"
+    },
+    {
+      "path": "backend/src/scripts/relocation/copy-org.ts",
+      "sha256": "1d9867d8f289bd2edcc359d1111db9cdaf5c2c624213ad5fcad62c1450352883"
+    },
+    {
+      "path": "backend/src/scripts/replay-chain-cold.mjs",
+      "sha256": "977b045acadad82dfb3983a39c34abfcfaf53a002232af900604136e5ea60b86"
+    },
+    {
+      "path": "backend/src/scripts/report-build-actor-backfill.mjs",
+      "sha256": "f245c02f9db1ab6324886b46bfe20b5f71c709b34b143cf4a6ec4855f9e6778e"
+    },
+    {
+      "path": "backend/src/scripts/report-hr-actor-backfill.mjs",
+      "sha256": "7b9c725adfbb4baff2dedefd3079715fed6005edce75a46302cb0f26c4c9b21b"
+    },
+    {
+      "path": "backend/src/scripts/report-kb-article-migration.ts",
+      "sha256": "a2727fde78247b47530a246abcc9d04922534f7f0c3961a6cd4637f8708b0495"
+    },
+    {
+      "path": "backend/src/scripts/report-kb-calendar-runtime-evidence.ts",
+      "sha256": "b8ee161509684c5bde02a52d732d31ad33a13043bba23777ce35a4e7942372d6"
+    },
+    {
+      "path": "backend/src/scripts/report-outbox-events.ts",
+      "sha256": "eb7bdbf6503979a4c694e1c13de0aa0b8ae978fe48ab1262b605b04e9572aeb9"
+    },
+    {
+      "path": "backend/src/scripts/report-pay-time-actor-backfill.mjs",
+      "sha256": "e6a2a3fed689e8f11ce652fadb055367aa9a0ca64ea0ef51c7c4f88aedd238c0"
+    },
+    {
+      "path": "backend/src/scripts/report-table-growth.mjs",
+      "sha256": "a11ed2e4d475171a3f217a25be2c5c047bf8afe19607f1ab746bd215130e6b09"
+    },
+    {
+      "path": "backend/src/scripts/rollout/cell-slo-probe.ts",
+      "sha256": "a069e97ab04604dd7c4ede3718c842bb375a8547f1d8e628deb209b20c489a59"
+    },
+    {
+      "path": "backend/src/scripts/route-attribution.mjs",
+      "sha256": "7b583ff3996ef88602b3c5281d5e4e006977fbfe2f69c2084359d04eadcbf74b"
+    },
+    {
+      "path": "backend/src/scripts/route-classification-report.mjs",
+      "sha256": "01514f313ec3e909910a2460f55e4b2a8284bfb7fa5aae218619c8457de3545e"
+    },
+    {
+      "path": "backend/src/scripts/run-cell-capacity.mjs",
+      "sha256": "cae4e31d6cd98a951772c1bbd08e444fb9bd0de950c197e0074602dc8d69b9c4"
+    },
+    {
+      "path": "backend/src/scripts/run-cell-rollout.ts",
+      "sha256": "91f527e8947b7751c9ea7179e355a570155a07a15af529659eeebfc21af771cf"
+    },
+    {
+      "path": "backend/src/scripts/run-cell-unit-cost.mjs",
+      "sha256": "b005d94068591a73dca0aed7caac3173b37b6d4da7b8686379898d1477e8fed9"
+    },
+    {
+      "path": "backend/src/scripts/run-load-driver.mjs",
+      "sha256": "ba1c36564c9a41c57b9aca99d13b2f5183871e386b38160d0411a3e237320526"
+    },
+    {
+      "path": "backend/src/scripts/run-pending-migrations.mjs",
+      "sha256": "65b947edbfebace6580d4737e88adc709f8e1ce299c96f403a21cfd248c2aab9"
+    },
+    {
+      "path": "backend/src/scripts/run-read-cost-budgets.mjs",
+      "sha256": "e73f13caf60307485ea58b56779056cb13c4daa8c78b0838237f54d0595ab45e"
+    },
+    {
+      "path": "backend/src/scripts/run-recovery-drill.mjs",
+      "sha256": "f8df29e72c8fcf340028d8ac1f2f9fe864639af11ee691e10b52c93ae8230b12"
+    },
+    {
+      "path": "backend/src/scripts/run-workload-envelope.mjs",
+      "sha256": "f7e162f51143f969f4ec06096a71a13700ee693305f1e900f8805c9b280fd836"
+    },
+    {
+      "path": "backend/src/scripts/scan-legacy-org-actors.mjs",
+      "sha256": "92f57a41ef6683606e7c1e5e6479b507c69ba687955a01bed0b9ac4fd02e29fd"
+    },
+    {
+      "path": "backend/src/scripts/seed-build-load.mjs",
+      "sha256": "e8ba1160f3e8e7d97a09c3792fbfc12272044de74e61e5db8a71e1445d6ad9df"
+    },
+    {
+      "path": "backend/src/scripts/seed-demo.ts",
+      "sha256": "9b02900d6082f0f04db14595601f9d89be5808222f93319a0a562d688656c967"
+    },
+    {
+      "path": "backend/src/scripts/seed-enterprise-workspace.ts",
+      "sha256": "318513eb5d790ab1849a7be463fc2b794b137e5ec493491e2b7c6de58b479b3a"
+    },
+    {
+      "path": "backend/src/scripts/seed-envelope.mjs",
+      "sha256": "55b6da1a8c750e288edf3ddf06e25c291486d18d87ad29985cf1b6cd2cf8282c"
+    },
+    {
+      "path": "backend/src/scripts/seed-hnsw-chunks.mjs",
+      "sha256": "4ff2c89b585ee7245268c08e734c4eba4f487911f5c230f202eb6c4ac3c20705"
+    },
+    {
+      "path": "backend/src/scripts/seed-hnsw-clustered.mjs",
+      "sha256": "32402056fc6542c6926150a49b80666b1fb41594a1af0a5d30e545034713244a"
+    },
+    {
+      "path": "backend/src/scripts/seed-hr-list-read-scale.mjs",
+      "sha256": "47f808d3afbcc32dd38a79754f38a838841d5cd5732a3adf20ec75f54f8aa3f8"
+    },
+    {
+      "path": "backend/src/scripts/seed-payroll-templates.ts",
+      "sha256": "6806f911358933fc9bb7be28f02bb1e91d735006428fcca84cd8e814b984cf9d"
+    },
+    {
+      "path": "backend/src/scripts/seed-perf1-budgets.mjs",
+      "sha256": "22b7899207a4597f9ca02c74e4fb75b850267898146ac9d858e3f9e96ba3d993"
+    },
+    {
+      "path": "backend/src/scripts/seed-permissions.ts",
+      "sha256": "a04cdd172f6e951bcf814407195c96ad4b8ffce08f55932c427261832b3dfd1d"
+    },
+    {
+      "path": "backend/src/scripts/setup-r2-buckets.ts",
+      "sha256": "a5a617b81c8b09ddce76abfd16c5acde661c143520674a5fc5bd684991d5688a"
+    },
+    {
+      "path": "backend/src/scripts/validate-env.ts",
+      "sha256": "6198092fdf1c8ddf49c9050ff10a260e3b70378c1afc089b96dd7763b913a6a0"
+    },
+    {
+      "path": "backend/src/scripts/verify-actor-membership-writes.mjs",
+      "sha256": "5ac643ac7168e4b8eb4e65d28457183860e8633a0747ed15aae2cbd1a494c829"
+    },
+    {
+      "path": "backend/src/scripts/verify-audit-log-privileges.mjs",
+      "sha256": "de7c0472d2f3df79786c317f4072c71b13f56bdbf49505da332d14bf2fafed9e"
+    },
+    {
+      "path": "backend/src/scripts/verify-cell-admission.ts",
+      "sha256": "a55dd456695cc75ce6cc39b14104030ba74dc6d74313215faea0096561ba299c"
+    },
+    {
+      "path": "backend/src/scripts/verify-cell-degraded-control-plane.ts",
+      "sha256": "dd7b6ca5dbfe7a3ab5f3cb9363ffc63a7d17b94da57c79fc7a11cdfc15e2238d"
+    },
+    {
+      "path": "backend/src/scripts/verify-cell-isolation.mjs",
+      "sha256": "d893b07a9c4906a91c2c83cb1b2fd97fba775b6979fa8cb58e894dfc3b4d5a74"
+    },
+    {
+      "path": "backend/src/scripts/verify-chat-mention-delivery.mjs",
+      "sha256": "d33f6cf976d0ce60a749434d674fe914e580a952ed57a419ccd8b8ef92fbcb55"
+    },
+    {
+      "path": "backend/src/scripts/verify-cross-cell-relay.ts",
+      "sha256": "6c6986016ece5de8527efd890a4dede8ab5867ff3a8c63428352c66436c234ec"
+    },
+    {
+      "path": "backend/src/scripts/verify-hr-list-endpoints.mjs",
+      "sha256": "f8a2179326a507b99dd5b7b2b24d601a4c785206923a5e77dc086f2fbc183ed5"
+    },
+    {
+      "path": "backend/src/scripts/verify-membership-revocation.ts",
+      "sha256": "b087dc50be8718e883e40b695c221357468cea7168c87a742bde948a2c945dc8"
+    },
+    {
+      "path": "backend/src/scripts/verify-migration-chain.mjs",
+      "sha256": "ecde25263a2c94f8573f3a6dc11418a2466bd3d6c9082358215cf4ad402d9bf4"
+    },
+    {
+      "path": "backend/src/scripts/verify-multi-org-employment.ts",
+      "sha256": "f23ae5c894a4e9f18cff82687db851df5a6acf6f888f0a3147cdf46b0cfc598c"
+    },
+    {
+      "path": "backend/src/scripts/verify-rbac-referential-integrity.mjs",
+      "sha256": "03799004fb24e5095e85414140e0b0bf1ccf7b99d44da1d47dad2dd14bb3e606"
+    },
+    {
+      "path": "backend/src/scripts/verify-replica-routing.mjs",
+      "sha256": "b4fa5836d843a6f94c85e69acd3445564e4b0c0131ccceb97f9ed1b1203c9dcc"
+    }
+  ]
+}

@@ -10,9 +10,7 @@ import {
   unique,
   uniqueIndex,
   uuid,
-  check,
 } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
 
@@ -158,10 +156,6 @@ export const operatorAccessGrants = pgTable(
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revocationReason: text("revocation_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    reviewDueAt: timestamp("review_due_at", { withTimezone: true }).notNull(),
-    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
-    reviewedBy: text("reviewed_by"),
-    reviewNote: text("review_note"),
   },
   (table) => [
     index("idx_oag_org_operator").on(
@@ -176,69 +170,6 @@ export const operatorAccessGrants = pgTable(
       table.scope,
       table.expiresAt,
     ),
-  ],
-);
-
-export const operatorAccessExceptions = pgTable(
-  "operator_access_exceptions",
-  {
-    exceptionId: uuid("exception_id").defaultRandom().primaryKey(),
-    grantId: uuid("grant_id").notNull().references(() => operatorAccessGrants.grantId),
-    orgId: text("org_id").notNull(),
-    operatorUserId: text("operator_user_id").notNull(),
-    incidentRef: text("incident_ref").notNull(),
-    reason: text("reason").notNull(),
-    requestedBy: text("requested_by").notNull(),
-    status: text("status").notNull().default("pending"),
-    approverId: text("approver_id"),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    postHocReviewDueAt: timestamp("post_hoc_review_due_at", { withTimezone: true }).notNull(),
-    postHocReviewedAt: timestamp("post_hoc_reviewed_at", { withTimezone: true }),
-    postHocReviewedBy: text("post_hoc_reviewed_by"),
-    postHocReviewNote: text("post_hoc_review_note"),
-    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
-    resolvedBy: text("resolved_by"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [
-    check("chk_operator_exception_status", sql`${table.status} IN ('pending', 'active', 'resolved', 'rejected')`),
-    index("idx_operator_exception_org_status").on(table.orgId, table.status),
-    index("idx_operator_exception_review_due").on(table.postHocReviewDueAt),
-  ],
-);
-
-export const operatorAccessGovernanceAudit = pgTable(
-  "operator_access_governance_audit",
-  {
-    eventId: uuid("event_id").defaultRandom().primaryKey(),
-    orgId: text("org_id").notNull(),
-    grantId: uuid("grant_id").references(() => operatorAccessGrants.grantId),
-    exceptionId: uuid("exception_id").references(() => operatorAccessExceptions.exceptionId),
-    actorUserId: text("actor_user_id").notNull(),
-    action: text("action").notNull(),
-    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
-    occurredAt: timestamp("occurred_at", { withTimezone: true }).defaultNow().notNull(),
-  },
-  (table) => [index("idx_operator_governance_audit_org_time").on(table.orgId, table.occurredAt)],
-);
-
-export const operatorAccessNotificationOutbox = pgTable(
-  "operator_access_notification_outbox",
-  {
-    notificationId: uuid("notification_id").defaultRandom().primaryKey(),
-    orgId: text("org_id").notNull(),
-    grantId: uuid("grant_id").references(() => operatorAccessGrants.grantId),
-    exceptionId: uuid("exception_id").references(() => operatorAccessExceptions.exceptionId),
-    recipientUserId: text("recipient_user_id").notNull(),
-    eventType: text("event_type").notNull(),
-    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
-    state: text("state").notNull().default("pending"),
-    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-    deliveredAt: timestamp("delivered_at", { withTimezone: true }),
-  },
-  (table) => [
-    check("chk_operator_notification_state", sql`${table.state} IN ('pending', 'delivered', 'dead')`),
-    index("idx_operator_notification_outbox_pending").on(table.orgId, table.state, table.createdAt),
   ],
 );
 

@@ -28,24 +28,25 @@ const user: CurrentUserContext = {
   tokenScopes: null,
   principal: { kind: "human-session", membershipId: 1, isOrgOwner: false },
 };
+const membershipId = "1";
 
 describe("ACL predicates survive on the degraded search path", () => {
   describe("applyScope produces a real SQL condition — not a post-fetch filter", () => {
     it("scope=none produces false, gating all access at the query level", () => {
-      const cond = applyScope("none", orgId, userId, { ownerColumn: tickets.assigneeId });
+      const cond = applyScope("none", orgId, membershipId, { ownerColumn: tickets.assigneeMembershipId });
       const { sql: text } = render(cond);
       expect(text).toBe("false");
     });
 
     it("scope=own produces an equality predicate on the owner column, not a JS filter", () => {
-      const cond = applyScope("own", orgId, userId, { ownerColumn: tickets.assigneeId });
+      const cond = applyScope("own", orgId, membershipId, { ownerColumn: tickets.assigneeMembershipId });
       const { sql: text, params } = render(cond);
       expect(text).toContain("=");
-      expect(params).toContain(userId);
+      expect(params).toContain(membershipId);
     });
 
     it("scope=all produces true — allowed, but still evaluated in SQL not post-fetch", () => {
-      const cond = applyScope("all", orgId, userId, { ownerColumn: tickets.assigneeId });
+      const cond = applyScope("all", orgId, membershipId, { ownerColumn: tickets.assigneeMembershipId });
       const { sql: text } = render(cond);
       expect(text).toBe("true");
     });
@@ -59,7 +60,7 @@ describe("ACL predicates survive on the degraded search path", () => {
         eq(tickets.orgId, orgId),
         eq(projects.orgId, orgId),
         isNull(tickets.deletedAt),
-        applyScope("all", orgId, userId, { ownerColumn: tickets.assigneeId }),
+        applyScope("all", orgId, membershipId, { ownerColumn: tickets.assigneeMembershipId }),
         textCondition,
       );
 
@@ -75,14 +76,14 @@ describe("ACL predicates survive on the degraded search path", () => {
       const textCondition = ilike(tickets.title, pattern);
       const fullCondition = and(
         eq(tickets.orgId, orgId),
-        applyScope("own", orgId, userId, { ownerColumn: tickets.assigneeId }),
+        applyScope("own", orgId, membershipId, { ownerColumn: tickets.assigneeMembershipId }),
         textCondition,
       );
 
       const { params } = render(fullCondition!);
 
       expect(params).toContain(orgId);
-      expect(params).toContain(userId);
+      expect(params).toContain(membershipId);
     });
 
     it("scope=none combined with ILIKE still produces false — no results exposed", () => {
@@ -90,7 +91,7 @@ describe("ACL predicates survive on the degraded search path", () => {
       const textCondition = ilike(tickets.title, pattern);
       const fullCondition = and(
         eq(tickets.orgId, orgId),
-        applyScope("none", orgId, userId, { ownerColumn: tickets.assigneeId }),
+        applyScope("none", orgId, membershipId, { ownerColumn: tickets.assigneeMembershipId }),
         textCondition,
       );
 

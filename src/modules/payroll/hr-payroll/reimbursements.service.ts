@@ -28,7 +28,7 @@ export class ReimbursementsService {
   listReimbursements(orgId: string, userId: string, membershipId: number | null, scope: DataScope, page = 1, limit = 100) {
     if (scope === "own" && membershipId === null) throw new ForbiddenException("Organization membership required");
     const ownerPredicate = scope === "own"
-      ? eq(reimbursements.userMembershipId, membershipId)
+      ? eq(reimbursements.userMembershipId, membershipId ?? -1)
       : applyScope(scope, orgId, userId, { ownerColumn: reimbursements.userId });
     const conditions = [eq(reimbursements.orgId, orgId), ownerPredicate];
 

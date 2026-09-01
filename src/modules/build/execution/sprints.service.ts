@@ -88,9 +88,7 @@ export class SprintsService {
           where: isNull(tickets.deletedAt),
           limit: 200,
           with: {
-            assignee: {
-              columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true },
-            },
+            assignee: { with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true } } } },
           },
         },
       },

@@ -1,9 +1,13 @@
+/* global process */
+
 /**
  * check-retention-coverage.mjs — Verify that every high-growth table has a retention decision.
  *
  * Reads the retention policy matrix defined below against the live database.
  * Reports COVERED, UNCOVERED, and KEEP-FOREVER tables. Exits 1 when any
- * high-growth table (>= COVERAGE_THRESHOLD_MB) is uncovered.
+ * high-growth table (>= COVERAGE_THRESHOLD_MB) is uncovered. The threshold
+ * must be a finite positive number; invalid input fails closed rather than
+ * producing an empty, falsely-clean result.
  *
  * Usage:
  *   node src/scripts/check-retention-coverage.mjs
@@ -22,9 +26,22 @@ import * as dotenv from "dotenv";
 dotenv.config({ path: resolve(process.cwd(), ".env") });
 
 const args = process.argv.slice(2);
-const thresholdMb = parseFloat(
-  args.find((a) => a.startsWith("--threshold-mb="))?.slice(15) ?? "1",
-);
+const thresholdArg = args.find((a) => a.startsWith("--threshold-mb="))?.slice(15) ?? "1";
+export function parseThreshold(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`--threshold-mb must be a finite positive number; received ${value}`);
+  }
+  return parsed;
+}
+
+let thresholdMb;
+try {
+  thresholdMb = parseThreshold(thresholdArg);
+} catch (error) {
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(2);
+}
 
 const RETENTION_MATRIX = {
   kb_article_chunks: {
@@ -97,6 +114,11 @@ const RETENTION_MATRIX = {
     worker: null,
     notes: "Employment records carry payroll and statutory obligations. Not deletable.",
   },
+  hr_reporting_lines: {
+    decision: "KEEP-FOREVER",
+    worker: null,
+    notes: "Effective-dated reporting history supports employment/payroll auditability and is bounded by employment history; no automated deletion is permitted without an approved statutory-retention rule.",
+  },
   attendance: {
     decision: "RETAIN-BOUNDED",
     worker: "CronHrRetentionService (via hr_retention_policies, recordType=attendance)",
@@ -114,7 +136,7 @@ const RETENTION_MATRIX = {
   },
 };
 
-function classify(tableName, totalMb) {
+function classify(tableName) {
   const entry = RETENTION_MATRIX[tableName];
   if (!entry) return { status: "UNCOVERED", decision: null, worker: null };
   return {
@@ -123,6 +145,10 @@ function classify(tableName, totalMb) {
     worker: entry.worker,
     notes: entry.notes,
   };
+}
+
+export function policyTableName(tableName, parentTableName = null) {
+  return parentTableName || tableName;
 }
 
 if (args.includes("--self-test")) {
@@ -135,6 +161,31 @@ if (args.includes("--self-test")) {
     auditLogsHasNoWorker: RETENTION_MATRIX["audit_logs"].worker === null,
     classifyUnknownIsUncovered: classify("unknown_table_xyz", 100).status === "UNCOVERED",
     classifyAuditLogsIsKeepForever: classify("audit_logs", 0).status === "KEEP-FOREVER",
+    partitionUsesParentDecision:
+      classify(policyTableName("notifications_y2026_m08", "notifications")).status === "COVERED" &&
+      classify(policyTableName("chat_messages_y2026_m08", "chat_messages")).status === "COVERED",
+    reportingLinesHaveDecision: RETENTION_MATRIX["hr_reporting_lines"].decision === "KEEP-FOREVER",
+    invalidThresholdsFailClosed: ["", "0", "-1", "NaN", "Infinity"].every((value) => {
+      try {
+        parseThreshold(value);
+        return false;
+      } catch {
+        return true;
+      }
+    }),
+    decimalThresholdIsAccepted: parseThreshold("1.5") === 1.5,
+    everyMatrixEntryHasDecision: Object.values(RETENTION_MATRIX).every((entry) =>
+      ["RETAIN-BOUNDED", "PARTITION+ARCHIVE", "KEEP-FOREVER"].includes(entry.decision),
+    ),
+    everyMatrixEntryHasNotes: Object.values(RETENTION_MATRIX).every(
+      (entry) => typeof entry.notes === "string" && entry.notes.trim().length > 0,
+    ),
+    keepForeverEntriesHaveNoWorker: Object.values(RETENTION_MATRIX)
+      .filter((entry) => entry.decision === "KEEP-FOREVER")
+      .every((entry) => entry.worker === null),
+    boundedEntriesHaveWorker: Object.values(RETENTION_MATRIX)
+      .filter((entry) => entry.decision !== "KEEP-FOREVER")
+      .every((entry) => typeof entry.worker === "string" && entry.worker.length > 0),
   };
   const pass = Object.values(checks).every(Boolean);
   process.stdout.write(JSON.stringify({ selfTest: true, pass, checks }) + "\n");
@@ -153,22 +204,26 @@ try {
   const rows = await sql`
     SELECT
       c.relname                                AS table_name,
+      COALESCE(parent.relname, c.relname)      AS policy_table,
       pg_total_relation_size(c.oid) / 1048576 AS total_mb,
       COALESCE(s.n_live_tup, 0)               AS n_live_tup
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
+    LEFT JOIN pg_inherits i ON i.inhrelid = c.oid
+    LEFT JOIN pg_class parent ON parent.oid = i.inhparent
     LEFT JOIN pg_stat_user_tables s
       ON s.relname = c.relname AND s.schemaname = n.nspname
     WHERE n.nspname = 'public'
-      AND c.relkind = 'r'
+      AND c.relkind IN ('r', 'p')
     ORDER BY pg_total_relation_size(c.oid) DESC
   `;
 
   const results = rows.map((row) => {
     const totalMb = Number(row.total_mb ?? 0);
-    const classification = classify(String(row.table_name), totalMb);
+    const classification = classify(policyTableName(String(row.table_name), row.policy_table), totalMb);
     return {
       table_name: row.table_name,
+      policy_table: row.policy_table,
       total_mb: totalMb,
       n_live_tup: Number(row.n_live_tup ?? 0),
       ...classification,

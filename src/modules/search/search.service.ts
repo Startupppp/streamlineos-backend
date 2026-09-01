@@ -19,6 +19,7 @@ import { authorize, type AccessResolver } from "../access/authorize";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import { logger } from "../../common/logger/logger.service";
+import { actingMembershipId } from "../../common/auth/principal";
 
 const UNDEFINED_FUNCTION = "42883";
 
@@ -401,9 +402,14 @@ export class SearchService {
             eq(tickets.orgId, orgId),
             eq(projects.orgId, orgId),
             isNull(tickets.deletedAt),
-            applyScope(access.build, orgId, userId, {
-              ownerColumn: tickets.assigneeId,
-            }),
+            access.build === "all"
+              ? sql`true`
+              : (() => {
+                  const membershipId = actingMembershipId(user.principal);
+                  return membershipId === null
+                    ? sql`false`
+                    : eq(tickets.assigneeMembershipId, membershipId);
+                })(),
             ticketWhere,
           ),
         )

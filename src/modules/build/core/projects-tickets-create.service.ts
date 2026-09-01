@@ -110,7 +110,6 @@ export class ProjectsTicketsCreateService {
           description: body.description,
           type: normalizeTicketType(body.type),
           priority: body.priority ?? "MEDIUM",
-          assigneeId: body.assigneeId,
           assigneeMembershipId,
           reporterId: reporterUserId,
           reporterMembershipId,
@@ -134,7 +133,7 @@ export class ProjectsTicketsCreateService {
             orgId: u.orgId,
             ticketId: created.id,
             userId,
-            membershipId: actorMap.get(userId)?.membershipId ?? null,
+            membershipId: actorMap.get(userId)!.membershipId,
             assignedBy: u.userId,
           })),
         );
@@ -146,7 +145,7 @@ export class ProjectsTicketsCreateService {
         Array.from(watcherIds).map((userId) => ({
           orgId: u.orgId,
           ticketId: created.id,
-          userId,
+          membershipId: actorMap.get(userId)!.membershipId,
         })),
       );
 
@@ -164,7 +163,7 @@ export class ProjectsTicketsCreateService {
         status: created.status,
         type: created.type,
         priority: created.priority,
-        assigneeId: created.assigneeId ?? null,
+        assigneeMembershipId: created.assigneeMembershipId ?? null,
         actor: u.userId,
         timestamp: new Date().toISOString(),
       });
@@ -223,7 +222,7 @@ export class ProjectsTicketsCreateService {
       title: ticket.title,
       status: ticket.status,
       priority: ticket.priority,
-      assigneeId: ticket.assigneeId ?? null,
+      assigneeId: body.assigneeId ?? null,
       type: ticket.type,
     });
 
@@ -262,7 +261,7 @@ export class ProjectsTicketsCreateService {
 
       await tx
         .insert(ticketWatchers)
-        .values({ orgId, ticketId: created.id, userId: actingUserId });
+        .values({ orgId, ticketId: created.id, membershipId: feedbackActorMembershipId! });
       await tx.insert(ticketActivityLog).values({
         orgId,
         ticketId: created.id,

@@ -239,7 +239,7 @@ describe("pay-projection-exposure", () => {
       expect(Object.keys(db.select.mock.calls[0][0] as object).sort()).toEqual(
         TEMPLATE_KEYS,
       );
-      const first = result[0] ?? {};
+      const first = result.data[0] ?? {};
       expect(Object.keys(first).sort()).toEqual(TEMPLATE_KEYS);
       expect(first).not.toHaveProperty("updatedAt");
     });

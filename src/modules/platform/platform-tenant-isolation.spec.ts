@@ -23,7 +23,7 @@ describe("PlatformAdminService — cross-tenant isolation", () => {
   it("listCustomers does not include a different org's data (cross-tenant isolation)", async () => {
     const orgRow = { id: ORG_A, slug: "org-a", name: "Org A", createdAt: new Date() };
     const db = makeDb([orgRow]);
-    const mockEmail = {} as any;
+    const mockEmail = {} as ConstructorParameters<typeof PlatformAdminService>[1];
     const svc = new PlatformAdminService(db, mockEmail);
     const result = await svc.listCustomers();
     const seenIds = result.items.map((i: { id: string }) => i.id);
@@ -33,7 +33,7 @@ describe("PlatformAdminService — cross-tenant isolation", () => {
   it("listCustomers returns items for the org that exists (control — same-platform)", async () => {
     const orgRow = { id: ORG_A, slug: "org-a", name: "Org A", createdAt: new Date() };
     const db = makeDb([orgRow]);
-    const mockEmail = {} as any;
+    const mockEmail = {} as ConstructorParameters<typeof PlatformAdminService>[1];
     const svc = new PlatformAdminService(db, mockEmail);
     const result = await svc.listCustomers();
     expect(result.items.length).toBeGreaterThanOrEqual(0);

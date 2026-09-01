@@ -52,5 +52,5 @@ export async function listBoundedEmployeeSkills(
       asc(sql`lower(${rankedSkills.skillName})`),
       asc(rankedSkills.skillName),
     )
-    .limit(Math.max(1, employeeUserIds.size * MAX_SKILLS_PER_EMPLOYEE));
+    .limit(Math.max(1, employeeUserIds.length * MAX_SKILLS_PER_EMPLOYEE));
 }

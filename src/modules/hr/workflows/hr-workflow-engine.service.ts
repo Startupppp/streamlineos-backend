@@ -231,7 +231,7 @@ export class HrWorkflowEngineService {
       await this.db.transaction(async (tx) => {
         const escalationUsers = actionValues.map((value) => value.actedByUserId).filter((value): value is string => Boolean(value));
         const escalationMembers = escalationUsers.length > 0
-          ? await tx.select({ userId: organizationMembers.userId, membershipId: organizationMembers.id, orgId: organizationMembers.orgId }).from(organizationMembers).where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, escalationUsers))).limit(escalationUsers.length)
+          ? await tx.select({ userId: organizationMembers.userId, membershipId: organizationMembers.id, orgId: organizationMembers.orgId }).from(organizationMembers).where(and(orgId ? eq(organizationMembers.orgId, orgId) : undefined, inArray(organizationMembers.userId, escalationUsers))).limit(escalationUsers.length)
           : [];
         const escalationMembershipByUser = new Map(escalationMembers.map((member) => [`${member.orgId}:${member.userId}`, member.membershipId]));
         for (const value of actionValues) {

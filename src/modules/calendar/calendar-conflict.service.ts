@@ -59,7 +59,7 @@ export class CalendarConflictService {
     let after: { startDate: Date; id: number } | null = null;
     for (;;) {
       // .limit(CONFLICT_SCAN_BATCH_SIZE) below is intentional: the keyset loop consumes every batch.
-      const batch = await tx
+      const batch: typeof rows = await tx
         .select({
           id: calendarEvents.id,
           title: calendarEvents.title,
@@ -172,7 +172,7 @@ export class CalendarConflictService {
             startDate: row.startDate,
             endDate: row.endDate,
             allDay: row.allDay ?? false,
-            timezone: row.timezone,
+             timezone: row.timezone ?? "UTC",
             orgId: row.orgId,
             rrule: row.rrule,
             recurrenceEnd: row.recurrenceEnd,

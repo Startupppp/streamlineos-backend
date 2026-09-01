@@ -43,7 +43,7 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
       end: event.endDate,
       allDay: event.allDay ?? false,
       color: event.color,
-      category: event.category,
+      category: event.category ?? "general",
       meta: {
         source: "event",
         location: event.location,

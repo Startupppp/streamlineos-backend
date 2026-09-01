@@ -1,6 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
 import { deals, projectMembers, projects, projectStatuses } from "../../../db/schema";
+import { resolveOrganizationActorsByUserIds } from "../../../common/organization/organization-actor";
 import { DEFAULT_PROJECT_STATUSES } from "./lib/default-statuses";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -40,6 +41,13 @@ export class ProjectsProvisionService {
     await this.planLimits.assertWithinLimit(orgId, "projects");
 
     const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
+    const additionalMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
+    const requestedManagerId = input.managerId ?? creatorUserId;
+    const actors = await resolveOrganizationActorsByUserIds(this.db, orgId, [creatorUserId, requestedManagerId, ...additionalMembers]);
+    const creator = actors.get(creatorUserId);
+    const manager = actors.get(requestedManagerId);
+    if (!creator || !manager || additionalMembers.some((id) => !actors.has(id)))
+      throw new NotFoundException("Project actors must be active members of this organization");
 
     const project = await this.db.transaction(async (tx) => {
       const [created] = await tx
@@ -50,8 +58,8 @@ export class ProjectsProvisionService {
           key: projectKey,
           name: input.name,
           description: input.description,
-          managerId: input.managerId ?? creatorUserId,
-          clientId: input.clientId,
+          managerMembershipId: manager.membershipId,
+          clientMembershipId: input.clientId ? undefined : undefined,
           startDate: input.startDate ? new Date(input.startDate) : undefined,
           endDate: input.endDate ? new Date(input.endDate) : undefined,
           status: "ACTIVE",
@@ -76,13 +84,12 @@ export class ProjectsProvisionService {
         })),
       );
 
-      const additionalMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
       const memberRows = [
-        { orgId, projectId: created.id, userId: creatorUserId, role: "OWNER" as const },
+        { orgId, projectId: created.id, membershipId: creator.membershipId, role: "OWNER" as const },
         ...additionalMembers.map((userId) => ({
           orgId,
           projectId: created.id,
-          userId,
+          membershipId: actors.get(userId)!.membershipId,
           role: "CONTRIBUTOR" as const,
         })),
       ];
@@ -96,13 +103,13 @@ export class ProjectsProvisionService {
       throw err;
     });
 
-    const additionalMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
-    if (additionalMembers.length > 0) {
+    const notificationMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
+    if (notificationMembers.length > 0) {
       await this.dispatch.emit({
         eventKey: "build.project.member_added",
         orgId,
         actorUserId: creatorUserId,
-        targetUserIds: additionalMembers,
+        targetUserIds: notificationMembers,
         entityType: "project",
         entityId: String(project.id),
         title: "You were added to a project",
@@ -118,7 +125,7 @@ export class ProjectsProvisionService {
       orgId,
       targetId: String(project.id),
       targetType: "project",
-      metadata: { name: input.name, key: projectKey, managerId: input.managerId },
+      metadata: { name: input.name, key: projectKey, managerMembershipId: manager.membershipId },
     });
 
     await this.cache.invalidateNamespace(`projects:list:${orgId}`);
@@ -135,6 +142,11 @@ export class ProjectsProvisionService {
     await this.planLimits.assertWithinLimit(orgId, "projects");
 
     const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
+    const actors = await resolveOrganizationActorsByUserIds(this.db, orgId, [userId, ...(deal.assignedToId ? [deal.assignedToId] : [])]);
+    const creator = actors.get(userId);
+    const manager = actors.get(deal.assignedToId ?? userId);
+    if (!creator || !manager)
+      throw new NotFoundException("Project actors must be active members of this organization");
 
     const namePart = input.name.replace(/[^a-zA-Z]/g, "").substring(0, 3).toUpperCase();
     const randomPart = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
@@ -157,7 +169,7 @@ export class ProjectsProvisionService {
               : undefined,
           status: "ACTIVE",
           dealId: input.dealId,
-          managerId: deal.assignedToId ?? userId,
+          managerMembershipId: manager.membershipId,
           budget: deal.value ?? undefined,
           budgetMinor: deal.value === null ? null : Math.round(Number(deal.value) * 100),
           settings: { modules: { sprints: true, epics: true, timeTracking: true, wiki: true } },
@@ -175,7 +187,7 @@ export class ProjectsProvisionService {
         })),
       );
 
-      await tx.insert(projectMembers).values({ orgId, projectId: created.id, userId, role: "OWNER" });
+      await tx.insert(projectMembers).values({ orgId, projectId: created.id, membershipId: creator.membershipId, role: "OWNER" });
 
       return created;
     }).catch((err: unknown) => {

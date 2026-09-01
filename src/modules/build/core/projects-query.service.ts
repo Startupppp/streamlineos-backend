@@ -166,6 +166,7 @@ export class ProjectsQueryService {
         .select({
           projectId: projectMembers.projectId,
           membershipId: projectMembers.membershipId,
+          userId: organizationMembers.userId,
           firstName: users.firstName,
           lastName: users.lastName,
           image: users.image,
@@ -206,7 +207,7 @@ export class ProjectsQueryService {
       const arr = membersMap.get(m.projectId);
       if (arr && arr.length < 5) {
         arr.push({
-          id: organizationMembers.userId,
+          id: m.userId,
           firstName: m.firstName,
           lastName: m.lastName,
           image: m.image,
@@ -286,12 +287,8 @@ export class ProjectsQueryService {
               user: {
                 columns: {
                   id: true,
-                  name: true,
-                  firstName: true,
-                  lastName: true,
-                  email: true,
-                  image: true,
                 },
+                with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } } },
               },
             },
           },

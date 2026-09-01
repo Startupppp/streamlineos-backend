@@ -162,7 +162,7 @@ export const RBAC_AUTH_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
   },
   {
     namespace: "module-access:candidates:<orgId>",
-    description: "Candidate members list for module access assignment (cachedForOrg; actual key: <orgId>:module-access:candidates). Note: CACHE_KEYS.moduleAccessCandidates factory produces module-access:candidates:<orgId> and is dead code — the service uses cachedForOrg with a raw localKey.",
+    description: "Candidate members list for module access assignment (cachedForOrg; actual key: <orgId>:module-access:candidates). The canonical key is owned by cachedForOrg; no parallel factory exists.",
     invalidation: {
       kind: "write",
       events: [

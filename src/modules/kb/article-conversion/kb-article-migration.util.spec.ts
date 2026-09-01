@@ -14,6 +14,7 @@ const baseArticle = {
   visibility: "public" as const,
   authorId: "user-author",
   ownerId: "user-owner",
+  ownerMembershipId: null,
   views: 0,
   helpfulCount: 0,
   notHelpfulCount: 0,

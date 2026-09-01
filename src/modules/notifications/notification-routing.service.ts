@@ -29,6 +29,9 @@ import {
   quietHoursEndAt,
   type QuietHoursConfig,
 } from "./quiet-hours.util";
+import { computeRouting, type RouteContext } from "./notification-routing-computation";
+
+export { computeRouting, type RouteContext } from "./notification-routing-computation";
 
 interface ResolvedPreferences {
   channelEnabled: Record<NotificationChannel, boolean>;
@@ -42,214 +45,19 @@ interface ResolvedPreferences {
   allowCriticalOverride: boolean;
 }
 
+type NotificationPreferenceRuleProjection = {
+  scopeType: "EVENT" | "MODULE" | "CATEGORY";
+  scopeKey: string;
+  channel: NotificationChannel;
+  mode: "ON" | "OFF" | "DIGEST";
+};
+
 interface OrgPolicyResolved {
   defaultChannels: NotificationChannel[];
   eventOverride?: { channels?: string[]; muted?: boolean };
   categoryOverride?: { channels?: string[]; muted?: boolean };
   moduleOverride?: { channels?: string[]; muted?: boolean };
   canUserOverride: boolean;
-}
-
-export interface RouteContext {
-  definition: NotificationEventDefinition;
-  priority: NotificationPriority;
-  now: Date;
-  prefs: ResolvedPreferences;
-  orgPolicy: OrgPolicyResolved | null;
-  availableChannels: Set<NotificationChannel>;
-  suppressedChannels: Map<NotificationChannel, SuppressionReason>;
-}
-
-const PRIORITY_RANK: Record<NotificationPriority, number> = {
-  LOW: 0,
-  NORMAL: 1,
-  HIGH: 2,
-  CRITICAL: 3,
-};
-
-const FALLBACK_CHAIN: Partial<
-  Record<NotificationChannel, NotificationChannel>
-> = {
-  WHATSAPP: "SMS",
-  SMS: "EMAIL",
-  PUSH: "EMAIL",
-  EMAIL: "IN_APP",
-};
-
-function isHigh(priority: NotificationPriority): boolean {
-  return PRIORITY_RANK[priority] >= PRIORITY_RANK.HIGH;
-}
-
-export function computeRouting(ctx: RouteContext): RoutingResult {
-  const {
-    definition,
-    priority,
-    prefs,
-    orgPolicy,
-    availableChannels,
-    suppressedChannels,
-  } = ctx;
-  const mandatory = definition.mandatory;
-
-  const allowed = new Set<NotificationChannel>(definition.allowedChannels);
-  allowed.add("IN_APP");
-
-  let candidates: NotificationChannel[];
-  if (orgPolicy?.eventOverride?.channels?.length) {
-    candidates = orgPolicy.eventOverride.channels.filter(
-      (c): c is NotificationChannel =>
-        ALL_CHANNELS.includes(c as NotificationChannel),
-    );
-  } else if (orgPolicy?.categoryOverride?.channels?.length) {
-    candidates = orgPolicy.categoryOverride.channels.filter(
-      (c): c is NotificationChannel =>
-        ALL_CHANNELS.includes(c as NotificationChannel),
-    );
-  } else if (orgPolicy?.moduleOverride?.channels?.length) {
-    candidates = orgPolicy.moduleOverride.channels.filter(
-      (c): c is NotificationChannel =>
-        ALL_CHANNELS.includes(c as NotificationChannel),
-    );
-  } else if (orgPolicy?.defaultChannels?.length) {
-    candidates = orgPolicy.defaultChannels;
-  } else {
-    candidates = definition.defaultChannels;
-  }
-  candidates = Array.from(
-    new Set<NotificationChannel>([...candidates].filter((c) => allowed.has(c))),
-  );
-  if (!candidates.includes("IN_APP")) candidates.unshift("IN_APP");
-
-  const userMuted =
-    !mandatory &&
-    (prefs.eventPreferences[definition.eventKey]?.muted === true ||
-      prefs.modulePreferences[definition.sourceModule]?.muted === true ||
-      prefs.categories[definition.category] === false ||
-      orgPolicy?.eventOverride?.muted === true);
-
-  const eventPrefChannels =
-    prefs.eventPreferences[definition.eventKey]?.channels;
-  const canUserOverride = orgPolicy?.canUserOverride ?? true;
-
-  const decisions: ChannelDecision[] = [];
-  const sending = new Set<NotificationChannel>();
-
-  const suppress = (
-    channel: NotificationChannel,
-    reason: SuppressionReason,
-    detail?: string,
-  ): void => {
-    if (decisions.some((d) => d.channel === channel)) return;
-    decisions.push({ channel, action: "SUPPRESS", reason, detail });
-  };
-  const send = (channel: NotificationChannel): void => {
-    if (sending.has(channel)) return;
-    sending.add(channel);
-    decisions.push({ channel, action: "SEND" });
-  };
-
-  for (const channel of candidates) {
-    const isInApp = channel === "IN_APP";
-
-    if (userMuted && !isInApp) {
-      suppress(channel, "MUTE", "Muted by preference");
-      continue;
-    }
-    if (
-      eventPrefChannels &&
-      canUserOverride &&
-      !mandatory &&
-      eventPrefChannels[channel] === false
-    ) {
-      suppress(channel, "CHANNEL_DISABLED", "Disabled for this event");
-      continue;
-    }
-    if (!prefs.channelEnabled[channel] && !(mandatory && !isInApp)) {
-      if (!mandatory) {
-        suppress(channel, "CHANNEL_DISABLED", "Channel turned off");
-        continue;
-      }
-    }
-    const ruleReason = suppressedChannels.get(channel);
-    if (ruleReason && !mandatory) {
-      suppress(channel, ruleReason, "Suppression rule");
-      continue;
-    }
-    if (!availableChannels.has(channel)) {
-      suppress(channel, "NO_PROVIDER", "No provider configured");
-      continue;
-    }
-    send(channel);
-  }
-
-  // Fallback chain for mandatory events whose primary external channels were blocked.
-  if (mandatory) {
-    const hasExternalSend = [...sending].some((c) => c !== "IN_APP");
-    if (!hasExternalSend) {
-      const blocked = decisions.filter(
-        (d) => d.action === "SUPPRESS" && d.channel !== "IN_APP",
-      );
-      for (const b of blocked) {
-        let fallback = FALLBACK_CHAIN[b.channel];
-        while (fallback && fallback !== "IN_APP") {
-          if (
-            allowed.has(fallback) &&
-            availableChannels.has(fallback) &&
-            !sending.has(fallback)
-          ) {
-            send(fallback);
-            break;
-          }
-          fallback = FALLBACK_CHAIN[fallback];
-        }
-      }
-    }
-    if (!sending.has("IN_APP")) send("IN_APP");
-  }
-
-  const createInApp =
-    sending.has("IN_APP") ||
-    (prefs.channelEnabled.IN_APP && !userMuted) ||
-    mandatory;
-  if (createInApp && !sending.has("IN_APP")) send("IN_APP");
-
-  // Quiet hours defer external channels (in-app is always immediate).
-  let deferredUntil: Date | null = null;
-  const behavior = definition.quietHoursBehavior;
-  const criticalBypass = priority === "CRITICAL" && prefs.allowCriticalOverride;
-  const shouldConsiderQuiet =
-    !mandatory &&
-    behavior !== "always_bypass" &&
-    !criticalBypass &&
-    !(behavior === "bypass_if_high" && isHigh(priority));
-  if (shouldConsiderQuiet && isWithinQuietHours(ctx.now, prefs.quietHours)) {
-    const hasExternal = [...sending].some((c) => c !== "IN_APP");
-    if (hasExternal) deferredUntil = quietHoursEndAt(ctx.now, prefs.quietHours);
-  }
-
-  const sentChannels = [...sending];
-  const externalSent = sentChannels.filter((c) => c !== "IN_APP");
-  const reasonParts: string[] = [`You received "${definition.displayName}"`];
-  if (mandatory)
-    reasonParts.push(
-      "This is a required security or compliance alert and cannot be muted.",
-    );
-  if (externalSent.length) {
-    reasonParts.push(
-      `Delivered via ${sentChannels.join(", ")}${deferredUntil ? " (external channels held until quiet hours end)" : ""}.`,
-    );
-  } else if (sentChannels.includes("IN_APP")) {
-    reasonParts.push("Shown in your in-app inbox.");
-  }
-
-  return {
-    userId: "",
-    createInApp,
-    channels: decisions,
-    priority,
-    deferredUntil,
-    reasonText: reasonParts.join(" "),
-  };
 }
 
 interface CachedPolicy {
@@ -296,9 +104,20 @@ export class NotificationRoutingService {
    * mode, which are genuinely one-per-user and not lifecycle state.
    */
   private resolvePrefs(
-    row: typeof notificationPreferences.$inferSelect | undefined,
+    row: Partial<Pick<
+      typeof notificationPreferences.$inferSelect,
+      | "inAppEnabled"
+      | "emailEnabled"
+      | "pushEnabled"
+      | "smsEnabled"
+      | "whatsappEnabled"
+      | "quietHoursStart"
+      | "quietHoursEnd"
+      | "quietHoursWeekends"
+      | "allowCriticalOverride"
+    >> | undefined,
     userTimezone: string | undefined,
-    rules: Array<typeof notificationPreferenceRules.$inferSelect>,
+    rules: NotificationPreferenceRuleProjection[],
   ): ResolvedPreferences {
     const eventPreferences: ResolvedPreferences["eventPreferences"] = {};
     const modulePreferences: ResolvedPreferences["modulePreferences"] = {};

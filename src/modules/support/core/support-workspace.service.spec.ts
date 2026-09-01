@@ -64,7 +64,7 @@ describe("SupportWorkspaceService", () => {
       });
 
       await expect(
-        service.updateSavedView("org1", "me", null, 1, { name: "renamed" } as never),
+        service.updateSavedView("org1", "me", 1, 1, { name: "renamed" } as never),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -77,7 +77,7 @@ describe("SupportWorkspaceService", () => {
       mockDb.returning.mockResolvedValueOnce([{ id: 1, name: "renamed" }]);
 
       await expect(
-        service.updateSavedView("org1", "me", null, 1, { name: "renamed" } as never),
+        service.updateSavedView("org1", "me", 1, 1, { name: "renamed" } as never),
       ).resolves.toMatchObject({ id: 1, name: "renamed" });
     });
 
@@ -113,13 +113,13 @@ describe("SupportWorkspaceService", () => {
     it("throws NotFoundException following a ticket outside the org", async () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
 
-      await expect(service.follow("org1", 999, "user1")).rejects.toThrow(NotFoundException);
+      await expect(service.follow("org1", 999, "user1", 1)).rejects.toThrow(NotFoundException);
     });
 
     it("succeeds following a ticket that exists in the org", async () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 1 });
 
-      await expect(service.follow("org1", 1, "user1")).resolves.toEqual({ success: true });
+      await expect(service.follow("org1", 1, "user1", 1)).resolves.toEqual({ success: true });
     });
   });
 });

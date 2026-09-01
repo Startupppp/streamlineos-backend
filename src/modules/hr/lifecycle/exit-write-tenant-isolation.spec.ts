@@ -89,7 +89,7 @@ describe("ExitWriteService — cross-tenant isolation", () => {
     const { db, findFirst, where } = makeDb([ROW]);
     const { mockDispatch, mockAutomation, mockHrAutomation, mockResignationJobs, mockExitChecklist, mockPolicyEval, mockCompletionGuard, mockAccess } = makeDeps();
     const svc = new ExitWriteService(db, mockDispatch as never, mockAutomation as never, mockHrAutomation as never, mockResignationJobs as never, mockExitChecklist as never, mockPolicyEval as never, mockCompletionGuard as never, mockAccess as never);
-    const actor = { userId: "u1", role: "MEMBER", isApprover: false };
+    const actor = { userId: "u1", membershipId: 1, role: "MEMBER", isApprover: false };
     await expect(svc.update(OWNER, actor, 1, {})).resolves.toBeDefined();
     expect(allQueryArgs(findFirst, where)).toContain(OWNER);
   });

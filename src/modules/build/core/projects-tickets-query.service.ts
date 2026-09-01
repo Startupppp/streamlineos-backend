@@ -199,7 +199,10 @@ export class ProjectsTicketsQueryService {
       }
 
       const updateData: Partial<typeof tickets.$inferInsert> = { updatedAt: new Date() };
-      if (body.assigneeId !== undefined) updateData.assigneeMembershipId = body.assigneeId === null ? null : sql`(SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${body.assigneeId} AND status = 'ACTIVE')`;
+      if (body.assigneeId !== undefined) {
+        const actor = body.assigneeId === null ? null : await tx.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, body.assigneeId)), columns: { id: true } });
+        updateData.assigneeMembershipId = actor?.id ?? null;
+      }
       if (body.status !== undefined) updateData.status = body.status;
       if (body.sprintId !== undefined) updateData.sprintId = body.sprintId;
       if (body.priority !== undefined) updateData.priority = body.priority;

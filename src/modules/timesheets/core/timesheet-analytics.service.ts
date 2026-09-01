@@ -49,7 +49,7 @@ export class TimesheetAnalyticsService {
 
     const rows = await this.db
       .select({
-        clientId: projects.clientId,
+        clientId: projects.clientMembershipId,
         currency: currencyExpr,
         hours: sql<string>`COALESCE(SUM(${timesheets.hours}::numeric), 0)::text`,
         billableAmount: sql<string>`COALESCE(SUM(CASE WHEN ${timesheets.billRate} IS NOT NULL THEN ${timesheets.hours}::numeric * ${timesheets.billRate}::numeric END), 0)::text`,
@@ -60,20 +60,25 @@ export class TimesheetAnalyticsService {
       .from(timesheets)
       .leftJoin(projects, eq(timesheets.projectId, projects.id))
       .where(and(...conditions))
-      .groupBy(projects.clientId, currencyExpr);
+      .groupBy(projects.clientMembershipId, currencyExpr);
 
-    const clientIds = [...new Set(rows.map((r) => r.clientId).filter((id): id is string => id !== null))];
-    let clientNames = new Map<string, string>();
+    const clientIds = [...new Set(rows.map((r) => r.clientId).filter((id): id is number => id !== null))];
+    let clientNames = new Map<number, string>();
     if (clientIds.length > 0) {
       const nameRows = await this.db
-        .select({ id: users.id, name: users.name, email: users.email })
-        .from(users)
-        .where(inArray(users.id, clientIds));
-      clientNames = new Map(nameRows.map((r) => [r.id, r.name ?? r.email]));
+        .select({ membershipId: organizationMembers.id, name: users.name, email: users.email })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(and(
+          eq(organizationMembers.orgId, u.orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+          inArray(organizationMembers.id, clientIds),
+        ));
+      clientNames = new Map(nameRows.map((r) => [r.membershipId, r.name ?? r.email]));
     }
 
     const byClient = new Map<
-      string | null,
+       number | null,
       { hours: number; missingRateHours: number; amountRows: CurrencyAmountInput[] }
     >();
     for (const r of rows) {

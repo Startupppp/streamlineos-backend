@@ -88,6 +88,7 @@ export class HrInterviewSchedulingService {
   ) {}
 
   async createInterview(orgId: string, input: CreateInterviewInput) {
+    if (!input.interviewerId) throw new BadRequestException("Interviewer is required.");
     const interviewerMembership = await this.requireActiveMember(orgId, input.interviewerId);
     const [interview] = await this.db
       .insert(interviews)
@@ -131,11 +132,18 @@ export class HrInterviewSchedulingService {
   ) {
     // Keep the pre-membership internal call shape usable for existing unit
     // consumers; HTTP callers always provide the active membership explicitly.
-    const legacyCall = typeof actorMembershipIdOrInput === "object";
-    const actorMembershipId = legacyCall ? null : actorMembershipIdOrInput;
-    const input = (legacyCall ? actorMembershipIdOrInput : inputMaybe) as ScheduleInterviewInput;
-    if (!input) throw new BadRequestException("Interview scheduling input is required.");
-    if (actorMembershipId == null && !legacyCall) throw new BadRequestException("Active organization membership required.");
+    const legacyCall = actorMembershipIdOrInput !== null && typeof actorMembershipIdOrInput === "object";
+    let input: ScheduleInterviewInput;
+    if (legacyCall) {
+      input = actorMembershipIdOrInput;
+    } else {
+      if (inputMaybe == null) throw new BadRequestException("Interview scheduling input is required.");
+      input = inputMaybe;
+    }
+    const actorMembershipId = legacyCall
+      ? (await this.requireActiveMember(orgId, userId)).id
+      : actorMembershipIdOrInput;
+    if (actorMembershipId == null) throw new BadRequestException("Active organization membership required.");
     const candidate = await this.db.query.candidates.findFirst({
       where: and(
         eq(candidates.id, input.candidateId),
@@ -156,9 +164,7 @@ export class HrInterviewSchedulingService {
     );
     const candidateName = `${candidate.firstName} ${candidate.lastName}`;
 
-    const memberships = legacyCall
-      ? input.interviewers.map((id) => ({ id: 0, userId: id }))
-      : await this.requireActiveMembers(orgId, input.interviewers);
+    const memberships = await this.requireActiveMembers(orgId, input.interviewers);
     const membershipByUserId = new Map(memberships.map((member) => [member.userId, member.id]));
     const primaryInterviewerId = input.interviewers[0];
     const primaryInterviewerMembershipId = membershipByUserId.get(primaryInterviewerId);

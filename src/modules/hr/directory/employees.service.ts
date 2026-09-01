@@ -18,6 +18,7 @@ import {
   organizationMembers,
   projectMembers,
   projects,
+  ticketAssignees,
   tickets,
   users,
 } from "../../../db/schema";
@@ -243,8 +244,13 @@ export class EmployeesService {
         role: projectMembers.role,
       })
       .from(projectMembers)
+      .innerJoin(organizationMembers, and(
+        eq(projectMembers.orgId, organizationMembers.orgId),
+        eq(projectMembers.membershipId, organizationMembers.id),
+        eq(organizationMembers.userId, userId),
+      ))
       .innerJoin(projects, eq(projectMembers.projectId, projects.id))
-      .where(and(eq(projectMembers.userId, userId), eq(projects.orgId, orgId)))
+      .where(and(eq(projectMembers.orgId, orgId), eq(projects.orgId, orgId)))
       .limit(100);
   }
 
@@ -258,8 +264,14 @@ export class EmployeesService {
         projectId: tickets.projectId,
         ticketNumber: tickets.ticketNumber,
       })
-      .from(tickets)
-      .where(and(eq(tickets.assigneeId, userId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
+      .from(ticketAssignees)
+      .innerJoin(tickets, and(eq(ticketAssignees.ticketId, tickets.id), eq(ticketAssignees.orgId, tickets.orgId)))
+      .innerJoin(organizationMembers, and(
+        eq(ticketAssignees.orgId, organizationMembers.orgId),
+        eq(ticketAssignees.membershipId, organizationMembers.id),
+        eq(organizationMembers.userId, userId),
+      ))
+      .where(and(eq(ticketAssignees.orgId, orgId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
       .orderBy(desc(tickets.id))
       .limit(50);
 

@@ -174,7 +174,7 @@ export class AutomationService {
         case "support_assign_ticket": {
           const ticketId = this.requireTicketId(payload);
           const [assignee] = await this.db
-            .select({ status: organizationMembers.status })
+            .select({ id: organizationMembers.id, status: organizationMembers.status })
             .from(organizationMembers)
             .where(
               and(
@@ -191,7 +191,7 @@ export class AutomationService {
             };
           await this.db
             .update(supportTickets)
-            .set({ assigneeId: action.config.assigneeId, updatedAt: new Date() })
+            .set({ assigneeMembershipId: assignee.id, updatedAt: new Date() })
             .where(and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)));
           return { type: action.type, ok: true };
         }

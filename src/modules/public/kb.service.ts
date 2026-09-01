@@ -67,7 +67,7 @@ export class KbService {
       .orderBy(desc(kbArticles.publishedAt), desc(kbArticles.id))
       .limit(pageSize + 1);
 
-    return { categories, ...buildCursorPage(articles, pageSize, (article) => ({ sortValue: article.publishedAt!, id: String(article.id) })) };
+    return { categories, ...buildCursorPage(articles, pageSize, (article) => ({ sortValue: article.publishedAt?.toISOString() ?? "", id: String(article.id) })) };
   }
 
   async getArticle(slug: string, org: string) {

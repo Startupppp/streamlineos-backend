@@ -132,7 +132,6 @@ export class ProjectsTicketsUpdateService {
     }
 
     if (resolvedAssignee !== undefined) {
-      updateData.assigneeId = resolvedAssignee;
       updateData.assigneeMembershipId = resolvedAssignee !== null
         ? (assigneeActors.get(resolvedAssignee)?.membershipId ?? null)
         : null;
@@ -168,7 +167,7 @@ export class ProjectsTicketsUpdateService {
         title: true,
         status: true,
         priority: true,
-        assigneeId: true,
+        assigneeMembershipId: true,
         sprintId: true,
         dueDate: true,
         projectId: true,
@@ -183,6 +182,8 @@ export class ProjectsTicketsUpdateService {
     if (!before || !before.projectId)
       throw new NotFoundException("Ticket not found");
     const ticketProjectId = before.projectId;
+    const beforeAssigneeId: string | null = null;
+    const beforeAssigneeMembershipId = before.assigneeMembershipId;
 
     if (input.expectedUpdatedAt !== undefined) {
       const expected = new Date(input.expectedUpdatedAt);
@@ -302,7 +303,7 @@ export class ProjectsTicketsUpdateService {
         actor: actingUserId,
         timestamp: now.toISOString(),
       });
-      if (newAssignee !== undefined && newAssignee !== before.assigneeId) {
+      if (newAssignee !== undefined && (newAssignee ? assigneeActors.get(newAssignee)?.membershipId ?? null : null) !== beforeAssigneeMembershipId) {
         await this.webhooksDispatch.enqueue(tx, orgId, ticketProjectId, "ticket.assigned", {
           id: ticketId,
           projectId: ticketProjectId,
@@ -316,7 +317,7 @@ export class ProjectsTicketsUpdateService {
     });
 
     await this.activity
-      .logTicketFieldChanges(orgId, ticketId, actingUserId, before, {
+      .logTicketFieldChanges(orgId, ticketId, actingUserId, { ...before, assigneeId: beforeAssigneeId }, {
           title: input.title,
           status: input.status,
           priority: input.priority,
@@ -336,7 +337,7 @@ export class ProjectsTicketsUpdateService {
       );
 
     if (input.status === "IN_REVIEW" || input.status === "CHANGES_REQUESTED") {
-      const reviewTarget = input.status === "IN_REVIEW" ? before.reporterId : before.assigneeId;
+      const reviewTarget = input.status === "IN_REVIEW" ? before.reporterId : newAssignee;
       if (reviewTarget) {
         void this.dispatch.emit({
           eventKey: input.status === "IN_REVIEW"
@@ -363,7 +364,7 @@ export class ProjectsTicketsUpdateService {
       title: input.title ?? before.title,
       status: input.status ?? before.status,
       priority: input.priority ?? before.priority,
-      assigneeId: newAssignee !== undefined ? newAssignee : before.assigneeId,
+      assigneeId: newAssignee !== undefined ? newAssignee : beforeAssigneeId,
       type: input.type ? normalizeTicketType(input.type) : before.type,
     };
 
@@ -373,7 +374,7 @@ export class ProjectsTicketsUpdateService {
       this.automationRunner.runForTicketEvent(orgId, ticketProjectId, "ticket.status_changed", afterPayload);
     }
 
-    if (newAssignee !== undefined && newAssignee !== before.assigneeId) {
+    if (newAssignee !== undefined && (newAssignee ? assigneeActors.get(newAssignee)?.membershipId ?? null : null) !== beforeAssigneeMembershipId) {
       this.automationRunner.runForTicketEvent(orgId, ticketProjectId, "ticket.assigned", afterPayload);
     }
 
@@ -401,13 +402,10 @@ export class ProjectsTicketsUpdateService {
       if (primary) allIds.add(primary);
       if (allIds.size > 0) {
         await db.insert(ticketAssignees).values(
-          Array.from(allIds).map((userId) => ({
-            orgId,
-            ticketId,
-            userId,
-            membershipId: actorMap.get(userId)?.membershipId ?? null,
-            assignedBy: actingUserId,
-          })),
+          Array.from(allIds).flatMap((userId) => {
+            const membershipId = actorMap.get(userId)?.membershipId;
+            return membershipId == null ? [] : [{ orgId, ticketId, membershipId, assignedBy: actingUserId }];
+          }),
         );
       }
       return;
@@ -418,12 +416,11 @@ export class ProjectsTicketsUpdateService {
         .delete(ticketAssignees)
         .where(eq(ticketAssignees.ticketId, ticketId));
       const newAssigneeId = resolveAssigneeId(input.assigneeId);
-      if (newAssigneeId) {
+      if (newAssigneeId && actorMap.get(newAssigneeId)?.membershipId != null) {
         await db.insert(ticketAssignees).values({
           orgId,
           ticketId,
-          userId: newAssigneeId,
-          membershipId: actorMap.get(newAssigneeId)?.membershipId ?? null,
+          membershipId: actorMap.get(newAssigneeId)!.membershipId,
           assignedBy: actingUserId,
         });
       }

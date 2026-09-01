@@ -108,7 +108,7 @@ export class DashboardLeaveService {
     const isApprover = await this.access.holds(u, "hr:leaves:approve");
     const audience = scope === "all" ? "org" : u.userId;
     const key = `dashboard:pending-approvals:${orgId}:${scope}:${audience}:${isApprover ? "approver" : "self"}`;
-    const visible = leaveApprovalScope(scope, orgId, u.userId, u.principal != null ? actingMembershipId(u.principal) : null);
+    const visible = leaveApprovalScope(scope, u.principal ? actingMembershipId(u.principal) : null);
 
     return this.cache.cached(
       key,
@@ -132,7 +132,7 @@ export class DashboardLeaveService {
                 resignations.status,
                 resignationStatuses as ("SUBMITTED" | "PENDING_HR" | "HR_APPROVED")[],
               ),
-              resignationApprovalScope(scope, orgId, u.userId),
+                resignationApprovalScope(scope, orgId, u.userId),
             ),
           );
 

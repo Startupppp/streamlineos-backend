@@ -87,7 +87,7 @@ export class KbArticlesService {
               status: input.status,
               visibility: input.visibility,
               authorId: user.userId,
-              ownerId: user.userId,
+               ownerMembershipId: actingMembershipId(user.principal),
               seoTitle: input.seoTitle ?? null,
               seoDescription: input.seoDescription ?? null,
               reviewIntervalDays: input.reviewIntervalDays ?? null,

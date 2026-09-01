@@ -127,8 +127,7 @@ export class OrgProfileService {
       if (!membership)
         throw new BadRequestException(
           "You are not a member of this organization",
-        )
-        .limit(100);
+        );
 
       if (membership.status === "SUSPENDED")
         throw new ConflictException(

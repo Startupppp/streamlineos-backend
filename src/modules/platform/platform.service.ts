@@ -4,7 +4,6 @@ import { eq, sql, and, isNull } from "drizzle-orm";
 import {
   platformMessages,
   platformVisits,
-  organizations,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";

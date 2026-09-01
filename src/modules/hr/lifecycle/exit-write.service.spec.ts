@@ -143,7 +143,7 @@ describe("ExitWriteService.update - exit completion guard", () => {
     await expect(
       service.update(
         "org-1",
-        { userId: "admin-1", role: "ADMIN", isApprover: true },
+        { userId: "admin-1", membershipId: 1, role: "ADMIN", isApprover: true },
         42,
         { status: "COMPLETED" },
       ),

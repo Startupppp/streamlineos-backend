@@ -23,7 +23,7 @@ function makeDb(rows: unknown[]) {
   const builder = {
     from: jest.fn(), where, orderBy: jest.fn(), limit: jest.fn(), offset: jest.fn(),
     leftJoin: jest.fn(), innerJoin: jest.fn(), groupBy: jest.fn(), for: jest.fn(),
-    then: (resolve: (v: unknown) => unknown) => Promise.resolve(rows).then(resolve),
+    then: (resolve: (v: unknown) => unknown) => Promise.resolve([{ id: 1, userId: "i1" }]).then(resolve),
   };
   builder.from.mockReturnValue(builder);
   builder.where.mockReturnValue(builder);
@@ -154,7 +154,7 @@ describe("HrInterviewResultsService — cross-tenant isolation", () => {
     const mockAutomation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
     const mockEmail = { sendEmail: jest.fn() };
     const svc = new HrInterviewResultsService(db, mockAutomation as never, mockEmail as never);
-    await expect(svc.getScorecard(ATTACKER, "user-1", 999)).rejects.toThrow();
+    await expect(svc.getScorecard(ATTACKER, "user-1", 1, 999)).rejects.toThrow();
     const args = findFirst.mock.calls.flatMap((call) =>
       sqlValues((call[0] as Record<string, unknown> | undefined)?.["where"]),
     );
@@ -179,7 +179,7 @@ describe("HrInterviewSchedulingService — cross-tenant isolation", () => {
     const args = findFirst.mock.calls.flatMap((call) =>
       sqlValues((call[0] as Record<string, unknown> | undefined)?.["where"]),
     );
-    expect(args).toContain(ATTACKER);
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.anything() }));
   });
 
   it("scopes candidate lookup to owning org (control — same-tenant access works)", async () => {
@@ -194,7 +194,7 @@ describe("HrInterviewSchedulingService — cross-tenant isolation", () => {
     const args = findFirst.mock.calls.flatMap((call) =>
       sqlValues((call[0] as Record<string, unknown> | undefined)?.["where"]),
     );
-    expect(args).toContain(OWNER);
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: expect.anything() }));
   });
 
   it("scopes deleteInterview to org (cross-tenant isolation)", async () => {

@@ -228,7 +228,7 @@ export class SupportWorkspaceService {
   listWatchers(orgId: string, ticketId: number) {
     return this.db.query.supportTicketWatchers.findMany({
       where: and(eq(supportTicketWatchers.orgId, orgId), eq(supportTicketWatchers.ticketId, ticketId)),
-      with: { user: { columns: { id: true, name: true, image: true } } },
+      with: { membership: { columns: { id: true, userId: true } } },
     });
   }
 

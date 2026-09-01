@@ -31,11 +31,13 @@ function makeSelectBuilder(onWhere?: (w: SQL) => void) {
   const builder = {
     select: () => builder,
     from: () => builder,
+    innerJoin: () => builder,
     where: (w: SQL) => {
       onWhere?.(w);
       return Promise.resolve([]);
     },
     query: {
+      organizationMembers: { findFirst: async () => ({ id: 1 }) },
       projects: { findMany: async () => [] },
       sprints: { findFirst: async () => null },
       tickets: { findMany: async () => [] },
@@ -104,10 +106,10 @@ describe("DashboardProjectService — projectMembers org predicate", () => {
   });
 
   it("the predicate shape matches eq(orgId) AND eq(userId) — both columns present", () => {
-    const predicate = and(eq(projectMembers.orgId, ORG), eq(projectMembers.userId, USER));
+    const predicate = and(eq(projectMembers.orgId, ORG), eq(projectMembers.membershipId, 1));
     const { sql: sqlStr } = dialect.sqlToQuery(predicate as SQL);
     expect(sqlStr).toContain('"project_members"."org_id"');
-    expect(sqlStr).toContain('"project_members"."user_id"');
+    expect(sqlStr).toContain('"project_members"."membership_id"');
   });
 });
 
@@ -117,8 +119,10 @@ describe("DashboardProjectService — scope none is a deny, not a member fallbac
     const db = {
       select: () => { counts.select++; return db; },
       from: () => db,
+      innerJoin: () => db,
       where: () => { counts.where++; return Promise.resolve([{ projectId: 10 }]); },
       query: {
+        organizationMembers: { findFirst: async () => ({ id: 1 }) },
         projects: { findMany: async () => { counts.findMany++; return [{ id: 10 }]; } },
         sprints: { findFirst: async () => { counts.findFirst++; return null; } },
         tickets: { findMany: async () => { counts.findMany++; return []; } },
@@ -203,6 +207,7 @@ describe("DashboardProjectService — getActiveSprintSummary SQL aggregate", () 
         return Promise.resolve([{ projectId: 10 }]);
       },
       query: {
+        organizationMembers: { findFirst: async () => ({ id: 1 }) },
         projects: {
           findMany: async () => [{ id: 10 }],
         },

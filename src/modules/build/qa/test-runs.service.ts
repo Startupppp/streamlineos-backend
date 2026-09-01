@@ -327,7 +327,7 @@ export class TestRunsService {
           actualResult: input.actualResult,
           environment: input.environment,
           browserDevice: input.browserDevice,
-          assigneeId: input.assigneeId ?? null,
+          assigneeMembershipId: undefined,
           reporterId: userId,
           linkedTestCaseId: tc.id,
           createdBy: userId,

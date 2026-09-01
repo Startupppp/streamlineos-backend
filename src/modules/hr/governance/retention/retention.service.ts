@@ -259,6 +259,24 @@ export class RetentionService {
       throw new BadRequestException("Request must be approved before processing");
     }
 
+    // A correction request is only a validated intake record today. Never mark
+    // it processing/completed without an implementation that applies and
+    // verifies the requested field-level change.
+    if (existing.type === "correction") {
+      await this.audit.log({
+        orgId,
+        actorId: userId,
+        entityType: "hr_data_request",
+        entityId: String(requestId),
+        action: "data_request.correction_manual_review_required",
+        after: { type: existing.type, subjectUserId: existing.subjectUserId },
+        ipAddress,
+      });
+      throw new ConflictException(
+        "Correction requests require verified field-level processing before completion",
+      );
+    }
+
     if (existing.type !== "export") {
       const hrHeld = await isUnderLegalHold(orgId, existing.subjectUserId, this.db);
       const orgHeld = await this.isOrgUnderLegalHold(orgId);

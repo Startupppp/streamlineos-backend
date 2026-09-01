@@ -107,11 +107,11 @@ async function provisionSyntheticMembers(orgId, count) {
     on conflict do nothing`;
 
   const rows = await sql`
-    select user_id from organization_members
+    select user_id, id as membership_id from organization_members
     where org_id = ${orgId} and user_id like ${prefix + '-%'}
     order by user_id`;
   log(`provisioned: ${rows.length} synthetic members for ${orgId} (prefix ${prefix})`);
-  return rows.map((r) => r.user_id);
+  return rows.map((r) => ({ userId: r.user_id, membershipId: r.membership_id }));
 }
 
 async function resetSyntheticMembers(orgId) {
@@ -126,10 +126,10 @@ async function resetSyntheticMembers(orgId) {
 
 async function resolveUsers(orgId) {
   const rows = await sql`
-    select user_id from organization_members
+    select user_id, id as membership_id from organization_members
     where org_id = ${orgId} and status = 'ACTIVE' order by user_id`;
   if (!rows.length) throw new Error(`org ${orgId} has no ACTIVE members to attribute seed rows to`);
-  return rows.map((r) => r.user_id);
+  return rows.map((r) => ({ userId: r.user_id, membershipId: r.membership_id }));
 }
 
 async function reset(orgId) {
@@ -241,10 +241,10 @@ async function seedProjects(orgId, workspaceId, count, users) {
     cross join generate_series(1, ${SPRINTS_PER_PROJECT}::int) s(n)`;
 
   await sql`
-    insert into build.project_members (project_id, user_id, org_id)
-    select p.id, u.uid, ${orgId}
+    insert into build.project_members (project_id, membership_id, org_id)
+    select p.id, u.membership_id, ${orgId}
     from unnest(${sql.array(ids)}::int[]) p(id)
-    cross join unnest(${sql.array(users)}::text[]) u(uid)
+    cross join unnest(${sql.array(users.map((user) => user.membershipId))}::int[]) u(membership_id)
     on conflict do nothing`;
 
   await sql`
@@ -260,12 +260,14 @@ async function seedTickets(orgId, projectIds, total, users) {
   const N = users.length;
   const W = (N * (N + 1)) / 2;
   const perProject = Math.ceil(total / projectIds.length);
+  const userIds = users.map((user) => user.userId);
+  const membershipIds = users.map((user) => user.membershipId);
 
   await chunked(total, "tickets", async (offset, size) => {
     await sql`
       insert into build.tickets (
         org_id, project_id, title, description, ticket_number, type, status, priority,
-        assignee_id, reporter_id, points, rank, start_date, due_date,
+        assignee_membership_id, reporter_id, reporter_membership_id, points, rank, start_date, due_date,
         completion_percentage, created_at, updated_at)
       select ${orgId},
              p.id,
@@ -275,8 +277,9 @@ async function seedTickets(orgId, projectIds, total, users) {
              (array['EPIC','STORY','TASK','TASK','TASK','BUG'])[1 + (g % 6)]::ticket_type,
              (array['TODO','IN_PROGRESS','IN_REVIEW','DONE'])[1 + (g % 4)],
              (array['LOW','MEDIUM','HIGH','URGENT'])[1 + (g % 4)]::ticket_priority,
-             case when g % 7 = 0 then null else u.uid end,
-             rep.uid,
+             case when g % 7 = 0 then null else u.membership_id end,
+             rep.user_id,
+             rep.membership_id,
              case when g % 3 = 0 then null else (g % 13) end,
              ((((g - 1) / ${projectIds.length}) + 1) * 1000)::numeric,
              (now() - ((g % 300) || ' days')::interval)::date,
@@ -290,13 +293,17 @@ async function seedTickets(orgId, projectIds, total, users) {
         where t.rn = ((g - 1) % ${projectIds.length}) + 1
       ) p on true
       join lateral (
-        select uid from unnest(${sql.array(users)}::text[]) with ordinality x(uid, rn)
+        select user_id, membership_id
+        from unnest(${sql.array(userIds)}::text[], ${sql.array(membershipIds)}::int[])
+          with ordinality x(user_id, membership_id, rn)
         where x.rn = (
           floor((${N} + 0.5) - sqrt(power(${N} + 0.5, 2.0) - 2.0 * ((g - 1) % ${W})))::int + 1
         )
       ) u on true
       join lateral (
-        select uid from unnest(${sql.array(users)}::text[]) with ordinality y(uid, rn)
+        select user_id, membership_id
+        from unnest(${sql.array(userIds)}::text[], ${sql.array(membershipIds)}::int[])
+          with ordinality y(user_id, membership_id, rn)
         where y.rn = ((g + 1) % ${N}) + 1
       ) rep on true`;
   });
@@ -319,9 +326,9 @@ async function seedTicketChildren(orgId, range, users, projectCount) {
   const span = range.hi - range.lo + 1;
 
   await sql`
-    insert into build.ticket_assignees (org_id, ticket_id, user_id, assigned_at)
-    select ${orgId}, t.id, t.assignee_id, t.created_at
-    from build.tickets t where t.org_id = ${orgId} and t.assignee_id is not null
+    insert into build.ticket_assignees (org_id, ticket_id, membership_id, assigned_at)
+    select ${orgId}, t.id, t.assignee_membership_id, t.created_at
+    from build.tickets t where t.org_id = ${orgId} and t.assignee_membership_id is not null
     on conflict do nothing`;
 
   const COLLAB_COUNT = Math.min(5, Math.max(1, Math.floor(users.length / 8)));
@@ -329,18 +336,18 @@ async function seedTicketChildren(orgId, range, users, projectCount) {
 
   for (const collaborator of collaborators) {
     await sql`
-      insert into build.ticket_assignees (org_id, ticket_id, user_id, assigned_at)
-      select ${orgId}, t.id, ${collaborator}, t.created_at
+      insert into build.ticket_assignees (org_id, ticket_id, membership_id, assigned_at)
+      select ${orgId}, t.id, ${collaborator.membershipId}, t.created_at
       from build.tickets t
       where t.org_id = ${orgId}
-        and t.assignee_id is distinct from ${collaborator}
-        and t.reporter_id is distinct from ${collaborator}
+        and t.assignee_membership_id is distinct from ${collaborator.membershipId}
+        and t.reporter_membership_id is distinct from ${collaborator.membershipId}
       limit 4000
       on conflict do nothing`;
   }
   log(
     `ticket_assignees: done — ${collaborators.length} collaboration-only participant(s) seeded ` +
-      `(${collaborators.join(", ")}), ensuring the OR/semi-join branch is exercisable`,
+      `(${collaborators.map((collaborator) => collaborator.userId).join(", ")}), ensuring the OR/semi-join branch is exercisable`,
   );
 
   const labels = await sql`
@@ -401,13 +408,14 @@ async function seedTicketChildren(orgId, range, users, projectCount) {
 
 async function seedTimesheets(orgId, range, users) {
   const span = range.hi - range.lo + 1;
+  const userIds = users.map((user) => user.userId);
   await chunked(TIMESHEETS, "timesheets", async (offset, size) => {
     await sql`
       insert into timesheets (
         org_id, user_id, ticket_id, project_id, date, hours, description,
         status, is_billable, bill_rate, currency, created_at, updated_at)
       select ${orgId},
-             u.uid,
+             u.user_id,
              t.id,
              t.project_id,
              (now() - ((g % 400) || ' days')::interval)::date,
@@ -422,7 +430,7 @@ async function seedTimesheets(orgId, range, users) {
       from generate_series(${offset + 1}::int, ${offset + size}::int) g
       join build.tickets t on t.id = ${range.lo} + (g % ${span})
       join lateral (
-        select uid from unnest(${sql.array(users)}::text[]) with ordinality x(uid, rn)
+        select user_id from unnest(${sql.array(userIds)}::text[]) with ordinality x(user_id, rn)
         where x.rn = (g % ${users.length}) + 1
       ) u on true`;
   });

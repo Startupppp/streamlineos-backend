@@ -1,9 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, avg, count, desc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import { and, avg, count, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   okrGoals,
   okrKeyResults,
   okrUpdates,
+  organizationMembers,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -158,17 +159,15 @@ export class GoalsService {
       const ownershipFilter = membershipId !== null
         ? or(
             eq(okrGoals.ownerMembershipId, membershipId),
-            eq(okrGoals.ownerId, userId),
             eq(okrGoals.createdByMembershipId, membershipId),
-            eq(okrGoals.createdBy, userId),
           )
-        : or(eq(okrGoals.ownerId, userId), eq(okrGoals.createdBy, userId));
+        : eq(okrGoals.ownerMembershipId, -1);
       if (ownershipFilter) conditions.push(ownershipFilter);
     }
 
     if (filters.status) conditions.push(eq(okrGoals.status, filters.status));
     if (filters.level) conditions.push(eq(okrGoals.level, filters.level));
-    if (filters.ownerId) conditions.push(eq(okrGoals.ownerId, filters.ownerId));
+    if (filters.ownerId) conditions.push(sql`EXISTS (SELECT 1 FROM organization_members om WHERE om.org_id = ${orgId} AND om.user_id = ${filters.ownerId} AND om.id = ${okrGoals.ownerMembershipId})`);
     if (filters.projectId !== undefined)
       conditions.push(eq(okrGoals.projectId, filters.projectId));
     if (filters.search)
@@ -180,9 +179,6 @@ export class GoalsService {
     const goals = await this.db.query.okrGoals.findMany({
       where: and(...conditions),
       orderBy: [desc(okrGoals.createdAt)],
-      with: {
-        owner: { columns: { id: true, name: true, email: true, image: true } },
-      },
       limit,
       offset,
     });
@@ -200,6 +196,7 @@ export class GoalsService {
 
     return goals.map((goal) => ({
       ...goal,
+      owner: null,
       keyResultCount: countMap.get(goal.id) ?? 0,
     }));
   }
@@ -212,14 +209,13 @@ export class GoalsService {
           orgId,
           title: input.title,
           description: input.description ?? null,
-          ownerId: input.ownerId ?? null,
+          ownerMembershipId: membershipId ?? null,
           level: input.level,
           status: input.status,
           startDate: input.startDate ?? null,
           dueDate: input.dueDate ?? null,
           parentGoalId: input.parentGoalId ?? null,
           projectId: input.projectId ?? null,
-          createdBy: userId,
           createdByMembershipId: membershipId ?? null,
         })
         .returning();
@@ -285,7 +281,6 @@ export class GoalsService {
     const goal = await this.db.query.okrGoals.findFirst({
       where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)),
       with: {
-        owner: { columns: { id: true, name: true, email: true, image: true } },
         project: { columns: { id: true, name: true, key: true } },
       },
     });
@@ -319,7 +314,7 @@ export class GoalsService {
 
     const links = await this.links.getLinks(orgId, goalId);
 
-    return { ...goal, keyResults, updates, links };
+    return { ...goal, owner: null, keyResults, updates, links };
   }
 
   async update(orgId: string, goalId: number, input: UpdateInput): Promise<typeof okrGoals.$inferSelect | null> {

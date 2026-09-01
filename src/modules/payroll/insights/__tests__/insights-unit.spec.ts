@@ -236,7 +236,7 @@ describe("ReportsService — pagination cap", () => {
       .mockReturnValueOnce(chain([{ id: 10, status: "LOCKED", month: "2026-07", orgId: "org1", runType: "REGULAR" }]))
       .mockReturnValueOnce(chain([]));
 
-    const result = await service.getBankPayout("org1", "2026-07", { limit: 999, offset: 0 });
+    const result = await service.getBankPayout("org1", "2026-07", { limit: 999 });
     expect(result.batches.length).toBeLessThanOrEqual(100);
   });
 
@@ -248,7 +248,7 @@ describe("ReportsService — pagination cap", () => {
       .mockReturnValueOnce(chain([]))
       .mockReturnValueOnce(chain([]));
 
-    const result = await service.getVariance("org1", "2026-07", { limit: 10, offset: 100 });
+    const result = await service.getVariance("org1", "2026-07", { limit: 10 });
     expect(result.perEmployee).toHaveLength(0);
   });
 });
@@ -290,7 +290,7 @@ describe("ReportsService — SQL cap bites at 100", () => {
     };
 
     const service2 = new ReportsService(mockDb2 as never);
-    const result = await service2.getVariance("org1", "2026-07", { limit: 999, offset: 0 });
+    const result = await service2.getVariance("org1", "2026-07", { limit: 999 });
 
     expect(result.perEmployee.length).toBe(100);
   });
@@ -319,7 +319,7 @@ describe("ReportsService — SQL cap bites at 100", () => {
     };
 
     const service3 = new ReportsService(mockDb3 as never);
-    const result = await service3.getBankPayout("org1", "2026-07", { limit: 999, offset: 0 });
+    const result = await service3.getBankPayout("org1", "2026-07", { limit: 999 });
 
     expect(result.batches.length).toBe(100);
   });

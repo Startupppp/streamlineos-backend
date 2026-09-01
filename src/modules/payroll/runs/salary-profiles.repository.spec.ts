@@ -10,7 +10,7 @@ function paramsOf(cond: unknown): unknown[] {
   return dialect.sqlToQuery(cond as SQL).params;
 }
 
-const DEFAULT_QUERY: ListProfilesQuery = { page: 1, limit: 20 };
+const DEFAULT_QUERY: ListProfilesQuery = { limit: 20 };
 
 function makeListMock(dataRows: unknown[] = [], countTotal = 0) {
   let capturedWhere: unknown;

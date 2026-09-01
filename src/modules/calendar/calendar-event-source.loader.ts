@@ -95,7 +95,7 @@ export class CalendarEventSourceLoader {
     const batchSize = 500;
     for (;;) {
       // .limit(batchSize) below is intentional: the keyset loop consumes every batch.
-      const batch = await this.database
+      const batch: typeof events = await this.database
         .select({
           id: calendarEvents.id,
           title: calendarEvents.title,

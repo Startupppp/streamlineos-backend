@@ -111,19 +111,11 @@ export class PeriodsSubmitService {
     if (!topId) return null;
 
     const [proj] = await this.db
-      .select({ managerId: projects.managerId })
+      .select({ managerMembershipId: projects.managerMembershipId })
       .from(projects)
       .where(and(eq(projects.id, topId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
       .limit(1);
 
-    if (!proj?.managerId) return null;
-
-    const [mgMember] = await this.db
-      .select({ id: organizationMembers.id })
-      .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, proj.managerId)))
-      .limit(1);
-
-    return mgMember?.id ?? null;
+    return proj?.managerMembershipId ?? null;
   }
 }

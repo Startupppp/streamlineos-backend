@@ -120,7 +120,7 @@ function isUnboundedSelect(src) {
       }
     }
     if (/\.findMany\(/.test(line)) {
-      const lookahead = lines.slice(i, i + 10).join("\n");
+      const lookahead = statementFrom(lines, i);
       if (!/"take":|take\s*:|\blimit\b/.test(lookahead)) {
         violations.push({ lineNo: i + 1, text: line.trim() });
       }
@@ -297,6 +297,28 @@ function runSelfTests() {
   `;
   if (isUnboundedSelect(rowsNotAggregates).length === 0) {
     console.error("SELF-TEST FAIL: a row-returning select with no .limit() was not flagged");
+    process.exit(1);
+  }
+
+  const longBoundedFindMany = `
+    async list() {
+      return this.db.query.records.findMany({
+        where: and(eq(records.orgId, orgId), eq(records.parentId, parentId)),
+        columns: {
+          id: true,
+          name: true,
+          createdAt: true,
+        },
+        with: {
+          owner: { columns: { id: true, name: true } },
+        },
+        orderBy: [desc(records.createdAt), desc(records.id)],
+        limit: 101,
+      });
+    }
+  `;
+  if (isUnboundedSelect(longBoundedFindMany).length > 0) {
+    console.error("SELF-TEST FAIL: a findMany() bound later in its statement was flagged");
     process.exit(1);
   }
 

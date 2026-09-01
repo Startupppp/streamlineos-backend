@@ -2,7 +2,7 @@ import { UnauthorizedException } from "@nestjs/common";
 import type { Request } from "express";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { BODYLESS_ACTION } from "../../common/openapi/zod-operation-contracts";
-import { createGrantSchema } from "./dto/platform.schemas";
+import { createGrantSchema, listGrantsQuerySchema } from "./dto/platform.schemas";
 import { PlatformOperatorAccessController } from "./platform-operator-access.controller";
 import type { PlatformOperatorAccessService } from "./platform-operator-access.service";
 
@@ -34,24 +34,16 @@ function httpRequest(): Request {
 }
 
 describe("PlatformOperatorAccessController identity integrity", () => {
-  const createGrant = jest.fn();
+  const createGrantAndLog = jest.fn();
   const approveGrant = jest.fn();
   const recordAccess = jest.fn();
-  const service = { createGrant, approveGrant, recordAccess } as unknown as PlatformOperatorAccessService;
-  const controller = new PlatformOperatorAccessController(service);
-  const originalSecret = process.env.INTERNAL_API_SECRET;
-
-  beforeAll(() => {
-    process.env.INTERNAL_API_SECRET = "test-internal-secret";
-  });
-
-  afterAll(() => {
-    if (originalSecret === undefined) delete process.env.INTERNAL_API_SECRET;
-    else process.env.INTERNAL_API_SECRET = originalSecret;
+  const service = { createGrantAndLog, approveGrant, recordAccess } as unknown as PlatformOperatorAccessService;
+  const controller = new PlatformOperatorAccessController(service, {
+    INTERNAL_API_SECRET: "test-internal-secret",
   });
 
   beforeEach(() => {
-    createGrant.mockReset().mockResolvedValue("grant-1");
+    createGrantAndLog.mockReset().mockResolvedValue("grant-1");
     approveGrant.mockReset().mockResolvedValue({ orgId: "customer-org", operatorUserId: "support-op" });
     recordAccess.mockReset().mockResolvedValue(undefined);
   });
@@ -76,6 +68,10 @@ describe("PlatformOperatorAccessController identity integrity", () => {
     }).success).toBe(false);
   });
 
+  it("accepts revoked grants in the management-plane list filter", () => {
+    expect(listGrantsQuerySchema.safeParse({ orgId: "customer-org", status: "revoked" }).success).toBe(true);
+  });
+
   it("derives grantedBy from the authenticated human and ignores forwarded audit IP headers", async () => {
     await controller.createGrant(
       "test-internal-secret",
@@ -90,12 +86,8 @@ describe("PlatformOperatorAccessController identity integrity", () => {
       httpRequest(),
     );
 
-    expect(createGrant).toHaveBeenCalledWith(expect.objectContaining({ grantedBy: "requester-admin" }));
-    expect(recordAccess).toHaveBeenCalledWith(
-      "grant-1",
-      "support-op",
-      "customer-org",
-      "grant.requested",
+    expect(createGrantAndLog).toHaveBeenCalledWith(
+      expect.objectContaining({ grantedBy: "requester-admin" }),
       "10.0.0.7",
       expect.objectContaining({ requestedBy: "requester-admin" }),
     );
@@ -138,7 +130,7 @@ describe("PlatformOperatorAccessController identity integrity", () => {
       : controller.approveGrant("test-internal-secret", "grant-1", serviceUser, httpRequest());
 
     await expect(attempt).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(createGrant).not.toHaveBeenCalled();
+    expect(createGrantAndLog).not.toHaveBeenCalled();
     expect(approveGrant).not.toHaveBeenCalled();
   });
 
@@ -157,6 +149,6 @@ describe("PlatformOperatorAccessController identity integrity", () => {
         httpRequest(),
       ),
     ).rejects.toBeInstanceOf(UnauthorizedException);
-    expect(createGrant).not.toHaveBeenCalled();
+    expect(createGrantAndLog).not.toHaveBeenCalled();
   });
 });

@@ -163,8 +163,7 @@ export class AccountOrganizationIndexService {
               live.map((m) => m.orgId),
             ),
           ),
-        )
-        .limit(100);
+        );
     });
   }
 

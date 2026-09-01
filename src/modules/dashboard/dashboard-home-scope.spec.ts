@@ -79,24 +79,24 @@ describe("attendance scope predicate isolation", () => {
 
 describe("leave approval scope predicate isolation", () => {
   it("all scope returns unrestricted predicate", () => {
-    expect(toSql(leaveApprovalScope("all", ORG, ACTOR))).toBe("true");
+    expect(toSql(leaveApprovalScope("all", 1))).toBe("true");
   });
 
   it("none scope returns false predicate", () => {
-    expect(toSql(leaveApprovalScope("none", ORG, ACTOR))).toBe("false");
+    expect(toSql(leaveApprovalScope("none", 1))).toBe("false");
   });
 
   it("own scope does not return unrestricted predicate", () => {
-    expect(toSql(leaveApprovalScope("own", ORG, ACTOR))).not.toBe("true");
+    expect(toSql(leaveApprovalScope("own", 1))).not.toBe("true");
   });
 
   it("team scope does not return unrestricted predicate", () => {
-    expect(toSql(leaveApprovalScope("team", ORG, ACTOR))).not.toBe("true");
+    expect(toSql(leaveApprovalScope("team", 1))).not.toBe("true");
   });
 
   it("each scope produces a distinct SQL predicate", () => {
     const sqls = (["all", "own", "team", "none"] as const).map((scope) =>
-      toSql(leaveApprovalScope(scope, ORG, ACTOR)),
+      toSql(leaveApprovalScope(scope, 1)),
     );
     expect(new Set(sqls).size).toBe(4);
   });
@@ -193,10 +193,10 @@ describe("getLeavesToday scope application", () => {
 
   it("(e) is a roster read, so it filters by whose leave it is, not by who approves it", () => {
     const roster = toSql(applyScope("own", ORG, ACTOR, ownerColumn));
-    const approval = toSql(leaveApprovalScope("own", ORG, ACTOR));
+    const approval = toSql(leaveApprovalScope("own", 1));
     expect(roster).toContain('"leave_requests"."user_id"');
     expect(roster).not.toContain('"leave_requests"."approver_id"');
-    expect(approval).toContain('"leave_requests"."approver_id"');
+    expect(approval).toContain('"leave_requests"."approver_membership_id"');
     expect(roster).not.toBe(approval);
   });
 

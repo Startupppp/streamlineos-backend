@@ -209,9 +209,7 @@ describe("OfferFulfillmentService", () => {
             from: jest.fn().mockReturnValue({
               where: jest.fn().mockReturnValue({
                 orderBy: jest.fn().mockReturnValue({
-                  limit: jest.fn().mockReturnValue({
-                    offset: jest.fn().mockResolvedValue(rows),
-                  }),
+                    limit: jest.fn().mockResolvedValue(rows),
                 }),
               }),
             }),
@@ -224,9 +222,9 @@ describe("OfferFulfillmentService", () => {
         };
       });
 
-      const result = await svc.listComponents(ORG_ID, { page: 1, limit: 20 });
+      const result = await svc.listComponents(ORG_ID, { limit: 20 });
       expect(result.data).toHaveLength(2);
-      expect(result.pagination).toEqual({ page: 1, limit: 20, total: 2, totalPages: 1 });
+      expect(result.pagination.limit).toBe(20);
     });
   });
 });

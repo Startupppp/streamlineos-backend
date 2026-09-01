@@ -56,7 +56,7 @@ export class AgentAccessService {
         description: true,
         ticketNumber: true,
         projectId: true,
-        assigneeId: true,
+        assigneeMembershipId: true,
         dueDate: true,
         createdAt: true,
         updatedAt: true,

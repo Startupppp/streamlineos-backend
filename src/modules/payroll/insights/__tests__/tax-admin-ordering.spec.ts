@@ -37,7 +37,7 @@ describe("TaxAdminService.listDeclarations — deterministic ORDER BY before pag
     const db = { select: jest.fn(() => ({ from: jest.fn(() => chain) })) };
     const svc = new TaxAdminService(db as never);
 
-    await svc.listDeclarations("org-1", {}, 2, 50);
+    await svc.listDeclarations("org-1", {}, undefined, 50);
 
     const orderByCalledAt = globalOrder.indexOf("orderBy");
     const offsetCalledAt = globalOrder.indexOf("offset");

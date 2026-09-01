@@ -71,8 +71,10 @@ describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
     });
 
     it("accepts a grant expiring within 4 hours", async () => {
-      const insertChain = { values: jest.fn().mockReturnThis(), returning: jest.fn().mockResolvedValue([{ grantId: "g1" }]) };
-      const db = { insert: jest.fn().mockReturnValue(insertChain) };
+      const grantInsert = { values: jest.fn().mockReturnThis(), returning: jest.fn().mockResolvedValue([{ grantId: "g1" }]) };
+      const auditInsert = { values: jest.fn().mockResolvedValue(undefined) };
+      const tx = { execute: jest.fn().mockResolvedValue([]), insert: jest.fn().mockReturnValueOnce(grantInsert).mockReturnValueOnce(auditInsert) };
+      const db = { transaction: jest.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx)) };
       const svc = await buildService(db);
 
       const within4h = new Date(Date.now() + 3 * 60 * 60 * 1000);

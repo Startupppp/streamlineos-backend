@@ -5,10 +5,12 @@ import {
   Get,
   Headers,
   HttpCode,
+  Inject,
   Param,
   Post,
   Query,
   Req,
+  Optional,
   UnauthorizedException,
 } from "@nestjs/common";
 import type { Request } from "express";
@@ -17,6 +19,8 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { Validate } from "../../common/validation/validate.decorator";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 import { PlatformOperatorAccessService } from "./platform-operator-access.service";
 import {
   createGrantSchema,
@@ -29,8 +33,7 @@ import {
   type RevokeGrantInput,
 } from "./dto/platform.schemas";
 
-function assertInternalSecret(secret: string | undefined): void {
-  const expected = process.env.INTERNAL_API_SECRET;
+function assertInternalSecret(secret: string | undefined, expected: string | undefined): void {
   if (!expected || secret !== expected) throw new UnauthorizedException("Invalid internal secret");
 }
 
@@ -52,7 +55,10 @@ function isEligibleOperator(user: CurrentUserContext): boolean {
 
 @Controller("platform/operator-access")
 export class PlatformOperatorAccessController {
-  constructor(private readonly operatorAccess: PlatformOperatorAccessService) {}
+  constructor(
+    private readonly operatorAccess: PlatformOperatorAccessService,
+    @Optional() @Inject(APP_CONFIG) private readonly config?: Pick<AppConfig, "INTERNAL_API_SECRET">,
+  ) {}
 
   @AuthorizedInService(
     "INTERNAL_API_SECRET header — StreamlineOS platform admin only; creates a pending grant requiring a second approver",
@@ -65,21 +71,17 @@ export class PlatformOperatorAccessController {
     @CurrentUser() user: CurrentUserContext,
     @Req() req: Request,
   ): Promise<{ grantId: string }> {
-    assertInternalSecret(secret);
+    assertInternalSecret(secret, this.config?.INTERNAL_API_SECRET);
     const requesterId = humanOperatorId(user);
-    const grantId = await this.operatorAccess.createGrant({
-      operatorUserId: body.operatorUserId,
-      orgId: body.orgId,
-      incidentRef: body.incidentRef,
-      grantedBy: requesterId,
-      scope: body.scope,
-      expiresAt: new Date(body.expiresAt),
-    });
-    await this.operatorAccess.recordAccess(
-      grantId,
-      body.operatorUserId,
-      body.orgId,
-      "grant.requested",
+    const grantId = await this.operatorAccess.createGrantAndLog(
+      {
+        operatorUserId: body.operatorUserId,
+        orgId: body.orgId,
+        incidentRef: body.incidentRef,
+        grantedBy: requesterId,
+        scope: body.scope,
+        expiresAt: new Date(body.expiresAt),
+      },
       ipOf(req),
       { incidentRef: body.incidentRef, scope: body.scope, requestedBy: requesterId },
     );
@@ -98,7 +100,7 @@ export class PlatformOperatorAccessController {
     @CurrentUser() user: CurrentUserContext,
     @Req() req: Request,
   ): Promise<{ ok: true }> {
-    assertInternalSecret(secret);
+    assertInternalSecret(secret, this.config?.INTERNAL_API_SECRET);
     const approverId = humanOperatorId(user);
     const { orgId, operatorUserId } = await this.operatorAccess.approveGrant(
       grantId,
@@ -127,7 +129,7 @@ export class PlatformOperatorAccessController {
     @Body() body: RevokeGrantInput,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<{ ok: true }> {
-    assertInternalSecret(secret);
+    assertInternalSecret(secret, this.config?.INTERNAL_API_SECRET);
     humanOperatorId(user);
     await this.operatorAccess.rejectGrant(grantId, body.reason);
     return { ok: true };
@@ -143,7 +145,7 @@ export class PlatformOperatorAccessController {
     @Query() query: ListGrantsQuery,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    assertInternalSecret(secret);
+    assertInternalSecret(secret, this.config?.INTERNAL_API_SECRET);
     humanOperatorId(user);
     return this.operatorAccess.listGrants(query.orgId, query.status);
   }
@@ -160,7 +162,7 @@ export class PlatformOperatorAccessController {
     @Body() body: RevokeGrantInput,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<{ ok: true }> {
-    assertInternalSecret(secret);
+    assertInternalSecret(secret, this.config?.INTERNAL_API_SECRET);
     humanOperatorId(user);
     await this.operatorAccess.revokeGrant(grantId, body.reason);
     return { ok: true };
@@ -176,8 +178,9 @@ export class PlatformOperatorAccessController {
     @Query() query: ListLogsQuery,
     @CurrentUser() user: CurrentUserContext,
   ) {
-    assertInternalSecret(secret);
+    assertInternalSecret(secret, this.config?.INTERNAL_API_SECRET);
     humanOperatorId(user);
     return this.operatorAccess.listLogs(query.orgId, query.limit);
   }
+
 }

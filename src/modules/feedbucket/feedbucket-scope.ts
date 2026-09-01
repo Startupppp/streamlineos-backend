@@ -1,5 +1,5 @@
 import type { DataScope } from "../access/access.types";
-import { eq, type SQL } from "drizzle-orm";
+import { eq, sql, type SQL } from "drizzle-orm";
 import { feedbucketSubmissions } from "../../db/schema";
 import { applyScope } from "../access/apply-scope";
 
@@ -12,6 +12,6 @@ export function applyFeedbucketScope(
   if (scope === "own")
     return membershipId !== null
       ? eq(feedbucketSubmissions.assigneeMembershipId, membershipId)
-      : eq(feedbucketSubmissions.assigneeId, userId);
-  return applyScope(scope, orgId, userId, { ownerColumn: feedbucketSubmissions.assigneeId });
+      : sql`false`;
+  return applyScope(scope, orgId, userId, { ownerColumn: feedbucketSubmissions.assigneeMembershipId });
 }

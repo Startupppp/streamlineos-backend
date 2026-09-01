@@ -17,7 +17,7 @@ describe("TaxAdminService.listDeclarations — pagination cap", () => {
   it("caps at 100 when caller requests more", async () => {
     const { db, limit } = makeDb();
     const svc = new TaxAdminService(db);
-    await svc.listDeclarations(orgId, {}, 1, 500);
+    await svc.listDeclarations(orgId, {}, undefined, 500);
     expect(limit.mock.calls[0]?.[0]).toBeLessThanOrEqual(100);
   });
 

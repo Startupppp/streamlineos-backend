@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, inArray, isNull, lt } from "drizzle-orm";
-import { notifications, projectApprovals, users } from "../../db/schema";
+import { notifications, projectApprovals, users, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
@@ -416,10 +416,17 @@ export class UnifiedInboxService {
     const rows = await this.db
       .select({ cnt: count() })
       .from(projectApprovals)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, projectApprovals.orgId),
+          eq(organizationMembers.id, projectApprovals.approverMembershipId),
+        ),
+      )
       .where(
         and(
           eq(projectApprovals.orgId, orgId),
-          eq(projectApprovals.approverId, userId),
+          eq(organizationMembers.userId, userId),
           inArray(projectApprovals.status, ["pending", "escalated"]),
           isNull(projectApprovals.deletedAt),
         ),

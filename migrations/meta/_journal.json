@@ -4075,6 +4075,27 @@
       "when": 1803000010022,
       "tag": "0929_gdpr_correction_request",
       "breakpoints": true
+    },
+    {
+      "idx": 711,
+      "version": "7",
+      "when": 1803000010023,
+      "tag": "0930_audit_logs_append_only_trigger",
+      "breakpoints": true
+    },
+    {
+      "idx": 712,
+      "version": "7",
+      "when": 1803000010024,
+      "tag": "0931_s02_build_read_cost_covering_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 713,
+      "version": "7",
+      "when": 1803000010025,
+      "tag": "0932_s02_announcements_read_cost_index",
+      "breakpoints": true
     }
   ]
 }

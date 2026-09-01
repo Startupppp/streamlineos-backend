@@ -115,7 +115,7 @@ describe("HrWorkflowApproverService — cross-tenant isolation", () => {
 
     const result = await svc.resolveEffectiveActor(
       ATTACKER_ORG,
-      "actor-from-attacker-org",
+      1,
       ["approver-in-victim-org"],
       "wf-obj-1",
       "leave_request",
@@ -144,7 +144,7 @@ describe("HrWorkflowApproverService — cross-tenant isolation", () => {
 
     const result = await svc.resolveEffectiveActor(
       ATTACKER_ORG,
-      "attacker-actor",
+      1,
       ["victim-approver-that-is-not-in-list"],
       "wf-obj-1",
       "leave_request",

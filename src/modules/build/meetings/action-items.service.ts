@@ -172,7 +172,6 @@ export class ActionItemsService {
           status: "TODO",
           priority: "MEDIUM",
           reporterId: userId,
-          assigneeId: item.assigneeId ?? null,
           dueDate: item.dueDate ?? null,
         })
         .returning();

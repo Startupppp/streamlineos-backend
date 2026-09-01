@@ -21,6 +21,8 @@ import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
 import { CronLeaseService } from "./cron-lease.service";
 import { CalendarReminderSweepService } from "../calendar/calendar-reminder-sweep.service";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { CronOperatorAccessService } from "./cron-operator-access.service";
+import { CronAiUsageRetentionService } from "./cron-ai-usage-retention.service";
 
 @Public()
 @Controller("cron")
@@ -37,6 +39,8 @@ export class CronPlatformController {
     private readonly calendarReminderSweep: CalendarReminderSweepService,
     private readonly accountOrgIndex: AccountOrganizationIndexService,
     private readonly cronLease: CronLeaseService,
+    private readonly operatorAccess: CronOperatorAccessService,
+    private readonly aiUsageRetention: CronAiUsageRetentionService,
   ) {}
 
   @Get("workflow-tick")
@@ -157,6 +161,30 @@ export class CronPlatformController {
   @HttpCode(200)
   postTimesheetsExceptionDetection(@Headers("authorization") authorization?: string) {
     return this.runTimesheetsExceptionDetection(authorization);
+  }
+
+  @Get("operator-grant-expiry")
+  getOperatorGrantExpiry(@Headers("authorization") authorization?: string) {
+    return this.runOperatorGrantExpiry(authorization);
+  }
+
+  @Post("operator-grant-expiry")
+  @BodylessAction()
+  @HttpCode(200)
+  postOperatorGrantExpiry(@Headers("authorization") authorization?: string) {
+    return this.runOperatorGrantExpiry(authorization);
+  }
+
+  @Get("ai-usage-retention-sweep")
+  getAiUsageRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runAiUsageRetentionSweep(authorization);
+  }
+
+  @Post("ai-usage-retention-sweep")
+  @BodylessAction()
+  @HttpCode(200)
+  postAiUsageRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runAiUsageRetentionSweep(authorization);
   }
 
   private async runWorkflowTick(authorization?: string) {
@@ -350,6 +378,34 @@ export class CronPlatformController {
       };
     } catch (error) {
       logger.error("Timesheet exception detection cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runOperatorGrantExpiry(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("operator-grant-expiry", 120, () =>
+        this.operatorAccess.expirePendingGrants(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "operator-grant-expiry already running" };
+      return { success: true, ...outcome.result };
+    } catch (error) {
+      logger.error("Operator grant expiry cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runAiUsageRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("ai-usage-retention-sweep", 1800, () =>
+        this.aiUsageRetention.sweep({ dryRun: false }),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "ai-usage-retention-sweep already running" };
+      return { success: true, ...outcome.result };
+    } catch (error) {
+      logger.error("AI usage retention sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

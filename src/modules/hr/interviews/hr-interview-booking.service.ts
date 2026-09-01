@@ -50,7 +50,12 @@ export class HrInterviewBookingService {
       async (tx) => {
         const link = await tx.query.interviewBookingLinks.findFirst({
           where: eq(interviewBookingLinks.token, token),
-          columns: { createdBy: true, createdByMembershipId: true },
+          columns: {
+            id: true, orgId: true, candidateId: true, jobPostingId: true,
+            durationMinutes: true, interviewType: true, availableSlots: true,
+            status: true, expiresAt: true, createdBy: true,
+            createdByMembershipId: true, notes: true,
+          },
           with: {
             interviewers: { columns: { userId: true, userMembershipId: true } },
           },

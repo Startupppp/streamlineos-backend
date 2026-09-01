@@ -210,7 +210,7 @@ export class ManagerInboxService {
         this.db
           .select({
             id: reimbursements.id,
-            userId: reimbursements.userId,
+            membershipId: reimbursements.userMembershipId,
             category: reimbursements.category,
             amount: reimbursements.amount,
             description: reimbursements.description,
@@ -229,7 +229,7 @@ export class ManagerInboxService {
         this.db
           .select({
             id: salaryLoans.id,
-            userId: salaryLoans.userId,
+            membershipId: salaryLoans.userMembershipId,
             amount: salaryLoans.amount,
             reason: salaryLoans.reason,
             totalEmis: salaryLoans.totalEmis,
@@ -247,8 +247,18 @@ export class ManagerInboxService {
           .limit(50),
       ]);
 
-    const reimbByUser = new Map(reimbRows.map((r) => [userIdByMembershipId.get(r.membershipId), Number(r.total)]));
-    const loanByUser = new Map(loanRows.map((r) => [userIdByMembershipId.get(r.membershipId), Number(r.total)]));
+    const reimbByUser = new Map<string, number>();
+    for (const row of reimbRows) {
+      if (row.membershipId === null) continue;
+      const userId = userIdByMembershipId.get(row.membershipId);
+      if (userId) reimbByUser.set(userId, Number(row.total));
+    }
+    const loanByUser = new Map<string, number>();
+    for (const row of loanRows) {
+      if (row.membershipId === null) continue;
+      const userId = userIdByMembershipId.get(row.membershipId);
+      if (userId) loanByUser.set(userId, Number(row.total));
+    }
 
     const latestPayslipByUser = new Map<
       string,
@@ -293,25 +303,35 @@ export class ManagerInboxService {
       (a, b) => b.actionCount - a.actionCount || (a.name ?? "").localeCompare(b.name ?? ""),
     );
 
-    const pendingReimbursements: ManagerPendingReimbursement[] = pendingReimbList.map((r) => ({
-      id: r.id,
-      userId: r.userId,
-      userName: nameByUser.get(r.userId) ?? null,
-      category: r.category,
-      amount: r.amount,
-      description: r.description,
-      createdAt: r.createdAt,
-    }));
+    const pendingReimbursements: ManagerPendingReimbursement[] = pendingReimbList.flatMap((r) => {
+      if (r.membershipId === null) return [];
+      const userId = userIdByMembershipId.get(r.membershipId);
+      if (!userId) return [];
+      return [{
+        id: r.id,
+        userId,
+        userName: nameByUser.get(userId) ?? null,
+        category: r.category,
+        amount: r.amount,
+        description: r.description,
+        createdAt: r.createdAt,
+      }];
+    });
 
-    const pendingLoans: ManagerPendingLoan[] = pendingLoanList.map((l) => ({
-      id: l.id,
-      userId: l.userId,
-      userName: nameByUser.get(l.userId) ?? null,
-      amount: l.amount,
-      reason: l.reason,
-      totalEmis: l.totalEmis,
-      createdAt: l.createdAt,
-    }));
+    const pendingLoans: ManagerPendingLoan[] = pendingLoanList.flatMap((l) => {
+      if (l.membershipId === null) return [];
+      const userId = userIdByMembershipId.get(l.membershipId);
+      if (!userId) return [];
+      return [{
+        id: l.id,
+        userId,
+        userName: nameByUser.get(userId) ?? null,
+        amount: l.amount,
+        reason: l.reason,
+        totalEmis: l.totalEmis,
+        createdAt: l.createdAt,
+      }];
+    });
 
     const totals = {
       pendingReimbursements: members.reduce((s, m) => s + m.pendingReimbursements, 0),

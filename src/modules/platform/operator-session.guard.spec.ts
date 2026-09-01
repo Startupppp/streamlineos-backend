@@ -1,6 +1,5 @@
 import { BadRequestException, ExecutionContext, ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import { OPERATOR_GRANT_KEY } from "./require-operator-grant.decorator";
 import { OperatorSessionGuard } from "./operator-session.guard";
 import type { PlatformOperatorAccessService } from "./platform-operator-access.service";
 

@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, ilike, isNull, like } from "drizzle-orm";
-import { feedbucketAttachments, feedbucketSubmissions } from "../../db/schema";
+import { feedbucketAttachments, feedbucketSubmissions, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { DataScope } from "../access/access.types";
@@ -27,7 +27,10 @@ export class FeedbucketSubmissionsService {
     if (widgetId !== undefined) conditions.push(eq(feedbucketSubmissions.widgetId, widgetId));
     if (type !== undefined) conditions.push(eq(feedbucketSubmissions.type, type));
     if (status !== undefined) conditions.push(eq(feedbucketSubmissions.status, status));
-    if (assigneeId !== undefined) conditions.push(eq(feedbucketSubmissions.assigneeId, assigneeId));
+    if (assigneeId !== undefined) {
+      const membership = await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, assigneeId)), columns: { id: true } });
+      conditions.push(eq(feedbucketSubmissions.assigneeMembershipId, membership?.id ?? -1));
+    }
     if (search?.trim()) {
       conditions.push(ilike(feedbucketSubmissions.message, `%${search}%`));
     }
@@ -40,9 +43,6 @@ export class FeedbucketSubmissionsService {
         columns: { consoleLogs: false, networkLogs: false },
         with: {
           widget: true,
-          assignee: {
-            columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true },
-          },
         },
         orderBy: [desc(feedbucketSubmissions.createdAt)],
         limit,
@@ -65,9 +65,6 @@ export class FeedbucketSubmissionsService {
         ),
         with: {
           widget: true,
-          assignee: {
-            columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true },
-          },
           linkedTicket: true,
         },
       }),
@@ -93,7 +90,10 @@ export class FeedbucketSubmissionsService {
     const patch: Partial<typeof feedbucketSubmissions.$inferInsert> = { updatedAt: new Date() };
     if (dto.status !== undefined) patch.status = dto.status;
     if (dto.priority !== undefined) patch.priority = dto.priority;
-    if (dto.assigneeId !== undefined) patch.assigneeId = dto.assigneeId;
+    if (dto.assigneeId !== undefined) {
+      const membership = dto.assigneeId === null ? null : await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, dto.assigneeId)), columns: { id: true } });
+      patch.assigneeMembershipId = membership?.id ?? null;
+    }
 
     const [updated] = await this.db
       .update(feedbucketSubmissions)

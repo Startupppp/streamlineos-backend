@@ -6,8 +6,11 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, gt, isNull } from "drizzle-orm";
-import { operatorAccessGrants, operatorAccessLog } from "../../db/schema";
+import { and, eq, gt, isNull, lte } from "drizzle-orm";
+import {
+  operatorAccessGrants,
+  operatorAccessLog,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -35,6 +38,19 @@ export class PlatformOperatorAccessService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async createGrant(params: GrantParams): Promise<string> {
+    return this.createGrantAndLog(params, undefined);
+  }
+
+  /**
+   * Creates the grant request and its management audit event in one tenant
+   * transaction. A request must never become visible without its immutable
+   * `grant.requested` record.
+   */
+  async createGrantAndLog(
+    params: GrantParams,
+    ipAddress: string | undefined,
+    detail?: Record<string, unknown>,
+  ): Promise<string> {
     if (params.expiresAt <= new Date())
       throw new BadRequestException("Grant expiry must be in the future");
     const maxExpiry = new Date(Date.now() + MAX_GRANT_DURATION_MS);
@@ -42,19 +58,32 @@ export class PlatformOperatorAccessService {
       throw new BadRequestException(
         "Grant duration cannot exceed 4 hours from now",
       );
-    const [row] = await this.db
-      .insert(operatorAccessGrants)
-      .values({
+
+    return runInNewTenantTransaction(this.db, params.orgId, async (tx) => {
+      const [row] = await tx
+        .insert(operatorAccessGrants)
+        .values({
+          operatorUserId: params.operatorUserId,
+          orgId: params.orgId,
+          incidentRef: params.incidentRef,
+          grantedBy: params.grantedBy,
+          scope: params.scope,
+          expiresAt: params.expiresAt,
+          status: "pending",
+        })
+        .returning({ grantId: operatorAccessGrants.grantId });
+
+      await tx.insert(operatorAccessLog).values({
+        grantId: row!.grantId,
         operatorUserId: params.operatorUserId,
         orgId: params.orgId,
-        incidentRef: params.incidentRef,
-        grantedBy: params.grantedBy,
-        scope: params.scope,
-        expiresAt: params.expiresAt,
-        status: "pending",
-      })
-      .returning({ grantId: operatorAccessGrants.grantId });
-    return row!.grantId;
+        action: "grant.requested",
+        detail: detail ?? null,
+        ipAddress: ipAddress ?? null,
+      });
+
+      return row!.grantId;
+    });
   }
 
   async approveGrant(
@@ -145,6 +174,22 @@ export class PlatformOperatorAccessService {
         "No active operator access grant for this organisation and scope",
       );
     return grant.grantId;
+  }
+
+  /** Move stale approval requests out of the queue without extending access. */
+  async expirePendingGrants(now = new Date()): Promise<number> {
+    const expired = await this.db
+      .update(operatorAccessGrants)
+      .set({ status: "expired" })
+      .where(
+        and(
+          eq(operatorAccessGrants.status, "pending"),
+          lte(operatorAccessGrants.expiresAt, now),
+          isNull(operatorAccessGrants.revokedAt),
+        ),
+      )
+      .returning({ grantId: operatorAccessGrants.grantId });
+    return expired.length;
   }
 
   async recordAccess(

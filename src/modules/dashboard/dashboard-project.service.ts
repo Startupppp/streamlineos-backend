@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
-import { projectMembers, projects, sprints, tickets } from "../../db/schema";
+import { organizationMembers, projectMembers, projects, sprints, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -29,7 +29,8 @@ export class DashboardProjectService {
     const memberOf = await this.db
       .select({ projectId: projectMembers.projectId })
       .from(projectMembers)
-      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.userId, userId)));
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
+      .where(and(eq(projectMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
     return memberOf.map((m) => m.projectId);
   }
 
@@ -43,17 +44,17 @@ export class DashboardProjectService {
         orderBy: [desc(projects.id)],
         limit: 5,
         with: {
-          manager: {
-            columns: { id: true, name: true, firstName: true, lastName: true, image: true },
-          },
+          manager: { with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true } } } },
         },
       });
     }
 
+    const managerMember = await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, u.userId)), columns: { id: true } });
     const memberOf = await this.db
       .select({ projectId: projectMembers.projectId })
       .from(projectMembers)
-      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.userId, u.userId)));
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
+      .where(and(eq(projectMembers.orgId, orgId), eq(organizationMembers.userId, u.userId)));
 
     const projectIds = memberOf.map((m) => m.projectId);
 
@@ -62,28 +63,28 @@ export class DashboardProjectService {
         eq(projects.orgId, orgId),
         isNull(projects.deletedAt),
         or(
-          eq(projects.managerId, u.userId),
+          eq(projects.managerMembershipId, managerMember?.id ?? -1),
           projectIds.length > 0 ? inArray(projects.id, projectIds) : undefined,
         ),
       ),
       orderBy: [desc(projects.id)],
       limit: 5,
       with: {
-        manager: {
-          columns: { id: true, name: true, firstName: true, lastName: true, image: true },
-        },
+        manager: { with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true } } } },
       },
     });
   }
 
   async getMyIssues(orgId: string, userId: string) {
+    const member = await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)), columns: { id: true } });
+    if (!member) return [];
     const issues = await this.db.query.tickets.findMany({
-      where: and(eq(tickets.orgId, orgId), eq(tickets.assigneeId, userId), isNull(tickets.deletedAt)),
+      where: and(eq(tickets.orgId, orgId), eq(tickets.assigneeMembershipId, member.id), isNull(tickets.deletedAt)),
       orderBy: [desc(tickets.updatedAt)],
       limit: 10,
       with: {
         project: { columns: { id: true, name: true, key: true } },
-        assignee: { columns: { id: true, firstName: true, lastName: true, image: true } },
+        assignee: { with: { user: { columns: { id: true, firstName: true, lastName: true, image: true } } } },
       },
     });
 
@@ -98,12 +99,12 @@ export class DashboardProjectService {
       projectName: t.project?.name ?? "",
       projectId: t.project?.id,
       projectKey: t.project?.key ?? "",
-      assignee: t.assignee
+      assignee: t.assignee?.user
         ? {
             id: t.assignee.id,
-            firstName: t.assignee.firstName,
-            lastName: t.assignee.lastName,
-            image: t.assignee.image,
+            firstName: t.assignee.user.firstName,
+            lastName: t.assignee.user.lastName,
+            image: t.assignee.user.image,
           }
         : null,
     }));
@@ -189,6 +190,7 @@ export class DashboardProjectService {
     if (scope === "none") return [];
     const projectIds = await this.resolveProjectIds(orgId, u.userId, scope === "all");
     if (projectIds.length === 0) return [];
+    const managerMember = await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, u.userId)), columns: { id: true } });
 
     const ticketFilters: SQL[] = [
       eq(tickets.orgId, orgId),
@@ -198,7 +200,7 @@ export class DashboardProjectService {
 
     if (scope !== "all") {
       const ownerFilter = or(
-        eq(tickets.assigneeId, u.userId),
+        eq(tickets.assigneeMembershipId, managerMember?.id ?? -1),
         eq(tickets.reporterId, u.userId),
       );
       if (ownerFilter) ticketFilters.push(ownerFilter);
@@ -210,7 +212,7 @@ export class DashboardProjectService {
       limit: 10,
       with: {
         project: { columns: { id: true, name: true, key: true } },
-        assignee: { columns: { id: true, firstName: true, lastName: true, image: true } },
+        assignee: { with: { user: { columns: { id: true, firstName: true, lastName: true, image: true } } } },
       },
     });
 
@@ -225,12 +227,12 @@ export class DashboardProjectService {
       projectName: t.project?.name || "",
       projectId: t.project?.id,
       projectKey: t.project?.key || "",
-      assignee: t.assignee
+      assignee: t.assignee?.user
         ? {
             id: t.assignee.id,
-            firstName: t.assignee.firstName,
-            lastName: t.assignee.lastName,
-            image: t.assignee.image,
+            firstName: t.assignee.user.firstName,
+            lastName: t.assignee.user.lastName,
+            image: t.assignee.user.image,
           }
         : null,
     }));

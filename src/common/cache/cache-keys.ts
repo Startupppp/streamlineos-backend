@@ -69,7 +69,6 @@ export const CACHE_KEYS = {
     `invoices:detail:${orgId}:${id}`,
   invoiceStats: (orgId: string) => `invoices:stats:${orgId}`,
 
-  tasksList: (orgId: string, hash: string) => `tasks:list:${orgId}:${hash}`,
   taskDetail: (orgId: string, id: number) => `tasks:detail:${orgId}:${id}`,
 
   quotesList: (orgId: string, hash: string) => `quotes:list:${orgId}:${hash}`,
@@ -92,7 +91,6 @@ export const CACHE_KEYS = {
   targetLeaderboard: (orgId: string, metricType: string) =>
     `targets:leaderboard:${orgId}:${metricType}`,
 
-  branchesList: (orgId: string) => `branches:list:${orgId}`,
 
   invProductsNamespace: (orgId: string) => `inv:products:list:${orgId}`,
   invProductDetail: (orgId: string, id: number) =>
@@ -158,8 +156,6 @@ export const CACHE_KEYS = {
 
   featureFlags: () => "feature-flags:all",
 
-  orgUnits: (orgId: string, kind?: string) =>
-    kind ? `org:units:${orgId}:${kind}` : `org:units:${orgId}`,
   orgHierarchyNamespace: (orgId: string) => `org:hierarchy:${orgId}`,
   hrHeadcountNamespace: (orgId: string) => `hr:headcount:${orgId}`,
   leaveAnalyticsNamespace: (orgId: string) => `hr:leave-analytics:${orgId}`,
@@ -228,7 +224,6 @@ export const CACHE_KEYS = {
     groupId: number,
     version: number,
   ) => `module-access:group-members:${orgId}:${moduleKey}:${groupId}:v${version}`,
-  moduleAccessCandidates: (orgId: string) => `module-access:candidates:${orgId}`,
   moduleAccessMembers: (
     orgId: string,
     moduleKey: string,

@@ -201,7 +201,7 @@ describe("DelegationsService normalized permission grants", () => {
 
     await expect(
       service.listGiven(actor.orgId, actor.userId, {
-        page: 2,
+        cursor: undefined,
         limit: 10,
         search: "Sam",
       }),
@@ -216,14 +216,13 @@ describe("DelegationsService normalized permission grants", () => {
         },
       ],
       pagination: {
-        page: 2,
         limit: 10,
-        total: 21,
-        totalPages: 3,
+        hasMore: false,
+        nextCursor: null,
       },
     });
     expect(limit).toHaveBeenCalledWith(10);
-    expect(offset).toHaveBeenCalledWith(10);
+    expect(offset).not.toHaveBeenCalled();
     expect(orderBy).toHaveBeenCalledTimes(1);
     expect(pageWhere).toHaveBeenCalledTimes(1);
     expect(countWhere).toHaveBeenCalledTimes(1);

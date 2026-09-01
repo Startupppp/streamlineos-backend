@@ -364,7 +364,7 @@ export class HrCalendarSource implements CalendarEventSource {
 
     const selfLeaveByDate = new Map<string, { isHalfDay: boolean; halfDayPeriod: string | null }>();
     for (const leave of leavesData) {
-      if (leave.userId !== userId) continue;
+      if (leave.userMembershipId !== membership.id) continue;
       const leaveStart = leave.startDate < startStr ? startStr : leave.startDate;
       const leaveEnd = leave.endDate > endStr ? endStr : leave.endDate;
       for (const date of enumerateDates(leaveStart, leaveEnd))

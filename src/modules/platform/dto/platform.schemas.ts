@@ -24,7 +24,7 @@ export const revokeGrantSchema = z.object({
 
 export type RevokeGrantInput = z.infer<typeof revokeGrantSchema>;
 
-export const grantStatusSchema = z.enum(["pending", "active", "rejected"]);
+export const grantStatusSchema = z.enum(["pending", "active", "rejected", "revoked", "expired"]);
 
 export const listGrantsQuerySchema = z.object({
   orgId: z.string().min(1).max(256),

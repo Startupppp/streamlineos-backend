@@ -46,7 +46,7 @@ describe("ReportsService — deterministic ORDER BY before paging", () => {
       const db = { select: jest.fn(() => ({ from: jest.fn(() => chain) })) };
       const svc = new ReportsService(db as never);
 
-      await svc.getDepartmentCost("org-1", "2026-01", {}, { limit: 10, offset: 0 });
+      await svc.getDepartmentCost("org-1", "2026-01", {}, { limit: 10 });
 
       const orderByCalledAt = globalOrder.indexOf("orderBy");
       const offsetCalledAt = globalOrder.indexOf("offset");
@@ -68,7 +68,7 @@ describe("ReportsService — deterministic ORDER BY before paging", () => {
       const db = { select: jest.fn(() => ({ from: jest.fn(() => chain) })) };
       const svc = new ReportsService(db as never);
 
-      await svc.getCostCenter("org-1", "2026-01", {}, { limit: 10, offset: 0 });
+      await svc.getCostCenter("org-1", "2026-01", {}, { limit: 10 });
 
       const orderByCalledAt = globalOrder.indexOf("orderBy");
       const offsetCalledAt = globalOrder.indexOf("offset");

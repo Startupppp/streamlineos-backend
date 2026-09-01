@@ -6,6 +6,7 @@ import {
   ticketLabelMappings,
   ticketLabels,
   tickets,
+  organizationMembers,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -128,7 +129,17 @@ export class BuildAutomationRunnerService {
       case "set_assignee": {
         await this.db
           .update(tickets)
-          .set({ assigneeId: action.value, updatedAt: new Date() })
+          .set({
+            assigneeMembershipId: (await this.db.query.organizationMembers.findFirst({
+              where: and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.userId, action.value),
+                eq(organizationMembers.status, "ACTIVE"),
+              ),
+              columns: { id: true },
+            }))?.id ?? null,
+            updatedAt: new Date(),
+          })
           .where(ticketWhere);
         return;
       }

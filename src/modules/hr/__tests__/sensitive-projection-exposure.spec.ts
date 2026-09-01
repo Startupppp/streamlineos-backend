@@ -222,7 +222,7 @@ describe("sensitive-projection-exposure", () => {
         }).compile();
 
         const service = module.get(HrBenefitsEnrollmentService);
-        await service.listDependents("org1", "user1");
+        await service.listDependents("org1", "user1", 1);
 
         assertProjection(capturedProj);
         expect(Object.keys(capturedProj).sort()).toEqual(DEPENDENT_ALLOWLIST);
@@ -261,7 +261,7 @@ describe("sensitive-projection-exposure", () => {
 
         const service = module.get(HrBenefitsEnrollmentService);
         await expect(
-          service.updateDependent("org1", "user1", 1, { name: "Test" }),
+          service.updateDependent("org1", "user1", 1, 1, { name: "Test" }),
         ).rejects.toThrow(NotFoundException);
 
         assertProjection(capturedProj);
@@ -309,10 +309,7 @@ describe("sensitive-projection-exposure", () => {
         }).compile();
 
         const service = module.get(CompPlanningService);
-        await service.listRecommendations("org1", {
-          page: 1,
-          limit: 10,
-        });
+        await service.listRecommendations("org1", { limit: 10 });
 
         expect(capturedProjs.length).toBeGreaterThanOrEqual(1);
         const recProj = capturedProjs[0];

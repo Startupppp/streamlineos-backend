@@ -1,4 +1,6 @@
 -- 0928: allow scheduled organization deletion while retaining audit evidence.
+-- @irreversible — detaching historical audit ownership is a deliberate data
+-- disposition and must not be silently reversed by an automated rollback.
 -- The application role may invoke this only for its current tenant; it never
 -- receives direct UPDATE/DELETE access to the append-only audit table.
 

@@ -38,7 +38,7 @@ describe("PrincipalGroupsService — cross-tenant isolation", () => {
     const { db, where } = makeDb(null, []);
     const mockAccess = {} as any;
     const svc = new PrincipalGroupsService(db, mockAccess);
-    const result = await svc.list(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.list(ATTACKER, { limit: 20 });
     expect(result.data).toHaveLength(0);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -56,7 +56,7 @@ describe("PrincipalGroupsService — cross-tenant isolation", () => {
     const { db } = makeDb(groupRow, [groupRow]);
     const mockAccess = {} as any;
     const svc = new PrincipalGroupsService(db, mockAccess);
-    const result = await svc.list(OWNER, { page: 1, limit: 20 });
+    const result = await svc.list(OWNER, { limit: 20 });
     expect(result.data).toHaveLength(1);
   });
 });

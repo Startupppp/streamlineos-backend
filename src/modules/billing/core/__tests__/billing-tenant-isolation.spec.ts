@@ -42,9 +42,7 @@ describe("AiCreditsPacksService — cross-tenant isolation", () => {
   it("listTransactions returns empty results and scopes WHERE to the requesting org (cross-tenant isolation)", async () => {
     const itemsWhere = jest.fn().mockReturnValue({
       orderBy: jest.fn().mockReturnValue({
-        limit: jest.fn().mockReturnValue({
-          offset: jest.fn().mockResolvedValue([]),
-        }),
+        limit: jest.fn().mockResolvedValue([]),
       }),
     });
     const countWhere = jest.fn().mockResolvedValue([{ total: 0 }]);
@@ -64,14 +62,13 @@ describe("AiCreditsPacksService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new AiCreditsPacksService(db);
 
-    const result = await svc.listTransactions(ATTACKER_ORG, 1, 10);
+    const result = await svc.listTransactions(ATTACKER_ORG, { limit: 10 });
 
     expect(itemsWhere).toHaveBeenCalled();
     const predicate = itemsWhere.mock.calls[0]?.[0];
     expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
     expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
-    expect(result.items).toHaveLength(0);
-    expect(result.total).toBe(0);
+    expect(result.data).toHaveLength(0);
   });
 
   it("listTransactions returns items for the owning org (control — same-tenant access works)", async () => {
@@ -87,7 +84,7 @@ describe("AiCreditsPacksService — cross-tenant isolation", () => {
         return {
           from: jest.fn().mockReturnValue({
             where: selectCall === 1
-              ? jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue({ offset: jest.fn().mockResolvedValue([fakeItem]) }) }) })
+              ? jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([fakeItem]) }) })
               : jest.fn().mockResolvedValue([{ total: 1 }]),
           }),
         };
@@ -95,9 +92,8 @@ describe("AiCreditsPacksService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new AiCreditsPacksService(db);
 
-    const result = await svc.listTransactions(OWNER_ORG, 1, 10);
-    expect(result.items).toHaveLength(1);
-    expect(result.total).toBe(1);
+    const result = await svc.listTransactions(OWNER_ORG, { limit: 10 });
+    expect(result.data).toHaveLength(1);
   });
 });
 

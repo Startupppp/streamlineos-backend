@@ -77,7 +77,10 @@ export class LeavesApprovalService {
           and(
             eq(leaveRequests.id, leaveRequestId),
             eq(leaveRequests.orgId, currentUser.orgId),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
+            leaveApprovalScope(
+              scope,
+              currentUser.principal != null ? actingMembershipId(currentUser.principal) : null,
+            ),
           ),
         )
         .limit(1)
@@ -108,7 +111,10 @@ export class LeavesApprovalService {
             eq(leaveRequests.orgId, currentUser.orgId),
             eq(leaveRequests.status, current.status),
             eq(leaveRequests.rowVersion, current.rowVersion),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
+            leaveApprovalScope(
+              scope,
+              currentUser.principal != null ? actingMembershipId(currentUser.principal) : null,
+            ),
           ),
         )
         .returning({ id: leaveRequests.id });
@@ -132,19 +138,21 @@ export class LeavesApprovalService {
             current.isHalfDay,
           );
 
-          const [balanceRecord] = await tx
-            .select()
-            .from(leaveBalances)
-            .where(
-              and(
-                eq(leaveBalances.userMembershipId, current.userMembershipId),
-                eq(leaveBalances.leaveTypeId, current.leaveTypeId),
-                eq(leaveBalances.orgId, currentUser.orgId),
-                eq(leaveBalances.year, this.leaveYear(current.startDate)),
-              ),
-            )
-            .limit(1)
-            .for("update");
+          const [balanceRecord] = current.userMembershipId == null
+            ? []
+            : await tx
+              .select()
+              .from(leaveBalances)
+              .where(
+                and(
+                  eq(leaveBalances.userMembershipId, current.userMembershipId),
+                  eq(leaveBalances.leaveTypeId, current.leaveTypeId),
+                  eq(leaveBalances.orgId, currentUser.orgId),
+                  eq(leaveBalances.year, this.leaveYear(current.startDate)),
+                ),
+              )
+              .limit(1)
+              .for("update");
 
           if (balanceRecord) {
             const prevLopDays = Number(current.lopDays ?? 0);
@@ -237,7 +245,10 @@ export class LeavesApprovalService {
           and(
             eq(leaveRequests.id, leaveRequestId),
             eq(leaveRequests.orgId, currentUser.orgId),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
+            leaveApprovalScope(
+              scope,
+              currentUser.principal != null ? actingMembershipId(currentUser.principal) : null,
+            ),
           ),
         )
         .limit(1)
@@ -266,7 +277,10 @@ export class LeavesApprovalService {
             eq(leaveRequests.orgId, currentUser.orgId),
             eq(leaveRequests.status, "PENDING"),
             eq(leaveRequests.rowVersion, current.rowVersion),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
+            leaveApprovalScope(
+              scope,
+              currentUser.principal != null ? actingMembershipId(currentUser.principal) : null,
+            ),
           ),
         )
         .returning({ id: leaveRequests.id });
@@ -289,19 +303,21 @@ export class LeavesApprovalService {
           current.endDate,
           current.isHalfDay,
         );
-        const [balanceRecord] = await tx
-          .select()
-          .from(leaveBalances)
-          .where(
-            and(
-              eq(leaveBalances.userMembershipId, current.userMembershipId),
-              eq(leaveBalances.leaveTypeId, current.leaveTypeId),
-              eq(leaveBalances.orgId, currentUser.orgId),
-              eq(leaveBalances.year, this.leaveYear(current.startDate)),
-            ),
-          )
-          .limit(1)
-          .for("update");
+        const [balanceRecord] = current.userMembershipId == null
+          ? []
+          : await tx
+            .select()
+            .from(leaveBalances)
+            .where(
+              and(
+                eq(leaveBalances.userMembershipId, current.userMembershipId),
+                eq(leaveBalances.leaveTypeId, current.leaveTypeId),
+                eq(leaveBalances.orgId, currentUser.orgId),
+                eq(leaveBalances.year, this.leaveYear(current.startDate)),
+              ),
+            )
+            .limit(1)
+            .for("update");
 
         if (balanceRecord) {
           const available = Number(balanceRecord.balance);
@@ -395,7 +411,10 @@ export class LeavesApprovalService {
           and(
             eq(leaveRequests.id, leaveRequestId),
             eq(leaveRequests.orgId, currentUser.orgId),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
+            leaveApprovalScope(
+              scope,
+              currentUser.principal != null ? actingMembershipId(currentUser.principal) : null,
+            ),
           ),
         )
         .limit(1)
@@ -425,7 +444,10 @@ export class LeavesApprovalService {
             eq(leaveRequests.orgId, currentUser.orgId),
             eq(leaveRequests.status, "PENDING"),
             eq(leaveRequests.rowVersion, current.rowVersion),
-            leaveApprovalScope(scope, currentUser.orgId, currentUser.userId, currentUser.principal != null ? actingMembershipId(currentUser.principal) : null),
+            leaveApprovalScope(
+              scope,
+              currentUser.principal != null ? actingMembershipId(currentUser.principal) : null,
+            ),
           ),
         )
         .returning({ id: leaveRequests.id });

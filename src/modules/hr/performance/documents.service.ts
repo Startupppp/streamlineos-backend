@@ -290,7 +290,7 @@ export class DocumentsService {
     if (!doc) throw new NotFoundException("Document not found.");
 
     const requestedUserId = input.userId;
-    const targetMember = requestedUserId === undefined
+    const targetMember = requestedUserId == null
       ? null
       : await this.db.query.organizationMembers.findFirst({
         where: and(
@@ -301,7 +301,7 @@ export class DocumentsService {
           }),
         ),
       });
-    if (requestedUserId !== undefined) {
+    if (requestedUserId != null) {
       if (!targetMember) {
         throw new NotFoundException("Target user not found in your permitted scope.");
       }

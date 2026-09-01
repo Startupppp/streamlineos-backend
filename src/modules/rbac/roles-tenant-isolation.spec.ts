@@ -65,7 +65,7 @@ describe("RolesService — cross-tenant isolation", () => {
     const mockRolePerm = { getRolePermissions: jest.fn().mockResolvedValue([]) } as any;
     const mockRoleMember = {} as any;
     const svc = new RolesService(db, mockAudit, mockAccess, mockRolePerm, mockRoleMember);
-    const result = await svc.getRoles(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.getRoles(ATTACKER, { limit: 20 });
     expect(result.data).toHaveLength(0);
     const pageWhere = whereCalls[0];
     expect(pageWhere).toHaveBeenCalled();
@@ -92,7 +92,7 @@ describe("RolesService — cross-tenant isolation", () => {
     const mockRolePerm = { getRolePermissions: jest.fn().mockResolvedValue([]) } as any;
     const mockRoleMember = {} as any;
     const svc = new RolesService(db, mockAudit, mockAccess, mockRolePerm, mockRoleMember);
-    const result = await svc.getRoles(OWNER, { page: 1, limit: 20 });
+    const result = await svc.getRoles(OWNER, { limit: 20 });
     expect(result.data).toHaveLength(1);
   });
 });

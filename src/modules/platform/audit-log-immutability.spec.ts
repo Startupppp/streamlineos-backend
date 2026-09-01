@@ -57,8 +57,8 @@ describe("audit_logs immutability — code-level enforcement", () => {
   );
 });
 
-describe("audit_logs immutability — DB-level evidence (from pg_catalog probe 2026-09-01)", () => {
-  it("RLS is enabled on audit_logs — verified via pg_catalog probe", () => {
+describe("audit_logs immutability — repository contract (not deployed evidence)", () => {
+  it("records the required deployed RLS contract without claiming a live probe", () => {
     const evidence = {
       table: "audit_logs",
       relrowsecurity: true,
@@ -73,7 +73,7 @@ describe("audit_logs immutability — DB-level evidence (from pg_catalog probe 2
   });
 
   it(
-    "streamline_app is not granted row mutation privileges on audit_logs",
+    "records the expected application-role privilege contract without claiming deployment",
     () => {
       const privileges = ["INSERT", "SELECT"];
       expect(privileges).not.toContain("DELETE");
@@ -99,4 +99,46 @@ describe("audit_logs immutability — DB-level evidence (from pg_catalog probe 2
       expect(migration).toContain("current_setting('app.organization_id', true)");
     },
   );
+
+  it("defines a database trigger that blocks UPDATE/DELETE outside purge detachment", () => {
+    const migration = readFileSync(
+      join(resolve(BACKEND_SRC, ".."), "migrations/0930_audit_logs_append_only_trigger.sql"),
+      "utf8",
+    );
+    expect(migration).toContain("CREATE TRIGGER audit_logs_append_only");
+    expect(migration).toContain("BEFORE UPDATE OR DELETE ON public.audit_logs");
+    expect(migration).toContain("audit_log_detachment");
+    expect(migration).toContain("set_config('app.audit_log_detachment', 'true', true)");
+    expect(migration).toContain("RAISE EXCEPTION 'audit_logs is append-only");
+    expect(migration).toContain("TG_OP = 'UPDATE'");
+    expect(migration).toContain("LANGUAGE plpgsql");
+    expect(migration).toContain("SECURITY DEFINER");
+    expect(migration).toContain("SET search_path = pg_catalog, public, app");
+    expect(migration).toContain("RAISE EXCEPTION 'audit_logs is append-only; % is not permitted', TG_OP");
+    expect(migration).toContain("DROP TRIGGER IF EXISTS audit_logs_append_only");
+  });
+
+  it("requires the live verifier to identify the named trigger and both mutation events", () => {
+    const verifier = readFileSync(
+      join(resolve(BACKEND_SRC, "scripts/verify-audit-log-privileges.mjs")),
+      "utf8",
+    );
+    expect(verifier).toContain("t.tgname = 'audit_logs_append_only'");
+    expect(verifier).toContain("fn.nspname = 'app'");
+    expect(verifier).toContain("p.proname = 'prevent_audit_log_mutation'");
+    expect(verifier).toContain("t.tgenabled <> 'D'");
+    expect(verifier).toContain("(t.tgtype::integer & 16) <> 0");
+    expect(verifier).toContain("(t.tgtype::integer & 8) <> 0");
+  });
+
+  it("keeps the rollback artifact explicit about its compensating-control risk", () => {
+    const rollback = readFileSync(
+      join(resolve(BACKEND_SRC, ".."), "migrations/rollback/0930_audit_logs_append_only_trigger.down.sql"),
+      "utf8",
+    );
+    expect(rollback).toContain("DROP TRIGGER IF EXISTS audit_logs_append_only");
+    expect(rollback).toContain("database-level mutation guard");
+    expect(rollback).toContain("release authority's compensating control");
+    expect(rollback).toContain("current_setting('app.organization_id', true)");
+  });
 });

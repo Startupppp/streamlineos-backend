@@ -45,9 +45,18 @@ async function buildService(db: unknown): Promise<PlatformOperatorAccessService>
 }
 
 describe("PlatformOperatorAccessService.createGrant", () => {
-  it("inserts with status=pending and returns grantId", async () => {
-    const insertChain = makeInsertChain([{ grantId: "grant-abc" }]);
-    const db = { insert: jest.fn().mockReturnValue(insertChain) };
+  it("inserts with status=pending, records the request, and returns grantId", async () => {
+    const grantInsert = makeInsertChain([{ grantId: "grant-abc" }]);
+    const auditInsert = makeInsertLogChain();
+    const tx = {
+      execute: jest.fn().mockResolvedValue([]),
+      insert: jest.fn()
+        .mockReturnValueOnce(grantInsert)
+        .mockReturnValueOnce(auditInsert),
+    };
+    const db = {
+      transaction: jest.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx)),
+    };
     const svc = await buildService(db);
 
     const id = await svc.createGrant({
@@ -60,8 +69,62 @@ describe("PlatformOperatorAccessService.createGrant", () => {
     });
 
     expect(id).toBe("grant-abc");
-    const valuesCall = insertChain.values.mock.calls[0]?.[0] as Record<string, unknown>;
+    const valuesCall = grantInsert.values.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(valuesCall.status).toBe("pending");
+    expect(auditInsert.values).toHaveBeenCalledWith(expect.objectContaining({
+      action: "grant.requested",
+      grantId: "grant-abc",
+      orgId: "org-1",
+    }));
+  });
+});
+
+describe("PlatformOperatorAccessService.createGrantAndLog", () => {
+  it("keeps grant creation inside the same transaction as its audit insert", async () => {
+    const auditFailure = new Error("audit database unavailable");
+    const grantInsert = {
+      values: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockResolvedValue([{ grantId: "grant-atomic" }]),
+    };
+    const auditInsert = {
+      values: jest.fn().mockRejectedValue(auditFailure),
+    };
+    const tx = {
+      execute: jest.fn().mockResolvedValue([]),
+      insert: jest.fn()
+        .mockReturnValueOnce(grantInsert)
+        .mockReturnValueOnce(auditInsert),
+    };
+    const db = {
+      transaction: jest.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) =>
+        callback(tx)),
+    };
+    const svc = await buildService(db);
+
+    await expect(
+      svc.createGrantAndLog(
+        {
+          operatorUserId: "op-alice",
+          orgId: "org-1",
+          incidentRef: "INC-ATOMIC",
+          grantedBy: "op-bob",
+          scope: "read_customer_data",
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+        "203.0.113.10",
+        { requestedBy: "op-bob" },
+      ),
+    ).rejects.toBe(auditFailure);
+
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(tx.insert).toHaveBeenCalledTimes(2);
+    expect(auditInsert.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "grant.requested",
+        grantId: "grant-atomic",
+        orgId: "org-1",
+      }),
+    );
   });
 });
 
@@ -322,6 +385,27 @@ describe("PlatformOperatorAccessService.rejectGrant", () => {
     const setCall = updateChain.set.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(setCall.status).toBe("rejected");
     expect(setCall.revocationReason).toBe("not justified");
+  });
+});
+
+describe("PlatformOperatorAccessService.expirePendingGrants", () => {
+  it("expires only pending grants whose requested expiry has passed", async () => {
+    const updateChain = makeUpdateChain();
+    const db = { update: jest.fn().mockReturnValue(updateChain) };
+    const svc = await buildService(db);
+
+    await expect(svc.expirePendingGrants(new Date("2026-09-01T12:00:00.000Z"))).resolves.toBe(1);
+    expect(updateChain.set).toHaveBeenCalledWith({ status: "expired" });
+    expect(updateChain.where).toHaveBeenCalledWith(expect.anything());
+  });
+
+  it("returns zero when no stale pending rows are changed", async () => {
+    const updateChain = makeUpdateChain();
+    updateChain.returning.mockResolvedValue([]);
+    const db = { update: jest.fn().mockReturnValue(updateChain) };
+    const svc = await buildService(db);
+
+    await expect(svc.expirePendingGrants()).resolves.toBe(0);
   });
 });
 

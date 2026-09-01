@@ -24,22 +24,34 @@ import type {
 } from "./dto/hr-lifecycle.schemas";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
+import {
+  decodeOnboardingSummaryCursor,
+  dispatchOnboardingDocumentSubmittedEvent,
+} from "./onboarding-views-support";
 
 const reviewerUsers = aliasedTable(users, "reviewer");
 
-function decodeOnboardingSummaryCursor(value: string | undefined) {
-  if (value === undefined) return null;
-  const position = decodeCursor(value);
-  if (!position) throw new BadRequestException("Invalid pagination cursor");
-
-  try {
-    const name: unknown = JSON.parse(position.sortValue);
-    if (name !== null && typeof name !== "string") throw new Error();
-    return { name: name as string | null, userId: position.id };
-  } catch {
-    throw new BadRequestException("Invalid pagination cursor");
-  }
-}
+type OnboardingDocumentListRow = {
+  id: number;
+  orgId: string;
+  userId: string;
+  employeeName: string | null;
+  documentTypeId: number;
+  documentTypeName: string;
+  isMandatory: boolean;
+  hasFile: boolean;
+  fileName: string | null;
+  fileSize: number | null;
+  mimeType: string | null;
+  version: number;
+  status: string;
+  reviewedBy: string | null;
+  reviewedAt: Date | null;
+  remarks: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  reviewerName: string | null;
+};
 
 @Injectable()
 export class OnboardingViewsService {
@@ -194,7 +206,7 @@ export class OnboardingViewsService {
     query: ListOnboardingDocsQueryInput,
     scope: DataScope,
   ) {
-    const conditions: SQL[] = [eq(onboardingDocuments.orgId, orgId)];
+    const conditions: SQL<unknown>[] = [eq(onboardingDocuments.orgId, orgId)];
     if (isAdmin) {
       conditions.push(applyScope(scope, orgId, actorUserId, { ownerColumn: onboardingDocuments.userId }));
       if (query.userId) conditions.push(eq(onboardingDocuments.userId, query.userId));
@@ -216,7 +228,7 @@ export class OnboardingViewsService {
       );
     }
 
-    const rows = await this.db
+    const rows: OnboardingDocumentListRow[] = await this.db
       .select({
         id: onboardingDocuments.id,
         orgId: onboardingDocuments.orgId,
@@ -242,7 +254,7 @@ export class OnboardingViewsService {
       .innerJoin(documentTypes, eq(onboardingDocuments.documentTypeId, documentTypes.id))
       .innerJoin(users, eq(onboardingDocuments.userId, users.id))
       .leftJoin(reviewerUsers, eq(onboardingDocuments.reviewedBy, reviewerUsers.id))
-      .where(and(...conditions))
+      .where(sql.join(conditions, sql` AND `))
       .orderBy(desc(onboardingDocuments.createdAt), desc(onboardingDocuments.id))
       .limit(query.limit + 1);
 
@@ -390,7 +402,8 @@ export class OnboardingViewsService {
     });
 
     const dispatch = () =>
-      this.dispatchDocumentSubmittedEvent(
+      dispatchOnboardingDocumentSubmittedEvent(
+        this.automation,
         orgId,
         result.record.id,
         targetUserId,
@@ -480,20 +493,4 @@ export class OnboardingViewsService {
     return or(inArray(hrPeople.id, ids), designationIlike)!;
   }
 
-  private dispatchDocumentSubmittedEvent(
-    orgId: string,
-    documentId: number,
-    targetUserId: string,
-    documentTypeName: string,
-  ): Promise<void> {
-    return this.automation
-      .runAutomationsForEvent(orgId, "onboarding.document_submitted", {
-        documentId,
-        userId: targetUserId,
-        documentTypeName,
-        status: "SUBMITTED",
-        submittedAt: new Date().toISOString(),
-      })
-      .catch(() => undefined);
-  }
 }

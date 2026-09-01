@@ -124,7 +124,6 @@ export class ExitController {
       currentUser.orgId,
       { userId: currentUser.userId, membershipId: actingMembershipId(currentUser.principal), role: currentUser.role, isApprover: await this.isExitAdmin(currentUser) },
       resignationId,
-      actingMembershipId(currentUser.principal),
       body,
     );
   }

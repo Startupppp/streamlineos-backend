@@ -54,7 +54,7 @@ describe("organization core read pagination", () => {
     expect(captured.limits).toEqual([3]);
     expect(captured.orderBy[0]).toHaveLength(2);
 
-    await service.listPaginated("org-1", { limit: 2, cursor: first.pagination.nextCursor });
+    await service.listPaginated("org-1", { limit: 2, cursor: first.pagination.nextCursor ?? undefined });
     expect(render(captured.where[1])).toMatch(/</);
   });
 
@@ -86,7 +86,7 @@ describe("organization core read pagination", () => {
     expect(captured.limits).toEqual([3]);
     expect(captured.orderBy[0]).toHaveLength(2);
 
-    await service.list("org-1", first.pagination.nextCursor, 2, undefined, undefined, false);
+    await service.list("org-1", first.pagination.nextCursor ?? undefined, 2, undefined, undefined, false);
     expect(render(captured.where[1])).toMatch(/>/);
   });
 

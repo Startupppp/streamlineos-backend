@@ -113,7 +113,7 @@ export class OrganizationUsersReader {
 
     const teamsSubquery = this.database
       .select({
-        userId: projectTeamMembers.userId,
+        membershipId: projectTeamMembers.membershipId,
         teamNames:
           sql<string>`string_agg(${projectTeams.name}, ',' ORDER BY ${projectTeams.name})`.as(
             "team_names",
@@ -122,12 +122,11 @@ export class OrganizationUsersReader {
       .from(projectTeamMembers)
       .innerJoin(projectTeams, eq(projectTeamMembers.teamId, projectTeams.id))
       .where(eq(projectTeamMembers.orgId, orgId))
-      .groupBy(projectTeamMembers.userId)
+      .groupBy(projectTeamMembers.membershipId)
       .as("user_teams");
 
-    const [data, countResult] = await Promise.all([
-      this.database
-        .select({
+    const data = await this.database
+      .select({
           membershipId: organizationMembers.id,
           id: users.id,
           email: users.email,
@@ -155,15 +154,19 @@ export class OrganizationUsersReader {
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
         .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-        .leftJoin(teamsSubquery, eq(teamsSubquery.userId, users.id))
+        .leftJoin(teamsSubquery, eq(teamsSubquery.membershipId, organizationMembers.id))
         .where(and(...conditions))
         .orderBy(sortExpr, sortBy === "name" ? sortDir(users.id) : sortBy === "status" ? sortDir(users.id) : sortDir(organizationMembers.id))
-        .limit(limit + 1),
-    ]);
+      .limit(limit + 1);
     const factsMap = await this.employment.getFactsBatch(orgId, data.map((r) => r.id));
 
     const page = buildCursorPage(data, limit, (row) => ({
-      sortValue: sortBy === "name" ? row.name : sortBy === "status" ? row.membershipStatus : row.joinedAt,
+      sortValue:
+        sortBy === "name"
+          ? row.name ?? ""
+          : sortBy === "status"
+            ? row.membershipStatus
+            : row.joinedAt.toISOString(),
       id: sortBy === "name" || sortBy === "status" ? row.id : String(row.membershipId),
     }));
     return {
