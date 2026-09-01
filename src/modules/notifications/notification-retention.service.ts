@@ -59,7 +59,6 @@ export class NotificationRetentionService {
       tables: {
         notifications: { detached: 0, dropped: 0 },
         chat_messages: { detached: 0, dropped: 0 },
-        notification_outbox: { detached: 0, dropped: 0 },
       },
     };
 

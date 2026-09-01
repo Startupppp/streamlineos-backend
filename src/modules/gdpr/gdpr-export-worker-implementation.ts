@@ -6,11 +6,20 @@ import {
   OnModuleInit,
   Optional,
 } from "@nestjs/common";
-import { and, asc, eq, getTableColumns, gt, isNull } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  getTableColumns,
+  gt,
+  isNull,
+} from "drizzle-orm";
 import type { AnyColumn } from "drizzle-orm";
 import type { Table } from "drizzle-orm/table";
 import {
   auditLogs,
+  aiCreditReservations,
+  aiCreditTransactions,
   aiFeedback,
   aiActionProposals,
   aiJobs,
@@ -39,9 +48,11 @@ import {
   hrPeople,
   hrReportingLines,
   onboardingDocuments,
+  onboardingSteps,
   onboardingTasks,
   mailMessageMetadata,
   notificationDeliveries,
+  notificationConsents,
   notificationPreferences,
   notificationReadWatermarks,
   notifications,
@@ -51,6 +62,7 @@ import {
   salaryLoans,
   fnfSettlements,
   assetReturns,
+  biometricLogs,
   attendance,
   compOffBalances,
   employeeDevices,
@@ -97,8 +109,26 @@ import {
   alumniProfiles,
   backgroundVerifications,
   certifications,
+  eventAttendees,
+  hrContracts,
+  hrEffectiveDatedChanges,
+  hrEmployeeSensitiveFields,
+  hrEmploymentHistory,
+  hrProbationReviews,
+  hrWorkAuthorizations,
+  kbChatConversations,
+  kbChatMessages,
+  meetingAttendees,
+  meetingStandupEntries,
+  projectMembers,
   resignations,
+  signRecipients,
   terminations,
+  timerSessions,
+  timesheetExceptions,
+  timesheetPeriods,
+  timesheetRates,
+  timesheets,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -129,6 +159,18 @@ interface SubjectScopedAdapter {
   userColumn: AnyColumn;
 }
 
+interface MembershipScopedAdapter {
+  source: string;
+  table: SubjectScopedTable;
+  membershipColumn: AnyColumn;
+}
+
+interface EmploymentScopedAdapter {
+  source: string;
+  table: SubjectScopedTable;
+  employmentColumn: AnyColumn;
+}
+
 /**
  * First-party tenant tables whose `user_id` is the data subject, rather than
  * merely an actor/creator projection. The generic adapter deliberately omits
@@ -137,7 +179,12 @@ interface SubjectScopedAdapter {
 const SUBJECT_SCOPED_TABLE_DEFINITIONS: ReadonlyArray<
   readonly [string, SubjectScopedTable, AnyColumn]
 > = [
+  ["ai_credit_reservations", aiCreditReservations, aiCreditReservations.userId],
+  ["ai_credit_transactions", aiCreditTransactions, aiCreditTransactions.userId],
   ["attendance", attendance, attendance.userId],
+  ["hr_people", hrPeople, hrPeople.userId],
+  ["biometric_logs", biometricLogs, biometricLogs.userId],
+  ["meeting_standup_entries", meetingStandupEntries, meetingStandupEntries.userId],
   ["comp_off_balances", compOffBalances, compOffBalances.userId],
   ["employee_devices", employeeDevices, employeeDevices.userId],
   [
@@ -224,6 +271,7 @@ const SUBJECT_SCOPED_TABLE_DEFINITIONS: ReadonlyArray<
   ["tax_declarations", taxDeclarations, taxDeclarations.userId],
   ["travel_requests", travelRequests, travelRequests.userId],
   ["wfh_requests", wfhRequests, wfhRequests.userId],
+  ["onboarding_steps", onboardingSteps, onboardingSteps.userId],
   ["onboarding_tasks", onboardingTasks, onboardingTasks.userId],
   ["resignations", resignations, resignations.userId],
   ["terminations", terminations, terminations.userId],
@@ -243,11 +291,64 @@ const SUBJECT_SCOPED_TABLES: readonly SubjectScopedAdapter[] =
     userColumn,
   }));
 
+const MEMBERSHIP_SCOPED_TABLE_DEFINITIONS: ReadonlyArray<
+  readonly [string, SubjectScopedTable, AnyColumn]
+> = [
+  ["event_attendees", eventAttendees, eventAttendees.membershipId],
+  ["kb_chat_conversations", kbChatConversations, kbChatConversations.userMembershipId],
+  ["kb_chat_messages", kbChatMessages, kbChatMessages.userMembershipId],
+  ["meeting_attendees", meetingAttendees, meetingAttendees.membershipId],
+  ["notification_consents", notificationConsents, notificationConsents.membershipId],
+  ["project_members", projectMembers, projectMembers.membershipId],
+  ["sign_recipients", signRecipients, signRecipients.userMembershipId],
+  ["timer_sessions", timerSessions, timerSessions.userMembershipId],
+  ["timesheet_exceptions", timesheetExceptions, timesheetExceptions.userMembershipId],
+  ["timesheet_periods", timesheetPeriods, timesheetPeriods.userMembershipId],
+  ["timesheet_rates", timesheetRates, timesheetRates.userMembershipId],
+  ["timesheets", timesheets, timesheets.userMembershipId],
+];
+
+const MEMBERSHIP_SCOPED_TABLES: readonly MembershipScopedAdapter[] =
+  MEMBERSHIP_SCOPED_TABLE_DEFINITIONS.map(
+    ([source, table, membershipColumn]) => ({
+      source,
+      table,
+      membershipColumn,
+    }),
+  );
+
+const EMPLOYMENT_SCOPED_TABLE_DEFINITIONS: ReadonlyArray<
+  readonly [string, SubjectScopedTable, AnyColumn]
+> = [
+  ["hr_contracts", hrContracts, hrContracts.employmentId],
+  [
+    "hr_effective_dated_changes",
+    hrEffectiveDatedChanges,
+    hrEffectiveDatedChanges.employmentId,
+  ],
+  ["hr_employee_sensitive_fields", hrEmployeeSensitiveFields, hrEmployeeSensitiveFields.employmentId],
+  ["hr_employment_history", hrEmploymentHistory, hrEmploymentHistory.employmentId],
+  ["hr_probation_reviews", hrProbationReviews, hrProbationReviews.employmentId],
+  ["hr_work_authorizations", hrWorkAuthorizations, hrWorkAuthorizations.employmentId],
+];
+
+const EMPLOYMENT_SCOPED_TABLES: readonly EmploymentScopedAdapter[] =
+  EMPLOYMENT_SCOPED_TABLE_DEFINITIONS.map(
+    ([source, table, employmentColumn]) => ({
+      source,
+      table,
+      employmentColumn,
+    }),
+  );
+
 const REDACTED_EXPORT_COLUMNS = new Set([
   "token",
   "tokenPrefix",
   "tokenEncrypted",
   "tokenHash",
+  "accessCodeHash",
+  "otpCodeHash",
+  "signingTokenHash",
   "codeHash",
   "keyHash",
   "auth",
@@ -277,11 +378,13 @@ const REDACTED_EXPORT_COLUMNS = new Set([
   "submittedBy",
   "calibratedBy",
   "approvedBy",
+  "approvedByMembershipId",
   "decidedBy",
   "decidedByMembershipId",
   "verifiedBy",
   "overriddenBy",
   "uploadedBy",
+  "lockedByMembershipId",
 ]);
 
 /** Tables whose userId is an actor/recipient projection or a credential-bearing
@@ -299,6 +402,14 @@ export const GENERIC_GDPR_EXPORT_EXCLUDED_SOURCES = [
 ] as const;
 
 export const SUBJECT_SCOPED_GDPR_EXPORT_SOURCES = SUBJECT_SCOPED_TABLES.map(
+  ({ source }) => source,
+);
+
+export const MEMBERSHIP_SCOPED_GDPR_EXPORT_SOURCES = MEMBERSHIP_SCOPED_TABLES.map(
+  ({ source }) => source,
+);
+
+export const EMPLOYMENT_SCOPED_GDPR_EXPORT_SOURCES = EMPLOYMENT_SCOPED_TABLES.map(
   ({ source }) => source,
 );
 
@@ -343,6 +454,8 @@ export const REQUIRED_GDPR_EXPORT_SOURCES = [
   "fnf_settlements",
   "asset_returns",
   ...SUBJECT_SCOPED_GDPR_EXPORT_SOURCES,
+  ...MEMBERSHIP_SCOPED_GDPR_EXPORT_SOURCES,
+  ...EMPLOYMENT_SCOPED_GDPR_EXPORT_SOURCES,
 ] as const;
 
 export const GDPR_EXPORT_SOURCE_ADAPTERS = new Set<string>([
@@ -565,6 +678,42 @@ export class GdprExportWorkerImplementation
           ).rows,
         })),
       );
+      const membershipScopedSections = await Promise.all(
+        MEMBERSHIP_SCOPED_TABLES.map(
+          async ({ source, table, membershipColumn }) => ({
+            source,
+            rows: (
+              await drainExportPages((afterId) =>
+                this.fetchMembershipScopedRows(
+                  table,
+                  membershipColumn,
+                  job.orgId,
+                  job.subjectUserId,
+                  afterId,
+                ),
+              )
+            ).rows,
+          }),
+        ),
+      );
+      const employmentScopedSections = await Promise.all(
+        EMPLOYMENT_SCOPED_TABLES.map(
+          async ({ source, table, employmentColumn }) => ({
+            source,
+            rows: (
+              await drainExportPages((afterId) =>
+                this.fetchEmploymentScopedRows(
+                  table,
+                  employmentColumn,
+                  job.orgId,
+                  job.subjectUserId,
+                  afterId,
+                ),
+              )
+            ).rows,
+          }),
+        ),
+      );
 
       const additionalSections = {
         chatChannelMembers: chatChannelMembers.rows,
@@ -590,6 +739,12 @@ export class GdprExportWorkerImplementation
         assetReturns: financial[5].rows,
         ...Object.fromEntries(
           subjectScopedSections.map(({ source, rows }) => [source, rows]),
+        ),
+        ...Object.fromEntries(
+          membershipScopedSections.map(({ source, rows }) => [source, rows]),
+        ),
+        ...Object.fromEntries(
+          employmentScopedSections.map(({ source, rows }) => [source, rows]),
         ),
       };
 
@@ -705,6 +860,82 @@ export class GdprExportWorkerImplementation
     const rows = await this.db
       .select(selectedColumns)
       .from(table)
+      .where(and(...conditions))
+      .orderBy(asc(table.id))
+      .limit(BATCH_SIZE);
+    return rows as Array<{ id: ExportCursor } & Record<string, unknown>>;
+  }
+
+  private async fetchMembershipScopedRows(
+    table: SubjectScopedTable,
+    membershipColumn: AnyColumn,
+    orgId: string,
+    subjectUserId: string,
+    afterId: ExportCursor | undefined,
+  ): Promise<Array<{ id: ExportCursor } & Record<string, unknown>>> {
+    const selectedColumns = Object.fromEntries(
+      Object.entries(getTableColumns(table)).filter(
+        ([name]) => !REDACTED_EXPORT_COLUMNS.has(name),
+      ),
+    );
+    const conditions = [
+      eq(table.orgId, orgId),
+      eq(organizationMembers.orgId, orgId),
+      eq(organizationMembers.userId, subjectUserId),
+    ];
+    if (afterId !== undefined) conditions.push(gt(table.id, afterId));
+    const rows = await this.db
+      .select(selectedColumns)
+      .from(table)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(table.orgId, organizationMembers.orgId),
+          eq(membershipColumn, organizationMembers.id),
+        ),
+      )
+      .where(and(...conditions))
+      .orderBy(asc(table.id))
+      .limit(BATCH_SIZE);
+    return rows as Array<{ id: ExportCursor } & Record<string, unknown>>;
+  }
+
+  private async fetchEmploymentScopedRows(
+    table: SubjectScopedTable,
+    employmentColumn: AnyColumn,
+    orgId: string,
+    subjectUserId: string,
+    afterId: ExportCursor | undefined,
+  ): Promise<Array<{ id: ExportCursor } & Record<string, unknown>>> {
+    const selectedColumns = Object.fromEntries(
+      Object.entries(getTableColumns(table)).filter(
+        ([name]) => !REDACTED_EXPORT_COLUMNS.has(name),
+      ),
+    );
+    const conditions = [
+      eq(table.orgId, orgId),
+      eq(hrEmployments.orgId, orgId),
+      eq(hrPeople.orgId, orgId),
+      eq(hrPeople.userId, subjectUserId),
+    ];
+    if (afterId !== undefined) conditions.push(gt(table.id, afterId));
+    const rows = await this.db
+      .select(selectedColumns)
+      .from(table)
+      .innerJoin(
+        hrEmployments,
+        and(
+          eq(table.orgId, hrEmployments.orgId),
+          eq(employmentColumn, hrEmployments.id),
+        ),
+      )
+      .innerJoin(
+        hrPeople,
+        and(
+          eq(hrEmployments.orgId, hrPeople.orgId),
+          eq(hrEmployments.personId, hrPeople.id),
+        ),
+      )
       .where(and(...conditions))
       .orderBy(asc(table.id))
       .limit(BATCH_SIZE);

@@ -11,7 +11,12 @@ const USER = {
 function buildController() {
   const gdpr = { exportSubjectData: jest.fn(), recordExportRequest: jest.fn() };
   const gdprExport = { create: jest.fn().mockResolvedValue({ id: "job-1" }) };
-  return { controller: new GdprController(gdpr as never, gdprExport as never), gdprExport };
+  const gdprRectification = { rectifyOwnProfile: jest.fn().mockResolvedValue({ requestId: 1 }) };
+  return {
+    controller: new GdprController(gdpr as never, gdprExport as never, gdprRectification as never),
+    gdprExport,
+    gdprRectification,
+  };
 }
 
 describe("GdprController async person export authorization", () => {
@@ -44,6 +49,25 @@ describe("GdprController async person export authorization", () => {
       USER.orgId,
       USER.userId,
       "key-1",
+    );
+  });
+});
+
+describe("GdprController self-service rectification", () => {
+  it("binds rectification to the authenticated subject and organization", async () => {
+    const { controller, gdprRectification } = buildController();
+
+    await controller.rectifyOwnProfile(
+      USER,
+      { field: "profile.name", value: "Ananya Rao" },
+      { ip: "127.0.0.1" } as Request,
+    );
+
+    expect(gdprRectification.rectifyOwnProfile).toHaveBeenCalledWith(
+      USER.orgId,
+      USER.userId,
+      { field: "profile.name", value: "Ananya Rao" },
+      "127.0.0.1",
     );
   });
 });

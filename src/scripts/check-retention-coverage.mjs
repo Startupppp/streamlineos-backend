@@ -64,6 +64,16 @@ const RETENTION_MATRIX = {
     worker: "CronAiUsageRetentionService",
     notes: "730-day default. Dry-run by default. Resumable cursor in Redis. 401 rows now.",
   },
+  kb_chat_conversations: {
+    decision: "RETAIN-BOUNDED",
+    worker: "CronKbChatRetentionService",
+    notes: "Organization-configured chat history retention, defaulting to 90 days, with bounded tenant-scoped deletion.",
+  },
+  webhook_deliveries: {
+    decision: "RETAIN-BOUNDED",
+    worker: "CronBuildRetentionService",
+    notes: "Completed delivery attempts are retained for 90 days; pending attempts are never removed by this worker.",
+  },
   notifications: {
     decision: "PARTITION+ARCHIVE",
     worker: "NotificationRetentionService (detach+drop)",
@@ -193,6 +203,8 @@ if (args.includes("--self-test")) {
     aiUsageLogsHasWorker: RETENTION_MATRIX["ai_usage_logs"].worker !== null,
     chatMessagesHasWorker: RETENTION_MATRIX["chat_messages"].worker !== null,
     kbChunksHasWorker: RETENTION_MATRIX["kb_article_chunks"].worker !== null,
+    kbChatConversationsHasWorker: RETENTION_MATRIX["kb_chat_conversations"].worker === "CronKbChatRetentionService",
+    webhookDeliveriesHaveWorker: RETENTION_MATRIX["webhook_deliveries"].worker === "CronBuildRetentionService",
     auditLogsHasNoWorker: RETENTION_MATRIX["audit_logs"].worker === null,
     classifyUnknownIsUncovered: classify("unknown_table_xyz", 100).status === "UNCOVERED",
     classifyAuditLogsIsKeepForever: classify("audit_logs", 0).status === "KEEP-FOREVER",

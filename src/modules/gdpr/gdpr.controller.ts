@@ -24,12 +24,19 @@ import { GdprExportService } from "./gdpr-export.service";
 import { exportRequestBodySchema, type ExportRequestBody } from "./dto/gdpr.schemas";
 import { gdprAsyncExportBodySchema, type GdprAsyncExportBody } from "./dto/gdpr-async-export.schemas";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import {
+  gdprRectificationBodySchema,
+  type GdprRectificationBody,
+} from "./dto/gdpr-rectification.schemas";
+import { GdprRectificationService } from "./gdpr-rectification.service";
 
 @Controller("gdpr")
 export class GdprController {
   constructor(
     private readonly gdpr: GdprService,
     private readonly gdprExport: GdprExportService,
+    private readonly gdprRectification: GdprRectificationService,
   ) {}
 
   @AuthorizedInService(
@@ -50,6 +57,21 @@ export class GdprController {
     );
     await this.gdpr.recordExportRequest(user.orgId, user.userId, user.userId, body.reason);
     return result;
+  }
+
+  @AuthorizedInService(
+    "JWT sub is the subject — rectification is limited to the caller's own profile name",
+  )
+  @Post("rectification/me")
+  @Idempotent("gdpr.rectification.profile-name")
+  @Validate({ body: gdprRectificationBodySchema })
+  async rectifyOwnProfile(
+    @CurrentUser() user: CurrentUserContext,
+    @Body() body: GdprRectificationBody,
+    @Req() req: Request,
+  ) {
+    if (!user.orgId) throw new ForbiddenException("An active organization is required");
+    return this.gdprRectification.rectifyOwnProfile(user.orgId, user.userId, body, req.ip);
   }
 
   @UseGuards(PermissionGuard)

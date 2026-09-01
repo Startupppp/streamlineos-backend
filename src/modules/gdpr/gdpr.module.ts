@@ -6,6 +6,7 @@ import { GdprExportService } from "./gdpr-export.service";
 import { GdprExportWorkerService } from "./gdpr-export-worker.service";
 import { GdprExportRequestedConsumer } from "./gdpr-export-outbox.consumer";
 import { GdprStoragePurgeService } from "./gdpr-storage-purge.service";
+import { GdprRectificationService } from "./gdpr-rectification.service";
 
 @Module({
   imports: [OutboxModule],
@@ -16,7 +17,8 @@ import { GdprStoragePurgeService } from "./gdpr-storage-purge.service";
     GdprExportWorkerService,
     GdprExportRequestedConsumer,
     GdprStoragePurgeService,
+    GdprRectificationService,
   ],
-  exports: [GdprService, GdprExportService, GdprStoragePurgeService],
+  exports: [GdprService, GdprExportService, GdprStoragePurgeService, GdprRectificationService],
 })
 export class GdprModule {}

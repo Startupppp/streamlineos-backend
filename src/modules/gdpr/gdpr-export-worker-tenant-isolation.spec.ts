@@ -9,7 +9,13 @@ import { StorageService } from "../storage/storage.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
-import { agentTokens, feedbackRequests } from "../../db/schema";
+import {
+  agentTokens,
+  feedbackRequests,
+  hrWorkAuthorizations,
+  signRecipients,
+  timesheets,
+} from "../../db/schema";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -281,6 +287,32 @@ describe("GDPR export source coverage", () => {
     ]));
   });
 
+  it("includes catalogue and schema sources with verified subject ownership paths", () => {
+    expect(REQUIRED_GDPR_EXPORT_SOURCES).toEqual(expect.arrayContaining([
+      "ai_credit_reservations",
+      "ai_credit_transactions",
+      "biometric_logs",
+      "event_attendees",
+      "kb_chat_conversations",
+      "kb_chat_messages",
+      "meeting_attendees",
+      "meeting_standup_entries",
+      "project_members",
+      "sign_recipients",
+      "timer_sessions",
+      "timesheet_exceptions",
+      "timesheet_periods",
+      "timesheet_rates",
+      "timesheets",
+      "hr_contracts",
+      "hr_effective_dated_changes",
+      "hr_employee_sensitive_fields",
+      "hr_employment_history",
+      "hr_probation_reviews",
+      "hr_work_authorizations",
+    ]));
+  });
+
   it("counts AI chat rows in export metadata", () => {
     expect(countExportRows(
       { rows: [{ id: 1 }] },
@@ -349,6 +381,130 @@ describe("generic subject-scoped adapter", () => {
     const selected = (db.select as jest.Mock).mock.calls[0]![0] as Record<string, unknown>;
     expect(selected).not.toHaveProperty("reviewerUserId");
     expect(selected).not.toHaveProperty("reviewerMembershipId");
+  });
+});
+
+describe("membership and employment subject adapters", () => {
+  it("uses a tenant membership join, subject predicate, cursor, and credential redaction", async () => {
+    const whereArgs: unknown[] = [];
+    const limit = jest.fn().mockResolvedValue([{ id: 12, membershipId: 4 }]);
+    const orderBy = jest.fn().mockReturnValue({ limit });
+    const where = jest.fn().mockImplementation((condition: unknown) => {
+      whereArgs.push(condition);
+      return { orderBy };
+    });
+    const innerJoin = jest.fn().mockReturnValue({ where });
+    const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({ innerJoin }),
+      }),
+    } as unknown as Db;
+    const service = Object.create(GdprExportWorkerService.prototype) as {
+      db: Db;
+      fetchMembershipScopedRows: (
+        table: unknown,
+        membershipColumn: unknown,
+        orgId: string,
+        userId: string,
+        afterId: number,
+      ) => Promise<unknown[]>;
+    };
+    service.db = db;
+
+    await service.fetchMembershipScopedRows(
+      signRecipients,
+      signRecipients.userMembershipId,
+      "org-owner",
+      "user-subj",
+      11,
+    );
+
+    const values = whereArgs.flatMap((condition) => sqlValues(condition));
+    expect(values).toEqual(expect.arrayContaining(["org-owner", "user-subj", 11]));
+    const selected = (db.select as jest.Mock).mock.calls[0]![0] as Record<string, unknown>;
+    expect(selected).not.toHaveProperty("accessCodeHash");
+    expect(selected).not.toHaveProperty("otpCodeHash");
+    expect(selected).not.toHaveProperty("signingTokenHash");
+    expect(innerJoin).toHaveBeenCalledTimes(1);
+    expect(limit).toHaveBeenCalledWith(200);
+  });
+
+  it("uses tenant-scoped employment and person joins for employee-owned records", async () => {
+    const whereArgs: unknown[] = [];
+    const limit = jest.fn().mockResolvedValue([{ id: 13, employmentId: 8 }]);
+    const orderBy = jest.fn().mockReturnValue({ limit });
+    const where = jest.fn().mockImplementation((condition: unknown) => {
+      whereArgs.push(condition);
+      return { orderBy };
+    });
+    const secondInnerJoin = jest.fn().mockReturnValue({ where });
+    const firstInnerJoin = jest.fn().mockReturnValue({ innerJoin: secondInnerJoin });
+    const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({ innerJoin: firstInnerJoin }),
+      }),
+    } as unknown as Db;
+    const service = Object.create(GdprExportWorkerService.prototype) as {
+      db: Db;
+      fetchEmploymentScopedRows: (
+        table: unknown,
+        employmentColumn: unknown,
+        orgId: string,
+        userId: string,
+        afterId: number,
+      ) => Promise<unknown[]>;
+    };
+    service.db = db;
+
+    await service.fetchEmploymentScopedRows(
+      hrWorkAuthorizations,
+      hrWorkAuthorizations.employmentId,
+      "org-owner",
+      "user-subj",
+      12,
+    );
+
+    const values = whereArgs.flatMap((condition) => sqlValues(condition));
+    expect(values).toEqual(expect.arrayContaining(["org-owner", "user-subj", 12]));
+    expect(firstInnerJoin).toHaveBeenCalledTimes(1);
+    expect(secondInnerJoin).toHaveBeenCalledTimes(1);
+    expect(limit).toHaveBeenCalledWith(200);
+  });
+
+  it("keeps the timesheet membership path distinct from approver identities", async () => {
+    const limit = jest.fn().mockResolvedValue([]);
+    const orderBy = jest.fn().mockReturnValue({ limit });
+    const where = jest.fn().mockReturnValue({ orderBy });
+    const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          innerJoin: jest.fn().mockReturnValue({ where }),
+        }),
+      }),
+    } as unknown as Db;
+    const service = Object.create(GdprExportWorkerService.prototype) as {
+      db: Db;
+      fetchMembershipScopedRows: (
+        table: unknown,
+        membershipColumn: unknown,
+        orgId: string,
+        userId: string,
+        afterId: number,
+      ) => Promise<unknown[]>;
+    };
+    service.db = db;
+
+    await service.fetchMembershipScopedRows(
+      timesheets,
+      timesheets.userMembershipId,
+      "org-owner",
+      "user-subj",
+      3,
+    );
+
+    const selected = (db.select as jest.Mock).mock.calls[0]![0] as Record<string, unknown>;
+    expect(selected).not.toHaveProperty("approvedByMembershipId");
+    expect(selected).not.toHaveProperty("lockedByMembershipId");
   });
 });
 

@@ -21,7 +21,7 @@ const leaseHeld = {
   withLease: jest.fn().mockResolvedValue({ ran: false as const }),
 };
 
-// Far enough past every retention window that all three tables have expired partitions.
+// Far enough past every retention window that both tables have expired partitions.
 const WELL_PAST_RETENTION = new Date("2030-01-15T00:00:00Z");
 
 describe("NotificationRetentionService", () => {
@@ -59,6 +59,10 @@ describe("NotificationRetentionService", () => {
     expect(Object.keys(result!.tables).sort()).toEqual(
       Object.keys(NOTIFICATION_RETENTION_POLICY).sort(),
     );
+  });
+
+  it("does not schedule the pending notification outbox for partition deletion", () => {
+    expect(Object.keys(NOTIFICATION_RETENTION_POLICY)).not.toContain("notification_outbox");
   });
 
   it("emits no DETACH PARTITION IF EXISTS — that is not valid Postgres", async () => {
