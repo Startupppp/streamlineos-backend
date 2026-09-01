@@ -4,14 +4,11 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, type SQL } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
   payrollFilings,
-  payrollLineItems,
-  payrollRunEmployees,
-  payrollRuns,
 } from "../../../db/schema";
 import {
   getIndiaBundleForDate,
@@ -19,13 +16,16 @@ import {
 } from "../runs/lib/statutory-registry";
 import {
   buildFilingExport,
-  type EmployeeStatutorySourceRow,
   type FilingExportType,
 } from "./export-builders";
 import { PayrollEntitiesService } from "../entities/entities.service";
-import { payrollSubjectKeyFromRunEmployee } from "../lib/payroll-subject";
-import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
+import {
+  decodePayrollTimestampCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
 
 export function resolveStatutoryTaxId(
   canonicalTaxId: string | null | undefined,
@@ -34,6 +34,7 @@ export function resolveStatutoryTaxId(
   return canonicalTaxId?.trim() || canonicalPan?.trim() || null;
 }
 import { generateForm16SummaryPdf } from "./form16-pdf";
+import { loadStatutorySources } from "./filings-source.service";
 
 export const FILING_CAPABILITY = {
   mode: "export_only" as const,
@@ -76,15 +77,34 @@ export class PayrollFilingsService {
     };
   }
 
-  list(orgId: string, page = 1, limit = 50) {
+  async list(orgId: string, cursor?: string, limit = 50) {
     const cap = Math.min(limit, 100);
-    return this.db
+    const cursorScope = ["filings", orgId] as const;
+    const position = decodePayrollTimestampCursor(cursor, cursorScope);
+    const conditions = [eq(payrollFilings.orgId, orgId)];
+    if (position) {
+      conditions.push(
+        keysetBeforeId(payrollFilings.createdAt, payrollFilings.id, {
+          sortValue: position.createdAt,
+          id: String(position.id),
+        }),
+      );
+    }
+
+    const rows = await this.db
       .select()
       .from(payrollFilings)
-      .where(eq(payrollFilings.orgId, orgId))
-      .orderBy(desc(payrollFilings.createdAt))
-      .limit(cap)
-      .offset((page - 1) * cap);
+      .where(and(...conditions))
+      .orderBy(desc(payrollFilings.createdAt), desc(payrollFilings.id))
+      .limit(cap + 1);
+
+    return buildCursorPage(rows, cap, (row) =>
+      payrollCursorPosition(
+        cursorScope,
+        [row.createdAt.toISOString()],
+        row.id,
+      ),
+    );
   }
 
   async get(orgId: string, filingId: number) {
@@ -372,120 +392,12 @@ export class PayrollFilingsService {
     return row;
   }
 
-  private async loadStatutorySources(
+  private loadStatutorySources(
     orgId: string,
     runId?: number,
     month?: string,
     entityId?: number | null,
-  ): Promise<{
-    employees: EmployeeStatutorySourceRow[];
-    run: typeof payrollRuns.$inferSelect | null;
-    periodMonth: string | null;
-  }> {
-    let run: typeof payrollRuns.$inferSelect | null = null;
-
-    if (runId != null) {
-      run =
-        (await this.db.query.payrollRuns.findFirst({
-          where: and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)),
-        })) ?? null;
-      if (!run) throw new NotFoundException("Payroll run not found");
-      if (entityId != null && run.entityId != null && run.entityId !== entityId) {
-        throw new BadRequestException(
-          `Run ${runId} is bound to entity ${run.entityId}, not entity ${entityId}`,
-        );
-      }
-    } else if (month) {
-      const conditions: SQL[] = [
-        eq(payrollRuns.orgId, orgId),
-        eq(payrollRuns.month, month),
-        eq(payrollRuns.runType, "REGULAR"),
-      ];
-      if (entityId != null) {
-        conditions.push(eq(payrollRuns.entityId, entityId));
-      }
-      const rows = await this.db
-        .select()
-        .from(payrollRuns)
-        .where(and(...conditions))
-        .limit(1);
-      run = rows[0] ?? null;
-      // Month without a run is allowed: empty artifact with honesty notes
-    }
-
-    if (!run) {
-      return { employees: [], run: null, periodMonth: month ?? null };
-    }
-
-    const [runEmployeeRows, payees] = await Promise.all([
-      this.db
-        .select({
-          id: payrollRunEmployees.id,
-          userId: payrollRunEmployees.userId,
-          workerId: payrollRunEmployees.workerId,
-          gross: payrollRunEmployees.gross,
-          net: payrollRunEmployees.net,
-        })
-        .from(payrollRunEmployees)
-        .where(
-          and(
-            eq(payrollRunEmployees.orgId, orgId),
-            eq(payrollRunEmployees.runId, run.id),
-          ),
-        ),
-      loadRunEmployeePayees(this.db, orgId, run.id, this.efService),
-    ]);
-
-    if (runEmployeeRows.length === 0) {
-      return { employees: [], run, periodMonth: run.month };
-    }
-
-    const payeeByRunEmployee = new Map(payees.map((payee) => [payee.runEmployeeId, payee]));
-
-    const lineRows = await this.db
-      .select({
-        runEmployeeId: payrollLineItems.runEmployeeId,
-        code: payrollLineItems.code,
-        amount: payrollLineItems.amount,
-      })
-      .from(payrollLineItems)
-      .where(
-        and(eq(payrollLineItems.orgId, orgId), eq(payrollLineItems.runId, run.id)),
-      );
-
-    const linesByRe = new Map<number, Record<string, string>>();
-    for (const li of lineRows) {
-      const map = linesByRe.get(li.runEmployeeId) ?? {};
-      const prev = parseFloat(map[li.code] ?? "0") || 0;
-      const next = parseFloat(li.amount) || 0;
-      map[li.code] = (prev + next).toFixed(2);
-      linesByRe.set(li.runEmployeeId, map);
-    }
-
-    const employees: EmployeeStatutorySourceRow[] = runEmployeeRows.map((e) => {
-      const payee = payeeByRunEmployee.get(e.id);
-      const bank = payee?.bankDetails ?? null;
-
-      const uan = bank?.pfUanNumber?.trim() || null;
-      const esiIpNumber = bank?.esiIpNumber?.trim() || null;
-      const pan = resolveStatutoryTaxId(payee?.taxId, payee?.panNumber);
-
-      return {
-        subjectKey: payrollSubjectKeyFromRunEmployee(e),
-        userId: e.userId,
-        workerId: e.workerId,
-        employeeNumber: payee?.employeeId ?? payee?.workerNumber ?? null,
-        employeeName: payee?.displayName ?? e.userId ?? e.workerId ?? "Payee",
-        email: payee?.email ?? null,
-        gross: e.gross ?? "0",
-        net: e.net ?? "0",
-        uan: uan || null,
-        esiIpNumber: esiIpNumber || null,
-        pan: pan || null,
-        lines: linesByRe.get(e.id) ?? {},
-      };
-    });
-
-    return { employees, run, periodMonth: run.month };
+  ) {
+    return loadStatutorySources(this.db, this.efService, orgId, runId, month, entityId);
   }
 }

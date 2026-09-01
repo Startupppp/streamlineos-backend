@@ -5,16 +5,22 @@ import {
   Inject,
   Injectable,
   NotFoundException,
-  PayloadTooLargeException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
-import { formatInTimeZone } from "date-fns-tz";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  isNull,
+  or,
+  sql,
+} from "drizzle-orm";
 import {
   attendance,
   hrEmployments,
   hrPeople,
   organizationMembers,
-  organizations,
   orgHolidays,
   users,
 } from "../../../db/schema";
@@ -31,18 +37,50 @@ import type {
   CheckInInput,
   TeamStatusQuery,
 } from "./dto/attendance.schemas";
-import {
-  ATTENDANCE_REPORT_MAX_DAYS,
-  ATTENDANCE_REPORT_RECIPIENT_LIMIT,
-} from "./dto/attendance.schemas";
-import { attendanceMemberScope, resolveAttendanceScope } from "./attendance-scope";
+import { resolveAttendanceScope } from "./attendance-scope";
 import { randomUUID } from "node:crypto";
 import { AttendanceClockService } from "./attendance-clock.service";
 import { AttendanceReadService } from "./attendance-read.service";
 import { livePersonOfUser, orgUnitInOrg, primaryEmploymentOfPerson } from "../../directory/employment-query";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { queueAttendanceEmailReport } from "./attendance-email-report.service";
 
 type AttendanceStatus = "OFFLINE" | "PRESENT" | "ON_BREAK" | "CHECKED_OUT";
-const ATTENDANCE_REPORT_ROW_LIMIT = 100;
+function attendanceStatusRank(status: AttendanceStatus): number {
+  switch (status) {
+    case "PRESENT":
+      return 0;
+    case "ON_BREAK":
+      return 1;
+    case "CHECKED_OUT":
+      return 2;
+    case "OFFLINE":
+      return 3;
+  }
+}
+
+function decodeTeamStatusCursor(value: string | undefined) {
+  if (value === undefined) return null;
+  const position = decodeCursor(value);
+  if (!position) throw new BadRequestException("Invalid pagination cursor");
+
+  try {
+    const parsed: unknown = JSON.parse(position.sortValue);
+    if (
+      !Array.isArray(parsed) ||
+      parsed.length !== 2 ||
+      !Number.isInteger(parsed[0]) ||
+      (parsed[1] !== null && typeof parsed[1] !== "string")
+    ) {
+      throw new Error("invalid team status cursor");
+    }
+    const rank = parsed[0] as number;
+    if (rank < 0 || rank > 3) throw new Error("invalid status rank");
+    return { rank, name: parsed[1] as string | null, userId: position.id };
+  } catch {
+    throw new BadRequestException("Invalid pagination cursor");
+  }
+}
 
 @Injectable()
 export class AttendanceService {
@@ -115,8 +153,8 @@ export class AttendanceService {
     const today = getTodayString();
 
     const todayStatus = this.db
-      .selectDistinctOn([attendance.userId], {
-        userId: attendance.userId,
+      .selectDistinctOn([attendance.userMembershipId], {
+        userMembershipId: attendance.userMembershipId,
         status: sql<string>`CASE WHEN ${attendance.checkOut} IS NOT NULL THEN 'CHECKED_OUT' WHEN ${attendance.status} = 'ON_BREAK' THEN 'ON_BREAK' ELSE 'PRESENT' END`.as(
           "derived_status",
         ),
@@ -127,16 +165,18 @@ export class AttendanceService {
       .from(attendance)
       .where(and(eq(attendance.orgId, u.orgId), eq(attendance.date, today)))
       .orderBy(
-        attendance.userId,
+        attendance.userMembershipId,
         desc(sql`${attendance.checkOut} IS NULL`),
         desc(attendance.createdAt),
       )
       .as("today_status");
 
     const statusExpr = sql<AttendanceStatus>`COALESCE(${todayStatus.status}, 'OFFLINE')`;
+    const statusRankExpr = sql<number>`CASE ${statusExpr} WHEN 'PRESENT' THEN 0 WHEN 'ON_BREAK' THEN 1 WHEN 'CHECKED_OUT' THEN 2 ELSE 3 END`;
 
     const baseConditions = [
       eq(organizationMembers.orgId, u.orgId),
+      eq(organizationMembers.status, "ACTIVE"),
       eq(users.isActive, true),
     ];
     if (query.departmentId !== undefined) {
@@ -151,8 +191,28 @@ export class AttendanceService {
 
     const rowConditions = [...baseConditions];
     if (query.status) rowConditions.push(sql`${statusExpr} = ${query.status}`);
-
-    const offset = (query.page - 1) * query.limit;
+    const cursorPosition = decodeTeamStatusCursor(query.cursor);
+    if (cursorPosition) {
+      const nameAfter = cursorPosition.name === null
+        ? and(
+            isNull(users.name),
+            gt(organizationMembers.userId, cursorPosition.userId),
+          )
+        : or(
+            gt(users.name, cursorPosition.name),
+            isNull(users.name),
+            and(
+              eq(users.name, cursorPosition.name),
+              gt(organizationMembers.userId, cursorPosition.userId),
+            ),
+          );
+      rowConditions.push(
+        or(
+          sql`${statusRankExpr} > ${cursorPosition.rank}`,
+          and(sql`${statusRankExpr} = ${cursorPosition.rank}`, nameAfter),
+        )!,
+      );
+    }
 
     const [rows, countRows] = await Promise.all([
       this.db
@@ -173,7 +233,7 @@ export class AttendanceService {
         .innerJoin(users, eq(users.id, organizationMembers.userId))
         .leftJoin(hrPeople, livePersonOfUser(u.orgId, users.id))
         .leftJoin(hrEmployments, primaryEmploymentOfPerson(u.orgId))
-        .leftJoin(todayStatus, eq(todayStatus.userId, organizationMembers.userId))
+        .leftJoin(todayStatus, eq(todayStatus.userMembershipId, organizationMembers.id))
         .leftJoin(
           orgUnits,
           and(
@@ -183,18 +243,18 @@ export class AttendanceService {
         )
         .where(and(...rowConditions))
         .orderBy(
-          sql`CASE ${statusExpr} WHEN 'PRESENT' THEN 0 WHEN 'ON_BREAK' THEN 1 WHEN 'CHECKED_OUT' THEN 2 ELSE 3 END`,
+          statusRankExpr,
           asc(users.name),
+          asc(organizationMembers.userId),
         )
-        .limit(query.limit)
-        .offset(offset),
+        .limit(query.limit + 1),
       this.db
         .select({ status: statusExpr, count: sql<number>`count(*)::int` })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
         .leftJoin(hrPeople, livePersonOfUser(u.orgId, users.id))
         .leftJoin(hrEmployments, primaryEmploymentOfPerson(u.orgId))
-        .leftJoin(todayStatus, eq(todayStatus.userId, organizationMembers.userId))
+        .leftJoin(todayStatus, eq(todayStatus.userMembershipId, organizationMembers.id))
         .where(and(...baseConditions))
         .groupBy(statusExpr),
     ]);
@@ -217,7 +277,15 @@ export class AttendanceService {
         counts.CHECKED_OUT +
         counts.OFFLINE;
 
-    const data = rows.map((m) => {
+    const page = buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: JSON.stringify([
+        attendanceStatusRank(row.status),
+        row.userName,
+      ]),
+      id: row.userId,
+    }));
+
+    const data = page.data.map((m) => {
       const name =
         m.userName ||
         [m.userFirstName, m.userLastName].filter(Boolean).join(" ") ||
@@ -239,10 +307,8 @@ export class AttendanceService {
       data,
       counts,
       pagination: {
-        page: query.page,
-        limit: query.limit,
+        ...page.pagination,
         total,
-        totalPages: Math.max(1, Math.ceil(total / query.limit)),
       },
     };
   }
@@ -315,150 +381,10 @@ export class AttendanceService {
       .where(and(eq(orgHolidays.id, id), eq(orgHolidays.orgId, orgId)));
   }
 
-  async emailReport(
+  emailReport(
     u: CurrentUserContext,
     input: AttendanceEmailReportInput,
   ): Promise<{ queued: number }> {
-    const scope = await resolveAttendanceScope(this.access, u);
-    if (scope === "none") {
-      throw new ForbiddenException("You do not have permission to email attendance reports.");
-    }
-
-    const recipients = [...input.to, ...input.cc, ...input.bcc].map((email) =>
-      email.trim().toLowerCase(),
-    );
-    if (
-      recipients.length === 0 ||
-      recipients.length > ATTENDANCE_REPORT_RECIPIENT_LIMIT ||
-      new Set(recipients).size !== recipients.length
-    ) {
-      throw new BadRequestException(
-        `Select between 1 and ${ATTENDANCE_REPORT_RECIPIENT_LIMIT} unique recipients.`,
-      );
-    }
-
-    const [orgRow] = await this.db
-      .select({ name: organizations.name, timezone: organizations.timezone })
-      .from(organizations)
-      .where(eq(organizations.id, u.orgId))
-      .limit(1);
-    if (!orgRow) throw new NotFoundException("Organization not found.");
-
-    const today = formatInTimeZone(new Date(), orgRow.timezone, "yyyy-MM-dd");
-    const startDate = input.startDate ?? `${today.slice(0, 7)}-01`;
-    const endDate = input.endDate ?? today;
-    const dayCount =
-      (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${startDate}T00:00:00Z`)) /
-        86_400_000 +
-      1;
-    if (
-      Boolean(input.startDate) !== Boolean(input.endDate) ||
-      !Number.isInteger(dayCount) ||
-      dayCount < 1 ||
-      dayCount > ATTENDANCE_REPORT_MAX_DAYS ||
-      startDate > today ||
-      endDate > today
-    ) {
-      throw new BadRequestException(
-        `Select a valid past-or-present date range of at most ${ATTENDANCE_REPORT_MAX_DAYS} days.`,
-      );
-    }
-
-    const recipientRows = await this.db
-      .select({ email: users.email, userId: users.id })
-      .from(organizationMembers)
-      .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(
-        and(
-          eq(organizationMembers.orgId, u.orgId),
-          eq(organizationMembers.status, "ACTIVE"),
-          inArray(sql<string>`lower(${users.email})`, recipients),
-        ),
-      );
-    const activeMemberEmails = new Set(
-      recipientRows.map((row) => row.email.trim().toLowerCase()),
-    );
-    if (recipients.some((email) => !activeMemberEmails.has(email))) {
-      throw new BadRequestException(
-        "Attendance reports can only be emailed to active members of this organization.",
-      );
-    }
-
-    const rows = await this.db
-      .select({
-        userId: attendance.userId,
-        userName: sql<string>`coalesce(${users.name}, ${users.email}, 'Unknown')`,
-        totalHours: sql<string>`coalesce(sum(${attendance.workHours}), 0)`,
-        autoCheckoutDays: sql<number>`count(*) filter (where ${attendance.autoCheckedOut} = true)::integer`,
-        overtimeDays: sql<number>`count(*) filter (where ${attendance.isOvertime} = true)::integer`,
-        daysPresent: sql<number>`count(*) filter (where ${attendance.checkIn} is not null)::integer`,
-      })
-      .from(attendance)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.orgId, attendance.orgId),
-          eq(organizationMembers.userId, attendance.userId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      )
-      .innerJoin(users, eq(users.id, attendance.userId))
-      .where(
-        and(
-          eq(attendance.orgId, u.orgId),
-          gte(attendance.date, startDate),
-          lte(attendance.date, endDate),
-          attendanceMemberScope(scope, u.orgId, u.userId),
-        ),
-      )
-      .groupBy(attendance.userId, users.name, users.email)
-      .orderBy(asc(users.name), asc(attendance.userId))
-      .limit(ATTENDANCE_REPORT_ROW_LIMIT + 1);
-
-    if (rows.length > ATTENDANCE_REPORT_ROW_LIMIT) {
-      throw new PayloadTooLargeException(
-        `Email reports support up to ${ATTENDANCE_REPORT_ROW_LIMIT} employees. Use a narrower attendance data scope.`,
-      );
-    }
-
-    const orgName = orgRow.name;
-    const dateRange = `${startDate} to ${endDate}`;
-
-    await this.audit.logCritical({
-      action: "hr.attendance_report.email_requested",
-      userId: u.userId,
-      orgId: u.orgId,
-      targetId: dateRange,
-      targetType: "attendance_report",
-      result: "SUCCESS",
-      metadata: {
-        dataScope: scope,
-        startDate,
-        endDate,
-        employeeCount: rows.length,
-        recipientCount: recipients.length,
-        deliveryStatus: "QUEUED",
-      },
-    });
-
-    const queued = await this.email.queueAttendanceReportEmail(
-      dateRange,
-      orgName,
-      rows.map((r) => ({
-        department: "",
-        name: r.userName,
-        totalHours: r.totalHours,
-        autoCheckoutDays: Number(r.autoCheckoutDays),
-        overtimeDays: Number(r.overtimeDays),
-        daysPresent: Number(r.daysPresent),
-      })),
-      recipientRows.map((recipient) => ({
-        email: recipient.email.trim().toLowerCase(),
-        userId: recipient.userId,
-      })),
-      u.orgId,
-    );
-
-    return { queued };
+    return queueAttendanceEmailReport(this.db, this.access, this.email, this.audit, u, input);
   }
 }
