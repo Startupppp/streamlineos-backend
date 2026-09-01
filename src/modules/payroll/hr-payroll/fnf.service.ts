@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import { fnfSettlements, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -43,9 +43,8 @@ export class FnfService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   listFnf(orgId: string, userId: string, membershipId: number | null, isAdmin: boolean, page = 1, limit = 100) {
-    const ownPredicate = membershipId != null
-      ? eq(fnfSettlements.userMembershipId, membershipId)
-      : eq(fnfSettlements.userId, userId);
+    if (!isAdmin && membershipId === null) throw new ForbiddenException("Organization membership required");
+    const ownPredicate = eq(fnfSettlements.userMembershipId, membershipId ?? 0);
     return this.db.query.fnfSettlements.findMany({
       where: isAdmin
         ? eq(fnfSettlements.orgId, orgId)
@@ -130,7 +129,8 @@ export class FnfService {
       .from(fnfSettlements)
       .where(
         and(eq(fnfSettlements.id, fnfId), eq(fnfSettlements.orgId, orgId)),
-      );
+      )
+      .limit(1);
 
     if (!existing) return { ok: false };
 

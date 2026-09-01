@@ -32,13 +32,13 @@ async function buildService(db: unknown): Promise<PlatformOperatorAccessService>
 }
 
 describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
-  describe("createGrant: max 24-hour duration enforced", () => {
-    it("(bite proof) rejects a grant expiring more than 24 hours from now", async () => {
+  describe("createGrant: max 4-hour duration enforced", () => {
+    it("(bite proof) rejects a grant expiring more than 4 hours from now", async () => {
       const insertChain = { values: jest.fn().mockReturnThis(), returning: jest.fn().mockResolvedValue([{ grantId: "g1" }]) };
       const db = { insert: jest.fn().mockReturnValue(insertChain) };
       const svc = await buildService(db);
 
-      const tooFar = new Date(Date.now() + 25 * 60 * 60 * 1000);
+      const tooFar = new Date(Date.now() + 5 * 60 * 60 * 1000);
       await expect(
         svc.createGrant({
           operatorUserId: "op-alice",
@@ -53,19 +53,19 @@ describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
       expect(db.insert).not.toHaveBeenCalled();
     });
 
-    it("accepts a grant expiring within 24 hours", async () => {
+    it("accepts a grant expiring within 4 hours", async () => {
       const insertChain = { values: jest.fn().mockReturnThis(), returning: jest.fn().mockResolvedValue([{ grantId: "g1" }]) };
       const db = { insert: jest.fn().mockReturnValue(insertChain) };
       const svc = await buildService(db);
 
-      const within24h = new Date(Date.now() + 23 * 60 * 60 * 1000);
+      const within4h = new Date(Date.now() + 3 * 60 * 60 * 1000);
       const id = await svc.createGrant({
         operatorUserId: "op-alice",
         orgId: "org-1",
         incidentRef: "INC-100",
         grantedBy: "op-alice",
         scope: "read_customer_data",
-        expiresAt: within24h,
+        expiresAt: within4h,
       });
       expect(id).toBe("g1");
     });

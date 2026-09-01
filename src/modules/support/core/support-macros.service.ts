@@ -41,9 +41,8 @@ export class SupportMacrosService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   listMacros(orgId: string, userId: string, membershipId: number | null, query: ListMacrosInput) {
-    const privateVisible = membershipId != null
-      ? eq(supportMacros.createdByMembershipId, membershipId)
-      : eq(supportMacros.createdBy, userId);
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
+    const privateVisible = eq(supportMacros.createdByMembershipId, membershipId);
     const conditions = [
       eq(supportMacros.orgId, orgId),
       or(sql`${supportMacros.visibility} != 'private'`, privateVisible)!,
@@ -63,6 +62,7 @@ export class SupportMacrosService {
   }
 
   async createMacro(orgId: string, userId: string, membershipId: number | null, input: CreateMacroInput) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const [macro] = await this.db
       .insert(supportMacros)
       .values({
@@ -73,7 +73,7 @@ export class SupportMacrosService {
         visibility: input.visibility,
         actions: input.actions,
         createdBy: userId,
-        createdByMembershipId: membershipId ?? undefined,
+        createdByMembershipId: membershipId,
       })
       .returning();
     return macro;
@@ -106,14 +106,13 @@ export class SupportMacrosService {
    * bump. Used for the compose-time preview before an agent sends a reply.
    */
   async previewMacro(orgId: string, macroId: number, userId: string, membershipId: number | null, ticketId: number): Promise<{ body: string }> {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const macro = await this.db.query.supportMacros.findFirst({
       where: and(eq(supportMacros.id, macroId), eq(supportMacros.orgId, orgId)),
       columns: { id: true, body: true, visibility: true, createdBy: true, createdByMembershipId: true },
     });
     if (!macro) throw new NotFoundException("Macro not found");
-    const isCreator = membershipId != null && macro.createdByMembershipId != null
-      ? macro.createdByMembershipId === membershipId
-      : macro.createdBy === userId;
+    const isCreator = macro.createdByMembershipId === membershipId;
     if (macro.visibility === "private" && !isCreator) {
       throw new ForbiddenException("This macro is private to its creator");
     }
@@ -130,13 +129,12 @@ export class SupportMacrosService {
    * into the macro itself.
    */
   async applyMacro(orgId: string, macroId: number, userId: string, membershipId: number | null, input: ApplyMacroInput) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const macro = await this.db.query.supportMacros.findFirst({
       where: and(eq(supportMacros.id, macroId), eq(supportMacros.orgId, orgId)),
     });
     if (!macro) throw new NotFoundException("Macro not found");
-    const isCreator = membershipId != null && macro.createdByMembershipId != null
-      ? macro.createdByMembershipId === membershipId
-      : macro.createdBy === userId;
+    const isCreator = macro.createdByMembershipId === membershipId;
     if (macro.visibility === "private" && !isCreator) {
       throw new ForbiddenException("This macro is private to its creator");
     }

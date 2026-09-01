@@ -7,6 +7,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { NOTIF_CACHE } from "./notification-cache-keys";
 import type { NotificationChannel, NotificationEventDefinition } from "./notification.types";
+import { resolveAvailableLocale } from "../../common/i18n/locale-fallback";
 
 type RenderedTemplate = { subject: string | null; body: string };
 export type TemplateMap = Map<NotificationChannel, RenderedTemplate>;
@@ -89,10 +90,11 @@ export class NotificationTemplateRenderer {
       // PIPE-014: the recipient's locale, not the actor's and not a hardcoded "en".
       // English remains the fallback because it is the only locale templates are
       // authored in today; `channelRows[0]` is the last resort.
-      const preferred =
-        channelRows.find((r) => r.locale === locale) ??
-        channelRows.find((r) => r.locale === "en") ??
-        channelRows[0];
+      const resolvedLocale = resolveAvailableLocale(
+        locale,
+        channelRows.map((row) => row.locale),
+      );
+      const preferred = channelRows.find((row) => row.locale === resolvedLocale);
       if (!preferred) continue;
       const subject =
         preferred.subject != null ? this.renderPlaceholders(preferred.subject, stringVars) : null;

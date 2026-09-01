@@ -37,7 +37,8 @@ export class HrEmailTemplatesService {
       .select()
       .from(emailTemplates)
       .where(eq(emailTemplates.orgId, orgId))
-      .orderBy(desc(emailTemplates.createdAt));
+      .orderBy(desc(emailTemplates.createdAt))
+      .limit(100);
   }
 
   async create(orgId: string, userId: string, input: CreateEmailTemplateInput) {

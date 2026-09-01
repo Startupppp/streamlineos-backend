@@ -9,7 +9,11 @@ export class GeofencingService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(orgId: string) {
-    return this.db.select().from(geofences).where(and(eq(geofences.orgId, orgId), eq(geofences.isActive, true)));
+    return this.db
+      .select()
+      .from(geofences)
+      .where(and(eq(geofences.orgId, orgId), eq(geofences.isActive, true)))
+      .limit(100);
   }
 
   async create(orgId: string, data: { name: string; lat: string; lng: string; radiusMeters?: number }) {

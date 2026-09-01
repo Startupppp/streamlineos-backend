@@ -7,6 +7,7 @@ import {
 } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { OPERATOR_GRANT_KEY } from "./require-operator-grant.decorator";
 import type { OperatorScope } from "./platform-operator-access.service";
 import { PlatformOperatorAccessService } from "./platform-operator-access.service";
@@ -25,15 +26,18 @@ export class OperatorSessionGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const scope = this.reflector.get<OperatorScope | undefined>(
+    const scope = this.reflector.getAllAndOverride<OperatorScope | undefined>(
       OPERATOR_GRANT_KEY,
-      context.getHandler(),
+      [context.getHandler(), context.getClass()],
     );
     if (scope === undefined) return true;
 
-    const req = context.switchToHttp().getRequest<Request & { user?: { userId?: string } }>();
-    const operatorUserId = req.user?.userId;
-    if (!operatorUserId) throw new UnauthorizedException("Operator must be authenticated via JWT");
+    const req = context
+      .switchToHttp()
+      .getRequest<Request & { user?: CurrentUserContext }>();
+    const operator = req.user;
+    if (!operator || operator.principal.kind !== "human-session")
+      throw new UnauthorizedException("Operator must use an authenticated human session");
 
     const orgId = req.params["orgId"];
     if (typeof orgId !== "string" || !orgId)
@@ -42,7 +46,15 @@ export class OperatorSessionGuard implements CanActivate {
     const route = (req as unknown as { route?: { path?: string } }).route?.path ?? req.url;
     const action = `operator.${req.method.toLowerCase()}.${route}`;
 
-    await this.operatorAccess.assertAndLog(operatorUserId, orgId, scope, action, ipOf(req));
+    await this.operatorAccess.authorizeRequest(
+      operator.userId,
+      orgId,
+      scope,
+      action,
+      ipOf(req),
+    );
+
+    operator.orgId = orgId;
 
     return true;
   }

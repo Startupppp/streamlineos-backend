@@ -398,16 +398,16 @@
       "note": "access lane (excluded territory â€” other lane owns this module)"
     },
     "/access/denied-modules.resolver.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "access lane (excluded territory â€” other lane owns this module)"
+      "verdict": "BOUNDED",
+      "note": "Denied-module resolution is capped to the finite 100-module catalog"
     },
     "/access/entitlements.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "access lane (excluded territory â€” other lane owns this module)"
     },
     "/access/user-module-access.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "access lane (excluded territory â€” other lane owns this module)"
+      "verdict": "BOUNDED",
+      "note": "Denied-module resolution is capped to the finite 100-module catalog"
     },
     "/accounting/core/accounting-gst.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -1470,20 +1470,20 @@
       "note": "create() reads prior disciplinary history for one employeeId (eq-predicate, typically 0-10 rows per employee); listMine() uses .limit(50); list() is now keyset-migrated; no unbounded org-wide scan"
     },
     "/hr/config/hr-document-templates.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Template and version lists have an explicit 100-row result cap"
     },
     "/hr/config/hr-email-templates.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Template list has an explicit 100-row result cap"
     },
     "/hr/config/hr-holidays.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/config/hr-leave-blackout.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Date-filtered blackout list has an explicit 100-row result cap"
     },
     "/hr/config/hr-salary-structures.service.ts": {
       "verdict": "ACTIONABLE",
@@ -1502,8 +1502,8 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/background-verification.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Verification list has an explicit 100-row result cap"
     },
     "/hr/directory/celebrations.service.ts": {
       "verdict": "ACTIONABLE",
@@ -1610,8 +1610,8 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/interviews/hr-offers.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Offer template list has an explicit 100-row result cap"
     },
     "/hr/interviews/hr-scorecards.service.ts": {
       "verdict": "ACTIONABLE",
@@ -1770,8 +1770,8 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-job-boards.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Per-job board posting list has an explicit 100-row result cap"
     },
     "/hr/recruitment/recruitment-jobs.service.ts": {
       "verdict": "ACTIONABLE",
@@ -1822,8 +1822,8 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/geofencing.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Active geofence list has an explicit 100-row result cap"
     },
     "/hr/time/leave-policies.service.ts": {
       "verdict": "ACTIONABLE",
@@ -2352,8 +2352,8 @@
       "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/setup/org-members.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory â€” other lane owns this module)"
+      "verdict": "BOUNDED",
+      "note": "Member picker enforces MAX_MEMBER_RESULTS=100 on the composed query"
     },
     "/organization/setup/org-setup-resolver.service.ts": {
       "verdict": "ACTIONABLE",
@@ -2458,12 +2458,12 @@
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/hr-payroll/bonuses.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane â€” paired service+frontend migration required"
+      "verdict": "BOUNDED",
+      "note": "Bonus list is capped and the unique mutation lookup uses LIMIT 1"
     },
     "/payroll/hr-payroll/fnf.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane â€” paired service+frontend migration required"
+      "verdict": "BOUNDED",
+      "note": "FNF list is capped and the unique mutation lookup uses LIMIT 1"
     },
     "/payroll/hr-payroll/tax.service.ts": {
       "verdict": "ACTIONABLE",

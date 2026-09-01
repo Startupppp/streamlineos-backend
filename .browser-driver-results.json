@@ -1,8 +1,32 @@
 {
-  "generatedAtMs": 1787945260157,
+  "error": "target http://localhost:1000 is not reachable — boot the frontend before running this driver",
+  "generatedAtMs": 1788252246878,
   "targetUrl": "http://localhost:1000",
   "browserPath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
   "repeat": 5,
+  "desktop": {
+    "lcp": {
+      "p75_ms": 1748
+    },
+    "inp": {
+      "p75_ms": 568
+    },
+    "cls": {
+      "p75": 0
+    },
+    "fcp": {
+      "p75_ms": 1748
+    },
+    "ttfb": {
+      "p95_ms": 1829.6600000083445
+    },
+    "longTasks": {
+      "p75_ms": 759
+    },
+    "renderAfterFcp": {
+      "p75_ms": 665.4000000059605
+    }
+  },
   "conditions": {
     "geography": "localhost — not the PRD reference geography (same-region reference device/network)",
     "device": "developer machine running headless Chrome/Edge",
@@ -11,130 +35,308 @@
   },
   "samples": [
     {
-      "wallMs": 506,
-      "ttfbMs": 39.399999998509884,
-      "domContentLoadedMs": 153.10000000149012,
-      "loadEventMs": 500.79999999701977,
-      "transferSizeBytes": 26744,
+      "wallMs": 14538,
+      "ttfbMs": 682.3000000119209,
+      "domContentLoadedMs": 4909.5999999940395,
+      "loadEventMs": 9632.800000011921,
+      "transferSizeBytes": 28214,
       "fromCache": false,
       "cachedResourceCount": 0,
       "cachedResourceMaxMs": null,
-      "fcpMs": 412,
-      "fpMs": 412
+      "fcpMs": 4912,
+      "fpMs": 4912,
+      "lcpMs": 4912,
+      "inpMs": 4352,
+      "cls": 0,
+      "longTaskMs": 6441,
+      "renderAfterFcpMs": 4720.800000011921,
+      "resources": {
+        "javascript": {
+          "count": 25,
+          "transferSizeBytes": 1296040,
+          "decodedBodySizeBytes": 7680473,
+          "durationMs": 86150.30000004172
+        },
+        "font": {
+          "count": 3,
+          "transferSizeBytes": 69836,
+          "decodedBodySizeBytes": 68936,
+          "durationMs": 4355.400000035763
+        },
+        "image": {
+          "count": 2,
+          "transferSizeBytes": 1996,
+          "decodedBodySizeBytes": 5968,
+          "durationMs": 528.2999999821186
+        },
+        "other": {
+          "count": 4,
+          "transferSizeBytes": 63189,
+          "decodedBodySizeBytes": 532733,
+          "durationMs": 2550.4000000059605
+        }
+      }
     },
     {
-      "wallMs": 247,
-      "ttfbMs": 46.5,
-      "domContentLoadedMs": 217.20000000298023,
-      "loadEventMs": 238.5,
-      "transferSizeBytes": 26746,
+      "wallMs": 8760,
+      "ttfbMs": 856.1999999880791,
+      "domContentLoadedMs": 2121.100000023842,
+      "loadEventMs": 4051.2000000178814,
+      "transferSizeBytes": 28204,
       "fromCache": false,
-      "cachedResourceCount": 23,
+      "cachedResourceCount": 3,
       "cachedResourceMaxMs": 0,
-      "fcpMs": null,
-      "fpMs": null
+      "fcpMs": 1968,
+      "fpMs": 1968,
+      "lcpMs": 1968,
+      "inpMs": 4040,
+      "cls": 0,
+      "longTaskMs": 5668,
+      "renderAfterFcpMs": 2083.2000000178814,
+      "resources": {
+        "javascript": {
+          "count": 25,
+          "transferSizeBytes": 7500,
+          "decodedBodySizeBytes": 0,
+          "durationMs": 11267.600000023842
+        },
+        "font": {
+          "count": 3,
+          "transferSizeBytes": 0,
+          "decodedBodySizeBytes": 68936,
+          "durationMs": 0
+        },
+        "image": {
+          "count": 2,
+          "transferSizeBytes": 600,
+          "decodedBodySizeBytes": 5968,
+          "durationMs": 342.2999999821186
+        },
+        "other": {
+          "count": 3,
+          "transferSizeBytes": 1587,
+          "decodedBodySizeBytes": 687,
+          "durationMs": 569.1999999880791
+        }
+      }
     },
     {
-      "wallMs": 271,
-      "ttfbMs": 48.80000000447035,
-      "domContentLoadedMs": 245.20000000298023,
-      "loadEventMs": 263.1000000014901,
-      "transferSizeBytes": 26743,
+      "wallMs": 8133,
+      "ttfbMs": 629.7000000178814,
+      "domContentLoadedMs": 2635,
+      "loadEventMs": 2952,
+      "transferSizeBytes": 28215,
       "fromCache": false,
-      "cachedResourceCount": 23,
+      "cachedResourceCount": 3,
       "cachedResourceMaxMs": 0,
-      "fcpMs": null,
-      "fpMs": null
+      "fcpMs": 1508,
+      "fpMs": 1508,
+      "lcpMs": 1508,
+      "inpMs": 4344,
+      "cls": 0,
+      "longTaskMs": 6083,
+      "renderAfterFcpMs": 1444,
+      "resources": {
+        "javascript": {
+          "count": 25,
+          "transferSizeBytes": 7500,
+          "decodedBodySizeBytes": 0,
+          "durationMs": 12294.000000089407
+        },
+        "font": {
+          "count": 3,
+          "transferSizeBytes": 0,
+          "decodedBodySizeBytes": 68936,
+          "durationMs": 0
+        },
+        "image": {
+          "count": 2,
+          "transferSizeBytes": 600,
+          "decodedBodySizeBytes": 5968,
+          "durationMs": 342.4999999701977
+        },
+        "other": {
+          "count": 3,
+          "transferSizeBytes": 1587,
+          "decodedBodySizeBytes": 687,
+          "durationMs": 649.5000000298023
+        }
+      }
     },
     {
-      "wallMs": 322,
-      "ttfbMs": 48.20000000298023,
-      "domContentLoadedMs": 101,
-      "loadEventMs": 313.79999999701977,
-      "transferSizeBytes": 26743,
+      "wallMs": 7935,
+      "ttfbMs": 637.7000000178814,
+      "domContentLoadedMs": 1422.0999999940395,
+      "loadEventMs": 3171.5999999940395,
+      "transferSizeBytes": 28208,
       "fromCache": false,
-      "cachedResourceCount": 23,
+      "cachedResourceCount": 3,
       "cachedResourceMaxMs": 0,
-      "fcpMs": 240,
-      "fpMs": 240
+      "fcpMs": 1428,
+      "fpMs": 1428,
+      "lcpMs": 1428,
+      "inpMs": 3992,
+      "cls": 0,
+      "longTaskMs": 5572,
+      "renderAfterFcpMs": 1743.5999999940395,
+      "resources": {
+        "javascript": {
+          "count": 25,
+          "transferSizeBytes": 7500,
+          "decodedBodySizeBytes": 0,
+          "durationMs": 12927.100000083447
+        },
+        "font": {
+          "count": 3,
+          "transferSizeBytes": 0,
+          "decodedBodySizeBytes": 68936,
+          "durationMs": 0
+        },
+        "image": {
+          "count": 2,
+          "transferSizeBytes": 600,
+          "decodedBodySizeBytes": 5968,
+          "durationMs": 403.59999999403954
+        },
+        "other": {
+          "count": 3,
+          "transferSizeBytes": 1587,
+          "decodedBodySizeBytes": 687,
+          "durationMs": 603.5999999940395
+        }
+      }
     },
     {
-      "wallMs": 270,
-      "ttfbMs": 52.600000001490116,
-      "domContentLoadedMs": 108.79999999701977,
-      "loadEventMs": 261.29999999701977,
-      "transferSizeBytes": 26746,
+      "wallMs": 7662,
+      "ttfbMs": 650.2999999821186,
+      "domContentLoadedMs": 2935.7999999821186,
+      "loadEventMs": 3245.199999988079,
+      "transferSizeBytes": 28217,
       "fromCache": false,
-      "cachedResourceCount": 23,
+      "cachedResourceCount": 3,
       "cachedResourceMaxMs": 0,
-      "fcpMs": 224,
-      "fpMs": 224
+      "fcpMs": 1696,
+      "fpMs": 1696,
+      "lcpMs": 1696,
+      "inpMs": 3592,
+      "cls": 0,
+      "longTaskMs": 5059,
+      "renderAfterFcpMs": 1549.199999988079,
+      "resources": {
+        "javascript": {
+          "count": 25,
+          "transferSizeBytes": 7500,
+          "decodedBodySizeBytes": 7680473,
+          "durationMs": 12548.199999898672
+        },
+        "font": {
+          "count": 3,
+          "transferSizeBytes": 0,
+          "decodedBodySizeBytes": 68936,
+          "durationMs": 0
+        },
+        "image": {
+          "count": 2,
+          "transferSizeBytes": 600,
+          "decodedBodySizeBytes": 5968,
+          "durationMs": 353.40000000596046
+        },
+        "other": {
+          "count": 3,
+          "transferSizeBytes": 1587,
+          "decodedBodySizeBytes": 687,
+          "durationMs": 642.7000000178814
+        }
+      }
     }
   ],
   "allNavigations": {
     "wallMs": {
       "count": 5,
-      "p50": 271,
-      "p75": 322,
-      "p95": 469.19999999999993,
-      "min": 247,
-      "max": 506
+      "p50": 8133,
+      "p75": 8760,
+      "p95": 13382.399999999998,
+      "min": 7662,
+      "max": 14538
     },
     "ttfbMs": {
       "count": 5,
-      "p50": 48.20000000298023,
-      "p75": 48.80000000447035,
-      "p95": 51.840000002086164,
-      "min": 39.399999998509884,
-      "max": 52.600000001490116
+      "p50": 650.2999999821186,
+      "p75": 682.3000000119209,
+      "p95": 821.4199999928474,
+      "min": 629.7000000178814,
+      "max": 856.1999999880791
     },
     "fcpMs": {
-      "count": 3,
-      "p50": 240,
-      "p75": 326,
-      "p95": 394.79999999999995,
-      "min": 224,
-      "max": 412
+      "count": 5,
+      "p50": 1696,
+      "p75": 1968,
+      "p95": 4323.199999999999,
+      "min": 1428,
+      "max": 4912
     }
   },
   "cachedNavigations": {
     "note": "A sample counts as cached only when the browser reported it as cached — the navigation document had transferSize 0, or the navigation replayed at least one subresource from cache (transferSize 0 with a non-zero decoded body). Being the second navigation is not evidence of caching and is not accepted as such.",
     "count": 4,
     "documentServedFromCache": false,
-    "cachedResourceReplays": 92,
+    "cachedResourceReplays": 12,
     "wallMs": {
       "count": 4,
-      "p50": 270.5,
-      "p75": 283.75,
-      "p95": 314.34999999999997,
-      "min": 247,
-      "max": 322
+      "p50": 8034,
+      "p75": 8289.75,
+      "p95": 8665.95,
+      "min": 7662,
+      "max": 8760
     },
     "ttfbMs": {
       "count": 4,
-      "p50": 48.50000000372529,
-      "p75": 49.75000000372529,
-      "p95": 52.03000000193715,
-      "min": 46.5,
-      "max": 52.600000001490116
+      "p50": 644,
+      "p75": 701.7749999836087,
+      "p95": 825.3149999871849,
+      "min": 629.7000000178814,
+      "max": 856.1999999880791
     }
   },
   "objectives": {
     "p95-browser-cached-read": {
       "target": 150,
       "unit": "ms same-region reference device",
-      "measured": 52.03000000193715,
-      "metric": "browser-visible TTFB on warm-cache navigations, corroborated by 92 subresource replays the browser itself reported as cached (transferSize 0, non-zero decoded body). The authenticated navigation document is deliberately no-store, so it is never HTTP-cached and its TTFB is a server read with warm caches rather than a cache replay. Subresource replay durations are not used as the figure: they round to 0 ms and would report a meaninglessly favourable number.",
-      "verdict": "MET",
+      "measured": 825.3149999871849,
+      "metric": "browser-visible TTFB on warm-cache navigations, corroborated by 12 subresource replays the browser itself reported as cached (transferSize 0, non-zero decoded body). The authenticated navigation document is deliberately no-store, so it is never HTTP-cached and its TTFB is a server read with warm caches rather than a cache replay. Subresource replay durations are not used as the figure: they round to 0 ms and would report a meaninglessly favourable number.",
+      "verdict": "BREACHED",
       "conditions": "localhost loopback — not the PRD's declared reference geography, so this carries zero network cost and is a floor rather than a comparable figure. Reported only from samples the browser itself marked cached."
     },
     "p75-first-useful-view": {
       "target": 1000,
       "unit": "ms reference device and network",
-      "measured": 326,
+      "measured": 1968,
       "metric": "First Contentful Paint p75, or wall time to load event if FCP unavailable",
-      "verdict": "MET",
+      "verdict": "BREACHED",
       "conditions": "localhost loopback — not the PRD's declared reference geography. Page navigated to login redirect. FCP is the browser's own measurement of when the first pixel was painted."
+    }
+  },
+  "mobile": {
+    "lcp": {
+      "p75_ms": 1968
+    },
+    "inp": {
+      "p75_ms": 4344
+    },
+    "cls": {
+      "p75": 0
+    },
+    "fcp": {
+      "p75_ms": 1968
+    },
+    "ttfb": {
+      "p95_ms": 821.4199999928474
+    },
+    "longTasks": {
+      "p75_ms": 6083
+    },
+    "renderAfterFcp": {
+      "p75_ms": 2083.2000000178814
     }
   }
 }

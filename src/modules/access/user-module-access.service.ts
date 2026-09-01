@@ -99,7 +99,8 @@ export class UserModuleAccessService {
                   eq(organizationMembers.userId, userId),
                   eq(userModuleAccess.enabled, false),
                 ),
-              ),
+              )
+              .limit(100),
           [] as { moduleKey: string }[],
         ),
       { orgId },

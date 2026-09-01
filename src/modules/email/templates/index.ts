@@ -1,5 +1,6 @@
 export {
   getVerificationEmailTemplate,
+  getVerificationEmailSubject,
   getMagicLinkEmailTemplate,
   getWelcomeEmailTemplate,
   getAccountDeactivationEmailTemplate,

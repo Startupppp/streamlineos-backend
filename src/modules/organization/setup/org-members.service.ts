@@ -33,7 +33,8 @@ export class OrgMembersService {
       if (match) conditions.push(match);
     }
 
-    const query = this.db
+    const limit = Math.min(options.limit ?? MAX_MEMBER_RESULTS, MAX_MEMBER_RESULTS);
+    return this.db
       .select({
         id: users.id,
         firstName: users.firstName,
@@ -46,9 +47,7 @@ export class OrgMembersService {
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))
       .where(and(...conditions))
-      .orderBy(asc(users.firstName));
-
-    const limit = Math.min(options.limit ?? MAX_MEMBER_RESULTS, MAX_MEMBER_RESULTS);
-    return query.limit(limit);
+      .orderBy(asc(users.firstName))
+      .limit(limit);
   }
 }

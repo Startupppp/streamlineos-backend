@@ -77,9 +77,8 @@ export class SupportWorkspaceService {
   }
 
   async listSavedViews(orgId: string, userId: string, membershipId: number | null) {
-    const ownerMatch = membershipId != null
-      ? eq(supportSavedViews.ownerMembershipId, membershipId)
-      : eq(supportSavedViews.ownerId, userId);
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
+    const ownerMatch = eq(supportSavedViews.ownerMembershipId, membershipId);
     return this.db.query.supportSavedViews.findMany({
       where: and(
         eq(supportSavedViews.orgId, orgId),
@@ -91,16 +90,18 @@ export class SupportWorkspaceService {
         ),
       ),
       orderBy: [asc(supportSavedViews.sortOrder), asc(supportSavedViews.id)],
+      limit: 100,
     });
   }
 
   async createSavedView(orgId: string, userId: string, membershipId: number | null, input: CreateSavedViewInput) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const [view] = await this.db
       .insert(supportSavedViews)
       .values({
         orgId,
         ownerId: input.visibility === "personal" ? userId : null,
-        ownerMembershipId: input.visibility === "personal" && membershipId != null ? membershipId : undefined,
+        ownerMembershipId: input.visibility === "personal" ? membershipId : undefined,
         name: input.name,
         filter: input.filter,
         visibility: input.visibility,
@@ -111,13 +112,12 @@ export class SupportWorkspaceService {
   }
 
   async updateSavedView(orgId: string, userId: string, membershipId: number | null, viewId: number, input: UpdateSavedViewInput) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const view = await this.db.query.supportSavedViews.findFirst({
       where: and(eq(supportSavedViews.id, viewId), eq(supportSavedViews.orgId, orgId)),
     });
     if (!view) throw new NotFoundException("View not found");
-    const isOwner = membershipId != null && view.ownerMembershipId != null
-      ? view.ownerMembershipId === membershipId
-      : view.ownerId === userId;
+    const isOwner = view.ownerMembershipId === membershipId;
     if (view.visibility === "personal" && !isOwner) {
       throw new ForbiddenException("You can only edit your own personal views");
     }
@@ -131,13 +131,12 @@ export class SupportWorkspaceService {
   }
 
   async deleteSavedView(orgId: string, userId: string, membershipId: number | null, viewId: number) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const view = await this.db.query.supportSavedViews.findFirst({
       where: and(eq(supportSavedViews.id, viewId), eq(supportSavedViews.orgId, orgId)),
     });
     if (!view) throw new NotFoundException("View not found");
-    const isOwner = membershipId != null && view.ownerMembershipId != null
-      ? view.ownerMembershipId === membershipId
-      : view.ownerId === userId;
+    const isOwner = view.ownerMembershipId === membershipId;
     if (view.visibility === "personal" && !isOwner) {
       throw new ForbiddenException("You can only delete your own personal views");
     }

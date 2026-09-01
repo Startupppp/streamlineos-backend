@@ -67,12 +67,12 @@ function reportSelect(rows: unknown[]) {
 
 function makeService(options: {
   scope?: "none" | "own" | "team" | "all";
-  recipientRows?: Array<{ email: string }>;
+  recipientRows?: Array<{ email: string; userId: string }>;
   reportRows?: unknown[];
 } = {}) {
   const orgQuery = orgSelect({ name: "Acme", timezone: "Asia/Kolkata" });
   const recipientQuery = recipientSelect(
-    options.recipientRows ?? [{ email: "manager@example.com" }],
+    options.recipientRows ?? [{ email: "manager@example.com", userId: "manager-1" }],
   );
   const reportQuery = reportSelect(
     options.reportRows ?? [
@@ -233,7 +233,7 @@ describe("AttendanceService.emailReport", () => {
           daysPresent: 20,
         }),
       ],
-      ["manager@example.com"],
+      [{ email: "manager@example.com", userId: "manager-1" }],
       "org-1",
     );
   });

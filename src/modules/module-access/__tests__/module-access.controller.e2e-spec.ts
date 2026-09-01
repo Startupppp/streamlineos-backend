@@ -832,7 +832,7 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
         const res = await request(app.getHttpServer())
           .post(`/module-access/${moduleKey}/ownership/transfer`)
           .set("Authorization", `Bearer ${token}`)
-          .set("Idempotency-Key", `it-${moduleKey}-transfer-initiate`)
+          .set("Idempotency-Key", `it-${moduleKey}-transfer-denied`)
           .send({ toUserId: "u-new-owner" });
         expect(res.status).toBe(403);
         expect(res.body).toMatchObject({ code: "FORBIDDEN" });

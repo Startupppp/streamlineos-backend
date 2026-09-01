@@ -23,6 +23,6 @@ export class EmailTemplatesController {
   @RequirePermission("settings:email-templates:manage")
   @Validate({ body: emailTemplateTestSchema })
   test(@Body() body: EmailTemplateTestInput) {
-    return this.routes.sendTemplateTest(body.templateId, body.testEmail);
+    return this.routes.sendTemplateTest(body.templateId, body.testEmail, body.locale);
   }
 }

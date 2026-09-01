@@ -1,11 +1,12 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   hrMoodCheckins,
   hrPollVotes,
@@ -31,6 +32,7 @@ export class EngagementMoodPollsService {
   async moodCheckin(u: CurrentUserContext, input: MoodCheckinInput) {
     const today = input.date ?? new Date().toISOString().slice(0, 10);
     const membershipId = actingMembershipId(u.principal);
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const [row] = await this.db
       .insert(hrMoodCheckins)
       .values({
@@ -46,7 +48,7 @@ export class EngagementMoodPollsService {
         set: {
           mood: input.mood,
           note: input.note ?? null,
-          ...(membershipId != null && { userMembershipId: membershipId }),
+          userMembershipId: membershipId,
         },
       })
       .returning();
@@ -55,9 +57,7 @@ export class EngagementMoodPollsService {
 
   myMoodHistory(u: CurrentUserContext, limit = 30) {
     const membershipId = actingMembershipId(u.principal);
-    const ownerPredicate = membershipId != null
-      ? or(eq(hrMoodCheckins.userMembershipId, membershipId), eq(hrMoodCheckins.userId, u.userId))!
-      : eq(hrMoodCheckins.userId, u.userId);
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     return this.db
       .select({
         id: hrMoodCheckins.id,
@@ -66,7 +66,7 @@ export class EngagementMoodPollsService {
         note: hrMoodCheckins.note,
       })
       .from(hrMoodCheckins)
-      .where(and(eq(hrMoodCheckins.orgId, u.orgId), ownerPredicate))
+      .where(and(eq(hrMoodCheckins.orgId, u.orgId), eq(hrMoodCheckins.userMembershipId, membershipId)))
       .orderBy(desc(hrMoodCheckins.createdAt))
       .limit(limit);
   }

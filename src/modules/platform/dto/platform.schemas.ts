@@ -47,6 +47,10 @@ export const listLogsQuerySchema = z.object({
 
 export type ListLogsQuery = z.infer<typeof listLogsQuerySchema>;
 
+export const operatorOrgParamsSchema = z.object({
+  orgId: z.string().min(1).max(256),
+}).strict();
+
 export const visitSchema = z.object({
   sessionToken: z.string().min(1).max(64),
   path: z.string().min(1).max(500),

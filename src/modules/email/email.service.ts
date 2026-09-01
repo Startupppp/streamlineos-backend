@@ -120,18 +120,19 @@ export class EmailService extends EmailSendersBase {
     dateRange: string,
     orgName: string,
     rows: { department: string; name: string; totalHours: string; autoCheckoutDays: number; overtimeDays: number; daysPresent: number }[],
-    recipientEmails: string[],
+    recipients: ReadonlyArray<{ email: string; userId: string }>,
     organizationId: string,
   ): Promise<number> {
-    if (recipientEmails.length === 0) return 0;
+    if (recipients.length === 0) return 0;
     const subject = `Attendance report — ${dateRange}`;
     const html = getAttendanceReportTemplate(dateRange, orgName, rows);
     return this.outbox.enqueueForDelivery(
-      recipientEmails.map((email) => ({
-        to: email,
+      recipients.map((recipient) => ({
+        to: recipient.email,
         subject,
         html,
         organizationId,
+        recipientUserId: recipient.userId,
       })),
     );
   }

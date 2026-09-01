@@ -91,7 +91,8 @@ export class KbMembersService {
         ),
         columns: { id: true },
       });
-      membershipId = membership?.id ?? null;
+      if (!membership) throw new NotFoundException("Active organization member not found");
+      membershipId = membership.id;
     }
     const [member] = await this.db
       .insert(kbSpaceMembers)

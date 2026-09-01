@@ -30,7 +30,8 @@ export class HrDocumentTemplatesService {
       .select()
       .from(documentTemplates)
       .where(and(...conditions))
-      .orderBy(desc(documentTemplates.createdAt));
+      .orderBy(desc(documentTemplates.createdAt))
+      .limit(100);
   }
 
   async getById(orgId: string, id: number): Promise<TemplateRow | null> {
@@ -181,6 +182,7 @@ export class HrDocumentTemplatesService {
       .select()
       .from(documentTemplateVersions)
       .where(and(eq(documentTemplateVersions.templateId, templateId), eq(documentTemplateVersions.orgId, orgId)))
-      .orderBy(desc(documentTemplateVersions.version));
+      .orderBy(desc(documentTemplateVersions.version))
+      .limit(100);
   }
 }

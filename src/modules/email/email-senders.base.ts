@@ -3,6 +3,7 @@ import { getBrandName } from "./branding";
 import { EmailProviderService, type EmailOptions } from "./email.provider";
 import {
   getVerificationEmailTemplate,
+  getVerificationEmailSubject,
   getMagicLinkEmailTemplate,
   getWelcomeEmailTemplate,
   getInvitationEmailTemplate,
@@ -35,11 +36,11 @@ export abstract class EmailSendersBase {
     return this.emailProvider.dispatchEmail(options);
   }
 
-  sendVerificationEmail(email: string, token: string): Promise<void> {
+  sendVerificationEmail(email: string, token: string, locale = "en"): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: "Verify your email address",
-      html: getVerificationEmailTemplate(`${appUrl()}/verify-email?token=${token}&email=${encodeURIComponent(email)}`),
+      subject: getVerificationEmailSubject(locale),
+      html: getVerificationEmailTemplate(`${appUrl()}/verify-email?token=${token}&email=${encodeURIComponent(email)}`, locale),
     });
   }
 

@@ -17,6 +17,7 @@ export type DispatchInput = z.infer<typeof dispatchSchema>;
 export const emailTemplateTestSchema = z.object({
   templateId: z.string().min(1),
   testEmail: z.string().email(),
+  locale: z.string().min(2).max(35).default("en"),
 });
 
 export type EmailTemplateTestInput = z.infer<typeof emailTemplateTestSchema>;

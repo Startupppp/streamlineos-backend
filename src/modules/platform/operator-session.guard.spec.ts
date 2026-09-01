@@ -5,19 +5,19 @@ import { OperatorSessionGuard } from "./operator-session.guard";
 import type { PlatformOperatorAccessService } from "./platform-operator-access.service";
 
 type MockOperatorService = {
-  assertAndLog: jest.Mock;
+  authorizeRequest: jest.Mock;
 };
 
 function makeService(opts: { throws?: Error } = {}): MockOperatorService {
   return {
-    assertAndLog: opts.throws
+    authorizeRequest: opts.throws
       ? jest.fn().mockRejectedValue(opts.throws)
       : jest.fn().mockResolvedValue(undefined),
   };
 }
 
 function makeReflector(scope: string | undefined): Reflector {
-  return { get: jest.fn().mockReturnValue(scope) } as unknown as Reflector;
+  return { getAllAndOverride: jest.fn().mockReturnValue(scope) } as unknown as Reflector;
 }
 
 function makeContext(opts: {
@@ -26,7 +26,21 @@ function makeContext(opts: {
   method?: string;
 }): ExecutionContext {
   const req = {
-    user: opts.userId !== undefined ? { userId: opts.userId } : undefined,
+    user: opts.userId !== undefined
+      ? {
+          userId: opts.userId,
+          orgId: "operator-home-org",
+          role: "MEMBER",
+          isOrgOwner: false,
+          sessionId: "session-1",
+          tokenScopes: null,
+          principal: {
+            kind: "human-session" as const,
+            membershipId: 1,
+            isOrgOwner: false,
+          },
+        }
+      : undefined,
     params: opts.orgId !== undefined ? { orgId: opts.orgId } : {},
     headers: {},
     method: opts.method ?? "GET",
@@ -48,7 +62,7 @@ describe("OperatorSessionGuard", () => {
       const guard = new OperatorSessionGuard(makeReflector(undefined), svc as unknown as PlatformOperatorAccessService);
       const result = await guard.canActivate(makeContext({ userId: "op-alice", orgId: "org-1" }));
       expect(result).toBe(true);
-      expect(svc.assertAndLog).not.toHaveBeenCalled();
+      expect(svc.authorizeRequest).not.toHaveBeenCalled();
     });
   });
 
@@ -63,7 +77,7 @@ describe("OperatorSessionGuard", () => {
       await expect(
         guard.canActivate(makeContext({ userId: "op-alice", orgId: "org-1" })),
       ).rejects.toBeInstanceOf(ForbiddenException);
-      expect(svc.assertAndLog).toHaveBeenCalledTimes(1);
+      expect(svc.authorizeRequest).toHaveBeenCalledTimes(1);
     });
 
     it("returns true and calls assertAndLog when an active grant exists", async () => {
@@ -74,7 +88,7 @@ describe("OperatorSessionGuard", () => {
       );
       const result = await guard.canActivate(makeContext({ userId: "op-alice", orgId: "org-1" }));
       expect(result).toBe(true);
-      expect(svc.assertAndLog).toHaveBeenCalledWith(
+      expect(svc.authorizeRequest).toHaveBeenCalledWith(
         "op-alice",
         "org-1",
         "read_customer_data",
@@ -92,7 +106,7 @@ describe("OperatorSessionGuard", () => {
       await expect(
         guard.canActivate(makeContext({ orgId: "org-1" })),
       ).rejects.toBeInstanceOf(UnauthorizedException);
-      expect(svc.assertAndLog).not.toHaveBeenCalled();
+      expect(svc.authorizeRequest).not.toHaveBeenCalled();
     });
 
     it("(bite proof) throws BadRequestException when no :orgId param on the route", async () => {
@@ -104,7 +118,7 @@ describe("OperatorSessionGuard", () => {
       await expect(
         guard.canActivate(makeContext({ userId: "op-alice" })),
       ).rejects.toBeInstanceOf(BadRequestException);
-      expect(svc.assertAndLog).not.toHaveBeenCalled();
+      expect(svc.authorizeRequest).not.toHaveBeenCalled();
     });
 
     it("passes scope, operatorUserId and orgId to assertAndLog — cross-org isolation enforced by the service", async () => {
@@ -114,7 +128,7 @@ describe("OperatorSessionGuard", () => {
         svc as unknown as PlatformOperatorAccessService,
       );
       await guard.canActivate(makeContext({ userId: "op-charlie", orgId: "org-acme" }));
-      const [userId, orgId, scope] = svc.assertAndLog.mock.calls[0] as [string, string, string];
+      const [userId, orgId, scope] = svc.authorizeRequest.mock.calls[0] as [string, string, string];
       expect(userId).toBe("op-charlie");
       expect(orgId).toBe("org-acme");
       expect(scope).toBe("read_payments");
@@ -127,7 +141,7 @@ describe("OperatorSessionGuard", () => {
         svc as unknown as PlatformOperatorAccessService,
       );
       await guard.canActivate(makeContext({ userId: "op-alice", orgId: "org-1", method: "POST" }));
-      const [, , , action] = svc.assertAndLog.mock.calls[0] as [string, string, string, string];
+      const [, , , action] = svc.authorizeRequest.mock.calls[0] as [string, string, string, string];
       expect(action).toContain("operator.");
       expect(action.toLowerCase()).toContain("post");
     });

@@ -1,8 +1,14 @@
 import { getEmailTemplate, escapeHtml } from "./base";
 import { renderKeyValueRows, renderCallout } from "./components";
-import { EMAIL_TEMPLATE_VERSION, resolveLocaleText } from "./email-locale";
+import {
+  EMAIL_TEMPLATE_VERSION,
+  resolveLocaleText,
+  resolveLocaleValue,
+  type LocalizedValues,
+} from "./email-locale";
 
 export const PAYSLIP_TEMPLATE_VERSION = EMAIL_TEMPLATE_VERSION;
+export const PAYSLIP_TEMPLATE_LOCALES = ["en", "fr", "es", "de"] as const;
 
 /**
  * SEC-007. `netSalary` was rendered into the body and retained in `email_outbox.html`.
@@ -17,64 +23,57 @@ export interface PayslipEmailParams {
   locale?: string;
 }
 
-const SUBJECT_MAP: Record<string, (month: string) => string> = {
+const SUBJECT_MAP: LocalizedValues<(month: string) => string> = {
   en: (m) => `Your payslip for ${m}`,
   fr: (m) => `Votre bulletin de salaire pour ${m}`,
   es: (m) => `Su nómina de ${m}`,
   de: (m) => `Ihre Gehaltsabrechnung für ${m}`,
 };
 
-const TITLE_MAP: Record<string, (month: string) => string> = {
+const TITLE_MAP: LocalizedValues<(month: string) => string> = {
   en: (m) => `Your payslip for ${m}`,
   fr: (m) => `Votre bulletin de salaire pour ${m}`,
   es: (m) => `Su nómina de ${m}`,
   de: (m) => `Ihre Gehaltsabrechnung für ${m}`,
 };
 
-const GREETING_MAP: Record<string, (firstName: string, month: string) => string> = {
+const GREETING_MAP: LocalizedValues<(firstName: string, month: string) => string> = {
   en: (n, m) => `Hi ${n}, your payslip for ${m} is attached to this email as a PDF.`,
   fr: (n, m) => `Bonjour ${n}, votre bulletin de salaire pour ${m} est joint à cet e-mail en PDF.`,
   es: (n, m) => `Hola ${n}, su nómina de ${m} está adjunta a este correo electrónico como PDF.`,
   de: (n, m) => `Hallo ${n}, Ihre Gehaltsabrechnung für ${m} ist diesem E-Mail als PDF beigefügt.`,
 };
 
-const PERIOD_LABEL_MAP: Record<string, string> = {
+const PERIOD_LABEL_MAP: LocalizedValues<string> = {
   en: "Period",
   fr: "Période",
   es: "Período",
   de: "Zeitraum",
 };
 
-const CALLOUT_MAP: Record<string, string> = {
+const CALLOUT_MAP: LocalizedValues<string> = {
   en: "The PDF contains your full salary breakdown including earnings, deductions, and bank transfer details. Contact HR if you have any questions.",
   fr: "Le PDF contient le détail complet de votre salaire, y compris les revenus, les déductions et les informations de virement bancaire. Contactez les RH si vous avez des questions.",
   es: "El PDF contiene el desglose completo de su salario, incluidos ingresos, deducciones y datos de transferencia bancaria. Contacte con RRHH si tiene alguna pregunta.",
   de: "Das PDF enthält Ihre vollständige Gehaltsaufschlüsselung mit Einnahmen, Abzügen und Banküberweisung. Wenden Sie sich bei Fragen an die Personalabteilung.",
 };
 
-const PREHEADER_MAP: Record<string, (month: string, org: string) => string> = {
+const PREHEADER_MAP: LocalizedValues<(month: string, org: string) => string> = {
   en: (m, o) => `Your ${m} payslip from ${o} is attached.`,
   fr: (m, o) => `Votre bulletin de salaire ${m} de ${o} est joint.`,
   es: (m, o) => `Su nómina de ${m} de ${o} está adjunta.`,
   de: (m, o) => `Ihre Gehaltsabrechnung ${m} von ${o} ist beigefügt.`,
 };
 
-function resolve<T>(map: Record<string, T>, locale: string, fallback: T): T {
-  if (Object.prototype.hasOwnProperty.call(map, locale)) return map[locale] as T;
-  const base = locale.split("-")[0] ?? "";
-  if (base && base !== locale && Object.prototype.hasOwnProperty.call(map, base)) return map[base] as T;
-  return (map["en"] as T) ?? fallback;
-}
-
 export function getPayslipEmailTemplate(params: PayslipEmailParams): { subject: string; html: string } {
   const { employeeName, month, orgName, locale = "en" } = params;
 
-  const subjectFn = resolve(SUBJECT_MAP, locale, SUBJECT_MAP["en"]!);
-  const titleFn = resolve(TITLE_MAP, locale, TITLE_MAP["en"]!);
-  const greetingFn = resolve(GREETING_MAP, locale, GREETING_MAP["en"]!);
+  const subjectFn = resolveLocaleValue(locale, SUBJECT_MAP);
+  const titleFn = resolveLocaleValue(locale, TITLE_MAP);
+  const greetingFn = resolveLocaleValue(locale, GREETING_MAP);
   const periodLabel = resolveLocaleText(locale, PERIOD_LABEL_MAP);
   const calloutText = resolveLocaleText(locale, CALLOUT_MAP);
-  const preheaderFn = resolve(PREHEADER_MAP, locale, PREHEADER_MAP["en"]!);
+  const preheaderFn = resolveLocaleValue(locale, PREHEADER_MAP);
 
   const subject = subjectFn(month);
   const firstName = escapeHtml(employeeName.split(" ")[0] ?? employeeName);

@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, or, inArray } from "drizzle-orm";
 import {
   kbSpaces,
@@ -13,7 +13,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { actingMembershipId } from "../../../common/auth/principal";
+import { accountableMembershipId, actingMembershipId } from "../../../common/auth/principal";
 import { CacheService } from "../../../common/cache/cache.service";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { AccessService } from "../../access/access.service";
@@ -77,12 +77,10 @@ export class KbAccessService {
 
     if (await this.isAdmin(user)) return spaces.map((s) => s.id);
 
-    const membershipId = user.principal !== undefined ? actingMembershipId(user.principal) : null;
+    const membershipId = user.principal !== undefined ? accountableMembershipId(user.principal) : null;
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const roleSlugs = await this.resolveRoleSlugs(user.orgId, user.userId);
-    const directMatch =
-      membershipId !== null
-        ? or(eq(kbSpaceMembers.membershipId, membershipId), eq(kbSpaceMembers.userId, user.userId))
-        : eq(kbSpaceMembers.userId, user.userId);
+    const directMatch = eq(kbSpaceMembers.membershipId, membershipId);
     const grantedRows = await this.db
       .selectDistinct({ spaceId: kbSpaceMembers.spaceId })
       .from(kbSpaceMembers)

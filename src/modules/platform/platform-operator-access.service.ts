@@ -10,6 +10,7 @@ import { and, eq, gt, isNull } from "drizzle-orm";
 import { operatorAccessGrants, operatorAccessLog } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 
 export type OperatorScope =
   | "read_customer_data"
@@ -18,7 +19,7 @@ export type OperatorScope =
   | "read_leads"
   | "manage_subscription";
 
-const MAX_GRANT_DURATION_MS = 24 * 60 * 60 * 1000;
+const MAX_GRANT_DURATION_MS = 4 * 60 * 60 * 1000;
 
 export interface GrantParams {
   operatorUserId: string;
@@ -37,7 +38,7 @@ export class PlatformOperatorAccessService {
     const maxExpiry = new Date(Date.now() + MAX_GRANT_DURATION_MS);
     if (params.expiresAt > maxExpiry)
       throw new BadRequestException(
-        "Grant duration cannot exceed 24 hours from now",
+        "Grant duration cannot exceed 4 hours from now",
       );
     const [row] = await this.db
       .insert(operatorAccessGrants)
@@ -153,6 +154,44 @@ export class PlatformOperatorAccessService {
   ): Promise<void> {
     const grantId = await this.assertGrant(operatorUserId, orgId, scope);
     await this.recordAccess(grantId, operatorUserId, orgId, action, ipAddress, detail);
+  }
+
+  async authorizeRequest(
+    operatorUserId: string,
+    orgId: string,
+    scope: OperatorScope,
+    action: string,
+    ipAddress: string | undefined,
+  ): Promise<void> {
+    await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+      const now = new Date();
+      const [grant] = await tx
+        .select({ grantId: operatorAccessGrants.grantId })
+        .from(operatorAccessGrants)
+        .where(
+          and(
+            eq(operatorAccessGrants.operatorUserId, operatorUserId),
+            eq(operatorAccessGrants.orgId, orgId),
+            eq(operatorAccessGrants.scope, scope),
+            eq(operatorAccessGrants.status, "active"),
+            gt(operatorAccessGrants.expiresAt, now),
+            isNull(operatorAccessGrants.revokedAt),
+          ),
+        )
+        .limit(1);
+      if (!grant)
+        throw new ForbiddenException(
+          "No active operator access grant for this organisation and scope",
+        );
+
+      await tx.insert(operatorAccessLog).values({
+        grantId: grant.grantId,
+        operatorUserId,
+        orgId,
+        action,
+        ipAddress: ipAddress ?? null,
+      });
+    });
   }
 
   async revokeGrant(grantId: string, reason: string): Promise<void> {

@@ -21,6 +21,7 @@ export class SupportPortalService {
   ) {}
 
   async createTicket(orgId: string, userId: string, membershipId: number | null, input: CreatePortalTicketInput) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     return this.tickets.createTicket(
       orgId,
       userId,
@@ -36,11 +37,9 @@ export class SupportPortalService {
   }
 
   async listMyTickets(orgId: string, userId: string, membershipId: number | null) {
-    const ownerPredicate = membershipId != null
-      ? eq(supportTickets.createdByMembershipId, membershipId)
-      : eq(supportTickets.createdBy, userId);
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     return this.db.query.supportTickets.findMany({
-      where: and(eq(supportTickets.orgId, orgId), ownerPredicate),
+      where: and(eq(supportTickets.orgId, orgId), eq(supportTickets.createdByMembershipId, membershipId)),
       orderBy: [desc(supportTickets.createdAt)],
       columns: {
         id: true,
@@ -93,14 +92,13 @@ export class SupportPortalService {
   }
 
   private async assertOwnTicket(orgId: string, userId: string, membershipId: number | null, ticketId: number) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const ticket = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
       columns: { id: true, createdBy: true, createdByMembershipId: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
-    const isOwner = membershipId != null && ticket.createdByMembershipId != null
-      ? ticket.createdByMembershipId === membershipId
-      : ticket.createdBy === userId;
+    const isOwner = ticket.createdByMembershipId === membershipId;
     if (!isOwner) throw new ForbiddenException("Not your ticket");
   }
 }

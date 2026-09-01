@@ -1,5 +1,16 @@
 export const EMAIL_TEMPLATE_VERSION = 1 as const;
 
+export {
+  resolveAvailableLocale,
+  resolveLocaleValue,
+  type LocalizedValues,
+} from "../../../common/i18n/locale-fallback";
+
+import {
+  resolveLocaleValue,
+  type LocalizedValues,
+} from "../../../common/i18n/locale-fallback";
+
 /**
  * Deterministic locale fallback chain: exact locale → base language → "en".
  *
@@ -8,10 +19,6 @@ export const EMAIL_TEMPLATE_VERSION = 1 as const;
  * An unknown locale never throws and never returns an empty string as long as "en"
  * is present.
  */
-export function resolveLocaleText(locale: string, map: Record<string, string>): string {
-  if (Object.prototype.hasOwnProperty.call(map, locale)) return map[locale] as string;
-  const base = locale.split("-")[0] ?? "";
-  if (base && base !== locale && Object.prototype.hasOwnProperty.call(map, base))
-    return map[base] as string;
-  return (map["en"] as string) ?? "";
+export function resolveLocaleText(locale: string, map: LocalizedValues<string>): string {
+  return resolveLocaleValue(locale, map);
 }

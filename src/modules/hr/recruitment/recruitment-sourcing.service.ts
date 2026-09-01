@@ -22,6 +22,8 @@ import {
 import { orgUnits } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { AccessService } from "../../access/access.service";
 import type {
   CreateHeadcountInput,
@@ -297,6 +299,10 @@ export class RecruitmentSourcingService {
     const conditions = [eq(headcountRequests.orgId, orgId)];
     if (!isHr) conditions.push(eq(headcountRequests.requestedBy, userId));
     if (input.status) conditions.push(sql`${headcountRequests.status} = ${input.status}`);
+    const cursor = decodeCursor(input.cursor);
+    if (cursor) {
+      conditions.push(keysetBeforeId(headcountRequests.createdAt, headcountRequests.id, cursor));
+    }
 
     return this.db
       .select({
@@ -323,9 +329,12 @@ export class RecruitmentSourcingService {
       .leftJoin(orgUnits, and(eq(headcountRequests.orgDepartmentId, orgUnits.id), eq(orgUnits.kind, "DEPARTMENT")))
       .leftJoin(users, eq(headcountRequests.requestedBy, users.id))
       .where(and(...conditions))
-      .orderBy(desc(headcountRequests.createdAt))
-      .limit(input.limit)
-      .offset(input.offset);
+      .orderBy(desc(headcountRequests.createdAt), desc(headcountRequests.id))
+      .limit(input.limit + 1)
+      .then((rows) => buildCursorPage(rows, input.limit, (row) => ({
+        sortValue: row.createdAt.toISOString(),
+        id: String(row.id),
+      })));
   }
 
   async createHeadcount(orgId: string, userId: string, input: CreateHeadcountInput) {

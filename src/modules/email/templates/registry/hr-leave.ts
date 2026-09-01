@@ -7,10 +7,9 @@ import {
   getResignationApprovedEmailTemplate,
   getTerminationEmailTemplate,
 } from "../index";
-import { BASE_URL } from "./_shared";
-import type { TemplateEntry } from "./_shared";
+import { BASE_URL, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
-export const hrLeaveTemplates: Record<string, TemplateEntry> = {
+export const hrLeaveTemplates = defineTemplateFamily({
   "hr.leave_request": {
     category: "HR Leave",
     name: "Leave Request (to approver)",
@@ -126,4 +125,4 @@ export const hrLeaveTemplates: Record<string, TemplateEntry> = {
         "hr@acme.in",
       ),
   },
-};
+}, EMAIL_TEMPLATE_VERSION);

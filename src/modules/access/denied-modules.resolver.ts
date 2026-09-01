@@ -50,7 +50,8 @@ export class DeniedModulesResolver {
                   eq(organizationMembers.userId, userId),
                   eq(userModuleAccess.enabled, false),
                 ),
-              ),
+              )
+              .limit(100),
           [] as { moduleKey: string }[],
         ),
       { orgId },

@@ -16,6 +16,7 @@ export class BackgroundVerificationService {
   async list(orgId: string) {
     const rows = await this.db.query.backgroundVerifications.findMany({
       where: eq(backgroundVerifications.orgId, orgId),
+      limit: 100,
       with: {
         user: {
           columns: {
@@ -29,7 +30,6 @@ export class BackgroundVerificationService {
         },
       },
       orderBy: [desc(backgroundVerifications.createdAt)],
-      limit: 500,
     });
 
     const facts = await this.employmentFacts.getFactsBatch(

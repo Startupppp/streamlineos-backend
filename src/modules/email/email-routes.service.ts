@@ -71,34 +71,60 @@ export class EmailRoutesService {
     return { results, allFailed };
   }
 
-  getTemplatePreviews(): { id: string; category: string; name: string; subject: string; html: string }[] {
-    return Object.entries(TEMPLATE_MAP).map(([id, entry]) => ({
-      id,
-      category: entry.category,
-      name: entry.name,
-      subject: entry.subject,
-      html: entry.generateHtml(),
-    }));
+  getTemplatePreviews(): Array<{
+    id: string;
+    category: string;
+    name: string;
+    subject: string;
+    html: string;
+    version: number;
+    locale: string;
+    supportedLocales: readonly string[];
+  }> {
+    return Object.entries(TEMPLATE_MAP).map(([id, entry]) => {
+      const rendered = entry.render();
+      return {
+        id,
+        category: entry.category,
+        name: entry.name,
+        subject: rendered.subject,
+        html: rendered.html,
+        version: rendered.version,
+        locale: rendered.locale,
+        supportedLocales: entry.supportedLocales,
+      };
+    });
   }
 
   async sendTemplateTest(
     templateId: string,
     testEmail: string,
-  ): Promise<{ sent: true; to: string; templateId: string }> {
+    locale: string,
+  ): Promise<{ sent: true; to: string; templateId: string; locale: string; version: number }> {
     const entry = TEMPLATE_MAP[templateId];
     if (!entry) throw new NotFoundException(`Unknown template ID: ${templateId}`);
 
-    let html: string;
+    let rendered: ReturnType<typeof entry.render>;
     try {
-      html = entry.generateHtml();
+      rendered = entry.render(locale);
     } catch (e) {
       throw new InternalServerErrorException(
         `Failed to generate template: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
 
-    await this.email.sendEmail({ to: testEmail, subject: `[TEST] ${entry.subject}`, html });
+    await this.email.sendEmail({
+      to: testEmail,
+      subject: `[TEST] ${rendered.subject}`,
+      html: rendered.html,
+    });
 
-    return { sent: true, to: testEmail, templateId };
+    return {
+      sent: true,
+      to: testEmail,
+      templateId,
+      locale: rendered.locale,
+      version: rendered.version,
+    };
   }
 }

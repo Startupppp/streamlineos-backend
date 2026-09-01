@@ -3,10 +3,9 @@ import {
   getLeadStatusChangeEmailTemplate,
   getLeadDistributionEmailTemplate,
 } from "../index";
-import { BASE_URL } from "./_shared";
-import type { TemplateEntry } from "./_shared";
+import { BASE_URL, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
-export const crmTemplates: Record<string, TemplateEntry> = {
+export const crmTemplates = defineTemplateFamily({
   "crm.client_investment": {
     category: "CRM",
     name: "Client Investment Recorded",
@@ -46,4 +45,4 @@ export const crmTemplates: Record<string, TemplateEntry> = {
         leadsUrl: `${BASE_URL()}/crm/leads`,
       }).html,
   },
-};
+}, EMAIL_TEMPLATE_VERSION);

@@ -12,7 +12,8 @@ export class RecruitmentJobBoardsService {
   async list(orgId: string, jobPostingId: number) {
     return this.db.select().from(jobBoardPostings)
       .where(and(eq(jobBoardPostings.orgId, orgId), eq(jobBoardPostings.jobPostingId, jobPostingId)))
-      .orderBy(desc(jobBoardPostings.createdAt));
+      .orderBy(desc(jobBoardPostings.createdAt))
+      .limit(100);
   }
 
   async create(orgId: string, userId: string, jobPostingId: number, data: CreateJobBoardPostingInput) {

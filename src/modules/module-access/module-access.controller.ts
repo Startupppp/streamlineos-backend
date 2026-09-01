@@ -36,8 +36,14 @@ import {
   listGroupsQuerySchema,
   listMembersQuerySchema,
   memberCandidatesQuerySchema,
+  flatMemberParamSchema,
+  moduleGroupMemberParamSchema,
+  moduleGroupParamSchema,
+  moduleKeyParamSchema,
+  moduleRoleParamSchema,
   renameModuleGroupSchema,
   setModuleRolePermissionsSchema,
+  standingMemberParamSchema,
   updateMemberGroupsSchema,
   type AddFlatMemberInput,
   type AddModuleGroupMemberInput,
@@ -60,14 +66,6 @@ import {
 } from "./dto/module-access.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
-import { z } from "zod";
-
-const moduleKeyParams = z.object({ moduleKey: z.string().min(1) }).strict();
-const moduleKeymembershipIdParams = z.object({ moduleKey: z.string().min(1), membershipId: z.string().min(1) }).strict();
-const moduleKeyroleIdParams = z.object({ moduleKey: z.string().min(1), roleId: z.string().min(1) }).strict();
-const moduleKeygroupIdParams = z.object({ moduleKey: z.string().min(1), groupId: z.string().min(1) }).strict();
-const moduleKeygroupIduserIdParams = z.object({ moduleKey: z.string().min(1), groupId: z.string().min(1), userId: z.string().min(1) }).strict();
-const moduleKeyuserIdParams = z.object({ moduleKey: z.string().min(1), userId: z.string().min(1) }).strict();
 
 @Controller("module-access")
 @UseGuards(JwtAuthGuard)
@@ -84,7 +82,7 @@ export class ModuleAccessController {
   ) {}
 
   @Get(":moduleKey/standing")
-  @Validate({ params: moduleKeyParams })
+  @Validate({ params: moduleKeyParamSchema })
   listStanding(
     @Param() params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
@@ -93,7 +91,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/standing/grantable")
-  @Validate({ params: moduleKeyParams })
+  @Validate({ params: moduleKeyParamSchema })
   describeGrantable(
     @Param() params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
@@ -105,7 +103,7 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:ownership-transfer")
-  @Validate({ params: moduleKeyParams, body: directTransferOwnerSchema })
+  @Validate({ params: moduleKeyParamSchema, body: directTransferOwnerSchema })
   directTransferOwnership(
     @Param() params: ModuleKeyParam,
     @Body() body: DirectTransferOwnerInput,
@@ -119,7 +117,7 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeymembershipIdParams })
+  @Validate({ params: standingMemberParamSchema })
   grantAdminStanding(
     @Param() params: StandingMemberParam,
     @CurrentUser() u: CurrentUserContext,
@@ -131,7 +129,7 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeymembershipIdParams })
+  @Validate({ params: standingMemberParamSchema })
   revokeStanding(
     @Param() params: StandingMemberParam,
     @CurrentUser() u: CurrentUserContext,
@@ -140,7 +138,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/catalog")
-  @Validate({ params: moduleKeyParams })
+  @Validate({ params: moduleKeyParamSchema })
   catalog(
     @Param() params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
@@ -149,7 +147,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/roles")
-  @Validate({ params: moduleKeyParams })
+  @Validate({ params: moduleKeyParamSchema })
   roles(
     @Param() params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
@@ -160,7 +158,7 @@ export class ModuleAccessController {
   @Put(":moduleKey/roles/:roleId/permissions")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeyroleIdParams, body: setModuleRolePermissionsSchema })
+  @Validate({ params: moduleRoleParamSchema, body: setModuleRolePermissionsSchema })
   setRolePermissions(
     @Param() params: ModuleRoleParam,
     @Body() body: SetModuleRolePermissionsInput,
@@ -170,7 +168,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/groups")
-  @Validate({ params: moduleKeyParams, query: listGroupsQuerySchema })
+  @Validate({ params: moduleKeyParamSchema, query: listGroupsQuerySchema })
   listGroups(
     @Param() params: ModuleKeyParam,
     @Query() query: ListGroupsQuery,
@@ -183,7 +181,7 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeyParams, body: createModuleGroupSchema })
+  @Validate({ params: moduleKeyParamSchema, body: createModuleGroupSchema })
   createGroup(
     @Param() params: ModuleKeyParam,
     @Body() body: CreateModuleGroupInput,
@@ -195,7 +193,7 @@ export class ModuleAccessController {
   @Patch(":moduleKey/groups/:groupId")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeygroupIdParams, body: renameModuleGroupSchema })
+  @Validate({ params: moduleGroupParamSchema, body: renameModuleGroupSchema })
   renameGroup(
     @Param() params: ModuleGroupParam,
     @Body() body: RenameModuleGroupInput,
@@ -208,7 +206,7 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeygroupIdParams })
+  @Validate({ params: moduleGroupParamSchema })
   deleteGroup(
     @Param() params: ModuleGroupParam,
     @CurrentUser() u: CurrentUserContext,
@@ -219,7 +217,7 @@ export class ModuleAccessController {
   @Put(":moduleKey/groups/:groupId/permissions")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeygroupIdParams, body: setModuleRolePermissionsSchema })
+  @Validate({ params: moduleGroupParamSchema, body: setModuleRolePermissionsSchema })
   setGroupPermissions(
     @Param() params: ModuleGroupParam,
     @Body() body: SetModuleRolePermissionsInput,
@@ -229,7 +227,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/groups/:groupId/members")
-  @Validate({ params: moduleKeygroupIdParams })
+  @Validate({ params: moduleGroupParamSchema })
   listGroupMembers(
     @Param() params: ModuleGroupParam,
     @CurrentUser() u: CurrentUserContext,
@@ -241,7 +239,7 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeygroupIdParams, body: addModuleGroupMemberSchema })
+  @Validate({ params: moduleGroupParamSchema, body: addModuleGroupMemberSchema })
   addGroupMember(
     @Param() params: ModuleGroupParam,
     @Body() body: AddModuleGroupMemberInput,
@@ -254,7 +252,7 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeygroupIduserIdParams })
+  @Validate({ params: moduleGroupMemberParamSchema })
   removeGroupMember(
     @Param() params: ModuleGroupMemberParam,
     @CurrentUser() u: CurrentUserContext,
@@ -263,7 +261,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/me/permissions")
-  @Validate({ params: moduleKeyParams })
+  @Validate({ params: moduleKeyParamSchema })
   getCallerPermissions(
     @Param() params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
@@ -272,7 +270,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/members")
-  @Validate({ params: moduleKeyParams, query: listMembersQuerySchema })
+  @Validate({ params: moduleKeyParamSchema, query: listMembersQuerySchema })
   listMembers(
     @Param() params: ModuleKeyParam,
     @Query() query: ListMembersQuery,
@@ -285,7 +283,7 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeyParams, body: addFlatMemberSchema })
+  @Validate({ params: moduleKeyParamSchema, body: addFlatMemberSchema })
   addMember(
     @Param() params: ModuleKeyParam,
     @Body() body: AddFlatMemberInput,
@@ -297,7 +295,7 @@ export class ModuleAccessController {
   @Patch(":moduleKey/members/:userId")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeyuserIdParams, body: updateMemberGroupsSchema })
+  @Validate({ params: flatMemberParamSchema, body: updateMemberGroupsSchema })
   updateMemberGroups(
     @Param() params: FlatMemberParam,
     @Body() body: UpdateMemberGroupsInput,
@@ -310,7 +308,7 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:group-mutate")
-  @Validate({ params: moduleKeyuserIdParams })
+  @Validate({ params: flatMemberParamSchema })
   removeMember(
     @Param() params: FlatMemberParam,
     @CurrentUser() u: CurrentUserContext,
@@ -319,7 +317,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/audit-log")
-  @Validate({ params: moduleKeyParams, query: auditLogQuerySchema })
+  @Validate({ params: moduleKeyParamSchema, query: auditLogQuerySchema })
   getAuditLog(
     @Param() params: ModuleKeyParam,
     @Query() query: AuditLogQuery,
@@ -329,7 +327,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/member-candidates")
-  @Validate({ params: moduleKeyParams, query: memberCandidatesQuerySchema })
+  @Validate({ params: moduleKeyParamSchema, query: memberCandidatesQuerySchema })
   listMemberCandidates(
     @Param() params: ModuleKeyParam,
     @Query() query: MemberCandidatesQuery,
@@ -339,7 +337,7 @@ export class ModuleAccessController {
   }
 
   @Get(":moduleKey/ownership")
-  @Validate({ params: moduleKeyParams })
+  @Validate({ params: moduleKeyParamSchema })
   getOwnership(
     @Param() params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,
@@ -352,7 +350,7 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.CREATED)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:ownership-transfer")
-  @Validate({ params: moduleKeyParams, body: initiateOwnershipTransferSchema })
+  @Validate({ params: moduleKeyParamSchema, body: initiateOwnershipTransferSchema })
   initiateOwnershipTransfer(
     @Param() params: ModuleKeyParam,
     @Body() body: InitiateOwnershipTransferInput,
@@ -366,7 +364,7 @@ export class ModuleAccessController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("module-access:ownership-transfer")
-  @Validate({ params: moduleKeyParams })
+  @Validate({ params: moduleKeyParamSchema })
   cancelOwnershipTransfer(
     @Param() params: ModuleKeyParam,
     @CurrentUser() u: CurrentUserContext,

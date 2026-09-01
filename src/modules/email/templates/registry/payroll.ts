@@ -1,16 +1,25 @@
 import { getPayslipEmailTemplate } from "../index";
-import type { TemplateEntry } from "./_shared";
+import { EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
+import { PAYSLIP_TEMPLATE_LOCALES } from "../payroll";
 
-export const payrollTemplates: Record<string, TemplateEntry> = {
+export const payrollTemplates = defineTemplateFamily({
   "payroll.payslip": {
     category: "Payroll",
     name: "Payslip",
-    subject: "Your payslip for June 2026",
-    generateHtml: () =>
+    subject: (locale: string) =>
       getPayslipEmailTemplate({
         employeeName: "Priya Sharma",
         month: "June 2026",
         orgName: "Acme Corp",
+        locale,
+      }).subject,
+    generateHtml: (locale?: string) =>
+      getPayslipEmailTemplate({
+        employeeName: "Priya Sharma",
+        month: "June 2026",
+        orgName: "Acme Corp",
+        locale,
       }).html,
+    supportedLocales: PAYSLIP_TEMPLATE_LOCALES,
   },
-};
+}, EMAIL_TEMPLATE_VERSION);

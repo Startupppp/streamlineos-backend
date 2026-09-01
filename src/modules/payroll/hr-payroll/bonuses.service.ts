@@ -14,11 +14,10 @@ export class BonusesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   listBonuses(orgId: string, userId: string, membershipId: number | null, isAdmin: boolean, page = 1, limit = 100) {
+    if (!isAdmin && membershipId === null) throw new ForbiddenException("Organization membership required");
     const where = isAdmin
       ? eq(bonuses.orgId, orgId)
-      : membershipId != null
-        ? and(eq(bonuses.orgId, orgId), eq(bonuses.userMembershipId, membershipId))
-        : and(eq(bonuses.orgId, orgId), eq(bonuses.userId, userId));
+      : and(eq(bonuses.orgId, orgId), eq(bonuses.userMembershipId, membershipId ?? 0));
     return this.db
       .select({
         id: bonuses.id,
@@ -72,7 +71,8 @@ export class BonusesService {
     const [existing] = await this.db
       .select()
       .from(bonuses)
-      .where(and(eq(bonuses.id, bonusId), eq(bonuses.orgId, orgId)));
+      .where(and(eq(bonuses.id, bonusId), eq(bonuses.orgId, orgId)))
+      .limit(1);
 
     if (!existing) return { ok: false, reason: "not_found" };
     if (existing.status === "PAID") return { ok: false, reason: "already_paid" };

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { createHash } from "crypto";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -16,6 +16,7 @@ import {
   payrollRunEvents,
   organizations,
   organizationMembers,
+  userPreferences,
 } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { StorageService } from "../../storage/storage.service";
@@ -105,6 +106,19 @@ export class PayslipBulkPublisherService {
     } else if (subjectKeys && subjectKeys.length > 0) {
       payees = filterPayeesBySubjectKeys(payees, subjectKeys);
     }
+
+    const recipientUserIds = payees.flatMap((payee) =>
+      payee.subject.userId ? [payee.subject.userId] : [],
+    );
+    const localeRows = recipientUserIds.length
+      ? await this.db
+          .select({ userId: userPreferences.userId, language: userPreferences.language })
+          .from(userPreferences)
+          .where(inArray(userPreferences.userId, recipientUserIds))
+      : [];
+    const localeByUserId = new Map(
+      localeRows.map((row) => [row.userId, row.language]),
+    );
 
     const runEmployees = await this.db
       .select({
@@ -244,6 +258,7 @@ export class PayslipBulkPublisherService {
               employeeName: payee.displayName,
               month: monthLabel,
               orgName,
+              locale: localeByUserId.get(payee.subject.userId) ?? "en",
             });
             await this.dispatch.emit({
               orgId,

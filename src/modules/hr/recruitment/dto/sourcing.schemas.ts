@@ -79,7 +79,7 @@ export type SubmissionIdQueryInput = z.infer<typeof submissionIdQuerySchema>;
 export const headcountListSchema = z.object({
   status: z.string().optional(),
   limit: pageSizeField(50, 100),
-  offset: z.coerce.number().int().min(0).default(0),
+  cursor: z.string().optional(),
 });
 export type HeadcountListInput = z.infer<typeof headcountListSchema>;
 

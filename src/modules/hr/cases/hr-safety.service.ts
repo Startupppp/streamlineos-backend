@@ -265,6 +265,7 @@ export class HrSafetyService {
 
   async upsertCheckin(u: CurrentUserContext, input: CheckinInput) {
     const membershipId = actingMembershipId(u.principal);
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const [row] = await this.db
       .insert(hrWellnessCheckins)
       .values({
@@ -284,7 +285,7 @@ export class HrSafetyService {
         set: {
           score: input.score,
           flags: input.flags ?? null,
-          ...(membershipId != null && { userMembershipId: membershipId }),
+          userMembershipId: membershipId,
         },
       })
       .returning();
@@ -298,12 +299,10 @@ export class HrSafetyService {
     toDate?: string,
   ) {
     const membershipId = actingMembershipId(u.principal);
-    const ownerPredicate = membershipId != null
-      ? or(eq(hrWellnessCheckins.userMembershipId, membershipId), eq(hrWellnessCheckins.userId, u.userId))!
-      : eq(hrWellnessCheckins.userId, u.userId);
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const conditions = [
       eq(hrWellnessCheckins.orgId, u.orgId),
-      ownerPredicate,
+      eq(hrWellnessCheckins.userMembershipId, membershipId),
     ];
 
     if (fromDate) conditions.push(gte(hrWellnessCheckins.date, fromDate));

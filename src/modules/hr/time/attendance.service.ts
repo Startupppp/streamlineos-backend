@@ -365,7 +365,7 @@ export class AttendanceService {
     }
 
     const recipientRows = await this.db
-      .select({ email: users.email })
+      .select({ email: users.email, userId: users.id })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(
@@ -452,7 +452,10 @@ export class AttendanceService {
         overtimeDays: Number(r.overtimeDays),
         daysPresent: Number(r.daysPresent),
       })),
-      recipients,
+      recipientRows.map((recipient) => ({
+        email: recipient.email.trim().toLowerCase(),
+        userId: recipient.userId,
+      })),
       u.orgId,
     );
 
