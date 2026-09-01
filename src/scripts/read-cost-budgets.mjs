@@ -73,6 +73,7 @@ export const BUDGETS = [
     id: "ticket-list-project",
     ceiling: 8_000,
     minRows: 50,
+    maxScanRows: 50_000,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
     params: (f) => (f.projectId ? [f.orgId, f.projectId] : null),
     sql: `
@@ -111,6 +112,7 @@ export const BUDGETS = [
     id: "notifications-list",
     ceiling: 5_000,
     minRows: 100,
+    maxScanRows: 2_000,
     rowCountSql: `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`,
     params: (f) => [f.orgId, f.userId],
     sql: `
@@ -259,6 +261,7 @@ export const BUDGETS = [
     id: "org-members-list",
     ceiling: 5_000,
     minRows: 10,
+    maxScanRows: 5_000,
     rowCountSql: `SELECT count(*)::int FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE'`,
     params: (f) => [f.orgId],
     sql: `
@@ -372,6 +375,7 @@ export const BUDGETS = [
     id: "attendance-mine",
     ceiling: 5_000,
     minRows: 30,
+    maxScanRows: 200,
     rowCountSql: `SELECT count(*)::int FROM attendance WHERE org_id = $1`,
     params: (f) => [f.orgId, f.userId],
     sql: `
@@ -1023,6 +1027,7 @@ export const BUDGETS = [
     id: "dashboard-personal-my-tasks",
     ceiling: 2_000,
     minRows: 50,
+    maxScanRows: 1_000,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
     params: (f) => (f.userId ? [f.orgId, f.userId] : null),
     sql: `
