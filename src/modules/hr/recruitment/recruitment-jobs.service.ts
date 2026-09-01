@@ -244,6 +244,7 @@ export class RecruitmentJobsService {
 
     const sources = await this.db.query.candidateSources.findMany({
       where: eq(candidateSources.orgId, orgId),
+      limit: 100,
     });
 
     const results: Array<{ platform: string; status: PublishStatus }> = [];
@@ -293,7 +294,8 @@ export class RecruitmentJobsService {
       })
       .from(jobRecruiters)
       .innerJoin(users, eq(jobRecruiters.userId, users.id))
-      .where(eq(jobRecruiters.jobPostingId, jobId));
+      .where(eq(jobRecruiters.jobPostingId, jobId))
+      .limit(100);
   }
 
   async assignRecruiter(orgId: string, userId: string, jobId: number, input: AssignRecruiterInput) {
@@ -347,6 +349,7 @@ export class RecruitmentJobsService {
 
   listInternalJobs(orgId: string) {
     return this.db.query.jobPostings.findMany({
+      limit: 100,
       where: and(eq(jobPostings.orgId, orgId), eq(jobPostings.isInternal, true), eq(jobPostings.status, "OPEN")),
       with: {
         orgDepartment: { columns: { id: true, name: true } },
@@ -365,7 +368,6 @@ export class RecruitmentJobsService {
         applicationDeadline: true,
         createdAt: true,
       },
-      limit: 100,
     });
   }
 

@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { SQL, and, asc, eq, getTableColumns, ilike, or, sql } from "drizzle-orm";
+import { SQL, and, asc, count, eq, getTableColumns, ilike, or, sql } from "drizzle-orm";
 import { salaryComponents, employeeSalaryProfileComponents } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";

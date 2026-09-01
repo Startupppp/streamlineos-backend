@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, gte } from "drizzle-orm";
+import { and, asc, eq, gte, gt } from "drizzle-orm";
 import { interviewScorecards, interviews, scorecardTemplates, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -21,6 +21,8 @@ interface InterviewerScore {
   hiresAfterPositive: number;
   positiveScorecards: number;
 }
+
+const SCORECARD_ANALYTICS_BATCH_SIZE = 500;
 
 @Injectable()
 export class HrScorecardsService {
@@ -87,22 +89,44 @@ export class HrScorecardsService {
     if (query.jobId) conditions.push(eq(interviews.jobPostingId, query.jobId));
     if (query.roundType) conditions.push(eq(interviews.type, query.roundType));
 
-    const scorecardRows = await this.db
-      .select({
-        interviewerId: interviewScorecards.interviewerId,
-        interviewerName: users.name,
-        interviewerEmail: users.email,
-        recommendation: interviewScorecards.recommendation,
-        interviewResult: interviews.result,
-        jobPostingId: interviews.jobPostingId,
-        interviewType: interviews.type,
-        createdAt: interviewScorecards.createdAt,
-        ratings: interviewScorecards.ratings,
-      })
-      .from(interviewScorecards)
-      .innerJoin(interviews, eq(interviewScorecards.interviewId, interviews.id))
-      .innerJoin(users, eq(interviewScorecards.interviewerId, users.id))
-      .where(and(...conditions));
+    const scorecardRows: Array<{
+      interviewerId: string;
+      interviewerName: string | null;
+      interviewerEmail: string | null;
+      recommendation: string;
+      interviewResult: typeof interviews.result.enumValues[number];
+      jobPostingId: number | null;
+      interviewType: typeof interviews.type.enumValues[number];
+      createdAt: Date;
+      ratings: Record<string, number>;
+    }> = [];
+    let afterId: number | undefined;
+    while (true) {
+      const rows = await this.db
+        .select({
+          id: interviewScorecards.id,
+          interviewerId: interviewScorecards.interviewerId,
+          interviewerName: users.name,
+          interviewerEmail: users.email,
+          recommendation: interviewScorecards.recommendation,
+          interviewResult: interviews.result,
+          jobPostingId: interviews.jobPostingId,
+          interviewType: interviews.type,
+          createdAt: interviewScorecards.createdAt,
+          ratings: interviewScorecards.ratings,
+        })
+        .from(interviewScorecards)
+        .innerJoin(interviews, eq(interviewScorecards.interviewId, interviews.id))
+        .innerJoin(users, eq(interviewScorecards.interviewerId, users.id))
+        .where(and(...conditions, afterId ? gt(interviewScorecards.id, afterId) : undefined))
+        .orderBy(asc(interviewScorecards.id))
+        .limit(SCORECARD_ANALYTICS_BATCH_SIZE);
+
+      if (rows.length === 0) break;
+      scorecardRows.push(...rows);
+      afterId = rows[rows.length - 1]!.id;
+      if (rows.length < SCORECARD_ANALYTICS_BATCH_SIZE) break;
+    }
 
     const byInterviewer = new Map<string, InterviewerScore>();
 

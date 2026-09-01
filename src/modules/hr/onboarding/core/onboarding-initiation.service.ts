@@ -225,7 +225,8 @@ export class OnboardingInitiationService {
               )
             : isNull(onboardingTemplates.departmentId),
         ),
-      );
+      )
+      .limit(1_000);
     const selected =
       templates.find((template) => template.departmentId === departmentId) ??
       templates.find((template) => template.departmentId === null);
@@ -237,7 +238,8 @@ export class OnboardingInitiationService {
       .select()
       .from(onboardingTemplateSteps)
       .where(eq(onboardingTemplateSteps.templateId, selected.id))
-      .orderBy(onboardingTemplateSteps.sortOrder);
+      .orderBy(onboardingTemplateSteps.sortOrder)
+      .limit(1_000);
     const otherIds = templates.filter((template) => template.id !== selected.id).map((template) => template.id);
     const extraCompliance = otherIds.length === 0
       ? []
@@ -249,7 +251,8 @@ export class OnboardingInitiationService {
               inArray(onboardingTemplateSteps.templateId, otherIds),
               eq(onboardingTemplateSteps.isComplianceItem, true),
             ),
-          );
+          )
+          .limit(1_000);
     const steps = [...selectedSteps, ...extraCompliance];
     if (steps.length === 0) {
       return { values: this.defaultTaskValues(orgId, userId, baseDate), fromTemplate: false };

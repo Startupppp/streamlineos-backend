@@ -68,11 +68,13 @@ export class JournalService {
           amount: payrollLineItems.amount,
         })
         .from(payrollLineItems)
-        .where(eq(payrollLineItems.runId, run.id)),
+        .where(eq(payrollLineItems.runId, run.id))
+        .limit(1000),
       this.db
         .select({ net: payrollRunEmployees.net })
         .from(payrollRunEmployees)
-        .where(eq(payrollRunEmployees.runId, run.id)),
+        .where(eq(payrollRunEmployees.runId, run.id))
+        .limit(1000),
       this.db
         .select({
           runEmployeeId: payrollRunEmployees.id,
@@ -83,7 +85,8 @@ export class JournalService {
           employeeSalaryProfiles,
           eq(payrollRunEmployees.profileId, employeeSalaryProfiles.id),
         )
-        .where(eq(payrollRunEmployees.runId, run.id)),
+        .where(eq(payrollRunEmployees.runId, run.id))
+        .limit(1000),
       this.accountingMappingsService.getMappings(orgId),
     ]);
 

@@ -20,7 +20,8 @@ export class LoanRecoveryService {
     const empRows = await tx
       .select({ calculationSnapshot: payrollRunEmployees.calculationSnapshot })
       .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
+      .limit(1000);
 
     const loanIdSet = new Set<number>();
     for (const emp of empRows) {
@@ -36,7 +37,8 @@ export class LoanRecoveryService {
     const loans = await tx
       .select({ id: salaryLoans.id, paidEmis: salaryLoans.paidEmis, totalEmis: salaryLoans.totalEmis })
       .from(salaryLoans)
-      .where(and(inArray(salaryLoans.id, [...loanIdSet]), eq(salaryLoans.orgId, orgId)));
+      .where(and(inArray(salaryLoans.id, [...loanIdSet]), eq(salaryLoans.orgId, orgId)))
+      .limit(1000);
 
     const now = new Date();
     for (const loan of loans) {

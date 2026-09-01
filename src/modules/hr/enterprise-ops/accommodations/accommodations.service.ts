@@ -217,7 +217,8 @@ export class AccommodationsService {
       .select()
       .from(hrAccommodationTasks)
       .where(and(eq(hrAccommodationTasks.orgId, orgId), eq(hrAccommodationTasks.requestId, requestId)))
-      .orderBy(hrAccommodationTasks.createdAt);
+      .orderBy(hrAccommodationTasks.createdAt)
+      .limit(100);
   }
 
   async createTask(orgId: string, requestId: string, input: CreateAccommodationTaskInput) {

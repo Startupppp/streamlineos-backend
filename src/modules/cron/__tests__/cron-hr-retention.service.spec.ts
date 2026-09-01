@@ -37,11 +37,13 @@ function drizzleSqlContains(obj: unknown, needle: string): boolean {
 
 function makeTx(opts: {
   policies?: unknown[];
+  selectResults?: unknown[][];
   updateRows?: { id: number }[];
   deleteRows?: { id: number }[];
   captureWhere?: (arg: unknown) => void;
 }) {
-  const { policies = [], updateRows = [], deleteRows = [], captureWhere } = opts;
+  const { policies = [], selectResults, updateRows = [], deleteRows = [], captureWhere } = opts;
+  let selectCall = 0;
 
   const whereReturning = jest.fn().mockReturnValue({
     returning: jest.fn().mockResolvedValue(updateRows),
@@ -59,7 +61,12 @@ function makeTx(opts: {
   return {
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue(policies),
+        where: jest.fn().mockImplementation(() => {
+          const rows = selectResults?.[selectCall++] ?? policies;
+          const query = Promise.resolve(rows) as Promise<unknown[]> & { limit: jest.Mock };
+          query.limit = jest.fn().mockResolvedValue(rows);
+          return query;
+        }),
       }),
     }),
     update: jest.fn().mockReturnValue({
@@ -198,12 +205,20 @@ describe("CronHrRetentionService", () => {
     expect(drizzleSqlContains(capturedDeleteWhere, "legal_holds")).toBe(true);
   });
 
-  it("(F) document and payroll policies are skipped without deleting anything", async () => {
+  it("(F) document policies are consumed and payroll policies are explicitly retained", async () => {
     const logWarnSpy = jest.spyOn(svc["logger"], "warn").mockImplementation(() => {});
     const tx = makeTx({
       policies: [
         employeePolicy({ recordType: "document", id: 5 }),
         employeePolicy({ recordType: "payroll", id: 6 }),
+      ],
+      selectResults: [
+        [
+          employeePolicy({ recordType: "document", id: 5 }),
+          employeePolicy({ recordType: "payroll", id: 6 }),
+        ],
+        [],
+        [],
       ],
       updateRows: [],
     });
@@ -211,11 +226,12 @@ describe("CronHrRetentionService", () => {
 
     const result = await svc.sweep();
 
-    expect(result.skippedDocumentPolicies).toBe(1);
-    expect(result.skippedPayrollPolicies).toBe(1);
+    expect(result.documentsDeleted).toBe(0);
+    expect(result.protectedPayrollPolicies).toBe(1);
     expect(tx.update).not.toHaveBeenCalled();
     expect(tx.delete).not.toHaveBeenCalled();
-    expect(logWarnSpy).toHaveBeenCalledTimes(2);
+    expect(tx.insert).toHaveBeenCalled();
+    expect(logWarnSpy).toHaveBeenCalled();
     logWarnSpy.mockRestore();
   });
 

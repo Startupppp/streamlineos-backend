@@ -9,6 +9,7 @@ import type {
   ListDocumentTypesInput,
   UpdateDocumentTypeInput,
 } from "./dto/document-types.schemas";
+import { boundHrReadLimit } from "../hr-read-limits";
 
 @Injectable()
 export class HrDocumentTypesService {
@@ -16,7 +17,7 @@ export class HrDocumentTypesService {
 
   async list(orgId: string, isAdmin: boolean, query: ListDocumentTypesInput) {
     const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
+    const limit = boundHrReadLimit(query.limit ?? 20);
     const offset = (page - 1) * limit;
 
     const where = isAdmin

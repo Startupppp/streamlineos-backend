@@ -88,7 +88,8 @@ export class AssetsService {
     const [existing] = await this.db
       .select()
       .from(assetReturns)
-      .where(and(eq(assetReturns.id, returnId), eq(assetReturns.orgId, orgId)));
+      .where(and(eq(assetReturns.id, returnId), eq(assetReturns.orgId, orgId)))
+      .limit(1);
 
     if (!existing) throw new NotFoundException("Asset return record not found.");
     if (existing.status === "RETURNED" || existing.status === "DAMAGED" || existing.status === "LOST") {

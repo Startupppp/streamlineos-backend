@@ -282,7 +282,8 @@ export class AttendanceEventWriterService {
           eq(attendanceEventLocators.commandId, command.commandId),
           inArray(attendanceEventLocators.effectOrdinal, effectOrdinals),
         ),
-      );
+      )
+      .limit(effectOrdinals.length);
     if (existingLocators.length !== effectOrdinals.length) {
       throw new ServiceUnavailableException(CANONICAL_NOT_READY);
     }

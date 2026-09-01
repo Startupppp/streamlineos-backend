@@ -154,7 +154,8 @@ export async function buildRunChecklist(
     const empUserIds = await db
       .select({ userId: payrollRunEmployees.userId })
       .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
+      .limit(1000);
 
     const userIds = requirePayrollUserIds(empUserIds.map((r) => r.userId));
     const memberRows = userIds.length > 0
@@ -162,6 +163,7 @@ export async function buildRunChecklist(
           .select({ membershipId: organizationMembers.id })
           .from(organizationMembers)
           .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, userIds)))
+          .limit(1000)
       : [];
     const membershipIds = memberRows.map((row) => row.membershipId);
 
@@ -175,7 +177,8 @@ export async function buildRunChecklist(
             eq(salaryLoans.status, "ACTIVE"),
             inArray(salaryLoans.userMembershipId, membershipIds),
           ),
-        );
+        )
+        .limit(1000);
 
       const loansWithRemainingEmis = activeLoans.filter(
         l => (l.totalEmis ?? 0) - (l.paidEmis ?? 0) > 0,
@@ -197,7 +200,8 @@ export async function buildRunChecklist(
               eq(payrollLineItems.orgId, orgId),
               inArray(payrollLineItems.code, loanCodes),
             ),
-          );
+          )
+          .limit(1000);
         const foundCodes = new Set(foundLines.map(l => l.code));
         const missing = loanCodes.filter(c => !foundCodes.has(c));
         loansApplied = missing.length === 0;

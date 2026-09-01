@@ -128,7 +128,8 @@ export class EmergencyService {
           eq(hrEmergencyResponses.orgId, orgId),
           eq(hrEmergencyResponses.eventId, eventId),
         ),
-      );
+      )
+      .limit(allUserIds.length);
 
     const respondedSet = new Set(alreadyResponded.map((r) => r.userId));
     const missingIds = allUserIds.filter((uid) => !respondedSet.has(uid));

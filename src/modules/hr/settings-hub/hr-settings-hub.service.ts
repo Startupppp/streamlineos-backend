@@ -7,6 +7,8 @@ import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.serv
 import { HR_POLICY_TYPES } from "./hr-settings-hub.constants";
 import type { PolicyType } from "../policies/hr-policy-types";
 
+const VERSION_LINEAGE_LIMIT = 500;
+
 @Injectable()
 export class HrSettingsHubService {
   constructor(
@@ -82,7 +84,8 @@ export class HrSettingsHubService {
           isNull(hrPolicies.deletedAt),
         ),
       )
-      .orderBy(desc(hrPolicies.version));
+      .orderBy(desc(hrPolicies.version))
+      .limit(VERSION_LINEAGE_LIMIT);
 
     return { entity: "policy", name, items: all };
   }
@@ -121,7 +124,8 @@ export class HrSettingsHubService {
           isNull(hrTemplates.deletedAt),
         ),
       )
-      .orderBy(desc(hrTemplates.version));
+      .orderBy(desc(hrTemplates.version))
+      .limit(VERSION_LINEAGE_LIMIT);
 
     return { entity: "template", name, items: all };
   }
@@ -154,7 +158,8 @@ export class HrSettingsHubService {
           eq(hrWorkflowDefinitions.objectType, root.objectType),
         ),
       )
-      .orderBy(desc(hrWorkflowDefinitions.version));
+      .orderBy(desc(hrWorkflowDefinitions.version))
+      .limit(VERSION_LINEAGE_LIMIT);
 
     return { entity: "workflow", name: root.name, items: all };
   }

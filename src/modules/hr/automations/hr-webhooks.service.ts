@@ -19,6 +19,7 @@ import type {
   ListDeliveriesInput,
 } from "./dto/hr-webhook.schemas";
 import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
+import { boundHrReadLimit } from "../hr-read-limits";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 const MAX_ATTEMPTS = 5;
@@ -36,6 +37,7 @@ export class HrWebhooksService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listSubscriptions(orgId: string, page: number, limit: number) {
+    limit = boundHrReadLimit(limit);
     const offset = (page - 1) * limit;
     const rows = await this.db.query.hrWebhookSubscriptions.findMany({
       where: and(
@@ -140,15 +142,16 @@ export class HrWebhooksService {
   }
 
   async listDeliveries(orgId: string, subscriptionId: number, params: ListDeliveriesInput) {
+    const limit = boundHrReadLimit(params.limit);
     await this.getSubscription(orgId, subscriptionId);
-    const offset = (params.page - 1) * params.limit;
+    const offset = (params.page - 1) * limit;
     return this.db.query.hrWebhookDeliveries.findMany({
       where: and(
         eq(hrWebhookDeliveries.orgId, orgId),
         eq(hrWebhookDeliveries.subscriptionId, subscriptionId),
       ),
       orderBy: [desc(hrWebhookDeliveries.createdAt)],
-      limit: params.limit,
+      limit,
       offset,
     });
   }

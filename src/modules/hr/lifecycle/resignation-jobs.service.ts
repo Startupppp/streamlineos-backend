@@ -69,7 +69,8 @@ export class ResignationJobsService {
             eq(organizationMembers.isOwner, true),
             eq(organizationMembers.status, "ACTIVE"),
           ),
-        );
+        )
+        .limit(10_000);
       const recipientIds = orgAdminRows.map((m) => m.userId);
       await this.fanOut(orgId, recipientIds, {
         type: "INFO",

@@ -1,5 +1,5 @@
 
-import { pgTable, text, serial, timestamp, boolean, jsonb, date, integer, index, uniqueIndex, unique, primaryKey, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, date, integer, index, uniqueIndex, unique, primaryKey, uuid, foreignKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { genderEnum, onboardingStatusEnum, onboardingDocStatusEnum, membershipStatusEnum, organizationStatusEnum, invitationStatusEnum } from "./enums";
 import { modulesCatalog } from "./modules";
@@ -182,17 +182,23 @@ export const invitations = pgTable("invitations", {
   expiresAt: timestamp("expires_at").notNull(),
   acceptedAt: timestamp("accepted_at"),
   status: invitationStatusEnum("status").default("PENDING").notNull(),
-  inviterMembershipId: integer("inviter_membership_id").references(() => organizationMembers.id, { onDelete: "set null" }),
-  acceptedMembershipId: integer("accepted_membership_id").references(() => organizationMembers.id, { onDelete: "set null" }),
+  inviterMembershipId: integer("inviter_membership_id"),
+  acceptedMembershipId: integer("accepted_membership_id"),
   declinedAt: timestamp("declined_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
-  revokedByMembershipId: integer("revoked_by_membership_id").references(() => organizationMembers.id, { onDelete: "set null" }),
+  revokedByMembershipId: integer("revoked_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_invitations_org_email").on(table.orgId, table.email),
+  index("idx_invitations_org_inviter_membership").on(table.orgId, table.inviterMembershipId),
+  index("idx_invitations_org_accepted_membership").on(table.orgId, table.acceptedMembershipId),
+  index("idx_invitations_org_revoked_by_membership").on(table.orgId, table.revokedByMembershipId),
   index("idx_invitations_expires").on(table.expiresAt),
   index("idx_invitations_status").on(table.orgId, table.status),
   uniqueIndex("uniq_invitations_org_email_pending").on(table.orgId, table.email).where(sql`status = 'PENDING'`),
+  foreignKey({ columns: [table.orgId, table.inviterMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_invitations_org_inviter_membership" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.acceptedMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_invitations_org_accepted_membership" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.revokedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_invitations_org_revoked_by_membership" }).onDelete("set null"),
 ]);
 
 export const roles = pgTable("roles", {

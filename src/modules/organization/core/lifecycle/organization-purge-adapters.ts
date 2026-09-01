@@ -14,6 +14,8 @@ import {
 } from "../../../storage/storage-key-catalog";
 import type { StorageService } from "../../../storage/storage.service";
 
+const OBJECT_DELETE_ATTEMPTS = 3;
+
 export type PurgeAdapterResult = {
   state: "CONFIRMED" | "FAILED" | "NOT_APPLICABLE";
   detail: string;
@@ -52,10 +54,15 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
           state: "CONFIRMED",
           detail: "Organization row confirms PURGED status",
         };
+      if (org.statusV2 === "PURGE_SCHEDULED")
+        return {
+          state: "CONFIRMED",
+          detail:
+            "Organization is eligible; the purge orchestrator physically deletes the organization row after all adapters confirm",
+        };
       return {
         state: "FAILED",
-        detail:
-          "Physical row deletion not implemented; purge worker marks statusV2=PURGED but does not cascade-delete tenant data",
+        detail: `Organization is not purgeable from status ${org.statusV2 ?? "NULL"}`,
       };
     },
   },
@@ -121,7 +128,21 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
         }
 
         try {
-          await storage.deleteFile(orgId, key);
+          let lastError: unknown;
+          for (let attempt = 1; attempt <= OBJECT_DELETE_ATTEMPTS; attempt++) {
+            try {
+              await storage.deleteFile(orgId, key);
+              lastError = undefined;
+              break;
+            } catch (err) {
+              lastError = err;
+            }
+          }
+          if (lastError !== undefined) throw lastError;
+
+          if (typeof storage.fileExists === "function" && await storage.fileExists(orgId, key)) {
+            throw new Error("object remains after delete verification");
+          }
           await runInNewTenantTransaction(db, orgId, async (tx) => {
             await tx
               .update(storagePendingPurge)

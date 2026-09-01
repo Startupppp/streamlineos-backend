@@ -79,6 +79,7 @@ export class OrgStructureService {
       this.db.query.orgUnits.findMany({
         where: and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT")),
         columns: { id: true, name: true },
+        limit: 500,
       }),
       this.employment.getFactsBatch(orgId, memberIds),
     ]);
@@ -162,7 +163,8 @@ export class OrgStructureService {
             eq(users.isActive, true),
           ),
         )
-        .groupBy(departmentLabel);
+        .groupBy(departmentLabel)
+        .limit(100);
 
       groups = headcountRows.map((headcountRow) => ({
         label: headcountRow.label,
@@ -174,7 +176,8 @@ export class OrgStructureService {
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
-        .groupBy(organizationMembers.role);
+        .groupBy(organizationMembers.role)
+        .limit(100);
 
       groups = roleHeadcountRows.map((headcountRow) => ({
         label: headcountRow.role ?? "Unassigned",
@@ -197,7 +200,8 @@ export class OrgStructureService {
           ),
         )
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
-        .groupBy(orgUnits.name);
+        .groupBy(orgUnits.name)
+        .limit(100);
 
       groups = branchHeadcountRows.map((headcountRow) => ({
         label: headcountRow.branchName ?? "Head Office",

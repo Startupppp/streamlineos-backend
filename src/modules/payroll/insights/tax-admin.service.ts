@@ -14,7 +14,7 @@ import {
 export class TaxAdminService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listDeclarations(
+  async listDeclarations(
     orgId: string,
     filters: { financialYear?: string; status?: string },
     cursor?: string,

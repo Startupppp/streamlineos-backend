@@ -90,12 +90,11 @@ export class EmployeeMutationsService {
       this.db
         .select({ name: employeeSkills.skillName, level: employeeSkills.level })
         .from(employeeSkills)
-        .where(
-          and(
-            eq(employeeSkills.orgId, orgId),
-            eq(employeeSkills.userId, targetUserId),
-          ),
-        ),
+        .where(and(
+          eq(employeeSkills.orgId, orgId),
+          eq(employeeSkills.userId, targetUserId),
+        ))
+        .limit(100),
       this.db
         .select({
           id: hrEmployments.id,
@@ -303,7 +302,8 @@ export class EmployeeMutationsService {
         const existing = await tx
           .select({ skillName: employeeSkills.skillName })
           .from(employeeSkills)
-          .where(and(eq(employeeSkills.orgId, actor.orgId), eq(employeeSkills.userId, targetUserId)));
+          .where(and(eq(employeeSkills.orgId, actor.orgId), eq(employeeSkills.userId, targetUserId)))
+          .limit(100);
 
         const existingNames = new Set(existing.map((s) => s.skillName));
         const newNames = new Set(body.skills);

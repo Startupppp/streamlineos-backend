@@ -422,7 +422,8 @@ describe('Scenario 1 — Idempotency replay', () => {
       const rows = await db
         .select({ id: payrollRuns.id })
         .from(payrollRuns)
-        .where(and(eq(payrollRuns.id, orgBRunId), eq(payrollRuns.orgId, ORG_A)));
+        .where(and(eq(payrollRuns.id, orgBRunId), eq(payrollRuns.orgId, ORG_A)))
+        .limit(1);
       expect(rows).toHaveLength(0);
     });
 
@@ -433,7 +434,8 @@ describe('Scenario 1 — Idempotency replay', () => {
         .where(and(
           eq(payrollRunEmployees.runId, orgBRunId),
           eq(payrollRunEmployees.orgId, ORG_A),
-        ));
+        ))
+        .limit(1);
       expect(rows).toHaveLength(0);
     });
 
@@ -444,7 +446,8 @@ describe('Scenario 1 — Idempotency replay', () => {
         .where(and(
           eq(payrollBankBatches.runId, orgBRunId),
           eq(payrollBankBatches.orgId, ORG_A),
-        ));
+        ))
+        .limit(1);
       expect(rows).toHaveLength(0);
     });
 
@@ -455,7 +458,8 @@ describe('Scenario 1 — Idempotency replay', () => {
         .where(and(
           eq(employeeSalaryProfiles.userId, USER_B),
           eq(employeeSalaryProfiles.orgId, ORG_A),
-        ));
+        ))
+        .limit(1);
       expect(rows).toHaveLength(0);
     });
 
@@ -493,7 +497,8 @@ describe('Scenario 1 — Idempotency replay', () => {
         .where(and(
           eq(employeeSalaryProfiles.userId, USER_B),
           eq(employeeSalaryProfiles.orgId, ORG_A),
-        ));
+        ))
+        .limit(1);
       expect(rows).toHaveLength(0);
     });
   });

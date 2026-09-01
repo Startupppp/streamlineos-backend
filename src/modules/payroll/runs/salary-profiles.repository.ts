@@ -111,7 +111,7 @@ export class SalaryProfilesRepository {
       .limit(query.limit + 1);
 
     const page = buildCursorPage(rows, query.limit, (row) =>
-      payrollCursorPosition(cursorScope, [row.sortName], row.id),
+      payrollCursorPosition(cursorScope, [String(row.sortName ?? "")], row.id),
     );
 
     return {
@@ -211,6 +211,7 @@ export class SalaryProfilesRepository {
       .from(employeeSalaryProfileComponents)
       .innerJoin(salaryComponents, eq(salaryComponents.id, employeeSalaryProfileComponents.componentId))
       .where(eq(employeeSalaryProfileComponents.profileId, profileId))
-      .orderBy(salaryComponents.sortOrder);
+      .orderBy(salaryComponents.sortOrder)
+      .limit(100);
   }
 }

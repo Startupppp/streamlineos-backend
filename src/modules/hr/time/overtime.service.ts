@@ -148,7 +148,8 @@ export class OvertimeService {
     return this.db
       .select()
       .from(compOffBalances)
-      .where(and(eq(compOffBalances.orgId, orgId), eq(compOffBalances.userMembershipId, userMembershipId)));
+      .where(and(eq(compOffBalances.orgId, orgId), eq(compOffBalances.userMembershipId, userMembershipId)))
+      .limit(100);
   }
 
   private async resolveStandardDayHours(orgId: string, userId: string): Promise<number> {

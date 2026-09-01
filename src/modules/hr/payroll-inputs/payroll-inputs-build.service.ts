@@ -54,7 +54,8 @@ export class PayrollInputsBuildService {
       })
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)));
+      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+      .limit(1000);
 
     if (members.length === 0) return;
 
@@ -98,7 +99,8 @@ export class PayrollInputsBuildService {
             gte(overtimeRequests.date, start),
             lte(overtimeRequests.date, end),
           ),
-        ),
+        )
+        .limit(1000),
       this.db
         .select({
           id: reimbursements.id,
@@ -118,7 +120,8 @@ export class PayrollInputsBuildService {
             gte(reimbursements.createdAt, new Date(start)),
             lte(reimbursements.createdAt, new Date(end + "T23:59:59Z")),
           ),
-        ),
+        )
+        .limit(1000),
       this.db
         .select({
           id: salaryLoans.id,
@@ -136,7 +139,8 @@ export class PayrollInputsBuildService {
             eq(salaryLoans.status, "ACTIVE"),
             inArray(salaryLoans.userId, userIds),
           ),
-        ),
+        )
+        .limit(1000),
       this.db
         .select({
           id: employeeSalaryProfiles.id,
@@ -156,7 +160,8 @@ export class PayrollInputsBuildService {
             inArray(employeeSalaryProfiles.userId, userIds),
             lte(employeeSalaryProfiles.effectiveFrom, end),
           ),
-        ),
+        )
+        .limit(1000),
       this.db
         .select({
           id: hrEmployments.id,
@@ -181,6 +186,7 @@ export class PayrollInputsBuildService {
             inArray(hrPeople.userId, userIds),
           ),
         )
+        .limit(1000)
         .catch(() => []),
       this.benefitsClaims.getPayrollPayableClaims(orgId, periodStart, periodEnd),
       this.benefitsClaims.getDueLoanRepayments(orgId, periodStart, periodEnd),

@@ -29,6 +29,8 @@ import {
   keysetBeforeUuid,
 } from "../../../common/pagination/keyset";
 
+const IMPORT_ROW_BATCH_SIZE = 500;
+
 @Injectable()
 export class HrImportService {
   constructor(
@@ -169,28 +171,43 @@ export class HrImportService {
 
     await this.db.update(hrImportJobs).set({ status: "committing" }).where(eq(hrImportJobs.id, jobId));
 
-    const validRows = await this.db
-      .select()
-      .from(hrImportRows)
-      .where(and(eq(hrImportRows.jobId, jobId), eq(hrImportRows.status, "valid")));
-
     let committed = 0;
 
     await this.db.transaction(async (tx) => {
-      for (const row of validRows) {
-        try {
-          const ref = await this.commitService.commitRow(tx, orgId, job.entity as HrImportEntity, row.payload);
-          if (ref) {
-            await this.commitService.markRowCommitted(tx, row.id, ref);
-            committed++;
+      let afterId: string | undefined;
+      while (true) {
+        const rows = await tx
+          .select()
+          .from(hrImportRows)
+          .where(
+            and(
+              eq(hrImportRows.jobId, jobId),
+              eq(hrImportRows.status, "valid"),
+              afterId ? gt(hrImportRows.id, afterId) : undefined,
+            ),
+          )
+          .orderBy(asc(hrImportRows.id))
+          .limit(IMPORT_ROW_BATCH_SIZE);
+
+        if (rows.length === 0) break;
+        for (const row of rows) {
+          try {
+            const ref = await this.commitService.commitRow(tx, orgId, job.entity as HrImportEntity, row.payload);
+            if (ref) {
+              await this.commitService.markRowCommitted(tx, row.id, ref);
+              committed++;
+            }
+          } catch (err) {
+            const message = err instanceof Error ? err.message : "Commit failed";
+            await tx
+              .update(hrImportRows)
+              .set({ status: "error", error: message })
+              .where(eq(hrImportRows.id, row.id));
           }
-        } catch (err) {
-          const message = err instanceof Error ? err.message : "Commit failed";
-          await tx
-            .update(hrImportRows)
-            .set({ status: "error", error: message })
-            .where(eq(hrImportRows.id, row.id));
         }
+
+        afterId = rows[rows.length - 1]!.id;
+        if (rows.length < IMPORT_ROW_BATCH_SIZE) break;
       }
 
       await tx
@@ -230,16 +247,31 @@ export class HrImportService {
       throw new BadRequestException(`Job cannot be rolled back in status '${job.status}'`);
     }
 
-    const committedRows = await this.db
-      .select()
-      .from(hrImportRows)
-      .where(and(eq(hrImportRows.jobId, jobId), eq(hrImportRows.status, "committed")));
-
     await this.db.transaction(async (tx) => {
-      for (const row of committedRows) {
-        if (row.createdRecordRef) {
-          await this.commitService.rollbackRef(tx, row.createdRecordRef);
+      let afterId: string | undefined;
+      while (true) {
+        const rows = await tx
+          .select()
+          .from(hrImportRows)
+          .where(
+            and(
+              eq(hrImportRows.jobId, jobId),
+              eq(hrImportRows.status, "committed"),
+              afterId ? gt(hrImportRows.id, afterId) : undefined,
+            ),
+          )
+          .orderBy(asc(hrImportRows.id))
+          .limit(IMPORT_ROW_BATCH_SIZE);
+
+        if (rows.length === 0) break;
+        for (const row of rows) {
+          if (row.createdRecordRef) {
+            await this.commitService.rollbackRef(tx, row.createdRecordRef);
+          }
         }
+
+        afterId = rows[rows.length - 1]!.id;
+        if (rows.length < IMPORT_ROW_BATCH_SIZE) break;
       }
 
       await tx

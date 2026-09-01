@@ -244,7 +244,8 @@ export class EmployeesService {
       })
       .from(projectMembers)
       .innerJoin(projects, eq(projectMembers.projectId, projects.id))
-      .where(and(eq(projectMembers.userId, userId), eq(projects.orgId, orgId)));
+      .where(and(eq(projectMembers.userId, userId), eq(projects.orgId, orgId)))
+      .limit(100);
   }
 
   async getTickets(orgId: string, userId: string) {
@@ -290,7 +291,8 @@ export class EmployeesService {
           inArray(users.id, reportIds),
           eq(users.isActive, true),
         ),
-      );
+      )
+      .limit(500);
 
     const factsMap = await this.employment.getFactsBatch(orgId, rows.map((r) => r.id));
     return rows.map((r) => ({ ...r, designation: factsMap.get(r.id)?.designation ?? null }));

@@ -16,6 +16,8 @@ import { RecruitmentReferralChecksService } from "./recruitment-referral-checks.
 import { RecruitmentRequisitionsService } from "./recruitment-requisitions.service";
 import { RecruitmentSourcingService } from "./recruitment-sourcing.service";
 import { RecruitmentTalentPoolsService } from "./recruitment-talent-pools.service";
+import { RecruitmentVendorSourcingService } from "./recruitment-vendor-sourcing.service";
+import { RecruitmentVendorSourcingService } from "./recruitment-vendor-sourcing.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean")
@@ -116,6 +118,19 @@ const OWNER = "org-owner";
 const ATTACKER = "org-attacker";
 
 describe("HR Recruitment services — cross-tenant isolation", () => {
+  describe("RecruitmentVendorSourcingService", () => {
+    it("scopes vendor listing to the requesting org (DENY — cross-tenant isolation)", async () => {
+      const { db, where } = makeDb([]);
+      const svc = new RecruitmentVendorSourcingService(db);
+
+      const result = await svc.listVendors(ATTACKER);
+
+      expect(result).toHaveLength(0);
+      expect(where).toHaveBeenCalled();
+      expect(where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg))).toContain(ATTACKER);
+    });
+  });
+
   describe("RecruitmentAutomationService", () => {
     it("scopes automations to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, findMany } = makeDb([]);
@@ -454,6 +469,21 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
       const svc = new RecruitmentSourcingService(db, {} as never);
       const result = await svc.listReferrals(OWNER, "user-1", true);
       expect(result).toHaveLength(1);
+    });
+  });
+
+  describe("RecruitmentVendorSourcingService", () => {
+    it("hides a vendor owned by another org before listing its submissions (DENY â€” cross-tenant isolation)", async () => {
+      const { db, findFirst } = makeDb([]);
+      findFirst.mockImplementation(({ where }: { where?: unknown }) =>
+        Promise.resolve(sqlValues(where).includes(ATTACKER) ? null : { id: 1, orgId: OWNER }),
+      );
+      const svc = new RecruitmentVendorSourcingService(db);
+
+      await expect(svc.listSubmissions(ATTACKER, 1, false)).rejects.toThrow();
+      expect(findFirst).toHaveBeenCalled();
+      const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
+      expect(sqlValues(call?.where)).toContain(ATTACKER);
     });
   });
 

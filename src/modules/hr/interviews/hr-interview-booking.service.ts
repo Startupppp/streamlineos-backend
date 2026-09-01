@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   calendarEvents,
   candidates,
@@ -13,7 +13,6 @@ import {
   interviewBookingLinks,
   interviewPanelMembers,
   interviews,
-  organizationMembers,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -52,7 +51,9 @@ export class HrInterviewBookingService {
         const link = await tx.query.interviewBookingLinks.findFirst({
           where: eq(interviewBookingLinks.token, token),
           columns: { createdBy: true, createdByMembershipId: true },
-          with: { interviewers: { columns: { userId: true, userMembershipId: true } } },
+          with: {
+            interviewers: { columns: { userId: true, userMembershipId: true } },
+          },
         });
         if (!link) throw new NotFoundException("Booking link not found.");
         if (link.status !== "pending")
@@ -60,7 +61,9 @@ export class HrInterviewBookingService {
         if (new Date() > link.expiresAt)
           throw new GoneException("This booking link has expired.");
         if (link.createdByMembershipId == null)
-          throw new BadRequestException("Booking link creator membership is required.");
+          throw new BadRequestException(
+            "Booking link creator membership is required.",
+          );
 
         const slotStart = new Date(input.slotStart);
         const validSlot = link.availableSlots.some(
@@ -97,7 +100,9 @@ export class HrInterviewBookingService {
             candidateId: link.candidateId,
             jobPostingId: link.jobPostingId,
             interviewerId: link.interviewers[0]?.userId ?? link.createdBy,
-            interviewerMembershipId: link.interviewers[0]?.userMembershipId ?? link.createdByMembershipId,
+            interviewerMembershipId:
+              link.interviewers[0]?.userMembershipId ??
+              link.createdByMembershipId,
             type: TYPE_MAP[link.interviewType] ?? "VIDEO",
             scheduledAt: slotStart,
             duration: link.durationMinutes,
@@ -110,11 +115,15 @@ export class HrInterviewBookingService {
           throw new BadRequestException("Failed to create the interview.");
 
         const panelMembers = link.interviewers.filter(
-          (interviewer): interviewer is { userId: string; userMembershipId: number } =>
+          (
+            interviewer,
+          ): interviewer is { userId: string; userMembershipId: number } =>
             interviewer.userMembershipId != null,
         );
         if (panelMembers.length !== link.interviewers.length)
-          throw new BadRequestException("Booking link interviewer membership is required.");
+          throw new BadRequestException(
+            "Booking link interviewer membership is required.",
+          );
         if (panelMembers.length > 0) {
           await tx.insert(interviewPanelMembers).values(
             panelMembers.map((interviewer) => ({
@@ -170,16 +179,23 @@ export class HrInterviewBookingService {
     creatorId: string,
     slotStart: Date,
   ): Promise<void> {
-    const [candidate, creator] = await Promise.all([
-      this.db.query.candidates.findFirst({
-        where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
-        columns: { firstName: true, lastName: true },
-      }),
-      this.db.query.users.findFirst({
-        where: eq(users.id, creatorId),
-        columns: { email: true },
-      }),
+    const [candidateRows, creatorRows] = await Promise.all([
+      this.db
+        .select({
+          firstName: candidates.firstName,
+          lastName: candidates.lastName,
+        })
+        .from(candidates)
+        .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)))
+        .limit(1),
+      this.db
+        .select({ email: users.email })
+        .from(users)
+        .where(eq(users.id, creatorId))
+        .limit(1),
     ]);
+    const candidate = candidateRows[0];
+    const creator = creatorRows[0];
     if (!creator?.email) return;
 
     const candidateName = candidate

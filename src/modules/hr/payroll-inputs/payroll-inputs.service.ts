@@ -64,7 +64,8 @@ export class PayrollInputsService {
           hrPayrollInputPeriods.id,
           position,
         ),
-      );
+      )
+      .limit(1000);
     }
 
     const rows = await this.db
@@ -201,7 +202,8 @@ export class PayrollInputsService {
             gte(hrLoanRepayments.dueDate, start),
             lte(hrLoanRepayments.dueDate, end),
           ),
-        );
+        )
+        .limit(1000);
 
       if (dueRepaymentIds.length > 0) {
         await tx

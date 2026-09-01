@@ -171,6 +171,9 @@ export class RetentionService {
   }
 
   async createRequest(orgId: string, userId: string, input: CreateDataRequestInput, ipAddress?: string) {
+    if (input.type === "correction" && !input.reason?.trim()) {
+      throw new BadRequestException("A correction request must describe the field and corrected value");
+    }
     const [req] = await this.db
       .insert(hrDataRequests)
       .values({

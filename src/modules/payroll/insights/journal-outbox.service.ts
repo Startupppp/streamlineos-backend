@@ -122,7 +122,8 @@ export class JournalOutboxService {
       .select(journalBatchLineSelection)
       .from(payrollJournalBatchLines)
       .where(eq(payrollJournalBatchLines.batchId, batchId))
-      .orderBy(payrollJournalBatchLines.lineNo);
+      .orderBy(payrollJournalBatchLines.lineNo)
+      .limit(1000);
 
     return { ...toJournalBatchSummary(batch), lines };
   }
@@ -324,11 +325,12 @@ export class JournalOutboxService {
       throw new BadRequestException("A reversal batch cannot itself be reversed.");
     }
 
-    const originalLines = await this.db
-      .select()
-      .from(payrollJournalBatchLines)
-      .where(eq(payrollJournalBatchLines.batchId, batchId))
-      .orderBy(payrollJournalBatchLines.lineNo);
+      const originalLines = await this.db
+        .select()
+        .from(payrollJournalBatchLines)
+        .where(eq(payrollJournalBatchLines.batchId, batchId))
+        .orderBy(payrollJournalBatchLines.lineNo)
+        .limit(1000);
 
     const reversalActorMembershipId = await this.resolveMembershipId(orgId, userId);
 

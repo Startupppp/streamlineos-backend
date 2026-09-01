@@ -136,7 +136,8 @@ export class HrWorkflowDefinitionsService {
       .select()
       .from(hrWorkflowSteps)
       .where(eq(hrWorkflowSteps.definitionId, id))
-      .orderBy(hrWorkflowSteps.stepOrder);
+      .orderBy(hrWorkflowSteps.stepOrder)
+      .limit(20);
 
     return { ...definition, steps };
   }

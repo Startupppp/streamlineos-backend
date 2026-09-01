@@ -36,7 +36,8 @@ export class PayrollInputSnapshotsService {
             eq(hrPayrollInputSnapshots.orgId, orgId),
             eq(hrPayrollInputSnapshots.periodId, periodId),
           ),
-        );
+        )
+        .limit(1000);
 
       const sections: Record<string, number> = {};
       const uniqueUsers = new Set<string>();

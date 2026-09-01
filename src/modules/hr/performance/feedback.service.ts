@@ -12,7 +12,9 @@ export class FeedbackService {
     return this.db
       .select()
       .from(feedbackCycles)
-      .where(eq(feedbackCycles.orgId, orgId));
+      .where(eq(feedbackCycles.orgId, orgId))
+      .orderBy(feedbackCycles.createdAt)
+      .limit(100);
   }
 
   createCycle(
@@ -45,7 +47,8 @@ export class FeedbackService {
     const requests = await this.db
       .select()
       .from(feedbackCycleRequests)
-      .where(eq(feedbackCycleRequests.cycleId, id));
+      .where(eq(feedbackCycleRequests.cycleId, id))
+      .limit(100);
 
     return { ...cycle[0], requests };
   }
@@ -85,7 +88,8 @@ export class FeedbackService {
           eq(feedbackCycleRequests.reviewerId, userId),
           eq(feedbackCycleRequests.status, "PENDING"),
         ),
-      );
+      )
+      .limit(100);
   }
 
   async submitResponse(
@@ -139,7 +143,8 @@ export class FeedbackService {
           eq(feedbackCycles.orgId, orgId),
           eq(feedbackCycleRequests.status, "COMPLETED"),
         ),
-      );
+      )
+      .limit(100);
 
     if (requests.length === 0) return { subjectId, requests: [], responses: [] };
 
@@ -147,7 +152,8 @@ export class FeedbackService {
     const responses = await this.db
       .select()
       .from(feedbackCycleResponses)
-      .where(and(eq(feedbackCycleResponses.orgId, orgId), inArray(feedbackCycleResponses.requestId, requestIds)));
+      .where(and(eq(feedbackCycleResponses.orgId, orgId), inArray(feedbackCycleResponses.requestId, requestIds)))
+      .limit(100);
 
     return { subjectId, requests, responses };
   }

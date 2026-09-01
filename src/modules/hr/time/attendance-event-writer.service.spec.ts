@@ -26,8 +26,10 @@ function resolvedWhereQuery<Row>(rows: readonly Row[]) {
   const query = {
     from: jest.fn(),
     where: jest.fn().mockResolvedValue(rows),
+    limit: jest.fn().mockResolvedValue(rows),
   };
   query.from.mockReturnValue(query);
+  query.where.mockReturnValue(query);
   return query;
 }
 
@@ -267,5 +269,6 @@ describe("AttendanceEventWriterService", () => {
       ]),
     ).resolves.toBeUndefined();
     expect(transaction.insert).toHaveBeenCalledTimes(1);
+    expect(replayQuery.limit).toHaveBeenCalledWith(2);
   });
 });

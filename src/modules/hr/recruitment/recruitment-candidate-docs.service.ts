@@ -41,7 +41,8 @@ export class RecruitmentCandidateDocsService {
           eq(candidateDocuments.orgId, orgId),
         ),
       )
-      .orderBy(desc(candidateDocuments.createdAt));
+      .orderBy(desc(candidateDocuments.createdAt))
+      .limit(100);
   }
 
   async generateDocument(
@@ -142,7 +143,8 @@ export class RecruitmentCandidateDocsService {
           eq(candidateDocuments.orgId, orgId),
         ),
       )
-      .orderBy(desc(candidateDocuments.createdAt));
+      .orderBy(desc(candidateDocuments.createdAt))
+      .limit(100);
   }
 
   async generateRolloutDocuments(
@@ -169,7 +171,8 @@ export class RecruitmentCandidateDocsService {
           eq(documentTemplates.orgId, orgId),
           eq(documentTemplates.isActive, true),
         ),
-      );
+      )
+      .limit(input.templateIds.length);
     if (templates.length === 0) {
       throw new NotFoundException(
         "No active templates found for the provided IDs",

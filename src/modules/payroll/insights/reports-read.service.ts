@@ -31,7 +31,7 @@ import type {
   DeptCostRow,
   PaginationParams,
   VarianceEmployeeRow,
-} from "./reports.service";
+} from "./reports.types";
 import { readPayrollKeysetBatches } from "../lib/payroll-keyset-batch";
 
 type Pagination = { limit: number; hasMore: boolean; nextCursor: string | null };

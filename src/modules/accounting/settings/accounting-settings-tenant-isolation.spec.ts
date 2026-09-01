@@ -99,4 +99,12 @@ describe("Accounting settings — cross-tenant isolation", () => {
     await expect(service.listDimensions("org-1")).rejects.toThrow(BadRequestException);
     expect(db.builder.limit).toHaveBeenCalledWith(101);
   });
+
+  it("rejects more than the bounded number of values instead of truncating", async () => {
+    const db = makeSelectDb([{ id: 52 }, ...Array.from({ length: 501 }, (_, id) => ({ id }))]);
+    const service = new DimensionsService(db as unknown as Db, cache, audit);
+
+    await expect(service.listValues("org-1", 52)).rejects.toThrow(BadRequestException);
+    expect(db.builder.limit).toHaveBeenCalledWith(501);
+  });
 });

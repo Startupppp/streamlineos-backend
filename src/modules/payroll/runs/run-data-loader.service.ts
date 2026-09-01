@@ -11,8 +11,15 @@ import {
   reimbursements,
   payrollRunAllocations,
 } from "../../../db/schema";
-import { PAYROLL_LOCKED_STATUSES, DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
-import type { PayrollToggles, PayrollPolicyConfig, CalculationSnapshot } from "../payroll.types";
+import {
+  PAYROLL_LOCKED_STATUSES,
+  DEFAULT_PAYROLL_TOGGLES,
+} from "../payroll.types";
+import type {
+  PayrollToggles,
+  PayrollPolicyConfig,
+  CalculationSnapshot,
+} from "../payroll.types";
 import { payrollSubjectKey } from "../lib/payroll-subject";
 import { requirePayrollUserIds } from "../lib/payroll-user-id";
 import { getLockedInputPeriodId } from "./lib/input-puller";
@@ -22,7 +29,10 @@ import type { ProfileData } from "./run-types";
 export class RunDataLoaderService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async loadPolicy(orgId: string, policyVersionId: number | null): Promise<{
+  async loadPolicy(
+    orgId: string,
+    policyVersionId: number | null,
+  ): Promise<{
     toggles: PayrollToggles;
     config: PayrollPolicyConfig;
     policyVersionId: number;
@@ -31,17 +41,29 @@ export class RunDataLoaderService {
       const version = await this.db
         .select()
         .from(payrollPolicyVersions)
-        .where(and(eq(payrollPolicyVersions.id, policyVersionId), eq(payrollPolicyVersions.orgId, orgId)))
+        .where(
+          and(
+            eq(payrollPolicyVersions.id, policyVersionId),
+            eq(payrollPolicyVersions.orgId, orgId),
+          ),
+        )
         .limit(1);
 
       if (version[0]) {
         const rawToggles = version[0].toggles;
         const rawConfig = version[0].config;
         return {
-          toggles: rawToggles && typeof rawToggles === "object"
-            ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawToggles as Partial<PayrollToggles>) }
-            : { ...DEFAULT_PAYROLL_TOGGLES },
-          config: rawConfig && typeof rawConfig === "object" ? (rawConfig as PayrollPolicyConfig) : ({} as PayrollPolicyConfig),
+          toggles:
+            rawToggles && typeof rawToggles === "object"
+              ? {
+                  ...DEFAULT_PAYROLL_TOGGLES,
+                  ...(rawToggles as Partial<PayrollToggles>),
+                }
+              : { ...DEFAULT_PAYROLL_TOGGLES },
+          config:
+            rawConfig && typeof rawConfig === "object"
+              ? (rawConfig as PayrollPolicyConfig)
+              : ({} as PayrollPolicyConfig),
           policyVersionId: version[0].id,
         };
       }
@@ -65,15 +87,26 @@ export class RunDataLoaderService {
     const rawActiveToggles = activeVersion[0].payroll_policy_versions.toggles;
     const rawActiveConfig = activeVersion[0].payroll_policy_versions.config;
     return {
-      toggles: rawActiveToggles && typeof rawActiveToggles === "object"
-        ? { ...DEFAULT_PAYROLL_TOGGLES, ...(rawActiveToggles as Partial<PayrollToggles>) }
-        : { ...DEFAULT_PAYROLL_TOGGLES },
-      config: rawActiveConfig && typeof rawActiveConfig === "object" ? (rawActiveConfig as PayrollPolicyConfig) : ({} as PayrollPolicyConfig),
+      toggles:
+        rawActiveToggles && typeof rawActiveToggles === "object"
+          ? {
+              ...DEFAULT_PAYROLL_TOGGLES,
+              ...(rawActiveToggles as Partial<PayrollToggles>),
+            }
+          : { ...DEFAULT_PAYROLL_TOGGLES },
+      config:
+        rawActiveConfig && typeof rawActiveConfig === "object"
+          ? (rawActiveConfig as PayrollPolicyConfig)
+          : ({} as PayrollPolicyConfig),
       policyVersionId: activeVersion[0].payroll_policy_versions.id,
     };
   }
 
-  async loadEligibleProfiles(orgId: string, month: string, toggles: PayrollToggles): Promise<ProfileData[]> {
+  async loadEligibleProfiles(
+    orgId: string,
+    month: string,
+    toggles: PayrollToggles,
+  ): Promise<ProfileData[]> {
     const [year, mon] = month.split("-").map(Number);
     const lastDay = new Date(year!, mon!, 0).getDate();
     const monthEndDate = `${month}-${String(lastDay).padStart(2, "0")}`;
@@ -96,7 +129,8 @@ export class RunDataLoaderService {
           inArray(employeeSalaryProfiles.status, ["ACTIVE", "UPCOMING"]),
           lte(employeeSalaryProfiles.effectiveFrom, monthEndDate),
         ),
-      );
+      )
+      .limit(1000);
 
     const filtered = rows.filter((r) => r.id > 0);
     if (!toggles.contractorPayments)
@@ -104,7 +138,11 @@ export class RunDataLoaderService {
     return filtered;
   }
 
-  async loadHeldUserIds(orgId: string, runId: number, userIds: string[]): Promise<Set<string>> {
+  async loadHeldUserIds(
+    orgId: string,
+    runId: number,
+    userIds: string[],
+  ): Promise<Set<string>> {
     if (userIds.length === 0) return new Set();
     const rows = await this.db
       .select({ userId: payrollRunEmployees.userId })
@@ -113,9 +151,13 @@ export class RunDataLoaderService {
         and(
           eq(payrollRunEmployees.orgId, orgId),
           eq(payrollRunEmployees.runId, runId),
-          or(eq(payrollRunEmployees.status, "HELD"), isNotNull(payrollRunEmployees.holdReason)),
+          or(
+            eq(payrollRunEmployees.status, "HELD"),
+            isNotNull(payrollRunEmployees.holdReason),
+          ),
         ),
-      );
+      )
+      .limit(1000);
     return new Set(requirePayrollUserIds(rows.map((r) => r.userId)));
   }
 
@@ -153,7 +195,8 @@ export class RunDataLoaderService {
           eq(payrollRunEmployees.runId, prevRun.id),
           inArray(payrollRunEmployees.userId, userIds),
         ),
-      );
+      )
+      .limit(1000);
 
     for (const prevEmp of prevEmps) {
       const rawSnap = prevEmp.calculationSnapshot;
@@ -168,31 +211,55 @@ export class RunDataLoaderService {
     return result;
   }
 
-  async clearPreviouslyConsumedReimbursements(orgId: string, runId: number): Promise<void> {
+  async clearPreviouslyConsumedReimbursements(
+    orgId: string,
+    runId: number,
+  ): Promise<void> {
     const existingEmps = await this.db
       .select({ inputsSnapshot: payrollRunEmployees.inputsSnapshot })
       .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+      .where(
+        and(
+          eq(payrollRunEmployees.runId, runId),
+          eq(payrollRunEmployees.orgId, orgId),
+        ),
+      )
+      .limit(1000);
 
     const prevIds = existingEmps.flatMap(
-      (e) => (e.inputsSnapshot as { consumedReimbursementIds?: number[] } | null)?.consumedReimbursementIds ?? [],
+      (e) =>
+        (e.inputsSnapshot as { consumedReimbursementIds?: number[] } | null)
+          ?.consumedReimbursementIds ?? [],
     );
 
     if (prevIds.length > 0) {
       await this.db
         .update(reimbursements)
         .set({ paidAt: null })
-        .where(and(inArray(reimbursements.id, prevIds), eq(reimbursements.orgId, orgId)));
+        .where(
+          and(
+            inArray(reimbursements.id, prevIds),
+            eq(reimbursements.orgId, orgId),
+          ),
+        );
     }
   }
 
   async clearRunAllocations(orgId: string, runId: number): Promise<void> {
     await this.db
       .delete(payrollRunAllocations)
-      .where(and(eq(payrollRunAllocations.orgId, orgId), eq(payrollRunAllocations.runId, runId)));
+      .where(
+        and(
+          eq(payrollRunAllocations.orgId, orgId),
+          eq(payrollRunAllocations.runId, runId),
+        ),
+      );
   }
 
-  async getLockedInputPeriodId(orgId: string, month: string): Promise<number | null> {
+  async getLockedInputPeriodId(
+    orgId: string,
+    month: string,
+  ): Promise<number | null> {
     return getLockedInputPeriodId(this.db, orgId, month);
   }
 }

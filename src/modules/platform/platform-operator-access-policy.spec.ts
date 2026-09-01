@@ -33,6 +33,23 @@ async function buildService(db: unknown): Promise<PlatformOperatorAccessService>
 
 describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
   describe("createGrant: max 4-hour duration enforced", () => {
+    it("rejects an expiry in the past instead of creating an unusable pending grant", async () => {
+      const db = { insert: jest.fn() };
+      const svc = await buildService(db);
+
+      await expect(
+        svc.createGrant({
+          operatorUserId: "op-alice",
+          orgId: "org-1",
+          incidentRef: "INC-100",
+          grantedBy: "op-bob",
+          scope: "read_customer_data",
+          expiresAt: new Date(Date.now() - 1),
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(db.insert).not.toHaveBeenCalled();
+    });
+
     it("(bite proof) rejects a grant expiring more than 4 hours from now", async () => {
       const insertChain = { values: jest.fn().mockReturnThis(), returning: jest.fn().mockResolvedValue([{ grantId: "g1" }]) };
       const db = { insert: jest.fn().mockReturnValue(insertChain) };
@@ -126,7 +143,8 @@ describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
       };
       const updateChain = {
         set: jest.fn().mockReturnThis(),
-        where: jest.fn().mockResolvedValue(undefined),
+        where: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockResolvedValue([{ grantId: "grant-1" }]),
       };
       const db = {
         select: jest.fn().mockReturnValue(selectChain),

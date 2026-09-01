@@ -100,7 +100,8 @@ export class PayrollRunVarianceService {
       this.db
         .select({ userId: payrollRunEmployees.userId, net: payrollRunEmployees.net })
         .from(payrollRunEmployees)
-        .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId))),
+        .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
+        .limit(1000),
     ]);
 
     if (!prevRun) return null;
@@ -108,7 +109,8 @@ export class PayrollRunVarianceService {
     const prevEmps = await this.db
       .select({ userId: payrollRunEmployees.userId, net: payrollRunEmployees.net })
       .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, prevRun.id), eq(payrollRunEmployees.orgId, orgId)));
+      .where(and(eq(payrollRunEmployees.runId, prevRun.id), eq(payrollRunEmployees.orgId, orgId)))
+      .limit(1000);
 
     const currentUserIds = new Set(currentEmps.map((employee) => employee.userId));
     const prevNetMap = new Map(prevEmps.map((employee) => [employee.userId, employee.net]));

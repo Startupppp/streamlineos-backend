@@ -146,7 +146,8 @@ export class HrHelpdeskService {
       .from(hrHelpdeskComments)
       .leftJoin(users, eq(users.id, hrHelpdeskComments.authorId))
       .where(and(eq(hrHelpdeskComments.ticketId, ticketId), eq(hrHelpdeskComments.orgId, orgId)))
-      .orderBy(hrHelpdeskComments.createdAt);
+      .orderBy(hrHelpdeskComments.createdAt)
+      .limit(500);
 
     return { ...ticket, comments };
   }
@@ -367,7 +368,8 @@ export class HrHelpdeskService {
       .from(hrHelpdeskRouting)
       .leftJoin(users, eq(users.id, hrHelpdeskRouting.assigneeUserId))
       .where(eq(hrHelpdeskRouting.orgId, orgId))
-      .orderBy(hrHelpdeskRouting.category);
+      .orderBy(hrHelpdeskRouting.category)
+      .limit(100);
   }
 
   async upsertRoutingRule(orgId: string, body: RoutingRuleInput) {

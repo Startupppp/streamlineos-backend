@@ -258,7 +258,8 @@ export class CelebrationsService {
           gte(leaveRequests.endDate, today),
           inArray(leaveRequests.userId, userIdList),
         ),
-      );
+      )
+      .limit(userIdList.length);
 
     const leaveByUser = new Map(activeLeaves.map((l) => [l.userId, l]));
 

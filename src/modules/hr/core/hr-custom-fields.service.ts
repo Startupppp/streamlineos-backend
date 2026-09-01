@@ -111,7 +111,8 @@ export class HrCustomFieldsService {
           eq(customFieldDefinitions.isActive, true),
         ),
       )
-      .orderBy(asc(customFieldDefinitions.displayOrder), asc(customFieldDefinitions.id));
+      .orderBy(asc(customFieldDefinitions.displayOrder), asc(customFieldDefinitions.id))
+      .limit(100);
     return rows.map((r) => this.toHrFieldDef(r));
   }
 
@@ -274,7 +275,8 @@ export class HrCustomFieldsService {
           applyScope(scope, orgId, actorUserId, { ownerColumn: hrPeople.userId }),
           fieldCondition,
         ),
-      );
+      )
+      .limit(100);
 
     return rows.map((r) => r.id);
   }

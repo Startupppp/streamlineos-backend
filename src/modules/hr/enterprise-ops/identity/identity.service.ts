@@ -123,7 +123,8 @@ export class IdentityService {
           eq(hrAccessProvisioningTemplates.orgId, orgId),
           eq(hrAccessProvisioningTemplates.triggeredBy, input.triggeredBy),
         ),
-      );
+      )
+      .limit(100);
 
     const records: typeof hrAccessProvisioning.$inferInsert[] = [];
 

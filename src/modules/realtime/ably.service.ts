@@ -223,15 +223,9 @@ export class AblyService {
    */
   async revokeUserTokens(userId: string): Promise<void> {
     if (!this.configured) return;
-    try {
-      await this.rest().auth.revokeTokens([
-        { type: "clientId", value: userId },
-      ]);
-    } catch (error: unknown) {
-      this.logger.error(
-        `Failed to revoke Ably tokens for ${userId}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+    await this.rest().auth.revokeTokens([
+      { type: "clientId", value: userId },
+    ]);
   }
 
   async publishSupportTicketEvent(

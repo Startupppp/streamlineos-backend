@@ -10,6 +10,7 @@ import type { DiversityReportQueryInput } from "./dto/candidates.schemas";
 
 const PIPELINE_STAGES = ["NEW", "SCREENING", "INTERVIEW", "OFFER", "HIRED", "REJECTED"] as const;
 const STAGE_CANDIDATE_LIMIT = 50;
+const SLA_READ_LIMIT = 1000;
 
 @Injectable()
 export class RecruitmentPipelineService {
@@ -60,6 +61,7 @@ export class RecruitmentPipelineService {
           .where(
             and(eq(candidateSlaTracking.orgId, orgId), inArray(candidateSlaTracking.candidateId, candidateIds)),
           )
+          .limit(SLA_READ_LIMIT)
       : [];
 
     const slaLookup = new Map<string, string>();

@@ -52,7 +52,8 @@ export class EngagementBadgesService {
     const [badge] = await this.db
       .select({ id: hrBadges.id })
       .from(hrBadges)
-      .where(and(eq(hrBadges.id, badgeId), eq(hrBadges.orgId, orgId)));
+      .where(and(eq(hrBadges.id, badgeId), eq(hrBadges.orgId, orgId)))
+      .limit(1);
     if (!badge) throw new NotFoundException("Badge not found.");
     await this.db
       .delete(hrBadges)
@@ -69,7 +70,8 @@ export class EngagementBadgesService {
     const [badge] = await this.db
       .select()
       .from(hrBadges)
-      .where(and(eq(hrBadges.id, badgeId), eq(hrBadges.orgId, orgId)));
+      .where(and(eq(hrBadges.id, badgeId), eq(hrBadges.orgId, orgId)))
+      .limit(1);
     if (!badge) throw new NotFoundException("Badge not found.");
 
     return this.db.transaction(async (tx) => {

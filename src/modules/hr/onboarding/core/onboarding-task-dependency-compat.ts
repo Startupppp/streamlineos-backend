@@ -35,7 +35,8 @@ export async function loadOnboardingTaskDependencies(
     .orderBy(
       asc(onboardingTaskDependencies.onboardingTaskId),
       asc(onboardingTaskDependencies.sortOrder),
-    );
+    )
+    .limit(10_000);
 
   const dependenciesByTaskId = new Map<number, number[]>();
   for (const dependencyRow of dependencyRows) {

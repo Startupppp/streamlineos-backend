@@ -26,7 +26,8 @@ export class PositionsTaxonomyService {
       .select()
       .from(hrPositionStatuses)
       .where(eq(hrPositionStatuses.orgId, orgId))
-      .orderBy(asc(hrPositionStatuses.order), asc(hrPositionStatuses.name));
+      .orderBy(asc(hrPositionStatuses.order), asc(hrPositionStatuses.name))
+      .limit(100);
   }
 
   async createStatus(orgId: string, input: CreatePositionStatusInput) {
@@ -172,7 +173,8 @@ export class PositionsTaxonomyService {
           isNull(hrPositionTransitions.deletedAt),
         ),
       )
-      .orderBy(asc(hrPositionTransitions.id));
+      .orderBy(asc(hrPositionTransitions.id))
+      .limit(100);
   }
 
   async createTransition(

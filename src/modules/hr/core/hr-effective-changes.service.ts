@@ -27,6 +27,7 @@ import type {
 import { HrAuditService } from "./hr-audit.service";
 import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
 import { HrEffectiveChangeApplierService } from "./hr-effective-change-applier.service";
+import { boundHrReadLimit } from "../hr-read-limits";
 
 type EmploymentSnapshot = {
   id: number;
@@ -234,7 +235,8 @@ export class HrEffectiveChangesService {
   }
 
   async list(orgId: string, input: ListEffectiveDateChangesInput) {
-    const { cursor, limit, employmentId, changeType, status } = input;
+    const { cursor, employmentId, changeType, status } = input;
+    const limit = boundHrReadLimit(input.limit);
     const cursorScope = {
       orgId,
       employmentId: employmentId ?? null,

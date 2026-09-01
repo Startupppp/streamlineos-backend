@@ -125,6 +125,22 @@ describe("GdprStoragePurgeService — Item C: physical storage purge", () => {
 
       expect(result.blocked).toBe(false);
     });
+
+    it("blocks when the active hold is in any requested organization, not only the first", async () => {
+      const db = makeDb([{ id: 1 }]);
+      const svc = await buildService(db, { deleteFile: jest.fn() });
+
+      const result = await svc.purgeSubjectStorage(
+        USER_HELD,
+        [ORG_A, ORG_B],
+        ACTOR,
+        ORG_A,
+        { dryRun: false },
+      );
+
+      expect(result.blocked).toBe(true);
+      expect(result.blockReason).toBe("active-legal-hold");
+    });
   });
 
   describe("partial failure — Item C (the confirmed defect fix)", () => {

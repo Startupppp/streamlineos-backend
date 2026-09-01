@@ -36,7 +36,9 @@ export class BiometricService {
     return this.db
       .select()
       .from(biometricDevices)
-      .where(eq(biometricDevices.orgId, orgId));
+      .where(eq(biometricDevices.orgId, orgId))
+      .orderBy(desc(biometricDevices.id))
+      .limit(100);
   }
 
   createDevice(orgId: string, data: CreateBiometricDevice) {

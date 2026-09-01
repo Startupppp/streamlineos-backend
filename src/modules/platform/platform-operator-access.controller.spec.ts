@@ -6,11 +6,15 @@ import { createGrantSchema } from "./dto/platform.schemas";
 import { PlatformOperatorAccessController } from "./platform-operator-access.controller";
 import type { PlatformOperatorAccessService } from "./platform-operator-access.service";
 
-function operator(userId: string, kind: "human-session" | "service-api-key" = "human-session"): CurrentUserContext {
+function operator(
+  userId: string,
+  kind: "human-session" | "service-api-key" = "human-session",
+  role = "ADMIN",
+): CurrentUserContext {
   return {
     userId,
     orgId: "platform-org",
-    role: "ADMIN",
+    role,
     isOrgOwner: false,
     sessionId: "session-1",
     tokenScopes: null,
@@ -136,5 +140,23 @@ describe("PlatformOperatorAccessController identity integrity", () => {
     await expect(attempt).rejects.toBeInstanceOf(UnauthorizedException);
     expect(createGrant).not.toHaveBeenCalled();
     expect(approveGrant).not.toHaveBeenCalled();
+  });
+
+  it("rejects a human session without an eligible admin role", async () => {
+    await expect(
+      controller.createGrant(
+        "test-internal-secret",
+        {
+          operatorUserId: "support-op",
+          orgId: "customer-org",
+          incidentRef: "INC-1",
+          scope: "read_customer_data",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+        operator("ordinary-member", "human-session", "MEMBER"),
+        httpRequest(),
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(createGrant).not.toHaveBeenCalled();
   });
 });

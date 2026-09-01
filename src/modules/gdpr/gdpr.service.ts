@@ -50,6 +50,17 @@ export interface SubjectExportResult {
     placedAt: Date;
     releasedAt: Date | null;
   }>;
+  auditEntries: Array<{
+    id: number;
+    action: string;
+    targetId: string | null;
+    targetType: string | null;
+    actorUserId: string | null;
+    resourceType: string | null;
+    resourceId: string | null;
+    metadata: Record<string, unknown> | null;
+    createdAt: Date;
+  }>;
   auditEntriesPresent: boolean;
   exportIncomplete: string[];
 }
@@ -178,11 +189,20 @@ export class GdprService {
         ),
       );
 
-    const [auditEntry] = await this.db
-      .select({ id: auditLogs.id })
+    const auditEntries = await this.db
+      .select({
+        id: auditLogs.id,
+        action: auditLogs.action,
+        targetId: auditLogs.targetId,
+        targetType: auditLogs.targetType,
+        actorUserId: auditLogs.actorUserId,
+        resourceType: auditLogs.resourceType,
+        resourceId: auditLogs.resourceId,
+        metadata: auditLogs.metadata,
+        createdAt: auditLogs.createdAt,
+      })
       .from(auditLogs)
-      .where(and(eq(auditLogs.userId, subjectUserId), eq(auditLogs.orgId, callerOrgId)))
-      .limit(1);
+      .where(and(eq(auditLogs.userId, subjectUserId), eq(auditLogs.orgId, callerOrgId)));
 
     return {
       exportedAt: new Date().toISOString(),
@@ -210,7 +230,16 @@ export class GdprService {
         placedAt: h.placedAt,
         releasedAt: h.releasedAt ?? null,
       })),
-      auditEntriesPresent: Boolean(auditEntry),
+      auditEntries: auditEntries.map((entry) => ({
+        ...entry,
+        targetId: entry.targetId ?? null,
+        targetType: entry.targetType ?? null,
+        actorUserId: entry.actorUserId ?? null,
+        resourceType: entry.resourceType ?? null,
+        resourceId: entry.resourceId ?? null,
+        metadata: entry.metadata ?? null,
+      })),
+      auditEntriesPresent: auditEntries.length > 0,
       exportIncomplete: [
         "audit_logs: existence confirmed only — full extract requires elevated tooling",
         "blob storage: R2 object keys require R2_ENDPOINT + credentials (see purge-user.mjs)",

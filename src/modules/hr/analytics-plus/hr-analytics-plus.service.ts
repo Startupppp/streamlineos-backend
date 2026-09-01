@@ -11,6 +11,9 @@ import {
   hrHeadcountPlans,
 } from "../../../db/schema/hr/workforce-planning";
 import { HrCommandCenterAnalyticsService } from "./hr-command-center-analytics.service";
+import { boundHrReadLimit } from "../hr-read-limits";
+
+const MAX_ANALYTICS_ROWS = 1000;
 
 @Injectable()
 export class HrAnalyticsPlusService {
@@ -58,6 +61,7 @@ export class HrAnalyticsPlusService {
               AND e.exit_date >= NOW() - INTERVAL '24 months' AND e.deleted_at IS NULL
             GROUP BY d.name
             ORDER BY exits DESC
+            LIMIT ${MAX_ANALYTICS_ROWS}
           `),
           this.db.execute(sql`
             SELECT COALESCE(exit_reason, 'Unknown') as reason, COUNT(*) as count
@@ -66,6 +70,7 @@ export class HrAnalyticsPlusService {
               AND exit_date >= NOW() - INTERVAL '24 months' AND deleted_at IS NULL
             GROUP BY exit_reason
             ORDER BY count DESC
+            LIMIT ${MAX_ANALYTICS_ROWS}
           `),
         ]);
 
@@ -109,6 +114,7 @@ export class HrAnalyticsPlusService {
             AND l.effective_date >= NOW() - INTERVAL '12 months'
           GROUP BY 1, 2
           ORDER BY 1, 2
+          LIMIT ${MAX_ANALYTICS_ROWS}
         `);
         return { trends: rows };
       },
@@ -126,6 +132,7 @@ export class HrAnalyticsPlusService {
           WHERE org_id = ${orgId}
             AND month >= to_char(NOW() - INTERVAL '12 months', 'YYYY-MM')
           ORDER BY month DESC
+          LIMIT ${MAX_ANALYTICS_ROWS}
         `);
         return {
           monthly: rows.map((r) => ({
@@ -152,6 +159,7 @@ export class HrAnalyticsPlusService {
             AND date >= NOW() - INTERVAL '12 months'
           GROUP BY 1
           ORDER BY 1
+          LIMIT ${MAX_ANALYTICS_ROWS}
         `);
         return {
           moodByMonth: rows.map((r) => ({
@@ -176,6 +184,7 @@ export class HrAnalyticsPlusService {
             AND overall_rating IS NOT NULL
           GROUP BY overall_rating
           ORDER BY overall_rating
+          LIMIT ${MAX_ANALYTICS_ROWS}
         `);
         return {
           distribution: rows.map((r) => ({
@@ -200,6 +209,7 @@ export class HrAnalyticsPlusService {
             AND deleted_at IS NULL
           GROUP BY category, severity
           ORDER BY count DESC
+          LIMIT ${MAX_ANALYTICS_ROWS}
         `);
         return {
           openCases: rows.map((r) => ({
@@ -226,6 +236,7 @@ export class HrAnalyticsPlusService {
   }
 
   async getDrilldown(orgId: string, metric: string, page: number, limit: number, _?: string) {
+    limit = boundHrReadLimit(limit);
     const offset = (page - 1) * limit;
     let rows: unknown[] = [];
     let total = 0;
@@ -303,7 +314,8 @@ export class HrAnalyticsPlusService {
       .from(hrHeadcountPlans)
       .leftJoin(orgUnits, eq(orgUnits.id, hrHeadcountPlans.departmentId))
       .where(eq(hrHeadcountPlans.orgId, orgId))
-      .orderBy(hrHeadcountPlans.fiscalYear, orgUnits.name);
+      .orderBy(hrHeadcountPlans.fiscalYear, orgUnits.name)
+      .limit(100);
   }
 
   createHeadcountPlan(orgId: string, data: {
@@ -358,6 +370,7 @@ export class HrAnalyticsPlusService {
       WHERE h.org_id = ${orgId}
       GROUP BY h.id, h.fiscal_year, h.department_id, d.name, h.budgeted_headcount, h.budgeted_cost_cents
       ORDER BY h.fiscal_year DESC, d.name
+      LIMIT ${MAX_ANALYTICS_ROWS}
     `);
     return Array.from(rows, (row) => {
       const budgeted = Number(row.budgeted_headcount ?? 0);
@@ -387,6 +400,7 @@ export class HrAnalyticsPlusService {
       WHERE r.org_id = ${orgId}
       GROUP BY r.skill_name
       ORDER BY (COUNT(DISTINCT r.id) - COUNT(DISTINCT CASE WHEN es.id IS NOT NULL THEN e.id END)) DESC
+      LIMIT ${MAX_ANALYTICS_ROWS}
     `);
     return {
       gaps: Array.from(rows, (row) => {
@@ -411,6 +425,7 @@ export class HrAnalyticsPlusService {
       FROM hr_succession_plans s
       WHERE s.org_id = ${orgId}
       ORDER BY CASE s.readiness WHEN 'ready_now' THEN 1 WHEN '1_2_years' THEN 2 ELSE 3 END
+      LIMIT ${MAX_ANALYTICS_ROWS}
     `);
     return {
       riskyRoles: Array.from(rows, (row) => ({
@@ -433,6 +448,7 @@ export class HrAnalyticsPlusService {
       WHERE org_id = ${orgId} AND exit_date >= NOW() - INTERVAL '12 months' AND deleted_at IS NULL
       GROUP BY 1
       ORDER BY 1
+      LIMIT ${MAX_ANALYTICS_ROWS}
     `);
 
     const headcountResult = await this.db.execute(sql`

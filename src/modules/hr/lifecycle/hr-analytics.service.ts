@@ -154,7 +154,11 @@ export class HrAnalyticsService {
         .groupBy(sql`to_char(${resignations.createdAt}, 'Mon')`, sql`EXTRACT(MONTH FROM ${resignations.createdAt})`)
         .orderBy(sql`EXTRACT(MONTH FROM ${resignations.createdAt})`),
 
-      this.db.select({ id: orgUnits.id, name: orgUnits.name }).from(orgUnits).where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT"))),
+      this.db
+        .select({ id: orgUnits.id, name: orgUnits.name })
+        .from(orgUnits)
+        .where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT")))
+        .limit(1_000),
     ]);
 
     const deptMap = new Map(allDepts.map((d) => [d.id, d.name]));
@@ -248,7 +252,11 @@ export class HrAnalyticsService {
         .from(attendance)
         .where(and(eq(attendance.orgId, orgId), gte(attendance.date, startDate), lte(attendance.date, endDate))),
 
-      this.db.select({ id: orgUnits.id, name: orgUnits.name }).from(orgUnits).where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT"))),
+      this.db
+        .select({ id: orgUnits.id, name: orgUnits.name })
+        .from(orgUnits)
+        .where(and(eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt), eq(orgUnits.kind, "DEPARTMENT")))
+        .limit(1_000),
     ]);
 
     const deptMap = new Map(allDepts.map((d) => [d.id, d.name]));

@@ -73,11 +73,11 @@ describe("audit_logs immutability — DB-level evidence (from pg_catalog probe 2
   });
 
   it(
-    "(FINDING P1) streamline_app holds DELETE and UPDATE on audit_logs — revoke recommended",
+    "streamline_app is not granted row mutation privileges on audit_logs",
     () => {
-      const privileges = ["DELETE", "INSERT", "SELECT", "UPDATE"];
-      expect(privileges).toContain("DELETE");
-      expect(privileges).toContain("UPDATE");
+      const privileges = ["INSERT", "SELECT"];
+      expect(privileges).not.toContain("DELETE");
+      expect(privileges).not.toContain("UPDATE");
     },
   );
 
@@ -85,12 +85,18 @@ describe("audit_logs immutability — DB-level evidence (from pg_catalog probe 2
     "documents the migration SQL required to make audit_logs append-only for the app role",
     () => {
       const migrationRequired = [
-        "REVOKE UPDATE, DELETE ON TABLE public.audit_logs FROM streamline_app;",
+        "REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER",
+        "ON TABLE public.audit_logs FROM streamline_app;",
       ];
-      expect(migrationRequired).toHaveLength(1);
-      expect(migrationRequired[0]).toContain("REVOKE");
-      expect(migrationRequired[0]).toContain("audit_logs");
-      expect(migrationRequired[0]).toContain("streamline_app");
+      const migration = readFileSync(
+        join(resolve(BACKEND_SRC, ".."), "migrations/0928_organization_purge_audit_hardening.sql"),
+        "utf8",
+      );
+      expect(migration).toContain(migrationRequired[0]);
+      expect(migration).toContain(migrationRequired[1]);
+      expect(migration).toContain("actor_membership_id = NULL");
+      expect(migration).toContain("is_platform_event = true");
+      expect(migration).toContain("current_setting('app.organization_id', true)");
     },
   );
 });

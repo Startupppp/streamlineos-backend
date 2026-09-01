@@ -136,7 +136,8 @@ export class HrBenefitsEnrollmentService {
         })
         .from(hrDependents)
         .where(and(eq(hrDependents.orgId, orgId), eq(hrDependents.userMembershipId, membershipId)))
-        .orderBy(hrDependents.name),
+        .orderBy(hrDependents.name)
+        .limit(200),
     ]);
 
     const enrollments = enrollmentRows.map((r) => ({ ...r.enrollment, plan: r.plan }));

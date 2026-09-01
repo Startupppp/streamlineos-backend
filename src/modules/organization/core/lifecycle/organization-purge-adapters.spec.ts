@@ -84,11 +84,11 @@ describe("PURGE_ADAPTER_REGISTRY — database_rows", () => {
     return { select: jest.fn().mockReturnValue({ from: fromMock }) };
   }
 
-  it("returns FAILED when org is present and statusV2 is PURGE_SCHEDULED", async () => {
+  it("confirms an eligible scheduled organization for the final physical-delete pass", async () => {
     const db = makeMockDb({ id: ORG_A, statusV2: "PURGE_SCHEDULED" }) as never;
     const result = await PURGE_ADAPTER_REGISTRY.database_rows.confirm(ORG_A, PURGE_JOB, db);
-    expect(result.state).toBe("FAILED");
-    expect(result.detail).toMatch(/not implemented/i);
+    expect(result.state).toBe("CONFIRMED");
+    expect(result.detail).toMatch(/physically deletes/i);
   });
 
   it("returns CONFIRMED when org row is absent", async () => {
@@ -96,6 +96,12 @@ describe("PURGE_ADAPTER_REGISTRY — database_rows", () => {
     const result = await PURGE_ADAPTER_REGISTRY.database_rows.confirm(ORG_A, PURGE_JOB, db);
     expect(result.state).toBe("CONFIRMED");
     expect(result.detail).toMatch(/absent/i);
+  });
+
+  it("returns FAILED for an organization outside the purge state", async () => {
+    const db = makeMockDb({ id: ORG_A, statusV2: "ACTIVE" }) as never;
+    const result = await PURGE_ADAPTER_REGISTRY.database_rows.confirm(ORG_A, PURGE_JOB, db);
+    expect(result.state).toBe("FAILED");
   });
 
   it("returns CONFIRMED when org row statusV2 is PURGED", async () => {

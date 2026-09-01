@@ -337,7 +337,8 @@ export class HrDashboardService {
       const userDetails = await this.db
         .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, name: users.name })
         .from(users)
-        .where(inArray(users.id, previewIds));
+        .where(inArray(users.id, previewIds))
+        .limit(Math.max(previewIds.length, 1));
 
       const statsByUser = Object.fromEntries(taskStats.map((s) => [s.userId, s]));
 

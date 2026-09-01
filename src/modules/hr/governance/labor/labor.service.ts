@@ -156,7 +156,8 @@ export class LaborService {
           lte(hrCollectiveAgreements.expiresAt, cutoff),
         ),
       )
-      .orderBy(hrCollectiveAgreements.expiresAt);
+      .orderBy(hrCollectiveAgreements.expiresAt)
+      .limit(100);
 
     return { data, daysWindow: input.days };
   }

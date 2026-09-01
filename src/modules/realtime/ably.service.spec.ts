@@ -122,6 +122,34 @@ describe("AblyService capabilities", () => {
 });
 
 describe("AblyService durable publish contract", () => {
+  it("revokes a previously minted publish/subscribe token before the refreshed capability is narrowed", async () => {
+    const service = new AblyService({ ABLY_API_KEY: "app.key:secret", CELL_ID: undefined });
+    const revokeTokens = jest.fn().mockResolvedValue(undefined);
+    let captured: CapturedTokenParams | undefined;
+    Reflect.set(service, "restClient", {
+      auth: {
+        createTokenRequest: (params: CapturedTokenParams) => {
+          captured = params;
+          return Promise.resolve({} as Ably.TokenRequest);
+        },
+        revokeTokens,
+      },
+    });
+
+    await service.createChatTokenRequest("removed-user", "org-1", [7]);
+    expect(captured?.capability["cell:legacy-1:chat:org-1:7"]).toEqual([
+      "subscribe",
+      "publish",
+      "history",
+    ]);
+
+    await service.revokeUserTokens("removed-user");
+    expect(revokeTokens).toHaveBeenCalledWith([{ type: "clientId", value: "removed-user" }]);
+
+    await service.createChatTokenRequest("removed-user", "org-1", []);
+    expect(captured?.capability["cell:legacy-1:chat:org-1:7"]).toBeUndefined();
+  });
+
   it("rejects a durable publish when Ably is not configured", async () => {
     const service = new AblyService({ ABLY_API_KEY: undefined, CELL_ID: undefined });
     await expect(service.publishChatMessage("org-1", 1, {} as never, {

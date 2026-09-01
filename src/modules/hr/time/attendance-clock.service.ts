@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import { formatInTimeZone } from "date-fns-tz";
 import { attendance, geofences, organizations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -106,7 +106,8 @@ export class AttendanceClockService {
             eq(geofences.orgId, organizationId),
             eq(geofences.isActive, true),
           ),
-        );
+        )
+        .limit(100);
       const matchedGeofence = geofenceRows.find(
         (geofence) =>
           calculateDistanceMeters(
@@ -320,28 +321,19 @@ export class AttendanceClockService {
         durationMilliseconds / 3_600_000 - totalBreakHours,
       );
 
-      const dailyAttendanceRows = await transaction
-        .select({
-          attendanceId: attendance.id,
-          workHours: attendance.workHours,
-        })
+      const [dailyAttendance] = await transaction
+        .select({ previousWorkHours: sql<number>`COALESCE(SUM(${attendance.workHours}), 0)`.mapWith(Number) })
         .from(attendance)
         .where(
           and(
             eq(attendance.userMembershipId, userMembershipId),
             eq(attendance.date, clockContext.businessDate),
             eq(attendance.orgId, organizationId),
+            ne(attendance.id, attendanceSession.attendanceId),
           ),
         );
 
-      let previousWorkHours = 0;
-      for (const dailyAttendanceRow of dailyAttendanceRows) {
-        if (
-          dailyAttendanceRow.attendanceId !== attendanceSession.attendanceId
-        ) {
-          previousWorkHours += Number(dailyAttendanceRow.workHours || 0);
-        }
-      }
+      const previousWorkHours = dailyAttendance?.previousWorkHours ?? 0;
 
       const totalDailyWork = previousWorkHours + sessionWorkHours;
       const isOvertime = totalDailyWork > dailyThresholdHours;

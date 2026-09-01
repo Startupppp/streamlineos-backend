@@ -209,6 +209,8 @@
     "cell:relay:self-test": "node --env-file-if-exists=.env -r ts-node/register/transpile-only src/scripts/verify-cross-cell-relay.ts --self-test",
     "check:migration-chain": "node --env-file-if-exists=.env src/scripts/verify-migration-chain.mjs",
     "check:migration-chain:self-test": "node src/scripts/verify-migration-chain.mjs --self-test",
+    "migration:proof": "node --env-file-if-exists=.env src/scripts/migration-proof.mjs",
+    "migration:proof:focused": "node --env-file-if-exists=.env src/scripts/migration-proof-focused.mjs",
     "auth:benchmark": "node --env-file=.env -r ts-node/register/transpile-only src/scripts/benchmark-access-service.ts",
     "auth:benchmark:self-test": "node -r ts-node/register/transpile-only src/scripts/benchmark-access-service.ts --self-test",
     "browser:measure": "node --env-file-if-exists=.env src/scripts/browser-driver.mjs",

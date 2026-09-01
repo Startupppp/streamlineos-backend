@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, count, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -43,14 +43,15 @@ export class HrWorkflowStepRunnerService {
     }
 
     if (currentStep.mode === "parallel_all") {
-      const actionsForStep = await this.db.select().from(hrWorkflowStepActions)
+      const [approvedActions] = await this.db.select({ approvedCount: count() }).from(hrWorkflowStepActions)
         .where(and(
           eq(hrWorkflowStepActions.instanceId, instance.id),
           eq(hrWorkflowStepActions.stepOrder, currentStep.stepOrder),
           inArray(hrWorkflowStepActions.action, ["approved"]),
-        ));
+        ))
+        .limit(1);
 
-      const approvedCount = actionsForStep.length;
+      const approvedCount = Number(approvedActions?.approvedCount ?? 0);
       const resolvedApprovers = await this.approver.resolveApprovers(currentStep, instance.subjectEmployeeId, orgId);
 
       if (approvedCount < resolvedApprovers.length) {
@@ -118,6 +119,7 @@ export class HrWorkflowStepRunnerService {
   async loadSteps(definitionId: number, db: Db) {
     return db.select().from(hrWorkflowSteps)
       .where(eq(hrWorkflowSteps.definitionId, definitionId))
-      .orderBy(hrWorkflowSteps.stepOrder);
+      .orderBy(hrWorkflowSteps.stepOrder)
+      .limit(20);
   }
 }

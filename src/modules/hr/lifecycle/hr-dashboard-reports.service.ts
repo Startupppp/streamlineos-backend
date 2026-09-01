@@ -65,7 +65,8 @@ export class HrDashboardReportsService {
       .innerJoin(users, eq(organizationMembers.userId, users.id))
       .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
       .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-      .where(and(eq(organizationMembers.orgId, orgId), isNotNull(hrEmployments.joiningDate), lte(hrEmployments.joiningDate, windowEnd)));
+      .where(and(eq(organizationMembers.orgId, orgId), isNotNull(hrEmployments.joiningDate), lte(hrEmployments.joiningDate, windowEnd)))
+      .limit(10_000);
 
     const countByMonthEnd = new Map<string, number>();
     for (const r of joiningRows) {
@@ -104,7 +105,8 @@ export class HrDashboardReportsService {
         updatedAt: jobPostings.updatedAt,
       })
       .from(jobPostings)
-      .where(and(eq(jobPostings.orgId, orgId), eq(jobPostings.status, "FILLED"), isNotNull(jobPostings.updatedAt)));
+      .where(and(eq(jobPostings.orgId, orgId), eq(jobPostings.status, "FILLED"), isNotNull(jobPostings.updatedAt)))
+      .limit(10_000);
 
     if (!filledJobs.length) {
       return { avgDaysOverall: null, byDepartment: [] };
@@ -136,7 +138,8 @@ export class HrDashboardReportsService {
       const rows = await this.db
         .select({ id: orgUnits.id, name: orgUnits.name })
         .from(orgUnits)
-        .where(inArray(orgUnits.id, deptIds));
+        .where(inArray(orgUnits.id, deptIds))
+        .limit(Math.max(deptIds.length, 1));
       deptNames = Object.fromEntries(rows.map((r) => [r.id, r.name]));
     }
 
@@ -321,6 +324,7 @@ export class HrDashboardReportsService {
       .leftJoin(hrEmployeeSensitiveFields, and(eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id), eq(hrEmployeeSensitiveFields.orgId, orgId)))
       .leftJoin(orgUnitMembers, and(eq(orgUnitMembers.membershipId, organizationMembers.id), eq(orgUnitMembers.orgId, orgId)))
       .leftJoin(orgUnits, orgUnitInOrg(orgId, orgUnitMembers.orgUnitId))
-      .where(eq(organizationMembers.orgId, orgId));
+      .where(eq(organizationMembers.orgId, orgId))
+      .limit(10_000);
   }
 }

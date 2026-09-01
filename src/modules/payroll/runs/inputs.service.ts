@@ -173,7 +173,8 @@ export class InputsService {
     const toReset = await this.db
       .select({ id: payrollInputs.id, userId: payrollInputs.userId })
       .from(payrollInputs)
-      .where(and(...conditions));
+      .where(and(...conditions))
+      .limit(1000);
 
     if (toReset.length === 0) return { ok: true, count: 0 };
 

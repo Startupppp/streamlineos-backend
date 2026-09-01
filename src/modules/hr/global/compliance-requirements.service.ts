@@ -203,7 +203,7 @@ export class ComplianceRequirementsService {
     const conditions = [eq(hrComplianceRequirements.orgId, orgId), eq(hrComplianceRequirements.active, true)];
     if (requirementId) conditions.push(eq(hrComplianceRequirements.id, requirementId));
 
-    const reqs = await this.db.select().from(hrComplianceRequirements).where(and(...conditions));
+    const reqs = await this.db.select().from(hrComplianceRequirements).where(and(...conditions)).limit(500);
     const now = new Date();
     const horizon = new Date(now);
     horizon.setMonth(horizon.getMonth() + 12);
@@ -228,7 +228,8 @@ export class ComplianceRequirementsService {
           eq(hrComplianceEvents.orgId, orgId),
           inArray(hrComplianceEvents.requirementId, reqIds),
         ),
-      );
+      )
+      .limit(5000);
 
     const existingKeys = new Set(
       existingEvents.map((e) => `${e.requirementId}:${e.dueDate}`),
@@ -316,12 +317,14 @@ export class ComplianceRequirementsService {
             .select({ date: holidays.date })
             .from(holidays)
             .where(and(eq(holidays.orgId, orgId), inArray(holidays.date, holidayDates)))
+            .limit(100)
         : Promise.resolve([]),
       reqNames.length > 0
         ? this.db
             .select({ name: hrComplianceRequirements.name })
             .from(hrComplianceRequirements)
             .where(and(eq(hrComplianceRequirements.orgId, orgId), inArray(hrComplianceRequirements.name, reqNames)))
+            .limit(100)
         : Promise.resolve([]),
     ]);
 

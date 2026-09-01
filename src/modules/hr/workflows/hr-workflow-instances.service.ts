@@ -128,7 +128,8 @@ export class HrWorkflowInstancesService {
         lastName: users.lastName,
       })
       .from(users)
-      .where(inArray(users.id, userIds));
+      .where(inArray(users.id, userIds))
+      .limit(userIds.length);
 
     const userMap = Object.fromEntries(resolvedUsers.map((u) => [u.id, u]));
 
@@ -198,7 +199,8 @@ export class HrWorkflowInstancesService {
           inArray(hrWorkflowInstances.id, instanceIds),
         ),
       )
-      .orderBy(desc(hrWorkflowInstances.updatedAt));
+      .orderBy(desc(hrWorkflowInstances.updatedAt))
+      .limit(instanceIds.length);
 
     return { data: rows, pagination: page.pagination };
   }
@@ -286,7 +288,8 @@ export class HrWorkflowInstancesService {
         .where(and(
           eq(organizationMembers.orgId, orgId),
           inArray(organizationMembers.userId, approverUserIds),
-        ));
+        ))
+        .limit(approverUserIds.length);
     const membershipIdByUserId = new Map(approverMembers.map((member) => [member.userId, member.membershipId]));
 
     const myInstances: (typeof candidates)[number][] = [];
@@ -355,6 +358,7 @@ export class HrWorkflowInstancesService {
             .from(orgUnits)
             .leftJoin(organizationMembers, eq(organizationMembers.id, orgUnits.headMembershipId))
             .where(inArray(orgUnits.id, deptIds))
+            .limit(deptIds.length)
         : Promise.resolve([]),
       locationIds.length > 0 && hrUserIds.length > 0
         ? this.db

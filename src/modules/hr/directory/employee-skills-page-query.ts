@@ -34,7 +34,8 @@ export async function listBoundedEmployeeSkills(
           eq(employeeSkills.orgId, orgId),
           inArray(employeeSkills.userId, [...employeeUserIds]),
         ),
-      ),
+      )
+      .limit(Math.max(1, employeeUserIds.length * MAX_SKILLS_PER_EMPLOYEE)),
   );
 
   return db
@@ -50,5 +51,6 @@ export async function listBoundedEmployeeSkills(
       asc(rankedSkills.userId),
       asc(sql`lower(${rankedSkills.skillName})`),
       asc(rankedSkills.skillName),
-    );
+    )
+    .limit(Math.max(1, employeeUserIds.size * MAX_SKILLS_PER_EMPLOYEE));
 }

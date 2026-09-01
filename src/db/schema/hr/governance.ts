@@ -35,7 +35,12 @@ export const hrRetentionRecordTypeEnum = pgEnum("hr_retention_record_type", [
 
 export const hrRetentionActionEnum = pgEnum("hr_retention_action", ["delete", "anonymize"]);
 
-export const hrDataRequestTypeEnum = pgEnum("hr_data_request_type", ["export", "delete", "anonymize"]);
+export const hrDataRequestTypeEnum = pgEnum("hr_data_request_type", [
+  "export",
+  "delete",
+  "anonymize",
+  "correction",
+]);
 
 export const hrDataRequestStatusEnum = pgEnum("hr_data_request_status", [
   "pending",

@@ -21,6 +21,10 @@ import { assertUsersInOrg } from "../../common/tenant/org-membership";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
 import { AblyService } from "../realtime/ably.service";
+import { randomUUID } from "node:crypto";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
+import { REALTIME_TOKEN_REVOCATION_EVENT } from "../realtime/realtime-token-revocation";
 
 @Injectable()
 export class ChatChannelMembersService {
@@ -148,19 +152,29 @@ export class ChatChannelMembersService {
       throw new ForbiddenException("Only channel admins can remove other members");
 
     const targetMembershipId = await this.resolveMembership(orgId, targetUserId);
-    if (targetMembershipId) {
-      await this.db.delete(chatChannelMembers).where(
-        and(
-          eq(chatChannelMembers.orgId, orgId),
-          eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.membershipId, targetMembershipId),
-        ),
-      );
-    }
-
-    void this.ably
-      .publishToUser(orgId, targetUserId, "realtime:capability:refresh", {})
-      .catch(() => undefined);
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx.delete(chatChannelMembers).where(
+          and(
+            eq(chatChannelMembers.orgId, orgId),
+            eq(chatChannelMembers.channelId, channelId),
+            eq(chatChannelMembers.membershipId, targetMembershipId),
+          ),
+        );
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "realtime.token-revocation",
+          aggregateId: `${channelId}:${targetMembershipId}:${randomUUID()}`,
+          aggregateVersion: 1,
+          eventType: REALTIME_TOKEN_REVOCATION_EVENT,
+          payload: { orgId, userId: targetUserId, channelId, membershipId: targetMembershipId },
+          occurredAt: new Date(),
+        });
+      },
+      { orgId },
+    );
 
     return { ok: true };
   }
@@ -239,19 +253,29 @@ export class ChatChannelMembersService {
   async leaveChannel(channelId: number, userId: string, orgId: string) {
     const { membershipId } = await this.assertMember(channelId, userId, orgId);
 
-    await this.db
-      .delete(chatChannelMembers)
-      .where(
-        and(
-          eq(chatChannelMembers.orgId, orgId),
-          eq(chatChannelMembers.channelId, channelId),
-          eq(chatChannelMembers.membershipId, membershipId),
-        ),
-      );
-
-    void this.ably
-      .publishToUser(orgId, userId, "realtime:capability:refresh", {})
-      .catch(() => undefined);
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx.delete(chatChannelMembers).where(
+          and(
+            eq(chatChannelMembers.orgId, orgId),
+            eq(chatChannelMembers.channelId, channelId),
+            eq(chatChannelMembers.membershipId, membershipId),
+          ),
+        );
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "realtime.token-revocation",
+          aggregateId: `${channelId}:${membershipId}:${randomUUID()}`,
+          aggregateVersion: 1,
+          eventType: REALTIME_TOKEN_REVOCATION_EVENT,
+          payload: { orgId, userId, channelId, membershipId },
+          occurredAt: new Date(),
+        });
+      },
+      { orgId },
+    );
 
     return { ok: true };
   }

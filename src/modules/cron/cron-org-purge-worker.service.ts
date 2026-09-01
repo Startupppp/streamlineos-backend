@@ -217,7 +217,8 @@ export class CronOrgPurgeWorkerService {
 
     if (!allConfirmed) return { kind: "adapters-incomplete", adapters: adapterStates };
 
-    const purged = await this.db.transaction(async (tx) => {
+    const memberUserIds = await this.listMemberUserIds(orgId);
+    const purged = await runInNewTenantTransaction(this.db, orgId, async (tx) => {
       const rows = await tx.execute(sql`
         SELECT id FROM organizations
         WHERE  id          = ${orgId}
@@ -229,32 +230,25 @@ export class CronOrgPurgeWorkerService {
 
       if (!rows[0]) return false;
 
-      await tx
-        .update(organizations)
-        .set({ statusV2: "PURGED", status: "PURGED", purgedAt: new Date() })
-        .where(
-          and(
-            eq(organizations.id, orgId),
-            eq(organizations.statusV2, "PURGE_SCHEDULED"),
-          ),
-        );
-
-      this.audit.log({
-        action: "org.purged",
-        userId: "system",
-        orgId,
-        targetId: orgId,
-        targetType: "organization",
-        metadata: { orgName, purgeJobId },
-      });
+      // audit_logs is retained as platform evidence, while every other
+      // organization-owned row is removed by the database FK cascade.
+      await tx.execute(sql`SELECT app.nullify_audit_logs_org_id(${orgId})`);
+      await tx.delete(organizations).where(eq(organizations.id, orgId));
 
       return true;
     });
 
     if (!purged) return { kind: "claimed-elsewhere" };
 
-    const memberUserIds = await this.listMemberUserIds(orgId);
     await this.revokeAndBustMembers(orgId, memberUserIds);
+    this.audit.log({
+      action: "org.purged",
+      userId: "system",
+      orgId: null,
+      targetId: orgId,
+      targetType: "organization",
+      metadata: { orgName, purgeJobId, physicalDeletion: true },
+    });
     return { kind: "purged" };
   }
 }

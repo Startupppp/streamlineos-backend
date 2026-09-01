@@ -122,7 +122,8 @@ export class HrHolidaysService {
       const memberIds = await this.db
         .select({ userId: organizationMembers.userId })
         .from(organizationMembers)
-        .where(eq(organizationMembers.orgId, orgId));
+        .where(eq(organizationMembers.orgId, orgId))
+        .limit(500);
       if (memberIds.length === 0) return;
 
       const activeUsers = await this.db
@@ -136,7 +137,8 @@ export class HrHolidaysService {
             ),
             eq(users.isActive, true),
           ),
-        );
+        )
+        .limit(500);
 
       if (activeUsers.length > 0) {
         await this.dispatch.emit({

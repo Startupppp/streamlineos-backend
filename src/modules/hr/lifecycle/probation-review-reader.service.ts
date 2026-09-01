@@ -142,10 +142,12 @@ export class ProbationReviewReaderService {
   }
 
   async resolveUserIds(orgId: string, personIds: number[]): Promise<Map<number, string | null>> {
+    const uniquePersonIds = [...new Set(personIds)];
     const people = await this.db
       .select({ id: hrPeople.id, userId: hrPeople.userId })
       .from(hrPeople)
-      .where(and(eq(hrPeople.orgId, orgId), inArray(hrPeople.id, [...new Set(personIds)])));
+      .where(and(eq(hrPeople.orgId, orgId), inArray(hrPeople.id, uniquePersonIds)))
+      .limit(Math.max(uniquePersonIds.length, 1));
     return new Map(people.map((person) => [person.id, person.userId]));
   }
 

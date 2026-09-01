@@ -38,7 +38,8 @@ export class LeavesPageService {
           eq(leaveBalances.orgId, orgId),
           eq(leaveBalances.year, year),
         ),
-      );
+      )
+      .limit(100);
 
     const [existingBalances, allTypes, facts] = await Promise.all([
       balanceQuery,

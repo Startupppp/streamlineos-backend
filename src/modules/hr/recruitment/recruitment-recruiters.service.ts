@@ -14,6 +14,8 @@ import { AccessService } from "../../access/access.service";
 import type { RecruiterActivityInput, RecruiterActivityQueryInput, UpsertPortalInput } from "./dto/jobs.schemas";
 
 const SYNC_PLATFORMS = ["LINKEDIN", "NAUKRI", "INDEED"];
+const RECRUITER_DIRECTORY_LIMIT = 500;
+const PORTAL_LIMIT = 100;
 
 @Injectable()
 export class RecruitmentRecruitersService {
@@ -34,7 +36,8 @@ export class RecruitmentRecruitersService {
       })
       .from(candidateSources)
       .where(eq(candidateSources.orgId, orgId))
-      .orderBy(candidateSources.platform);
+      .orderBy(candidateSources.platform)
+      .limit(PORTAL_LIMIT);
   }
 
   async upsertPortal(orgId: string, userId: string, input: UpsertPortalInput) {
@@ -116,7 +119,8 @@ export class RecruitmentRecruitersService {
         image: users.image,
       })
       .from(users)
-      .where(inArray(users.id, recruiterIds));
+      .where(inArray(users.id, recruiterIds))
+      .limit(RECRUITER_DIRECTORY_LIMIT);
 
     const assignmentCounts = await this.db
       .select({ userId: jobRecruiters.userId, jobCount: count(jobRecruiters.id) })

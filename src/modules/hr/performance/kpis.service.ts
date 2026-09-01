@@ -158,7 +158,8 @@ export class KpisService {
     return this.db
       .select()
       .from(competencies)
-      .where(eq(competencies.frameworkId, frameworkId));
+      .where(eq(competencies.frameworkId, frameworkId))
+      .limit(500);
   }
 
   async createCompetency(

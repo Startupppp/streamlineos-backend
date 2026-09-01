@@ -123,8 +123,8 @@ export class EquityService {
     const [grant] = await this.db.select().from(hrEquityGrants).where(and(eq(hrEquityGrants.id, grantId), eq(hrEquityGrants.orgId, orgId))).limit(1);
     if (!grant) throw new NotFoundException("Equity grant not found");
 
-    const vestingEvents = await this.db.select().from(hrEquityVestingEvents).where(and(eq(hrEquityVestingEvents.grantId, grantId), eq(hrEquityVestingEvents.orgId, orgId))).orderBy(hrEquityVestingEvents.vestDate);
-    const exercises = await this.db.select().from(hrEquityExercises).where(and(eq(hrEquityExercises.grantId, grantId), eq(hrEquityExercises.orgId, orgId))).orderBy(hrEquityExercises.exerciseDate);
+    const vestingEvents = await this.db.select().from(hrEquityVestingEvents).where(and(eq(hrEquityVestingEvents.grantId, grantId), eq(hrEquityVestingEvents.orgId, orgId))).orderBy(hrEquityVestingEvents.vestDate).limit(1000);
+    const exercises = await this.db.select().from(hrEquityExercises).where(and(eq(hrEquityExercises.grantId, grantId), eq(hrEquityExercises.orgId, orgId))).orderBy(hrEquityExercises.exerciseDate).limit(1000);
 
     return { ...grant, vestingEvents, exercises };
   }
@@ -148,7 +148,7 @@ export class EquityService {
     const [grant] = await this.db.select({ id: hrEquityGrants.id }).from(hrEquityGrants).where(and(eq(hrEquityGrants.id, grantId), eq(hrEquityGrants.orgId, orgId))).limit(1);
     if (!grant) throw new NotFoundException("Equity grant not found");
 
-    return this.db.select().from(hrEquityVestingEvents).where(and(eq(hrEquityVestingEvents.grantId, grantId), eq(hrEquityVestingEvents.orgId, orgId))).orderBy(hrEquityVestingEvents.vestDate);
+    return this.db.select().from(hrEquityVestingEvents).where(and(eq(hrEquityVestingEvents.grantId, grantId), eq(hrEquityVestingEvents.orgId, orgId))).orderBy(hrEquityVestingEvents.vestDate).limit(1000);
   }
 
   async recordExercise(orgId: string, actorId: string, input: CreateExerciseInput) {

@@ -75,6 +75,7 @@ export class LeavesService {
   ) {
     const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
     const rows = await this.db.query.leaveRequests.findMany({
+      limit: query.limit + 1,
       where: and(
         eq(leaveRequests.userMembershipId, userMembershipId),
         eq(leaveRequests.orgId, orgId),
@@ -85,7 +86,6 @@ export class LeavesService {
         approver: { columns: { id: true, name: true, firstName: true, lastName: true } },
       },
       orderBy: [desc(leaveRequests.id)],
-      limit: query.limit + 1,
     });
     const hasMore = rows.length > query.limit;
     const data = hasMore ? rows.slice(0, query.limit) : rows;
@@ -154,7 +154,8 @@ export class LeavesService {
         eq(organizationMembers.orgId, orgId),
         eq(organizationMembers.status, "ACTIVE"),
         inArray(organizationMembers.userId, reportingUserIds),
-      ));
+      ))
+      .limit(reportingUserIds.length);
     if (reporteeMemberships.length === 0) return base;
     const alreadyFetchedIds = new Set(base.map((r) => r.id));
 
@@ -186,6 +187,7 @@ export class LeavesService {
     weekEnd.setHours(23, 59, 59, 999);
 
     const rows = await this.db.query.leaveRequests.findMany({
+      limit: 100,
       where: and(
         eq(leaveRequests.orgId, orgId),
         eq(leaveRequests.status, "APPROVED"),
@@ -206,7 +208,6 @@ export class LeavesService {
         leaveType: { columns: { id: true, name: true } },
       },
       orderBy: [desc(leaveRequests.startDate)],
-      limit: 100,
     });
 
     const facts = await this.employment.getFactsBatch(
@@ -382,7 +383,8 @@ export class LeavesService {
       const types = await this.db
         .select({ id: leaveTypes.id, name: leaveTypes.name })
         .from(leaveTypes)
-        .where(inArray(leaveTypes.id, leaveTypeIds));
+        .where(inArray(leaveTypes.id, leaveTypeIds))
+        .limit(leaveTypeIds.length);
       leaveTypeMap = new Map(types.map((t) => [t.id, t.name]));
     }
 

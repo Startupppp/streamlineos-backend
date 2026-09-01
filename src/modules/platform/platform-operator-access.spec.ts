@@ -23,7 +23,8 @@ function makeInsertChain(returning: unknown[]): ChainMock {
 function makeUpdateChain(): ChainMock {
   const chain: ChainMock = {};
   chain.set = jest.fn().mockReturnValue(chain);
-  chain.where = jest.fn().mockResolvedValue(undefined);
+  chain.where = jest.fn().mockReturnValue(chain);
+  chain.returning = jest.fn().mockResolvedValue([{ grantId: "grant-1" }]);
   return chain;
 }
 
@@ -103,6 +104,26 @@ describe("PlatformOperatorAccessService.approveGrant", () => {
     const setCall = updateDb.set.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(setCall.status).toBe("active");
     expect(setCall.approverId).toBe("op-bob");
+  });
+
+  it("conflicts when the conditional transition updates no row", async () => {
+    const selectChain = makeSelectChain([{
+      grantId: "grant-1",
+      grantedBy: "op-alice",
+      status: "pending",
+      orgId: "org-1",
+      operatorUserId: "op-alice",
+    }]);
+    const updateChain = makeUpdateChain();
+    updateChain.returning.mockResolvedValue([]);
+    const db = {
+      select: jest.fn().mockReturnValue(selectChain),
+      update: jest.fn().mockReturnValue(updateChain),
+    };
+    const svc = await buildService(db);
+
+    await expect(svc.approveGrant("grant-1", "op-bob")).rejects.toBeInstanceOf(ConflictException);
+    expect(updateChain.where).toHaveBeenCalledWith(expect.anything());
   });
 
   it("throws ConflictException when grant is not pending", async () => {

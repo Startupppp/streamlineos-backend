@@ -16,6 +16,8 @@ import type {
   UpdateCalibrationInput,
 } from "./dto/candidate-records.schemas";
 
+const CALIBRATION_PARTICIPANT_LIMIT = 500;
+
 @Injectable()
 export class RecruitmentCalibrationService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -131,7 +133,8 @@ export class RecruitmentCalibrationService {
       const rows = await this.db
         .select({ userId: calibrationParticipants.userId })
         .from(calibrationParticipants)
-        .where(eq(calibrationParticipants.sessionId, input.id));
+        .where(eq(calibrationParticipants.sessionId, input.id))
+        .limit(CALIBRATION_PARTICIPANT_LIMIT);
       participantIds = rows.map((r) => r.userId);
     }
 

@@ -248,6 +248,7 @@ export class RecruitmentCandidatesService {
       this.db.query.candidateSlaTracking.findMany({
         where: and(eq(candidateSlaTracking.candidateId, candidateId), eq(candidateSlaTracking.orgId, orgId)),
         orderBy: (t, { asc }) => [asc(t.stage)],
+        limit: 100,
       }),
     ]);
 

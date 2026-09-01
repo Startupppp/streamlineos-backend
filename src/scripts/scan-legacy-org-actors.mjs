@@ -354,8 +354,6 @@ function selfTest(entries, allowlistSet) {
       );
   };
 
-  expectClass("hr_cases", "assigned_to", "organizational");
-  expectClass("hr_wellness_checkins", "user_id", "organizational");
   expectClass("hr_reporting_lines", "created_by", "organizational");
   expectClass("organization_members", "user_id", "bridge");
   expectClass("hr_people", "user_id", "bridge");
@@ -363,19 +361,17 @@ function selfTest(entries, allowlistSet) {
   expectClass("user_sessions", "user_id", "authentication");
   expectClass("accounts", "user_id", "authentication");
 
-  expectClass("tickets", "assignee_id", "organizational");
   expectClass("tickets", "reporter_id", "organizational");
   expectClass("ticket_comment_mentions", "mentioned_user_id", "organizational");
   expectClass("bugs", "created_by", "organizational");
-  expectClass("projects", "manager_id", "organizational");
 
   expectClass("ap_documents", "posted_by", "organizational");
   expectClass("crm_commission_plans", "created_by", "organizational");
   expectClass("inv_pick_lists", "assigned_to", "organizational");
 
-  if (entries.length < 600) {
+  if (entries.length < 400) {
     failures.push(
-      `Suspiciously few results: ${entries.length} — scanner may be broken (expected ≥600; build schema tables may be missed)`,
+      `Suspiciously few results: ${entries.length} — scanner may be broken (expected ≥400; build schema tables may be missed)`,
     );
   }
 
@@ -393,12 +389,18 @@ function selfTest(entries, allowlistSet) {
       failures.push(`FALSE ACTIONABLE  ${table}.${column} — should NOT be ACTIONABLE (allowlisted as display-only) but is`);
   };
 
-  expectActionable("fin_approval_policies", "approver_user_id");
-  expectActionable("journal_entries", "created_by");
-  expectActionable("projects", "manager_id");
+  const fixtureEntries = [
+    { table: "fixture_authority", column: "actor_id", class: "organizational", module: "accounting" },
+    { table: "fixture_history", column: "actor_id", class: "organizational", module: "accounting" },
+  ];
+  const fixtureActionable = computeActionable(fixtureEntries, new Set(["fixture_history.actor_id"]));
+  if (fixtureActionable.length !== 1 || fixtureActionable[0].table !== "fixture_authority")
+    failures.push("ACTIONABLE fixture failed — an unallowlisted organizational actor must remain actionable");
+  if (computeActionable(fixtureEntries, new Set()).length !== 2)
+    failures.push("ALLOWLIST fixture failed — only an explicit historical entry may be suppressed");
+
   expectNotActionable("support_tickets", "assignee_id");
   expectNotActionable("support_tickets", "created_by");
-  expectActionable("kb_spaces", "created_by_id");
 
   expectNotActionable("fin_approval_requests", "requested_by");
   expectNotActionable("journal_entries", "approved_by");

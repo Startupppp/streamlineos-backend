@@ -41,7 +41,13 @@ function ipOf(req: Request): string | undefined {
 function humanOperatorId(user: CurrentUserContext): string {
   if (user.principal.kind !== "human-session")
     throw new UnauthorizedException("Operator administration requires a human session");
+  if (!isEligibleOperator(user))
+    throw new UnauthorizedException("Operator administration requires an eligible admin role");
   return user.userId;
+}
+
+function isEligibleOperator(user: CurrentUserContext): boolean {
+  return user.isOrgOwner || ["ADMIN", "OWNER", "ORG_ADMIN"].includes(user.role);
 }
 
 @Controller("platform/operator-access")
@@ -119,8 +125,10 @@ export class PlatformOperatorAccessController {
     @Headers("x-internal-secret") secret: string | undefined,
     @Param("grantId") grantId: string,
     @Body() body: RevokeGrantInput,
+    @CurrentUser() user: CurrentUserContext,
   ): Promise<{ ok: true }> {
     assertInternalSecret(secret);
+    humanOperatorId(user);
     await this.operatorAccess.rejectGrant(grantId, body.reason);
     return { ok: true };
   }
@@ -133,8 +141,10 @@ export class PlatformOperatorAccessController {
   async listGrants(
     @Headers("x-internal-secret") secret: string | undefined,
     @Query() query: ListGrantsQuery,
+    @CurrentUser() user: CurrentUserContext,
   ) {
     assertInternalSecret(secret);
+    humanOperatorId(user);
     return this.operatorAccess.listGrants(query.orgId, query.status);
   }
 
@@ -148,8 +158,10 @@ export class PlatformOperatorAccessController {
     @Headers("x-internal-secret") secret: string | undefined,
     @Param("grantId") grantId: string,
     @Body() body: RevokeGrantInput,
+    @CurrentUser() user: CurrentUserContext,
   ): Promise<{ ok: true }> {
     assertInternalSecret(secret);
+    humanOperatorId(user);
     await this.operatorAccess.revokeGrant(grantId, body.reason);
     return { ok: true };
   }
@@ -162,8 +174,10 @@ export class PlatformOperatorAccessController {
   async listLogs(
     @Headers("x-internal-secret") secret: string | undefined,
     @Query() query: ListLogsQuery,
+    @CurrentUser() user: CurrentUserContext,
   ) {
     assertInternalSecret(secret);
+    humanOperatorId(user);
     return this.operatorAccess.listLogs(query.orgId, query.limit);
   }
 }

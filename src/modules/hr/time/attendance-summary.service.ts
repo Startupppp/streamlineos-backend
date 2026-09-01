@@ -68,6 +68,23 @@ interface AttendanceSummaryScope {
   dataScope: Awaited<ReturnType<typeof resolveAttendanceReadScope>>;
 }
 
+const ATTENDANCE_READ_BATCH_SIZE = 500;
+const MEMBER_READ_BATCH_SIZE = 100;
+
+async function readKeysetBatches<T>(input: {
+  fetch: (afterId: number | null, limit: number) => Promise<T[]>;
+  getId: (row: T) => number;
+}) {
+  const rows: T[] = [];
+  let afterId: number | null = null;
+  while (true) {
+    const batch = await input.fetch(afterId, ATTENDANCE_READ_BATCH_SIZE);
+    rows.push(...batch);
+    if (batch.length < ATTENDANCE_READ_BATCH_SIZE) return rows;
+    afterId = input.getId(batch[batch.length - 1]!);
+  }
+}
+
 @Injectable()
 export class AttendanceSummaryService {
   constructor(
@@ -110,18 +127,24 @@ export class AttendanceSummaryService {
           pagination: { limit: 0, nextCursor: null, hasMore: false },
         };
       }
-      members = await this.db
-        .select({ membershipId: organizationMembers.id, userId: organizationMembers.userId, name: users.name, firstName: users.firstName, lastName: users.lastName, email: users.email })
-        .from(organizationMembers)
-        .innerJoin(users, eq(users.id, organizationMembers.userId))
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.status, "ACTIVE"),
-            eq(users.isActive, true),
-            inArray(organizationMembers.userId, explicitUserIds),
-          ),
-        );
+      members = [];
+      for (let offset = 0; offset < explicitUserIds.length; offset += MEMBER_READ_BATCH_SIZE) {
+        const userIdBatch = explicitUserIds.slice(offset, offset + MEMBER_READ_BATCH_SIZE);
+        const memberBatch = await this.db
+          .select({ membershipId: organizationMembers.id, userId: organizationMembers.userId, name: users.name, firstName: users.firstName, lastName: users.lastName, email: users.email })
+          .from(organizationMembers)
+          .innerJoin(users, eq(users.id, organizationMembers.userId))
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.status, "ACTIVE"),
+              eq(users.isActive, true),
+              inArray(organizationMembers.userId, userIdBatch),
+            ),
+          )
+          .limit(userIdBatch.length);
+        members.push(...memberBatch);
+      }
       pagination = {
         limit: members.length,
         nextCursor: null,
@@ -181,43 +204,53 @@ export class AttendanceSummaryService {
 
     const [orgRow, attendanceRows, regularizationRows, holidayRows] = await Promise.all([
       this.db.select({ timezone: organizations.timezone }).from(organizations).where(eq(organizations.id, orgId)).limit(1),
-      this.db
-        .select({
-          membershipId: attendance.userMembershipId,
-          date: attendance.date,
-          checkIn: attendance.checkIn,
-          checkOut: attendance.checkOut,
-          workHours: attendance.workHours,
-          isOvertime: attendance.isOvertime,
-        })
-        .from(attendance)
-        .where(
-          and(
+      readKeysetBatches({
+        fetch: (afterId, batchSize) => this.db
+          .select({
+            id: attendance.id,
+            membershipId: attendance.userMembershipId,
+            date: attendance.date,
+            checkIn: attendance.checkIn,
+            checkOut: attendance.checkOut,
+            workHours: attendance.workHours,
+            isOvertime: attendance.isOvertime,
+          })
+          .from(attendance)
+          .where(and(
             eq(attendance.orgId, orgId),
             inArray(attendance.userMembershipId, membershipIds),
             gte(attendance.date, periodStart),
             lte(attendance.date, periodEnd),
             isNotNull(attendance.checkIn),
-          ),
-        ),
+            ...(afterId === null ? [] : [gt(attendance.id, afterId)]),
+          ))
+          .orderBy(asc(attendance.id))
+          .limit(batchSize),
+        getId: (row) => row.id,
+      }),
 
-      this.db
-        .select({
-          membershipId: hrAttendanceRegularizations.userMembershipId,
-          attendanceDate: hrAttendanceRegularizations.attendanceDate,
-          requestedCheckIn: hrAttendanceRegularizations.requestedCheckIn,
-          requestedCheckOut: hrAttendanceRegularizations.requestedCheckOut,
-        })
-        .from(hrAttendanceRegularizations)
-        .where(
-          and(
+      readKeysetBatches({
+        fetch: (afterId, batchSize) => this.db
+          .select({
+            id: hrAttendanceRegularizations.id,
+            membershipId: hrAttendanceRegularizations.userMembershipId,
+            attendanceDate: hrAttendanceRegularizations.attendanceDate,
+            requestedCheckIn: hrAttendanceRegularizations.requestedCheckIn,
+            requestedCheckOut: hrAttendanceRegularizations.requestedCheckOut,
+          })
+          .from(hrAttendanceRegularizations)
+          .where(and(
             eq(hrAttendanceRegularizations.orgId, orgId),
             inArray(hrAttendanceRegularizations.userMembershipId, membershipIds),
             eq(hrAttendanceRegularizations.status, "APPROVED"),
             gte(hrAttendanceRegularizations.attendanceDate, periodStart),
             lte(hrAttendanceRegularizations.attendanceDate, periodEnd),
-          ),
-        ),
+            ...(afterId === null ? [] : [gt(hrAttendanceRegularizations.id, afterId)]),
+          ))
+          .orderBy(asc(hrAttendanceRegularizations.id))
+          .limit(batchSize),
+        getId: (row) => row.id,
+      }),
 
       listCompatibleHolidays(this.db, orgId, periodStart, periodEnd),
     ]);
@@ -258,7 +291,8 @@ export class AttendanceSummaryService {
         .from(rosterEntries)
         .innerJoin(rosters, and(eq(rosters.id, rosterEntries.rosterId), eq(rosters.orgId, orgId)))
         .innerJoin(shiftTemplates, eq(shiftTemplates.id, rosterEntries.shiftId))
-        .where(and(eq(rosterEntries.orgId, orgId), inArray(rosterEntries.userMembershipId, membershipIds), eq(rosterEntries.date, periodStart))),
+        .where(and(eq(rosterEntries.orgId, orgId), inArray(rosterEntries.userMembershipId, membershipIds), eq(rosterEntries.date, periodStart)))
+        .limit(membershipIds.length),
 
       this.db
         .select({
@@ -278,7 +312,8 @@ export class AttendanceSummaryService {
             lte(employeeShiftAssignments.effectiveFrom, periodStart),
             or(isNull(employeeShiftAssignments.effectiveTo), gte(employeeShiftAssignments.effectiveTo, periodStart)),
           ),
-        ),
+        )
+        .limit(membershipIds.length),
     ]);
 
     const rosterShiftByUser = new Map<string, ShiftInfo>();

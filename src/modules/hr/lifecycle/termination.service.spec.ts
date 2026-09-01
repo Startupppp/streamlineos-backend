@@ -10,10 +10,12 @@ describe("TerminationService.create - structural owner block", () => {
   function buildSelectChain(): Record<string, jest.Mock> {
     const chain: Record<string, jest.Mock> = {
       from: jest.fn(),
-      where: jest.fn().mockResolvedValue([]),
+      where: jest.fn(),
+      limit: jest.fn().mockResolvedValue([]),
       innerJoin: jest.fn(),
     };
     chain.from.mockReturnValue(chain);
+    chain.where.mockReturnValue(chain);
     chain.innerJoin.mockReturnValue(chain);
     return chain;
   }

@@ -1,7 +1,18 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
-import { keysetAfterValue, keysetBeforeId } from "../../../common/pagination/keyset";
+import {
+  buildCursorPage,
+  decodeCursor,
+} from "../../../common/pagination/cursor";
+import {
+  keysetAfterValue,
+  keysetBeforeId,
+} from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -31,10 +42,15 @@ function decodePaginationCursor(cursor: string | undefined) {
 function isDateOnly(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
-  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  return (
+    !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
+  );
 }
 
-const COUNTRY_PRESET_TASKS: Record<string, { name: string; dueDayOfMonth: number }[]> = {
+const COUNTRY_PRESET_TASKS: Record<
+  string,
+  { name: string; dueDayOfMonth: number }[]
+> = {
   IN: [
     { name: "PF Monthly Return (ECR)", dueDayOfMonth: 15 },
     { name: "ESI Monthly Contribution", dueDayOfMonth: 15 },
@@ -60,22 +76,42 @@ export class PayrollComplianceService {
     private readonly audit: HrAuditService,
   ) {}
 
-  async createVarianceApproval(orgId: string, actorId: string, input: CreateVarianceApprovalInput) {
-    const [created] = await this.db.insert(hrPayrollVarianceApprovals).values({
+  async createVarianceApproval(
+    orgId: string,
+    actorId: string,
+    input: CreateVarianceApprovalInput,
+  ) {
+    const [created] = await this.db
+      .insert(hrPayrollVarianceApprovals)
+      .values({
+        orgId,
+        payrollPeriodKey: input.payrollPeriodKey,
+        variancePct: String(input.variancePct),
+        thresholdPct: String(input.thresholdPct),
+      })
+      .returning();
+    await this.audit.log({
       orgId,
-      payrollPeriodKey: input.payrollPeriodKey,
-      variancePct: String(input.variancePct),
-      thresholdPct: String(input.thresholdPct),
-    }).returning();
-    await this.audit.log({ orgId, actorId, entityType: "hr_payroll_variance_approvals", entityId: String(created!.id), action: "created", after: created });
+      actorId,
+      entityType: "hr_payroll_variance_approvals",
+      entityId: String(created!.id),
+      action: "created",
+      after: created,
+    });
     return created;
   }
 
-  async listVarianceApprovals(orgId: string, input: ListVarianceApprovalsInput) {
+  async listVarianceApprovals(
+    orgId: string,
+    input: ListVarianceApprovalsInput,
+  ) {
     const { cursor, limit, status, payrollPeriodKey } = input;
     const conditions = [eq(hrPayrollVarianceApprovals.orgId, orgId)];
     if (status) conditions.push(eq(hrPayrollVarianceApprovals.status, status));
-    if (payrollPeriodKey) conditions.push(eq(hrPayrollVarianceApprovals.payrollPeriodKey, payrollPeriodKey));
+    if (payrollPeriodKey)
+      conditions.push(
+        eq(hrPayrollVarianceApprovals.payrollPeriodKey, payrollPeriodKey),
+      );
     const position = decodePaginationCursor(cursor);
     if (position)
       conditions.push(
@@ -102,24 +138,69 @@ export class PayrollComplianceService {
     }));
   }
 
-  async resolveVarianceApproval(orgId: string, id: number, actorId: string, input: ResolveVarianceInput) {
-    const [existing] = await this.db.select().from(hrPayrollVarianceApprovals).where(and(eq(hrPayrollVarianceApprovals.id, id), eq(hrPayrollVarianceApprovals.orgId, orgId))).limit(1);
+  async resolveVarianceApproval(
+    orgId: string,
+    id: number,
+    actorId: string,
+    input: ResolveVarianceInput,
+  ) {
+    const [existing] = await this.db
+      .select()
+      .from(hrPayrollVarianceApprovals)
+      .where(
+        and(
+          eq(hrPayrollVarianceApprovals.id, id),
+          eq(hrPayrollVarianceApprovals.orgId, orgId),
+        ),
+      )
+      .limit(1);
     if (!existing) throw new NotFoundException("Variance approval not found");
 
-    const [updated] = await this.db.update(hrPayrollVarianceApprovals).set({
-      status: input.action,
-      approverId: actorId,
-      note: input.note ?? null,
-      resolvedAt: new Date(),
-    }).where(and(eq(hrPayrollVarianceApprovals.id, id), eq(hrPayrollVarianceApprovals.orgId, orgId))).returning();
+    const [updated] = await this.db
+      .update(hrPayrollVarianceApprovals)
+      .set({
+        status: input.action,
+        approverId: actorId,
+        note: input.note ?? null,
+        resolvedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(hrPayrollVarianceApprovals.id, id),
+          eq(hrPayrollVarianceApprovals.orgId, orgId),
+        ),
+      )
+      .returning();
 
-    await this.audit.log({ orgId, actorId, entityType: "hr_payroll_variance_approvals", entityId: String(id), action: input.action, before: { status: existing.status }, after: { status: input.action } });
+    await this.audit.log({
+      orgId,
+      actorId,
+      entityType: "hr_payroll_variance_approvals",
+      entityId: String(id),
+      action: input.action,
+      before: { status: existing.status },
+      after: { status: input.action },
+    });
     return updated;
   }
 
-  async createArrears(orgId: string, actorId: string, input: CreateArrearsInput) {
-    const [created] = await this.db.insert(hrArrearsAdjustments).values({ orgId, ...input, createdBy: actorId }).returning();
-    await this.audit.log({ orgId, actorId, entityType: "hr_arrears_adjustments", entityId: String(created!.id), action: "created", after: created });
+  async createArrears(
+    orgId: string,
+    actorId: string,
+    input: CreateArrearsInput,
+  ) {
+    const [created] = await this.db
+      .insert(hrArrearsAdjustments)
+      .values({ orgId, ...input, createdBy: actorId })
+      .returning();
+    await this.audit.log({
+      orgId,
+      actorId,
+      entityType: "hr_arrears_adjustments",
+      entityId: String(created!.id),
+      action: "created",
+      after: created,
+    });
     return created;
   }
 
@@ -131,14 +212,21 @@ export class PayrollComplianceService {
     const position = decodePaginationCursor(cursor);
     if (position)
       conditions.push(
-        keysetBeforeId(hrArrearsAdjustments.createdAt, hrArrearsAdjustments.id, position),
+        keysetBeforeId(
+          hrArrearsAdjustments.createdAt,
+          hrArrearsAdjustments.id,
+          position,
+        ),
       );
 
     const rows = await this.db
       .select()
       .from(hrArrearsAdjustments)
       .where(and(...conditions))
-      .orderBy(desc(hrArrearsAdjustments.createdAt), desc(hrArrearsAdjustments.id))
+      .orderBy(
+        desc(hrArrearsAdjustments.createdAt),
+        desc(hrArrearsAdjustments.id),
+      )
       .limit(limit + 1);
 
     return buildCursorPage(rows, limit, (adjustment) => ({
@@ -148,31 +236,76 @@ export class PayrollComplianceService {
   }
 
   async applyArrears(orgId: string, id: number, actorId: string) {
-    const [existing] = await this.db.select().from(hrArrearsAdjustments).where(and(eq(hrArrearsAdjustments.id, id), eq(hrArrearsAdjustments.orgId, orgId))).limit(1);
+    const [existing] = await this.db
+      .select()
+      .from(hrArrearsAdjustments)
+      .where(
+        and(
+          eq(hrArrearsAdjustments.id, id),
+          eq(hrArrearsAdjustments.orgId, orgId),
+        ),
+      )
+      .limit(1);
     if (!existing) throw new NotFoundException("Arrears adjustment not found");
 
-    const [updated] = await this.db.update(hrArrearsAdjustments).set({ status: "applied", appliedAt: new Date() }).where(and(eq(hrArrearsAdjustments.id, id), eq(hrArrearsAdjustments.orgId, orgId))).returning();
-    await this.audit.log({ orgId, actorId, entityType: "hr_arrears_adjustments", entityId: String(id), action: "applied", before: { status: "pending" }, after: { status: "applied" } });
+    const [updated] = await this.db
+      .update(hrArrearsAdjustments)
+      .set({ status: "applied", appliedAt: new Date() })
+      .where(
+        and(
+          eq(hrArrearsAdjustments.id, id),
+          eq(hrArrearsAdjustments.orgId, orgId),
+        ),
+      )
+      .returning();
+    await this.audit.log({
+      orgId,
+      actorId,
+      entityType: "hr_arrears_adjustments",
+      entityId: String(id),
+      action: "applied",
+      before: { status: "pending" },
+      after: { status: "applied" },
+    });
     return updated;
   }
 
-  async createComplianceTask(orgId: string, actorId: string, input: CreateComplianceTaskInput) {
-    const [created] = await this.db.insert(hrPayrollComplianceTasks).values({ orgId, ...input }).returning();
-    await this.audit.log({ orgId, actorId, entityType: "hr_payroll_compliance_tasks", entityId: String(created!.id), action: "created", after: created });
+  async createComplianceTask(
+    orgId: string,
+    actorId: string,
+    input: CreateComplianceTaskInput,
+  ) {
+    const [created] = await this.db
+      .insert(hrPayrollComplianceTasks)
+      .values({ orgId, ...input })
+      .returning();
+    await this.audit.log({
+      orgId,
+      actorId,
+      entityType: "hr_payroll_compliance_tasks",
+      entityId: String(created!.id),
+      action: "created",
+      after: created,
+    });
     return created;
   }
 
   async listComplianceTasks(orgId: string, input: ListComplianceTasksInput) {
     const { cursor, limit, countryCode, status } = input;
     const conditions = [eq(hrPayrollComplianceTasks.orgId, orgId)];
-    if (countryCode) conditions.push(eq(hrPayrollComplianceTasks.countryCode, countryCode));
+    if (countryCode)
+      conditions.push(eq(hrPayrollComplianceTasks.countryCode, countryCode));
     if (status) conditions.push(eq(hrPayrollComplianceTasks.status, status));
     const position = decodePaginationCursor(cursor);
     if (position) {
       if (!isDateOnly(position.sortValue))
         throw new BadRequestException("Invalid pagination cursor");
       conditions.push(
-        keysetAfterValue(hrPayrollComplianceTasks.dueDate, hrPayrollComplianceTasks.id, position),
+        keysetAfterValue(
+          hrPayrollComplianceTasks.dueDate,
+          hrPayrollComplianceTasks.id,
+          position,
+        ),
       );
     }
 
@@ -180,7 +313,10 @@ export class PayrollComplianceService {
       .select()
       .from(hrPayrollComplianceTasks)
       .where(and(...conditions))
-      .orderBy(asc(hrPayrollComplianceTasks.dueDate), asc(hrPayrollComplianceTasks.id))
+      .orderBy(
+        asc(hrPayrollComplianceTasks.dueDate),
+        asc(hrPayrollComplianceTasks.id),
+      )
       .limit(limit + 1);
 
     return buildCursorPage(rows, limit, (task) => ({
@@ -189,8 +325,22 @@ export class PayrollComplianceService {
     }));
   }
 
-  async updateComplianceTask(orgId: string, id: number, actorId: string, input: UpdateComplianceTaskInput) {
-    const [existing] = await this.db.select().from(hrPayrollComplianceTasks).where(and(eq(hrPayrollComplianceTasks.id, id), eq(hrPayrollComplianceTasks.orgId, orgId))).limit(1);
+  async updateComplianceTask(
+    orgId: string,
+    id: number,
+    actorId: string,
+    input: UpdateComplianceTaskInput,
+  ) {
+    const [existing] = await this.db
+      .select()
+      .from(hrPayrollComplianceTasks)
+      .where(
+        and(
+          eq(hrPayrollComplianceTasks.id, id),
+          eq(hrPayrollComplianceTasks.orgId, orgId),
+        ),
+      )
+      .limit(1);
     if (!existing) throw new NotFoundException("Compliance task not found");
 
     const setData: Record<string, unknown> = { ...input };
@@ -199,14 +349,37 @@ export class PayrollComplianceService {
       setData["completedAt"] = new Date();
     }
 
-    const [updated] = await this.db.update(hrPayrollComplianceTasks).set(setData as never).where(and(eq(hrPayrollComplianceTasks.id, id), eq(hrPayrollComplianceTasks.orgId, orgId))).returning();
-    await this.audit.log({ orgId, actorId, entityType: "hr_payroll_compliance_tasks", entityId: String(id), action: "updated", before: existing, after: updated });
+    const [updated] = await this.db
+      .update(hrPayrollComplianceTasks)
+      .set(setData as never)
+      .where(
+        and(
+          eq(hrPayrollComplianceTasks.id, id),
+          eq(hrPayrollComplianceTasks.orgId, orgId),
+        ),
+      )
+      .returning();
+    await this.audit.log({
+      orgId,
+      actorId,
+      entityType: "hr_payroll_compliance_tasks",
+      entityId: String(id),
+      action: "updated",
+      before: existing,
+      after: updated,
+    });
     return updated;
   }
 
-  async seedCountryPresets(orgId: string, actorId: string, countryCode: string, periodKey: string) {
+  async seedCountryPresets(
+    orgId: string,
+    actorId: string,
+    countryCode: string,
+    periodKey: string,
+  ) {
     const presets = COUNTRY_PRESET_TASKS[countryCode.toUpperCase()];
-    if (!presets) return { seeded: 0, message: `No presets for country ${countryCode}` };
+    if (!presets)
+      return { seeded: 0, message: `No presets for country ${countryCode}` };
 
     const [year, month] = periodKey.split("-");
     const upperCode = countryCode.toUpperCase();
@@ -221,7 +394,8 @@ export class PayrollComplianceService {
           eq(hrPayrollComplianceTasks.countryCode, upperCode),
           inArray(hrPayrollComplianceTasks.name, presetNames),
         ),
-      );
+      )
+      .limit(presetNames.length);
 
     const existingNames = new Set(existing.map((r) => r.name));
     const tasks = presets
@@ -235,7 +409,10 @@ export class PayrollComplianceService {
 
     if (tasks.length === 0) return { seeded: 0 };
 
-    const created = await this.db.insert(hrPayrollComplianceTasks).values(tasks).returning();
+    const created = await this.db
+      .insert(hrPayrollComplianceTasks)
+      .values(tasks)
+      .returning();
     return { seeded: created.length };
   }
 }

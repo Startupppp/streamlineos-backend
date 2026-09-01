@@ -260,8 +260,8 @@ export class AiCreditsService {
     }
   }
 
-  async listTransactions(orgId: string, page: number, limit: number) {
-    return this.packs.listTransactions(orgId, page, limit);
+  async listTransactions(orgId: string, query: { cursor?: string; limit: number }) {
+    return this.packs.listTransactions(orgId, query);
   }
 
   async updateAutoTopUp(

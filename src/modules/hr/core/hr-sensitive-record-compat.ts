@@ -33,7 +33,8 @@ export async function loadSensitiveRecordCollections(
           eq(hrEmployeeSensitiveDisciplinaryRecords.sensitiveFieldsId, sensitiveFieldsId),
         ),
       )
-      .orderBy(asc(hrEmployeeSensitiveDisciplinaryRecords.sourceOrdinal));
+      .orderBy(asc(hrEmployeeSensitiveDisciplinaryRecords.sourceOrdinal))
+      .limit(1000);
     collections.disciplinaryRecords = disciplinaryRows.map(
       (disciplinaryRow) => disciplinaryRow.recordPayload,
     );
@@ -53,7 +54,8 @@ export async function loadSensitiveRecordCollections(
           eq(hrEmployeeSensitiveGrievanceRecords.sensitiveFieldsId, sensitiveFieldsId),
         ),
       )
-      .orderBy(asc(hrEmployeeSensitiveGrievanceRecords.sourceOrdinal));
+      .orderBy(asc(hrEmployeeSensitiveGrievanceRecords.sourceOrdinal))
+      .limit(1000);
     collections.grievanceRecords = grievanceRows.map(
       (grievanceRow) => grievanceRow.recordPayload,
     );

@@ -74,8 +74,7 @@ export class PortalAccessService {
       position ? keysetBeforeUuid(portalMemberships.createdAt, portalMemberships.portalMembershipId, position) : undefined,
     );
 
-    const [rows, [totalRow]] = await Promise.all([
-      this.db
+    const rows = await this.db
         .select({
           portalMembershipId: portalMemberships.portalMembershipId,
           organizationId: portalMemberships.organizationId,
@@ -102,8 +101,7 @@ export class PortalAccessService {
         .where(conditions)
         .orderBy(desc(portalMemberships.createdAt), desc(portalMemberships.portalMembershipId))
         .limit(limit + 1),
-    ]);
-    return buildCursorPage(rows, limit, (row) => ({ sortValue: row.createdAt, id: row.portalMembershipId }));
+    return buildCursorPage(rows, limit, (row) => ({ sortValue: row.createdAt.toISOString(), id: row.portalMembershipId }));
   }
 
   async getMembership(organizationId: string, portalMembershipId: string) {
@@ -207,8 +205,7 @@ export class PortalAccessService {
       position ? keysetBeforeUuid(projectClientGrants.createdAt, projectClientGrants.projectClientGrantId, position) : undefined,
     );
 
-    const [rows, [totalRow]] = await Promise.all([
-      this.db
+    const rows = await this.db
         .select({
           projectClientGrantId: projectClientGrants.projectClientGrantId,
           organizationId: projectClientGrants.organizationId,
@@ -240,8 +237,7 @@ export class PortalAccessService {
         .where(conditions)
         .orderBy(desc(projectClientGrants.createdAt), desc(projectClientGrants.projectClientGrantId))
         .limit(limit + 1),
-    ]);
-    return buildCursorPage(rows, limit, (row) => ({ sortValue: row.createdAt, id: row.projectClientGrantId }));
+    return buildCursorPage(rows, limit, (row) => ({ sortValue: row.createdAt.toISOString(), id: row.projectClientGrantId }));
   }
 
   async getGrant(organizationId: string, projectClientGrantId: string) {

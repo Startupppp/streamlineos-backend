@@ -20,6 +20,7 @@ import type {
   CreateEnrollmentWindowInput,
   BenefitPlansQuery,
 } from "./dto/benefits.schemas";
+import { boundHrReadLimit } from "../hr-read-limits";
 
 type BenefitPlansCursorScope = {
   orgId: string;
@@ -66,7 +67,8 @@ export class HrBenefitsPlansService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listPlans(orgId: string, query: BenefitPlansQuery) {
-    const { cursor, status, category, limit } = query;
+    const { cursor, status, category } = query;
+    const limit = boundHrReadLimit(query.limit);
     const cursorScope = {
       orgId,
       status: status ?? null,

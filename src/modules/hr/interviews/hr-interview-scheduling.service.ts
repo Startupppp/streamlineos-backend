@@ -349,7 +349,8 @@ export class HrInterviewSchedulingService {
         email: users.email,
       })
       .from(users)
-      .where(inArray(users.id, input.interviewers));
+      .where(inArray(users.id, input.interviewers))
+      .limit(Math.max(input.interviewers.length, 1));
 
     const tasks: Promise<void>[] = [];
 
@@ -435,7 +436,8 @@ export class HrInterviewSchedulingService {
         eq(organizationMembers.orgId, orgId),
         eq(organizationMembers.status, "ACTIVE"),
         inArray(organizationMembers.userId, uniqueUserIds),
-      ));
+      ))
+      .limit(Math.max(uniqueUserIds.length, 1));
     if (members.length !== uniqueUserIds.length) {
       throw new BadRequestException("Every interviewer must have an active organization membership.");
     }

@@ -16,6 +16,7 @@ import type { HrAutomationEvent } from "./hr-automation-events";
 // so HR automation webhooks silently never dispatch.
 import { HrWebhooksService } from "./hr-webhooks.service";
 import { evaluateNormalizedCondition, evaluateNormalizedConditions, type NormalizedCondition } from "../../automation/shared-condition-evaluator";
+import { boundHrReadLimit } from "../hr-read-limits";
 
 const MAX_DEPTH = 3;
 const COOLDOWN_MS = 5_000;
@@ -73,6 +74,7 @@ export class HrAutomationEngineService {
         isNull(hrAutomationRules.deletedAt),
       ),
       columns: { id: true, conditions: true, actions: true, webhookSecret: true },
+      limit: 100,
     });
 
     if (rules.length === 0) return;
@@ -202,7 +204,8 @@ export class HrAutomationEngineService {
   }
 
   async listRules(orgId: string, params: { search?: string; triggerEvent?: string; isEnabled?: boolean; page: number; limit: number }) {
-    const { page, limit } = params;
+    const { page } = params;
+    const limit = boundHrReadLimit(params.limit);
     const offset = (page - 1) * limit;
 
     const baseWhere = and(
@@ -312,7 +315,8 @@ export class HrAutomationEngineService {
       this.db
         .select({ total: sql<number>`count(*)::int` })
         .from(hrAutomationRuns)
-        .where(where),
+        .where(where)
+        .limit(1),
     ]);
 
     const total = countRows[0]?.total ?? 0;

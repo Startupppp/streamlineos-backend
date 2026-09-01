@@ -318,7 +318,7 @@ export class EssService {
       await Promise.all([
         this.db.query.employeeSalaryProfiles.findFirst({
           where: and(
-            eq(employeeSalaryProfiles.userMembershipId, membershipId),
+            eq(employeeSalaryProfiles.userMembershipId, membershipId ?? 0),
             eq(employeeSalaryProfiles.orgId, orgId),
             eq(employeeSalaryProfiles.status, "ACTIVE"),
           ),
@@ -330,7 +330,7 @@ export class EssService {
           .innerJoin(payrollRuns, eq(payrollRuns.id, payslipPublications.runId))
           .where(
             and(
-              eq(payslipPublications.userMembershipId, membershipId),
+              eq(payslipPublications.userMembershipId, membershipId ?? 0),
               eq(payslipPublications.orgId, orgId),
               eq(payslipPublications.status, "PUBLISHED"),
               gte(payrollRuns.month, fyStart),
@@ -343,7 +343,7 @@ export class EssService {
           })
           .from(salaryLoans)
           .where(and(
-            eq(salaryLoans.userMembershipId, membershipId),
+            eq(salaryLoans.userMembershipId, membershipId ?? 0),
             eq(salaryLoans.orgId, orgId),
             inArray(salaryLoans.status, ["APPROVED", "ACTIVE"]),
           )),
@@ -410,7 +410,7 @@ export class EssService {
         .from(payrollRunEmployees)
         .where(
           and(
-            eq(payrollRunEmployees.userMembershipId, membershipId),
+            eq(payrollRunEmployees.userMembershipId, membershipId ?? 0),
             inArray(
               payrollRunEmployees.runId,
               fyPubs.map((p) => p.runId),

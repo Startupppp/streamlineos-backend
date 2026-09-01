@@ -82,7 +82,7 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-comp/payroll-compliance.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-ops/accommodations/accommodations.service.ts": {
@@ -146,8 +146,9 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/import/hr-import.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "KEYSET-MIGRATED",
+      "note": "Import commit and rollback consume valid/committed rows in ascending ID batches of 500",
+      "justification": "Each job-scoped row workflow advances an ascending UUID cursor and processes the complete set without an in-memory full-job read 2026-09-01"
     },
     "/hr/lifecycle/onboarding-views.service.ts": {
       "verdict": "ACTIONABLE",
@@ -158,7 +159,7 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/payroll-inputs/payroll-input-snapshots.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/payroll-inputs/payroll-inputs.service.ts": {
@@ -186,7 +187,7 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/attendance-summary.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/attendance.service.ts": {
@@ -198,11 +199,11 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/workflows/hr-workflow-definitions.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/workflows/hr-workflow-instances.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/inventory/channels/channels.service.ts": {
@@ -490,9 +491,9 @@
       "justification": "CoA tree bounded at 50-500 accounts per org; cached 120s"
     },
     "/accounting/settings/dimensions.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Accounting dimensions read remains unbounded; requires a source-backed bounded projection or proven small-set invariant",
-      "justification": "dimensions 3-10 per org cached; values 10-200 per dimension bounded config catalog"
+      "verdict": "BOUNDED",
+      "note": "listDimensions and listValues use limit+1 overflow detection; callers receive an explicit error rather than a silently truncated growing configuration set",
+      "justification": "Source and tests enforce 101-dimension and 501-value overflow boundaries"
     },
     "/accounting/settings/opening-balances.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -844,9 +845,9 @@
       "justification": "has explicit .limit(); violations are per-project/ticket incident reads; gate missed limit placement 2026-09-01"
     },
     "/build/meetings/meetings.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Meeting record read remains unbounded on at least one path; requires source-backed continuation or explicit overflow handling",
-      "justification": "per-meeting sub-reads (attendees, action items, standup entries) bounded by meeting scope; 9 aggregate projections (count); attendees/items per meeting bounded by meeting design 2026-09-01"
+      "verdict": "BOUNDED",
+      "note": "listMeetings uses a tenant/project-scoped limit+1 read and rejects overflow instead of silently truncating the meeting list",
+      "justification": "MeetingsService.listMeetings overflow test asserts the 101-row probe and explicit BadRequestException"
     },
     "/build/qa/test-runs.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -1470,19 +1471,19 @@
       "justification": "goal reads bounded by orgId+ownerId filter or goalId; single-record or filtered list 2026-09-01"
     },
     "/hr/analytics-plus/hr-analytics-plus.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/automations/hr-automation-engine.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/benefits/hr-benefits-enrollment.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/benefits/hr-benefits-plans.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/cases/hr-disciplinary.service.ts": {
@@ -1498,7 +1499,7 @@
       "note": "Template list has an explicit 100-row result cap"
     },
     "/hr/config/hr-holidays.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/config/hr-leave-blackout.service.ts": {
@@ -1506,19 +1507,19 @@
       "note": "Date-filtered blackout list has an explicit 100-row result cap"
     },
     "/hr/config/hr-salary-structures.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/core/hr-custom-fields.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/core/hr-sensitive-record-compat.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/assets.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/background-verification.service.ts": {
@@ -1526,79 +1527,79 @@
       "note": "Verification list has an explicit 100-row result cap"
     },
     "/hr/directory/celebrations.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/employee-analytics.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/employee-bulk-onboarding.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/employee-mutations.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/employee-skills-page-query.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/employees.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/org-structure.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/salary-profile-seed.helper.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-comp/equity.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-comp/payroll-compliance.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-ops/accommodations/accommodations.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-ops/emergency/emergency.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-ops/identity/identity.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/global/compliance-requirements.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/governance/labor/labor.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/governance/legal-holds/legal-holds.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/governance/positions/positions-taxonomy.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/governance/positions/positions-workflow-utils.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/helpdesk/hr-helpdesk.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/hr-calendar-source.ts": {
@@ -1614,15 +1615,16 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/interviews/hr-interview-booking.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Booking notification recipient lookups use explicit single-row limits",
+      "justification": "Candidate lookup is tenant-scoped and creator lookup is user-scoped; both projections are explicitly limited to one row 2026-09-01"
     },
     "/hr/interviews/hr-interview-scheduling.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/interviews/hr-interviewers.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/interviews/hr-interviews.service.ts": {
@@ -1634,59 +1636,60 @@
       "note": "Offer template list has an explicit 100-row result cap"
     },
     "/hr/interviews/hr-scorecards.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "KEYSET-MIGRATED",
+      "note": "Scorecard analytics consumes the selected time window in ascending ID batches of 500",
+      "justification": "Analytics preserves complete aggregation while each joined scorecard read is bounded and advances an ID cursor 2026-09-01"
     },
     "/hr/lifecycle/hr-analytics.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/lifecycle/hr-dashboard-reports.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/lifecycle/hr-dashboard.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/lifecycle/probation-review-reader.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/lifecycle/resignation-jobs.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/lifecycle/termination-relational-compat.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/lifecycle/termination.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-details.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-initiation-dispatch.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-initiation.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-requirements.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-submission.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-task-dependency-compat.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-task.service.ts": {
@@ -1706,47 +1709,47 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/payroll-inputs/payroll-input-snapshots.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/payroll-inputs/payroll-inputs-build.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/payroll-inputs/payroll-inputs.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/calibration.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/document-tag-compat.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/engagement-badges.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/engagement-communities-campaigns.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Community and member reads have explicit 500-row caps; community pages use keyset pagination"
     },
     "/hr/performance/engagement-mood-polls.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "AGGREGATE",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/engagement.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/feedback.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/kpis.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/review-cycles.service.ts": {
@@ -1754,27 +1757,27 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/policies/hr-policies.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Policy lists and existence checks are capped; activation archives lower-priority policies in one update"
     },
     "/hr/policies/hr-policy-conflict.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Conflict scans have an explicit 500-policy cap"
     },
     "/hr/policies/hr-policy-evaluation.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Employee attribute and candidate-policy reads have explicit 1000-row caps"
     },
     "/hr/recruitment/recruitment-calibration.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Calibration sessions and participant reads are explicitly capped"
     },
     "/hr/recruitment/recruitment-candidate-ai.service.ts": {
       "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-candidate-docs.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-candidate-ops.service.ts": {
@@ -1786,7 +1789,7 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-candidates.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-job-boards.service.ts": {
@@ -1794,27 +1797,27 @@
       "note": "Per-job board posting list has an explicit 100-row result cap"
     },
     "/hr/recruitment/recruitment-jobs.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Job and internal-job collection reads have explicit page/result caps"
     },
     "/hr/recruitment/recruitment-offers.service.ts": {
       "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-pipeline.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Pipeline candidates are capped per stage and SLA hydration is capped"
     },
     "/hr/recruitment/recruitment-recruiters.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Portal and recruiter directory reads have explicit result caps; activity is query-limited"
     },
     "/hr/recruitment/recruitment-referral-checks.service.ts": {
       "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-requisitions.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-sourcing.service.ts": {
@@ -1822,19 +1825,19 @@
       "note": "Candidate and external referral lists each have explicit 200-row result caps"
     },
     "/hr/settings-hub/hr-settings-hub.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Policy, template, and workflow version lineages have explicit 500-item caps"
     },
     "/hr/time/attendance-clock.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/attendance-event-writer.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/attendance-summary.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/attendance.service.ts": {
@@ -1842,7 +1845,7 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/biometric.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/geofencing.service.ts": {
@@ -1858,31 +1861,31 @@
       "note": "Organization leave-type configuration has a hard 100-row result cap"
     },
     "/hr/time/leaves-page.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/leaves.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/overtime.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/workflows/hr-workflow-definitions.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/workflows/hr-workflow-engine.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/workflows/hr-workflow-instances.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/workflows/hr-workflow-step-runner.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/integrations/core/integrations.service.ts": {
@@ -2475,11 +2478,11 @@
       "justification": "subject reads bounded by subjectId (single-record lookup) 2026-09-01"
     },
     "/payroll/__tests__/payroll-db-integration.e2e-spec.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/filings/filings.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "KEYSET-MIGRATED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/hr-payroll/bonuses.service.ts": {
@@ -2511,11 +2514,11 @@
       "note": "Tenant-scoped settlement lookup is unique and explicitly limited to one row"
     },
     "/payroll/insights/journal-outbox.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/journal.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/lib/report-builders.ts": {
@@ -2602,11 +2605,11 @@
       "note": "Command-center lookups are tenant-scoped and bounded; calendar and pending-stage panels probe one overflow row and fail visibly"
     },
     "/payroll/runs/inputs.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/lib/checklist.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/lib/input-puller.ts": {
@@ -2614,11 +2617,11 @@
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/loan-recovery.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/payroll-run-variance.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/run-batch-loader.service.ts": {
@@ -2626,11 +2629,11 @@
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/run-data-loader.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/salary-profiles.repository.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/platform/platform-admin.service.ts": {

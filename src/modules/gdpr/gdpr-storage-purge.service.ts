@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { hrLegalHolds, auditLogs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -26,6 +26,8 @@ export interface PurgeResult {
   failed: Array<{ key: string; reason: string }>;
   manifest: SubjectFileKey[];
 }
+
+const STORAGE_DELETE_ATTEMPTS = 3;
 
 @Injectable()
 export class GdprStoragePurgeService {
@@ -98,7 +100,25 @@ export class GdprStoragePurgeService {
         continue;
       }
       try {
-        await this.storage.deleteFile(entry.orgId, entry.key);
+        let lastError: unknown;
+        for (let attempt = 1; attempt <= STORAGE_DELETE_ATTEMPTS; attempt++) {
+          try {
+            await this.storage.deleteFile(entry.orgId, entry.key);
+            lastError = undefined;
+            break;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+        if (lastError !== undefined) throw lastError;
+
+        // StorageService exposes a provider-side HEAD check. Keep the fallback
+        // for test doubles/older adapters, but never claim verification when
+        // the concrete adapter can perform it.
+        if (typeof this.storage.fileExists === "function") {
+          const remains = await this.storage.fileExists(entry.orgId, entry.key);
+          if (remains) throw new Error("object remains after delete");
+        }
         deleted.push(entry.key);
       } catch (err) {
         failed.push({
@@ -130,8 +150,7 @@ export class GdprStoragePurgeService {
     userId: string,
     orgIds: string[],
   ): Promise<boolean> {
-    const orgId = orgIds[0];
-    if (!orgId) return false;
+    if (orgIds.length === 0) return false;
 
     const [row] = await this.db
       .select({ id: hrLegalHolds.id })
@@ -139,7 +158,7 @@ export class GdprStoragePurgeService {
       .where(
         and(
           eq(hrLegalHolds.subjectUserId, userId),
-          eq(hrLegalHolds.orgId, orgId),
+          inArray(hrLegalHolds.orgId, orgIds),
           eq(hrLegalHolds.status, "active"),
           isNull(hrLegalHolds.deletedAt),
         ),

@@ -235,9 +235,9 @@ export class HrPoliciesService {
         .set({ status: "active" })
         .where(and(eq(hrPolicies.id, policyId), eq(hrPolicies.orgId, orgId)));
 
-      const lowerPriorityConflicts = await tx
-        .select({ id: hrPolicies.id })
-        .from(hrPolicies)
+      await tx
+        .update(hrPolicies)
+        .set({ status: "archived" })
         .where(
           and(
             eq(hrPolicies.orgId, orgId),
@@ -247,19 +247,6 @@ export class HrPoliciesService {
             sql`${hrPolicies.priority} < ${policy.priority}`,
           ),
         );
-
-      if (lowerPriorityConflicts.length > 0) {
-        const ids = lowerPriorityConflicts.map((r) => r.id);
-        await tx
-          .update(hrPolicies)
-          .set({ status: "archived" })
-          .where(
-            and(
-              eq(hrPolicies.orgId, orgId),
-              inArray(hrPolicies.id, ids),
-            ),
-          );
-      }
     });
 
     await Promise.all([

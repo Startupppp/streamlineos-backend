@@ -36,7 +36,8 @@ export class EmployeeBulkOnboardingService {
           isNull(orgUnits.deletedAt),
           sql`${orgUnits.status} <> 'ARCHIVED'`,
         ),
-      );
+      )
+      .limit(500);
 
     const orgDeptByKey = new Map<string, string>();
     const usedCodes = new Set<string>();

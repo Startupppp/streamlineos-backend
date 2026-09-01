@@ -325,7 +325,8 @@ export class OnboardingDetailsService {
             eq(onboardingSteps.userId, userId),
             eq(onboardingSteps.orgId, orgId),
           ),
-        ),
+        )
+        .limit(1_000),
       this.db
         .select({ count: sql<number>`count(*)::int` })
         .from(documents)

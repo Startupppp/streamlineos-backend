@@ -4054,6 +4054,20 @@
       "when": 1803000010019,
       "tag": "0926_s03_actor_fk_contract",
       "breakpoints": true
+    },
+    {
+      "idx": 708,
+      "version": "7",
+      "when": 1803000010020,
+      "tag": "0927_s01_invitation_membership_fk_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 709,
+      "version": "7",
+      "when": 1803000010021,
+      "tag": "0929_gdpr_correction_request",
+      "breakpoints": true
     }
   ]
 }

@@ -35,6 +35,8 @@ export class PlatformOperatorAccessService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async createGrant(params: GrantParams): Promise<string> {
+    if (params.expiresAt <= new Date())
+      throw new BadRequestException("Grant expiry must be in the future");
     const maxExpiry = new Date(Date.now() + MAX_GRANT_DURATION_MS);
     if (params.expiresAt > maxExpiry)
       throw new BadRequestException(
@@ -77,10 +79,20 @@ export class PlatformOperatorAccessService {
     if (grant.status !== "pending") throw new ConflictException("Grant is not in pending status");
     if (grant.grantedBy === approverId)
       throw new ForbiddenException("Self-approval not permitted: approverId must differ from the requester");
-    await this.db
+    const updated = await this.db
       .update(operatorAccessGrants)
       .set({ status: "active", approverId })
-      .where(eq(operatorAccessGrants.grantId, grantId));
+      .where(
+        and(
+          eq(operatorAccessGrants.grantId, grantId),
+          eq(operatorAccessGrants.status, "pending"),
+          isNull(operatorAccessGrants.revokedAt),
+          gt(operatorAccessGrants.expiresAt, new Date()),
+        ),
+      )
+      .returning({ grantId: operatorAccessGrants.grantId });
+    if (!updated?.[0])
+      throw new ConflictException("Grant was changed before approval completed");
     return { orgId: grant.orgId, operatorUserId: grant.operatorUserId };
   }
 
@@ -93,10 +105,19 @@ export class PlatformOperatorAccessService {
     if (!grant) throw new NotFoundException("Grant not found");
     if (grant.status === "rejected") return;
     if (grant.status !== "pending") throw new ConflictException("Grant is not in pending status");
-    await this.db
+    const updated = await this.db
       .update(operatorAccessGrants)
       .set({ status: "rejected", revokedAt: new Date(), revocationReason: reason })
-      .where(eq(operatorAccessGrants.grantId, grantId));
+      .where(
+        and(
+          eq(operatorAccessGrants.grantId, grantId),
+          eq(operatorAccessGrants.status, "pending"),
+          isNull(operatorAccessGrants.revokedAt),
+        ),
+      )
+      .returning({ grantId: operatorAccessGrants.grantId });
+    if (!updated?.[0])
+      throw new ConflictException("Grant was changed before rejection completed");
   }
 
   async assertGrant(
@@ -201,10 +222,19 @@ export class PlatformOperatorAccessService {
       .where(eq(operatorAccessGrants.grantId, grantId))
       .limit(1);
     if (!existing) throw new NotFoundException("Grant not found");
-    await this.db
+    const revoked = await this.db
       .update(operatorAccessGrants)
       .set({ status: "revoked", revokedAt: new Date(), revocationReason: reason })
-      .where(eq(operatorAccessGrants.grantId, grantId));
+      .where(
+        and(
+          eq(operatorAccessGrants.grantId, grantId),
+          eq(operatorAccessGrants.status, "active"),
+          isNull(operatorAccessGrants.revokedAt),
+        ),
+      )
+      .returning({ grantId: operatorAccessGrants.grantId });
+    if (!revoked?.[0])
+      throw new ConflictException("Grant was changed before revocation completed");
   }
 
   async listGrants(orgId: string, status?: string) {

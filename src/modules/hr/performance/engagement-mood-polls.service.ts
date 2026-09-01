@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import {
   hrMoodCheckins,
   hrPollVotes,
@@ -32,7 +32,8 @@ export class EngagementMoodPollsService {
   async moodCheckin(u: CurrentUserContext, input: MoodCheckinInput) {
     const today = input.date ?? new Date().toISOString().slice(0, 10);
     const membershipId = actingMembershipId(u.principal);
-    if (membershipId === null) throw new ForbiddenException("Organization membership required");
+    if (membershipId === null)
+      throw new ForbiddenException("Organization membership required");
     const [row] = await this.db
       .insert(hrMoodCheckins)
       .values({
@@ -44,7 +45,11 @@ export class EngagementMoodPollsService {
         note: input.note ?? null,
       })
       .onConflictDoUpdate({
-        target: [hrMoodCheckins.orgId, hrMoodCheckins.userMembershipId, hrMoodCheckins.date],
+        target: [
+          hrMoodCheckins.orgId,
+          hrMoodCheckins.userMembershipId,
+          hrMoodCheckins.date,
+        ],
         set: {
           mood: input.mood,
           note: input.note ?? null,
@@ -57,7 +62,8 @@ export class EngagementMoodPollsService {
 
   myMoodHistory(u: CurrentUserContext, limit = 30) {
     const membershipId = actingMembershipId(u.principal);
-    if (membershipId === null) throw new ForbiddenException("Organization membership required");
+    if (membershipId === null)
+      throw new ForbiddenException("Organization membership required");
     return this.db
       .select({
         id: hrMoodCheckins.id,
@@ -66,7 +72,12 @@ export class EngagementMoodPollsService {
         note: hrMoodCheckins.note,
       })
       .from(hrMoodCheckins)
-      .where(and(eq(hrMoodCheckins.orgId, u.orgId), eq(hrMoodCheckins.userMembershipId, membershipId)))
+      .where(
+        and(
+          eq(hrMoodCheckins.orgId, u.orgId),
+          eq(hrMoodCheckins.userMembershipId, membershipId),
+        ),
+      )
       .orderBy(desc(hrMoodCheckins.createdAt))
       .limit(limit);
   }
@@ -90,7 +101,11 @@ export class EngagementMoodPollsService {
     for (const [date, moods] of byDate.entries()) {
       if (moods.length < MIN_GROUP_SIZE) continue;
       const avg = moods.reduce((a, b) => a + b, 0) / moods.length;
-      result.push({ date, avgMood: Math.round(avg * 10) / 10, count: moods.length });
+      result.push({
+        date,
+        avgMood: Math.round(avg * 10) / 10,
+        count: moods.length,
+      });
     }
     result.sort((a, b) => a.date.localeCompare(b.date));
     return result;
@@ -124,7 +139,8 @@ export class EngagementMoodPollsService {
     const [poll] = await this.db
       .select({ id: hrPolls.id })
       .from(hrPolls)
-      .where(and(eq(hrPolls.id, pollId), eq(hrPolls.orgId, orgId)));
+      .where(and(eq(hrPolls.id, pollId), eq(hrPolls.orgId, orgId)))
+      .limit(1);
     if (!poll) throw new NotFoundException("Poll not found.");
 
     await this.db
@@ -146,7 +162,8 @@ export class EngagementMoodPollsService {
     const [poll] = await this.db
       .select()
       .from(hrPolls)
-      .where(and(eq(hrPolls.id, pollId), eq(hrPolls.orgId, orgId)));
+      .where(and(eq(hrPolls.id, pollId), eq(hrPolls.orgId, orgId)))
+      .limit(1);
     if (!poll) throw new NotFoundException("Poll not found.");
     if (poll.status !== "active")
       throw new BadRequestException("Poll is not active.");
@@ -171,19 +188,21 @@ export class EngagementMoodPollsService {
     const [poll] = await this.db
       .select()
       .from(hrPolls)
-      .where(and(eq(hrPolls.id, pollId), eq(hrPolls.orgId, orgId)));
+      .where(and(eq(hrPolls.id, pollId), eq(hrPolls.orgId, orgId)))
+      .limit(1);
     if (!poll) throw new NotFoundException("Poll not found.");
 
     const votes = await this.db
-      .select({ optionIndex: hrPollVotes.optionIndex })
+      .select({ optionIndex: hrPollVotes.optionIndex, count: count() })
       .from(hrPollVotes)
-      .where(eq(hrPollVotes.pollId, pollId));
+      .where(eq(hrPollVotes.pollId, pollId))
+      .groupBy(hrPollVotes.optionIndex);
 
     const opts = poll.options as string[];
     const counts = opts.map((option, idx) => ({
       option,
       optionIndex: idx,
-      count: votes.filter((v) => v.optionIndex === idx).length,
+      count: Number(votes.find((v) => v.optionIndex === idx)?.count ?? 0),
     }));
 
     return {
@@ -191,7 +210,7 @@ export class EngagementMoodPollsService {
       question: poll.question,
       anonymous: poll.anonymous,
       status: poll.status,
-      totalVotes: votes.length,
+      totalVotes: votes.reduce((total, vote) => total + Number(vote.count), 0),
       counts,
     };
   }

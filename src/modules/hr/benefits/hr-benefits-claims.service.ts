@@ -17,6 +17,7 @@ import {
 } from "../../../db/schema/hr/benefits";
 import { auditLogs, organizationMembers, users } from "../../../db/schema";
 import type { SubmitClaimInput, ReviewClaimInput, ClaimsQuery } from "./dto/benefits.schemas";
+import { boundHrReadLimit } from "../hr-read-limits";
 
 type ClaimsCursorScope = {
   orgId: string;
@@ -74,7 +75,8 @@ export class HrBenefitsClaimsService {
     if (requesterMembershipId == null) {
       throw new BadRequestException("Organization membership required.");
     }
-    const { cursor, limit, status, userId } = query;
+    const { cursor, status, userId } = query;
+    const limit = boundHrReadLimit(query.limit);
     const cursorScope = {
       orgId,
       requesterMembershipId,

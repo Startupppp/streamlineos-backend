@@ -21,7 +21,7 @@ export const auditLogs = pgTable(
     userId: text("user_id")
       .references(() => users.id)
       .notNull(),
-    orgId: text("org_id").references(() => organizations.id),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "set null" }),
     targetId: text("target_id"),
     targetType: text("target_type"),
     actorUserId: text("actor_user_id"),

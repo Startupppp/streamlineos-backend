@@ -12,7 +12,8 @@ export class CalibrationService {
     return this.db
       .select()
       .from(hrCalibrationEntries)
-      .where(and(eq(hrCalibrationEntries.orgId, orgId), eq(hrCalibrationEntries.cycleId, cycleId)));
+      .where(and(eq(hrCalibrationEntries.orgId, orgId), eq(hrCalibrationEntries.cycleId, cycleId)))
+      .limit(500);
   }
 
   async upsertEntry(
@@ -59,7 +60,8 @@ export class CalibrationService {
         note: hrCalibrationEntries.note,
       })
       .from(hrCalibrationEntries)
-      .where(and(eq(hrCalibrationEntries.orgId, orgId), eq(hrCalibrationEntries.cycleId, cycleId)));
+      .where(and(eq(hrCalibrationEntries.orgId, orgId), eq(hrCalibrationEntries.cycleId, cycleId)))
+      .limit(500);
 
     const reviews = await this.db
       .select({
@@ -67,7 +69,8 @@ export class CalibrationService {
         overallRating: performanceReviews.overallRating,
       })
       .from(performanceReviews)
-      .where(and(eq(performanceReviews.orgId, orgId), eq(performanceReviews.cycleId, cycleId)));
+      .where(and(eq(performanceReviews.orgId, orgId), eq(performanceReviews.cycleId, cycleId)))
+      .limit(500);
 
     const reviewMap = new Map(reviews.map((r) => [r.userId, Number(r.overallRating ?? 0)]));
 

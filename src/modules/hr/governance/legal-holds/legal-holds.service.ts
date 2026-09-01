@@ -169,7 +169,8 @@ export class LegalHoldsService {
       .select()
       .from(hrLegalHoldItems)
       .where(and(eq(hrLegalHoldItems.orgId, orgId), eq(hrLegalHoldItems.holdId, holdId)))
-      .orderBy(desc(hrLegalHoldItems.createdAt));
+      .orderBy(desc(hrLegalHoldItems.createdAt))
+      .limit(100);
   }
 
   async attachItem(orgId: string, holdId: number, userId: string, input: AttachHoldItemInput, ipAddress?: string) {

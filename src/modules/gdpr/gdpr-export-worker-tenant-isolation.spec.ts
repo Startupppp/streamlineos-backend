@@ -3,7 +3,7 @@ jest.mock("../../common/tenant", () => ({
 }));
 
 import { Test } from "@nestjs/testing";
-import { GdprExportWorkerService } from "./gdpr-export-worker.service";
+import { drainExportPages, GdprExportWorkerService } from "./gdpr-export-worker.service";
 import { GdprExportService } from "./gdpr-export.service";
 import { StorageService } from "../storage/storage.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -25,6 +25,7 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   const record = value as { queryChunks?: unknown[]; value?: unknown };
   return [
     ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
+    ...((record as { params?: unknown[] }).params ? sqlValues((record as { params: unknown[] }).params, seen) : []),
     ...(Object.prototype.hasOwnProperty.call(record, "value") ? sqlValues(record.value, seen) : []),
   ];
 }
@@ -36,8 +37,8 @@ const flushPromises = () => new Promise<void>((resolve) => setTimeout(resolve, 0
 
 function makeDb(): { db: Db; allWhereArgs: unknown[] } {
   const allWhereArgs: unknown[] = [];
-  const makeWhereResult = () => {
-    const rows: unknown[] = [];
+  let selectCount = 0;
+  const makeWhereResult = (rows: unknown[]) => {
     const limitFn = jest.fn().mockResolvedValue(rows);
     const orderByFn = jest.fn().mockReturnValue({ limit: limitFn });
     return {
@@ -50,14 +51,19 @@ function makeDb(): { db: Db; allWhereArgs: unknown[] } {
     };
   };
   const db = {
-    select: jest.fn().mockImplementation(() => ({
+    select: jest.fn().mockImplementation(() => {
+      const rows = selectCount++ === 0
+        ? [{ userId: "user-subj", email: "subject@example.invalid", name: null }]
+        : [];
+      return {
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockImplementation((arg: unknown) => {
           allWhereArgs.push(arg);
-          return makeWhereResult();
+          return makeWhereResult(rows);
         }),
       }),
-    })),
+      };
+    }),
   } as unknown as Db;
   return { db, allWhereArgs };
 }
@@ -157,5 +163,23 @@ describe("GdprExportWorkerService — cross-tenant isolation", () => {
     const allVals = allWhereArgs.flatMap((w) => sqlValues(w));
     expect(allVals).toContain(OWNER_ORG);
     expect(allVals).not.toContain(ATTACKER_ORG);
+  });
+});
+
+describe("drainExportPages", () => {
+  it("resumes after the batch boundary and never truncates an available section", async () => {
+    const first = Array.from({ length: 200 }, (_, index) => ({ id: index + 1 }));
+    const second = Array.from({ length: 4_801 }, (_, index) => ({ id: index + 201 }));
+    const calls: Array<number | undefined> = [];
+    const result = await drainExportPages(async (afterId) => {
+      calls.push(afterId);
+      if (afterId === undefined) return first;
+      if (afterId === 200) return second;
+      return [];
+    });
+
+    expect(result.rows).toHaveLength(5_001);
+    expect(result.truncated).toBe(false);
+    expect(calls).toEqual([undefined, 200, 5_001]);
   });
 });

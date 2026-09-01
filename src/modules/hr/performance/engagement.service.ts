@@ -97,7 +97,8 @@ export class EngagementService {
           eq(feedbackRequests.orgId, orgId),
           eq(feedbackRequests.reviewerUserId, userId),
         ),
-      );
+      )
+      .limit(1);
 
     if (!existing) throw new NotFoundException("Feedback request not found.");
     if (existing.isCompleted)

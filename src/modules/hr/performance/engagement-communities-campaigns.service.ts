@@ -20,6 +20,8 @@ import type {
 } from "./dto/engagement-extras.schemas";
 import { decodeTimestampCursor, encodeTimestampCursor } from "./cursor-pagination";
 
+const COMMUNITY_MEMBER_LIMIT = 500;
+
 @Injectable()
 export class EngagementCommunitiesCampaignsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -56,7 +58,8 @@ export class EngagementCommunitiesCampaignsService {
         role: hrCommunityMembers.role,
       })
       .from(hrCommunityMembers)
-      .where(inArray(hrCommunityMembers.communityId, ids));
+      .where(inArray(hrCommunityMembers.communityId, ids))
+      .limit(COMMUNITY_MEMBER_LIMIT);
 
     const membersByComm = new Map<number, { userId: string; role: string }[]>();
     for (const m of members) {
@@ -115,7 +118,8 @@ export class EngagementCommunitiesCampaignsService {
       .from(hrCommunities)
       .where(
         and(eq(hrCommunities.id, communityId), eq(hrCommunities.orgId, orgId)),
-      );
+      )
+      .limit(1);
     if (!community) throw new NotFoundException("Community not found.");
 
     await this.db
@@ -134,7 +138,8 @@ export class EngagementCommunitiesCampaignsService {
       .from(hrCommunities)
       .where(
         and(eq(hrCommunities.id, communityId), eq(hrCommunities.orgId, orgId)),
-      );
+      )
+      .limit(1);
     if (!community) throw new NotFoundException("Community not found.");
 
     await this.db
@@ -154,7 +159,8 @@ export class EngagementCommunitiesCampaignsService {
       .from(hrCommunities)
       .where(
         and(eq(hrCommunities.id, communityId), eq(hrCommunities.orgId, orgId)),
-      );
+      )
+      .limit(1);
     if (!community) throw new NotFoundException("Community not found.");
 
     const members = await this.db
@@ -163,7 +169,8 @@ export class EngagementCommunitiesCampaignsService {
         role: hrCommunityMembers.role,
       })
       .from(hrCommunityMembers)
-      .where(eq(hrCommunityMembers.communityId, communityId));
+      .where(eq(hrCommunityMembers.communityId, communityId))
+      .limit(500);
 
     return { ...community, members };
   }
@@ -208,7 +215,8 @@ export class EngagementCommunitiesCampaignsService {
       .from(hrCampaigns)
       .where(
         and(eq(hrCampaigns.id, campaignId), eq(hrCampaigns.orgId, orgId)),
-      );
+      )
+      .limit(1);
     if (!campaign) throw new NotFoundException("Campaign not found.");
 
     const [updated] = await this.db
@@ -238,7 +246,8 @@ export class EngagementCommunitiesCampaignsService {
       .from(hrCampaigns)
       .where(
         and(eq(hrCampaigns.id, campaignId), eq(hrCampaigns.orgId, orgId)),
-      );
+      )
+      .limit(1);
     if (!campaign) throw new NotFoundException("Campaign not found.");
 
     await this.db
