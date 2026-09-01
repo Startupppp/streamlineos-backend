@@ -173,7 +173,7 @@ describe("drainExportPages", () => {
     const first = Array.from({ length: 200 }, (_, index) => ({ id: index + 1 }));
     const second = Array.from({ length: 4_801 }, (_, index) => ({ id: index + 201 }));
     const calls: Array<number | undefined> = [];
-    const result = await drainExportPages(async (afterId) => {
+    const result = await drainExportPages<number, { id: number }>(async (afterId) => {
       calls.push(afterId);
       if (afterId === undefined) return first;
       if (afterId === 200) return second;
@@ -187,7 +187,7 @@ describe("drainExportPages", () => {
 
   it("resumes UUID-keyed sections with a stable string cursor", async () => {
     const calls: Array<string | undefined> = [];
-    const result = await drainExportPages(async (afterId) => {
+    const result = await drainExportPages<string, { id: string }>(async (afterId) => {
       calls.push(afterId);
       if (afterId === undefined) return [{ id: "00000000-0000-0000-0000-000000000001" }];
       return [];
@@ -195,6 +195,15 @@ describe("drainExportPages", () => {
 
     expect(result.rows).toHaveLength(1);
     expect(calls).toEqual([undefined]);
+  });
+
+  it("fails instead of looping when a page cursor does not advance", async () => {
+    const page = Array.from({ length: 200 }, () => ({ id: 1 }));
+    await expect(
+      drainExportPages<number, { id: number }>(async (afterId) =>
+        afterId === undefined ? page : page,
+      ),
+    ).rejects.toThrow("GDPR export cursor did not advance");
   });
 });
 

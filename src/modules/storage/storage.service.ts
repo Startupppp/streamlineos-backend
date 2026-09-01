@@ -68,6 +68,15 @@ const PRIVATE_HR_FOLDERS = new Set([
   "hr-exports",
 ]);
 
+export function isMissingObjectError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const details = error as Error & {
+    name?: string;
+    $metadata?: { httpStatusCode?: number };
+  };
+  return details.name === "NotFound" || details.name === "NoSuchKey" || details.$metadata?.httpStatusCode === 404;
+}
+
 export type StorageConfig = Pick<
   AppConfig,
   | "R2_REGION"
@@ -388,14 +397,15 @@ export class StorageService {
   async fileExists(orgId: string, key: string): Promise<boolean> {
     const placement = await this.placementFor(orgId);
     const bucketName = placement.bucketName;
-    if (!bucketName) return false;
+    if (!bucketName) throw new ServiceUnavailableException("R2 bucket not configured");
     try {
       await placement.client.send(
         new HeadObjectCommand({ Bucket: bucketName, Key: key }),
       );
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      if (isMissingObjectError(error)) return false;
+      throw error;
     }
   }
 

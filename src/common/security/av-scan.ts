@@ -7,17 +7,16 @@
  * (e.g. Gmail/Outlook) that already scans on delivery.
  *
  * PRODUCTION: set AV_SCANNER=clamav|virustotal and provide the required env
- * vars. Without AV_SCANNER the fallback is the noop adapter, which logs a
- * warning and returns "clean". That is intentional: the first safe state is to
- * let uploads through rather than to block everything silently.
+ * vars. Without AV_SCANNER the fallback logs a warning and fails closed;
+ * uploads must not be treated as clean when no scanner is configured.
  *
- * File quarantine:
- *   Uploads land in a staging path (`uploads/quarantine/<orgId>/<uuid>`) first.
- *   The scan result gates promotion to the permanent path
- *   (`uploads/<orgId>/<uuid>`). Any scan result other than "clean" leaves the
- *   file in quarantine for the operator's review window (48 h by default, then
- *   auto-deleted by the cron sweep). The calling controller is responsible for
- *   writing the quarantine record to the DB before calling scan().
+ * File quarantine integration contract:
+ *   Uploads must land in a staging path (`uploads/quarantine/<orgId>/<uuid>`)
+ *   first. The scan result gates promotion to the permanent path
+ *   (`uploads/<orgId>/<uuid>`). Any scan result other than "clean" must leave
+ *   the file in quarantine for the operator's review window (48 h by default,
+ *   then auto-delete by the cron sweep) and be recorded in the DB before the
+ *   caller invokes scan().
  *
  * Upload size and type limits:
  *   Enforced before scan by `assertUploadAllowed` in this module. Never accept
@@ -50,7 +49,7 @@ export class NoopAvScanner extends AvScanner implements OnModuleInit {
   onModuleInit(): void {
     if (process.env.NODE_ENV === "production") {
       this.logger.warn(
-        "MALWARE SCANNING DISABLED — set AV_SCANNER=clamav|virustotal to enable real scanning (uploads pass through unscanned)",
+        "MALWARE SCANNING DISABLED — set AV_SCANNER=clamav|virustotal to enable real scanning (uploads are rejected)",
       );
     } else {
       this.logger.log("AV scanner: noop/disabled (development mode — not suitable for production)");
@@ -60,6 +59,7 @@ export class NoopAvScanner extends AvScanner implements OnModuleInit {
   async scan(_buffer: Buffer, filename: string, _mimeType: string): Promise<AvScanResult> {
     if (process.env.NODE_ENV === "production") {
       this.logger.warn(`File "${filename}" uploaded without malware scan — scanning is disabled`);
+      return { status: "error", reason: "malware-scanning-disabled" };
     }
     return { status: "clean" };
   }

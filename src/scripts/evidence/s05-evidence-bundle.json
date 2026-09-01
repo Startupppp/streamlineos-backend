@@ -16,11 +16,11 @@
     "note": "This bundle records check outputs and metadata only; it does not export application data."
   },
   "execution": {
-    "startedAt": "2026-09-01T15:58:51.830Z",
-    "endedAt": "2026-09-01T15:59:02.619Z"
+    "startedAt": "2026-09-01T16:37:15.216Z",
+    "endedAt": "2026-09-01T16:37:19.384Z"
   },
   "commit": {
-    "sha": "c8c9cbde433868941be9991de8789f410cd7563a",
+    "sha": "197777dc3e45ff5d3e3880c8f1c321e1c18d58dc",
     "branch": "main",
     "dirty": true
   },
@@ -41,88 +41,88 @@
     {
       "id": "compliance",
       "command": "node compliance-drill-e2e --self-test",
-      "startedAt": "2026-09-01T15:58:51.832Z",
-      "endedAt": "2026-09-01T15:58:52.406Z",
+      "startedAt": "2026-09-01T16:37:15.217Z",
+      "endedAt": "2026-09-01T16:37:15.469Z",
       "exitCode": 0,
       "output": "compliance-drill-e2e --self-test\nProving each assertion bites when the invariant is violated.\n\n=== Self-test 1: hold_must_block_erasure ===\n  PASS  assertion fires when hold is absent (hold_must_block_erasure)\n\n=== Self-test 2: erasure_refused_while_held ===\n  PASS  assertion fires when erasure is not refused (erasure_refused_while_held)\n\n=== Self-test 3: release_enables_erasure ===\n  PASS  assertion fires when hold persists after release (release_enables_erasure)\n\n=== Self-test 4: residual_rows_after_erasure ===\n  PASS  assertion fires when rows remain after erasure (residual_rows_after_erasure)\n\n=== Self-test 5: export_blocked_by_active_hold ===\n  PASS  assertion fires when export proceeds despite active hold (export_blocked_by_active_hold)\n\n=== Self-test 6: compliance_audit_trail_exit_code ===\n  PASS  assertion fires when compliance-drill exits non-zero (compliance_audit_trail_exit_code)\n  PASS  assertion fires when required phrase is absent from output\n\n=== Self-test 7: storage assertion self-test (delegates to drill-storage-purge.mjs) ===\n  PASS  drill-storage-purge --self-test: all assertions bite correctly\n\n=== SELF-TEST RESULT: PASS — all 8 assertion bite proofs confirmed ==="
     },
     {
       "id": "purge-erasure",
       "command": "node drill-erasure --self-test",
-      "startedAt": "2026-09-01T15:58:52.407Z",
-      "endedAt": "2026-09-01T15:58:52.586Z",
+      "startedAt": "2026-09-01T16:37:15.470Z",
+      "endedAt": "2026-09-01T16:37:15.550Z",
       "exitCode": 0,
       "output": "self-test: verifying FK enumeration helpers\n\n  PASS  no cyclic tables in test graph\n  PASS  notifications (1) ordered before organization_members (3)\n  PASS  organization_members (3) ordered before users (4)\n  PASS  hr_employments (0) ordered before hr_people (2)\n\nself-test PASS — FK enumeration and deletion ordering correct"
     },
     {
       "id": "purge-storage",
       "command": "node drill-storage-purge --self-test",
-      "startedAt": "2026-09-01T15:58:52.586Z",
-      "endedAt": "2026-09-01T15:58:52.957Z",
+      "startedAt": "2026-09-01T16:37:15.550Z",
+      "endedAt": "2026-09-01T16:37:15.713Z",
       "exitCode": 0,
       "output": "[self-test] Verifying each assertion bites when the invariant is broken…\n[self-test] ✓ assertion 1 (zero-remaining) bites correctly\n[self-test] ✓ assertion 2 (idempotent second run) bites correctly\n[self-test] ✓ assertion 3 (partial-failure separation) bites correctly\n[self-test] ✓ assertion 4 (zero-failures on clean data) bites correctly\n[self-test] All assertions verified. PASS."
     },
     {
       "id": "retention",
       "command": "node check-retention-coverage --self-test",
-      "startedAt": "2026-09-01T15:58:52.957Z",
-      "endedAt": "2026-09-01T15:58:53.153Z",
+      "startedAt": "2026-09-01T16:37:15.713Z",
+      "endedAt": "2026-09-01T16:37:15.802Z",
       "exitCode": 0,
-      "output": "◇ injected env (51) from .env // tip: ⌘ suppress logs { quiet: true }\n{\"selfTest\":true,\"pass\":true,\"checks\":{\"auditLogsIsKeepForever\":true,\"payrollRunsIsKeepForever\":true,\"aiUsageLogsHasWorker\":true,\"chatMessagesHasWorker\":true,\"kbChunksHasWorker\":true,\"auditLogsHasNoWorker\":true,\"classifyUnknownIsUncovered\":true,\"classifyAuditLogsIsKeepForever\":true,\"partitionUsesParentDecision\":true,\"reportingLinesHaveDecision\":true,\"invalidThresholdsFailClosed\":true,\"decimalThresholdIsAccepted\":true,\"everyMatrixEntryHasDecision\":true,\"everyMatrixEntryHasNotes\":true,\"keepForeverEntriesHaveNoWorker\":true,\"boundedEntriesHaveWorker\":true}}"
+      "output": "◇ injected env (51) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }\n{\"selfTest\":true,\"pass\":true,\"checks\":{\"auditLogsIsKeepForever\":true,\"payrollRunsIsKeepForever\":true,\"aiUsageLogsHasWorker\":true,\"chatMessagesHasWorker\":true,\"kbChunksHasWorker\":true,\"auditLogsHasNoWorker\":true,\"classifyUnknownIsUncovered\":true,\"classifyAuditLogsIsKeepForever\":true,\"partitionUsesParentDecision\":true,\"reportingLinesHaveDecision\":true,\"invalidThresholdsFailClosed\":true,\"decimalThresholdIsAccepted\":true,\"everyMatrixEntryHasDecision\":true,\"everyMatrixEntryHasNotes\":true,\"keepForeverEntriesHaveNoWorker\":true,\"boundedEntriesHaveWorker\":true}}"
     },
     {
       "id": "immutability",
       "command": "node jest audit-log-immutability + journal-immutability",
-      "startedAt": "2026-09-01T15:58:53.153Z",
-      "endedAt": "2026-09-01T15:59:01.178Z",
+      "startedAt": "2026-09-01T16:37:15.802Z",
+      "endedAt": "2026-09-01T16:37:18.939Z",
       "exitCode": 0,
-      "output": "PASS src/modules/accounting/posting/journal-immutability.spec.ts\nPASS src/modules/platform/audit-log-immutability.spec.ts\n\nTest Suites: 2 passed, 2 total\nTests:       14 passed, 14 total\nSnapshots:   0 total\nTime:        6.293 s\nRan all test suites matching /src\\\\modules\\\\platform\\\\audit-log-immutability.spec.ts|src\\\\modules\\\\accounting\\\\posting\\\\journal-immutability.spec.ts/i.\nForce exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?"
+      "output": "PASS src/modules/accounting/posting/journal-immutability.spec.ts\nPASS src/modules/platform/audit-log-immutability.spec.ts\n\nTest Suites: 2 passed, 2 total\nTests:       14 passed, 14 total\nSnapshots:   0 total\nTime:        2.55 s, estimated 3 s\nRan all test suites matching /src\\\\modules\\\\platform\\\\audit-log-immutability.spec.ts|src\\\\modules\\\\accounting\\\\posting\\\\journal-immutability.spec.ts/i.\nForce exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?"
     },
     {
       "id": "audit-log-privileges-contract",
       "command": "node verify-audit-log-privileges --self-test",
-      "startedAt": "2026-09-01T15:59:01.178Z",
-      "endedAt": "2026-09-01T15:59:01.392Z",
+      "startedAt": "2026-09-01T16:37:18.939Z",
+      "endedAt": "2026-09-01T16:37:19.019Z",
       "exitCode": 0,
       "output": "{\"selfTest\":true,\"pass\":true,\"safe\":{\"role\":\"streamline_app\",\"updateRevoked\":true,\"deleteRevoked\":true,\"triggerPresent\":true},\"unsafe\":{\"role\":\"streamline_app\",\"updateRevoked\":false,\"deleteRevoked\":true,\"triggerPresent\":true}}"
     },
     {
       "id": "migration-chain",
       "command": "node verify-migration-chain --self-test",
-      "startedAt": "2026-09-01T15:59:01.392Z",
-      "endedAt": "2026-09-01T15:59:01.685Z",
+      "startedAt": "2026-09-01T16:37:19.019Z",
+      "endedAt": "2026-09-01T16:37:19.104Z",
       "exitCode": 0,
       "output": "Self-test: (a) unjournalled file\n  PASS  unjournalled non-allowlisted file caught\nSelf-test: (b) duplicate numeric prefix\n  PASS  duplicate prefix caught\nSelf-test: (c) timestamp regression\n  PASS  timestamp regression caught\nSelf-test: (d) orphan journal entry\n  PASS  orphan entry caught\nSelf-test: (f) applied watermark ahead of the journal\n  PASS  watermark ahead of journal caught\n  PASS  a watermark equal to the newest entry is not reported\n  PASS  check (f) is skipped when no database is reachable\nSelf-test: (e) chain gaps marker\n  PASS  chain gaps caught\n  PASS  unparseable gap count caught\n  PASS  zero gaps is not reported as a failure\n\nSelf-test: 10 passed, 0 failed"
     },
     {
       "id": "migration-discipline",
       "command": "node check-migration-discipline --self-test",
-      "startedAt": "2026-09-01T15:59:01.685Z",
-      "endedAt": "2026-09-01T15:59:02.011Z",
+      "startedAt": "2026-09-01T16:37:19.104Z",
+      "endedAt": "2026-09-01T16:37:19.171Z",
       "exitCode": 0,
       "output": "check-migration-discipline self-test\n=====================================\n\nCheck 1: lock_timeout\n  PASS  missing lock_timeout is caught\n  PASS  present lock_timeout passes\n  PASS  lowercase SET lock_timeout passes\n\nCheck 2: FK NOT VALID\n  PASS  FK without NOT VALID is caught\n  PASS  FK with NOT VALID passes\n  PASS  NOT VALID on same statement passes\n\nCheck 3: SET NOT NULL two-step\n  PASS  SET NOT NULL without CHECK NOT VALID is caught\n  PASS  full two-step SET NOT NULL passes\n  PASS  migration without SET NOT NULL passes check 3\n\nCheck 4: validate-before-backfill\n  PASS  VALIDATE before backfill is caught\n  PASS  backfill before VALIDATE passes\n  PASS  VALIDATE with no backfill (FK two-step) passes check 4\n  PASS  a header comment naming VALIDATE CONSTRAINT does not fake a violation\n  PASS  a real VALIDATE before the backfill is still caught once comments are stripped\n  PASS  stripSqlComments preserves the statement-breakpoint marker it must split on\n\nCheck 5: DO-block breakpoint\n  PASS  statement-breakpoint inside DO block is caught\n  PASS  breakpoint outside DO block passes\n  PASS  no DO block at all passes check 5\n\nCheck 6: journal entry\n  PASS  file missing from journal is caught\n  PASS  file present in journal passes\n  PASS  second journalled file passes\n\nCheck 7: CONCURRENTLY\n  PASS  CREATE INDEX CONCURRENTLY in SQL body is caught\n  PASS  CREATE UNIQUE INDEX CONCURRENTLY in SQL body is caught\n  PASS  CREATE INDEX without CONCURRENTLY passes\n  PASS  CONCURRENTLY only in a comment does not trigger check 7\n\nAnti-vacuity: checks must never silently pass on unparseable input\n  PASS  file with binary noise but lock_timeout still passes check 1\n  PASS  unparseable file with no lock_timeout is caught (not silently passed)\n\nSelf-test results: 27 passed, 0 failed\nSELF-TEST PASSED — all seven check shapes are caught"
     },
     {
       "id": "migration-ledger",
       "command": "node check-migration-ledger --self-test",
-      "startedAt": "2026-09-01T15:59:02.011Z",
-      "endedAt": "2026-09-01T15:59:02.236Z",
+      "startedAt": "2026-09-01T16:37:19.171Z",
+      "endedAt": "2026-09-01T16:37:19.235Z",
       "exitCode": 0,
       "output": "Self-tests passed."
     },
     {
       "id": "migration-rollback",
       "command": "node check-migration-rollback --self-test",
-      "startedAt": "2026-09-01T15:59:02.236Z",
-      "endedAt": "2026-09-01T15:59:02.439Z",
+      "startedAt": "2026-09-01T16:37:19.235Z",
+      "endedAt": "2026-09-01T16:37:19.317Z",
       "exitCode": 0,
       "output": "check-migration-rollback self-test\n===================================\n\nFailure mode (a): migration above cutoff with no rollback and no declaration\n  PASS  missing rollback and no declaration is caught (above cutoff)\n\nFailure mode (a): migration below cutoff with no rollback → grandfathered, no violation\n  PASS  migration below cutoff is grandfathered\n\nClean case: migration above cutoff with -- @irreversible declaration\n  PASS  @irreversible declaration satisfies the gate\n\nClean case: migration above cutoff with -- @data-loss declaration\n  PASS  @data-loss declaration satisfies the gate\n\nClean case: migration above cutoff with matching rollback (no CREATE TYPE)\n  PASS  rollback present with no CREATE TYPE passes\n\nFailure mode (b): rollback exists but DROP TYPE name mismatches CREATE TYPE name\n  PASS  rollback with mismatched DROP TYPE name is caught (0143-class defect)\n\nClean case: rollback with correct DROP TYPE name\n  PASS  rollback with correct DROP TYPE name passes\n\nType-mismatch check applies to historical migrations too (below cutoff)\n  PASS  type-mismatch caught for historical migration that has a rollback\n\nInjection: unjournalled file above cutoff is exempt\n  PASS  unjournalled file above cutoff is not flagged (no journal = never applies)\n\nSelf-test: 9 passed, 0 failed\nSELF-TEST PASSED"
     },
     {
       "id": "artifact-contract",
       "command": "node check-s05-artifact-contract",
-      "startedAt": "2026-09-01T15:59:02.439Z",
-      "endedAt": "2026-09-01T15:59:02.619Z",
+      "startedAt": "2026-09-01T16:37:19.317Z",
+      "endedAt": "2026-09-01T16:37:19.384Z",
       "exitCode": 0,
       "output": "S05 approval/evidence artifact contract passed."
     }
