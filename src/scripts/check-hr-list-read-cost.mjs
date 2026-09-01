@@ -179,12 +179,12 @@ async function fetchFixtures() {
 
     return {
       deepCreatedAt: tsStr(deep) ?? "2000-01-01 00:00:00",
-      deepId: deep?.id ?? "00000000-0000-0000-0000-000000000000",
+      deepId: deep?.id ?? 0,
       subjectUserId: deep?.user_id ?? null,
       total: total?.n ?? 0,
       cursorLabel,
       ticketCreatedAt: tsStr(ticket) ?? "2000-01-01 00:00:00",
-      ticketId: ticket?.id ?? "00000000-0000-0000-0000-000000000000",
+      ticketId: ticket?.id ?? 0,
       ticketOwnerId: ticket?.user_id ?? null,
       ticketTotal: ticketTotal?.n ?? 0,
       ticketLabel,

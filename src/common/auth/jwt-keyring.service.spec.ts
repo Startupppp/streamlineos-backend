@@ -1,31 +1,43 @@
 import { Test } from "@nestjs/testing";
 import { generateKeyPairSync } from "node:crypto";
-import { exportJWK } from "jose";
+import { exportJWK, type JWK } from "jose";
 import { JwtKeyringService } from "./jwt-keyring.service";
 import { INTERNAL_TOKEN_AUDIENCE, INTERNAL_TOKEN_ISSUER } from "./backend-claims";
 
-async function buildTestKeys(): Promise<string> {
-  const kp = generateKeyPairSync("ed25519");
-  const privateJwk = await exportJWK(kp.privateKey as unknown as CryptoKey);
-  const publicJwk = await exportJWK(kp.publicKey as unknown as CryptoKey);
-  return JSON.stringify([{ kid: "test-key-1", privateKey: privateJwk, publicKey: publicJwk }]);
+interface TestKeyEntry {
+  kid: string;
+  privateKey: JWK;
+  publicKey: JWK;
 }
 
-async function buildTestKeysTwo(): Promise<{ keys: string; kid1: string; kid2: string }> {
-  const kp1 = generateKeyPairSync("ed25519");
-  const kp2 = generateKeyPairSync("ed25519");
-  const priv1 = await exportJWK(kp1.privateKey as unknown as CryptoKey);
-  const pub1 = await exportJWK(kp1.publicKey as unknown as CryptoKey);
-  const priv2 = await exportJWK(kp2.privateKey as unknown as CryptoKey);
-  const pub2 = await exportJWK(kp2.publicKey as unknown as CryptoKey);
+async function buildKeyEntry(kid: string): Promise<TestKeyEntry> {
+  const kp = generateKeyPairSync("ed25519");
   return {
-    keys: JSON.stringify([
-      { kid: "key-old", privateKey: priv1, publicKey: pub1 },
-      { kid: "key-new", privateKey: priv2, publicKey: pub2 },
-    ]),
-    kid1: "key-old",
-    kid2: "key-new",
+    kid,
+    privateKey: await exportJWK(kp.privateKey),
+    publicKey: await exportJWK(kp.publicKey),
   };
+}
+
+async function buildTestKeys(): Promise<{ json: string; entries: TestKeyEntry[] }> {
+  const entries = [await buildKeyEntry("test-key-1")];
+  return { json: JSON.stringify(entries), entries };
+}
+
+async function buildTestKeysTwo(): Promise<{
+  keys: string;
+  entries: TestKeyEntry[];
+  kid1: string;
+  kid2: string;
+}> {
+  const entries = [await buildKeyEntry("key-old"), await buildKeyEntry("key-new")];
+  return { keys: JSON.stringify(entries), entries, kid1: "key-old", kid2: "key-new" };
+}
+
+function requireEntry(entries: TestKeyEntry[], index: number): TestKeyEntry {
+  const entry = entries[index];
+  if (entry === undefined) throw new Error(`test key entry ${String(index)} missing`);
+  return entry;
 }
 
 describe("JwtKeyringService", () => {
@@ -51,7 +63,7 @@ describe("JwtKeyringService", () => {
   }
 
   it("loads keys and reports isReady()", async () => {
-    const keysJson = await buildTestKeys();
+    const { json: keysJson } = await buildTestKeys();
     service = await makeService(keysJson);
     expect(service.isReady()).toBe(true);
   });
@@ -65,7 +77,7 @@ describe("JwtKeyringService", () => {
   });
 
   it("sign+verify roundtrip returns correct claims", async () => {
-    const keysJson = await buildTestKeys();
+    const { json: keysJson } = await buildTestKeys();
     service = await makeService(keysJson);
 
     const token = await service.signToken({ sub: "user-1", orgId: "org-1", sessionId: "sess-1" });
@@ -77,15 +89,14 @@ describe("JwtKeyringService", () => {
   });
 
   it("verifyToken returns null for a token with wrong issuer", async () => {
-    const keysJson = await buildTestKeys();
+    const { json: keysJson, entries } = await buildTestKeys();
     service = await makeService(keysJson);
 
     const { SignJWT } = await import("jose");
     const { importJWK } = await import("jose");
-    const entries = JSON.parse(keysJson) as Array<{ kid: string; privateKey: JsonWebKey; publicKey: JsonWebKey }>;
-    const privateKey = await importJWK(entries[0].privateKey, "EdDSA");
+    const privateKey = await importJWK(requireEntry(entries, 0).privateKey, "EdDSA");
     const badIssuerToken = await new SignJWT({ orgId: "org-1", sessionId: "sess-1" })
-      .setProtectedHeader({ alg: "EdDSA", kid: entries[0].kid })
+      .setProtectedHeader({ alg: "EdDSA", kid: requireEntry(entries, 0).kid })
       .setSubject("user-1")
       .setIssuer("evil-issuer")
       .setAudience(INTERNAL_TOKEN_AUDIENCE)
@@ -98,14 +109,13 @@ describe("JwtKeyringService", () => {
   });
 
   it("verifyToken returns null for a token with wrong audience", async () => {
-    const keysJson = await buildTestKeys();
+    const { json: keysJson, entries } = await buildTestKeys();
     service = await makeService(keysJson);
 
     const { SignJWT, importJWK } = await import("jose");
-    const entries = JSON.parse(keysJson) as Array<{ kid: string; privateKey: JsonWebKey; publicKey: JsonWebKey }>;
-    const privateKey = await importJWK(entries[0].privateKey, "EdDSA");
+    const privateKey = await importJWK(requireEntry(entries, 0).privateKey, "EdDSA");
     const badAudienceToken = await new SignJWT({ orgId: "org-1", sessionId: "sess-1" })
-      .setProtectedHeader({ alg: "EdDSA", kid: entries[0].kid })
+      .setProtectedHeader({ alg: "EdDSA", kid: requireEntry(entries, 0).kid })
       .setSubject("user-1")
       .setIssuer(INTERNAL_TOKEN_ISSUER)
       .setAudience("wrong-audience")
@@ -118,13 +128,13 @@ describe("JwtKeyringService", () => {
   });
 
   it("verifyToken returns null for a token signed by an unregistered key", async () => {
-    const keysJson = await buildTestKeys();
+    const { json: keysJson } = await buildTestKeys();
     service = await makeService(keysJson);
 
     const { generateKeyPairSync: gen } = await import("node:crypto");
     const { SignJWT, exportJWK: expJwk, importJWK } = await import("jose");
     const foreign = gen("ed25519");
-    const foreignPrivJwk = await expJwk(foreign.privateKey as unknown as CryptoKey);
+    const foreignPrivJwk = await expJwk(foreign.privateKey);
     const foreignPriv = await importJWK(foreignPrivJwk, "EdDSA");
 
     const badKeyToken = await new SignJWT({ orgId: "org-1", sessionId: "sess-1" })
@@ -141,14 +151,13 @@ describe("JwtKeyringService", () => {
   });
 
   it("verifyToken returns null for an expired token", async () => {
-    const keysJson = await buildTestKeys();
+    const { json: keysJson, entries } = await buildTestKeys();
     service = await makeService(keysJson);
 
     const { SignJWT, importJWK } = await import("jose");
-    const entries = JSON.parse(keysJson) as Array<{ kid: string; privateKey: JsonWebKey; publicKey: JsonWebKey }>;
-    const privateKey = await importJWK(entries[0].privateKey, "EdDSA");
+    const privateKey = await importJWK(requireEntry(entries, 0).privateKey, "EdDSA");
     const expiredToken = await new SignJWT({ orgId: "org-1", sessionId: "sess-1" })
-      .setProtectedHeader({ alg: "EdDSA", kid: entries[0].kid })
+      .setProtectedHeader({ alg: "EdDSA", kid: requireEntry(entries, 0).kid })
       .setSubject("user-1")
       .setIssuer(INTERNAL_TOKEN_ISSUER)
       .setAudience(INTERNAL_TOKEN_AUDIENCE)
@@ -161,11 +170,10 @@ describe("JwtKeyringService", () => {
   });
 
   it("rotation overlap — older tokens verified against old key still pass", async () => {
-    const { keys, kid1 } = await buildTestKeysTwo();
-    const entries = JSON.parse(keys) as Array<{ kid: string; privateKey: JsonWebKey; publicKey: JsonWebKey }>;
+    const { keys, entries, kid1 } = await buildTestKeysTwo();
 
     const { SignJWT, importJWK } = await import("jose");
-    const oldPriv = await importJWK(entries[0].privateKey, "EdDSA");
+    const oldPriv = await importJWK(requireEntry(entries, 0).privateKey, "EdDSA");
     const oldToken = await new SignJWT({ orgId: "org-1", sessionId: "sess-1" })
       .setProtectedHeader({ alg: "EdDSA", kid: kid1 })
       .setSubject("user-1")
@@ -191,7 +199,7 @@ describe("JwtKeyringService", () => {
   });
 
   it("JWKS contains only public key material", async () => {
-    const keysJson = await buildTestKeys();
+    const { json: keysJson } = await buildTestKeys();
     service = await makeService(keysJson);
 
     const jwks = service.getJwks();
@@ -205,7 +213,7 @@ describe("JwtKeyringService", () => {
   });
 
   it("a compromised frontend without the private key cannot forge a valid token", async () => {
-    const keysJson = await buildTestKeys();
+    const { json: keysJson } = await buildTestKeys();
     service = await makeService(keysJson);
 
     const { SignJWT } = await import("jose");
@@ -223,7 +231,7 @@ describe("JwtKeyringService", () => {
   });
 
   it("altered user claim (sub) invalidates token signature", async () => {
-    const keysJson = await buildTestKeys();
+    const { json: keysJson } = await buildTestKeys();
     service = await makeService(keysJson);
 
     const token = await service.signToken({ sub: "real-user", orgId: "org-1", sessionId: "sess-1" });
@@ -238,7 +246,7 @@ describe("JwtKeyringService", () => {
   });
 
   it("altered org claim invalidates token signature", async () => {
-    const keysJson = await buildTestKeys();
+    const { json: keysJson } = await buildTestKeys();
     service = await makeService(keysJson);
 
     const token = await service.signToken({ sub: "user-1", orgId: "real-org", sessionId: "sess-1" });

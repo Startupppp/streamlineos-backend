@@ -22,6 +22,7 @@
 import postgres from "postgres";
 import * as dotenv from "dotenv";
 import { resolve } from "node:path";
+import { createHash, randomUUID } from "node:crypto";
 
 dotenv.config({ path: resolve(process.cwd(), ".env") });
 
@@ -89,8 +90,8 @@ async function purge() {
 
 async function upsertUser(id, n, suffix = "") {
   await sql.unsafe(
-    `INSERT INTO users (id, name, email, first_name, last_name, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, now(), now())
+    `INSERT INTO users (id, name, email, email_verified, first_name, last_name, is_active, created_at, updated_at)
+     VALUES ($1, $2, $3, now(), $4, $5, true, now(), now())
      ON CONFLICT (id) DO NOTHING`,
     [id, `Seed User ${n}${suffix}`, `user-${n}${suffix}@scratch-seed.test`, `Seed${suffix}`, `User ${n}`],
   );
@@ -452,7 +453,7 @@ async function seedChat() {
   log("Seeding chat...");
 
   const memberRows = await sql.unsafe(
-    `SELECT id, user_id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY joined_at DESC LIMIT 10`,
+    `SELECT id, user_id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY joined_at DESC`,
     [LARGE_ORG],
   );
   const senderMemberId = memberRows[0]?.id;
@@ -488,6 +489,22 @@ async function seedChat() {
        ON CONFLICT DO NOTHING`,
       [LARGE_ORG, `channel-${i}`],
     ).catch(() => {});
+  }
+
+  const chan1Id = await sql.unsafe(
+    `SELECT id FROM chat_channels WHERE org_id = $1 AND name = 'channel-1' LIMIT 1`,
+    [LARGE_ORG],
+  ).then((r) => r[0]?.id);
+
+  if (chan1Id) {
+    for (const m of memberRows) {
+      await sql.unsafe(
+        `INSERT INTO chat_channel_members (org_id, channel_id, membership_id, role, joined_at, is_favorite)
+         VALUES ($1, $2, $3, 'MEMBER', now(), false)
+         ON CONFLICT DO NOTHING`,
+        [LARGE_ORG, chan1Id, m.id],
+      ).catch(() => {});
+    }
   }
 
   const existingMsgs = await sql.unsafe(
@@ -881,6 +898,71 @@ async function seedMail() {
   }
 }
 
+async function seedHrExtras() {
+  log("Seeding performance_reviews and helpdesk_tickets...");
+  const memberRows = await sql.unsafe(
+    `SELECT id, user_id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY joined_at DESC LIMIT 5`,
+    [LARGE_ORG],
+  );
+  if (!memberRows.length) { log("  no members — skipping HR extras"); return; }
+
+  const existingPR = await sql.unsafe(
+    `SELECT count(*)::int n FROM performance_reviews WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+
+  if (existingPR < 500) {
+    const toIns = 500 - existingPR;
+    log(`  inserting ${toIns} performance_reviews via generate_series...`);
+    await sql.unsafe(
+      `INSERT INTO performance_reviews (org_id, user_id, period_start, period_end, status, created_at, updated_at)
+       SELECT $1, m.user_id, '2026-01-01', '2026-06-30',
+         CASE WHEN s % 3 = 0 THEN 'DRAFT' WHEN s % 3 = 1 THEN 'IN_PROGRESS' ELSE 'COMPLETED' END::review_status,
+         now() - (s || ' hours')::interval, now()
+       FROM generate_series(${existingPR + 1}, 500) s
+       JOIN LATERAL (SELECT user_id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 1 OFFSET (s % 5)) m ON true`,
+      [LARGE_ORG],
+    ).catch((e) => warn("performance_reviews batch", e));
+  }
+
+  const existingHD = await sql.unsafe(
+    `SELECT count(*)::int n FROM helpdesk_tickets WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
+
+  if (existingHD < 500) {
+    const toIns = 500 - existingHD;
+    log(`  inserting ${toIns} helpdesk_tickets via generate_series...`);
+    await sql.unsafe(
+      `INSERT INTO helpdesk_tickets (org_id, user_id, title, priority, status, is_confidential, created_at, updated_at)
+       SELECT $1, m.user_id, 'Helpdesk Ticket ' || s, 'MEDIUM'::ticket_priority, 'IN_PROGRESS'::ticket_status, false,
+         now() - (s || ' hours')::interval, now()
+       FROM generate_series(${existingHD + 1}, 500) s
+       JOIN LATERAL (SELECT user_id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 1 OFFSET (s % 5)) m ON true`,
+      [LARGE_ORG],
+    ).catch((e) => warn("helpdesk_tickets batch", e));
+  }
+}
+
+const SEED_MAGIC_LINK_RAW = "scratch-seed-magic-link-2099-aaaa1111";
+
+async function seedMagicLinkToken() {
+  log("Seeding magic link token for headless browser auth...");
+  const tokenHash = createHash("sha256").update(SEED_MAGIC_LINK_RAW).digest("hex");
+  const tokenId = "00000000-0000-0000-0000-000000000099";
+  await sql.unsafe(
+    `DELETE FROM magic_link_tokens WHERE user_id = $1`,
+    [ownerId],
+  ).catch(() => {});
+  await sql.unsafe(
+    `INSERT INTO magic_link_tokens (id, user_id, token_hash, expires_at, used_at, created_at)
+     VALUES ($1, $2, $3, '2099-12-31 00:00:00', null, now())
+     ON CONFLICT (id) DO UPDATE SET token_hash = EXCLUDED.token_hash, expires_at = EXCLUDED.expires_at, used_at = null`,
+    [tokenId, ownerId, tokenHash],
+  ).catch((e) => warn("magic_link_token", e));
+  log(`  SEED LOGIN: email=user-1@scratch-seed.test  rawToken=${SEED_MAGIC_LINK_RAW}  orgId=${LARGE_ORG}`);
+}
+
 async function seedRoles() {
   log("Seeding roles...");
   await sql.unsafe(
@@ -986,6 +1068,8 @@ async function main() {
   await trySection("seedCalendarAndAnnouncements", seedCalendarAndAnnouncements);
   await trySection("seedMail", seedMail);
   await trySection("seedRoles", seedRoles);
+  await trySection("seedHrExtras", seedHrExtras);
+  await trySection("seedMagicLinkToken", seedMagicLinkToken);
   await vacuumAnalyze();
   await reportCounts();
 
