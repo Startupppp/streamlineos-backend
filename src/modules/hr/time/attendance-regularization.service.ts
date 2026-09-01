@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, or, sql } from "drizzle-orm";
 import { attendance, hrAttendanceRegularizations } from "../../../db/schema";
 import { PayrollInputsService } from "../payroll-inputs/payroll-inputs.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -15,6 +15,7 @@ import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service
 import { AccessService } from "../../access/access.service";
 import { resolveAttendanceScope } from "./attendance-scope";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { AuditService } from "../../../common/audit/audit.service";
 
 export interface CreateRegularizationInput {
@@ -79,6 +80,7 @@ export class AttendanceRegularizationService {
         .values({
           orgId: u.orgId,
           userId: u.userId,
+          userMembershipId: actingMembershipId(u.principal),
           attendanceDate: input.attendanceDate,
           requestedCheckIn: input.requestedCheckIn ? new Date(input.requestedCheckIn) : null,
           requestedCheckOut: input.requestedCheckOut ? new Date(input.requestedCheckOut) : null,
@@ -132,7 +134,14 @@ export class AttendanceRegularizationService {
     const offset = ((query.page ?? 1) - 1) * pageSize;
 
     const conditions = [eq(hrAttendanceRegularizations.orgId, u.orgId)];
-    if (targetUserId) conditions.push(eq(hrAttendanceRegularizations.userId, targetUserId));
+    if (targetUserId) {
+      const membershipId = actingMembershipId(u.principal);
+      const userPredicate =
+        targetUserId === u.userId && membershipId != null
+          ? or(eq(hrAttendanceRegularizations.userMembershipId, membershipId), eq(hrAttendanceRegularizations.userId, targetUserId))!
+          : eq(hrAttendanceRegularizations.userId, targetUserId);
+      conditions.push(userPredicate);
+    }
     if (query.status) conditions.push(eq(hrAttendanceRegularizations.status, query.status));
     if (query.startDate) conditions.push(gte(hrAttendanceRegularizations.attendanceDate, query.startDate));
     if (query.endDate) conditions.push(lte(hrAttendanceRegularizations.attendanceDate, query.endDate));

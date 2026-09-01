@@ -45,6 +45,7 @@ export class HrCasesService {
     userId: string,
     hasConfidential: boolean,
     input: ListCasesInput,
+    membershipId?: number | null,
   ) {
     const { page, limit, status, category, severity, search, assignedTo } = input;
     const offset = (page - 1) * limit;
@@ -52,10 +53,11 @@ export class HrCasesService {
     const conditions = [eq(hrCases.orgId, orgId), isNull(hrCases.deletedAt)];
 
     if (!hasConfidential) {
-      const visibilityFilter = or(
-        eq(hrCases.confidential, false),
-        eq(hrCases.assignedTo, userId),
-      );
+      const assigneeMatch =
+        membershipId != null
+          ? or(eq(hrCases.assignedToMembershipId, membershipId), eq(hrCases.assignedTo, userId))
+          : eq(hrCases.assignedTo, userId);
+      const visibilityFilter = or(eq(hrCases.confidential, false), assigneeMatch);
       if (visibilityFilter) conditions.push(visibilityFilter);
     }
 
@@ -117,7 +119,13 @@ export class HrCasesService {
     return inArray(hrCases.id, ids);
   }
 
-  async getById(orgId: string, id: number, userId: string, hasConfidential: boolean) {
+  async getById(
+    orgId: string,
+    id: number,
+    userId: string,
+    hasConfidential: boolean,
+    membershipId?: number | null,
+  ) {
     const [row] = await this.db
       .select()
       .from(hrCases)
@@ -126,7 +134,11 @@ export class HrCasesService {
 
     if (!row) throw new NotFoundException("Case not found");
 
-    if (row.confidential && !hasConfidential && row.assignedTo !== userId) {
+    const isAssigned =
+      membershipId != null
+        ? row.assignedToMembershipId === membershipId || row.assignedTo === userId
+        : row.assignedTo === userId;
+    if (row.confidential && !hasConfidential && !isAssigned) {
       throw new ForbiddenException("Access denied to confidential case");
     }
 

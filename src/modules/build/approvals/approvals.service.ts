@@ -17,6 +17,7 @@ import { ChatMessagesService } from "../../chat/chat-messages.service";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import {
   assertOrganizationActor,
   OrganizationActorError,
@@ -89,7 +90,7 @@ export class ApprovalsService {
     return row;
   }
 
-  async getInbox(orgId: string, userId: string) {
+  async getInbox(orgId: string, membershipId: number) {
     return this.db
       .select({
         id: projectApprovals.id,
@@ -110,7 +111,7 @@ export class ApprovalsService {
       .where(
         and(
           eq(projectApprovals.orgId, orgId),
-          eq(projectApprovals.approverId, userId),
+          eq(projectApprovals.approverMembershipId, membershipId),
           or(
             eq(projectApprovals.status, "pending"),
             eq(projectApprovals.status, "escalated"),
@@ -229,7 +230,8 @@ export class ApprovalsService {
     const { orgId, userId } = user;
     const approval = await this.loadApproval(orgId, projectId, approvalId);
 
-    if (approval.approverId !== userId) {
+    const callerMid = actingMembershipId(user.principal);
+    if (approval.approverMembershipId !== callerMid || callerMid === null) {
       if (!(await this.access.holds(user, "build:approvals:manage"))) {
         throw new NotFoundException("Approval not found");
       }

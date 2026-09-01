@@ -17,6 +17,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 
 import { AccessService } from "../../access/access.service";
 import {
@@ -81,7 +82,7 @@ export class DocumentsController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveDocumentsScope(this.access, currentUser);
-    return this.documents.listDocuments(currentUser.orgId, currentUser.userId, scope, filters);
+    return this.documents.listDocuments(currentUser.orgId, currentUser.userId, scope, filters, actingMembershipId(currentUser.principal));
   }
 
   @Post("documents")
@@ -93,7 +94,7 @@ export class DocumentsController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveDocumentsManageScope(this.access, currentUser);
-    return this.documents.createDocument(currentUser.orgId, currentUser.userId, scope, body);
+    return this.documents.createDocument(currentUser.orgId, currentUser.userId, scope, body, actingMembershipId(currentUser.principal));
   }
 
   @Get("documents/:documentId/file")
@@ -109,6 +110,7 @@ export class DocumentsController {
       currentUser.userId,
       scope,
       documentId,
+      actingMembershipId(currentUser.principal),
     );
     const fileKey = this.storage.getFileKeyFromUrl(document.fileUrl);
     if (!this.storage.isValidFileKey(fileKey)) {
@@ -132,7 +134,7 @@ export class DocumentsController {
   @RequirePermission("hr:documents:view")
   async documentStats(@CurrentUser() currentUser: CurrentUserContext) {
     const scope = await resolveDocumentsScope(this.access, currentUser);
-    return this.documents.stats(currentUser.orgId, currentUser.userId, scope);
+    return this.documents.stats(currentUser.orgId, currentUser.userId, scope, actingMembershipId(currentUser.principal));
   }
 
   @Patch("documents/:documentId")
@@ -150,6 +152,7 @@ export class DocumentsController {
       scope,
       documentId,
       body,
+      actingMembershipId(currentUser.principal),
     );
   }
 
@@ -162,7 +165,7 @@ export class DocumentsController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveDocumentsManageScope(this.access, currentUser);
-    await this.documents.deleteDocument(currentUser.orgId, currentUser.userId, scope, documentId);
+    await this.documents.deleteDocument(currentUser.orgId, currentUser.userId, scope, documentId, actingMembershipId(currentUser.principal));
   }
 
   @Get("document-expiry")
@@ -173,7 +176,7 @@ export class DocumentsController {
   ) {
     const daysAhead = Math.min(Math.max(Number(days) || 30, 1), 365);
     const scope = await resolveDocumentsScope(this.access, currentUser);
-    return this.documents.expiry(currentUser.orgId, currentUser.userId, scope, daysAhead);
+    return this.documents.expiry(currentUser.orgId, currentUser.userId, scope, daysAhead, actingMembershipId(currentUser.principal));
   }
 
   @Get("compliance")

@@ -1,7 +1,7 @@
-import { pgEnum, text, timestamp, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgEnum, text, timestamp, integer, index, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { projects } from "./core";
 
 export const changeRequestStatusEnum = pgEnum("change_request_status", [
@@ -29,6 +29,7 @@ export const changeRequests = build.table("change_requests", {
   status: changeRequestStatusEnum("status").notNull().default("submitted"),
   requestedById: text("requested_by_id").references(() => users.id, { onDelete: "set null" }),
   approvalOwnerId: text("approval_owner_id").references(() => users.id, { onDelete: "set null" }),
+  approvalOwnerMembershipId: integer("approval_owner_membership_id"),
   decisionComment: text("decision_comment"),
   decidedAt: timestamp("decided_at"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -39,5 +40,11 @@ export const changeRequests = build.table("change_requests", {
   index("idx_change_requests_org_project_status").on(t.orgId, t.projectId, t.status).where(sql`deleted_at IS NULL`),
   uniqueIndex("uq_change_requests_project_number").on(t.projectId, t.crNumber),
   index("idx_change_requests_requested_by").on(t.requestedById),
+  index("idx_change_requests_org_approval_owner_membership").on(t.orgId, t.approvalOwnerMembershipId),
   unique("uniq_change_requests_org_id").on(t.orgId, t.id),
+  foreignKey({
+    name: "fk_change_requests_approval_owner_actor",
+    columns: [t.orgId, t.approvalOwnerMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("set null"),
 ]);

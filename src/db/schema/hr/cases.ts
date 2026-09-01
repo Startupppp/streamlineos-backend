@@ -64,6 +64,8 @@ export const hrCases = pgTable("hr_cases", {
   outcome: text("outcome"),
   resolvedAt: timestamp("resolved_at"),
   assignedTo: text("assigned_to").references(() => users.id, { onDelete: "set null" }),
+  assignedToMembershipId: integer("assigned_to_membership_id"),
+  reportedByMembershipId: integer("reported_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   deletedAt: timestamp("deleted_at"),
@@ -73,6 +75,8 @@ export const hrCases = pgTable("hr_cases", {
   index("idx_hr_cases_org_status").on(table.orgId, table.status),
   index("idx_hr_cases_org_category").on(table.orgId, table.category),
   index("idx_hr_cases_org_assigned").on(table.orgId, table.assignedTo),
+  index("idx_hr_cases_org_assigned_membership").on(table.orgId, table.assignedToMembershipId),
+  index("idx_hr_cases_org_reported_membership").on(table.orgId, table.reportedByMembershipId),
 ]);
 
 export const hrCaseNotes = pgTable("hr_case_notes", {

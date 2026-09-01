@@ -6,6 +6,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ServiceDeliveryInboxService } from "./service-delivery-inbox.service";
+import { actingMembershipId } from "../../../common/auth/principal";
 
 @RequireModule("hr")
 @Controller("hr/service-delivery")
@@ -20,13 +21,13 @@ export class ServiceDeliveryController {
   @Get("ops-inbox")
   @RequirePermission("hr:cases:view")
   getOpsInbox(@CurrentUser() u: CurrentUserContext) {
-    return this.inbox.getOpsInbox(u.orgId, u.userId);
+    return this.inbox.getOpsInbox(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   /** Employee: my open helpdesk tickets + cases I reported. */
   @Get("my-items")
   @RequirePermission("hr:helpdesk:view")
   getMyItems(@CurrentUser() u: CurrentUserContext) {
-    return this.inbox.getMyItems(u.orgId, u.userId);
+    return this.inbox.getMyItems(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 }

@@ -44,6 +44,7 @@ export const documents = pgTable("documents", {
   tags: text("tags").array().default([]).notNull(),
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   uploadedBy: text("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+  userMembershipId: integer("user_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -52,6 +53,7 @@ export const documents = pgTable("documents", {
   index("idx_documents_org_type").on(table.orgId, table.type),
   index("idx_documents_user").on(table.userId),
   index("idx_documents_expiry").on(table.expiryDate),
+  index("idx_documents_org_user_membership").on(table.orgId, table.userMembershipId),
 ]);
 
 export const handbookVersions = pgTable("handbook_versions", {

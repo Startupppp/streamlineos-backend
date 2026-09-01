@@ -27,6 +27,7 @@ export const hrAttendanceRegularizations = pgTable("hr_attendance_regularization
   rejectedAt: timestamp("rejected_at"),
   rejectionReason: text("rejection_reason"),
   attendanceId: integer("attendance_id").references(() => attendance.id, { onDelete: "set null" }),
+  userMembershipId: integer("user_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -34,4 +35,5 @@ export const hrAttendanceRegularizations = pgTable("hr_attendance_regularization
   index("idx_att_reg_org_user").on(table.orgId, table.userId),
   index("idx_att_reg_org_date").on(table.orgId, table.attendanceDate),
   index("idx_att_reg_status").on(table.orgId, table.status),
+  index("idx_hr_attendance_regularizations_org_user_membership").on(table.orgId, table.userMembershipId),
 ]);

@@ -4,7 +4,6 @@ import { AccessService } from "../../access/access.service";
 import { isScopable } from "../../rbac/permissions";
 import { and, eq, or, sql, type SQL } from "drizzle-orm";
 import { leaveRequests } from "../../../db/schema";
-import { applyScope } from "../../access/apply-scope";
 
 export const LEAVES_PERMISSION = "hr:leaves:approve";
 
@@ -15,6 +14,12 @@ export async function resolveLeavesViewScope(
   if (!isScopable(LEAVES_PERMISSION)) return "none";
   const resolved = await access.resolveUserPermissions(u.orgId, u.userId);
   return resolved.get(LEAVES_PERMISSION) ?? "none";
+}
+
+function employeeOwnerPredicate(actorUserId: string, actorMembershipId?: number | null): SQL {
+  return actorMembershipId != null
+    ? or(eq(leaveRequests.userMembershipId, actorMembershipId), eq(leaveRequests.userId, actorUserId))!
+    : eq(leaveRequests.userId, actorUserId);
 }
 
 /** A derived approver is exclusive for scoped approvers; all-scope HR can override. */
@@ -34,12 +39,30 @@ export function leaveApprovalScope(
     case "team":
       return and(
         approverMatch,
-        applyScope(scope, orgId, actorUserId, {
-          ownerColumn: leaveRequests.userId,
-        }),
+        employeeOwnerPredicate(actorUserId, actorMembershipId),
       )!;
     case "own":
       return approverMatch;
+    case "none":
+      return sql`false`;
+    default: {
+      const _exhaustive: never = scope;
+      return sql`false`;
+    }
+  }
+}
+
+export function leaveEmployeeScope(
+  scope: DataScope,
+  actorUserId: string,
+  actorMembershipId?: number | null,
+): SQL {
+  switch (scope) {
+    case "all":
+      return sql`true`;
+    case "team":
+    case "own":
+      return employeeOwnerPredicate(actorUserId, actorMembershipId);
     case "none":
       return sql`false`;
     default: {

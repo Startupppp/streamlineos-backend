@@ -7,7 +7,7 @@ import {
   notificationChannelEnum,
   templateApprovalStatusEnum,
 } from "./enums";
-import { organizations, users } from "./auth";
+import { organizations, users, organizationMembers } from "./auth";
 
 export const notifications = pgTable("notifications", {
   // SCH-001: was serial (int4). int4 caps at 2.1bn, reachable by a fan-out-on-write
@@ -139,6 +139,7 @@ export const notificationAuditLogs = pgTable("notification_audit_logs", {
 export const notificationPreferences = pgTable("notification_preferences", {
   id: serial("id").primaryKey(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  membershipId: integer("membership_id"),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   emailEnabled: boolean("email_enabled").default(true).notNull(),
   pushEnabled: boolean("push_enabled").default(true).notNull(),
@@ -167,6 +168,12 @@ export const notificationPreferences = pgTable("notification_preferences", {
   // SCH-011: was a bare UNIQUE(user_id), so a user in two orgs shared one row and
   // the second org's write overwrote the first.
   uniqueIndex("uniq_notification_preferences_org_user").on(table.orgId, table.userId),
+  index("idx_notification_preferences_org_membership").on(table.orgId, table.membershipId),
+  foreignKey({
+    name: "fk_notification_preferences_actor",
+    columns: [table.orgId, table.membershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("cascade"),
 ]);
 
 export const notificationsRelations = relations(notifications, ({ one }) => ({

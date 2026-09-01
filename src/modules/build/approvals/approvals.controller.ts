@@ -17,6 +17,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { ApprovalsService } from "./approvals.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
@@ -44,7 +45,9 @@ export class ApprovalsInboxController {
   @Get("inbox")
   @RequirePermission("build:approvals:view")
   getInbox(@CurrentUser() u: CurrentUserContext) {
-    return this.svc.getInbox(u.orgId, u.userId);
+    const mid = actingMembershipId(u.principal);
+    if (mid === null) return Promise.resolve([]);
+    return this.svc.getInbox(u.orgId, mid);
   }
 }
 

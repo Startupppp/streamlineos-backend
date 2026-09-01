@@ -203,12 +203,10 @@ jobs:
       - name: Dependency licences
         run: pnpm check:licenses:self-test && pnpm check:licenses
 
-      # Every feature flag must declare an owner and a removal date. Reported, not enforced,
-      # until the feature_flags governance columns are migrated — the gate currently fails
-      # correctly, and turning it red now would only teach people to ignore it.
+      # Every feature flag must declare an owner and a removal date. ENFORCED since 0841 added
+      # the governance columns; the gate had been failing correctly and is now green for real.
       - name: Feature flag governance
         run: pnpm check:feature-flag-governance:self-test && pnpm check:feature-flag-governance
-        continue-on-error: true
 
       # Cross-tenant negative-test coverage. ENFORCED as of 2026-09-01: measured 895/895
       # tenant-owned services declare at least one isolation spec. The previous comment here

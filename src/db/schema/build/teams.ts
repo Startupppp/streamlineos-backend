@@ -1,7 +1,7 @@
 import { text, integer, boolean, timestamp, index, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { projects } from "./core";
 import { pmWorkspaces } from "./pm-workspaces";
 
@@ -50,6 +50,7 @@ export const projectTeamMembers = build.table(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    membershipId: integer("membership_id"),
     role: text("role").notNull().default("member"),
     joinedAt: timestamp("joined_at").defaultNow().notNull(),
   },
@@ -57,7 +58,13 @@ export const projectTeamMembers = build.table(
     uniqueIndex("uniq_project_team_members_team_user").on(t.teamId, t.userId),
     index("idx_project_team_members_org").on(t.orgId),
     index("idx_project_team_members_user").on(t.userId),
+    index("idx_project_team_members_org_membership").on(t.orgId, t.membershipId),
     unique("uniq_project_team_members_org_id").on(t.orgId, t.id),
+    foreignKey({
+      name: "fk_project_team_members_actor",
+      columns: [t.orgId, t.membershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("cascade"),
   ],
 );
 
@@ -71,6 +78,7 @@ export const projectWorkspaceMembers = build.table(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    membershipId: integer("membership_id"),
     role: text("role").notNull().default("member"),
     pmWorkspaceId: text("pm_workspace_id").notNull(),
     addedAt: timestamp("added_at").defaultNow().notNull(),
@@ -81,12 +89,18 @@ export const projectWorkspaceMembers = build.table(
       t.userId,
     ),
     index("idx_project_workspace_members_org").on(t.orgId),
+    index("idx_project_workspace_members_org_membership").on(t.orgId, t.membershipId),
     unique("uniq_project_workspace_members_org_id").on(t.orgId, t.id),
     foreignKey({
       columns: [t.orgId, t.pmWorkspaceId],
       foreignColumns: [pmWorkspaces.orgId, pmWorkspaces.pmWorkspaceId],
       name: "fk_project_workspace_members_org_pm_workspace",
     }),
+    foreignKey({
+      name: "fk_project_workspace_members_actor",
+      columns: [t.orgId, t.membershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("cascade"),
   ],
 );
 

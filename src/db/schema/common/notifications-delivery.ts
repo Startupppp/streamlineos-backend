@@ -11,7 +11,7 @@ import {
   notificationQuietHoursBehaviorEnum,
   notificationSuppressionReasonEnum,
 } from "./enums";
-import { organizations, users } from "./auth";
+import { organizations, users, organizationMembers } from "./auth";
 import { broadcasts } from "./broadcasts";
 import { notifications } from "./notifications";
 
@@ -58,6 +58,7 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
   notificationCreatedAt: timestamp("notification_created_at", { withTimezone: true }),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  membershipId: integer("membership_id"),
   eventKey: text("event_key"),
   channel: notificationChannelEnum("channel").notNull(),
   provider: notificationProviderEnum("provider"),
@@ -102,6 +103,12 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
   index("idx_notification_deliveries_due").on(table.orgId, table.status, table.nextAttemptAt),
   index("idx_notification_deliveries_notification").on(table.notificationId),
   index("idx_notification_deliveries_user_channel").on(table.orgId, table.userId, table.channel, table.createdAt),
+  index("idx_notification_deliveries_org_membership").on(table.orgId, table.membershipId),
+  foreignKey({
+    name: "fk_notification_deliveries_actor",
+    columns: [table.orgId, table.membershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("cascade"),
   // SEC-009 retention sweep, which runs per tenant via forEachOrg — a global sweep
   // is denied 42501 by this table's RLS policy.
   index("idx_notification_deliveries_retention").on(table.orgId, table.createdAt),
@@ -269,6 +276,7 @@ export const notificationPreferenceRules = pgTable(
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    membershipId: integer("membership_id"),
     scopeType: text("scope_type").$type<"EVENT" | "MODULE" | "CATEGORY">().notNull(),
     scopeKey: text("scope_key").notNull(),
     channel: notificationChannelEnum("channel").notNull(),
@@ -278,7 +286,13 @@ export const notificationPreferenceRules = pgTable(
   (t) => [
     uniqueIndex("uniq_notification_pref_rule").on(t.orgId, t.userId, t.scopeType, t.scopeKey, t.channel),
     index("idx_notification_pref_rule_lookup").on(t.orgId, t.userId, t.scopeType, t.scopeKey),
+    index("idx_notification_pref_rules_org_membership").on(t.orgId, t.membershipId),
     uniqueIndex("uniq_notification_preference_rules_org_id").on(t.orgId, t.id),
+    foreignKey({
+      name: "fk_notification_pref_rules_actor",
+      columns: [t.orgId, t.membershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("cascade"),
   ],
 );
 
@@ -297,6 +311,7 @@ export const notificationConsents = pgTable(
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    membershipId: integer("membership_id"),
     channel: notificationChannelEnum("channel").notNull(),
     destination: text("destination").notNull(),
     state: notificationConsentStateEnum("state").notNull(),
@@ -311,7 +326,13 @@ export const notificationConsents = pgTable(
   },
   (t) => [
     uniqueIndex("uniq_notification_consents_current").on(t.orgId, t.userId, t.channel, t.destination),
+    index("idx_notification_consents_org_membership").on(t.orgId, t.membershipId),
     uniqueIndex("uniq_notification_consents_org_id").on(t.orgId, t.id),
+    foreignKey({
+      name: "fk_notification_consents_actor",
+      columns: [t.orgId, t.membershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("cascade"),
   ],
 );
 
@@ -357,6 +378,7 @@ export const notificationDigestItems = pgTable(
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    membershipId: integer("membership_id"),
     channel: notificationChannelEnum("channel").notNull(),
     eventKey: text("event_key").notNull(),
     entityType: text("entity_type"),
@@ -377,7 +399,13 @@ export const notificationDigestItems = pgTable(
       .on(t.orgId, t.userId, t.channel, t.coalesceKey)
       .where(sql`flushed_at is null`),
     index("idx_notification_digest_due").on(t.orgId, t.deliverAfter).where(sql`flushed_at is null`),
+    index("idx_notification_digest_items_org_membership").on(t.orgId, t.membershipId),
     uniqueIndex("uniq_notification_digest_items_org_id").on(t.orgId, t.id),
+    foreignKey({
+      name: "fk_notification_digest_items_actor",
+      columns: [t.orgId, t.membershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("cascade"),
   ],
 );
 
@@ -438,11 +466,18 @@ export const broadcastReadReceipts = pgTable(
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     broadcastId: integer("broadcast_id").references(() => broadcasts.id, { onDelete: "cascade" }).notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    membershipId: integer("membership_id"),
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     uniqueIndex("uniq_broadcast_read_receipts_org_user_broadcast").on(t.orgId, t.broadcastId, t.userId),
     index("idx_broadcast_read_receipts_admin").on(t.orgId, t.broadcastId),
     index("idx_broadcast_read_receipts_user").on(t.orgId, t.userId),
+    index("idx_broadcast_read_receipts_org_membership").on(t.orgId, t.membershipId),
+    foreignKey({
+      name: "fk_broadcast_read_receipts_actor",
+      columns: [t.orgId, t.membershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("cascade"),
   ],
 );

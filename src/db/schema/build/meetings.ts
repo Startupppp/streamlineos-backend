@@ -9,10 +9,11 @@ import {
   index,
   unique,
   uniqueIndex,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { projects, sprints } from "./core";
 import { tickets } from "./tasks";
 
@@ -52,12 +53,19 @@ export const meetingAttendees = build.table("meeting_attendees", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   meetingId: integer("meeting_id").references(() => projectMeetings.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  membershipId: integer("membership_id"),
   attended: boolean("attended").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   uniqueIndex("uq_meeting_attendees_meeting_user").on(t.meetingId, t.userId),
   index("idx_meeting_attendees_user").on(t.userId),
+  index("idx_meeting_attendees_org_membership").on(t.orgId, t.membershipId),
   unique("uniq_meeting_attendees_org_id").on(t.orgId, t.id),
+  foreignKey({
+    name: "fk_meeting_attendees_actor",
+    columns: [t.orgId, t.membershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("cascade"),
 ]);
 
 export const meetingActionItems = build.table("meeting_action_items", {
@@ -87,6 +95,7 @@ export const meetingStandupEntries = build.table("meeting_standup_entries", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   meetingId: integer("meeting_id").references(() => projectMeetings.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  membershipId: integer("membership_id"),
   yesterday: text("yesterday"),
   today: text("today"),
   blockers: text("blockers"),
@@ -94,5 +103,11 @@ export const meetingStandupEntries = build.table("meeting_standup_entries", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
   uniqueIndex("uq_meeting_standup_meeting_user").on(t.meetingId, t.userId),
+  index("idx_meeting_standup_entries_org_membership").on(t.orgId, t.membershipId),
   unique("uniq_meeting_standup_entries_org_id").on(t.orgId, t.id),
+  foreignKey({
+    name: "fk_meeting_standup_entries_actor",
+    columns: [t.orgId, t.membershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("cascade"),
 ]);

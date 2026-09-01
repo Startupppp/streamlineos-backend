@@ -18,6 +18,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 
 import { ExitService } from "./exit.service";
 import { ExitWriteService } from "./exit-write.service";
@@ -70,7 +71,7 @@ export class ExitController {
     @Query() query: ListResignationsQueryInput,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.exit.list(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), query);
+    return this.exit.list(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), query, actingMembershipId(currentUser.principal));
   }
 
   @Post()

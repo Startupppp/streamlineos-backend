@@ -23,6 +23,20 @@ function formatDateString(value: Date): string {
   return value.toISOString().split("T")[0];
 }
 
+function documentOwnerPredicate(
+  scope: DataScope,
+  orgId: string,
+  userId: string,
+  membershipId?: number | null,
+): SQL {
+  if (scope === "own") {
+    return membershipId != null
+      ? or(eq(documents.userMembershipId, membershipId), eq(documents.userId, userId))!
+      : eq(documents.userId, userId);
+  }
+  return applyScope(scope, orgId, userId, { ownerColumn: documents.userId });
+}
+
 function documentCategoryCondition(category: string): SQL {
   switch (category) {
     case "Contracts":
@@ -78,12 +92,12 @@ export class DocumentsService {
     private readonly audit: AuditService,
   ) {}
 
-  async listDocuments(orgId: string, userId: string, scope: DataScope, filters: ListDocumentsInput) {
+  async listDocuments(orgId: string, userId: string, scope: DataScope, filters: ListDocumentsInput, membershipId?: number | null) {
     const conditions: SQL[] = [
       eq(documents.orgId, orgId),
       eq(documents.isActive, true),
     ];
-    conditions.push(applyScope(scope, orgId, userId, { ownerColumn: documents.userId }));
+    conditions.push(documentOwnerPredicate(scope, orgId, userId, membershipId));
     if (filters.userId && scope === "all") {
       conditions.push(eq(documents.userId, filters.userId));
     }
@@ -161,6 +175,7 @@ export class DocumentsService {
     userId: string,
     scope: DataScope,
     documentId: number,
+    membershipId?: number | null,
   ): Promise<{ documentId: number; fileUrl: string; fileName: string }> {
     const [document] = await this.db
       .select({
@@ -176,7 +191,7 @@ export class DocumentsService {
           eq(documents.isActive, true),
           or(
             eq(documents.isPublic, true),
-            applyScope(scope, orgId, userId, { ownerColumn: documents.userId }),
+            documentOwnerPredicate(scope, orgId, userId, membershipId),
           ),
         ),
       )
@@ -191,6 +206,7 @@ export class DocumentsService {
     userId: string,
     scope: DataScope,
     input: CreateDocumentInput,
+    membershipId?: number | null,
   ) {
     const targetUserId = input.userId ?? userId;
 
@@ -263,12 +279,13 @@ export class DocumentsService {
     scope: DataScope,
     documentId: number,
     input: UpdateDocumentInput,
+    membershipId?: number | null,
   ) {
     const doc = await this.db.query.documents.findFirst({
       where: and(
         eq(documents.id, documentId),
         eq(documents.orgId, orgId),
-        applyScope(scope, orgId, userId, { ownerColumn: documents.userId }),
+        documentOwnerPredicate(scope, orgId, userId, membershipId),
       ),
       columns: { id: true, userId: true, name: true },
     });
@@ -313,7 +330,7 @@ export class DocumentsService {
             and(
               eq(documents.id, documentId),
               eq(documents.orgId, orgId),
-              applyScope(scope, orgId, userId, { ownerColumn: documents.userId }),
+              documentOwnerPredicate(scope, orgId, userId, membershipId),
             ),
           )
           .returning();
@@ -333,12 +350,13 @@ export class DocumentsService {
     userId: string,
     scope: DataScope,
     documentId: number,
+    membershipId?: number | null,
   ) {
     const doc = await this.db.query.documents.findFirst({
       where: and(
         eq(documents.id, documentId),
         eq(documents.orgId, orgId),
-        applyScope(scope, orgId, userId, { ownerColumn: documents.userId }),
+        documentOwnerPredicate(scope, orgId, userId, membershipId),
       ),
       columns: { id: true, userId: true, name: true },
     });
@@ -351,7 +369,7 @@ export class DocumentsService {
         and(
           eq(documents.id, documentId),
           eq(documents.orgId, orgId),
-          applyScope(scope, orgId, userId, { ownerColumn: documents.userId }),
+          documentOwnerPredicate(scope, orgId, userId, membershipId),
         ),
       );
 
@@ -367,11 +385,11 @@ export class DocumentsService {
     return { success: true };
   }
 
-  async stats(orgId: string, userId: string, scope: DataScope) {
+  async stats(orgId: string, userId: string, scope: DataScope, membershipId?: number | null) {
     const baseWhere = and(
       eq(documents.orgId, orgId),
       eq(documents.isActive, true),
-      applyScope(scope, orgId, userId, { ownerColumn: documents.userId }),
+      documentOwnerPredicate(scope, orgId, userId, membershipId),
     );
 
     const horizon = formatDateString(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
@@ -406,7 +424,7 @@ export class DocumentsService {
     };
   }
 
-  async expiry(orgId: string, userId: string, scope: DataScope, daysAhead: number) {
+  async expiry(orgId: string, userId: string, scope: DataScope, daysAhead: number, membershipId?: number | null) {
     const now = new Date();
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
@@ -416,7 +434,7 @@ export class DocumentsService {
     const docConditions = [
       eq(documents.orgId, orgId),
       eq(documents.isActive, true),
-      applyScope(scope, orgId, userId, { ownerColumn: documents.userId }),
+      documentOwnerPredicate(scope, orgId, userId, membershipId),
       gte(documents.expiryDate, todayStr),
       lte(documents.expiryDate, futureStr),
     ];

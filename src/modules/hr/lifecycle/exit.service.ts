@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, or, sql } from "drizzle-orm";
 import {
   hrEmployments,
   hrPeople,
@@ -63,11 +63,17 @@ export class ExitService {
     private readonly employment: EmploymentFactsService,
   ) {}
 
-  async list(orgId: string, userId: string, isAdmin: boolean, params: ListResignationsQueryInput) {
+  async list(orgId: string, userId: string, isAdmin: boolean, params: ListResignationsQueryInput, membershipId?: number | null) {
     const limit = Math.min(params.limit, 100);
     const offset = (params.page - 1) * limit;
     const conditions = [eq(resignations.orgId, orgId)];
-    if (!isAdmin) conditions.push(eq(resignations.userId, userId));
+    if (!isAdmin) {
+      const ownerPredicate =
+        membershipId != null
+          ? or(eq(resignations.userMembershipId, membershipId), eq(resignations.userId, userId))!
+          : eq(resignations.userId, userId);
+      conditions.push(ownerPredicate);
+    }
     if (params.status) conditions.push(eq(resignations.status, params.status));
     const where = and(...conditions);
 

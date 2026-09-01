@@ -19,6 +19,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 
 import { HrCasesService } from "./hr-cases.service";
 import {
@@ -59,7 +60,7 @@ export class HrCasesController {
     @Query() query: ListCasesInput,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    return this.cases.list(user.orgId, user.userId, hasConfidential, query);
+    return this.cases.list(user.orgId, user.userId, hasConfidential, query, actingMembershipId(user.principal));
   }
 
   @Get("stats")
@@ -76,7 +77,7 @@ export class HrCasesController {
     @Param("caseId", ParseIntPipe) caseId: number,
   ) {
     const hasConfidential = await this.canConfidential(user);
-    return this.cases.getById(user.orgId, caseId, user.userId, hasConfidential);
+    return this.cases.getById(user.orgId, caseId, user.userId, hasConfidential, actingMembershipId(user.principal));
   }
 
   @Post()

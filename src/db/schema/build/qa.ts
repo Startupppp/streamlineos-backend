@@ -7,11 +7,12 @@ import {
   unique,
   uniqueIndex,
   jsonb,
+  foreignKey,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { projects, sprints } from "./core";
 import { tickets, projectReleases } from "./tasks";
 
@@ -73,6 +74,7 @@ export const testRuns = build.table("test_runs", {
   environment: text("environment"),
   browserDevice: text("browser_device"),
   testerId: text("tester_id").references(() => users.id, { onDelete: "set null" }),
+  testerMembershipId: integer("tester_membership_id"),
   status: testRunStatusEnum("status").default("not_started").notNull(),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
@@ -84,8 +86,14 @@ export const testRuns = build.table("test_runs", {
   index("idx_test_runs_org_project_status").on(table.orgId, table.projectId, table.status).where(sql`deleted_at IS NULL`),
   index("idx_test_runs_sprint").on(table.sprintId),
   index("idx_test_runs_release").on(table.releaseId),
+  index("idx_test_runs_org_tester_membership").on(table.orgId, table.testerMembershipId),
   uniqueIndex("uq_test_runs_project_number").on(table.projectId, table.runNumber),
   unique("uniq_test_runs_org_id").on(table.orgId, table.id),
+  foreignKey({
+    name: "fk_test_runs_tester_actor",
+    columns: [table.orgId, table.testerMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("set null"),
 ]);
 
 export const testRunResults = build.table("test_run_results", {
@@ -129,8 +137,10 @@ export const bugs = build.table("bugs", {
   affectedReleaseId: integer("affected_release_id").references(() => projectReleases.id, { onDelete: "set null" }),
   fixedReleaseId: integer("fixed_release_id").references(() => projectReleases.id, { onDelete: "set null" }),
   assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
+  assigneeMembershipId: integer("assignee_membership_id"),
   reporterId: text("reporter_id").references(() => users.id, { onDelete: "set null" }),
   qaOwnerId: text("qa_owner_id").references(() => users.id, { onDelete: "set null" }),
+  qaOwnerMembershipId: integer("qa_owner_membership_id"),
   reopenCount: integer("reopen_count").default(0).notNull(),
   linkedTicketId: integer("linked_ticket_id").references(() => tickets.id, { onDelete: "set null" }),
   linkedTestCaseId: integer("linked_test_case_id").references((): AnyPgColumn => testCases.id, { onDelete: "set null" }),
@@ -143,5 +153,17 @@ export const bugs = build.table("bugs", {
   index("idx_bugs_org_project_severity").on(table.orgId, table.projectId, table.severity).where(sql`deleted_at IS NULL`),
   uniqueIndex("uq_bugs_project_number").on(table.projectId, table.bugNumber),
   index("idx_bugs_assignee").on(table.assigneeId),
+  index("idx_bugs_org_assignee_membership").on(table.orgId, table.assigneeMembershipId),
+  index("idx_bugs_org_qa_owner_membership").on(table.orgId, table.qaOwnerMembershipId),
   unique("uniq_bugs_org_id").on(table.orgId, table.id),
+  foreignKey({
+    name: "fk_bugs_assignee_actor",
+    columns: [table.orgId, table.assigneeMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("set null"),
+  foreignKey({
+    name: "fk_bugs_qa_owner_actor",
+    columns: [table.orgId, table.qaOwnerMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("set null"),
 ]);

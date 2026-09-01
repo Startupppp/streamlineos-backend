@@ -67,7 +67,7 @@ export class ServiceDeliveryInboxService {
     private readonly access: AccessService,
   ) {}
 
-  async getOpsInbox(orgId: string, userId: string): Promise<ServiceDeliveryOpsInbox> {
+  async getOpsInbox(orgId: string, userId: string, membershipId?: number | null): Promise<ServiceDeliveryOpsInbox> {
     const perms = await this.access.resolveUserPermissions(orgId, userId);
     const canViewCases = perms.has("hr:cases:view");
     const canViewSafety = perms.has("hr:safety:view");
@@ -88,7 +88,11 @@ export class ServiceDeliveryInboxService {
         inArray(hrCases.status, ["open", "under_investigation"]),
       ];
       if (!hasConfidential) {
-        const vis = or(eq(hrCases.confidential, false), eq(hrCases.assignedTo, userId));
+        const assigneeMatch =
+          membershipId != null
+            ? or(eq(hrCases.assignedToMembershipId, membershipId), eq(hrCases.assignedTo, userId))
+            : eq(hrCases.assignedTo, userId);
+        const vis = or(eq(hrCases.confidential, false), assigneeMatch);
         if (vis) caseConditions.push(vis);
       }
       const rows = await this.db
@@ -230,7 +234,7 @@ export class ServiceDeliveryInboxService {
   }
 
   /** Employee view: my open helpdesk tickets + cases I reported (non-confidential summary). */
-  async getMyItems(orgId: string, userId: string): Promise<ServiceDeliveryMyItems> {
+  async getMyItems(orgId: string, userId: string, membershipId?: number | null): Promise<ServiceDeliveryMyItems> {
     const now = new Date();
     const items: ServiceDeliveryItem[] = [];
 
@@ -288,7 +292,9 @@ export class ServiceDeliveryInboxService {
         and(
           eq(hrCases.orgId, orgId),
           isNull(hrCases.deletedAt),
-          eq(hrCases.reportedBy, userId),
+          membershipId != null
+            ? or(eq(hrCases.reportedByMembershipId, membershipId), eq(hrCases.reportedBy, userId))!
+            : eq(hrCases.reportedBy, userId),
           inArray(hrCases.status, ["open", "under_investigation"]),
         ),
       )

@@ -12,7 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { relations, sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
 
@@ -26,6 +26,7 @@ export const okrGoals = build.table("okr_goals", {
   title: text("title").notNull(),
   description: text("description"),
   ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
+  ownerMembershipId: integer("owner_membership_id"),
   level: goalLevelEnum("level").default("company").notNull(),
   status: goalStatusEnum("status").default("not_started").notNull(),
   progress: integer("progress").default(0).notNull(),
@@ -34,6 +35,7 @@ export const okrGoals = build.table("okr_goals", {
   parentGoalId: integer("parent_goal_id"),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -42,7 +44,18 @@ export const okrGoals = build.table("okr_goals", {
   index("idx_okr_goals_org").on(table.orgId).where(sql`deleted_at IS NULL`),
   index("idx_okr_goals_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
   index("idx_okr_goals_parent").on(table.parentGoalId),
+  index("idx_okr_goals_org_owner_membership").on(table.orgId, table.ownerMembershipId),
   unique("uniq_okr_goals_org_id").on(table.orgId, table.id),
+  foreignKey({
+    name: "fk_okr_goals_owner_actor",
+    columns: [table.orgId, table.ownerMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("set null"),
+  foreignKey({
+    name: "fk_okr_goals_created_by_actor",
+    columns: [table.orgId, table.createdByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("set null"),
 ]);
 
 export const okrKeyResults = build.table("okr_key_results", {

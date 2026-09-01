@@ -1,7 +1,7 @@
 
-import { boolean, index, serial, pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
+import { boolean, index, integer, serial, pgTable, text, timestamp, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "./auth";
+import { organizations, users, organizationMembers } from "./auth";
 
 export type IntegrationToolkit = "googlecalendar" | "outlook" | "gmail";
 export type IntegrationConnectionStatus = "active" | "needs_reauth" | "disabled";
@@ -17,6 +17,7 @@ export const userIntegrationConnections = pgTable(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    membershipId: integer("membership_id"),
     toolkit: text("toolkit").$type<IntegrationToolkit>().notNull(),
     composioConnectedAccountId: text("composio_connected_account_id").notNull(),
     accountEmail: text("account_email"),
@@ -30,7 +31,13 @@ export const userIntegrationConnections = pgTable(
   (table) => [
     unique("uq_integration_connections_composio_account").on(table.composioConnectedAccountId),
     index("idx_integration_connections_org_user").on(table.orgId, table.userId),
+    index("idx_integration_connections_org_membership").on(table.orgId, table.membershipId),
     unique("uniq_user_integration_connections_org_id").on(table.orgId, table.id),
+    foreignKey({
+      name: "fk_user_integration_connections_actor",
+      columns: [table.orgId, table.membershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("cascade"),
   ],
 );
 
