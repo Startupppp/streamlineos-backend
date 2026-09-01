@@ -3977,6 +3977,76 @@
       "when": 1803000010008,
       "tag": "0915_support_routing_actor_drop",
       "breakpoints": true
+    },
+    {
+      "idx": 697,
+      "version": "7",
+      "when": 1803000010009,
+      "tag": "0916_support_remaining_actor_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 698,
+      "version": "7",
+      "when": 1803000010010,
+      "tag": "0917_build_actor_drop",
+      "breakpoints": true
+    },
+    {
+      "idx": 699,
+      "version": "7",
+      "when": 1803000010011,
+      "tag": "0918_common_actor_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 700,
+      "version": "7",
+      "when": 1803000010012,
+      "tag": "0919_s03_billing_affiliate_actor_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 701,
+      "version": "7",
+      "when": 1803000010013,
+      "tag": "0920_s03_ai_accounting_actor_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 702,
+      "version": "7",
+      "when": 1803000010014,
+      "tag": "0921_hr_people_performance_recruiting_actor_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 703,
+      "version": "7",
+      "when": 1803000010015,
+      "tag": "0922_hr_employee_career_plan_actor_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 704,
+      "version": "7",
+      "when": 1803000010016,
+      "tag": "0923_hr_cases_benefits_actor_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 705,
+      "version": "7",
+      "when": 1803000010017,
+      "tag": "0924_s01_hr_remaining_actor_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 706,
+      "version": "7",
+      "when": 1803000010018,
+      "tag": "0925_hr_attendance_regularization_decision_actors",
+      "breakpoints": true
     }
   ]
 }
