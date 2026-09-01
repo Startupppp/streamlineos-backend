@@ -3690,6 +3690,13 @@
       "when": 1798000152000,
       "tag": "0841_feature_flags_governance",
       "breakpoints": true
+    },
+    {
+      "idx": 654,
+      "version": "7",
+      "when": 1798000153000,
+      "tag": "0842_subscription_payments_amount_paise",
+      "breakpoints": true
     }
   ]
 }

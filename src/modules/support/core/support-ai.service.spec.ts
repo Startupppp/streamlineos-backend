@@ -145,7 +145,7 @@ describe("SupportAiService", () => {
       await expect(service.analyzeTicket("org1", 999)).rejects.toThrow(NotFoundException);
     });
 
-    it("persists summary/sentiment/category/priority suggestions from one structured gateway call (no charge)", async () => {
+    it("persists summary/sentiment/category/priority suggestions from one structured gateway call (charge: true)", async () => {
       mockGateway.invokeStructured.mockResolvedValueOnce(makeGatewayOk({
         summary: "Customer can't log in.",
         sentiment: "negative",
@@ -159,7 +159,7 @@ describe("SupportAiService", () => {
 
       expect(result).not.toBeNull();
       const [call] = mockGateway.invokeStructured.mock.calls;
-      expect(call[0].charge).toBeUndefined();
+      expect(call[0].charge).toBe(true);
       expect(call[0].feature).toBe("support.analysis");
       const insertedTypes = mockDb.values.mock.calls.map((c: [Record<string, unknown>]) => c[0].type);
       expect(insertedTypes).toEqual(expect.arrayContaining(["summary", "sentiment", "category", "priority"]));
@@ -451,7 +451,7 @@ describe("SupportAiService", () => {
   });
 
   describe("runFullAnalysis", () => {
-    it("calls analyzeTicket, findDuplicates, suggestKbArticles — all without charge (background auto)", async () => {
+    it("calls analyzeTicket (charge: true) and findDuplicates via Promise.allSettled", async () => {
       mockGateway.invokeStructured.mockResolvedValueOnce(makeGatewayOk({
         summary: "s", sentiment: "neutral", category: null, suggestedPriority: "LOW", isSpam: false, confidence: 0.5,
       }));
@@ -462,7 +462,7 @@ describe("SupportAiService", () => {
       expect(mockGateway.invokeStructured).toHaveBeenCalledTimes(1);
       const [analysisCall] = mockGateway.invokeStructured.mock.calls;
       expect(analysisCall[0].feature).toBe("support.analysis");
-      expect(analysisCall[0].charge).toBeUndefined();
+      expect(analysisCall[0].charge).toBe(true);
     });
 
     it("swallows errors from sub-calls (fire-and-forget safety)", async () => {

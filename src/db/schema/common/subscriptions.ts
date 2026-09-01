@@ -34,7 +34,8 @@ export const subscriptionPayments = pgTable("subscription_payments", {
   subscriptionId: integer("subscription_id").references(() => subscriptions.id, { onDelete: "cascade" }).notNull(),
   razorpayPaymentId: text("razorpay_payment_id"),
   razorpayOrderId: text("razorpay_order_id"),
-  amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
+  amount: numeric("amount", { precision: 15, scale: 2 }),
+  amountPaise: integer("amount_paise").notNull(),
   currency: text("currency").default("INR").notNull(),
   status: text("status").notNull(),
   paidAt: timestamp("paid_at"),
@@ -73,6 +74,7 @@ export const couponRedemptions = pgTable("coupon_redemptions", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
   amount: numeric("amount", { precision: 15, scale: 2 }),
+  amountPaise: integer("amount_paise").notNull(),
   redeemedAt: timestamp("redeemed_at").defaultNow().notNull(),
 }, (table) => [
   unique("uq_coupon_redemptions_coupon_org").on(table.couponId, table.orgId),

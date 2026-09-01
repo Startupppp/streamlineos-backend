@@ -156,7 +156,7 @@ export class BillingPaymentActivation {
           subscriptionId,
           razorpayPaymentId: input.razorpay_payment_id,
           razorpayOrderId: input.razorpay_order_id,
-          amount: (amount / 100).toFixed(2),
+          amountPaise: amount,
           currency: price.currency,
           status: "captured",
           paidAt: now,
@@ -280,7 +280,7 @@ export class BillingPaymentActivation {
       couponId,
       orgId,
       userId,
-      amount: (discountPaise / 100).toFixed(2),
+      amountPaise: discountPaise,
     });
   }
 

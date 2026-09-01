@@ -134,6 +134,7 @@ export class LeadNotificationAiService {
         feature: "lead.smart-notification",
         tier: "fast",
         maxTokens: 256,
+        charge: false,
         prompt: { system: SYSTEM_PROMPT, user: promptFn(input.context) },
       });
 
