@@ -275,7 +275,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
         {} as never, {} as never, {} as never,
         reader, {} as never,
       );
-      const result = await svc.list(ATTACKER, { page: 1, limit: 10 });
+      const result = await svc.list(ATTACKER, { limit: 10 });
       expect(result.data).toHaveLength(0);
       expect(where).toHaveBeenCalled();
       expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -289,7 +289,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
         {} as never, {} as never, {} as never,
         reader, {} as never,
       );
-      const result = await svc.list(OWNER, { page: 1, limit: 10 });
+      const result = await svc.list(OWNER, { limit: 10 });
       expect(result.data).toHaveLength(1);
     });
   });

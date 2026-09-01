@@ -106,7 +106,7 @@ export const terminationReviewSchema = z.object({
 });
 
 export const listTerminationsQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   status: z.enum(["DRAFT", "PENDING_FINAL", "APPROVED", "REJECTED", "SENT", "COMPLETED"]).optional(),
 });

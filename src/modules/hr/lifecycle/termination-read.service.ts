@@ -15,6 +15,8 @@ import {
   loadTerminationRelationalCollections,
 } from "./termination-relational-compat";
 import type { ListTerminationsQueryInput } from "./dto/hr-lifecycle.schemas";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 @Injectable()
 export class TerminationReadService {
@@ -25,9 +27,11 @@ export class TerminationReadService {
 
   async list(orgId: string, params: ListTerminationsQueryInput) {
     const limit = Math.min(params.limit, 100);
-    const offset = (params.page - 1) * limit;
     const conditions = [eq(terminations.orgId, orgId)];
     if (params.status) conditions.push(eq(terminations.status, params.status));
+    const position = decodeCursor(params.cursor);
+    if (position)
+      conditions.push(keysetBeforeId(terminations.createdAt, terminations.id, position));
     const where = and(...conditions);
     const [data, statusRows] = await Promise.all([
       this.db
@@ -63,9 +67,8 @@ export class TerminationReadService {
         .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
         .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(where)
-        .orderBy(desc(terminations.createdAt))
-        .limit(limit)
-        .offset(offset),
+        .orderBy(desc(terminations.createdAt), desc(terminations.id))
+        .limit(limit + 1),
       this.db
         .select({ status: terminations.status, count: sql<number>`count(*)` })
         .from(terminations)
@@ -79,13 +82,16 @@ export class TerminationReadService {
       if (row.status) statusCounts[row.status] = rowCount;
       orgTotal += rowCount;
     }
-    const total = params.status ? (statusCounts[params.status] ?? 0) : orgTotal;
+    const page = buildCursorPage(data, limit, (termination) => ({
+      sortValue: termination.createdAt.toISOString(),
+      id: String(termination.id),
+    }));
     const relationalCollections = await loadTerminationRelationalCollections(
       this.db,
       orgId,
-      data.map((termination) => termination.id),
+      page.data.map((termination) => termination.id),
     );
-    const compatibleData = data.map((termination) => ({
+    const compatibleData = page.data.map((termination) => ({
       ...termination,
       reasons: resolveCompatibleList(
         termination.reasons,
@@ -94,7 +100,7 @@ export class TerminationReadService {
     }));
     return {
       data: compatibleData,
-      pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
+      pagination: page.pagination,
       statusCounts: { ...statusCounts, ALL: orgTotal },
     };
   }

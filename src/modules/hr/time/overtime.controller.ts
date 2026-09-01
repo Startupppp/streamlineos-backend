@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode } from "@nestjs/common";
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -17,7 +17,7 @@ import { BodylessAction } from "../../../common/openapi/zod-operation-contracts"
 const overtimeRequestIdParams = z.object({ overtimeRequestId: z.coerce.number().int().positive() }).strict();
 
 const listQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   pageSize: pageSizeField(20, 100),
 });
 

@@ -375,7 +375,7 @@ describe("HR Time services — cross-tenant isolation", () => {
     it("scopes overtime requests to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
       const svc = new OvertimeService(db, null as never, null as never);
-      const result = await svc.listRequests(ATTACKER, { page: 1, pageSize: 10 });
+      const result = await svc.listRequests(ATTACKER, { pageSize: 10 });
       expect(result.items).toHaveLength(0);
       expect(where).toHaveBeenCalled();
       expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -384,7 +384,7 @@ describe("HR Time services — cross-tenant isolation", () => {
     it("returns overtime requests for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
       const svc = new OvertimeService(db, null as never, null as never);
-      const result = await svc.listRequests(OWNER, { page: 1, pageSize: 10 });
+      const result = await svc.listRequests(OWNER, { pageSize: 10 });
       expect(result.items).toHaveLength(1);
     });
   });

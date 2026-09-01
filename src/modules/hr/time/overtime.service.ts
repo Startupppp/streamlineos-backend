@@ -5,6 +5,8 @@ import { compOffBalances, hrLeaveLedger, leaveTypes, overtimeRequests } from "..
 import { eq, and, desc, sql } from "drizzle-orm";
 import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.service";
 import { HrWorkflowEngineService } from "../workflows/hr-workflow-engine.service";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 const DEFAULT_STANDARD_DAY_HOURS = 8;
 
@@ -18,34 +20,29 @@ export class OvertimeService {
 
   async listRequests(
     orgId: string,
-    params: { page?: number; pageSize?: number } = {},
+    params: { cursor?: string; pageSize?: number } = {},
   ) {
-    const page = Math.max(1, params.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, params.pageSize ?? 20));
-    const offset = (page - 1) * pageSize;
-
-    const [items, totalRow] = await Promise.all([
-      this.db
-        .select()
-        .from(overtimeRequests)
-        .where(eq(overtimeRequests.orgId, orgId))
-        .orderBy(desc(overtimeRequests.createdAt))
-        .limit(pageSize)
-        .offset(offset),
-      this.db
-        .select({ total: sql<number>`count(*)::int` })
-        .from(overtimeRequests)
-        .where(eq(overtimeRequests.orgId, orgId))
-        .then((rows) => rows[0] ?? { total: 0 }),
-    ]);
-
-    const total = Number(totalRow.total);
+    const position = decodeCursor(params.cursor);
+    const where = position
+      ? and(
+          eq(overtimeRequests.orgId, orgId),
+          keysetBeforeId(overtimeRequests.createdAt, overtimeRequests.id, position),
+        )
+      : eq(overtimeRequests.orgId, orgId);
+    const rows = await this.db
+      .select()
+      .from(overtimeRequests)
+      .where(where)
+      .orderBy(desc(overtimeRequests.createdAt), desc(overtimeRequests.id))
+      .limit(pageSize + 1);
+    const page = buildCursorPage(rows, pageSize, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
     return {
-      items,
-      total,
-      page,
-      pageSize,
-      totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
+      items: page.data,
+      pagination: page.pagination,
     };
   }
 
