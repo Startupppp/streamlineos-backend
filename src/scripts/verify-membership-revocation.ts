@@ -332,7 +332,7 @@ async function main(): Promise<void> {
           orgId: ORG_ID,
           name: `Revoc Space ${TS}`,
           slug: `revoc-space-${TS}`,
-          createdById: DEL_USER_ID,
+          createdByMembershipId: delRow.id,
         })
         .returning({ id: kbSpaces.id });
       if (!spaceRow) throw new Error("kb space insert failed");

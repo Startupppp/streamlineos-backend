@@ -9,6 +9,7 @@ import {
   supportVipClients,
   users,
   organizations,
+  organizationMembers,
   type RoutingRuleCondition,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -39,6 +40,19 @@ export interface RoutingOutcome {
 @Injectable()
 export class SupportMacrosService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  private async resolveActiveMembershipId(orgId: string, userId: string): Promise<number> {
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    if (!member) throw new NotFoundException("Active organization member not found");
+    return member.id;
+  }
 
   listMacros(orgId: string, _userId: string, membershipId: number | null, query: ListMacrosInput) {
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
@@ -300,12 +314,19 @@ export class SupportMacrosService {
     if (requiredSkills.length === 0) return candidates;
 
     const rows = await this.db
-      .select({ userId: supportAgentSkills.userId, skill: supportAgentSkills.skill })
+      .select({ userId: organizationMembers.userId, skill: supportAgentSkills.skill })
       .from(supportAgentSkills)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, supportAgentSkills.orgId),
+          eq(organizationMembers.id, supportAgentSkills.userMembershipId),
+        ),
+      )
       .where(
         and(
           eq(supportAgentSkills.orgId, orgId),
-          inArray(supportAgentSkills.userId, candidates),
+          inArray(organizationMembers.userId, candidates),
           inArray(supportAgentSkills.skill, requiredSkills),
         ),
       );
@@ -328,12 +349,19 @@ export class SupportMacrosService {
    */
   private async filterByAvailability(orgId: string, candidates: string[]): Promise<string[]> {
     const rows = await this.db
-      .select({ userId: supportAgentAvailability.userId, isAvailable: supportAgentAvailability.isAvailable })
+      .select({ userId: organizationMembers.userId, isAvailable: supportAgentAvailability.isAvailable })
       .from(supportAgentAvailability)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, supportAgentAvailability.orgId),
+          eq(organizationMembers.id, supportAgentAvailability.userMembershipId),
+        ),
+      )
       .where(
         and(
           eq(supportAgentAvailability.orgId, orgId),
-          inArray(supportAgentAvailability.userId, candidates),
+          inArray(organizationMembers.userId, candidates),
         ),
       );
 
@@ -372,14 +400,15 @@ export class SupportMacrosService {
   }
 
   async setAgentSkills(orgId: string, userId: string, skills: string[]) {
+    const membershipId = await this.resolveActiveMembershipId(orgId, userId);
     await this.db.transaction(async (tx) => {
       await tx
         .delete(supportAgentSkills)
-        .where(and(eq(supportAgentSkills.orgId, orgId), eq(supportAgentSkills.userId, userId)));
+        .where(and(eq(supportAgentSkills.orgId, orgId), eq(supportAgentSkills.userMembershipId, membershipId)));
       if (skills.length > 0) {
         await tx
           .insert(supportAgentSkills)
-          .values(skills.map((skill) => ({ orgId, userId, skill })))
+          .values(skills.map((skill) => ({ orgId, userMembershipId: membershipId, skill })))
           .onConflictDoNothing();
       }
     });
@@ -387,15 +416,29 @@ export class SupportMacrosService {
   }
 
   listAgentSkills(orgId: string) {
-    return this.db.query.supportAgentSkills.findMany({ where: eq(supportAgentSkills.orgId, orgId) });
+    return this.db
+      .select({
+        id: supportAgentSkills.id,
+        orgId: supportAgentSkills.orgId,
+        userId: organizationMembers.userId,
+        userMembershipId: supportAgentSkills.userMembershipId,
+        skill: supportAgentSkills.skill,
+        createdAt: supportAgentSkills.createdAt,
+      })
+      .from(supportAgentSkills)
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, supportAgentSkills.orgId), eq(organizationMembers.id, supportAgentSkills.userMembershipId)))
+      .where(eq(supportAgentSkills.orgId, orgId))
+      .orderBy(asc(supportAgentSkills.id))
+      .limit(500);
   }
 
   async setAgentAvailability(orgId: string, userId: string, isAvailable: boolean) {
+    const membershipId = await this.resolveActiveMembershipId(orgId, userId);
     const [row] = await this.db
       .insert(supportAgentAvailability)
-      .values({ orgId, userId, isAvailable })
+      .values({ orgId, userMembershipId: membershipId, isAvailable })
       .onConflictDoUpdate({
-        target: [supportAgentAvailability.orgId, supportAgentAvailability.userId],
+        target: [supportAgentAvailability.orgId, supportAgentAvailability.userMembershipId],
         set: { isAvailable, updatedAt: new Date() },
       })
       .returning();
@@ -403,7 +446,20 @@ export class SupportMacrosService {
   }
 
   listAgentAvailability(orgId: string) {
-    return this.db.query.supportAgentAvailability.findMany({ where: eq(supportAgentAvailability.orgId, orgId) });
+    return this.db
+      .select({
+        id: supportAgentAvailability.id,
+        orgId: supportAgentAvailability.orgId,
+        userId: organizationMembers.userId,
+        userMembershipId: supportAgentAvailability.userMembershipId,
+        isAvailable: supportAgentAvailability.isAvailable,
+        updatedAt: supportAgentAvailability.updatedAt,
+      })
+      .from(supportAgentAvailability)
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, supportAgentAvailability.orgId), eq(organizationMembers.id, supportAgentAvailability.userMembershipId)))
+      .where(eq(supportAgentAvailability.orgId, orgId))
+      .orderBy(asc(supportAgentAvailability.id))
+      .limit(500);
   }
 
   async addVipClient(orgId: string, clientId: number) {

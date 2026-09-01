@@ -1,5 +1,5 @@
 import { pgTable, serial, text, integer, boolean, timestamp, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { supportTickets, supportTicketMessages } from "./tickets";
 
 export const supportMessageMentions = pgTable(
@@ -8,12 +8,11 @@ export const supportMessageMentions = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     messageId: integer("message_id").references(() => supportTicketMessages.id, { onDelete: "cascade" }).notNull(),
-    mentionedUserId: text("mentioned_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-    mentionedUserMembershipId: integer("mentioned_user_membership_id"),
+    mentionedUserMembershipId: integer("mentioned_user_membership_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uniq_support_message_mentions_message_user").on(table.messageId, table.mentionedUserId),
+    uniqueIndex("uniq_support_message_mentions_message_membership").on(table.messageId, table.mentionedUserMembershipId),
     index("idx_support_message_mentions_message").on(table.messageId),
     unique("uniq_support_message_mentions_org_id").on(table.orgId, table.id),
     index("idx_support_message_mentions_org_mentioned_actor").on(table.orgId, table.mentionedUserMembershipId),
