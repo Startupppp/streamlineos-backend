@@ -12,6 +12,15 @@ BEGIN
     ['support_tickets', 'assignee_id', 'assignee_membership_id'],
     ['support_tickets', 'created_by', 'created_by_membership_id']
   ] LOOP
+    IF NOT EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = target[1]
+        AND column_name = target[2]
+    ) THEN
+      CONTINUE;
+    END IF;
     LOOP
       EXECUTE format(
         'WITH batch AS (
@@ -39,13 +48,37 @@ END $$;
 DO $$
 DECLARE
   unmappable_count integer;
+  target record;
+  count_sql text;
+  current_count integer;
 BEGIN
-  SELECT
-    (SELECT count(*) FROM kb_articles WHERE owner_id IS NOT NULL AND owner_membership_id IS NULL) +
-    (SELECT count(*) FROM support_routing_rules WHERE assignee_id IS NOT NULL AND assignee_membership_id IS NULL) +
-    (SELECT count(*) FROM support_tickets WHERE assignee_id IS NOT NULL AND assignee_membership_id IS NULL) +
-    (SELECT count(*) FROM support_tickets WHERE created_by_membership_id IS NULL)
-  INTO unmappable_count;
+  unmappable_count := 0;
+  FOR target IN
+    SELECT *
+    FROM (VALUES
+      ('kb_articles', 'owner_id', 'owner_membership_id'),
+      ('support_routing_rules', 'assignee_id', 'assignee_membership_id'),
+      ('support_tickets', 'assignee_id', 'assignee_membership_id'),
+      ('support_tickets', 'created_by', 'created_by_membership_id')
+    ) AS requested(table_name, legacy_column, membership_column)
+  LOOP
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = target.table_name
+        AND column_name = target.legacy_column
+    ) AND EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = target.table_name
+        AND column_name = target.membership_column
+    ) THEN
+      count_sql := format(
+        'SELECT count(*) FROM public.%I WHERE %I IS NOT NULL AND %I IS NULL',
+        target.table_name, target.legacy_column, target.membership_column
+      );
+      EXECUTE count_sql INTO current_count;
+      unmappable_count := unmappable_count + current_count;
+    END IF;
+  END LOOP;
   IF unmappable_count > 0 THEN
     RAISE EXCEPTION '0916: % support actor row(s) cannot map to org membership', unmappable_count;
   END IF;
