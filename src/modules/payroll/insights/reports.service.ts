@@ -3,6 +3,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payrollLineItems } from "../../../db/schema";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
+import { toPaise, fromPaise } from "../runs/lib/money";
 import { findRunForMonth, getLineItemsForRun, getRunEmployeeIds, type LineItemFilters } from "./lib/report-builders";
 import { buildCursorPage, type CursorPage } from "../../../common/pagination/cursor";
 import {
@@ -112,7 +113,7 @@ function pivotByEmployee(
     }
     const row = empMap.get(uid)!;
     const existing = row.components[lineItem.code] ?? "0";
-    row.components[lineItem.code] = (parseFloat(existing) + parseFloat(lineItem.amount)).toFixed(2);
+    row.components[lineItem.code] = fromPaise(toPaise(existing) + toPaise(lineItem.amount));
   }
 
   const rows = [...empMap.values()];
@@ -182,7 +183,7 @@ export class ReportsService {
       }
       const row = empMap.get(uid)!;
       const existing = row.components[lineItem.code] ?? "0";
-      row.components[lineItem.code] = (parseFloat(existing) + parseFloat(lineItem.amount)).toFixed(2);
+      row.components[lineItem.code] = fromPaise(toPaise(existing) + toPaise(lineItem.amount));
     }
 
     const rows = [...empMap.values()];

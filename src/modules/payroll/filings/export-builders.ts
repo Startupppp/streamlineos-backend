@@ -9,6 +9,7 @@ import {
   IN_STATUTORY_RULE_BUNDLE_VERSION,
   type IndiaStatutoryBundle,
 } from "../runs/lib/statutory-registry";
+import { toPaise } from "../runs/lib/money";
 
 export type FilingExportType = "PF_ECR" | "ESI" | "PT" | "TDS_24Q" | "FORM16" | "LWF";
 
@@ -56,12 +57,12 @@ const PT_CODES = ["PROFESSIONAL_TAX", "PT"] as const;
 const TDS_CODES = ["TDS"] as const;
 
 function amt(lines: Record<string, string>, codes: readonly string[]): number {
-  let sum = 0;
+  let sumPaise = 0;
   for (const c of codes) {
     const v = lines[c];
-    if (v != null && v !== "") sum += parseFloat(v) || 0;
+    if (v != null && v !== "") sumPaise += toPaise(v);
   }
-  return Math.round(sum * 100) / 100;
+  return sumPaise / 100;
 }
 
 function money(n: number): string {
@@ -69,13 +70,13 @@ function money(n: number): string {
 }
 
 function sumField(rows: Record<string, string | number>[], key: string): string {
-  let total = 0;
+  let totalPaise = 0;
   for (const r of rows) {
     const v = r[key];
-    if (typeof v === "number") total += v;
-    else if (typeof v === "string" && v !== "") total += parseFloat(v) || 0;
+    if (typeof v === "number") totalPaise += Math.round(v * 100);
+    else if (typeof v === "string" && v !== "") totalPaise += toPaise(v);
   }
-  return money(Math.round(total * 100) / 100);
+  return money(totalPaise / 100);
 }
 
 function baseMeta(

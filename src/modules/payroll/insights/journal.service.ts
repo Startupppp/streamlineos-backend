@@ -6,6 +6,7 @@ import { payrollLineItems, payrollRunEmployees, employeeSalaryProfiles } from ".
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { findRunForMonth } from "./lib/report-builders";
 import { AccountingMappingsService } from "./accounting-mappings.service";
+import { toPaise } from "../runs/lib/money";
 
 export interface JournalLine {
   account: string;
@@ -29,11 +30,9 @@ interface LineGroup {
   code: string;
   category: string;
   name: string;
-  total: number;
+  totalPaise: number;
   costCenter: string | null;
 }
-
-const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 const EMPTY_RESULT = (month: string): JournalResult => ({
   provisional: true,
@@ -101,14 +100,14 @@ export class JournalService {
       const key = `${item.componentId ?? ""}\0${item.code}\0${item.category}\0${costCenter ?? ""}`;
       const existing = groups.get(key);
       if (existing !== undefined) {
-        existing.total += parseFloat(item.amount);
+        existing.totalPaise += toPaise(item.amount);
       } else {
         groups.set(key, {
           componentId: item.componentId,
           code: item.code,
           category: item.category,
           name: item.name,
-          total: parseFloat(item.amount),
+          totalPaise: toPaise(item.amount),
           costCenter,
         });
       }
@@ -140,7 +139,7 @@ export class JournalService {
         group.category === "REIMBURSEMENT" ||
         group.category === "EMPLOYER_CONTRIBUTION";
 
-      const amount = round2(group.total);
+      const amount = group.totalPaise / 100;
 
       lines.push({
         account,
@@ -161,20 +160,20 @@ export class JournalService {
       }
     }
 
-    const totalNetNum = runEmployees.reduce((acc, emp) => acc + parseFloat(emp.net), 0);
+    const totalNetPaise = runEmployees.reduce((acc, emp) => acc + toPaise(emp.net), 0);
     lines.push({
       account: "Salaries Payable",
       description: "Net payable to employees",
       debit: 0,
-      credit: round2(totalNetNum),
+      credit: totalNetPaise / 100,
       costCenter: null,
     });
 
-    let totalDebitsNum = 0;
-    let totalCreditsNum = 0;
+    let totalDebitsPaise = 0;
+    let totalCreditsPaise = 0;
     for (const line of lines) {
-      totalDebitsNum += line.debit;
-      totalCreditsNum += line.credit;
+      totalDebitsPaise += Math.round(line.debit * 100);
+      totalCreditsPaise += Math.round(line.credit * 100);
     }
 
     return {
@@ -182,8 +181,8 @@ export class JournalService {
       month,
       lines,
       unmappedCodes: [...new Set(unmappedCodes)],
-      totalDebits: round2(totalDebitsNum),
-      totalCredits: round2(totalCreditsNum),
+      totalDebits: totalDebitsPaise / 100,
+      totalCredits: totalCreditsPaise / 100,
     };
   }
 }

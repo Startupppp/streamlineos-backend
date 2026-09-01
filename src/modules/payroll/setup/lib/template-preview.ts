@@ -1,5 +1,6 @@
 import type { TemplateComponentDef, MoneyString, FormulaScope } from "../../payroll.types";
 import { FORMULA_VARIABLES } from "../../payroll.types";
+import { toPaise } from "../../runs/lib/money";
 
 export interface PreviewLine {
   code: string;
@@ -146,8 +147,8 @@ export function computeTemplatePreview(
     });
   }
 
-  let totalDeductions = 0;
-  let employerContributions = 0;
+  let totalDeductionsPaise = 0;
+  let employerContributionsPaise = 0;
 
   for (const line of lines) {
     const comp = sorted.find((c) => c.code === line.code);
@@ -156,15 +157,15 @@ export function computeTemplatePreview(
     if (comp.calcMethod === "PERCENT_OF_GROSS" && (comp.type === "DEDUCTION" || comp.type === "TAX")) {
       const amt = grossEarnings * parseFloat(comp.percent ?? "0") / 100;
       line.monthlyAmount = toDecimalString(amt);
-      totalDeductions += amt;
+      totalDeductionsPaise += toPaise(line.monthlyAmount);
     } else if (comp.calcMethod === "PERCENT_OF_GROSS" && comp.type === "EMPLOYER_CONTRIBUTION") {
       const amt = grossEarnings * parseFloat(comp.percent ?? "0") / 100;
       line.monthlyAmount = toDecimalString(amt);
-      employerContributions += amt;
+      employerContributionsPaise += toPaise(line.monthlyAmount);
     } else if (comp.type === "DEDUCTION" || comp.type === "TAX") {
-      totalDeductions += parseFloat(line.monthlyAmount);
+      totalDeductionsPaise += toPaise(line.monthlyAmount);
     } else if (comp.type === "EMPLOYER_CONTRIBUTION") {
-      employerContributions += parseFloat(line.monthlyAmount);
+      employerContributionsPaise += toPaise(line.monthlyAmount);
     }
   }
 
@@ -174,9 +175,9 @@ export function computeTemplatePreview(
     components: lines,
     totals: {
       grossEarnings: toDecimalString(grossEarnings),
-      totalDeductions: toDecimalString(totalDeductions),
-      employerContributions: toDecimalString(employerContributions),
-      netTakeHome: toDecimalString(grossEarnings - totalDeductions),
+      totalDeductions: toDecimalString(totalDeductionsPaise / 100),
+      employerContributions: toDecimalString(employerContributionsPaise / 100),
+      netTakeHome: toDecimalString(grossEarnings - totalDeductionsPaise / 100),
     },
   };
 }

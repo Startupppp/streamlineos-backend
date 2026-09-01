@@ -10,6 +10,7 @@ import { EmploymentFactsService } from "../../directory/employment-facts.service
 import {
   type EmployeeStatutorySourceRow,
 } from "./export-builders";
+import { toPaise, fromPaise } from "../runs/lib/money";
 import { payrollSubjectKeyFromRunEmployee } from "../lib/payroll-subject";
 import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
 import { readPayrollKeysetBatches } from "../lib/payroll-keyset-batch";
@@ -112,9 +113,7 @@ export async function loadStatutorySources(
   const linesByRe = new Map<number, Record<string, string>>();
   for (const li of lineRows) {
     const map = linesByRe.get(li.runEmployeeId) ?? {};
-    const prev = parseFloat(map[li.code] ?? "0") || 0;
-    const next = parseFloat(li.amount) || 0;
-    map[li.code] = (prev + next).toFixed(2);
+    map[li.code] = fromPaise(toPaise(map[li.code] ?? "0") + toPaise(li.amount));
     linesByRe.set(li.runEmployeeId, map);
   }
 
