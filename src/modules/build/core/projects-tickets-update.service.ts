@@ -335,7 +335,7 @@ export class ProjectsTicketsUpdateService {
     }
 
     const ticketProjectId = before.projectId;
-    this.webhooksDispatch.dispatch(orgId, ticketProjectId, "ticket.updated", {
+    await this.webhooksDispatch.dispatch(orgId, ticketProjectId, "ticket.updated", {
       id: ticketId,
       projectId: ticketProjectId,
       title: input.title ?? before.title,
@@ -347,7 +347,7 @@ export class ProjectsTicketsUpdateService {
 
     const newAssignee = resolveAssigneeId(input.assigneeId);
     if (newAssignee !== undefined && newAssignee !== before.assigneeId) {
-      this.webhooksDispatch.dispatch(
+      await this.webhooksDispatch.dispatch(
         orgId,
         ticketProjectId,
         "ticket.assigned",

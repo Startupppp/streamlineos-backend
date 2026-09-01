@@ -145,7 +145,7 @@ export class SprintsService {
             ? "sprint.completed"
             : null;
       if (eventName) {
-        this.webhooksDispatch.dispatch(orgId, before.projectId, eventName, {
+        await this.webhooksDispatch.dispatch(orgId, before.projectId, eventName, {
           id: sprintId,
           projectId: before.projectId,
           name: input.name ?? before.name,

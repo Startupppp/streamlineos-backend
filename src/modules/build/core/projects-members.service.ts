@@ -261,7 +261,7 @@ export class ProjectsMembersService {
       .values({ orgId, projectId, userId: body.userId, membershipId: actor.membershipId, role: body.role })
       .returning();
 
-    this.webhooksDispatch.dispatch(orgId, projectId, "member.added", {
+    await this.webhooksDispatch.dispatch(orgId, projectId, "member.added", {
       id: member.id,
       projectId,
       userId: body.userId,
@@ -315,7 +315,7 @@ export class ProjectsMembersService {
       );
     });
 
-    this.webhooksDispatch.dispatch(orgId, projectId, "member.removed", {
+    await this.webhooksDispatch.dispatch(orgId, projectId, "member.removed", {
       id: projectId,
       projectId,
       userId,
@@ -354,7 +354,7 @@ export class ProjectsMembersService {
 
     if (!updated) throw new NotFoundException("Member not found");
 
-    this.webhooksDispatch.dispatch(orgId, projectId, "member.role_updated", {
+    await this.webhooksDispatch.dispatch(orgId, projectId, "member.role_updated", {
       id: updated.id,
       projectId,
       userId: memberUserId,

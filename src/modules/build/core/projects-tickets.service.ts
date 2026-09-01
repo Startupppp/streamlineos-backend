@@ -172,7 +172,7 @@ export class ProjectsTicketsService {
         .where(eq(tickets.id, ticketId));
     });
 
-    this.webhooksDispatch.dispatch(
+    await this.webhooksDispatch.dispatch(
       orgId,
       existing.projectId,
       "ticket.deleted",

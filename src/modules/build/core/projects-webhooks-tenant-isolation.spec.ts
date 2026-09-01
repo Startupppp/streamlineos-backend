@@ -2,6 +2,7 @@ import type { Db } from "../../../db/drizzle.module";
 import { NotFoundException } from "@nestjs/common";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import { runWithTenantContext } from "../../../common/tenant/tenant-context";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -84,15 +85,22 @@ describe("ProjectsWebhooksService — cross-tenant isolation", () => {
 describe("ProjectsWebhooksDispatchService — cross-tenant isolation", () => {
   it("run scopes webhook query to the requesting org (cross-tenant isolation)", async () => {
     const where = jest.fn().mockResolvedValue([]);
-    const db = {
+    const tx = {
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
       insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }) }),
       update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
-    } as unknown as Db;
-    const svc = new ProjectsWebhooksDispatchService(db);
+    };
+    const svc = new ProjectsWebhooksDispatchService({} as Db);
 
-    svc.dispatch(ATTACKER_ORG, 1, "ticket.created", { id: 1, projectId: 1, actor: "u1", timestamp: new Date().toISOString() });
-    await new Promise((r) => setImmediate(r));
+    await runWithTenantContext(
+      { orgId: ATTACKER_ORG, audience: "INTERNAL", tx: tx as never },
+      () => svc.dispatch(ATTACKER_ORG, 1, "ticket.created", {
+        id: 1,
+        projectId: 1,
+        actor: "u1",
+        timestamp: new Date().toISOString(),
+      }),
+    );
 
     if (where.mock.calls.length > 0) {
       const predicate = where.mock.calls[0]?.[0];

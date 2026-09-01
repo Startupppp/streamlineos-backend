@@ -1,12 +1,20 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { createHmac, randomBytes } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { Inject, Injectable, Optional, type OnModuleInit } from "@nestjs/common";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import { and, eq, sql } from "drizzle-orm";
 import { projectWebhooks, webhookDeliveries } from "../../../db/schema/build/tasks";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { logger } from "../../../common/logger/logger.service";
-import { logSideEffectFailure } from "../../../common/logger/side-effect";
-import { checkWebhookUrl } from "./webhook-url-guard";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import {
+  OutboxConsumerRegistry,
+  type OutboxEventConsumer,
+  type OutboxEventRow,
+} from "../../../common/outbox/outbox-consumer.registry";
+import {
+  postSafeWebhook,
+  UnsafeWebhookTargetError,
+} from "../../../common/outbound/safe-webhook-transport";
 import {
   callProvider,
   type ProviderCallResult,
@@ -19,6 +27,7 @@ const RESPONSE_BODY_LIMIT = 2000;
 const WEBHOOK_MAX_ATTEMPTS = 5;
 const WEBHOOK_BASE_DELAY_MS = 1_000;
 const WEBHOOK_MAX_DELAY_MS = 30_000;
+const WEBHOOK_OUTBOX_EVENT = "build.project-webhook.delivery.requested";
 
 export interface WebhookPayload extends Record<string, unknown> {
   id: number;
@@ -103,76 +112,126 @@ function outcomeFromProviderResult(
 }
 
 @Injectable()
-export class ProjectsWebhooksDispatchService {
+export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnModuleInit {
+  readonly eventType = WEBHOOK_OUTBOX_EVENT;
   private readonly breaker = new ProviderCircuitBreaker();
 
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    @Optional() private readonly registry?: OutboxConsumerRegistry,
+  ) {}
 
-  dispatch(orgId: string, projectId: number, eventName: string, payload: WebhookPayload): void {
-    void this.run(orgId, projectId, eventName, payload).catch(logSideEffectFailure("webhook dispatch", { orgId, projectId, event: eventName }));
+  onModuleInit(): void {
+    this.registry?.register(this);
   }
 
-  private async run(
+  async dispatch(orgId: string, projectId: number, eventName: string, payload: WebhookPayload): Promise<void> {
+    await this.enqueue(orgId, projectId, eventName, payload);
+  }
+
+  private async enqueue(
     orgId: string,
     projectId: number,
     eventName: string,
     payload: WebhookPayload,
   ): Promise<void> {
-    const rows = await this.db
-      .select({
-        id: projectWebhooks.id,
-        url: projectWebhooks.url,
-        secret: projectWebhooks.secret,
-        orgId: projectWebhooks.orgId,
-        events: projectWebhooks.events,
-      })
-      .from(projectWebhooks)
-      .where(
-        and(
+    await runInTenantTransaction(this.db, async (tx) => {
+      const rows = await tx
+        .select({ id: projectWebhooks.id, events: projectWebhooks.events })
+        .from(projectWebhooks)
+        .where(and(
           eq(projectWebhooks.orgId, orgId),
           eq(projectWebhooks.projectId, projectId),
           eq(projectWebhooks.isActive, true),
-        ),
+        ));
+
+      const active = rows.filter(({ events }) =>
+        events.length === 0 || events.includes(eventName) || events.includes("*"),
       );
-
-    const active = rows.filter((row) => {
-      const events = row.events;
-      return events.length === 0 || events.includes(eventName) || events.includes("*");
-    });
-    if (active.length === 0) return;
-
-    await Promise.allSettled(
-      active.map((row) =>
-        this.deliver(
-          { id: row.id, url: row.url, secret: row.secret ?? "", orgId: row.orgId },
-          eventName,
+      for (const endpoint of active) {
+        const [delivery] = await tx.insert(webhookDeliveries).values({
+          orgId,
+          webhookId: endpoint.id,
+          event: eventName,
           payload,
-        ),
-      ),
+          status: "pending",
+          attempts: 0,
+          nextAttemptAt: new Date(),
+        }).returning({ id: webhookDeliveries.id });
+        if (!delivery) throw new Error("Failed to persist project webhook delivery intent");
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: orgId,
+          aggregateType: "project_webhook_delivery",
+          aggregateId: String(delivery.id),
+          aggregateVersion: delivery.id,
+          eventType: WEBHOOK_OUTBOX_EVENT,
+          payload: { deliveryId: delivery.id },
+          occurredAt: new Date(),
+        });
+      }
+    }, { orgId });
+  }
+
+  async handle(event: OutboxEventRow): Promise<void> {
+    const deliveryId = typeof event.payload === "object" && event.payload !== null
+      ? Reflect.get(event.payload, "deliveryId")
+      : undefined;
+    if (typeof deliveryId !== "number" || !Number.isSafeInteger(deliveryId) || deliveryId <= 0)
+      throw new Error("Invalid project webhook delivery outbox payload");
+    await this.processDelivery(event.organizationId, deliveryId);
+  }
+
+  private async processDelivery(
+    orgId: string,
+    deliveryId: number,
+    throwRetryable = true,
+  ): Promise<DeliveryOutcome | null> {
+    const row = await this.db
+      .select({
+        deliveryId: webhookDeliveries.id,
+        event: webhookDeliveries.event,
+        payload: webhookDeliveries.payload,
+        status: webhookDeliveries.status,
+        endpointId: projectWebhooks.id,
+        url: projectWebhooks.url,
+        secret: projectWebhooks.secret,
+        endpointOrgId: projectWebhooks.orgId,
+      })
+      .from(webhookDeliveries)
+      .innerJoin(projectWebhooks, and(
+        eq(projectWebhooks.id, webhookDeliveries.webhookId),
+        eq(projectWebhooks.orgId, webhookDeliveries.orgId),
+      ))
+      .where(and(eq(webhookDeliveries.orgId, orgId), eq(webhookDeliveries.id, deliveryId)))
+      .limit(1)
+      .then((rows) => rows[0]);
+    if (!row || row.status === "success") return null;
+
+    const outcome = await this.deliver(
+      { id: row.endpointId, url: row.url, secret: row.secret ?? "", orgId: row.endpointOrgId },
+      row.event,
+      (row.payload ?? {}) as WebhookPayload,
+      deliveryId,
     );
+    await this.updateDelivery(orgId, deliveryId, outcome);
+    if (!outcome.success && outcome.lastError && outcome.responseCode !== null) {
+      const error = new ProjectWebhookResponseError(outcome.responseCode, outcome.responseBody ?? "");
+      if (throwRetryable && classifyProjectWebhookError(error) === "retryable") throw error;
+    } else if (throwRetryable && !outcome.success && !outcome.lastError?.startsWith("Blocked webhook target")) {
+      throw new Error(outcome.lastError ?? "Project webhook delivery failed");
+    }
+    return outcome;
   }
 
   private async deliver(
     endpoint: ActiveEndpoint,
     eventName: string,
     payload: WebhookPayload,
+    deliveryId: number,
   ): Promise<DeliveryOutcome> {
     const body = JSON.stringify({ event: eventName, data: payload, timestamp: new Date().toISOString() });
     const signature = createHmac("sha256", endpoint.secret || "").update(body).digest("hex");
-
-    const urlCheck = await checkWebhookUrl(endpoint.url);
-    if (!urlCheck.allowed) {
-      const blocked: DeliveryOutcome = {
-        responseCode: null,
-        responseBody: null,
-        success: false,
-        lastError: `Blocked webhook target (${urlCheck.reason})`,
-        attempts: 1,
-        nextAttemptAt: null,
-      };
-      await this.recordDelivery(endpoint, eventName, payload, blocked);
-      return blocked;
-    }
 
     const descriptor: ProviderDescriptor = {
       provider: `build-webhook:${endpoint.id}`,
@@ -185,51 +244,42 @@ export class ProjectsWebhooksDispatchService {
     const result = await callProvider(
       descriptor,
       async () => {
-        const response = await fetch(endpoint.url, {
-          method: "POST",
-          headers: {
+        try {
+          const response = await postSafeWebhook(endpoint.url, body, {
             "Content-Type": "application/json",
             "X-StreamlineOS-Signature": `sha256=${signature}`,
             "X-Webhook-Event": eventName,
-          },
-          body,
-          redirect: "error",
-          signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
-        });
-        const responseBody = await response.text().catch(() => "");
-        if (!response.ok)
-          throw new ProjectWebhookResponseError(response.status, responseBody);
-        return { statusCode: response.status, responseBody };
+            "X-StreamlineOS-Delivery-Id": String(deliveryId),
+          }, WEBHOOK_TIMEOUT_MS, RESPONSE_BODY_LIMIT);
+          if (response.statusCode < 200 || response.statusCode >= 300)
+            throw new ProjectWebhookResponseError(response.statusCode, response.responseBody);
+          return response;
+        } catch (error) {
+          if (error instanceof UnsafeWebhookTargetError)
+            throw new ProjectWebhookResponseError(400, error.message);
+          throw error;
+        }
       },
       this.breaker,
     );
     const outcome = outcomeFromProviderResult(result);
-    await this.recordDelivery(endpoint, eventName, payload, outcome);
     return outcome;
   }
 
-  private async recordDelivery(
-    endpoint: ActiveEndpoint,
-    eventName: string,
-    payload: WebhookPayload,
+  private async updateDelivery(
+    orgId: string,
+    deliveryId: number,
     outcome: DeliveryOutcome,
   ): Promise<void> {
-    try {
-      await this.db.insert(webhookDeliveries).values({
-        orgId: endpoint.orgId,
-        webhookId: endpoint.id,
-        event: eventName,
-        payload,
+      await this.db.update(webhookDeliveries).set({
         status: outcome.success ? "success" : "failed",
         responseCode: outcome.responseCode,
         responseBody: outcome.responseBody?.slice(0, RESPONSE_BODY_LIMIT) ?? null,
-        attempts: outcome.attempts,
+        attempts: sql`${webhookDeliveries.attempts} + ${outcome.attempts}`,
         lastError: outcome.lastError,
         nextAttemptAt: outcome.nextAttemptAt,
-      });
-    } catch (dbError) {
-      logger.error("Failed to record webhook delivery", { dbError });
-    }
+        deliveredAt: new Date(),
+      }).where(and(eq(webhookDeliveries.orgId, orgId), eq(webhookDeliveries.id, deliveryId)));
   }
 
   async sendTest(
@@ -266,11 +316,31 @@ export class ProjectsWebhooksDispatchService {
       message: "This is a test delivery from StreamlineOS.",
     };
 
-    const outcome = await this.deliver(
-      { id: row.id, url: row.url, secret: row.secret ?? "", orgId: row.orgId },
-      "webhook.test",
-      testPayload,
-    );
+    const deliveryId = await runInTenantTransaction(this.db, async (tx) => {
+      const [delivery] = await tx.insert(webhookDeliveries).values({
+        orgId,
+        webhookId,
+        event: "webhook.test",
+        payload: testPayload,
+        status: "pending",
+        attempts: 0,
+        nextAttemptAt: new Date(),
+      }).returning({ id: webhookDeliveries.id });
+      if (!delivery) throw new Error("Failed to persist test webhook delivery intent");
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "project_webhook_delivery",
+        aggregateId: String(delivery.id),
+        aggregateVersion: delivery.id,
+        eventType: WEBHOOK_OUTBOX_EVENT,
+        payload: { deliveryId: delivery.id },
+        occurredAt: new Date(),
+      });
+      return delivery.id;
+    }, { orgId });
+    const outcome = await this.processDelivery(orgId, deliveryId, false);
+    if (!outcome) return { success: true, responseCode: null };
     return { success: outcome.success, responseCode: outcome.responseCode };
   }
 }

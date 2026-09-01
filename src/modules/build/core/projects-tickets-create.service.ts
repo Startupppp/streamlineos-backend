@@ -204,7 +204,7 @@ export class ProjectsTicketsCreateService {
         );
     }
 
-    this.webhooksDispatch.dispatch(u.orgId, projectId, "ticket.created", {
+    await this.webhooksDispatch.dispatch(u.orgId, projectId, "ticket.created", {
       id: ticket.id,
       projectId,
       title: ticket.title,

@@ -105,7 +105,7 @@ export class ProjectsTicketCommentsService {
     }
 
     if (ticket.projectId) {
-      this.webhooksDispatch.dispatch(u.orgId, ticket.projectId, "comment.created", {
+      await this.webhooksDispatch.dispatch(u.orgId, ticket.projectId, "comment.created", {
         id: comment.id,
         projectId: ticket.projectId,
         ticketId,

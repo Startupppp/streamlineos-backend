@@ -11,6 +11,15 @@ export type WebhookUrlCheck =
   | { allowed: true }
   | { allowed: false; reason: WebhookUrlRejection };
 
+export interface SafeWebhookTarget {
+  url: URL;
+  addresses: ReadonlyArray<{ address: string; family: 4 | 6 }>;
+}
+
+export type WebhookDnsResolver = (
+  hostname: string,
+) => Promise<ReadonlyArray<{ address: string; family: number }>>;
+
 function isBlockedIpv4(address: string): boolean {
   const parts = address.split(".").map(Number);
   const [a, b, c] = parts;
@@ -78,39 +87,57 @@ function isBlockedAddress(address: string): boolean {
  * internal address. Callers must also disable redirect following, since a
  * permitted host can 302 to an internal one.
  */
-export async function checkWebhookUrl(rawUrl: string): Promise<WebhookUrlCheck> {
+export async function resolveSafeWebhookTarget(
+  rawUrl: string,
+  resolve: WebhookDnsResolver = (hostname) => lookup(hostname, { all: true }),
+): Promise<SafeWebhookTarget | { reason: WebhookUrlRejection }> {
   let parsed: URL;
   try {
     parsed = new URL(rawUrl);
   } catch {
-    return { allowed: false, reason: "invalid-url" };
+    return { reason: "invalid-url" };
   }
 
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    return { allowed: false, reason: "unsupported-scheme" };
+    return { reason: "unsupported-scheme" };
   }
 
   const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
 
   if (isIP(hostname) !== 0) {
-    return isBlockedAddress(hostname)
-      ? { allowed: false, reason: "blocked-address" }
-      : { allowed: true };
+    if (isBlockedAddress(hostname)) return { reason: "blocked-address" };
+    return {
+      url: parsed,
+      addresses: [{ address: hostname, family: isIP(hostname) as 4 | 6 }],
+    };
   }
 
-  let resolved: { address: string }[];
+  let resolved: Array<{ address: string; family: number }>;
   try {
-    resolved = await lookup(hostname, { all: true });
+    resolved = [...await resolve(hostname)];
   } catch {
-    return { allowed: false, reason: "unresolvable-host" };
+    return { reason: "unresolvable-host" };
   }
 
-  if (resolved.length === 0) return { allowed: false, reason: "unresolvable-host" };
+  if (resolved.length === 0) return { reason: "unresolvable-host" };
   if (resolved.some((entry) => isBlockedAddress(entry.address))) {
-    return { allowed: false, reason: "blocked-address" };
+    return { reason: "blocked-address" };
   }
 
-  return { allowed: true };
+  return {
+    url: parsed,
+    addresses: resolved.map(({ address, family }) => ({
+      address,
+      family: family === 6 ? 6 : 4,
+    })),
+  };
+}
+
+export async function checkWebhookUrl(rawUrl: string): Promise<WebhookUrlCheck> {
+  const target = await resolveSafeWebhookTarget(rawUrl);
+  return "reason" in target
+    ? { allowed: false, reason: target.reason }
+    : { allowed: true };
 }
 
 /**
