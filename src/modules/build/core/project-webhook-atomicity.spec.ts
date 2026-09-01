@@ -1,6 +1,7 @@
 import type { Db } from "../../../db/drizzle.module";
 import { SprintsService } from "../execution/sprints.service";
 import type { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import { ProjectsTicketsService } from "./projects-tickets.service";
 
 function harness(enqueueFails: boolean) {
   let mutationCommitted = false;
@@ -75,5 +76,34 @@ describe("Build mutation and webhook intent atomicity", () => {
     expect(test.timeline).toEqual(["mutation-staged", "intent-staged", "commit"]);
     expect(test.committed()).toEqual({ mutationCommitted: true, intentCommitted: true });
     expect(test.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed before mutation or enqueue when a ticket has no real project identity", async () => {
+    const enqueue = jest.fn();
+    const db = {
+      query: {
+        tickets: {
+          findFirst: jest.fn().mockResolvedValue({ id: 7, projectId: null, title: "orphan" }),
+        },
+      },
+      transaction: jest.fn(),
+    } as unknown as Db;
+    const service = new ProjectsTicketsService(
+      db,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { enqueue } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(service.deleteTicket("org-1", "member-1", 7, true))
+      .rejects.toThrow("Ticket not found");
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
   });
 });

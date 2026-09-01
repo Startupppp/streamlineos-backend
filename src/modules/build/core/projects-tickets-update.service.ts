@@ -182,6 +182,7 @@ export class ProjectsTicketsUpdateService {
     });
     if (!before || !before.projectId)
       throw new NotFoundException("Ticket not found");
+    const ticketProjectId = before.projectId;
 
     if (input.expectedUpdatedAt !== undefined) {
       const expected = new Date(input.expectedUpdatedAt);
@@ -196,7 +197,7 @@ export class ProjectsTicketsUpdateService {
         : await this.read.checkProjectAccess(
             orgId,
             actingUserId,
-            before.projectId,
+            ticketProjectId,
           );
     if (!accessResult.hasAccess)
       throw new ForbiddenException("Not authorized to update this ticket");
@@ -224,7 +225,7 @@ export class ProjectsTicketsUpdateService {
       if (statusChanged) {
         await Promise.all([
           this.query.validateTicketStatus(
-            before.projectId,
+            ticketProjectId,
             orgId,
             input.status,
           ),
@@ -237,7 +238,7 @@ export class ProjectsTicketsUpdateService {
         ]);
         await this.query.assertTransitionAllowed(
           orgId,
-          before.projectId,
+          ticketProjectId,
           before.status,
           input.status,
           {
@@ -280,7 +281,7 @@ export class ProjectsTicketsUpdateService {
           eventType: "build.ticket.status_changed",
           payload: {
             ticketId,
-            projectId: before.projectId,
+            projectId: ticketProjectId,
             orgId,
             previousStatus: before.status,
             newStatus: input.status,
@@ -292,9 +293,9 @@ export class ProjectsTicketsUpdateService {
 
       await this.syncAssignees(tx, orgId, ticketId, actingUserId, input, assigneeActors);
 
-      await this.webhooksDispatch.enqueue(tx, orgId, before.projectId, "ticket.updated", {
+      await this.webhooksDispatch.enqueue(tx, orgId, ticketProjectId, "ticket.updated", {
         id: ticketId,
-        projectId: before.projectId,
+        projectId: ticketProjectId,
         title: input.title ?? before.title,
         status: input.status ?? before.status,
         priority: input.priority ?? before.priority,
@@ -302,9 +303,9 @@ export class ProjectsTicketsUpdateService {
         timestamp: now.toISOString(),
       });
       if (newAssignee !== undefined && newAssignee !== before.assigneeId) {
-        await this.webhooksDispatch.enqueue(tx, orgId, before.projectId, "ticket.assigned", {
+        await this.webhooksDispatch.enqueue(tx, orgId, ticketProjectId, "ticket.assigned", {
           id: ticketId,
-          projectId: before.projectId,
+          projectId: ticketProjectId,
           title: input.title ?? before.title,
           status: input.status ?? before.status,
           assigneeId: newAssignee,
@@ -354,7 +355,6 @@ export class ProjectsTicketsUpdateService {
       }
     }
 
-    const ticketProjectId = before.projectId;
 
     const afterPayload = {
       ticketId,

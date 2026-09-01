@@ -107,11 +107,12 @@ export class ProjectsTicketsService {
     });
     if (!existing || !existing.projectId)
       throw new NotFoundException("Ticket not found");
+    const ticketProjectId = existing.projectId;
 
     const { hasAccess } = await this.read.checkProjectAccess(
       orgId,
       userId,
-      existing.projectId,
+      ticketProjectId,
     );
     if (!hasAccess)
       throw new ForbiddenException("Not authorized to delete this ticket");
@@ -171,9 +172,9 @@ export class ProjectsTicketsService {
         .set({ deletedAt: new Date() })
         .where(eq(tickets.id, ticketId));
 
-      await this.webhooksDispatch.enqueue(tx, orgId, existing.projectId, "ticket.deleted", {
+      await this.webhooksDispatch.enqueue(tx, orgId, ticketProjectId, "ticket.deleted", {
         id: ticketId,
-        projectId: existing.projectId,
+        projectId: ticketProjectId,
         title: existing.title,
         actor: userId,
         timestamp: new Date().toISOString(),
@@ -181,8 +182,8 @@ export class ProjectsTicketsService {
     });
 
     void this.cache
-      .del(`projects:analytics:${orgId}:${existing.projectId}`)
-      .catch(logSideEffectFailure("analytics cache eviction", { orgId, projectId: existing.projectId }));
+      .del(`projects:analytics:${orgId}:${ticketProjectId}`)
+      .catch(logSideEffectFailure("analytics cache eviction", { orgId, projectId: ticketProjectId }));
 
     return { deleted: true };
   }
