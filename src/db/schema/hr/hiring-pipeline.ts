@@ -1,6 +1,6 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizationMembers, organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
 import { jobPostings } from "./hiring-core";
 import { candidates } from "./hiring-candidates";
@@ -221,12 +221,14 @@ export const headcountRequests = pgTable("headcount_requests", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   orgDepartmentId: text("org_department_id").references(() => orgUnits.id, { onDelete: "set null" }),
   requestedBy: text("requested_by").references(() => users.id).notNull(),
+  requestedByMembershipId: integer("requested_by_membership_id"),
   requestedRole: text("requested_role").notNull(),
   level: text("level"),
   justification: text("justification"),
   targetDate: date("target_date"),
   status: text("status").$type<HeadcountRequestStatus>().notNull().default("DRAFT"),
   approvedBy: text("approved_by").references(() => users.id),
+  approvedByMembershipId: integer("approved_by_membership_id"),
   approvedAt: timestamp("approved_at"),
   rejectedReason: text("rejected_reason"),
   linkedJobPostingId: integer("linked_job_posting_id").references(() => jobPostings.id, { onDelete: "set null" }),
@@ -237,14 +239,28 @@ export const headcountRequests = pgTable("headcount_requests", {
   index("idx_headcount_requests_org").on(table.orgId),
   index("idx_headcount_requests_status").on(table.status),
   index("idx_headcount_requests_org_dept").on(table.orgDepartmentId),
+  index("idx_headcount_requests_org_requested_by_membership").on(table.orgId, table.requestedByMembershipId),
+  index("idx_headcount_requests_org_approved_by_membership").on(table.orgId, table.approvedByMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.requestedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_hr_actor_edcd74baae8dcf06",
+  }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.approvedByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_hr_actor_b98269fd23c2381b",
+  }).onDelete("restrict"),
 ]);
 
 export type RecruiterActivityAction = "CALL_MADE" | "EMAIL_SENT" | "CANDIDATE_ADDED" | "NOTE_ADDED" | "INTERVIEW_SCHEDULED";
 
 export const jobRecruiters = pgTable("job_recruiters", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id"),
   jobPostingId: integer("job_posting_id").references(() => jobPostings.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   assignedBy: text("assigned_by").references(() => users.id).notNull(),
   assignedAt: timestamp("assigned_at").defaultNow().notNull(),
 }, (table) => [

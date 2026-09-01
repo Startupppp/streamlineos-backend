@@ -1,7 +1,7 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique, uniqueIndex, check, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique, uniqueIndex, check, foreignKey, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { candidateStatusEnum, applicationStatusEnum } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizationMembers, organizations, users } from "../common/auth";
 import { jobPostings } from "./hiring-core";
 
 export const candidates = pgTable("candidates", {
@@ -84,6 +84,7 @@ export const candidateReferrals = pgTable("candidate_referrals", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   candidateId: integer("candidate_id").references(() => candidates.id, { onDelete: "cascade" }).notNull(),
   referredBy: text("referred_by").references(() => users.id).notNull(),
+  referredByMembershipId: integer("referred_by_membership_id"),
   jobPostingId: integer("job_posting_id").references(() => jobPostings.id),
   relationship: text("relationship"),
   notes: text("notes"),
@@ -98,6 +99,12 @@ export const candidateReferrals = pgTable("candidate_referrals", {
   index("idx_referrals_candidate").on(table.candidateId),
   index("idx_referrals_referred_by").on(table.referredBy),
   index("idx_referrals_org").on(table.orgId),
+  index("idx_referrals_org_referred_by_membership").on(table.orgId, table.referredByMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.referredByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_hr_actor_8bce4f6f65893af6",
+  }).onDelete("restrict"),
 ]);
 
 export const candidateDocumentsVault = pgTable("candidate_documents_vault", {

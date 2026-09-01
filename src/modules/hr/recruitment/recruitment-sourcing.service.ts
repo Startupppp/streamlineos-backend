@@ -6,7 +6,6 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { randomBytes } from "node:crypto";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import {
   candidateReferrals,
@@ -15,16 +14,13 @@ import {
   externalReferrers,
   headcountRequests,
   jobPostings,
-  recruitmentVendors,
   users,
-  vendorCandidateSubmissions,
 } from "../../../db/schema";
 import { orgUnits } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
-import { AccessService } from "../../access/access.service";
 import type {
   CreateHeadcountInput,
   CreateReferralSubmissionInput,
@@ -38,17 +34,27 @@ import type {
   UpdateSubmissionInput,
   UpdateVendorInput,
 } from "./dto/sourcing.schemas";
+import { RecruitmentVendorSourcingService } from "./recruitment-vendor-sourcing.service";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 
 @Injectable()
 export class RecruitmentSourcingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly access: AccessService,
+    private readonly vendorSourcing: RecruitmentVendorSourcingService,
   ) {}
 
-  listReferrals(orgId: string, userId: string, canManage: boolean) {
+  private async actorMembershipId(orgId: string, userId: string, membershipId?: number | null): Promise<number> {
+    if (membershipId != null) return membershipId;
+    return (await assertOrganizationActor(this.db, orgId, { kind: "user", userId })).membershipId;
+  }
+
+  async listReferrals(orgId: string, userId: string, canManage: boolean, membershipId?: number | null) {
+    const actorMembershipId = canManage ? null : await this.actorMembershipId(orgId, userId, membershipId);
     return this.db.query.candidateReferrals.findMany({
-      where: canManage ? eq(candidateReferrals.orgId, orgId) : eq(candidateReferrals.referredBy, userId),
+      where: canManage
+        ? eq(candidateReferrals.orgId, orgId)
+        : and(eq(candidateReferrals.orgId, orgId), eq(candidateReferrals.referredByMembershipId, actorMembershipId!)),
       with: {
         candidate: { columns: { id: true, firstName: true, lastName: true, email: true } },
         referrer: { columns: { id: true, name: true, email: true } },
@@ -59,7 +65,8 @@ export class RecruitmentSourcingService {
     });
   }
 
-  async createReferral(orgId: string, userId: string, input: CreateReferralSubmissionInput) {
+  async createReferral(orgId: string, userId: string, input: CreateReferralSubmissionInput, membershipId?: number | null) {
+    const actorMembershipId = await this.actorMembershipId(orgId, userId, membershipId);
     const existing = await this.db.query.candidates.findFirst({
       where: and(eq(candidates.email, input.email), eq(candidates.orgId, orgId)),
       columns: { id: true },
@@ -97,6 +104,7 @@ export class RecruitmentSourcingService {
         orgId,
         candidateId,
         referredBy: userId,
+        referredByMembershipId: actorMembershipId,
         jobPostingId: input.jobPostingId,
         relationship: input.relationship,
         notes: input.notes,
@@ -124,180 +132,42 @@ export class RecruitmentSourcingService {
   }
 
   listVendors(orgId: string) {
-    return this.db
-      .select({
-        id: recruitmentVendors.id,
-        name: recruitmentVendors.name,
-        contactName: recruitmentVendors.contactName,
-        contactEmail: recruitmentVendors.contactEmail,
-        contactPhone: recruitmentVendors.contactPhone,
-        website: recruitmentVendors.website,
-        feePercent: recruitmentVendors.feePercent,
-        status: recruitmentVendors.status,
-        createdAt: recruitmentVendors.createdAt,
-        submissionCount: count(vendorCandidateSubmissions.id),
-        placements: sql<number>`sum(case when ${vendorCandidateSubmissions.placementStatus} = 'PLACED' then 1 else 0 end)::int`,
-        revenueTotal: sql<string>`coalesce(sum(case when ${vendorCandidateSubmissions.invoiceStatus} = 'PAID' then ${vendorCandidateSubmissions.invoiceAmount}::numeric else 0 end), 0)::text`,
-      })
-      .from(recruitmentVendors)
-      .leftJoin(vendorCandidateSubmissions, eq(vendorCandidateSubmissions.vendorId, recruitmentVendors.id))
-      .where(eq(recruitmentVendors.orgId, orgId))
-      .groupBy(recruitmentVendors.id)
-      .orderBy(recruitmentVendors.name);
+    return this.vendorSourcing.listVendors(orgId);
   }
 
-  async createVendor(orgId: string, userId: string, input: CreateVendorInput) {
-    const [vendor] = await this.db
-      .insert(recruitmentVendors)
-      .values({
-        orgId,
-        createdBy: userId,
-        name: input.name,
-        contactName: input.contactName,
-        contactEmail: input.contactEmail,
-        contactPhone: input.contactPhone,
-        website: input.website || undefined,
-        feePercent: input.feePercent !== undefined ? String(input.feePercent) : undefined,
-        status: input.status,
-        contractType: input.contractType,
-        slaDays: input.slaDays,
-        replacementGuaranteeDays: input.replacementGuaranteeDays,
-      })
-      .returning();
-    return vendor;
+  createVendor(orgId: string, userId: string, input: CreateVendorInput) {
+    return this.vendorSourcing.createVendor(orgId, userId, input);
   }
 
-  async updateVendor(orgId: string, vendorId: number, input: UpdateVendorInput) {
-    const existing = await this.db.query.recruitmentVendors.findFirst({
-      where: and(eq(recruitmentVendors.id, vendorId), eq(recruitmentVendors.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!existing) throw new NotFoundException("Not found");
-
-    const updateData: Partial<typeof recruitmentVendors.$inferInsert> = {};
-    if (input.name !== undefined) updateData.name = input.name;
-    if (input.contactName !== undefined) updateData.contactName = input.contactName;
-    if (input.contactEmail !== undefined) updateData.contactEmail = input.contactEmail;
-    if (input.contactPhone !== undefined) updateData.contactPhone = input.contactPhone;
-    if (input.status !== undefined) updateData.status = input.status;
-    if (input.feePercent !== undefined) updateData.feePercent = String(input.feePercent);
-    if (input.website !== undefined) updateData.website = input.website || undefined;
-    if (input.contractType !== undefined) updateData.contractType = input.contractType;
-    if (input.slaDays !== undefined) updateData.slaDays = input.slaDays;
-    if (input.replacementGuaranteeDays !== undefined) updateData.replacementGuaranteeDays = input.replacementGuaranteeDays;
-
-    const [updated] = await this.db
-      .update(recruitmentVendors)
-      .set(updateData)
-      .where(and(eq(recruitmentVendors.id, vendorId), eq(recruitmentVendors.orgId, orgId)))
-      .returning();
-    return updated;
+  updateVendor(orgId: string, vendorId: number, input: UpdateVendorInput) {
+    return this.vendorSourcing.updateVendor(orgId, vendorId, input);
   }
 
-  async deleteVendor(orgId: string, vendorId: number) {
-    await this.db
-      .delete(recruitmentVendors)
-      .where(and(eq(recruitmentVendors.id, vendorId), eq(recruitmentVendors.orgId, orgId)));
-    return { success: true };
+  deleteVendor(orgId: string, vendorId: number) {
+    return this.vendorSourcing.deleteVendor(orgId, vendorId);
   }
 
-  async generateVendorPortalLink(orgId: string, vendorId: number) {
-    await this.ensureVendor(orgId, vendorId);
-    const portalToken = randomBytes(16).toString("hex");
-    const portalTokenExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-
-    const [updated] = await this.db
-      .update(recruitmentVendors)
-      .set({ portalToken, portalTokenExpiresAt })
-      .where(eq(recruitmentVendors.id, vendorId))
-      .returning({ portalToken: recruitmentVendors.portalToken, portalTokenExpiresAt: recruitmentVendors.portalTokenExpiresAt });
-    return updated;
+  generateVendorPortalLink(orgId: string, vendorId: number) {
+    return this.vendorSourcing.generateVendorPortalLink(orgId, vendorId);
   }
 
-  async listSubmissions(orgId: string, vendorId: number, canViewFinancials: boolean) {
-    await this.ensureVendor(orgId, vendorId);
-    const rows = await this.db
-      .select({
-        id: vendorCandidateSubmissions.id,
-        candidateId: vendorCandidateSubmissions.candidateId,
-        jobPostingId: vendorCandidateSubmissions.jobPostingId,
-        submittedAt: vendorCandidateSubmissions.submittedAt,
-        placementStatus: vendorCandidateSubmissions.placementStatus,
-        invoiceStatus: vendorCandidateSubmissions.invoiceStatus,
-        invoiceAmount: vendorCandidateSubmissions.invoiceAmount,
-        invoiceDate: vendorCandidateSubmissions.invoiceDate,
-        paidAt: vendorCandidateSubmissions.paidAt,
-        billRate: vendorCandidateSubmissions.billRate,
-        payRate: vendorCandidateSubmissions.payRate,
-        contractStartDate: vendorCandidateSubmissions.contractStartDate,
-        contractEndDate: vendorCandidateSubmissions.contractEndDate,
-        candidateFirstName: candidates.firstName,
-        candidateLastName: candidates.lastName,
-        candidateEmail: candidates.email,
-        jobTitle: jobPostings.title,
-      })
-      .from(vendorCandidateSubmissions)
-      .leftJoin(candidates, eq(vendorCandidateSubmissions.candidateId, candidates.id))
-      .leftJoin(jobPostings, eq(vendorCandidateSubmissions.jobPostingId, jobPostings.id))
-      .where(eq(vendorCandidateSubmissions.vendorId, vendorId))
-      .orderBy(desc(vendorCandidateSubmissions.submittedAt))
-      .limit(100);
-
-    if (canViewFinancials) {
-      return rows.map((r) => ({
-        ...r,
-        margin:
-          r.billRate !== null && r.payRate !== null
-            ? (Number(r.billRate) - Number(r.payRate)).toFixed(2)
-            : null,
-      }));
-    }
-
-    return rows.map((r) => ({ ...r, billRate: null, payRate: null, margin: null }));
+  listSubmissions(orgId: string, vendorId: number, canViewFinancials: boolean) {
+    return this.vendorSourcing.listSubmissions(orgId, vendorId, canViewFinancials);
   }
 
-  async createSubmission(orgId: string, vendorId: number, input: CreateSubmissionInput) {
-    await this.ensureVendor(orgId, vendorId);
-    const [row] = await this.db
-      .insert(vendorCandidateSubmissions)
-      .values({
-        vendorId,
-        candidateId: input.candidateId,
-        jobPostingId: input.jobPostingId,
-        billRate: input.billRate !== undefined ? String(input.billRate) : undefined,
-        payRate: input.payRate !== undefined ? String(input.payRate) : undefined,
-        contractStartDate: input.contractStartDate,
-        contractEndDate: input.contractEndDate,
-      })
-      .returning();
-    return row;
+  createSubmission(orgId: string, vendorId: number, input: CreateSubmissionInput) {
+    return this.vendorSourcing.createSubmission(orgId, vendorId, input);
   }
 
-  async updateSubmission(orgId: string, vendorId: number, submissionId: number, input: UpdateSubmissionInput) {
-    await this.ensureVendor(orgId, vendorId);
-    const updateData: Partial<typeof vendorCandidateSubmissions.$inferInsert> = {};
-    if (input.placementStatus !== undefined) updateData.placementStatus = input.placementStatus;
-    if (input.invoiceStatus !== undefined) updateData.invoiceStatus = input.invoiceStatus;
-    if (input.invoiceAmount !== undefined) updateData.invoiceAmount = String(input.invoiceAmount);
-    if (input.invoiceDate !== undefined) updateData.invoiceDate = input.invoiceDate;
-    if (input.paidAt !== undefined) updateData.paidAt = input.paidAt;
-    if (input.billRate !== undefined) updateData.billRate = String(input.billRate);
-    if (input.payRate !== undefined) updateData.payRate = String(input.payRate);
-    if (input.contractStartDate !== undefined) updateData.contractStartDate = input.contractStartDate;
-    if (input.contractEndDate !== undefined) updateData.contractEndDate = input.contractEndDate;
-
-    const [updated] = await this.db
-      .update(vendorCandidateSubmissions)
-      .set(updateData)
-      .where(and(eq(vendorCandidateSubmissions.id, submissionId), eq(vendorCandidateSubmissions.vendorId, vendorId)))
-      .returning();
-    return updated;
+  updateSubmission(orgId: string, vendorId: number, submissionId: number, input: UpdateSubmissionInput) {
+    return this.vendorSourcing.updateSubmission(orgId, vendorId, submissionId, input);
   }
 
-  listHeadcount(orgId: string, userId: string, canManage: boolean, input: HeadcountListInput) {
+  async listHeadcount(orgId: string, userId: string, canManage: boolean, input: HeadcountListInput, membershipId?: number | null) {
+    const actorMembershipId = canManage ? null : await this.actorMembershipId(orgId, userId, membershipId);
     const isHr = canManage;
     const conditions = [eq(headcountRequests.orgId, orgId)];
-    if (!isHr) conditions.push(eq(headcountRequests.requestedBy, userId));
+    if (!isHr) conditions.push(eq(headcountRequests.requestedByMembershipId, actorMembershipId!));
     if (input.status) conditions.push(sql`${headcountRequests.status} = ${input.status}`);
     const cursor = decodeCursor(input.cursor);
     if (cursor) {
@@ -310,12 +180,14 @@ export class RecruitmentSourcingService {
         orgId: headcountRequests.orgId,
         orgDepartmentId: headcountRequests.orgDepartmentId,
         requestedBy: headcountRequests.requestedBy,
+        requestedByMembershipId: headcountRequests.requestedByMembershipId,
         requestedRole: headcountRequests.requestedRole,
         level: headcountRequests.level,
         justification: headcountRequests.justification,
         targetDate: headcountRequests.targetDate,
         status: headcountRequests.status,
         approvedBy: headcountRequests.approvedBy,
+        approvedByMembershipId: headcountRequests.approvedByMembershipId,
         approvedAt: headcountRequests.approvedAt,
         rejectedReason: headcountRequests.rejectedReason,
         linkedJobPostingId: headcountRequests.linkedJobPostingId,
@@ -337,12 +209,14 @@ export class RecruitmentSourcingService {
       })));
   }
 
-  async createHeadcount(orgId: string, userId: string, input: CreateHeadcountInput) {
+  async createHeadcount(orgId: string, userId: string, input: CreateHeadcountInput, membershipId?: number | null) {
+    const actorMembershipId = await this.actorMembershipId(orgId, userId, membershipId);
     const [row] = await this.db
       .insert(headcountRequests)
       .values({
         orgId,
         requestedBy: userId,
+        requestedByMembershipId: actorMembershipId,
         orgDepartmentId: input.departmentId,
         requestedRole: input.requestedRole,
         level: input.level,
@@ -354,9 +228,10 @@ export class RecruitmentSourcingService {
     return row;
   }
 
-  async updateHeadcount(orgId: string, userId: string, requestId: number, input: UpdateHeadcountInput) {
+  async updateHeadcount(orgId: string, userId: string, requestId: number, input: UpdateHeadcountInput, membershipId?: number | null) {
+    const actorMembershipId = await this.actorMembershipId(orgId, userId, membershipId);
     const existing = await this.findHeadcount(orgId, requestId);
-    if (existing.requestedBy !== userId) throw new ForbiddenException("Forbidden");
+    if (existing.requestedByMembershipId !== actorMembershipId) throw new ForbiddenException("Forbidden");
     if (existing.status !== "DRAFT") throw new BadRequestException("Only DRAFT requests can be edited");
 
     const updateData: Partial<typeof headcountRequests.$inferInsert> = {};
@@ -374,22 +249,24 @@ export class RecruitmentSourcingService {
     return updated;
   }
 
-  async deleteHeadcount(orgId: string, userId: string, requestId: number) {
+  async deleteHeadcount(orgId: string, userId: string, requestId: number, membershipId?: number | null) {
+    const actorMembershipId = await this.actorMembershipId(orgId, userId, membershipId);
     const existing = await this.findHeadcount(orgId, requestId);
-    if (existing.requestedBy !== userId) throw new ForbiddenException("Forbidden");
+    if (existing.requestedByMembershipId !== actorMembershipId) throw new ForbiddenException("Forbidden");
     if (existing.status !== "DRAFT") throw new BadRequestException("Cannot delete non-draft requests");
 
     await this.db.delete(headcountRequests).where(and(eq(headcountRequests.id, requestId), eq(headcountRequests.orgId, orgId)));
     return { success: true };
   }
 
-  async approveHeadcount(orgId: string, userId: string, requestId: number) {
+  async approveHeadcount(orgId: string, userId: string, requestId: number, membershipId?: number | null) {
+    const actorMembershipId = await this.actorMembershipId(orgId, userId, membershipId);
     const existing = await this.findHeadcount(orgId, requestId);
     if (existing.status !== "SUBMITTED") throw new BadRequestException("Only SUBMITTED requests can be approved");
 
     const [updated] = await this.db
       .update(headcountRequests)
-      .set({ status: "APPROVED", approvedBy: userId, approvedAt: new Date() })
+      .set({ status: "APPROVED", approvedBy: userId, approvedByMembershipId: actorMembershipId, approvedAt: new Date() })
       .where(eq(headcountRequests.id, requestId))
       .returning();
     return updated;
@@ -488,14 +365,6 @@ export class RecruitmentSourcingService {
       .returning();
     if (!updated) throw new NotFoundException("Referrer not found");
     return updated;
-  }
-
-  private async ensureVendor(orgId: string, vendorId: number) {
-    const vendor = await this.db.query.recruitmentVendors.findFirst({
-      where: and(eq(recruitmentVendors.id, vendorId), eq(recruitmentVendors.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!vendor) throw new NotFoundException("Not found");
   }
 
   private async findHeadcount(orgId: string, requestId: number) {

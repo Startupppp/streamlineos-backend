@@ -51,6 +51,7 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { actingMembershipId } from "../../../common/auth/principal";
 
 const referralIdParams = z.object({ referralId: z.coerce.number().int().positive() }).strict();
 const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
@@ -71,7 +72,7 @@ export class RecruitmentSourcingController {
   async listReferrals(@CurrentUser() u: CurrentUserContext) {
     const canManage = u.isOrgOwner
       || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:requisitions:manage");
-    return this.sourcing.listReferrals(u.orgId, u.userId, canManage);
+    return this.sourcing.listReferrals(u.orgId, u.userId, canManage, actingMembershipId(u.principal));
   }
 
   @Post("referrals")
@@ -83,7 +84,7 @@ export class RecruitmentSourcingController {
     @Body() body: CreateReferralSubmissionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sourcing.createReferral(u.orgId, u.userId, body);
+    return this.sourcing.createReferral(u.orgId, u.userId, body, actingMembershipId(u.principal));
   }
 
   @Patch("referrals/:referralId")
@@ -181,7 +182,7 @@ export class RecruitmentSourcingController {
   ) {
     const canManage = u.isOrgOwner
       || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:requisitions:manage");
-    return this.sourcing.listHeadcount(u.orgId, u.userId, canManage, query);
+    return this.sourcing.listHeadcount(u.orgId, u.userId, canManage, query, actingMembershipId(u.principal));
   }
 
   @Post("headcount")
@@ -192,7 +193,7 @@ export class RecruitmentSourcingController {
     @Body() body: CreateHeadcountInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sourcing.createHeadcount(u.orgId, u.userId, body);
+    return this.sourcing.createHeadcount(u.orgId, u.userId, body, actingMembershipId(u.principal));
   }
 
   @Patch("headcount/:requestId")
@@ -203,7 +204,7 @@ export class RecruitmentSourcingController {
     @Body() body: UpdateHeadcountInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sourcing.updateHeadcount(u.orgId, u.userId, requestId, body);
+    return this.sourcing.updateHeadcount(u.orgId, u.userId, requestId, body, actingMembershipId(u.principal));
   }
 
   @Post("headcount/:requestId/approve")
@@ -212,7 +213,7 @@ export class RecruitmentSourcingController {
   @RequirePermission("hr:employees:manage")
   @Validate({ params: requestIdParams })
   approveHeadcount(@Param("requestId", ParseIntPipe) requestId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.sourcing.approveHeadcount(u.orgId, u.userId, requestId);
+    return this.sourcing.approveHeadcount(u.orgId, u.userId, requestId, actingMembershipId(u.principal));
   }
 
   @Post("headcount/:requestId/reject")
