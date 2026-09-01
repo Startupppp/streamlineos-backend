@@ -1,9 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, gte, lte, sql } from "drizzle-orm";
+import { and, eq, gte, lt, lte, or, sql } from "drizzle-orm";
 import { ledgerAccounts, journalEntries, journalLines } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { buildListResponse, paginateOffset } from "../../../common/pagination/pagination";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetAfterValue } from "../../../common/pagination/keyset";
 import type { GlQuery, GlAccountsQuery } from "./dto/general-ledger.schemas";
 
 function parseDecimal(v: unknown): number {
@@ -16,7 +17,8 @@ export class GeneralLedgerService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async getGeneralLedger(orgId: string, query: GlQuery) {
-    const { accountId, from, to, clientId, vendorId, projectId, departmentId, page, pageSize } = query;
+    const { accountId, from, to, clientId, vendorId, projectId, departmentId, cursor, limit } = query;
+    const pos = decodeCursor(cursor);
 
     const openingConds = [
       eq(journalLines.orgId, orgId),
@@ -54,42 +56,30 @@ export class GeneralLedgerService {
     if (projectId !== undefined) rangeConds.push(eq(journalLines.projectId, projectId));
     if (departmentId !== undefined) rangeConds.push(eq(journalLines.departmentId, departmentId));
 
-    const { offset, limit } = paginateOffset({ page, pageSize });
-
     let priorPageBalance = openingBalance;
-    if (offset > 0) {
-      const priorPageRows = await this.db.execute(
-        sql`
-          SELECT
-            coalesce(sum(d), 0) AS total_debit,
-            coalesce(sum(c), 0) AS total_credit
-          FROM (
-            SELECT jl.debit AS d, jl.credit AS c
-            FROM journal_lines jl
-            INNER JOIN journal_entries je ON jl.entry_id = je.id
-            WHERE
-              jl.org_id = ${orgId}
-              AND je.entry_date >= ${from}
-              AND je.entry_date <= ${to}
-              AND je.status = 'POSTED'
-              ${accountId !== undefined ? sql`AND jl.account_id = ${accountId}` : sql``}
-              ${clientId !== undefined ? sql`AND jl.client_id = ${clientId}` : sql``}
-              ${vendorId !== undefined ? sql`AND jl.vendor_id = ${vendorId}` : sql``}
-              ${projectId !== undefined ? sql`AND jl.project_id = ${projectId}` : sql``}
-              ${departmentId !== undefined ? sql`AND jl.department_id = ${departmentId}` : sql``}
-            ORDER BY je.entry_date, je.id, jl.line_order
-            LIMIT ${offset}
-          ) sub
-        `,
-      );
-      const prRow = priorPageRows[0];
-      priorPageBalance =
-        openingBalance +
-        Number(prRow?.total_debit ?? 0) -
-        Number(prRow?.total_credit ?? 0);
+    if (pos) {
+      const balanceConds = [
+        ...rangeConds,
+        or(
+          lt(journalEntries.entryDate, pos.sortValue),
+          and(eq(journalEntries.entryDate, pos.sortValue), lte(journalLines.id, Number(pos.id))),
+        ),
+      ];
+      const balanceRows = await this.db
+        .select({
+          totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
+          totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+        })
+        .from(journalLines)
+        .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
+        .where(and(...balanceConds));
+      const bRow = balanceRows[0];
+      priorPageBalance = openingBalance + parseDecimal(bRow?.totalDebit) - parseDecimal(bRow?.totalCredit);
     }
 
-    const [rows, [countRow]] = await Promise.all([
+    const pageConds = pos ? [...rangeConds, keysetAfterValue(journalEntries.entryDate, journalLines.id, pos)] : rangeConds;
+
+    const [rows, allRangeRows] = await Promise.all([
       this.db
         .select({
           lineId: journalLines.id,
@@ -113,50 +103,37 @@ export class GeneralLedgerService {
         .from(journalLines)
         .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
         .innerJoin(ledgerAccounts, eq(journalLines.accountId, ledgerAccounts.id))
-        .where(and(...rangeConds))
-        .orderBy(journalEntries.entryDate, journalEntries.id, journalLines.lineOrder)
-        .offset(offset)
-        .limit(limit),
+        .where(and(...pageConds))
+        .orderBy(journalEntries.entryDate, journalLines.id)
+        .limit(limit + 1),
       this.db
-        .select({ c: count() })
+        .select({
+          totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
+          totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
+        })
         .from(journalLines)
         .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
         .where(and(...rangeConds)),
     ]);
-
-    const total = Number(countRow?.c ?? 0);
-
-    let runningBalance = priorPageBalance;
-    const items = rows.map((row) => {
-      const rest = row;
-      const debit = parseDecimal(rest.debit);
-      const credit = parseDecimal(rest.credit);
-      runningBalance = runningBalance + debit - credit;
-      return { ...rest, debit, credit, runningBalance };
-    });
-
-    const allRangeRows = await this.db
-      .select({
-        totalDebit: sql<string>`coalesce(sum(${journalLines.debit}), 0)`,
-        totalCredit: sql<string>`coalesce(sum(${journalLines.credit}), 0)`,
-      })
-      .from(journalLines)
-      .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
-      .where(and(...rangeConds));
 
     const closingBalance =
       openingBalance +
       parseDecimal(allRangeRows[0]?.totalDebit) -
       parseDecimal(allRangeRows[0]?.totalCredit);
 
-    return {
-      openingBalance,
-      closingBalance,
-      ...buildListResponse(items, total, { page, pageSize }),
-    };
+    const cursorPage = buildCursorPage(rows, limit, (row) => ({ sortValue: String(row.entryDate ?? ""), id: String(row.lineId) }));
+    let runningBalance = priorPageBalance;
+    const items = cursorPage.data.map((row) => {
+      const debit = parseDecimal(row.debit);
+      const credit = parseDecimal(row.credit);
+      runningBalance = runningBalance + debit - credit;
+      return { ...row, debit, credit, runningBalance };
+    });
+
+    return { openingBalance, closingBalance, items, nextCursor: cursorPage.pagination.nextCursor };
   }
 
-  async getGeneralLedgerCsv(orgId: string, query: Omit<GlQuery, "page" | "pageSize" | "format">): Promise<string> {
+  async getGeneralLedgerCsv(orgId: string, query: Omit<GlQuery, "cursor" | "limit" | "format">): Promise<string> {
     const { accountId, from, to, clientId, vendorId, projectId, departmentId } = query;
 
     const rangeConds = [

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const glQuerySchema = z.object({
   accountId: z.coerce.number().int().positive().optional(),
@@ -9,8 +9,8 @@ export const glQuerySchema = z.object({
   vendorId: z.coerce.number().int().positive().optional(),
   projectId: z.coerce.number().int().positive().optional(),
   departmentId: z.string().uuid().optional(),
-  page: pageNumberField,
-  pageSize: pageSizeField(50),
+  cursor: z.string().optional(),
+  limit: pageSizeField(50, 100),
   format: z.enum(["json", "csv"]).default("json"),
 });
 

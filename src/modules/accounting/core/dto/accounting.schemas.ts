@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
-import { pageSizeField, pageNumberField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD");
 const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
@@ -95,8 +95,8 @@ export const listCustomerLedgerQuerySchema = z.object({
 });
 
 export const listCustomersOutstandingQuerySchema = z.object({
-  page: pageNumberField,
-  pageSize: pageSizeField(20, 100),
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   q: z.string().trim().max(200).optional(),
   onlyOutstanding: queryBoolean.optional(),
 });
