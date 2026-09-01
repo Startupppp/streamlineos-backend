@@ -43,9 +43,6 @@ export const tickets = build.table(
       onDelete: "set null",
     }),
     epicId: integer("epic_id"),
-    assigneeId: text("assignee_id").references(() => users.id, {
-      onDelete: "set null",
-    }),
     assigneeMembershipId: integer("assignee_membership_id"),
     reporterId: text("reporter_id").references(() => users.id, {
       onDelete: "set null",
@@ -115,9 +112,9 @@ export const tickets = build.table(
     }).onUpdate("cascade"),
     uniqueIndex("uniq_tickets_project_number").on(t.projectId, t.ticketNumber),
     index("idx_tickets_project_status").on(t.projectId, t.status),
-    index("idx_tickets_org_assignee_status").on(t.orgId, t.assigneeId, t.status),
+    index("idx_tickets_org_assignee_status").on(t.orgId, t.assigneeMembershipId, t.status),
     index("idx_tickets_org_assignee_due_open")
-      .on(t.orgId, t.assigneeId, t.dueDate)
+      .on(t.orgId, t.assigneeMembershipId, t.dueDate)
       .where(sql`status <> 'DONE'`),
     index("idx_tickets_org_assignee_membership").on(t.orgId, t.assigneeMembershipId),
     index("idx_tickets_org_reporter_membership").on(t.orgId, t.reporterMembershipId),

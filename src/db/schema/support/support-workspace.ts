@@ -79,12 +79,11 @@ export const supportTicketWatchers = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     ticketId: integer("ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-    userMembershipId: integer("user_membership_id"),
+    userMembershipId: integer("user_membership_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uniq_support_ticket_watchers_ticket_user").on(table.ticketId, table.userId),
+    uniqueIndex("uniq_support_ticket_watchers_ticket_membership").on(table.ticketId, table.userMembershipId),
     index("idx_support_ticket_watchers_org_ticket").on(table.orgId, table.ticketId),
     unique("uniq_support_ticket_watchers_org_id").on(table.orgId, table.id),
     index("idx_support_ticket_watchers_org_user_actor").on(table.orgId, table.userMembershipId),
@@ -152,7 +151,7 @@ export const supportSavedViewsRelations = relations(supportSavedViews, ({ one })
 
 export const supportTicketWatchersRelations = relations(supportTicketWatchers, ({ one }) => ({
   ticket: one(supportTickets, { fields: [supportTicketWatchers.ticketId], references: [supportTickets.id] }),
-  user: one(users, { fields: [supportTicketWatchers.userId], references: [users.id] }),
+  membership: one(organizationMembers, { fields: [supportTicketWatchers.userMembershipId], references: [organizationMembers.id] }),
 }));
 
 export const supportTagsRelations = relations(supportTags, ({ many }) => ({

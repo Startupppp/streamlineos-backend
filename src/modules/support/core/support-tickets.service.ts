@@ -7,6 +7,7 @@ import {
   supportTicketLinks,
   supportTicketMessages,
   supportTickets,
+  organizationMembers,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -73,6 +74,7 @@ export class SupportTicketsService {
     priority: string;
     category?: string | null;
     assigneeId?: string | null;
+    assigneeMembershipId?: number | null;
   }): Record<string, unknown> {
     return {
       ticketId: ticket.id,
@@ -80,7 +82,7 @@ export class SupportTicketsService {
       status: ticket.status,
       priority: ticket.priority,
       category: ticket.category ?? null,
-      assigneeId: ticket.assigneeId ?? null,
+      assigneeId: null,
     };
   }
 
@@ -95,7 +97,9 @@ export class SupportTicketsService {
         const conditions: SQL[] = [eq(supportTickets.orgId, orgId)];
         if (status) conditions.push(eq(supportTickets.status, status));
         if (priority) conditions.push(eq(supportTickets.priority, priority));
-        if (assigneeId) conditions.push(eq(supportTickets.assigneeId, assigneeId));
+        if (assigneeId) {
+          conditions.push(sql`${supportTickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${assigneeId})`);
+        }
         if (queueId) conditions.push(eq(supportTickets.queueId, queueId));
         if (channel) conditions.push(eq(supportTickets.sourceChannel, channel));
         if (snoozed === true) {
@@ -105,7 +109,7 @@ export class SupportTicketsService {
           if (notSnoozed) conditions.push(notSnoozed);
         }
         if (scope && scope !== "none" && userId) {
-          conditions.push(applyScope(scope, orgId, userId, { ownerColumn: supportTickets.assigneeId }));
+          conditions.push(sql`${supportTickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId} AND status = 'ACTIVE')`);
         } else if (scope === "none") {
           return { items: [], total: 0, page, totalPages: 0 };
         }
@@ -118,8 +122,8 @@ export class SupportTicketsService {
             offset,
             with: {
               client: { columns: { id: true, name: true } },
-              assignee: { columns: { id: true, name: true, image: true } },
-              creator: { columns: { id: true, name: true } },
+              assigneeMembership: { with: { user: { columns: { id: true, name: true, image: true } } } },
+              creatorMembership: { with: { user: { columns: { id: true, name: true } } } },
             },
           }),
           this.db
@@ -147,6 +151,7 @@ export class SupportTicketsService {
     },
     membershipId?: number | null,
   ) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
     const possibleDuplicate = await this.db.query.supportTickets.findFirst({
       where: and(
         eq(supportTickets.orgId, orgId),
@@ -197,11 +202,16 @@ export class SupportTicketsService {
           description: input.description ?? null,
           clientId: input.clientId ?? null,
           priority: finalPriority,
-          assigneeId: finalAssigneeId ?? null,
+          assigneeMembershipId: finalAssigneeId
+            ? (await (tx as Db).query.organizationMembers.findFirst({
+                where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, finalAssigneeId), eq(organizationMembers.status, "ACTIVE")),
+                columns: { id: true },
+              }))?.id ?? null
+            : null,
           slaDeadline: resolutionDueAt,
           firstResponseDueAt,
           createdBy: userId,
-          createdByMembershipId: membershipId ?? undefined,
+          createdByMembershipId: membershipId,
           sourceChannel: source?.channel ?? "web",
           sourceMessageId: source?.messageId ?? null,
           requesterEmail: source?.requesterEmail ?? null,
@@ -249,8 +259,8 @@ export class SupportTicketsService {
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
       with: {
         client: { columns: { id: true, name: true } },
-        assignee: { columns: { id: true, name: true, image: true } },
-        creator: { columns: { id: true, name: true } },
+        assigneeMembership: { with: { user: { columns: { id: true, name: true, image: true } } } },
+        creatorMembership: { with: { user: { columns: { id: true, name: true } } } },
         messages: {
           with: { author: { columns: { id: true, name: true, image: true } } },
           orderBy: [asc(supportTicketMessages.createdAt)],
@@ -259,7 +269,7 @@ export class SupportTicketsService {
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
     if (actor.scope === "none") throw new ForbiddenException("Not authorized to view tickets");
-    if (actor.scope !== "all" && ticket.assigneeId !== actor.userId)
+    if (actor.scope !== "all" && ticket.assigneeMembership?.user?.id !== actor.userId)
       throw new ForbiddenException("Not authorized to view this ticket");
     const customFieldValues = await this.customFields.getFieldValues(orgId, ticketId);
     return { ...ticket, customFieldValues };
@@ -303,7 +313,14 @@ export class SupportTicketsService {
       }
     }
     if (input.priority) updateData.priority = input.priority;
-    if (input.assigneeId !== undefined) updateData.assigneeId = input.assigneeId;
+    if (input.assigneeId !== undefined) {
+      updateData.assigneeMembershipId = input.assigneeId
+        ? (await this.db.query.organizationMembers.findFirst({
+            where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, input.assigneeId), eq(organizationMembers.status, "ACTIVE")),
+            columns: { id: true },
+          }))?.id ?? null
+        : null;
+    }
     if (input.queueId !== undefined) updateData.queueId = input.queueId;
 
     await this.db.transaction(async (tx) => {
@@ -340,7 +357,7 @@ export class SupportTicketsService {
       status: updateData.status ?? ticket.status,
       priority: updateData.priority ?? ticket.priority,
       category: ticket.category,
-      assigneeId: updateData.assigneeId !== undefined ? updateData.assigneeId : ticket.assigneeId,
+      assigneeId: input.assigneeId !== undefined ? input.assigneeId : ticket.assigneeMembership?.user?.id,
     };
 
     if (input.status && input.status !== ticket.status) {
@@ -366,7 +383,7 @@ export class SupportTicketsService {
       if (!registerAfterCommit(statusNotifTask)) void statusNotifTask();
     }
 
-    if (input.assigneeId && input.assigneeId !== ticket.assigneeId) {
+    if (input.assigneeId && input.assigneeId !== ticket.assigneeMembership?.user?.id) {
       const assignNotifTask = () =>
         this.notifications
           .sendAssignmentEmail(

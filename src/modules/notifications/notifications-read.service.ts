@@ -13,7 +13,7 @@ import {
   ilike,
   or,
 } from "drizzle-orm";
-import { notifications, notificationReadWatermarks, tickets, projects, users } from "../../db/schema";
+import { notifications, notificationReadWatermarks, tickets, projects, users, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -115,10 +115,20 @@ export class NotificationsReadService {
       .where(
         and(
           eq(notificationReadWatermarks.orgId, orgId),
-          eq(notificationReadWatermarks.userId, userId),
+          eq(notificationReadWatermarks.membershipId, await this.resolveMembershipId(orgId, userId)),
         ),
       );
     return wm?.lastReadId ?? 0;
+  }
+
+  /** Resolve the current tenant authority once; user_id is only an identity lookup. */
+  private async resolveMembershipId(orgId: string, userId: string): Promise<number> {
+    const [member] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
+    if (!member) throw new Error("Organization membership required");
+    return member.id;
   }
 
   private async queryNotifications(
@@ -126,11 +136,12 @@ export class NotificationsReadService {
     userId: string,
     filters: ListInput & { section: string },
   ) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
     const lastReadId = await this.fetchLastReadId(orgId, userId);
 
     const conditions = [
       eq(notifications.orgId, orgId),
-      eq(notifications.userId, userId),
+      eq(notifications.membershipId, membershipId),
       isNull(notifications.deletedAt),
     ];
 
@@ -302,10 +313,11 @@ export class NotificationsReadService {
   }
 
   private async queryUnreadCount(orgId: string, userId: string) {
+    const membershipId = await this.resolveMembershipId(orgId, userId);
     const lastReadId = await this.fetchLastReadId(orgId, userId);
     const conditions = [
       eq(notifications.orgId, orgId),
-      eq(notifications.userId, userId),
+      eq(notifications.membershipId, membershipId),
       eq(notifications.isRead, false),
       isNull(notifications.deletedAt),
       isNull(notifications.archivedAt),

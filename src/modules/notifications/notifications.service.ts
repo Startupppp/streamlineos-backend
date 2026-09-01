@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { notifications } from "../../db/schema";
+import { notifications, organizationMembers } from "../../db/schema";
+import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type {
@@ -36,11 +37,19 @@ export class NotificationsService {
   ) {}
 
   async create(input: CreateNotificationInput) {
+    // userId is an identity/display address; delivery authority is the tenant membership.
+    const [member] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, input.orgId), eq(organizationMembers.userId, input.userId)))
+      .limit(1);
+    if (!member) throw new Error("Organization membership required");
     const [notification] = await this.db
       .insert(notifications)
       .values({
         orgId: input.orgId,
         userId: input.userId,
+        membershipId: member.id,
         type: input.type ?? "INFO",
         priority: input.priority ?? "NORMAL",
         category: input.category ?? "SYSTEM",

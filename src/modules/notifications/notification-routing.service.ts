@@ -398,12 +398,31 @@ export class NotificationRoutingService {
       this.loadOrgAvailability(orgId),
       this.loadOrgPolicy(orgId, definition),
       this.db
-        .select()
+        .select({
+          userId: notificationPreferences.userId,
+          inAppEnabled: notificationPreferences.inAppEnabled,
+          emailEnabled: notificationPreferences.emailEnabled,
+          pushEnabled: notificationPreferences.pushEnabled,
+          smsEnabled: notificationPreferences.smsEnabled,
+          whatsappEnabled: notificationPreferences.whatsappEnabled,
+          quietHoursStart: notificationPreferences.quietHoursStart,
+          quietHoursEnd: notificationPreferences.quietHoursEnd,
+          quietHoursWeekends: notificationPreferences.quietHoursWeekends,
+          allowCriticalOverride: notificationPreferences.allowCriticalOverride,
+        })
         .from(notificationPreferences)
         .where(and(eq(notificationPreferences.orgId, orgId), inArray(notificationPreferences.userId, userIds))),
       // SCH-003: the normalised replacement for the four JSONB preference blobs.
       this.db
-        .select({ userId: organizationMembers.userId, rule: notificationPreferenceRules })
+        .select({
+          userId: organizationMembers.userId,
+          rule: {
+            scopeType: notificationPreferenceRules.scopeType,
+            scopeKey: notificationPreferenceRules.scopeKey,
+            channel: notificationPreferenceRules.channel,
+            mode: notificationPreferenceRules.mode,
+          },
+        })
         .from(notificationPreferenceRules)
         .innerJoin(
           organizationMembers,

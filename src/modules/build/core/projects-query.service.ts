@@ -13,6 +13,7 @@ import {
   projects,
   tickets,
   users,
+  organizationMembers,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -69,7 +70,7 @@ export class ProjectsQueryService {
         this.db
           .select({ projectId: projectMembers.projectId })
           .from(projectMembers)
-          .where(eq(projectMembers.userId, userId)),
+          .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.membershipId, membershipId ?? -1))),
         this.db
           .select({ projectId: projectTeamAssignments.projectId })
           .from(projectTeamAssignments)
@@ -80,7 +81,7 @@ export class ProjectsQueryService {
           .where(
             and(
               eq(projectTeamAssignments.orgId, orgId),
-              eq(projectTeamMembers.userId, userId),
+              eq(projectTeamMembers.membershipId, membershipId ?? -1),
             ),
           ),
       ]);
@@ -92,7 +93,6 @@ export class ProjectsQueryService {
       );
       const memberScopeCondition = or(
         membershipId !== null ? eq(projects.managerMembershipId, membershipId) : undefined,
-        eq(projects.managerId, userId),
         accessibleProjectIds.length > 0
           ? inArray(projects.id, accessibleProjectIds)
           : sql`false`,
@@ -127,7 +127,7 @@ export class ProjectsQueryService {
       priority: projects.priority,
       startDate: projects.startDate,
       endDate: projects.endDate,
-      managerId: projects.managerId,
+      managerId: organizationMembers.userId,
       managerFirstName: users.firstName,
       managerLastName: users.lastName,
       managerImage: users.image,
@@ -135,7 +135,8 @@ export class ProjectsQueryService {
     const projectRows = await this.db
       .select(projectCols)
       .from(projects)
-      .leftJoin(users, eq(projects.managerId, users.id))
+      .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, projects.orgId), eq(organizationMembers.id, projects.managerMembershipId)))
+      .leftJoin(users, eq(organizationMembers.userId, users.id))
       .where(whereClause)
       .orderBy(desc(projects.id))
       .limit(limit + 1);
@@ -164,13 +165,14 @@ export class ProjectsQueryService {
       this.db
         .select({
           projectId: projectMembers.projectId,
-          userId: projectMembers.userId,
+          membershipId: projectMembers.membershipId,
           firstName: users.firstName,
           lastName: users.lastName,
           image: users.image,
         })
         .from(projectMembers)
-        .innerJoin(users, eq(projectMembers.userId, users.id))
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
         .where(inArray(projectMembers.projectId, projectIds)),
       this.db
         .select({
@@ -180,7 +182,7 @@ export class ProjectsQueryService {
         .from(projectMembers)
         .innerJoin(
           projectTeamMembers,
-          eq(projectTeamMembers.userId, projectMembers.userId),
+          eq(projectTeamMembers.membershipId, projectMembers.membershipId),
         )
         .innerJoin(projectTeams, eq(projectTeams.id, projectTeamMembers.teamId))
         .where(inArray(projectMembers.projectId, projectIds))
@@ -193,7 +195,7 @@ export class ProjectsQueryService {
     const membersMap = new Map<
       number,
       {
-        id: string;
+          id: string;
         firstName: string | null;
         lastName: string | null;
         image: string | null;
@@ -204,7 +206,7 @@ export class ProjectsQueryService {
       const arr = membersMap.get(m.projectId);
       if (arr && arr.length < 5) {
         arr.push({
-          id: m.userId,
+          id: m.membershipId,
           firstName: m.firstName,
           lastName: m.lastName,
           image: m.image,
@@ -304,15 +306,14 @@ export class ProjectsQueryService {
     if (!isOwnerOrAdmin) {
       const callerMid = actingMembershipId(u.principal);
       const isManager =
-        (callerMid !== null && project.managerMembershipId === callerMid) ||
-        project.managerId === u.userId;
+        callerMid !== null && project.managerMembershipId === callerMid;
       if (!isManager) {
         const memberOf = await this.db
           .select({ projectId: projectMembers.projectId })
           .from(projectMembers)
           .where(
             and(
-              eq(projectMembers.userId, u.userId),
+              eq(projectMembers.membershipId, callerMid ?? -1),
               eq(projectMembers.projectId, projectId),
             ),
           );
@@ -328,7 +329,7 @@ export class ProjectsQueryService {
               and(
                 eq(projectTeamAssignments.projectId, projectId),
                 eq(projectTeamAssignments.orgId, orgId),
-                eq(projectTeamMembers.userId, u.userId),
+                eq(projectTeamMembers.membershipId, callerMid ?? -1),
               ),
             )
             .limit(1);

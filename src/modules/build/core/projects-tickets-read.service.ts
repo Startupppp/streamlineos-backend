@@ -3,11 +3,11 @@ import { actingMembershipId } from "../../../common/auth/principal";
 import {
   and,
   asc,
-  count,
   desc,
   eq,
   gte,
   inArray,
+  isNotNull,
   isNull,
   lte,
   or,
@@ -27,11 +27,11 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetAfterValue } from "../../../common/pagination/keyset";
-import { totalOverWindow } from "../../../common/pagination/window-count";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveTicketsScope } from "./tickets-scope";
 import type { TicketsListQuery } from "./dto/projects.schemas";
+import { queryTickets } from "./projects-tickets-read.query";
 
 const TRIGRAM_MIN_TERM_LENGTH = 3;
 
@@ -45,44 +45,71 @@ const TICKET_ORDERBY_COLUMNS = {
   rank: tickets.rank,
 } as const;
 
-const USER_COLS = {
-  id: true,
-  name: true,
-  firstName: true,
-  lastName: true,
-  email: true,
-  image: true,
-} as const;
+type TicketOrderBy = keyof typeof TICKET_ORDERBY_COLUMNS;
 
-const TICKET_LIST_COLUMNS = {
-  id: true,
-  orgId: true,
-  title: true,
-  type: true,
-  status: true,
-  priority: true,
-  projectId: true,
-  ticketNumber: true,
-  sprintId: true,
-  epicId: true,
-  assigneeId: true,
-  reporterId: true,
-  points: true,
-  storyPoints: true,
-  link: true,
-  rank: true,
-  parentTicketId: true,
-  originalEstimate: true,
-  timeSpent: true,
-  startDate: true,
-  dueDate: true,
-  moduleId: true,
-  cycleId: true,
-  sequenceId: true,
-  estimate: true,
-  createdAt: true,
-  updatedAt: true,
-} as const;
+interface TicketCursorSort {
+  primary: string | null;
+  createdAt: string;
+}
+
+function ticketCursorBoundary(
+  orderBy: Exclude<TicketOrderBy, "rank">,
+  direction: "asc" | "desc",
+  position: NonNullable<ReturnType<typeof decodeCursor>>,
+): SQL<unknown> | undefined {
+  const id = Number(position.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return undefined;
+
+  let decoded: TicketCursorSort;
+  try {
+    decoded = JSON.parse(String(position.sortValue)) as TicketCursorSort;
+  } catch {
+    return undefined;
+  }
+  if (
+    !decoded ||
+    !(decoded.primary === null || typeof decoded.primary === "string") ||
+    typeof decoded.createdAt !== "string"
+  ) {
+    return undefined;
+  }
+
+  const createdAt = new Date(decoded.createdAt);
+  if (Number.isNaN(createdAt.getTime())) return undefined;
+  const primaryColumn = TICKET_ORDERBY_COLUMNS[orderBy];
+  const primaryValue =
+    orderBy === "created" || orderBy === "updated"
+      ? decoded.primary === null
+        ? null
+        : new Date(decoded.primary)
+      : decoded.primary;
+  if (primaryValue instanceof Date && Number.isNaN(primaryValue.getTime())) return undefined;
+
+  const createdParam = sql.param(createdAt, tickets.createdAt);
+  const idParam = sql.param(id, tickets.id);
+  const tail = sql`(
+    ${tickets.createdAt} < ${createdParam}
+    OR (${tickets.createdAt} = ${createdParam} AND ${tickets.id} > ${idParam})
+  )`;
+
+  if (primaryValue === null) {
+    return direction === "asc"
+      ? and(isNull(primaryColumn), tail)
+      : or(and(isNull(primaryColumn), tail), isNotNull(primaryColumn));
+  }
+
+  const primaryParam = sql.param(primaryValue, primaryColumn);
+  return direction === "asc"
+    ? sql`(
+        ${primaryColumn} > ${primaryParam}
+        OR ${primaryColumn} IS NULL
+        OR (${primaryColumn} = ${primaryParam} AND ${tail})
+      )`
+    : sql`(
+        ${primaryColumn} < ${primaryParam}
+        OR (${primaryColumn} = ${primaryParam} AND ${tail})
+      )`;
+}
 
 @Injectable()
 export class ProjectsTicketsReadService {
@@ -90,43 +117,6 @@ export class ProjectsTicketsReadService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
   ) {}
-
-  private queryTickets(
-    where: SQL<unknown> | undefined,
-    orderBy: SQL<unknown>[],
-    limit: number,
-    offset?: number,
-  ) {
-    return this.db.query.tickets.findMany({
-      where,
-      columns: TICKET_LIST_COLUMNS,
-      with: {
-        assignee: { columns: USER_COLS },
-        assignees: {
-          with: { user: { columns: USER_COLS } },
-        },
-        labels: {
-          with: {
-            label: {
-              columns: { id: true, name: true, color: true },
-            },
-          },
-        },
-        cycle: {
-          columns: {
-            id: true,
-            name: true,
-            status: true,
-            startDate: true,
-            endDate: true,
-          },
-        },
-      },
-      orderBy,
-      limit,
-      offset,
-    });
-  }
 
   async checkProjectAccess(
     orgId: string,
@@ -216,7 +206,6 @@ export class ProjectsTicketsReadService {
     const scope = await resolveTicketsScope(this.access, u);
 
     const {
-      page,
       limit,
       search,
       status,
@@ -234,10 +223,12 @@ export class ProjectsTicketsReadService {
       orderBy,
       orderDir,
     } = query;
-    const offset = (page - 1) * limit;
 
     if (scope === "none")
-      return { data: [], total: 0, page, limit, totalPages: 0 };
+      return {
+        data: [],
+        pagination: { limit, nextCursor: null, hasMore: false },
+      };
 
     const scopeClause =
       scope !== "all"
@@ -344,37 +335,14 @@ export class ProjectsTicketsReadService {
           ? [asc(col), desc(tickets.createdAt), asc(tickets.id)]
           : [desc(col), desc(tickets.createdAt), asc(tickets.id)];
 
-    if (query.paging === "cursor") {
-      return this.listTicketsByCursor(where, limit, query.cursor);
-    }
-
-    if (scope !== "all") {
-      const { ids, total } = await this.pageScopedTicketIds(
-        where,
-        sortExpr,
-        limit,
-        offset,
-      );
-      const data =
-        ids.length > 0
-          ? await this.queryTickets(inArray(tickets.id, ids), sortExpr, limit)
-          : [];
-      return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
-    }
-
-    const [dataResult, countResult] = await Promise.all([
-      this.queryTickets(where, sortExpr, limit, offset),
-      this.db.select({ total: count() }).from(tickets).where(where),
-    ]);
-
-    const total = Number(countResult[0]?.total ?? 0);
-    return {
-      data: dataResult,
-      total,
-      page,
+    return this.listTicketsByCursor(
+      where,
       limit,
-      totalPages: Math.ceil(total / limit),
-    };
+      query.cursor,
+      orderBy,
+      dir,
+      sortExpr,
+    );
   }
 
   /**
@@ -385,66 +353,59 @@ export class ProjectsTicketsReadService {
     where: SQL<unknown> | undefined,
     limit: number,
     cursor: string | undefined,
+    orderBy: TicketOrderBy,
+    direction: "asc" | "desc",
+    sortExpr: SQL<unknown>[],
   ) {
     const position = decodeCursor(cursor);
-    const bounded = position
-      ? and(where, keysetAfterValue(tickets.rank, tickets.id, position))
-      : where;
+    const boundary = position
+      ? orderBy === "rank"
+        ? keysetAfterValue(tickets.rank, tickets.id, position)
+        : ticketCursorBoundary(orderBy, direction, position)
+      : undefined;
+    const bounded = and(where, boundary);
+    const primaryColumn = TICKET_ORDERBY_COLUMNS[orderBy];
 
     const rows = await this.db
-      .select({ id: tickets.id, rank: tickets.rank, total: totalOverWindow })
+      .select({
+        id: tickets.id,
+        cursorPrimary: primaryColumn,
+        rank: tickets.rank,
+        createdAt: tickets.createdAt,
+      })
       .from(tickets)
       .where(bounded)
-      .orderBy(asc(tickets.rank), asc(tickets.id))
+      .orderBy(...sortExpr)
       .limit(limit + 1);
 
     const page = buildCursorPage(rows, limit, (row) => ({
-      sortValue: row.rank ?? "",
+      sortValue:
+        orderBy === "rank"
+          ? row.rank ?? ""
+          : JSON.stringify({
+              primary:
+                row.cursorPrimary instanceof Date
+                  ? row.cursorPrimary.toISOString()
+                  : row.cursorPrimary === null
+                    ? null
+                    : String(row.cursorPrimary),
+              createdAt: row.createdAt.toISOString(),
+            } satisfies TicketCursorSort),
       id: String(row.id),
     }));
 
     const ids = page.data.map((row) => row.id);
     const data =
       ids.length > 0
-        ? await this.queryTickets(
+        ? await queryTickets(
+            this.db,
             inArray(tickets.id, ids),
-            [asc(tickets.rank), asc(tickets.id)],
+            sortExpr,
             limit,
           )
         : [];
 
-    return {
-      data,
-      total: position ? undefined : Number(page.data[0]?.total ?? 0),
-      limit,
-      nextCursor: page.pagination.nextCursor,
-      hasMore: page.pagination.hasMore,
-    };
-  }
-
-  private async pageScopedTicketIds(
-    where: SQL<unknown> | undefined,
-    sortExpr: SQL<unknown>[],
-    limit: number,
-    offset: number,
-  ): Promise<{ ids: number[]; total: number }> {
-    const rows = await this.db
-      .select({ id: tickets.id, total: sql<string>`count(*) OVER ()` })
-      .from(tickets)
-      .where(where)
-      .orderBy(...sortExpr)
-      .limit(limit)
-      .offset(offset);
-
-    const first = rows[0];
-    if (first) return { ids: rows.map((row) => row.id), total: Number(first.total) };
-
-    if (offset === 0) return { ids: [], total: 0 };
-    const countResult = await this.db
-      .select({ total: count() })
-      .from(tickets)
-      .where(where);
-    return { ids: [], total: Number(countResult[0]?.total ?? 0) };
+    return { data, pagination: page.pagination };
   }
 
   async getColumnCounts(orgId: string, projectId: number): Promise<Record<string, number>> {

@@ -35,9 +35,7 @@ export const projects = build.table(
     name: text("name").notNull(),
     description: text("description"),
     key: text("key").notNull(),
-    clientId: text("client_id").references(() => users.id),
     clientMembershipId: integer("client_membership_id"),
-    managerId: text("manager_id").references(() => users.id),
     managerMembershipId: integer("manager_membership_id"),
     startDate: timestamp("start_date"),
     endDate: timestamp("end_date"),
@@ -75,7 +73,7 @@ export const projects = build.table(
   (table) => [
     uniqueIndex("uniq_projects_org_key").on(table.orgId, table.key).where(sql`deleted_at IS NULL`),
     index("idx_projects_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
-    index("idx_projects_manager").on(table.managerId),
+    index("idx_projects_manager").on(table.orgId, table.managerMembershipId),
     index("idx_projects_org_manager_membership").on(table.orgId, table.managerMembershipId),
     index("idx_projects_org_client_membership").on(table.orgId, table.clientMembershipId),
     index("idx_projects_deal").on(table.dealId),

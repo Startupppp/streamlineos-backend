@@ -153,7 +153,6 @@ export const feedbucketSubmissions = build.table(
     crmContactId: integer("crm_contact_id").references(() => contacts.id, { onDelete: "set null" }),
     crmOrganizationId: integer("crm_organization_id").references(() => crmOrganizations.id, { onDelete: "set null" }),
     accountValueSnapshot: decimal("account_value_snapshot", { precision: 15, scale: 2 }),
-    assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
     assigneeMembershipId: integer("assignee_membership_id"),
     linkedTicketId: integer("linked_ticket_id").references(() => tickets.id, { onDelete: "set null" }),
     aiType: text("ai_type"),
@@ -168,7 +167,7 @@ export const feedbucketSubmissions = build.table(
   (t) => [
     index("idx_feedbucket_submissions_widget").on(t.orgId, t.widgetId, t.status, t.createdAt).where(sql`deleted_at IS NULL`),
     index("idx_feedbucket_submissions_org_status").on(t.orgId, t.status, t.createdAt).where(sql`deleted_at IS NULL`),
-    index("idx_feedbucket_submissions_assignee").on(t.orgId, t.assigneeId).where(sql`deleted_at IS NULL`),
+    index("idx_feedbucket_submissions_assignee").on(t.orgId, t.assigneeMembershipId).where(sql`deleted_at IS NULL`),
     index("idx_feedbucket_submissions_org_assignee_membership").on(t.orgId, t.assigneeMembershipId).where(sql`deleted_at IS NULL`),
     index("idx_feedbucket_submissions_crm_contact").on(t.orgId, t.crmContactId).where(sql`deleted_at IS NULL`),
     index("idx_feedbucket_submissions_crm_org").on(t.orgId, t.crmOrganizationId).where(sql`deleted_at IS NULL`),
@@ -220,7 +219,6 @@ export const feedbucketSubmissionsRelations = relations(feedbucketSubmissions, (
     fields: [feedbucketSubmissions.widgetId],
     references: [feedbucketWidgets.id],
   }),
-  assignee: one(users, { fields: [feedbucketSubmissions.assigneeId], references: [users.id] }),
   linkedTicket: one(tickets, {
     fields: [feedbucketSubmissions.linkedTicketId],
     references: [tickets.id],

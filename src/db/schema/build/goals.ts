@@ -25,7 +25,6 @@ export const okrGoals = build.table("okr_goals", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
   description: text("description"),
-  ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
   ownerMembershipId: integer("owner_membership_id"),
   level: goalLevelEnum("level").default("company").notNull(),
   status: goalStatusEnum("status").default("not_started").notNull(),
@@ -34,7 +33,6 @@ export const okrGoals = build.table("okr_goals", {
   dueDate: date("due_date"),
   parentGoalId: integer("parent_goal_id"),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
-  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -105,10 +103,6 @@ export const okrLinks = build.table("okr_links", {
 ]);
 
 export const okrGoalsRelations = relations(okrGoals, ({ one, many }) => ({
-  owner: one(users, {
-    fields: [okrGoals.ownerId],
-    references: [users.id],
-  }),
   project: one(projects, {
     fields: [okrGoals.projectId],
     references: [projects.id],

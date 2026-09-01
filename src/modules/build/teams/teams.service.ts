@@ -9,7 +9,7 @@ import {
   projectTeamMembers,
   projectTeams,
 } from "../../../db/schema/build/teams";
-import { users } from "../../../db/schema/common/auth";
+import { organizationMembers, users } from "../../../db/schema/common/auth";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -93,7 +93,7 @@ export class TeamsService {
     const members = await this.db
       .select({
         id: projectTeamMembers.id,
-        userId: projectTeamMembers.userId,
+        userId: organizationMembers.userId,
         role: projectTeamMembers.role,
         joinedAt: projectTeamMembers.joinedAt,
         firstName: users.firstName,
@@ -102,7 +102,14 @@ export class TeamsService {
         image: users.image,
       })
       .from(projectTeamMembers)
-      .innerJoin(users, eq(users.id, projectTeamMembers.userId))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, projectTeamMembers.orgId),
+          eq(organizationMembers.id, projectTeamMembers.membershipId),
+        ),
+      )
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(
         and(
           eq(projectTeamMembers.teamId, teamId),

@@ -52,13 +52,11 @@ export const meetingAttendees = build.table("meeting_attendees", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   meetingId: integer("meeting_id").references(() => projectMeetings.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  membershipId: integer("membership_id"),
+  membershipId: integer("membership_id").notNull(),
   attended: boolean("attended").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
-  uniqueIndex("uq_meeting_attendees_meeting_user").on(t.meetingId, t.userId),
-  index("idx_meeting_attendees_user").on(t.userId),
+  uniqueIndex("uq_meeting_attendees_meeting_user").on(t.meetingId, t.membershipId),
   index("idx_meeting_attendees_org_membership").on(t.orgId, t.membershipId),
   unique("uniq_meeting_attendees_org_id").on(t.orgId, t.id),
   foreignKey({

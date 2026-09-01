@@ -6,6 +6,7 @@ import {
   supportQueues,
   automationRules,
   automationRuns,
+  organizationMembers,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -33,7 +34,9 @@ export class SupportReportsService {
     if (filters.queueId) conditions.push(eq(supportTickets.queueId, filters.queueId));
     if (filters.channel) conditions.push(eq(supportTickets.sourceChannel, filters.channel));
     const agentId = filters.scopeToUserId ?? filters.agentId;
-    if (agentId) conditions.push(eq(supportTickets.assigneeId, agentId));
+    if (agentId) {
+      conditions.push(sql`${supportTickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${agentId})`);
+    }
     return conditions;
   }
 
@@ -119,11 +122,11 @@ export class SupportReportsService {
 
   async getAgentPerformance(orgId: string, filters: ScopedFilters) {
     const conditions = this.baseConditions(orgId, filters);
-    conditions.push(sql`${supportTickets.assigneeId} IS NOT NULL`);
+    conditions.push(sql`${supportTickets.assigneeMembershipId} IS NOT NULL`);
 
     return this.db
       .select({
-        agentId: supportTickets.assigneeId,
+        agentId: organizationMembers.userId,
         ticketsHandled: sql<number>`COUNT(*)::int`,
         ticketsResolved: sql<number>`COUNT(*) FILTER (WHERE ${supportTickets.resolvedAt} IS NOT NULL)::int`,
         avgFirstResponseMinutes: sql<number | null>`
@@ -134,8 +137,15 @@ export class SupportReportsService {
           FILTER (WHERE ${supportTickets.resolvedAt} IS NOT NULL)`,
       })
       .from(supportTickets)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, supportTickets.orgId),
+          eq(organizationMembers.id, supportTickets.assigneeMembershipId),
+        ),
+      )
       .where(and(...conditions))
-      .groupBy(supportTickets.assigneeId)
+      .groupBy(organizationMembers.userId)
       .orderBy(sql`COUNT(*) DESC`);
   }
 

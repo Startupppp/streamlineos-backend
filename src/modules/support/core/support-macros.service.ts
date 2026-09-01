@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, or, sql } from "drizzle-orm";
 import {
   supportMacros,
   supportRoutingRules,
@@ -23,6 +23,7 @@ import type {
   UpdateMacroInput,
   UpdateRoutingRuleInput,
 } from "./dto/support.schemas";
+import { resolveAssignmentModeAgent } from "./support-macros-assignment";
 
 export interface RoutableTicket {
   title?: string | null;
@@ -186,15 +187,15 @@ export class SupportMacrosService {
     const [ticket, agent, org] = await Promise.all([
       this.db.query.supportTickets.findFirst({
         where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-        columns: { id: true, requesterName: true, createdBy: true },
-        with: { creator: { columns: { name: true } } },
+        columns: { id: true, requesterName: true },
+        with: { creatorMembership: { with: { user: { columns: { name: true } } } } },
       }),
       this.db.query.users.findFirst({ where: eq(users.id, userId), columns: { name: true } }),
       this.db.query.organizations.findFirst({ where: eq(organizations.id, orgId), columns: { name: true } }),
     ]);
     if (!ticket) throw new NotFoundException("Ticket not found");
 
-    const customerName = ticket.requesterName ?? ticket.creator?.name ?? "there";
+    const customerName = ticket.requesterName ?? ticket.creatorMembership?.user?.name ?? "there";
     const variables: Record<string, string> = {
       "customer.name": customerName,
       "ticket.id": String(ticket.id),
@@ -221,7 +222,12 @@ export class SupportMacrosService {
         orgId,
         name: input.name,
         conditions: input.conditions,
-        assigneeId: input.assigneeId ?? null,
+        assigneeMembershipId: input.assigneeId
+          ? (await this.db.query.organizationMembers.findFirst({
+              where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, input.assigneeId), eq(organizationMembers.status, "ACTIVE")),
+              columns: { id: true },
+            }))?.id ?? null
+          : null,
         setPriority: input.setPriority ?? null,
         assignmentMode: input.assignmentMode,
         candidateAgentIds: input.candidateAgentIds,
@@ -235,9 +241,23 @@ export class SupportMacrosService {
   }
 
   async updateRoutingRule(orgId: string, ruleId: number, input: UpdateRoutingRuleInput) {
+    const { assigneeId, ...rest } = input;
     const [updated] = await this.db
       .update(supportRoutingRules)
-      .set({ ...input, updatedAt: new Date() })
+      .set({
+        ...rest,
+        ...(assigneeId !== undefined
+          ? {
+              assigneeMembershipId: assigneeId
+                ? (await this.db.query.organizationMembers.findFirst({
+                    where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, assigneeId), eq(organizationMembers.status, "ACTIVE")),
+                    columns: { id: true },
+                  }))?.id ?? null
+                : null,
+            }
+          : {}),
+        updatedAt: new Date(),
+      })
       .where(and(eq(supportRoutingRules.id, ruleId), eq(supportRoutingRules.orgId, orgId)))
       .returning();
 
@@ -273,9 +293,19 @@ export class SupportMacrosService {
       const requiredSkills = Array.isArray(rule.requiredSkills) ? rule.requiredSkills : [];
 
       if (rule.assignmentMode !== "static" && candidates.length > 0) {
-        outcome.assigneeId = await this.resolveAssignmentModeAgent(orgId, rule.assignmentMode, candidates, requiredSkills);
-      } else if (rule.assigneeId) {
-        outcome.assigneeId = rule.assigneeId;
+        outcome.assigneeId = await resolveAssignmentModeAgent(
+          this.db,
+          orgId,
+          rule.assignmentMode,
+          candidates,
+          requiredSkills,
+        );
+      } else if (rule.assigneeMembershipId) {
+        const member = await this.db.query.organizationMembers.findFirst({
+          where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.id, rule.assigneeMembershipId)),
+          columns: { userId: true },
+        });
+        if (member) outcome.assigneeId = member.userId;
       }
 
       if (rule.setPriority) outcome.setPriority = rule.setPriority;
@@ -285,120 +315,17 @@ export class SupportMacrosService {
     return {};
   }
 
-  private async loadBalance(orgId: string, candidates: string[]): Promise<string> {
-    const workloads = await this.db
-      .select({ assigneeId: supportTickets.assigneeId, cnt: count() })
-      .from(supportTickets)
-      .where(
-        and(
-          eq(supportTickets.orgId, orgId),
-          inArray(supportTickets.assigneeId, candidates),
-          or(eq(supportTickets.status, "OPEN"), eq(supportTickets.status, "IN_PROGRESS")),
-        ),
-      )
-      .groupBy(supportTickets.assigneeId);
-
-    const workloadMap = new Map(workloads.map((w) => [w.assigneeId, Number(w.cnt)]));
-    return candidates.reduce((least, candidate) =>
-      (workloadMap.get(candidate) ?? 0) < (workloadMap.get(least) ?? 0) ? candidate : least,
-    );
-  }
-
   /**
    * Filters candidates down to those who have EVERY skill in requiredSkills.
    * Falls back to the full candidate list (rather than returning nothing) if
    * no candidate qualifies — a misconfigured skill requirement shouldn't
    * leave a ticket unassigned.
    */
-  private async filterBySkills(orgId: string, candidates: string[], requiredSkills: string[]): Promise<string[]> {
-    if (requiredSkills.length === 0) return candidates;
-
-    const rows = await this.db
-      .select({ userId: organizationMembers.userId, skill: supportAgentSkills.skill })
-      .from(supportAgentSkills)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.orgId, supportAgentSkills.orgId),
-          eq(organizationMembers.id, supportAgentSkills.userMembershipId),
-        ),
-      )
-      .where(
-        and(
-          eq(supportAgentSkills.orgId, orgId),
-          inArray(organizationMembers.userId, candidates),
-          inArray(supportAgentSkills.skill, requiredSkills),
-        ),
-      );
-
-    const skillsByUser = new Map<string, Set<string>>();
-    for (const row of rows) {
-      const set = skillsByUser.get(row.userId) ?? new Set<string>();
-      set.add(row.skill);
-      skillsByUser.set(row.userId, set);
-    }
-
-    const qualified = candidates.filter((c) => requiredSkills.every((skill) => skillsByUser.get(c)?.has(skill)));
-    return qualified.length > 0 ? qualified : candidates;
-  }
-
   /**
    * Filters candidates down to those currently marked available (no row =
    * available by default). Falls back to the full candidate list if nobody
    * is available — better to assign someone than leave the ticket unassigned.
    */
-  private async filterByAvailability(orgId: string, candidates: string[]): Promise<string[]> {
-    const rows = await this.db
-      .select({ userId: organizationMembers.userId, isAvailable: supportAgentAvailability.isAvailable })
-      .from(supportAgentAvailability)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.orgId, supportAgentAvailability.orgId),
-          eq(organizationMembers.id, supportAgentAvailability.userMembershipId),
-        ),
-      )
-      .where(
-        and(
-          eq(supportAgentAvailability.orgId, orgId),
-          inArray(organizationMembers.userId, candidates),
-        ),
-      );
-
-    const availabilityByUser = new Map(rows.map((r) => [r.userId, r.isAvailable]));
-    const available = candidates.filter((c) => availabilityByUser.get(c) ?? true);
-    return available.length > 0 ? available : candidates;
-  }
-
-  private async resolveAssignmentModeAgent(
-    orgId: string,
-    mode: string,
-    candidates: string[],
-    requiredSkills: string[],
-  ): Promise<string> {
-    if (mode === "load_balanced") {
-      return this.loadBalance(orgId, candidates);
-    }
-
-    if (mode === "skill_based") {
-      const qualified = await this.filterBySkills(orgId, candidates, requiredSkills);
-      return this.loadBalance(orgId, qualified);
-    }
-
-    if (mode === "availability_based") {
-      const available = await this.filterByAvailability(orgId, candidates);
-      return this.loadBalance(orgId, available);
-    }
-
-    // round_robin: use total ticket count for the org as a stateless rotating cursor.
-    const [totalResult] = await this.db
-      .select({ cnt: count() })
-      .from(supportTickets)
-      .where(eq(supportTickets.orgId, orgId));
-    const cursor = Number(totalResult?.cnt ?? 0) % candidates.length;
-    return candidates[cursor];
-  }
-
   async setAgentSkills(orgId: string, userId: string, skills: string[]) {
     const membershipId = await this.resolveActiveMembershipId(orgId, userId);
     await this.db.transaction(async (tx) => {

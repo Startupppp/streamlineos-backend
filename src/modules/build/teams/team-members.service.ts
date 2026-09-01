@@ -10,7 +10,8 @@ import {
   projectTeamMembers,
   projectWorkspaceMembers,
 } from "../../../db/schema/build/teams";
-import { users } from "../../../db/schema/common/auth";
+import { organizationMembers, users } from "../../../db/schema/common/auth";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -50,7 +51,7 @@ export class TeamMembersService {
     const rows = await this.db
       .select({
         id: projectTeamMembers.id,
-        userId: projectTeamMembers.userId,
+        userId: organizationMembers.userId,
         role: projectTeamMembers.role,
         joinedAt: projectTeamMembers.joinedAt,
         firstName: users.firstName,
@@ -59,7 +60,14 @@ export class TeamMembersService {
         image: users.image,
       })
       .from(projectTeamMembers)
-      .innerJoin(users, eq(users.id, projectTeamMembers.userId))
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, projectTeamMembers.orgId),
+          eq(organizationMembers.id, projectTeamMembers.membershipId),
+        ),
+      )
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(and(...conds))
       .orderBy(asc(projectTeamMembers.joinedAt), asc(projectTeamMembers.id))
       .limit(pageSize + 1);
@@ -84,7 +92,10 @@ export class TeamMembersService {
       .where(
         and(
           eq(projectWorkspaceMembers.orgId, orgId),
-          eq(projectWorkspaceMembers.userId, input.userId),
+          eq(
+            projectWorkspaceMembers.membershipId,
+            (await assertOrganizationActor(this.db, orgId, { kind: "user", userId: input.userId })).membershipId,
+          ),
         ),
       )
       .limit(1);
@@ -100,7 +111,7 @@ export class TeamMembersService {
         .values({
           orgId,
           teamId,
-          userId: input.userId,
+          membershipId: (await assertOrganizationActor(this.db, orgId, { kind: "user", userId: input.userId })).membershipId,
           role: input.role ?? "member",
         })
         .returning();
@@ -138,7 +149,10 @@ export class TeamMembersService {
       .where(
         and(
           eq(projectTeamMembers.teamId, teamId),
-          eq(projectTeamMembers.userId, memberId),
+          eq(
+            projectTeamMembers.membershipId,
+            (await assertOrganizationActor(this.db, orgId, { kind: "user", userId: memberId })).membershipId,
+          ),
           eq(projectTeamMembers.orgId, orgId),
         ),
       );
@@ -166,7 +180,10 @@ export class TeamMembersService {
       .where(
         and(
           eq(projectTeamMembers.teamId, teamId),
-          eq(projectTeamMembers.userId, memberUserId),
+          eq(
+            projectTeamMembers.membershipId,
+            (await assertOrganizationActor(this.db, orgId, { kind: "user", userId: memberUserId })).membershipId,
+          ),
           eq(projectTeamMembers.orgId, orgId),
         ),
       )

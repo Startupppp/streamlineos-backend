@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
-import { releaseTickets, tickets } from "../../../db/schema";
+import { organizationMembers, releaseTickets, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InboxConsumer } from "../../../common/outbox/inbox-consumer";
@@ -66,7 +66,7 @@ export class BuildReleasePublishedConsumerService
     // notified — the same derivation used by the sprint.ending sweep, applied here
     // through the release→ticket FK rather than the sprint→ticket FK.
     const owners = await this.db
-      .selectDistinct({ assigneeId: tickets.assigneeId })
+      .selectDistinct({ assigneeMembershipId: tickets.assigneeMembershipId, userId: organizationMembers.userId })
       .from(releaseTickets)
       .innerJoin(
         tickets,
@@ -75,17 +75,18 @@ export class BuildReleasePublishedConsumerService
           eq(tickets.orgId, orgId),
         ),
       )
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
       .where(
         and(
           eq(releaseTickets.orgId, orgId),
           eq(releaseTickets.releaseId, releaseId),
           isNull(tickets.deletedAt),
-          isNotNull(tickets.assigneeId),
+          isNotNull(tickets.assigneeMembershipId),
         ),
       );
 
     const targets = owners
-      .map((o) => o.assigneeId)
+      .map((o) => o.userId)
       .filter((id): id is string => Boolean(id));
 
     if (targets.length === 0) {

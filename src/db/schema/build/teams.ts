@@ -1,7 +1,7 @@
 import { text, integer, boolean, timestamp, index, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { projects } from "./core";
 import { pmWorkspaces } from "./pm-workspaces";
 
@@ -47,17 +47,13 @@ export const projectTeamMembers = build.table(
     teamId: integer("team_id")
       .references(() => projectTeams.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     role: text("role").notNull().default("member"),
     joinedAt: timestamp("joined_at").defaultNow().notNull(),
   },
   (t) => [
-    uniqueIndex("uniq_project_team_members_team_user").on(t.teamId, t.userId),
+    uniqueIndex("uniq_project_team_members_team_user").on(t.teamId, t.membershipId),
     index("idx_project_team_members_org").on(t.orgId),
-    index("idx_project_team_members_user").on(t.userId),
     index("idx_project_team_members_org_membership").on(t.orgId, t.membershipId),
     unique("uniq_project_team_members_org_id").on(t.orgId, t.id),
     foreignKey({
@@ -75,10 +71,7 @@ export const projectWorkspaceMembers = build.table(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     role: text("role").notNull().default("member"),
     pmWorkspaceId: text("pm_workspace_id").notNull(),
     addedAt: timestamp("added_at").defaultNow().notNull(),
@@ -86,7 +79,7 @@ export const projectWorkspaceMembers = build.table(
   (t) => [
     uniqueIndex("uniq_project_workspace_members_org_user").on(
       t.orgId,
-      t.userId,
+      t.membershipId,
     ),
     index("idx_project_workspace_members_org").on(t.orgId),
     index("idx_project_workspace_members_org_membership").on(t.orgId, t.membershipId),

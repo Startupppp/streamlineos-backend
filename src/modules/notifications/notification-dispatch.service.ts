@@ -368,6 +368,7 @@ export class NotificationDispatchService {
           .values({
             orgId: input.orgId,
             userId,
+            membershipId,
             type: definition.defaultType,
             priority: routingResult.priority,
             category: definition.category,

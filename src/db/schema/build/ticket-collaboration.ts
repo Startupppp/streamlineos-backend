@@ -28,10 +28,7 @@ export const ticketAssignees = build.table(
     ticketId: integer("ticket_id")
       .references(() => tickets.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     assignedAt: timestamp("assigned_at").defaultNow().notNull(),
     assignedBy: text("assigned_by").references(() => users.id, {
       onDelete: "set null",
@@ -40,12 +37,11 @@ export const ticketAssignees = build.table(
   (table) => [
     uniqueIndex("uniq_ticket_assignees_ticket_user").on(
       table.ticketId,
-      table.userId,
+      table.membershipId,
     ),
-    index("idx_ticket_assignees_user_id").on(table.userId),
     index("idx_ticket_assignees_org_user_ticket").on(
       table.orgId,
-      table.userId,
+      table.membershipId,
       table.ticketId,
     ),
     index("idx_ticket_assignees_org_member_membership").on(table.orgId, table.membershipId),
@@ -166,15 +162,11 @@ export const ticketWatchers = build.table(
     ticketId: integer("ticket_id")
       .references(() => tickets.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uniq_ticket_watcher").on(table.ticketId, table.userId),
-    index("idx_ticket_watchers_user").on(table.userId),
+    uniqueIndex("uniq_ticket_watcher").on(table.ticketId, table.membershipId),
     index("idx_ticket_watchers_org_membership").on(table.orgId, table.membershipId),
     foreignKey({
       name: "fk_ticket_watchers_actor",
@@ -275,10 +267,7 @@ export const ticketCommentReactions = build.table(
     commentId: bigint("comment_id", { mode: "number" })
       .notNull()
       .references(() => ticketComments.id, { onDelete: "cascade" }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -290,7 +279,7 @@ export const ticketCommentReactions = build.table(
   (t) => [
     uniqueIndex("uq_comment_reaction_user_emoji").on(
       t.commentId,
-      t.userId,
+      t.membershipId,
       t.emoji,
     ),
     index("idx_comment_reactions_comment_id").on(t.commentId),

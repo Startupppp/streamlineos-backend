@@ -14,6 +14,7 @@ import {
   projectTeams,
   ticketAssignees,
   tickets,
+  organizationMembers,
   users,
 } from "../../../db/schema";
 import {
@@ -70,18 +71,18 @@ export class ProjectsMembersService {
     if (perms.has("build:manage")) return;
     const project = await this.db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
-      columns: { managerId: true, managerMembershipId: true },
+      columns: { managerMembershipId: true },
     });
     if (!project) throw new NotFoundException("Project not found");
     const callerMid = actingMembershipId(u.principal);
-    if ((callerMid !== null && project.managerMembershipId === callerMid) || project.managerId === u.userId) return;
+    if (callerMid !== null && project.managerMembershipId === callerMid) return;
     const membership = await this.db
       .select({ role: projectMembers.role })
       .from(projectMembers)
       .where(
         and(
           eq(projectMembers.projectId, projectId),
-          eq(projectMembers.userId, u.userId),
+          eq(projectMembers.membershipId, callerMid ?? -1),
         ),
       )
       .limit(1);
@@ -100,18 +101,18 @@ export class ProjectsMembersService {
     if (perms.has("build:manage")) return;
     const project = await this.db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
-      columns: { managerId: true, managerMembershipId: true },
+      columns: { managerMembershipId: true },
     });
     if (!project) throw new NotFoundException("Project not found");
     const callerMid = actingMembershipId(u.principal);
-    if ((callerMid !== null && project.managerMembershipId === callerMid) || project.managerId === u.userId) return;
+    if (callerMid !== null && project.managerMembershipId === callerMid) return;
     const membership = await this.db
       .select({ id: projectMembers.id })
       .from(projectMembers)
       .where(
         and(
           eq(projectMembers.projectId, projectId),
-          eq(projectMembers.userId, u.userId),
+          eq(projectMembers.membershipId, callerMid ?? -1),
         ),
       )
       .limit(1);
@@ -128,7 +129,7 @@ export class ProjectsMembersService {
         and(
           eq(projectTeamAssignments.projectId, projectId),
           eq(projectTeamAssignments.orgId, u.orgId),
-          eq(projectTeamMembers.userId, u.userId),
+          eq(projectTeamMembers.membershipId, callerMid ?? -1),
         ),
       )
       .limit(1);
@@ -151,7 +152,8 @@ export class ProjectsMembersService {
         joinedAt: projectMembers.joinedAt,
       })
       .from(projectMembers)
-      .innerJoin(users, eq(projectMembers.userId, users.id))
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
       .innerJoin(
         projects,
         and(
@@ -204,7 +206,8 @@ export class ProjectsMembersService {
         image: users.image,
       })
       .from(projectTeamMembers)
-      .innerJoin(users, eq(users.id, projectTeamMembers.userId))
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.id, projectTeamMembers.membershipId)))
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(
         and(
           eq(projectTeamMembers.orgId, u.orgId),
@@ -250,7 +253,7 @@ export class ProjectsMembersService {
     const existing = await this.db.query.projectMembers.findFirst({
       where: and(
         eq(projectMembers.projectId, projectId),
-        eq(projectMembers.userId, body.userId),
+        eq(projectMembers.membershipId, actor.membershipId),
       ),
     });
     if (existing)
@@ -259,7 +262,7 @@ export class ProjectsMembersService {
     const member = await this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(projectMembers)
-        .values({ orgId, projectId, userId: body.userId, membershipId: actor.membershipId, role: body.role })
+        .values({ orgId, projectId, membershipId: actor.membershipId, role: body.role })
         .returning();
       await this.webhooksDispatch.enqueue(tx, orgId, projectId, "member.added", {
         id: created.id,
@@ -280,6 +283,7 @@ export class ProjectsMembersService {
     const actorId = u.userId;
     await assertProjectOwnership(this.db, orgId, projectId);
     await this.assertCanManageProject(u, projectId);
+    const targetActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId });
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -287,18 +291,18 @@ export class ProjectsMembersService {
         .where(
           and(
             eq(projectMembers.projectId, projectId),
-            eq(projectMembers.userId, userId),
+            eq(projectMembers.membershipId, targetActor.membershipId),
           ),
         );
 
       await tx
         .update(tickets)
-        .set({ assigneeId: null })
+        .set({ assigneeMembershipId: null })
         .where(
           and(
             eq(tickets.projectId, projectId),
             eq(tickets.orgId, orgId),
-            eq(tickets.assigneeId, userId),
+            eq(tickets.assigneeMembershipId, targetActor.membershipId),
             ne(tickets.status, "DONE"),
             ne(tickets.status, "CANCELLED"),
           ),
@@ -306,7 +310,7 @@ export class ProjectsMembersService {
 
       await tx.delete(ticketAssignees).where(
         and(
-          eq(ticketAssignees.userId, userId),
+          eq(ticketAssignees.membershipId, targetActor.membershipId),
           sql`${ticketAssignees.ticketId} IN (
               SELECT id FROM build.tickets
               WHERE project_id = ${projectId}
@@ -337,6 +341,7 @@ export class ProjectsMembersService {
     const actorId = u.userId;
     await assertProjectOwnership(this.db, orgId, projectId);
     await this.assertCanManageProject(u, projectId);
+    const targetActor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId: memberUserId });
 
     const updated = await this.db.transaction(async (tx) => {
       const [row] = await tx
@@ -344,11 +349,11 @@ export class ProjectsMembersService {
         .set({ role: input.role })
         .where(and(
           eq(projectMembers.projectId, projectId),
-          eq(projectMembers.userId, memberUserId),
+          eq(projectMembers.membershipId, targetActor.membershipId),
         ))
         .returning({
           id: projectMembers.id,
-          userId: projectMembers.userId,
+          membershipId: projectMembers.membershipId,
           role: projectMembers.role,
         });
       if (!row) throw new NotFoundException("Member not found");
@@ -360,7 +365,7 @@ export class ProjectsMembersService {
         actor: actorId,
         timestamp: new Date().toISOString(),
       });
-      return row;
+      return { ...row, userId: memberUserId };
     });
 
     return updated;

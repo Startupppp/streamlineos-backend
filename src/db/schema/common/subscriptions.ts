@@ -4,7 +4,7 @@ import {
   subscriptionStatusEnum,
   subscriptionPlanEnum,
 } from "./enums";
-import { organizations, users, organizationMembers } from "./auth";
+import { organizations, organizationMembers } from "./auth";
 
 export const subscriptions = pgTable("subscriptions", {
   id: serial("id").primaryKey(),
@@ -72,7 +72,8 @@ export const couponRedemptions = pgTable("coupon_redemptions", {
   id: serial("id").primaryKey(),
   couponId: integer("coupon_id").references(() => coupons.id, { onDelete: "cascade" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  // Historical redemption display projection; membershipId is authoritative.
+  userId: text("user_id"),
   membershipId: integer("membership_id"),
   amount: numeric("amount", { precision: 15, scale: 2 }),
   amountPaise: integer("amount_paise").notNull(),
@@ -107,5 +108,5 @@ export const couponsRelations = relations(coupons, ({ one, many }) => ({
 export const couponRedemptionsRelations = relations(couponRedemptions, ({ one }) => ({
   coupon: one(coupons, { fields: [couponRedemptions.couponId], references: [coupons.id] }),
   organization: one(organizations, { fields: [couponRedemptions.orgId], references: [organizations.id] }),
-  user: one(users, { fields: [couponRedemptions.userId], references: [users.id] }),
+  membership: one(organizationMembers, { fields: [couponRedemptions.orgId, couponRedemptions.membershipId], references: [organizationMembers.orgId, organizationMembers.id] }),
 }));

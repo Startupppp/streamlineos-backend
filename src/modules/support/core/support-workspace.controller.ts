@@ -183,13 +183,13 @@ export class SupportWorkspaceController {
   @HttpCode(200)
   @Validate({ params: ticketIdParams })
   follow(@Param("supportTicketId", ParseIntPipe) supportTicketId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.workspace.follow(u.orgId, supportTicketId, u.userId);
+    return this.workspace.follow(u.orgId, supportTicketId, u.userId, actingMembershipId(u.principal));
   }
 
   @Delete(":supportTicketId/follow")
   @RequirePermission("support:tickets:view")
   @Validate({ params: ticketIdParams })
   unfollow(@Param("supportTicketId", ParseIntPipe) supportTicketId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.workspace.unfollow(u.orgId, supportTicketId, u.userId);
+    return this.workspace.unfollow(u.orgId, supportTicketId, u.userId, actingMembershipId(u.principal));
   }
 }

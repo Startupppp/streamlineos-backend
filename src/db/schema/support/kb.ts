@@ -75,7 +75,6 @@ export const kbArticles = pgTable(
     status: kbArticleStatusEnum("status").default("draft").notNull(),
     visibility: kbArticleVisibilityEnum("visibility").default("internal").notNull(),
     authorId: text("author_id").references(() => users.id, { onDelete: "set null" }),
-    ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
     ownerMembershipId: integer("owner_membership_id"),
     views: integer("views").default(0).notNull(),
     helpfulCount: integer("helpful_count").default(0).notNull(),

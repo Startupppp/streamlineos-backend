@@ -1,5 +1,5 @@
 import { Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { supportTickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -51,7 +51,10 @@ export class SupportRealtimeService {
       .where(
         // support_tickets carries no deleted_at — the table is not soft-deleted,
         // so there is no deletion predicate to mirror from listTickets.
-        and(eq(supportTickets.orgId, u.orgId), eq(supportTickets.assigneeId, u.userId)),
+        and(
+          eq(supportTickets.orgId, u.orgId),
+          sql`${supportTickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${u.userId} AND status = 'ACTIVE')`,
+        ),
       )
       .limit(MAX_SCOPED_CHANNELS);
 

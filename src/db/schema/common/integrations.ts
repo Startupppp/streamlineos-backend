@@ -1,7 +1,7 @@
 
 import { boolean, index, integer, serial, pgTable, text, timestamp, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "./auth";
+import { organizations, organizationMembers } from "./auth";
 
 export type IntegrationToolkit = "googlecalendar" | "outlook" | "gmail";
 export type IntegrationConnectionStatus = "active" | "needs_reauth" | "disabled";
@@ -14,9 +14,8 @@ export const userIntegrationConnections = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    // Retained solely for a stable account-label projection; membershipId owns access.
+    userId: text("user_id").notNull(),
     membershipId: integer("membership_id"),
     toolkit: text("toolkit").$type<IntegrationToolkit>().notNull(),
     composioConnectedAccountId: text("composio_connected_account_id").notNull(),
@@ -41,6 +40,4 @@ export const userIntegrationConnections = pgTable(
   ],
 );
 
-export const userIntegrationConnectionsRelations = relations(userIntegrationConnections, ({ one }) => ({
-  user: one(users, { fields: [userIntegrationConnections.userId], references: [users.id] }),
-}));
+export const userIntegrationConnectionsRelations = relations(userIntegrationConnections, () => ({}));

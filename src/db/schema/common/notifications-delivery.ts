@@ -57,7 +57,8 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
   notificationId: bigint("notification_id", { mode: "number" }),
   notificationCreatedAt: timestamp("notification_created_at", { withTimezone: true }),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  // Stable delivery/audit display projection. membershipId controls recipient access.
+  userId: text("user_id").notNull(),
   membershipId: integer("membership_id"),
   eventKey: text("event_key"),
   channel: notificationChannelEnum("channel").notNull(),
@@ -102,7 +103,7 @@ export const notificationDeliveries = pgTable("notification_deliveries", {
   uniqueIndex("uq_notification_deliveries_idempotency").on(table.idempotencyKey),
   index("idx_notification_deliveries_due").on(table.orgId, table.status, table.nextAttemptAt),
   index("idx_notification_deliveries_notification").on(table.notificationId),
-  index("idx_notification_deliveries_user_channel").on(table.orgId, table.userId, table.channel, table.createdAt),
+  index("idx_notification_deliveries_membership_channel").on(table.orgId, table.membershipId, table.channel, table.createdAt),
   index("idx_notification_deliveries_org_membership").on(table.orgId, table.membershipId),
   foreignKey({
     name: "fk_notification_deliveries_actor",
@@ -186,7 +187,8 @@ export const notificationProviderAccounts = pgTable("notification_provider_accou
 export const notificationSuppressionRules = pgTable("notification_suppression_rules", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id"),
+  membershipId: integer("membership_id"),
   scopeType: text("scope_type").notNull(),
   scopeKey: text("scope_key").notNull(),
   channel: notificationChannelEnum("channel"),
@@ -196,9 +198,10 @@ export const notificationSuppressionRules = pgTable("notification_suppression_ru
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  index("idx_notification_suppression_lookup").on(table.orgId, table.userId, table.scopeType, table.scopeKey),
+  index("idx_notification_suppression_lookup").on(table.orgId, table.membershipId, table.scopeType, table.scopeKey),
   index("idx_notification_suppression_expiry").on(table.orgId, table.expiresAt),
   unique("uniq_notif_suppression_rules_org_id").on(table.orgId, table.id),
+  foreignKey({ name: "fk_notification_suppression_rules_membership", columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id] }).onDelete("cascade"),
 ]);
 
 export const notificationDeliveriesRelations = relations(notificationDeliveries, ({ one }) => ({

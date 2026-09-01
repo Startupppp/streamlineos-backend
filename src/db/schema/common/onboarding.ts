@@ -19,7 +19,8 @@ import { organizations, users, organizationMembers } from "./auth";
 export const onboardingFlowSessions = pgTable("onboarding_flow_sessions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  // Stable historical display projection; membershipId is the actor key.
+  userId: text("user_id").notNull(),
   membershipId: integer("membership_id"),
   type: onboardingFlowTypeEnum("type").notNull(),
   status: onboardingFlowSessionStatusEnum("status").notNull().default("not_started"),
@@ -34,7 +35,7 @@ export const onboardingFlowSessions = pgTable("onboarding_flow_sessions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_onb_flow_sessions_org_user_type").on(table.orgId, table.userId, table.type),
+  index("idx_onb_flow_sessions_org_membership_type").on(table.orgId, table.membershipId, table.type),
   index("idx_onb_flow_sessions_status").on(table.orgId, table.status),
   index("idx_onb_flow_sessions_org_membership").on(table.orgId, table.membershipId),
   unique("uniq_onb_flow_sessions_org_id").on(table.orgId, table.id),
@@ -96,7 +97,8 @@ export const guidedTours = pgTable("guided_tours", {
 export const userTourProgress = pgTable("user_tour_progress", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  // Stable historical display projection; membershipId is the actor key.
+  userId: text("user_id").notNull(),
   membershipId: integer("membership_id"),
   tourKey: text("tour_key").notNull(),
   status: guidedTourProgressStatusEnum("status").notNull().default("not_started"),
@@ -105,7 +107,7 @@ export const userTourProgress = pgTable("user_tour_progress", {
   dismissedAt: timestamp("dismissed_at"),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  unique("uq_user_tour_progress_org_user_tour").on(table.orgId, table.userId, table.tourKey),
+  unique("uq_user_tour_progress_org_membership_tour").on(table.orgId, table.membershipId, table.tourKey),
   index("idx_user_tour_progress_org_membership").on(table.orgId, table.membershipId),
   unique("uniq_user_tour_progress_org_id").on(table.orgId, table.id),
   foreignKey({
@@ -133,7 +135,7 @@ export const onboardingAnalyticsEvents = pgTable("onboarding_analytics_events", 
 
 export const onboardingFlowSessionsRelations = relations(onboardingFlowSessions, ({ one }) => ({
   organization: one(organizations, { fields: [onboardingFlowSessions.orgId], references: [organizations.id] }),
-  user: one(users, { fields: [onboardingFlowSessions.userId], references: [users.id] }),
+  membership: one(organizationMembers, { fields: [onboardingFlowSessions.orgId, onboardingFlowSessions.membershipId], references: [organizationMembers.orgId, organizationMembers.id] }),
 }));
 
 export const moduleSetupChecklistsRelations = relations(moduleSetupChecklists, ({ one, many }) => ({
@@ -151,7 +153,7 @@ export const guidedToursRelations = relations(guidedTours, ({ one }) => ({
 
 export const userTourProgressRelations = relations(userTourProgress, ({ one }) => ({
   organization: one(organizations, { fields: [userTourProgress.orgId], references: [organizations.id] }),
-  user: one(users, { fields: [userTourProgress.userId], references: [users.id] }),
+  membership: one(organizationMembers, { fields: [userTourProgress.orgId, userTourProgress.membershipId], references: [organizationMembers.orgId, organizationMembers.id] }),
 }));
 
 export const onboardingAnalyticsEventsRelations = relations(onboardingAnalyticsEvents, ({ one }) => ({

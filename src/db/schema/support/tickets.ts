@@ -8,7 +8,6 @@ export const supportTickets = pgTable("support_tickets", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   clientId: integer("client_id").references(() => clients.id),
-  assigneeId: text("assignee_id").references(() => users.id),
   assigneeMembershipId: integer("assignee_membership_id"),
   title: text("title").notNull(),
   category: text("category"),
@@ -29,15 +28,13 @@ export const supportTickets = pgTable("support_tickets", {
   mergedIntoTicketId: integer("merged_into_ticket_id").references((): AnyPgColumn => supportTickets.id, { onDelete: "set null" }),
   snoozedUntil: timestamp("snoozed_until"),
   snoozedBy: text("snoozed_by").references(() => users.id),
-  createdBy: text("created_by").references(() => users.id).notNull(),
-  createdByMembershipId: integer("created_by_membership_id"),
+  createdByMembershipId: integer("created_by_membership_id").notNull(),
   sourceChannel: text("source_channel").default("web").notNull(),
   sourceMessageId: text("source_message_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_support_tickets_org_status").on(table.orgId, table.status),
-  index("idx_support_tickets_org_assignee").on(table.orgId, table.assigneeId, table.createdAt),
   index("idx_support_tickets_org_assignee_actor").on(table.orgId, table.assigneeMembershipId, table.createdAt),
   index("idx_support_tickets_org_created_actor").on(table.orgId, table.createdByMembershipId),
   foreignKey({
@@ -95,8 +92,14 @@ export const supportTicketAttachments = pgTable("support_ticket_attachments", {
 export const supportTicketsRelations = relations(supportTickets, ({ one, many }) => ({
   organization: one(organizations, { fields: [supportTickets.orgId], references: [organizations.id] }),
   client: one(clients, { fields: [supportTickets.clientId], references: [clients.id] }),
-  assignee: one(users, { fields: [supportTickets.assigneeId], references: [users.id] }),
-  creator: one(users, { fields: [supportTickets.createdBy], references: [users.id] }),
+  assigneeMembership: one(organizationMembers, {
+    fields: [supportTickets.assigneeMembershipId],
+    references: [organizationMembers.id],
+  }),
+  creatorMembership: one(organizationMembers, {
+    fields: [supportTickets.createdByMembershipId],
+    references: [organizationMembers.id],
+  }),
   messages: many(supportTicketMessages),
 }));
 

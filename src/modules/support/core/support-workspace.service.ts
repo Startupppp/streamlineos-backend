@@ -200,16 +200,18 @@ export class SupportWorkspaceService {
     return { success: true };
   }
 
-  async follow(orgId: string, ticketId: number, userId: string) {
+  async follow(orgId: string, ticketId: number, userId: string, membershipId: number | null) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     await this.assertTicketInOrg(orgId, ticketId);
     await this.db
       .insert(supportTicketWatchers)
-      .values({ orgId, ticketId, userId })
+      .values({ orgId, ticketId, userMembershipId: membershipId })
       .onConflictDoNothing();
     return { success: true };
   }
 
-  async unfollow(orgId: string, ticketId: number, userId: string) {
+  async unfollow(orgId: string, ticketId: number, userId: string, membershipId: number | null) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     await this.assertTicketInOrg(orgId, ticketId);
     await this.db
       .delete(supportTicketWatchers)
@@ -217,7 +219,7 @@ export class SupportWorkspaceService {
         and(
           eq(supportTicketWatchers.orgId, orgId),
           eq(supportTicketWatchers.ticketId, ticketId),
-          eq(supportTicketWatchers.userId, userId),
+          eq(supportTicketWatchers.userMembershipId, membershipId),
         ),
       );
     return { success: true };

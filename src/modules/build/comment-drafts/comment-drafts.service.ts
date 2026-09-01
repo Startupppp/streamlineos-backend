@@ -8,7 +8,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { commentDrafts } from "../../../db/schema/build/comment-drafts";
 import { tickets } from "../../../db/schema/build/tasks";
 import { projects } from "../../../db/schema/build/core";
-import { users } from "../../../db/schema/common/auth";
+import { organizationMembers, users } from "../../../db/schema/common/auth";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { UpsertCommentDraftInput } from "./dto/comment-drafts.schemas";
@@ -51,7 +51,8 @@ export class CommentDraftsService {
         projects,
         and(eq(projects.id, tickets.projectId), eq(projects.orgId, orgId)),
       )
-      .leftJoin(users, eq(users.id, tickets.assigneeId))
+      .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+      .leftJoin(users, eq(users.id, organizationMembers.userId))
       .where(
         and(
           eq(commentDrafts.orgId, orgId),
@@ -116,11 +117,11 @@ export class CommentDraftsService {
       throw new ForbiddenException("Organization membership required");
     const [row] = await this.db
       .insert(commentDrafts)
-      .values({ orgId, userId, membershipId, ticketId, body: input.body })
+      .values({ orgId, membershipId, ticketId, body: input.body })
       .onConflictDoUpdate({
         target: [
           commentDrafts.orgId,
-          commentDrafts.userId,
+          commentDrafts.membershipId,
           commentDrafts.ticketId,
         ],
         set: { body: input.body, membershipId, updatedAt: new Date() },

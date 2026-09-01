@@ -12,6 +12,12 @@ BEGIN
     ['support_agent_availability', 'user_id', 'user_membership_id'],
     ['support_message_mentions', 'mentioned_user_id', 'mentioned_user_membership_id']
   ] LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = target[1] AND column_name = target[2]
+    ) THEN
+      CONTINUE;
+    END IF;
     LOOP
       EXECUTE format(
         'WITH batch AS (

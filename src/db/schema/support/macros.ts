@@ -60,7 +60,6 @@ export const supportRoutingRules = pgTable(
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     name: text("name").notNull(),
     conditions: jsonb("conditions").$type<RoutingRuleCondition[]>().default([]).notNull(),
-    assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
     assigneeMembershipId: integer("assignee_membership_id"),
     setPriority: text("set_priority"),
     assignmentMode: text("assignment_mode").default("static").notNull(),

@@ -73,16 +73,13 @@ export const projectWhiteboardShares = build.table(
     whiteboardId: integer("whiteboard_id")
       .references(() => projectWhiteboards.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     role: whiteboardShareRoleEnum("role").notNull().default("viewer"),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uniq_whiteboard_shares_board_user").on(table.whiteboardId, table.userId),
+    uniqueIndex("uniq_whiteboard_shares_board_user").on(table.whiteboardId, table.membershipId),
     index("idx_whiteboard_shares_org_board").on(table.orgId, table.whiteboardId),
     index("idx_whiteboard_shares_org_membership").on(table.orgId, table.membershipId),
     unique("uniq_project_whiteboard_shares_org_id").on(table.orgId, table.id),
@@ -104,5 +101,4 @@ export const projectWhiteboardSharesRelations = relations(projectWhiteboardShare
     fields: [projectWhiteboardShares.whiteboardId],
     references: [projectWhiteboards.id],
   }),
-  user: one(users, { fields: [projectWhiteboardShares.userId], references: [users.id] }),
 }));
