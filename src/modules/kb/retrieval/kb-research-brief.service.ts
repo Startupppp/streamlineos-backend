@@ -1,5 +1,5 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, lt } from "drizzle-orm";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, lt, sql } from "drizzle-orm";
 import { kbResearchBriefs } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -33,12 +33,13 @@ export class KbResearchBriefService {
   ) {}
 
   async enqueue(user: CurrentUserContext, input: KbResearchBriefCreateInput): Promise<{ briefId: number; jobId: number }> {
+    const membershipId = actingMembershipId(user.principal);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
     const inserted = await this.db
       .insert(kbResearchBriefs)
       .values({
         orgId: user.orgId,
-        userId: user.userId,
-        userMembershipId: actingMembershipId(user.principal) ?? undefined,
+        userMembershipId: membershipId,
         topic: input.topic,
         spaceId: input.spaceId ?? null,
         status: "queued",
@@ -69,7 +70,8 @@ export class KbResearchBriefService {
     opts: KbResearchBriefListInput,
   ): Promise<{ items: BriefSummary[]; nextCursor: number | null }> {
     const limit = Math.min(opts.limit, 100);
-    const membershipId = actingMembershipId(user.principal) ?? 0;
+    const membershipId = actingMembershipId(user.principal);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
     const conditions = [
       eq(kbResearchBriefs.orgId, user.orgId),
       eq(kbResearchBriefs.userMembershipId, membershipId),
@@ -80,7 +82,7 @@ export class KbResearchBriefService {
       .select({
         id: kbResearchBriefs.id,
         orgId: kbResearchBriefs.orgId,
-        userId: kbResearchBriefs.userId,
+        userId: sql<string>`${user.userId}`,
         topic: kbResearchBriefs.topic,
         spaceId: kbResearchBriefs.spaceId,
         status: kbResearchBriefs.status,
@@ -104,9 +106,25 @@ export class KbResearchBriefService {
   }
 
   async getById(user: CurrentUserContext, briefId: number): Promise<BriefDetail> {
-    const membershipId = actingMembershipId(user.principal) ?? 0;
+    const membershipId = actingMembershipId(user.principal);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
     const rows = await this.db
-      .select()
+      .select({
+        id: kbResearchBriefs.id,
+        orgId: kbResearchBriefs.orgId,
+        userId: sql<string>`${user.userId}`,
+        topic: kbResearchBriefs.topic,
+        spaceId: kbResearchBriefs.spaceId,
+        status: kbResearchBriefs.status,
+        jobId: kbResearchBriefs.jobId,
+        sourceCount: kbResearchBriefs.sourceCount,
+        report: kbResearchBriefs.report,
+        citations: kbResearchBriefs.citations,
+        errorMessage: kbResearchBriefs.errorMessage,
+        rating: kbResearchBriefs.rating,
+        createdAt: kbResearchBriefs.createdAt,
+        updatedAt: kbResearchBriefs.updatedAt,
+      })
       .from(kbResearchBriefs)
       .where(
         and(
@@ -122,7 +140,8 @@ export class KbResearchBriefService {
   }
 
   async rateBrief(user: CurrentUserContext, briefId: number, rating: "helpful" | "not_helpful"): Promise<void> {
-    const membershipId = actingMembershipId(user.principal) ?? 0;
+    const membershipId = actingMembershipId(user.principal);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
     const existing = await this.db
       .select({ id: kbResearchBriefs.id })
       .from(kbResearchBriefs)

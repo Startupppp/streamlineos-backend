@@ -3949,6 +3949,13 @@
       "when": 1803000010004,
       "tag": "0911_support_ticket_drafts_actor_drop",
       "breakpoints": true
+    },
+    {
+      "idx": 693,
+      "version": "7",
+      "when": 1803000010005,
+      "tag": "0912_kb_research_briefs_actor_drop",
+      "breakpoints": true
     }
   ]
 }
