@@ -17,7 +17,7 @@ describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
   const query = { validateTicketStatus: jest.fn().mockResolvedValue(undefined) } as never;
   const read = { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: false, role: null }) } as never;
   const transfer = { notifyNewAssignees: jest.fn().mockResolvedValue(undefined) } as never;
-  const webhooksDispatch = { dispatchTicketEvent: jest.fn(), dispatch: jest.fn().mockResolvedValue(undefined) } as never;
+  const webhooksDispatch = { dispatchTicketEvent: jest.fn(), dispatch: jest.fn().mockResolvedValue(undefined), enqueue: jest.fn().mockResolvedValue(undefined) } as never;
   const automationRunner = { run: jest.fn(), runForTicketEvent: jest.fn().mockResolvedValue(undefined) } as never;
   const cache = { invalidateNamespace: jest.fn(), del: jest.fn().mockResolvedValue(undefined) } as never;
 

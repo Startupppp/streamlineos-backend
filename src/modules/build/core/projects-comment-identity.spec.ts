@@ -41,7 +41,7 @@ const access = {
   resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:tickets:view"])),
   scopeFor: mockScopeFor,
 } as never;
-const webhooks = { dispatch: jest.fn() } as never;
+const webhooks = { dispatch: jest.fn(), enqueue: jest.fn() } as never;
 
 beforeEach(() => {
   jest.resetAllMocks();

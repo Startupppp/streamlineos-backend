@@ -14,6 +14,7 @@ import { resolveOrganizationActorsByUserIds } from "../../../common/organization
 import type { OrganizationActor } from "../../../common/organization/organization-actor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { logger } from "../../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -255,6 +256,7 @@ export class ProjectsTicketsUpdateService {
       }
     }
 
+    const newAssignee = resolveAssigneeId(input.assigneeId);
     await this.db.transaction(async (tx) => {
       const versionCondition =
         input.version !== undefined
@@ -287,12 +289,33 @@ export class ProjectsTicketsUpdateService {
           occurredAt: now,
         });
       }
+
+      await this.syncAssignees(tx, orgId, ticketId, actingUserId, input, assigneeActors);
+
+      await this.webhooksDispatch.enqueue(tx, orgId, before.projectId, "ticket.updated", {
+        id: ticketId,
+        projectId: before.projectId,
+        title: input.title ?? before.title,
+        status: input.status ?? before.status,
+        priority: input.priority ?? before.priority,
+        actor: actingUserId,
+        timestamp: now.toISOString(),
+      });
+      if (newAssignee !== undefined && newAssignee !== before.assigneeId) {
+        await this.webhooksDispatch.enqueue(tx, orgId, before.projectId, "ticket.assigned", {
+          id: ticketId,
+          projectId: before.projectId,
+          title: input.title ?? before.title,
+          status: input.status ?? before.status,
+          assigneeId: newAssignee,
+          actor: actingUserId,
+          timestamp: now.toISOString(),
+        });
+      }
     });
 
-    await Promise.all([
-      this.syncAssignees(orgId, ticketId, actingUserId, input, assigneeActors),
-      this.activity
-        .logTicketFieldChanges(orgId, ticketId, actingUserId, before, {
+    await this.activity
+      .logTicketFieldChanges(orgId, ticketId, actingUserId, before, {
           title: input.title,
           status: input.status,
           priority: input.priority,
@@ -302,11 +325,8 @@ export class ProjectsTicketsUpdateService {
           points: input.points,
           type: input.type,
           cycleId: input.cycleId,
-        })
-        .catch((error) =>
-          logger.error("Failed to log ticket activity", { error }),
-        ),
-    ]);
+      })
+      .catch((error) => logger.error("Failed to log ticket activity", { error }));
 
     void this.transfer
       .notifyNewAssignees(orgId, ticketId, actingUserId, input)
@@ -335,33 +355,6 @@ export class ProjectsTicketsUpdateService {
     }
 
     const ticketProjectId = before.projectId;
-    await this.webhooksDispatch.dispatch(orgId, ticketProjectId, "ticket.updated", {
-      id: ticketId,
-      projectId: ticketProjectId,
-      title: input.title ?? before.title,
-      status: input.status ?? before.status,
-      priority: input.priority ?? before.priority,
-      actor: actingUserId,
-      timestamp: now.toISOString(),
-    });
-
-    const newAssignee = resolveAssigneeId(input.assigneeId);
-    if (newAssignee !== undefined && newAssignee !== before.assigneeId) {
-      await this.webhooksDispatch.dispatch(
-        orgId,
-        ticketProjectId,
-        "ticket.assigned",
-        {
-          id: ticketId,
-          projectId: ticketProjectId,
-          title: input.title ?? before.title,
-          status: input.status ?? before.status,
-          assigneeId: newAssignee,
-          actor: actingUserId,
-          timestamp: now.toISOString(),
-        },
-      );
-    }
 
     const afterPayload = {
       ticketId,
@@ -392,6 +385,7 @@ export class ProjectsTicketsUpdateService {
   }
 
   private async syncAssignees(
+    db: DbOrTx,
     orgId: string,
     ticketId: number,
     actingUserId: string,
@@ -399,14 +393,14 @@ export class ProjectsTicketsUpdateService {
     actorMap: Map<string, OrganizationActor>,
   ): Promise<void> {
     if (input.assigneeIds !== undefined) {
-      await this.db
+      await db
         .delete(ticketAssignees)
         .where(eq(ticketAssignees.ticketId, ticketId));
       const allIds = new Set(input.assigneeIds);
       const primary = resolveAssigneeId(input.assigneeId);
       if (primary) allIds.add(primary);
       if (allIds.size > 0) {
-        await this.db.insert(ticketAssignees).values(
+        await db.insert(ticketAssignees).values(
           Array.from(allIds).map((userId) => ({
             orgId,
             ticketId,
@@ -420,12 +414,12 @@ export class ProjectsTicketsUpdateService {
     }
 
     if (input.assigneeId !== undefined) {
-      await this.db
+      await db
         .delete(ticketAssignees)
         .where(eq(ticketAssignees.ticketId, ticketId));
       const newAssigneeId = resolveAssigneeId(input.assigneeId);
       if (newAssigneeId) {
-        await this.db.insert(ticketAssignees).values({
+        await db.insert(ticketAssignees).values({
           orgId,
           ticketId,
           userId: newAssigneeId,

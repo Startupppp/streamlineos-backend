@@ -256,18 +256,20 @@ export class ProjectsMembersService {
     if (existing)
       throw new ConflictException("User is already a project member");
 
-    const [member] = await this.db
-      .insert(projectMembers)
-      .values({ orgId, projectId, userId: body.userId, membershipId: actor.membershipId, role: body.role })
-      .returning();
-
-    await this.webhooksDispatch.dispatch(orgId, projectId, "member.added", {
-      id: member.id,
-      projectId,
-      userId: body.userId,
-      role: body.role,
-      actor: actorId,
-      timestamp: new Date().toISOString(),
+    const member = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(projectMembers)
+        .values({ orgId, projectId, userId: body.userId, membershipId: actor.membershipId, role: body.role })
+        .returning();
+      await this.webhooksDispatch.enqueue(tx, orgId, projectId, "member.added", {
+        id: created.id,
+        projectId,
+        userId: body.userId,
+        role: body.role,
+        actor: actorId,
+        timestamp: new Date().toISOString(),
+      });
+      return created;
     });
 
     return member;
@@ -313,14 +315,13 @@ export class ProjectsMembersService {
             )`,
         ),
       );
-    });
-
-    await this.webhooksDispatch.dispatch(orgId, projectId, "member.removed", {
-      id: projectId,
-      projectId,
-      userId,
-      actor: actorId,
-      timestamp: new Date().toISOString(),
+      await this.webhooksDispatch.enqueue(tx, orgId, projectId, "member.removed", {
+        id: projectId,
+        projectId,
+        userId,
+        actor: actorId,
+        timestamp: new Date().toISOString(),
+      });
     });
 
     return { success: true };
@@ -337,30 +338,29 @@ export class ProjectsMembersService {
     await assertProjectOwnership(this.db, orgId, projectId);
     await this.assertCanManageProject(u, projectId);
 
-    const [updated] = await this.db
-      .update(projectMembers)
-      .set({ role: input.role })
-      .where(
-        and(
+    const updated = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(projectMembers)
+        .set({ role: input.role })
+        .where(and(
           eq(projectMembers.projectId, projectId),
           eq(projectMembers.userId, memberUserId),
-        ),
-      )
-      .returning({
-        id: projectMembers.id,
-        userId: projectMembers.userId,
-        role: projectMembers.role,
+        ))
+        .returning({
+          id: projectMembers.id,
+          userId: projectMembers.userId,
+          role: projectMembers.role,
+        });
+      if (!row) throw new NotFoundException("Member not found");
+      await this.webhooksDispatch.enqueue(tx, orgId, projectId, "member.role_updated", {
+        id: row.id,
+        projectId,
+        userId: memberUserId,
+        role: input.role,
+        actor: actorId,
+        timestamp: new Date().toISOString(),
       });
-
-    if (!updated) throw new NotFoundException("Member not found");
-
-    await this.webhooksDispatch.dispatch(orgId, projectId, "member.role_updated", {
-      id: updated.id,
-      projectId,
-      userId: memberUserId,
-      role: input.role,
-      actor: actorId,
-      timestamp: new Date().toISOString(),
+      return row;
     });
 
     return updated;

@@ -135,26 +135,25 @@ export class SprintsService {
           occurredAt: new Date(),
         });
       }
-    });
 
-    if (before && input.status && input.status !== before.status && this.webhooksDispatch) {
-      const eventName =
-        input.status === "ACTIVE"
+      if (before && input.status && input.status !== before.status && this.webhooksDispatch) {
+        const eventName = input.status === "ACTIVE"
           ? "sprint.started"
           : input.status === "COMPLETED"
             ? "sprint.completed"
             : null;
-      if (eventName) {
-        await this.webhooksDispatch.dispatch(orgId, before.projectId, eventName, {
-          id: sprintId,
-          projectId: before.projectId,
-          name: input.name ?? before.name,
-          status: input.status,
-          actor: actorId ?? "system",
-          timestamp: new Date().toISOString(),
-        });
+        if (eventName) {
+          await this.webhooksDispatch.enqueue(tx, orgId, before.projectId, eventName, {
+            id: sprintId,
+            projectId: before.projectId,
+            name: input.name ?? before.name,
+            status: input.status,
+            actor: actorId ?? "system",
+            timestamp: new Date().toISOString(),
+          });
+        }
       }
-    }
+    });
 
     return { success: true };
   }

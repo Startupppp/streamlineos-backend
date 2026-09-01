@@ -69,7 +69,7 @@ describe("ProjectsMembersService.addMember — actor seam", () => {
   } as unknown as Db;
 
   const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as unknown as AccessService;
-  const mockWebhooks = { dispatch: jest.fn() };
+  const mockWebhooks = { dispatch: jest.fn(), enqueue: jest.fn() };
   const mockStates = {};
   const mockLabels = {};
 
@@ -214,7 +214,7 @@ describe("ProjectsTicketsCreateService.createTicket — actor seam", () => {
   };
   const mockNotifications = { create: jest.fn() };
   const mockDispatch = { emit: jest.fn().mockResolvedValue(undefined) };
-  const mockWebhooks = { dispatch: jest.fn() };
+  const mockWebhooks = { dispatch: jest.fn(), enqueue: jest.fn() };
   const mockAutomation = { runForTicketEvent: jest.fn() };
   const mockCache = { del: jest.fn().mockResolvedValue(undefined) };
 

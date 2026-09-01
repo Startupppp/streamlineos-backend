@@ -170,20 +170,15 @@ export class ProjectsTicketsService {
         .update(tickets)
         .set({ deletedAt: new Date() })
         .where(eq(tickets.id, ticketId));
-    });
 
-    await this.webhooksDispatch.dispatch(
-      orgId,
-      existing.projectId,
-      "ticket.deleted",
-      {
+      await this.webhooksDispatch.enqueue(tx, orgId, existing.projectId, "ticket.deleted", {
         id: ticketId,
         projectId: existing.projectId,
         title: existing.title,
         actor: userId,
         timestamp: new Date().toISOString(),
-      },
-    );
+      });
+    });
 
     void this.cache
       .del(`projects:analytics:${orgId}:${existing.projectId}`)

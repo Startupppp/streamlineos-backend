@@ -5,6 +5,7 @@ import { projectWebhooks, webhookDeliveries } from "../../../db/schema/build/tas
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import {
   OutboxConsumerRegistry,
@@ -126,16 +127,20 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
   }
 
   async dispatch(orgId: string, projectId: number, eventName: string, payload: WebhookPayload): Promise<void> {
-    await this.enqueue(orgId, projectId, eventName, payload);
+    await runInTenantTransaction(
+      this.db,
+      (tx) => this.enqueue(tx, orgId, projectId, eventName, payload),
+      { orgId },
+    );
   }
 
-  private async enqueue(
+  async enqueue(
+    tx: DbOrTx,
     orgId: string,
     projectId: number,
     eventName: string,
     payload: WebhookPayload,
   ): Promise<void> {
-    await runInTenantTransaction(this.db, async (tx) => {
       const rows = await tx
         .select({ id: projectWebhooks.id, events: projectWebhooks.events })
         .from(projectWebhooks)
@@ -170,7 +175,6 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
           occurredAt: new Date(),
         });
       }
-    }, { orgId });
   }
 
   async handle(event: OutboxEventRow): Promise<void> {

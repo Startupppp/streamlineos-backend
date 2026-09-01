@@ -157,6 +157,18 @@ export class ProjectsTicketsCreateService {
         action: "created",
       });
 
+      await this.webhooksDispatch.enqueue(tx, u.orgId, projectId, "ticket.created", {
+        id: created.id,
+        projectId,
+        title: created.title,
+        status: created.status,
+        type: created.type,
+        priority: created.priority,
+        assigneeId: created.assigneeId ?? null,
+        actor: u.userId,
+        timestamp: new Date().toISOString(),
+      });
+
       return [created];
     });
 
@@ -203,18 +215,6 @@ export class ProjectsTicketsCreateService {
           logger.error("Failed to dispatch ticket assignment notification", { error }),
         );
     }
-
-    await this.webhooksDispatch.dispatch(u.orgId, projectId, "ticket.created", {
-      id: ticket.id,
-      projectId,
-      title: ticket.title,
-      status: ticket.status,
-      type: ticket.type,
-      priority: ticket.priority,
-      assigneeId: ticket.assigneeId ?? null,
-      actor: u.userId,
-      timestamp: new Date().toISOString(),
-    });
 
     this.automationRunner.runForTicketEvent(u.orgId, projectId, "ticket.created", {
       ticketId: ticket.id,

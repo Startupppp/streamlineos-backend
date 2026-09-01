@@ -71,16 +71,29 @@ export class ProjectsTicketCommentsService {
       }
     }
 
-    const [comment] = await this.db
-      .insert(ticketComments)
-      .values({
-        orgId: u.orgId,
-        ticketId,
-        userId: u.userId,
-        content: body.content,
-        parentCommentId: body.parentCommentId ?? null,
-      })
-      .returning();
+    const comment = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(ticketComments)
+        .values({
+          orgId: u.orgId,
+          ticketId,
+          userId: u.userId,
+          content: body.content,
+          parentCommentId: body.parentCommentId ?? null,
+        })
+        .returning();
+      if (ticket.projectId) {
+        await this.webhooksDispatch.enqueue(tx, u.orgId, ticket.projectId, "comment.created", {
+          id: created.id,
+          projectId: ticket.projectId,
+          ticketId,
+          parentCommentId: body.parentCommentId ?? null,
+          actor: u.userId,
+          timestamp: new Date().toISOString(),
+        });
+      }
+      return created;
+    });
 
     try {
       await this.activity.logTicketActivity(u.orgId, ticketId, u.userId, "comment_added");
@@ -102,17 +115,6 @@ export class ProjectsTicketCommentsService {
       });
     } catch (error) {
       logger.error("Failed to process comment mentions", { error });
-    }
-
-    if (ticket.projectId) {
-      await this.webhooksDispatch.dispatch(u.orgId, ticket.projectId, "comment.created", {
-        id: comment.id,
-        projectId: ticket.projectId,
-        ticketId,
-        parentCommentId: body.parentCommentId ?? null,
-        actor: u.userId,
-        timestamp: new Date().toISOString(),
-      });
     }
 
     return comment;
