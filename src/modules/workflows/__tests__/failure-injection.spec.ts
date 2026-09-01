@@ -536,21 +536,21 @@ describe("S11 — cancellation: WorkflowsExecutionService.cancelExecution state 
 
   it("a pending execution transitions to cancelled", async () => {
     const db = makeExecDb("pending");
-    const svc = new WorkflowsExecutionService(db);
+    const svc = new WorkflowsExecutionService(db, {} as never);
     const result = await svc.cancelExecution(ORG, "user-1", "wf-1", "exec-cancel");
     expect((result as { status: string }).status).toBe("cancelled");
   });
 
   it("a running execution can be cancelled", async () => {
     const db = makeExecDb("running");
-    const svc = new WorkflowsExecutionService(db);
+    const svc = new WorkflowsExecutionService(db, {} as never);
     const result = await svc.cancelExecution(ORG, "user-1", "wf-1", "exec-cancel");
     expect((result as { status: string }).status).toBe("cancelled");
   });
 
   it("a waiting execution (on approval or delay) can be cancelled", async () => {
     const db = makeExecDb("waiting");
-    const svc = new WorkflowsExecutionService(db);
+    const svc = new WorkflowsExecutionService(db, {} as never);
     const result = await svc.cancelExecution(ORG, "user-1", "wf-1", "exec-cancel");
     expect((result as { status: string }).status).toBe("cancelled");
   });
@@ -565,7 +565,7 @@ describe("S11 — cancellation: WorkflowsExecutionService.cancelExecution state 
       update: jest.fn(),
       insert: jest.fn(),
     } as unknown as Db;
-    const svc = new WorkflowsExecutionService(db);
+    const svc = new WorkflowsExecutionService(db, {} as never);
 
     await expect(svc.cancelExecution(ORG, "user-1", "wf-1", "exec-cancel")).rejects.toBeInstanceOf(
       ForbiddenException,
@@ -582,7 +582,7 @@ describe("S11 — cancellation: WorkflowsExecutionService.cancelExecution state 
       update: jest.fn(),
       insert: jest.fn(),
     } as unknown as Db;
-    const svc = new WorkflowsExecutionService(db);
+    const svc = new WorkflowsExecutionService(db, {} as never);
 
     await expect(svc.cancelExecution(ORG, "user-1", "wf-1", "exec-cancel")).rejects.toBeInstanceOf(
       ForbiddenException,
@@ -598,7 +598,7 @@ describe("S11 — cancellation: WorkflowsExecutionService.cancelExecution state 
       update: jest.fn(),
       insert: jest.fn(),
     } as unknown as Db;
-    const svc = new WorkflowsExecutionService(db);
+    const svc = new WorkflowsExecutionService(db, {} as never);
 
     await expect(svc.cancelExecution(ORG, "user-1", "wf-1", "exec-nonexistent")).rejects.toBeInstanceOf(
       NotFoundException,
@@ -614,7 +614,7 @@ describe("S11 — cancellation: WorkflowsExecutionService.cancelExecution state 
       update: jest.fn(),
       insert: jest.fn(),
     } as unknown as Db;
-    const svc = new WorkflowsExecutionService(db);
+    const svc = new WorkflowsExecutionService(db, {} as never);
 
     await expect(svc.cancelExecution("attacker-org", "user-1", "wf-owned-by-victim", "exec-victim")).rejects.toBeInstanceOf(
       NotFoundException,

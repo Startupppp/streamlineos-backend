@@ -357,8 +357,17 @@ async function main() {
     const breaches = [];
     const unusable = [];
     let skipped = 0;
+    let excluded = 0;
+    let passed = 0;
 
     for (const budget of budgets) {
+      if (budget.excluded) {
+        if (!SELF_TEST)
+          console.log(`EXCL  ${budget.id.padEnd(36)} (${budget.excluded})`);
+        excluded++;
+        continue;
+      }
+
       const result = await runBudget(budget, fixtures, url, ssl, ORG);
 
       if (result.status === "skip") {
@@ -394,6 +403,7 @@ async function main() {
       const totalBlocks = run1.totalBlocks;
       const overCeiling = totalBlocks > budget.ceiling;
       const ok = !overCeiling && assertionFailures.length === 0 && scanRowViolations.length === 0;
+      if (ok && !SELF_TEST) passed++;
 
       if (!SELF_TEST) {
         const primaryScan = scans.length > 0
@@ -454,8 +464,13 @@ async function main() {
       return;
     }
 
+    console.log(
+      `\n--- Tally: ${passed} PASS / ${breaches.length} FAIL / ${excluded} EXCL / ${skipped} SKIP ---`,
+    );
+    if (excluded > 0)
+      console.log(`${excluded} budget(s) excluded (module not seeded on this DB — not a failure).`);
     if (skipped > 0)
-      console.log(`\n${skipped} budget(s) skipped (no fixture data — seed the relevant tables).`);
+      console.log(`${skipped} budget(s) skipped (no fixture data — seed the relevant tables).`);
 
     if (breaches.length > 0) {
       console.error(`\n${breaches.length} breach(es):`);
@@ -464,7 +479,7 @@ async function main() {
       return;
     }
 
-    console.log("\nAll budgets within ceiling.");
+    console.log("All measured budgets within ceiling.");
   } finally {
     await db.end();
   }

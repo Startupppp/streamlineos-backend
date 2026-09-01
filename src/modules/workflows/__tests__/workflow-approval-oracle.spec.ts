@@ -27,7 +27,7 @@ describe("WorkflowsExecutionService — handleApproval ORACLE-2 existence oracle
   it("throws NotFoundException for a cross-tenant probe (not ForbiddenException)", async () => {
     const chain = buildSelectChain([]);
     const db = { select: chain.select } as unknown as Db;
-    const svc = new WorkflowsExecutionService(db);
+    const svc = new WorkflowsExecutionService(db, {} as never);
 
     await expect(
       svc.handleApproval(ATTACKER_ORG, USER_ID, APPROVAL_ID, { action: "approve" }),
@@ -37,7 +37,7 @@ describe("WorkflowsExecutionService — handleApproval ORACLE-2 existence oracle
   it("throws NotFoundException (not ForbiddenException) when approval is not found", async () => {
     const chain = buildSelectChain([]);
     const db = { select: chain.select } as unknown as Db;
-    const svc = new WorkflowsExecutionService(db);
+    const svc = new WorkflowsExecutionService(db, {} as never);
 
     let thrownError: unknown;
     try {
@@ -65,7 +65,7 @@ describe("WorkflowsExecutionService — handleApproval ORACLE-2 existence oracle
       update,
       insert,
     } as unknown as Db;
-    const svc = new WorkflowsExecutionService(db);
+    const svc = new WorkflowsExecutionService(db, {} as never);
 
     let thrownError: unknown = null;
     try {
@@ -94,7 +94,7 @@ describe("WorkflowsExecutionService — handleApproval ORACLE-2 existence oracle
       insert,
     } as unknown as Db;
 
-    const svc = new WorkflowsExecutionService(db);
+    const svc = new WorkflowsExecutionService(db, {} as never);
     const result = await svc.handleApproval(OWNER_ORG, USER_ID, APPROVAL_ID, { action: "approve" });
 
     expect(result).toMatchObject({ id: APPROVAL_ID, status: "approved" });

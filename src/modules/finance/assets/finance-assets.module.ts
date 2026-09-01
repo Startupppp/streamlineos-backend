@@ -7,11 +7,12 @@ import { DepreciationRunsController } from "./depreciation-runs.controller";
 import { AssetCategoriesService } from "./asset-categories.service";
 import { AssetsService } from "./assets.service";
 import { DepreciationRunsService } from "./depreciation-runs.service";
+import { DepreciationReverseService } from "./depreciation-reverse.service";
 
 @Module({
   imports: [AccountingModule, NotificationsModule],
   controllers: [AssetCategoriesController, FinanceAssetsController, DepreciationRunsController],
-  providers: [AssetCategoriesService, AssetsService, DepreciationRunsService],
+  providers: [AssetCategoriesService, AssetsService, DepreciationRunsService, DepreciationReverseService],
   exports: [DepreciationRunsService],
 })
 export class FinanceAssetsModule {}

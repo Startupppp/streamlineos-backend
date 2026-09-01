@@ -254,7 +254,6 @@ export class AuthController {
     @Body() body: SessionExchangeInput,
     @Request() req: { headers: Record<string, string> },
   ): Promise<{ token: string }> {
-    // Transport gate — prevents direct browser access
     const internalSecret = process.env.INTERNAL_API_SECRET;
     if (!internalSecret || req.headers["x-internal-secret"] !== internalSecret) {
       throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
@@ -298,13 +297,11 @@ export class AuthController {
       throw new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED);
     }
 
-    // Single-use nonce prevents replay; TTL matches the 30s proof window plus margin
     const nonceAccepted = await this.isNonceFirstUse(nonce, 90);
     if (!nonceAccepted) {
       throw new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED);
     }
 
-    // Revalidate session at exchange time — refuse to mint for a revoked session
     if (this.redis) {
       const tombstone = await this.redis.get<boolean>(`revoked:session:${sessionId}`);
       if (tombstone === true) {

@@ -8,6 +8,7 @@ import type { Redis } from "@upstash/redis";
 import { CacheService, REDIS } from "../../../common/cache/cache.service";
 import { InMemoryRedis } from "../../../common/cache/in-memory-redis.test-double";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import type { AccountingCashFlowService } from "../core/accounting-cash-flow.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
@@ -208,7 +209,8 @@ async function buildHarness(
     ],
   }).compile();
 
-  const statements = new AccountingStatementsService(makeStatementsDb(ledger), cache);
+  const cashFlowDouble = { cashFlow: jest.fn() } as unknown as AccountingCashFlowService;
+  const statements = new AccountingStatementsService(makeStatementsDb(ledger), cache, cashFlowDouble);
 
   return { ledger, posting: module.get(FinancePostingService), statements };
 }

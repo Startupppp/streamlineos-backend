@@ -44,7 +44,7 @@ function buildService(rows: ReturnType<typeof makeRow>[]): AccountingReceivables
     return makeListChain();
   });
 
-  return new AccountingReceivablesService({ select: selectMock } as unknown as Db);
+  return new AccountingReceivablesService({ select: selectMock } as unknown as Db, {} as never);
 }
 
 const baseQuery = { limit: 20, cursor: undefined as string | undefined, q: undefined as string | undefined, onlyOutstanding: false as boolean | undefined };

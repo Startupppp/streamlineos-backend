@@ -16,7 +16,7 @@ describe("WorkflowsExecutionService — cross-tenant isolation", () => {
         query: { workflowExecutions: { findFirst } },
       } as unknown as Db;
 
-      const svc = new WorkflowsExecutionService(db);
+      const svc = new WorkflowsExecutionService(db, {} as never);
       await expect(svc.getExecution(ATTACKER_ORG, WORKFLOW_ID, EXECUTION_ID)).rejects.toThrow(NotFoundException);
 
       expect(findFirst).toHaveBeenCalledTimes(1);
@@ -37,7 +37,7 @@ describe("WorkflowsExecutionService — cross-tenant isolation", () => {
         query: { workflowExecutions: { findFirst } },
       } as unknown as Db;
 
-      const svc = new WorkflowsExecutionService(db);
+      const svc = new WorkflowsExecutionService(db, {} as never);
       const result = await svc.getExecution(OWNER_ORG, WORKFLOW_ID, EXECUTION_ID);
       expect(result).toMatchObject({ id: EXECUTION_ID, orgId: OWNER_ORG });
     });
@@ -50,7 +50,7 @@ describe("WorkflowsExecutionService — cross-tenant isolation", () => {
         query: { workflowExecutions: { findFirst } },
       } as unknown as Db;
 
-      const svc = new WorkflowsExecutionService(db);
+      const svc = new WorkflowsExecutionService(db, {} as never);
       await expect(svc.cancelExecution(ATTACKER_ORG, USER_ID, WORKFLOW_ID, EXECUTION_ID)).rejects.toThrow(
         NotFoundException,
       );
@@ -67,7 +67,7 @@ describe("WorkflowsExecutionService — cross-tenant isolation", () => {
         insert: jest.fn().mockReturnValue({ values: insertValues }),
       } as unknown as Db;
 
-      const svc = new WorkflowsExecutionService(db);
+      const svc = new WorkflowsExecutionService(db, {} as never);
       const result = await svc.cancelExecution(OWNER_ORG, USER_ID, WORKFLOW_ID, EXECUTION_ID);
       expect(result).toMatchObject({ status: "cancelled" });
     });
@@ -80,7 +80,7 @@ describe("WorkflowsExecutionService — cross-tenant isolation", () => {
         query: { workflows: { findFirst } },
       } as unknown as Db;
 
-      const svc = new WorkflowsExecutionService(db);
+      const svc = new WorkflowsExecutionService(db, {} as never);
       await expect(
         svc.triggerWorkflow(ATTACKER_ORG, USER_ID, WORKFLOW_ID, { triggerData: {} }),
       ).rejects.toThrow(NotFoundException);
@@ -107,7 +107,7 @@ describe("WorkflowsExecutionService — cross-tenant isolation", () => {
         }),
       } as unknown as Db;
 
-      const svc = new WorkflowsExecutionService(db);
+      const svc = new WorkflowsExecutionService(db, {} as never);
       const result = await svc.triggerWorkflow(OWNER_ORG, USER_ID, WORKFLOW_ID, { triggerData: {} });
       expect(result).toMatchObject({ id: EXECUTION_ID, orgId: OWNER_ORG });
     });
@@ -120,7 +120,7 @@ describe("WorkflowsExecutionService — cross-tenant isolation", () => {
         query: { workflows: { findFirst: workflowFindFirst } },
       } as unknown as Db;
 
-      const svc = new WorkflowsExecutionService(db);
+      const svc = new WorkflowsExecutionService(db, {} as never);
       await expect(
         svc.listExecutions(ATTACKER_ORG, WORKFLOW_ID, { cursor: undefined, limit: 20, direction: "desc" }),
       ).rejects.toThrow(NotFoundException);
@@ -138,7 +138,7 @@ describe("WorkflowsExecutionService — cross-tenant isolation", () => {
         select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
       } as unknown as Db;
 
-      const svc = new WorkflowsExecutionService(db);
+      const svc = new WorkflowsExecutionService(db, {} as never);
       const result = await svc.listExecutions(OWNER_ORG, WORKFLOW_ID, { cursor: undefined, limit: 20, direction: "desc" });
       expect(result.data).toHaveLength(1);
       expect(result.data[0]).toMatchObject({ id: EXECUTION_ID });

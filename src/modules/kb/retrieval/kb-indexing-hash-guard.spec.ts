@@ -23,6 +23,10 @@ interface MockTx {
   where: jest.Mock;
   insert: jest.Mock;
   values: jest.Mock;
+  execute: jest.Mock;
+  query: { kbArticles: { findFirst: jest.Mock }; kbPages: { findFirst: jest.Mock } };
+  select: jest.Mock;
+  update: jest.Mock;
 }
 
 const makeTx = (): MockTx => ({
@@ -30,6 +34,19 @@ const makeTx = (): MockTx => ({
   where: jest.fn().mockReturnThis(),
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockResolvedValue(undefined),
+  execute: jest.fn().mockResolvedValue([]),
+  query: {
+    kbArticles: { findFirst: jest.fn().mockResolvedValue(null) },
+    kbPages: { findFirst: jest.fn().mockResolvedValue(null) },
+  },
+  select: jest.fn().mockReturnValue({
+    from: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+    }),
+  }),
+  update: jest.fn().mockReturnValue({
+    set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+  }),
 });
 
 interface StoredAcl {
@@ -54,28 +71,21 @@ const makeDb = (storedHash: string | null, tx?: MockTx, storedAcl?: StoredAcl) =
           },
         ];
 
+  (txObj.select as jest.Mock).mockReturnValue({
+    from: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        limit: jest.fn().mockResolvedValue(hashRows),
+      }),
+    }),
+  });
+
   return {
     db: {
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue(hashRows),
-          }),
-        }),
-      }),
-      update: jest.fn().mockReturnValue({
-        set: jest.fn().mockReturnValue({
-          where: jest.fn().mockResolvedValue(undefined),
-        }),
-      }),
-      delete: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue(undefined),
-      }),
+      select: txObj.select,
+      update: txObj.update,
+      delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
       transaction: jest.fn().mockImplementation(async (fn: (t: MockTx) => unknown) => fn(txObj)),
-      query: {
-        kbArticles: { findFirst: jest.fn().mockResolvedValue(null) },
-        kbPages: { findFirst: jest.fn().mockResolvedValue(null) },
-      },
+      query: txObj.query,
     },
     tx: txObj,
   };
@@ -206,7 +216,7 @@ describe("KbIndexingService — content-hash guard", () => {
 
   it("updates chunk ACL without re-embedding when page moves to a different project", async () => {
     const text = "unchanged page body";
-    const { db } = makeDb(sha256(text), undefined, {
+    const { db, tx } = makeDb(sha256(text), undefined, {
       pageVisibility: "org",
       pageProjectId: 1,
       pageCreatedById: "user-7",
@@ -228,7 +238,7 @@ describe("KbIndexingService — content-hash guard", () => {
     await svc.indexPage("org-1", 99);
 
     expect(embeddings.embedQuery).not.toHaveBeenCalled();
-    expect(db.transaction as jest.Mock).not.toHaveBeenCalled();
+    expect(tx.insert as jest.Mock).not.toHaveBeenCalled();
     expect(db.update as jest.Mock).toHaveBeenCalled();
     const setMock = ((db.update as jest.Mock).mock.results[0]?.value as { set: jest.Mock }).set;
     expect(setMock).toHaveBeenCalledWith(

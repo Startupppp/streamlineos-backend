@@ -85,21 +85,25 @@ export class KbIngestionConsumer implements OutboxEventConsumer, OnModuleInit {
       throw new Error("KB_INGESTION_DEAD_LETTER");
     }
 
-    const lease = await this.leaseService.acquire(orgId, payload.contentType, payload.contentId);
-    if (!lease.acquired)
-      throw new Error("KB_INGESTION_LEASE_CONTENTION");
-
     this.orgConcurrency.set(orgId, current + 1);
+    let leaseToken: string | undefined;
     const startMs = Date.now();
-    this.logger.log("KB ingestion started", {
-      orgId,
-      contentType: payload.contentType,
-      contentId: payload.contentId,
-    });
 
     try {
+      const lease = await this.leaseService.acquire(orgId, payload.contentType, payload.contentId);
+      if (!lease.acquired)
+        throw new Error("KB_INGESTION_LEASE_CONTENTION");
+
+      leaseToken = lease.token;
+      this.logger.log("KB ingestion started", {
+        orgId,
+        contentType: payload.contentType,
+        contentId: payload.contentId,
+      });
+
+      const controller = new AbortController();
       await runInNewTenantTransaction(this.db, orgId, async () => {
-        await adapter.handle(orgId, payload.contentId);
+        await adapter.handle(orgId, payload.contentId, controller.signal);
       });
       this.logger.log("KB ingestion completed", {
         orgId,
@@ -120,7 +124,8 @@ export class KbIngestionConsumer implements OutboxEventConsumer, OnModuleInit {
       const after = (this.orgConcurrency.get(orgId) ?? 1) - 1;
       if (after <= 0) this.orgConcurrency.delete(orgId);
       else this.orgConcurrency.set(orgId, after);
-      await this.leaseService.release(orgId, payload.contentType, payload.contentId, lease.token);
+      if (leaseToken !== undefined)
+        await this.leaseService.release(orgId, payload.contentType, payload.contentId, leaseToken);
     }
   }
 }

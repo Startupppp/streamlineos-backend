@@ -46,7 +46,7 @@ const warn = (label, e) =>
 const LARGE_ORG = "aaaaaaaa-1111-0000-0000-000000000001";
 const SMALL_ORG = "aaaaaaaa-1111-0000-0000-000000000002";
 
-const MEMBER_COUNT = 30;
+const MEMBER_COUNT = 500;
 const TICKET_COUNT = 500;
 const CHAT_MSG_COUNT = 300;
 const HR_EMP_COUNT = 5100;
@@ -55,7 +55,7 @@ const NOTIFICATION_COUNT = 150;
 const LEAVE_REQUEST_COUNT = 60;
 const ATTENDANCE_COUNT = 90;
 const TIMESHEET_COUNT = 200;
-const KB_PAGES_COUNT = 60;
+const KB_PAGES_PER_SPACE = 60;
 const KB_VISITS_COUNT = 50;
 const SUPPORT_TICKET_COUNT = 60;
 const INVOICE_COUNT = 25;
@@ -449,6 +449,93 @@ async function seedBuild() {
   }
 }
 
+async function seedExtraTickets() {
+  log("Seeding extra tickets for planner threshold coverage...");
+
+  const wsId = await sql.unsafe(
+    `SELECT pm_workspace_id FROM build.pm_workspaces WHERE org_id = $1 LIMIT 1`,
+    [LARGE_ORG],
+  ).then((r) => r[0]?.pm_workspace_id);
+  const memberIds = await sql.unsafe(
+    `SELECT id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 200`,
+    [LARGE_ORG],
+  ).then((r) => r.map((row) => row.id));
+  if (!wsId || !memberIds.length) { log("  no workspace or members — skipping extra tickets"); return; }
+
+  const statusDefs = [["Todo", "unstarted"], ["In Progress", "started"], ["Done", "completed"]];
+  const TARGET_TOTAL = 18_500;
+  const PER_PROJECT = 1_000;
+  let projNum = 100;
+
+  while (true) {
+    const totalNow = await sql.unsafe(
+      `SELECT count(*)::int n FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
+      [LARGE_ORG],
+    ).then((r) => r[0].n);
+    if (totalNow >= TARGET_TOTAL) break;
+
+    const key = `ZZ${projNum}`;
+    const memId = memberIds[projNum % memberIds.length];
+    const existingProj = await sql.unsafe(
+      `INSERT INTO build.projects (org_id, name, key, status, pm_workspace_id, manager_membership_id, created_at, updated_at)
+       VALUES ($1, $2, $3, 'ACTIVE', $4, $5::int, now(), now())
+       ON CONFLICT DO NOTHING RETURNING id`,
+      [LARGE_ORG, `Thresh Project ${projNum}`, key, wsId, memId],
+    ).then((r) => r[0]);
+    const projId = existingProj?.id ?? await sql.unsafe(
+      `SELECT id FROM build.projects WHERE org_id = $1 AND key = $2`,
+      [LARGE_ORG, key],
+    ).then((r) => r[0]?.id);
+    if (!projId) { projNum++; continue; }
+
+    for (let si = 0; si < statusDefs.length; si++) {
+      const [sname, stype] = statusDefs[si];
+      await sql.unsafe(
+        `INSERT INTO build.project_statuses (org_id, project_id, name, "order", type, created_at, updated_at)
+         VALUES ($1, $2::int, $3, $4, $5::state_group, now(), now())
+         ON CONFLICT DO NOTHING`,
+        [LARGE_ORG, projId, sname, si + 1, stype],
+      ).catch((e) => warn(`project_status ${sname}`, e));
+    }
+
+    const existingInProj = await sql.unsafe(
+      `SELECT count(*)::int n FROM build.tickets WHERE org_id = $1 AND project_id = $2 AND deleted_at IS NULL`,
+      [LARGE_ORG, projId],
+    ).then((r) => r[0].n);
+    const toAdd = Math.min(PER_PROJECT - existingInProj, TARGET_TOTAL - totalNow);
+    if (toAdd > 0) {
+      await sql.unsafe(
+        `INSERT INTO build.tickets (org_id, project_id, title, status, assignee_membership_id, reporter_membership_id, ticket_number, deleted_at, created_at, updated_at)
+         SELECT $1, $2::int, 'Ticket ' || s, 'Todo', $3::int, $3::int,
+           90000 + $4::int * 1000 + s, null,
+           now() - (s || ' minutes')::interval, now()
+         FROM generate_series(${existingInProj + 1}, ${existingInProj + toAdd}) s`,
+        [LARGE_ORG, projId, memId, projNum],
+      ).catch((e) => warn(`tickets proj ${projNum}`, e));
+      log(`  project ${key}: added ${toAdd} tickets`);
+    }
+    projNum++;
+  }
+
+  // Redistribute existing extra tickets evenly across members so no one member dominates.
+  // Without this, a single member holds ~97% of tickets and the planner skips the assignee index.
+  // Uses ticket_number % memberCount for deterministic, idempotent redistribution.
+  if (memberIds.length > 0) {
+    log(`  Redistributing extra ticket assignments across ${memberIds.length} members...`);
+    for (let i = 0; i < memberIds.length; i++) {
+      await sql.unsafe(
+        `UPDATE build.tickets
+         SET assignee_membership_id = $1::int, reporter_membership_id = $1::int
+         WHERE org_id = $2 AND deleted_at IS NULL AND ticket_number > 90000
+           AND ticket_number % $3 = $4`,
+        [memberIds[i], LARGE_ORG, memberIds.length, i],
+      ).catch((e) => warn(`redistribute member ${i}`, e));
+    }
+  }
+
+  log("  Extra tickets seeding done.");
+}
+
 async function seedChat() {
   log("Seeding chat...");
 
@@ -579,12 +666,12 @@ async function seedKb() {
     ).catch((e) => warn(`kb_space ${i}`, e));
   }
 
-  const spaceId = await sql.unsafe(
-    `SELECT id FROM kb_spaces WHERE org_id = $1 AND deleted_at IS NULL LIMIT 1`,
+  const spaceRows = await sql.unsafe(
+    `SELECT id FROM kb_spaces WHERE org_id = $1 AND deleted_at IS NULL ORDER BY id LIMIT 5`,
     [LARGE_ORG],
-  ).then((r) => r[0]?.id);
+  );
 
-  if (!spaceId) { log("  no KB space — skipping pages"); return; }
+  if (!spaceRows.length) { log("  no KB space — skipping pages"); return; }
 
   const memRow = await sql.unsafe(
     `SELECT id, user_id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' LIMIT 1`,
@@ -593,21 +680,23 @@ async function seedKb() {
   const creatorId = memRow?.user_id ?? ownerId;
   const membershipId = memRow?.id;
 
-  const existingPages = await sql.unsafe(
-    `SELECT count(*)::int n FROM kb_pages WHERE org_id = $1 AND deleted_at IS NULL`,
-    [LARGE_ORG],
-  ).then((r) => r[0].n);
+  for (const { id: spaceId } of spaceRows) {
+    const existingInSpace = await sql.unsafe(
+      `SELECT count(*)::int n FROM kb_pages WHERE org_id = $1 AND space_id = $2 AND deleted_at IS NULL`,
+      [LARGE_ORG, spaceId],
+    ).then((r) => r[0].n);
 
-  if (existingPages < KB_PAGES_COUNT) {
-    const from = existingPages + 1;
-    log(`  inserting ${KB_PAGES_COUNT - existingPages} kb_pages...`);
-    await sql.unsafe(
-      `INSERT INTO kb_pages (org_id, space_id, title, content, status, visibility, sort_order, created_by_id, created_by_membership_id, last_edited_by_id, last_edited_by_membership_id, deleted_at, created_at, updated_at)
-       SELECT $1, $2::int, 'Page ' || s, '{}'::jsonb, 'published', 'org', s, $3, $4::int, $3, $4::int, null,
-         now() - (s || ' hours')::interval, now() - (s || ' minutes')::interval
-       FROM generate_series(${from}, ${KB_PAGES_COUNT}) s`,
-      [LARGE_ORG, spaceId, creatorId, membershipId],
-    ).catch((e) => warn("kb_pages batch", e));
+    if (existingInSpace < KB_PAGES_PER_SPACE) {
+      const from = existingInSpace + 1;
+      log(`  inserting ${KB_PAGES_PER_SPACE - existingInSpace} kb_pages for space ${spaceId}...`);
+      await sql.unsafe(
+        `INSERT INTO kb_pages (org_id, space_id, title, content, status, visibility, sort_order, created_by_id, created_by_membership_id, last_edited_by_id, last_edited_by_membership_id, deleted_at, created_at, updated_at)
+         SELECT $1, $2::int, 'Page ' || s, '{}'::jsonb, 'published', 'org', s, $3, $4::int, $3, $4::int, null,
+           now() - (s || ' hours')::interval, now() - (s || ' minutes')::interval
+         FROM generate_series(${from}, ${KB_PAGES_PER_SPACE}) s`,
+        [LARGE_ORG, spaceId, creatorId, membershipId],
+      ).catch((e) => warn("kb_pages batch", e));
+    }
   }
 
   await sql.unsafe(
@@ -986,7 +1075,7 @@ async function vacuumAnalyze() {
     "hr_people", "hr_employments", "hr_reporting_lines",
   ];
   const buildTables = [
-    "tickets", "ticket_assignees", "projects", "sprints", "project_members",
+    "tickets", "ticket_assignees", "projects", "project_statuses", "sprints", "project_members",
     "roadmap_items", "feedback_posts", "changelog_entries",
   ];
 
@@ -1058,6 +1147,7 @@ async function main() {
   await trySection("seedLeave", seedLeave);
   await trySection("seedAttendance", seedAttendance);
   await trySection("seedBuild", seedBuild);
+  await trySection("seedExtraTickets", seedExtraTickets);
   await trySection("seedChat", seedChat);
   await trySection("seedNotifications", seedNotifications);
   await trySection("seedKb", seedKb);

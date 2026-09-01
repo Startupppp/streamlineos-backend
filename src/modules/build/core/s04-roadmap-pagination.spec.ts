@@ -13,7 +13,7 @@ interface RoadmapRow {
 
 function makeService(findMany: jest.Mock) {
   const db = { query: { roadmapItems: { findMany } } } as unknown as Db;
-  return new ProjectsRoadmapService(db);
+  return new ProjectsRoadmapService(db, {} as never, {} as never);
 }
 
 function queryParams(findMany: jest.Mock, callIndex: number): unknown[] {

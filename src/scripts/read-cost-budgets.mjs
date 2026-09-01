@@ -404,6 +404,7 @@ export const BUDGETS = [
   },
   {
     id: "contacts-list",
+    excluded: "CRM module not seeded on scratch_e2e",
     ceiling: 8_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM contacts WHERE org_id = $1 AND deleted_at IS NULL`,
@@ -418,6 +419,7 @@ export const BUDGETS = [
   },
   {
     id: "leads-active",
+    excluded: "CRM module not seeded on scratch_e2e",
     ceiling: 10_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM leads WHERE org_id = $1 AND deleted_at IS NULL`,
@@ -433,6 +435,7 @@ export const BUDGETS = [
   },
   {
     id: "leads-assigned-to-me",
+    excluded: "CRM module not seeded on scratch_e2e",
     ceiling: 8_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM leads WHERE org_id = $1 AND deleted_at IS NULL`,
@@ -447,6 +450,7 @@ export const BUDGETS = [
   },
   {
     id: "deals-pipeline",
+    excluded: "CRM module not seeded on scratch_e2e",
     ceiling: 10_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM deals WHERE org_id = $1 AND deleted_at IS NULL`,
@@ -503,6 +507,7 @@ export const BUDGETS = [
   },
   {
     id: "gl-journals-list",
+    excluded: "accounting_books table not present in scratch_e2e",
     ceiling: 8_000,
     minRows: 30,
     rowCountSql: `SELECT count(*)::int FROM gl_journals WHERE org_id = $1`,
@@ -559,6 +564,7 @@ export const BUDGETS = [
   },
   {
     id: "inv-products-list",
+    excluded: "Inventory module not seeded on scratch_e2e",
     ceiling: 10_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM inv_products WHERE org_id = $1`,
@@ -573,6 +579,7 @@ export const BUDGETS = [
   },
   {
     id: "inv-stock-levels",
+    excluded: "Inventory module not seeded on scratch_e2e",
     ceiling: 10_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM inv_stock_levels WHERE org_id = $1`,
@@ -587,6 +594,7 @@ export const BUDGETS = [
   },
   {
     id: "inv-stock-transactions",
+    excluded: "Inventory module not seeded on scratch_e2e",
     ceiling: 15_000,
     minRows: 100,
     rowCountSql: `SELECT count(*)::int FROM inv_stock_transactions WHERE org_id = $1`,
@@ -601,6 +609,7 @@ export const BUDGETS = [
   },
   {
     id: "inv-purchase-orders",
+    excluded: "Inventory module not seeded on scratch_e2e",
     ceiling: 8_000,
     minRows: 20,
     rowCountSql: `SELECT count(*)::int FROM inv_purchase_orders WHERE org_id = $1`,
@@ -615,6 +624,7 @@ export const BUDGETS = [
   },
   {
     id: "inv-vendors-list",
+    excluded: "Inventory module not seeded on scratch_e2e",
     ceiling: 5_000,
     minRows: 10,
     rowCountSql: `SELECT count(*)::int FROM inv_vendors WHERE org_id = $1`,
@@ -647,6 +657,7 @@ export const BUDGETS = [
   },
   {
     id: "search-deal-sdf",
+    excluded: "CRM module not seeded on scratch_e2e",
     ceiling: 30_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM deals WHERE org_id = $1 AND deleted_at IS NULL`,

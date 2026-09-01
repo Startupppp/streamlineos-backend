@@ -81,7 +81,7 @@ function makeService(
 ): OutboxPublisherService {
   jest.spyOn(Logger.prototype, "warn").mockImplementation(() => undefined);
   jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
-  return new OutboxPublisherService(db as never, config as never, registry);
+  return new OutboxPublisherService(db as never, config as never, registry, {} as never);
 }
 
 function forEachOrgWithRow(row: OutboxEventRow) {

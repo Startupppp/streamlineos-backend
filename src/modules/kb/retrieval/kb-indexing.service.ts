@@ -77,6 +77,7 @@ export class KbIndexingService {
     contentId: number,
     contentHash: string,
     chunks: string[],
+    signal?: AbortSignal,
   ): Promise<number[][]> {
     const cached = await this.checkpoint.loadCheckpoints(
       orgId,
@@ -104,6 +105,7 @@ export class KbIndexingService {
         continue;
       }
       const emb = await this.embeddings.embedQuery(chunks[i]);
+      if (signal?.aborted) throw new DOMException("KB ingestion cancelled", "AbortError");
       await this.checkpoint.saveCheckpoint(
         orgId,
         contentType,
@@ -126,7 +128,7 @@ export class KbIndexingService {
     return embeddings;
   }
 
-  async indexArticle(orgId: string, articleId: number): Promise<void> {
+  async indexArticle(orgId: string, articleId: number, signal?: AbortSignal): Promise<void> {
     const article = await runInTenantTransaction(this.db, async (tx) =>
       tx.query.kbArticles.findFirst({
         where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
@@ -185,6 +187,7 @@ export class KbIndexingService {
       articleId,
       contentHash,
       chunks,
+      signal,
     );
 
     const contentRevision = article.contentRevision;
@@ -229,7 +232,7 @@ export class KbIndexingService {
     });
   }
 
-  async indexPage(orgId: string, pageId: number): Promise<number> {
+  async indexPage(orgId: string, pageId: number, signal?: AbortSignal): Promise<number> {
     const page = await runInTenantTransaction(this.db, async (tx) =>
       tx.query.kbPages.findFirst({
         where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
@@ -313,6 +316,7 @@ export class KbIndexingService {
       pageId,
       contentHash,
       chunks,
+      signal,
     );
 
     await runInTenantTransaction(this.db, async (tx) => {

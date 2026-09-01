@@ -126,7 +126,7 @@ describe("KbIngestionConsumer", () => {
 
       await consumer.handle(makeEvent());
 
-      expect(pageAdapter.handle).toHaveBeenCalledWith(ORG_ID, CONTENT_ID);
+      expect(pageAdapter.handle).toHaveBeenCalledWith(ORG_ID, CONTENT_ID, expect.any(AbortSignal));
     });
 
     it("throws for an unknown content type so the relay can dead-letter the poison event", async () => {
@@ -145,7 +145,7 @@ describe("KbIngestionConsumer", () => {
 
       await consumer.handle(makeEvent({ organizationId: isolatedOrg }));
 
-      expect(pageAdapter.handle).toHaveBeenCalledWith(isolatedOrg, CONTENT_ID);
+      expect(pageAdapter.handle).toHaveBeenCalledWith(isolatedOrg, CONTENT_ID, expect.any(AbortSignal));
     });
   });
 
@@ -202,8 +202,8 @@ describe("KbIngestionConsumer", () => {
       await consumer.handle(makeEvent());
 
       expect(adapterFn).toHaveBeenCalledTimes(2);
-      expect(adapterFn.mock.calls[0]).toEqual([ORG_ID, CONTENT_ID]);
-      expect(adapterFn.mock.calls[1]).toEqual([ORG_ID, CONTENT_ID]);
+      expect(adapterFn.mock.calls[0]).toEqual([ORG_ID, CONTENT_ID, expect.any(AbortSignal)]);
+      expect(adapterFn.mock.calls[1]).toEqual([ORG_ID, CONTENT_ID, expect.any(AbortSignal)]);
     });
   });
 

@@ -26,25 +26,30 @@ function makePage(text: string): Record<string, unknown> {
 interface MockTx {
   delete: jest.Mock;
   insert: jest.Mock;
+  execute: jest.Mock;
+  query: { kbPages: { findFirst: jest.Mock } };
+  select: jest.Mock;
 }
 
 function makeTx(): MockTx {
   return {
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
-  };
-}
-
-function makeDb(page: Record<string, unknown> | null, tx: MockTx) {
-  return {
-    query: {
-      kbPages: { findFirst: jest.fn().mockResolvedValue(page) },
-    },
+    execute: jest.fn().mockResolvedValue([]),
+    query: { kbPages: { findFirst: jest.fn() } },
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
       }),
     }),
+  };
+}
+
+function makeDb(page: Record<string, unknown> | null, tx: MockTx) {
+  (tx.query.kbPages.findFirst as jest.Mock).mockResolvedValue(page);
+  return {
+    query: tx.query,
+    select: tx.select,
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
     transaction: jest.fn().mockImplementation(async (fn: (t: MockTx) => unknown) => fn(tx)),
   };

@@ -41,6 +41,8 @@ import { ProjectsReportsService } from "./projects-reports.service";
 import { ProjectsBudgetService } from "./projects-budget.service";
 import { ProjectsTemplatesService } from "./projects-templates.service";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
+import { ProjectsChangelogService } from "./projects-changelog.service";
+import { ProjectsFeedbackService } from "./projects-feedback.service";
 import { ProjectsCustomFieldsService } from "./projects-custom-fields.service";
 import { ProjectsReleasesService } from "./projects-releases.service";
 import { ProjectsWebhooksService } from "./projects-webhooks.service";
@@ -99,6 +101,8 @@ import { BuildReleasePublishedConsumerService } from "./build-release-published-
     ProjectsBudgetService,
     ProjectsTemplatesService,
     ProjectsRoadmapService,
+    ProjectsChangelogService,
+    ProjectsFeedbackService,
     ProjectsCustomFieldsService,
     ProjectsReleasesService,
     ProjectsWebhooksService,

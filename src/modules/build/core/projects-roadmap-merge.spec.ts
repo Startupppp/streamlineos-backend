@@ -41,7 +41,7 @@ describe("ProjectsRoadmapService — mergeFeedback", () => {
     const db = {
       transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(makeTx())),
     } as unknown as Db;
-    svc = new ProjectsRoadmapService(db);
+    svc = new ProjectsRoadmapService(db, {} as never, {} as never);
   });
 
   it("rejects merging a post into itself", async () => {

@@ -1,5 +1,5 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import { AccountingPayablesQueryService } from "../accounting-payables-query.service";
+import { AccountingVendorQueryService } from "../accounting-vendor-query.service";
 import { encodeCursor } from "../../../../common/pagination/cursor";
 import type { Db } from "../../../../db/drizzle.module";
 
@@ -41,12 +41,12 @@ function buildDb(captured: Captured) {
 
 async function capture(cursor: string | undefined): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
-  const svc = new AccountingPayablesQueryService(buildDb(captured));
+  const svc = new AccountingVendorQueryService(buildDb(captured));
   await svc.listVendors("org-a", { cursor, limit: 20 });
   return captured;
 }
 
-describe("AccountingPayablesQueryService.listVendors — keyset matches sort", () => {
+describe("AccountingVendorQueryService.listVendors — keyset matches sort", () => {
   it("orders by name as the leading sort column", async () => {
     const { orderBy } = await capture(undefined);
     expect(orderBy).toHaveLength(2);

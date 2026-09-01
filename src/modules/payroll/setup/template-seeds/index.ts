@@ -4,13 +4,8 @@ import { CONTRACTOR_SEED, GLOBAL_REMOTE_SEED } from "./contractor-global-seeds";
 import { SALES_INCENTIVE_SEED } from "./sales-incentive-seed";
 import { HOURLY_SEED, MANUFACTURING_SEED } from "./hourly-manufacturing-seeds";
 import { STAFFING_SEED, EXECUTIVE_SEED } from "./staffing-executive-seeds";
-import {
-  US_STANDARD_SEED,
-  UK_STANDARD_SEED,
-  UAE_STANDARD_SEED,
-  SG_STANDARD_SEED,
-  AU_STANDARD_SEED,
-} from "./country-standard-seeds";
+import { US_STANDARD_SEED, UK_STANDARD_SEED } from "./country-seeds-western";
+import { UAE_STANDARD_SEED, SG_STANDARD_SEED, AU_STANDARD_SEED } from "./country-seeds-eastern";
 
 export const PAYROLL_TEMPLATE_SEEDS: PayrollTemplateSeed[] = [
   INDIAN_STANDARD_SEED,

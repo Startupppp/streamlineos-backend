@@ -13,56 +13,14 @@ import {
 import { OutboxConsumerRegistry, type OutboxEventRow } from "./outbox-consumer.registry";
 import { runInNewTenantTransaction } from "../tenant/run-in-tenant-transaction";
 import { forEachOrg } from "../tenant";
+import { OutboxReportService } from "./outbox-report.service";
+import type { OutboxFlushResult, OutboxMetrics, OutboxOrganizationReport, OutboxReport } from "./outbox-publisher.types";
+
+export type { OutboxFlushResult, OutboxMetrics, OutboxOrganizationReport, OutboxReport };
 
 const BATCH_SIZE = 50;
 const LEASE_MS = 30_000;
 
-export interface OutboxFlushResult {
-  claimed: number;
-  delivered: number;
-  suppressed: number;
-  retried: number;
-  dead: number;
-  fenced: number;
-}
-
-export interface OutboxMetrics {
-  pending: number;
-  inFlight: number;
-  dead: number;
-  oldestPendingAt: Date | null;
-}
-
-export interface OutboxOrganizationReport {
-  organizationId: string;
-  totalRows: number;
-  pending: number;
-  inFlight: number;
-  dead: number;
-  oldestPendingAt: Date | null;
-  oldestEventAt: Date | null;
-  oldestEventAgeSeconds: number | null;
-  distinctEventTypes: number;
-}
-
-export interface OutboxReport {
-  generatedAt: string;
-  organizations: number;
-  succeeded: number;
-  failed: number;
-  reports: OutboxOrganizationReport[];
-}
-
-/**
- * Drains the transactional outbox: leases a batch of due PENDING events per organisation (each in
- * its own tenant transaction via forEachOrg — a cross-org sweep has no ambient GUC and is denied
- * 42501 by the outbox_events RLS policy), re-checks the owning organisation's lifecycle immediately
- * before delivery, then marks each DELIVERED or reschedules with bounded backoff / dead-letters past
- * the retry ceiling. An event type with no registered consumer is a configuration failure and takes
- * the same retry/dead-letter path as any other delivery failure; it is never silently discarded or
- * marked DELIVERED. Lifecycle suppression is reserved for organizations that no longer exist or
- * must not receive side effects. All state mutations run in their own per-org tenant transaction.
- */
 @Injectable()
 export class OutboxPublisherService {
   private readonly logger = new Logger(OutboxPublisherService.name);
@@ -72,6 +30,7 @@ export class OutboxPublisherService {
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly registry: OutboxConsumerRegistry,
+    private readonly reportService: OutboxReportService,
   ) {}
 
   private isDispatchConfigured(): boolean {
@@ -120,105 +79,16 @@ export class OutboxPublisherService {
     return { claimed: claimed.length, delivered, suppressed, retried, dead, fenced };
   }
 
-  async metrics(): Promise<OutboxMetrics> {
-    const result: OutboxMetrics = { pending: 0, inFlight: 0, dead: 0, oldestPendingAt: null };
-    await forEachOrg(this.db, "outbox-events-metrics", async (tx) => {
-      const rows = await tx
-        .select({
-          totalRows: sql<number>`count(*)`,
-          pending: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
-          inFlight: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'IN_FLIGHT')`,
-          dead: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'DEAD')`,
-          oldestPendingAt: sql<Date | null>`min(${outboxEvents.createdAt}) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
-          oldestEventAt: sql<Date | null>`min(${outboxEvents.createdAt})`,
-        })
-        .from(outboxEvents);
-      const row = rows[0];
-      if (!row) return;
-      result.pending += Number(row.pending ?? 0);
-      result.inFlight += Number(row.inFlight ?? 0);
-      result.dead += Number(row.dead ?? 0);
-      if (row.oldestPendingAt && (!result.oldestPendingAt || row.oldestPendingAt < result.oldestPendingAt)) {
-        result.oldestPendingAt = row.oldestPendingAt;
-      }
-    });
-    return result;
+  metrics(): Promise<OutboxMetrics> {
+    return this.reportService.metrics();
   }
 
-  /** Capture the row-count evidence required before changing the outbox ledger policy. */
-  async reportByOrganization(): Promise<OutboxOrganizationReport[]> {
-    const reports: OutboxOrganizationReport[] = [];
-    await forEachOrg(this.db, "outbox-events-report", async (tx, organizationId) => {
-      const rows = await tx
-        .select({
-          totalRows: sql<number>`count(*)`,
-          pending: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
-          inFlight: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'IN_FLIGHT')`,
-          dead: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'DEAD')`,
-          oldestPendingAt: sql<Date | null>`min(${outboxEvents.createdAt}) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
-          oldestEventAt: sql<Date | null>`min(${outboxEvents.createdAt})`,
-          distinctEventTypes: sql<number>`count(distinct ${outboxEvents.eventType})`,
-        })
-        .from(outboxEvents);
-      const row = rows[0];
-      reports.push({
-        organizationId,
-        totalRows: Number(row?.totalRows ?? 0),
-        pending: Number(row?.pending ?? 0),
-        inFlight: Number(row?.inFlight ?? 0),
-        dead: Number(row?.dead ?? 0),
-        oldestPendingAt: row?.oldestPendingAt ?? null,
-        oldestEventAt: row?.oldestEventAt ?? null,
-        oldestEventAgeSeconds: row?.oldestEventAt
-          ? Math.max(0, Math.floor((Date.now() - new Date(row.oldestEventAt).getTime()) / 1000))
-          : null,
-        distinctEventTypes: Number(row?.distinctEventTypes ?? 0),
-      });
-    });
-    return reports;
+  reportByOrganization(): Promise<OutboxOrganizationReport[]> {
+    return this.reportService.reportByOrganization();
   }
 
-  /**
-   * Returns both the rows and the sweep accounting. A plain array is insufficient evidence:
-   * forEachOrg intentionally continues after a tenant failure, so a missing row must not be
-   * mistaken for an empty outbox.
-   */
-  async report(): Promise<OutboxReport> {
-    const reports: OutboxOrganizationReport[] = [];
-    const result = await forEachOrg(this.db, "outbox-events-report", async (tx, organizationId) => {
-      const rows = await tx
-        .select({
-          totalRows: sql<number>`count(*)`,
-          pending: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
-          inFlight: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'IN_FLIGHT')`,
-          dead: sql<number>`count(*) filter (where ${outboxEvents.deliveryState} = 'DEAD')`,
-          oldestPendingAt: sql<Date | null>`min(${outboxEvents.createdAt}) filter (where ${outboxEvents.deliveryState} = 'PENDING')`,
-          oldestEventAt: sql<Date | null>`min(${outboxEvents.createdAt})`,
-          distinctEventTypes: sql<number>`count(distinct ${outboxEvents.eventType})`,
-        })
-        .from(outboxEvents);
-      const row = rows[0];
-      reports.push({
-        organizationId,
-        totalRows: Number(row?.totalRows ?? 0),
-        pending: Number(row?.pending ?? 0),
-        inFlight: Number(row?.inFlight ?? 0),
-        dead: Number(row?.dead ?? 0),
-        oldestPendingAt: row?.oldestPendingAt ?? null,
-        oldestEventAt: row?.oldestEventAt ?? null,
-        oldestEventAgeSeconds: row?.oldestEventAt
-          ? Math.max(0, Math.floor((Date.now() - new Date(row.oldestEventAt).getTime()) / 1000))
-          : null,
-        distinctEventTypes: Number(row?.distinctEventTypes ?? 0),
-      });
-    });
-    return {
-      generatedAt: new Date().toISOString(),
-      organizations: result.organizations,
-      succeeded: result.succeeded,
-      failed: result.failed,
-      reports,
-    };
+  report(): Promise<OutboxReport> {
+    return this.reportService.report();
   }
 
   private async claimBatch(): Promise<OutboxEventRow[]> {

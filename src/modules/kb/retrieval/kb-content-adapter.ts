@@ -20,8 +20,8 @@ export class KbPageAdapter implements KbContentAdapter {
 
   constructor(private readonly indexing: KbIndexingService) {}
 
-  async handle(orgId: string, contentId: number): Promise<void> {
-    await this.indexing.indexPage(orgId, contentId);
+  async handle(orgId: string, contentId: number, signal?: AbortSignal): Promise<void> {
+    await this.indexing.indexPage(orgId, contentId, signal);
   }
 }
 
@@ -31,8 +31,8 @@ export class KbArticleAdapter implements KbContentAdapter {
 
   constructor(private readonly indexing: KbIndexingService) {}
 
-  async handle(orgId: string, contentId: number): Promise<void> {
-    await this.indexing.indexArticle(orgId, contentId);
+  async handle(orgId: string, contentId: number, signal?: AbortSignal): Promise<void> {
+    await this.indexing.indexArticle(orgId, contentId, signal);
   }
 }
 
@@ -46,7 +46,7 @@ export class KbSourceAdapter implements KbContentAdapter {
     private readonly storage: StorageService,
   ) {}
 
-  async handle(orgId: string, sourceId: number): Promise<void> {
+  async handle(orgId: string, sourceId: number, _signal?: AbortSignal): Promise<void> {
     const source = await this.db.query.kbSources.findFirst({
       where: and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)),
       columns: { id: true, kind: true, noteText: true, fileKey: true, mimeType: true, status: true },
@@ -73,7 +73,7 @@ export class KbAttachmentAdapter implements KbContentAdapter {
 
   constructor(private readonly attachmentIndexing: KbAttachmentIndexingService) {}
 
-  async handle(orgId: string, contentId: number): Promise<void> {
+  async handle(orgId: string, contentId: number, _signal?: AbortSignal): Promise<void> {
     await this.attachmentIndexing.indexAttachment(orgId, contentId);
   }
 }

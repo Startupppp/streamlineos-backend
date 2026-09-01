@@ -24,7 +24,7 @@ describe("DepreciationRunsService — cross-tenant isolation", () => {
       }),
     });
     const db = { select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }) } as unknown as Db;
-    const svc = new DepreciationRunsService(db, {} as never, {} as never, {} as never, {} as never);
+    const svc = new DepreciationRunsService(db, {} as never, {} as never, {} as never, {} as never, {} as never);
     return { svc, where };
   }
 

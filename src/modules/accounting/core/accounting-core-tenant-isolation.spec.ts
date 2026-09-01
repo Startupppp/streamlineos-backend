@@ -8,6 +8,8 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { JournalPostingService } from "../posting/journal-posting.service";
 import type { FinancePostingService } from "../posting/finance-posting.service";
 import type { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import type { AccountingCashFlowService } from "./accounting-cash-flow.service";
+import type { AccountingJournalEntryService } from "./accounting-journal-entry.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -64,6 +66,8 @@ const cache = {
 
 const audit = { log: jest.fn() } as unknown as AuditService;
 const dispatch = { emit: jest.fn() } as unknown as NotificationDispatchService;
+const cashFlow = { cashFlow: jest.fn() } as unknown as AccountingCashFlowService;
+const journalEntry = { create: jest.fn(), update: jest.fn() } as unknown as AccountingJournalEntryService;
 
 describe("accounting core services — cross-tenant isolation", () => {
   describe("AccountingGstService", () => {
@@ -102,7 +106,7 @@ describe("accounting core services — cross-tenant isolation", () => {
   describe("AccountingStatementsService", () => {
     it("balanceSheet scopes to the requesting org — DENY returns zeros for attacker org", async () => {
       const { db, where } = makeSelectDb([]);
-      const svc = new AccountingStatementsService(db, cache);
+      const svc = new AccountingStatementsService(db, cache, cashFlow);
 
       const result = await svc.balanceSheet("org-attacker", { asOf: "2024-01-31" });
 
@@ -121,7 +125,7 @@ describe("accounting core services — cross-tenant isolation", () => {
         credit: "0.00",
       };
       const { db } = makeSelectDb([fakeAgg]);
-      const svc = new AccountingStatementsService(db, cache);
+      const svc = new AccountingStatementsService(db, cache, cashFlow);
 
       const result = await svc.balanceSheet("org-owner", { asOf: "2024-01-31" });
       expect(result).toBeDefined();
@@ -137,7 +141,7 @@ describe("accounting core services — cross-tenant isolation", () => {
     it("REVOCATION: own scope scopes predicate to membershipId, not userId", async () => {
       const MEMBERSHIP_ID = 42;
       const { db, where } = makeSelectDb([]);
-      const svc = new AccountingLedgerService(db, posting, finPosting, audit, dispatch, cache);
+      const svc = new AccountingLedgerService(db, posting, finPosting, audit, cache, journalEntry);
 
       await svc.listJournal("org-owner", { limit: 10 }, "own", "user-1", MEMBERSHIP_ID);
 
@@ -147,7 +151,7 @@ describe("accounting core services — cross-tenant isolation", () => {
 
     it("DENY: none scope returns empty data array", async () => {
       const { db } = makeSelectDb([]);
-      const svc = new AccountingLedgerService(db, posting, finPosting, audit, dispatch, cache);
+      const svc = new AccountingLedgerService(db, posting, finPosting, audit, cache, journalEntry);
 
       const result = await svc.listJournal("org-attacker", { limit: 10 }, "none", "user-1", 0);
 

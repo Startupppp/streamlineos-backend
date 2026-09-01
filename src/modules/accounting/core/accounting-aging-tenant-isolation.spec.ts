@@ -1,6 +1,6 @@
 import type { Db } from "../../../db/drizzle.module";
-import { AccountingPayablesQueryService } from "./accounting-payables-query.service";
-import { AccountingReceivablesService } from "./accounting-receivables.service";
+import { AccountingVendorQueryService } from "./accounting-vendor-query.service";
+import { AccountingAgedReceivablesService } from "./accounting-aged-receivables.service";
 
 type QueryBuilder = {
   from: jest.Mock;
@@ -56,9 +56,9 @@ function agingDb(): CapturedDb {
 describe("accounting aging â€” cross-tenant isolation", () => {
   const attackerOrgId = "org-attacker";
 
-  it("AccountingReceivablesService excludes another org's invoices before aging them", async () => {
+  it("AccountingAgedReceivablesService excludes another org's invoices before aging them", async () => {
     const captured = agingDb();
-    const service = new AccountingReceivablesService(captured.db);
+    const service = new AccountingAgedReceivablesService(captured.db);
 
     const result = await service.agedReceivables(attackerOrgId, { asOf: "2026-08-29" });
 
@@ -67,9 +67,9 @@ describe("accounting aging â€” cross-tenant isolation", () => {
     expect(sqlValues(captured.where.mock.calls[0]?.[0])).toContain(attackerOrgId);
   });
 
-  it("AccountingPayablesQueryService excludes another org's bills before aging them", async () => {
+  it("AccountingVendorQueryService excludes another org's bills before aging them", async () => {
     const captured = agingDb();
-    const service = new AccountingPayablesQueryService(captured.db);
+    const service = new AccountingVendorQueryService(captured.db);
 
     const result = await service.agedPayables(attackerOrgId, { asOf: "2026-08-29" });
 

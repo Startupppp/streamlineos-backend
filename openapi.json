@@ -6494,6 +6494,7 @@
                     "type": "object",
                     "properties": {
                       "vendorIds": {
+                        "maxItems": 200,
                         "type": "array",
                         "items": {
                           "type": "integer",
@@ -13986,6 +13987,7 @@
                     "type": "string"
                   },
                   "memberIds": {
+                    "maxItems": 100,
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -14130,6 +14132,7 @@
                     "type": "string"
                   },
                   "assigneeIds": {
+                    "maxItems": 20,
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -24372,6 +24375,7 @@
                           },
                           "roleIds": {
                             "minItems": 1,
+                            "maxItems": 50,
                             "type": "array",
                             "items": {
                               "type": "string"
@@ -24392,6 +24396,7 @@
                           },
                           "departmentIds": {
                             "minItems": 1,
+                            "maxItems": 200,
                             "type": "array",
                             "items": {
                               "type": "string"
@@ -24412,6 +24417,7 @@
                           },
                           "userIds": {
                             "minItems": 1,
+                            "maxItems": 200,
                             "type": "array",
                             "items": {
                               "type": "string"
@@ -24584,6 +24590,7 @@
                           },
                           "roleIds": {
                             "minItems": 1,
+                            "maxItems": 50,
                             "type": "array",
                             "items": {
                               "type": "string"
@@ -24604,6 +24611,7 @@
                           },
                           "departmentIds": {
                             "minItems": 1,
+                            "maxItems": 200,
                             "type": "array",
                             "items": {
                               "type": "string"
@@ -24624,6 +24632,7 @@
                           },
                           "userIds": {
                             "minItems": 1,
+                            "maxItems": 200,
                             "type": "array",
                             "items": {
                               "type": "string"
@@ -25103,6 +25112,7 @@
                     "type": "string"
                   },
                   "memberIds": {
+                    "maxItems": 100,
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -25317,6 +25327,7 @@
                     ]
                   },
                   "memberIds": {
+                    "maxItems": 100,
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -35548,6 +35559,7 @@
                     "type": "string"
                   },
                   "caseIds": {
+                    "maxItems": 500,
                     "type": "array",
                     "items": {
                       "type": "integer",
@@ -36561,6 +36573,7 @@
                     "type": "string"
                   },
                   "assigneeIds": {
+                    "maxItems": 20,
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -36808,6 +36821,7 @@
                     "type": "string"
                   },
                   "assigneeIds": {
+                    "maxItems": 20,
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -47683,6 +47697,7 @@
                     "type": "string"
                   },
                   "attendeeIds": {
+                    "maxItems": 200,
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -47861,6 +47876,7 @@
                     ]
                   },
                   "attendeeIds": {
+                    "maxItems": 200,
                     "type": "array",
                     "items": {
                       "type": "string"
@@ -48869,6 +48885,7 @@
                       },
                       "memberIds": {
                         "minItems": 1,
+                        "maxItems": 200,
                         "type": "array",
                         "items": {
                           "type": "string"
@@ -48916,6 +48933,7 @@
                       },
                       "memberIds": {
                         "minItems": 1,
+                        "maxItems": 200,
                         "type": "array",
                         "items": {
                           "type": "string"
@@ -48963,6 +48981,7 @@
                       },
                       "memberIds": {
                         "minItems": 1,
+                        "maxItems": 200,
                         "type": "array",
                         "items": {
                           "type": "string"
@@ -91390,6 +91409,7 @@
                   },
                   "userIds": {
                     "minItems": 1,
+                    "maxItems": 100,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -97601,6 +97621,7 @@
                         "minLength": 1
                       },
                       "ids": {
+                        "maxItems": 500,
                         "type": "array",
                         "items": {
                           "type": "string"
@@ -97710,6 +97731,7 @@
                         "minLength": 1
                       },
                       "ids": {
+                        "maxItems": 500,
                         "type": "array",
                         "items": {
                           "type": "string"
@@ -163115,6 +163137,7 @@
                 "type": "object",
                 "properties": {
                   "tagIds": {
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
                       "type": "integer",
@@ -170530,6 +170553,7 @@
                 "properties": {
                   "leadIds": {
                     "minItems": 1,
+                    "maxItems": 200,
                     "type": "array",
                     "items": {
                       "type": "number"
@@ -170603,6 +170627,7 @@
                 "properties": {
                   "leadIds": {
                     "minItems": 1,
+                    "maxItems": 200,
                     "type": "array",
                     "items": {
                       "type": "number"
@@ -170744,6 +170769,7 @@
                 "properties": {
                   "leadIds": {
                     "minItems": 1,
+                    "maxItems": 200,
                     "type": "array",
                     "items": {
                       "type": "number"
@@ -199764,12 +199790,14 @@
                 "type": "object",
                 "properties": {
                   "userIds": {
+                    "maxItems": 100,
                     "type": "array",
                     "items": {
                       "type": "string"
                     }
                   },
                   "runEmployeeIds": {
+                    "maxItems": 100,
                     "type": "array",
                     "items": {
                       "type": "integer",
@@ -206792,6 +206820,7 @@
                           "maxLength": 10000
                         },
                         "choiceIds": {
+                          "maxItems": 50,
                           "type": "array",
                           "items": {
                             "type": "integer",
@@ -206890,6 +206919,7 @@
                           "maxLength": 10000
                         },
                         "choiceIds": {
+                          "maxItems": 50,
                           "type": "array",
                           "items": {
                             "type": "integer",
@@ -207078,6 +207108,7 @@
                   },
                   "answerValue": {},
                   "choiceIds": {
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
                       "type": "integer",
@@ -217497,6 +217528,535 @@
         "x-exposure": "in-service",
         "x-authorized-in-service": "resolveFileOwner",
         "description": "Exposure: authorized in service — resolveFileOwner"
+      }
+    },
+    "/storage/multipart/abort": {
+      "post": {
+        "operationId": "StorageMultipartController_abort",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "StorageMultipart"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "storage:files:manage",
+        "description": "Exposure: permission — storage:files:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  },
+                  "uploadId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "key",
+                  "uploadId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/storage/multipart/complete": {
+      "post": {
+        "operationId": "StorageMultipartController_complete",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "StorageMultipart"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "storage:files:manage",
+        "description": "Exposure: permission — storage:files:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  },
+                  "uploadId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "parts": {
+                    "minItems": 1,
+                    "maxItems": 10000,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "partNumber": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 9007199254740991
+                        },
+                        "eTag": {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      },
+                      "required": [
+                        "partNumber",
+                        "eTag"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "key",
+                  "uploadId",
+                  "parts"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/storage/multipart/initiate": {
+      "post": {
+        "operationId": "StorageMultipartController_initiate",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "StorageMultipart"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "storage:files:manage",
+        "description": "Exposure: permission — storage:files:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "folder": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "pattern": "^[a-zA-Z0-9_-]+$"
+                  },
+                  "fileName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "mimeType": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "partCount": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000
+                  }
+                },
+                "required": [
+                  "folder",
+                  "fileName",
+                  "mimeType",
+                  "partCount"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/storage/quarantine": {
+      "get": {
+        "operationId": "StorageQuarantineController_list",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "pending_scan",
+                "clean",
+                "infected",
+                "error"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "StorageQuarantine"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "storage:quarantine:view",
+        "description": "Exposure: permission — storage:quarantine:view"
+      }
+    },
+    "/storage/quarantine/{quarantineId}": {
+      "get": {
+        "operationId": "StorageQuarantineController_getOne",
+        "parameters": [
+          {
+            "name": "quarantineId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "StorageQuarantine"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "storage:quarantine:view",
+        "description": "Exposure: permission — storage:quarantine:view"
+      },
+      "delete": {
+        "operationId": "StorageQuarantineController_remove",
+        "parameters": [
+          {
+            "name": "quarantineId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "StorageQuarantine"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "storage:quarantine:manage",
+        "description": "Exposure: permission — storage:quarantine:manage"
+      }
+    },
+    "/storage/quarantine/{quarantineId}/reject": {
+      "post": {
+        "operationId": "StorageQuarantineController_reject",
+        "parameters": [
+          {
+            "name": "quarantineId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "StorageQuarantine"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "storage:quarantine:manage",
+        "description": "Exposure: permission — storage:quarantine:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-idempotency-command": "storage.quarantine.reject",
+        "x-idempotent": true
+      }
+    },
+    "/storage/quarantine/{quarantineId}/release": {
+      "post": {
+        "operationId": "StorageQuarantineController_release",
+        "parameters": [
+          {
+            "name": "quarantineId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "StorageQuarantine"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "storage:quarantine:manage",
+        "description": "Exposure: permission — storage:quarantine:manage",
+        "x-idempotency-command": "storage.quarantine.release",
+        "x-idempotent": true
       }
     },
     "/storage/upload": {

@@ -23,7 +23,7 @@ function buildDb(cap: Captured): Db {
 
 async function captureList(cursor: string | undefined): Promise<Captured> {
   const cap: Captured = { where: undefined, orderBy: [] };
-  const svc = new DepreciationRunsService(buildDb(cap), {} as never, {} as never, {} as never, {} as never);
+  const svc = new DepreciationRunsService(buildDb(cap), {} as never, {} as never, {} as never, {} as never, {} as never);
   await svc.list("org-1", { cursor, limit: 20 });
   return cap;
 }

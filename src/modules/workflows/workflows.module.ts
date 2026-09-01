@@ -3,6 +3,7 @@ import { WorkflowsController } from "./workflows.controller";
 import { WorkflowsService } from "./workflows.service";
 import { WorkflowsCrudService } from "./workflows-crud.service";
 import { WorkflowsExecutionService } from "./workflows-execution.service";
+import { WorkflowsApprovalService } from "./workflows-approval.service";
 import { WorkflowsSchedulesService } from "./workflows-schedules.service";
 import { WorkflowsSecretsService } from "./workflows-secrets.service";
 import { WorkflowsVariablesService } from "./workflows-variables.service";
@@ -42,6 +43,7 @@ import { ComposioGateway } from "../integrations/core/composio.gateway";
   controllers: [WorkflowsController, WorkflowsCronController],
   providers: [
     WorkflowsCrudService,
+    WorkflowsApprovalService,
     WorkflowsExecutionService,
     WorkflowsSchedulesService,
     WorkflowsSecretsService,
