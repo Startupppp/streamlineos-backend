@@ -44,12 +44,13 @@ WHERE om.org_id = je.org_id
   AND je."created_by_membership_id" IS NULL;
 
 --> statement-breakpoint
-UPDATE "affiliates" a
-SET "user_membership_id" = om.id
-FROM "organization_members" om
-WHERE om.org_id = a.org_id
-  AND om.user_id = a.user_id
-  AND a."user_membership_id" IS NULL;
+-- No affiliates backfill, and this is deliberate. `affiliates.user_id` is an INTEGER with no
+-- foreign key, while `organization_members.user_id` is TEXT like every other user reference in
+-- the schema, so `om.user_id = a.user_id` fails outright with `operator does not exist:
+-- text = integer`. A cold replay caught it; production has never run this file. The table holds
+-- zero rows, so there is nothing to backfill and a cast would only paper over the type defect.
+-- `affiliates.user_id` being an unconstrained integer is a separate schema bug and is recorded
+-- as such; the column added above stays NULL until it is resolved.
 
 --> statement-breakpoint
 ALTER TABLE "fin_approval_policies"

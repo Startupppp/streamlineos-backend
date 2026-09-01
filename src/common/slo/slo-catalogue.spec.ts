@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { execSync } from "node:child_process";
 import { MODULE_REGISTRY } from "../rbac/module-registry";
 import { SEAM_BUDGETS } from "../observability/seam-budgets";
 import { SLO_CATALOGUE, MODULE_SLOS, QUEUE_SLOS, QUEUE_SUBJECTS, SLO_OWNERS } from "./index";
@@ -236,5 +237,48 @@ describe("SLO catalogue", () => {
   it("gives every objective a unique id", () => {
     const ids = SLO_CATALOGUE.map((slo) => slo.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe("Route attribution", () => {
+  const scriptPath = join(SRC_ROOT, "scripts", "route-attribution.mjs");
+
+  it("declares PLATFORM_NAMESPACES explicitly with the required platform entries", () => {
+    const source = readScript("route-attribution.mjs");
+    expect(source).toContain("PLATFORM_NAMESPACES");
+    expect(source).toContain('"health"');
+    expect(source).toContain('"auth"');
+    expect(source).toContain('"cron"');
+    expect(source).toContain('"platform"');
+  });
+
+  it("encodes the moduleOwningNamespace-equivalent mapping for home-administered namespaces", () => {
+    const source = readScript("route-attribution.mjs");
+    expect(source).toContain("chat:");
+    expect(source).toContain("mail:");
+    expect(source).toContain("calendar:");
+    expect(source).toContain("notifications:");
+    expect(source).toContain('"home"');
+  });
+
+  it("handles the route-segment exceptions where module id differs from route first segment", () => {
+    const source = readScript("route-attribution.mjs");
+    expect(source).toContain("knowledge:");
+    expect(source).toContain('"kb"');
+    expect(source).toContain("dashboard:");
+  });
+
+  it("self-test passes: hr → people-team, chat → communications, health → platform, unknown → unattributable, owners differ", () => {
+    const output = execSync(`"${process.execPath}" "${scriptPath}" --self-test`, {
+      encoding: "utf8",
+    });
+    const lastLine = output.trim().split("\n").at(-1) ?? "{}";
+    const result = JSON.parse(lastLine) as { pass: boolean; checks: Record<string, boolean> };
+    expect(result.pass).toBe(true);
+    expect(result.checks.hrAttributesToPeopleTeam).toBe(true);
+    expect(result.checks.chatAttributesToCommunicationsViaHome).toBe(true);
+    expect(result.checks.healthAttributesToPlatform).toBe(true);
+    expect(result.checks.unknownNamespaceIsUnattributable).toBe(true);
+    expect(result.checks.ownersDifferBetweenHrAndChat).toBe(true);
   });
 });

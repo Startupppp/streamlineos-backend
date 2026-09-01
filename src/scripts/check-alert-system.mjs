@@ -6,6 +6,7 @@ import process from "node:process";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const ALERT_SCRIPTS = [
+  "route-attribution.mjs",
   "alert-dead-outbox.mjs",
   "alert-dead-delivery.mjs",
   "alert-sig-failures.mjs",
