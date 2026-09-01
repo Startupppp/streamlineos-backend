@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, gte, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { attendance, hrAttendanceRegularizations } from "../../../db/schema";
 import { PayrollInputsService } from "../payroll-inputs/payroll-inputs.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -49,6 +49,11 @@ export class AttendanceRegularizationService {
       throw new BadRequestException("At least one of requestedCheckIn or requestedCheckOut is required.");
     }
 
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId == null) {
+      throw new ForbiddenException("Organization membership required.");
+    }
+
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`
         SELECT pg_advisory_xact_lock(
@@ -59,7 +64,7 @@ export class AttendanceRegularizationService {
       const existingPending = await tx.query.hrAttendanceRegularizations.findFirst({
         where: and(
           eq(hrAttendanceRegularizations.orgId, u.orgId),
-          eq(hrAttendanceRegularizations.userId, u.userId),
+          eq(hrAttendanceRegularizations.userMembershipId, membershipId),
           eq(hrAttendanceRegularizations.attendanceDate, input.attendanceDate),
           eq(hrAttendanceRegularizations.status, "PENDING"),
         ),
@@ -80,7 +85,7 @@ export class AttendanceRegularizationService {
         .values({
           orgId: u.orgId,
           userId: u.userId,
-          userMembershipId: actingMembershipId(u.principal),
+          userMembershipId: membershipId,
           attendanceDate: input.attendanceDate,
           requestedCheckIn: input.requestedCheckIn ? new Date(input.requestedCheckIn) : null,
           requestedCheckOut: input.requestedCheckOut ? new Date(input.requestedCheckOut) : null,
@@ -136,10 +141,12 @@ export class AttendanceRegularizationService {
     const conditions = [eq(hrAttendanceRegularizations.orgId, u.orgId)];
     if (targetUserId) {
       const membershipId = actingMembershipId(u.principal);
-      const userPredicate =
-        targetUserId === u.userId && membershipId != null
-          ? or(eq(hrAttendanceRegularizations.userMembershipId, membershipId), eq(hrAttendanceRegularizations.userId, targetUserId))!
-          : eq(hrAttendanceRegularizations.userId, targetUserId);
+      if (targetUserId === u.userId && membershipId == null) {
+        throw new ForbiddenException("Organization membership required.");
+      }
+      const userPredicate = targetUserId === u.userId
+        ? eq(hrAttendanceRegularizations.userMembershipId, membershipId!)
+        : eq(hrAttendanceRegularizations.userId, targetUserId);
       conditions.push(userPredicate);
     }
     if (query.status) conditions.push(eq(hrAttendanceRegularizations.status, query.status));

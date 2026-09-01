@@ -8,15 +8,15 @@ import type { BurnupQuery, CfdQuery } from "./dto/projects.schemas";
 import { buildEdges, computeCriticalPath } from "./projects-critical-path.util";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import {
+  computeBurnupFromEvents,
+  type BurnupPoint,
+} from "./projects-burnup.util";
+
+export type { BurnupPoint } from "./projects-burnup.util";
 
 const STATE_GROUPS = ["backlog", "unstarted", "started", "completed", "cancelled"] as const;
 type StateGroup = (typeof STATE_GROUPS)[number];
-
-export interface BurnupPoint {
-  date: string;
-  scope: number;
-  completed: number;
-}
 
 export interface VelocitySprint {
   sprintId: number;
@@ -95,63 +95,12 @@ export class ProjectsReportsService {
           .orderBy(asc(sprintScopeEvents.createdAt));
 
         if (events.length > 0)
-          return this.burnupFromEvents(events, startDate, days);
+          return computeBurnupFromEvents(events, startDate, days);
 
         return this.burnupFromCurrentMembership(orgId, projectId, sprint.id, startDate, days);
       },
       CACHE_TTL.SHORT,
     );
-  }
-
-  private burnupFromEvents(
-    events: { ticketId: number; eventType: string; newPoints: number | null; createdAt: Date }[],
-    startDate: Date,
-    days: number,
-  ): BurnupPoint[] {
-    type TicketState = { points: number; inSprint: boolean; completed: boolean };
-    const state = new Map<number, TicketState>();
-    let eventIdx = 0;
-
-    return Array.from({ length: days }).map((_, i) => {
-      const day = addDays(startDate, i);
-      const dayEnd = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59, 59, 999);
-
-      while (eventIdx < events.length) {
-        const ev = events[eventIdx];
-        if (!ev || ev.createdAt > dayEnd) break;
-        const s = state.get(ev.ticketId) ?? { points: 0, inSprint: false, completed: false };
-        switch (ev.eventType) {
-          case "added":
-            s.inSprint = true;
-            if (ev.newPoints !== null) s.points = ev.newPoints;
-            break;
-          case "removed":
-            s.inSprint = false;
-            break;
-          case "estimate_changed":
-            if (ev.newPoints !== null) s.points = ev.newPoints;
-            break;
-          case "completed":
-            s.completed = true;
-            break;
-          case "reopened":
-            s.completed = false;
-            break;
-        }
-        state.set(ev.ticketId, s);
-        eventIdx++;
-      }
-
-      let scope = 0;
-      let completed = 0;
-      for (const [, s] of state) {
-        if (!s.inSprint) continue;
-        scope += s.points;
-        if (s.completed) completed += s.points;
-      }
-
-      return { date: formatDateOnly(day), scope, completed: Math.min(completed, scope) };
-    });
   }
 
   private async burnupFromCurrentMembership(

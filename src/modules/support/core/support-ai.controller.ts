@@ -7,6 +7,7 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
@@ -136,7 +137,12 @@ export class SupportAiController {
   @Validate({ params: ticketIdParams })
   async suggestMacro(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
     await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
-    return this.ai.suggestMacro(u.orgId, u.userId, ticketId);
+    return this.ai.suggestMacro(
+      u.orgId,
+      u.userId,
+      ticketId,
+      actingMembershipId(u.principal),
+    );
   }
 
   @Post(":ticketId/ai/translate")
@@ -203,7 +209,14 @@ export class SupportAiController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.planLimits.assertFeature(u.orgId, "ai.reply-suggestion");
-    return this.ai.translateDraft(u.orgId, body.ticketId, body.language, body.content, u.userId);
+    return this.ai.translateDraft(
+      u.orgId,
+      body.ticketId,
+      body.language,
+      body.content,
+      u.userId,
+      actingMembershipId(u.principal),
+    );
   }
 
   @Get("ai/report")

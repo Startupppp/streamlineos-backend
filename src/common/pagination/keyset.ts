@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import { sql, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 
@@ -26,8 +27,20 @@ export interface KeysetPosition {
   readonly id: string;
 }
 
+function invalidCursor(): never {
+  throw new BadRequestException("Invalid pagination cursor");
+}
+
 function at(position: KeysetPosition): Date {
-  return position.sortValue instanceof Date ? position.sortValue : new Date(position.sortValue);
+  const date = position.sortValue instanceof Date
+    ? position.sortValue
+    : new Date(position.sortValue);
+  return Number.isNaN(date.getTime()) ? invalidCursor() : date;
+}
+
+function numericId(position: KeysetPosition): number {
+  const id = Number(position.id);
+  return Number.isSafeInteger(id) && id > 0 ? id : invalidCursor();
 }
 
 // For a sort column that is already text and totally ordered with its id — a lexorank, a code — where `at()` must not coerce.
@@ -36,7 +49,7 @@ export function keysetAfterValue(
   idColumn: PgColumn,
   position: KeysetPosition,
 ): SQL {
-  return sql`(${sortColumn}, ${idColumn}) > (${sql.param(String(position.sortValue), sortColumn)}, ${sql.param(Number(position.id), idColumn)})`;
+  return sql`(${sortColumn}, ${idColumn}) > (${sql.param(String(position.sortValue), sortColumn)}, ${sql.param(numericId(position), idColumn)})`;
 }
 
 export function keysetBeforeValue(
@@ -44,7 +57,7 @@ export function keysetBeforeValue(
   idColumn: PgColumn,
   position: KeysetPosition,
 ): SQL {
-  return sql`(${sortColumn}, ${idColumn}) < (${sql.param(String(position.sortValue), sortColumn)}, ${sql.param(Number(position.id), idColumn)})`;
+  return sql`(${sortColumn}, ${idColumn}) < (${sql.param(String(position.sortValue), sortColumn)}, ${sql.param(numericId(position), idColumn)})`;
 }
 
 export function keysetAfterId(
@@ -52,7 +65,7 @@ export function keysetAfterId(
   idColumn: PgColumn,
   position: KeysetPosition,
 ): SQL {
-  return sql`(${sortColumn}, ${idColumn}) > (${sql.param(at(position), sortColumn)}, ${sql.param(Number(position.id), idColumn)})`;
+  return sql`(${sortColumn}, ${idColumn}) > (${sql.param(at(position), sortColumn)}, ${sql.param(numericId(position), idColumn)})`;
 }
 
 export function keysetBeforeId(
@@ -60,7 +73,7 @@ export function keysetBeforeId(
   idColumn: PgColumn,
   position: KeysetPosition,
 ): SQL {
-  return sql`(${sortColumn}, ${idColumn}) < (${sql.param(at(position), sortColumn)}, ${sql.param(Number(position.id), idColumn)})`;
+  return sql`(${sortColumn}, ${idColumn}) < (${sql.param(at(position), sortColumn)}, ${sql.param(numericId(position), idColumn)})`;
 }
 
 /** Everything strictly after the position, for a list read oldest-first. */

@@ -31,14 +31,13 @@ export const supportTicketDrafts = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     ticketId: integer("ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-    userMembershipId: integer("user_membership_id"),
+    userMembershipId: integer("user_membership_id").notNull(),
     body: text("body").default("").notNull(),
     isInternal: boolean("is_internal").default(false).notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    uniqueIndex("uniq_support_ticket_drafts_ticket_user").on(table.ticketId, table.userId),
+    uniqueIndex("uniq_support_ticket_drafts_ticket_membership").on(table.ticketId, table.userMembershipId),
     unique("uniq_support_ticket_drafts_org_id").on(table.orgId, table.id),
     index("idx_support_ticket_drafts_org_user_actor").on(table.orgId, table.userMembershipId),
     foreignKey({

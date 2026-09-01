@@ -31,8 +31,6 @@ import {
   stripDeniedModules,
 } from "./access-policy";
 import { isMissingRelationError } from "./access-error-utils";
-import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
-import { assertNever } from "../../common/auth/principal";
 import {
   moduleAvailability,
   type ModuleAvailabilityResolver,
@@ -54,6 +52,7 @@ import {
 } from "./access-permission-members.resolver";
 import { AccessSnapshotResolver } from "./access-snapshot.resolver";
 import { DeniedModulesResolver } from "./denied-modules.resolver";
+import { resolvePrincipalScope } from "./access-principal-scope";
 
 export {
   broadest,
@@ -72,10 +71,6 @@ const VERSION_CACHE_TTL_MS = 1_000;
 const SHARED_VERSION_TTL_SECONDS = 300;
 const PERMS_CACHE_TTL_MS = 30_000;
 const MEMBERSHIP_CACHE_TTL_MS = 15_000;
-
-function withinCeiling(ceiling: readonly string[], key: string): boolean {
-  return isPersonalTokenPermissionDelegable(key) && ceiling.includes(key);
-}
 
 @Injectable()
 export class AccessService implements OnModuleInit, OnModuleDestroy {
@@ -471,27 +466,9 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
   }
 
   async scopeFor(user: CurrentUserContext, key: string): Promise<DataScope> {
-    const principal = user.principal;
-    switch (principal.kind) {
-      case "account-only":
-        return "none";
-      case "system-job":
-        return principal.ceiling.includes(key) ? "all" : "none";
-      case "human-session":
-        return this.membershipCapability(user, principal.isOrgOwner, key);
-      case "personal-token":
-        if (!withinCeiling(principal.ceiling, key)) return "none";
-        return this.membershipCapability(user, principal.isOrgOwner, key);
-      case "agent-token":
-        if (!withinCeiling(principal.ceiling, key)) return "none";
-        return (
-          (await this.resolveUserPermissions(user.orgId, user.userId)).get(
-            key,
-          ) ?? "none"
-        );
-      default:
-        return assertNever(principal);
-    }
+    return resolvePrincipalScope(user.principal, key, (isOrgOwner) =>
+      this.membershipCapability(user, isOrgOwner, key),
+    );
   }
 
   private async membershipCapability(

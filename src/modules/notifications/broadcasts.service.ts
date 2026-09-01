@@ -1,5 +1,5 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { eq, and, desc, lt, inArray, isNull, or, sql } from "drizzle-orm";
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { eq, and, desc, exists, lt, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   broadcastAudienceTargets,
   broadcasts,
@@ -224,16 +224,17 @@ export class BroadcastsService {
 
   /**
    * C21-02. Records a user's dismissal of a broadcast. The unique index on
-   * (org_id, broadcast_id, user_id) makes this idempotent: repeating the call
+   * (org_id, broadcast_id, membership_id) makes this idempotent: repeating the call
    * produces exactly one receipt row.
    */
   async dismiss(orgId: string, userId: string, broadcastId: number, membershipId?: number | null) {
     await this.findOne(orgId, broadcastId);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
     await this.db
       .insert(broadcastReadReceipts)
-      .values({ orgId, broadcastId, userId, membershipId: membershipId ?? null })
+      .values({ orgId, broadcastId, membershipId })
       .onConflictDoNothing({
-        target: [broadcastReadReceipts.orgId, broadcastReadReceipts.broadcastId, broadcastReadReceipts.userId],
+        target: [broadcastReadReceipts.orgId, broadcastReadReceipts.broadcastId, broadcastReadReceipts.membershipId],
       });
     return { success: true };
   }
@@ -246,6 +247,7 @@ export class BroadcastsService {
         .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
         .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(eq(users.id, userId))
+        .limit(1)
         .then((rows) => rows[0]),
       this.db
         .select({ roleId: roleAssignments.roleId })
@@ -258,7 +260,8 @@ export class BroadcastsService {
             eq(organizationMembers.userId, userId),
           ),
         )
-        .where(eq(roleAssignments.orgId, orgId)),
+        .where(eq(roleAssignments.orgId, orgId))
+        .limit(100),
     ]);
 
     const userDeptId = userRow?.deptId ?? null;
@@ -280,16 +283,18 @@ export class BroadcastsService {
         : undefined,
     ].filter((c): c is NonNullable<typeof c> => c !== undefined);
 
-    const audienceTargetRows = await this.db
-      .select({ broadcastId: broadcastAudienceTargets.broadcastId })
+    const matchingTarget = this.db
+      .select({ matched: sql<number>`1` })
       .from(broadcastAudienceTargets)
-      .where(and(eq(broadcastAudienceTargets.orgId, orgId), or(...audienceKindConditions)));
+      .where(
+        and(
+          eq(broadcastAudienceTargets.orgId, orgId),
+          eq(broadcastAudienceTargets.broadcastId, broadcasts.id),
+          or(...audienceKindConditions),
+        ),
+      );
 
-    const targetedBroadcastIds = audienceTargetRows.map((r) => r.broadcastId);
-
-    return targetedBroadcastIds.length > 0
-      ? or(eq(broadcasts.audienceType, "all"), inArray(broadcasts.id, targetedBroadcastIds))
-      : eq(broadcasts.audienceType, "all");
+    return or(eq(broadcasts.audienceType, "all"), exists(matchingTarget))!;
   }
 
   /**
@@ -301,13 +306,9 @@ export class BroadcastsService {
    * by the three possible kinds (USER / ROLE / DEPARTMENT). audienceType='all'
    * bypasses the subquery and matches every org member.
    */
-  private receiptPredicate(userId: string, membershipId: number | null | undefined) {
-    if (membershipId != null)
-      return or(
-        eq(broadcastReadReceipts.membershipId, membershipId),
-        and(isNull(broadcastReadReceipts.membershipId), eq(broadcastReadReceipts.userId, userId)),
-      );
-    return eq(broadcastReadReceipts.userId, userId);
+  private receiptPredicate(membershipId: number | null | undefined) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
+    return eq(broadcastReadReceipts.membershipId, membershipId);
   }
 
   async listInbox(orgId: string, userId: string, limit: number, membershipId?: number | null) {
@@ -332,7 +333,7 @@ export class BroadcastsService {
         and(
           eq(broadcastReadReceipts.broadcastId, broadcasts.id),
           eq(broadcastReadReceipts.orgId, orgId),
-          this.receiptPredicate(userId, membershipId),
+          this.receiptPredicate(membershipId),
         ),
       )
       .where(
@@ -375,7 +376,7 @@ export class BroadcastsService {
         and(
           eq(broadcastReadReceipts.broadcastId, broadcasts.id),
           eq(broadcastReadReceipts.orgId, orgId),
-          this.receiptPredicate(userId, membershipId),
+          this.receiptPredicate(membershipId),
         ),
       )
       .where(

@@ -40,7 +40,7 @@ export interface RoutingOutcome {
 export class SupportMacrosService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listMacros(orgId: string, userId: string, membershipId: number | null, query: ListMacrosInput) {
+  listMacros(orgId: string, _userId: string, membershipId: number | null, query: ListMacrosInput) {
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const privateVisible = eq(supportMacros.createdByMembershipId, membershipId);
     const conditions = [
@@ -61,7 +61,7 @@ export class SupportMacrosService {
     });
   }
 
-  async createMacro(orgId: string, userId: string, membershipId: number | null, input: CreateMacroInput) {
+  async createMacro(orgId: string, _userId: string, membershipId: number | null, input: CreateMacroInput) {
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const [macro] = await this.db
       .insert(supportMacros)
@@ -72,7 +72,6 @@ export class SupportMacrosService {
         category: input.category ?? null,
         visibility: input.visibility,
         actions: input.actions,
-        createdBy: userId,
         createdByMembershipId: membershipId,
       })
       .returning();
@@ -109,7 +108,7 @@ export class SupportMacrosService {
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const macro = await this.db.query.supportMacros.findFirst({
       where: and(eq(supportMacros.id, macroId), eq(supportMacros.orgId, orgId)),
-      columns: { id: true, body: true, visibility: true, createdBy: true, createdByMembershipId: true },
+      columns: { id: true, body: true, visibility: true, createdByMembershipId: true },
     });
     if (!macro) throw new NotFoundException("Macro not found");
     const isCreator = macro.createdByMembershipId === membershipId;

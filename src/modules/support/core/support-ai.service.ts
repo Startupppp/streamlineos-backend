@@ -30,8 +30,8 @@ export class SupportAiService {
     return this.triage.suggestReply(user, ticketId);
   }
 
-  suggestMacro(orgId: string, userId: string, ticketId: number) {
-    return this.triage.suggestMacro(orgId, userId, ticketId);
+  suggestMacro(orgId: string, userId: string, ticketId: number, membershipId?: number | null) {
+    return this.triage.suggestMacro(orgId, userId, ticketId, membershipId);
   }
 
   suggestKbArticles(user: CurrentUserContext, ticketId: number) {
@@ -54,8 +54,8 @@ export class SupportAiService {
     return this.translation.translateMessage(orgId, ticketId, messageId, targetLanguage, userId);
   }
 
-  translateDraft(orgId: string, ticketId: number, language: string, content?: string, userId?: string) {
-    return this.translation.translateDraft(orgId, ticketId, language, content, userId);
+  translateDraft(orgId: string, ticketId: number, language: string, content?: string, userId?: string, membershipId?: number | null) {
+    return this.translation.translateDraft(orgId, ticketId, language, content, userId, membershipId);
   }
 
   improveReply(orgId: string, ticketId: number, content: string, userId?: string, macroId?: number) {
@@ -77,6 +77,7 @@ export class SupportAiService {
     return this.db.query.supportAiSuggestions.findMany({
       where: and(eq(supportAiSuggestions.orgId, orgId), eq(supportAiSuggestions.ticketId, ticketId)),
       orderBy: [desc(supportAiSuggestions.createdAt)],
+      limit: 100,
     });
   }
 

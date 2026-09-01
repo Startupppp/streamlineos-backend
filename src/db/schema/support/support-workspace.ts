@@ -54,7 +54,6 @@ export const supportSavedViews = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    ownerId: text("owner_id").references(() => users.id, { onDelete: "cascade" }),
     ownerMembershipId: integer("owner_membership_id"),
     name: text("name").notNull(),
     filter: jsonb("filter").$type<Record<string, unknown>>().default({}).notNull(),
@@ -64,7 +63,6 @@ export const supportSavedViews = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
-    index("idx_support_saved_views_org_owner").on(table.orgId, table.ownerId),
     unique("uniq_support_saved_views_org_id").on(table.orgId, table.id),
     index("idx_support_saved_views_org_owner_actor").on(table.orgId, table.ownerMembershipId),
     foreignKey({
@@ -150,7 +148,6 @@ export const supportQueuesRelations = relations(supportQueues, ({ one }) => ({
 
 export const supportSavedViewsRelations = relations(supportSavedViews, ({ one }) => ({
   organization: one(organizations, { fields: [supportSavedViews.orgId], references: [organizations.id] }),
-  owner: one(users, { fields: [supportSavedViews.ownerId], references: [users.id] }),
 }));
 
 export const supportTicketWatchersRelations = relations(supportTicketWatchers, ({ one }) => ({

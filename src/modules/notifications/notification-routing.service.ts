@@ -7,6 +7,7 @@ import {
   notificationProviderAccounts,
   notificationSuppressionRules,
   notificationDeliveries,
+  organizationMembers,
   userPreferences,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -402,9 +403,22 @@ export class NotificationRoutingService {
         .where(and(eq(notificationPreferences.orgId, orgId), inArray(notificationPreferences.userId, userIds))),
       // SCH-003: the normalised replacement for the four JSONB preference blobs.
       this.db
-        .select()
+        .select({ userId: organizationMembers.userId, rule: notificationPreferenceRules })
         .from(notificationPreferenceRules)
-        .where(and(eq(notificationPreferenceRules.orgId, orgId), inArray(notificationPreferenceRules.userId, userIds))),
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.orgId, notificationPreferenceRules.orgId),
+            eq(organizationMembers.id, notificationPreferenceRules.membershipId),
+          ),
+        )
+        .where(
+          and(
+            eq(notificationPreferenceRules.orgId, orgId),
+            eq(organizationMembers.status, "ACTIVE"),
+            inArray(organizationMembers.userId, userIds),
+          ),
+        ),
       // SCH-012: quiet hours resolve from the canonical per-user timezone.
       // notification_preferences.quiet_hours_timezone defaulted 'UTC' while this
       // column defaults 'Asia/Kolkata', so an IST user's 22:00-07:00 window was
@@ -415,11 +429,11 @@ export class NotificationRoutingService {
         .where(inArray(userPreferences.userId, userIds)),
     ]);
     const prefsByUser = new Map(prefRows.map((r) => [r.userId, r]));
-    const rulesByUser = new Map<string, typeof ruleRows>();
-    for (const rule of ruleRows) {
-      const bucket = rulesByUser.get(rule.userId);
-      if (bucket) bucket.push(rule);
-      else rulesByUser.set(rule.userId, [rule]);
+    const rulesByUser = new Map<string, Array<(typeof ruleRows)[number]["rule"]>>();
+    for (const row of ruleRows) {
+      const bucket = rulesByUser.get(row.userId);
+      if (bucket) bucket.push(row.rule);
+      else rulesByUser.set(row.userId, [row.rule]);
     }
     const tzByUser = new Map(tzRows.map((r) => [r.userId, r.timezone]));
     const routingDefinition = channels

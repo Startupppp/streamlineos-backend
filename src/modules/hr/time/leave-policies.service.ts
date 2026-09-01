@@ -47,14 +47,16 @@ export class LeavePoliciesService {
           carryForward: leaveTypes.carryForward,
         })
         .from(leaveTypes)
-        .where(eq(leaveTypes.orgId, orgId)),
+        .where(eq(leaveTypes.orgId, orgId))
+        .limit(100),
       this.db
         .select({
           leaveTypeId: leavePolicies.leaveTypeId,
           accrualType: leavePolicies.accrualType,
         })
         .from(leavePolicies)
-        .where(and(eq(leavePolicies.orgId, orgId), eq(leavePolicies.isActive, true))),
+        .where(and(eq(leavePolicies.orgId, orgId), eq(leavePolicies.isActive, true)))
+        .limit(100),
       this.resolveOrgWfhQuota(orgId),
     ]);
 

@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { eq, and, isNull, desc, or } from "drizzle-orm";
 import { notificationPreferences, notificationPolicyDefaults, notificationAuditLogs, notificationPreferenceRules, notificationSuppressionRules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -120,6 +120,7 @@ export class NotificationPreferencesService {
     dto: UpdatePreferenceInput,
     membershipId?: number | null,
   ): Promise<void> {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
     const writes: Array<{
       scopeType: "EVENT" | "MODULE" | "CATEGORY";
       scopeKey: string;
@@ -168,7 +169,7 @@ export class NotificationPreferencesService {
         .where(
           and(
             eq(notificationPreferenceRules.orgId, orgId),
-            eq(notificationPreferenceRules.userId, userId),
+            eq(notificationPreferenceRules.membershipId, membershipId),
             eq(notificationPreferenceRules.scopeType, w.scopeType),
             eq(notificationPreferenceRules.scopeKey, w.scopeKey),
             eq(notificationPreferenceRules.channel, w.channel),
@@ -182,8 +183,7 @@ export class NotificationPreferencesService {
         .values(
           off.map((w) => ({
             orgId,
-            userId,
-            membershipId: membershipId ?? null,
+            membershipId,
             scopeType: w.scopeType,
             scopeKey: w.scopeKey,
             channel: w.channel,
@@ -194,7 +194,7 @@ export class NotificationPreferencesService {
         .onConflictDoUpdate({
           target: [
             notificationPreferenceRules.orgId,
-            notificationPreferenceRules.userId,
+            notificationPreferenceRules.membershipId,
             notificationPreferenceRules.scopeType,
             notificationPreferenceRules.scopeKey,
             notificationPreferenceRules.channel,

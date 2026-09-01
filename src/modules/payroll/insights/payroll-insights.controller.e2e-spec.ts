@@ -306,14 +306,14 @@ describe("payroll-insights ESS — auth-only routes (e2e)", () => {
       .get("/payroll/me/payslips")
       .set("Authorization", `Bearer ${tokenA}`);
     expect(resA.status).toBe(200);
-    expect(mockEssService.getPayslips).toHaveBeenLastCalledWith(expect.any(String), "userA");
+    expect(mockEssService.getPayslips).toHaveBeenLastCalledWith(expect.any(String), "userA", 1);
 
     mockEssService.getPayslips.mockResolvedValueOnce([{ id: 2, userId: "userB" }]);
     const resB = await request(app.getHttpServer())
       .get("/payroll/me/payslips")
       .set("Authorization", `Bearer ${tokenB}`);
     expect(resB.status).toBe(200);
-    expect(mockEssService.getPayslips).toHaveBeenLastCalledWith(expect.any(String), "userB");
+    expect(mockEssService.getPayslips).toHaveBeenLastCalledWith(expect.any(String), "userB", 1);
   });
 });
 

@@ -27,6 +27,10 @@ import {
   COMMAND_FENCE_STORE,
   InMemoryCommandFenceStore,
 } from "src/common/idempotency/command-fence-store";
+import { PayrollJobsWorkerService } from "src/modules/payroll/jobs/payroll-jobs-worker.service";
+import { PayrollCalendarReminderScheduler } from "src/modules/payroll/insights/payroll-calendar-reminder.scheduler";
+import { NotificationDeliveryWorker } from "src/modules/notifications/notification-delivery-worker.service";
+import { PermissionCatalogSyncService } from "src/modules/rbac/permission-catalog-sync.service";
 
 /**
  * Controller e2e specs assert the guard chain — 401 / 402 / 403 — and every one
@@ -104,9 +108,16 @@ const mfaPolicyStub = {
   invalidateUser: async (): Promise<void> => undefined,
 };
 
+function fixtureModuleAvailable(moduleKey: string): boolean {
+  return (
+    isCoreModuleKey(moduleKey) ||
+    current().enabledModules.includes(moduleKey.toLowerCase())
+  );
+}
+
 const entitlementsStub = {
   isModuleEnabled: async (_orgId: string, moduleKey: string): Promise<boolean> =>
-    current().enabledModules.includes(moduleKey.toLowerCase()),
+    fixtureModuleAvailable(moduleKey),
   getModuleMap: async (): Promise<Record<string, boolean>> =>
     Object.fromEntries(current().enabledModules.map((key) => [key, true])),
   getEffectiveModuleMap: async (): Promise<Record<string, boolean>> =>
@@ -115,7 +126,7 @@ const entitlementsStub = {
   // below are pinned to the identity answer so a module's availability is still
   // decided by the token's `enabledModules` alone, which is what every existing
   // spec was written against.
-  isCoreModule: (): boolean => false,
+  isCoreModule: isCoreModuleKey,
   getPlanLockedModules: async (): Promise<readonly string[]> => [],
 };
 
@@ -128,8 +139,7 @@ export const accessStub = {
   // calendar source registry and PermissionGuard both consume these methods;
   // resolving them from the token preserves the fixture's existing semantics.
   getModuleState: async (_orgId: string, moduleKey: string): Promise<boolean | undefined> => {
-    if (isCoreModuleKey(moduleKey)) return true;
-    return current().enabledModules.includes(moduleKey.toLowerCase()) ? true : undefined;
+    return fixtureModuleAvailable(moduleKey) ? true : undefined;
   },
   scopeFor: async (_user: unknown, permissionKey: string): Promise<DataScope> => {
     const f = current();
@@ -142,7 +152,7 @@ export const accessStub = {
     return f.permissions.includes(permissionKey);
   },
   moduleAvailability: async (_user: unknown, moduleKey: string) => {
-    return current().enabledModules.includes(moduleKey.toLowerCase())
+    return fixtureModuleAvailable(moduleKey)
       ? { available: true as const }
       : { available: false as const, reason: "org-disabled" as const };
   },
@@ -151,7 +161,7 @@ export const accessStub = {
     _userId: string,
     moduleKey: string,
   ) => {
-    return current().enabledModules.includes(moduleKey.toLowerCase())
+    return fixtureModuleAvailable(moduleKey)
       ? { available: true as const }
       : { available: false as const, reason: "org-disabled" as const };
   },
@@ -227,6 +237,12 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
   // every subsequent request regardless of the actual test intent. Disable it
   // here so every e2e suite starts with a clean counter state.
   process.env.ADMISSION_ENABLED = "false";
+  process.env.NOTIFICATIONS_INPROCESS_WORKER = "false";
+  process.env.HR_EXPORT_WORKER_ENABLED = "false";
+  process.env.PAYROLL_EXPORT_WORKER_ENABLED = "false";
+  process.env.EXPENSE_EXPORT_WORKER_ENABLED = "false";
+  process.env.FINANCE_REPORT_EXPORT_WORKER_ENABLED = "false";
+  process.env.GDPR_EXPORT_WORKER_ENABLED = "false";
 
   let builder: TestingModuleBuilder = Test.createTestingModule({ imports: [AppModule] })
     .overrideProvider(MembershipStateService)
@@ -238,7 +254,15 @@ export async function createE2eApp(options: E2eAppOptions = {}): Promise<INestAp
     .overrideProvider(MfaPolicyService)
     .useValue(mfaPolicyStub)
     .overrideProvider(COMMAND_FENCE_STORE)
-    .useValue(new InMemoryCommandFenceStore());
+    .useValue(new InMemoryCommandFenceStore())
+    .overrideProvider(PayrollJobsWorkerService)
+    .useValue({})
+    .overrideProvider(PayrollCalendarReminderScheduler)
+    .useValue({})
+    .overrideProvider(NotificationDeliveryWorker)
+    .useValue({})
+    .overrideProvider(PermissionCatalogSyncService)
+    .useValue({});
 
   for (const override of options.overrides ?? [])
     builder = builder.overrideProvider(override.provide).useValue(override.useValue);

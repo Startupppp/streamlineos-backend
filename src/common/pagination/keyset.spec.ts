@@ -1,8 +1,16 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { BadRequestException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { activities } from "../../db/schema";
-import { keysetAfter, keysetBefore } from "./keyset";
+import {
+  keysetAfter,
+  keysetAfterId,
+  keysetAfterValue,
+  keysetBefore,
+  keysetBeforeId,
+  keysetBeforeValue,
+} from "./keyset";
 
 const dialect = new PgDialect();
 
@@ -49,6 +57,45 @@ describe("keyset comparisons", () => {
 
     expect(query.params[0]).toBe("2026-08-20T09:00:00.000Z");
   });
+});
+
+describe("numeric keyset cursor validation", () => {
+  const invalidIds = ["abc", "0", "-1", "1.5", "Infinity", "9007199254740992"];
+
+  it.each(invalidIds)("rejects invalid numeric id %s before building SQL", (id) => {
+    const timestampPosition = {
+      sortValue: "2026-08-20T09:00:00.000Z",
+      id,
+    };
+    const valuePosition = { sortValue: "alpha", id };
+
+    expect(() =>
+      keysetAfterId(activities.occurredAt, activities.activityId, timestampPosition),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      keysetBeforeId(activities.occurredAt, activities.activityId, timestampPosition),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      keysetAfterValue(activities.activityId, activities.activityId, valuePosition),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      keysetBeforeValue(activities.activityId, activities.activityId, valuePosition),
+    ).toThrow(BadRequestException);
+  });
+
+  it.each(["not-a-date", "2026-99-99", ""])(
+    "rejects invalid timestamp %s before building SQL",
+    (sortValue) => {
+      const position = { sortValue, id: "42" };
+
+      expect(() =>
+        keysetAfterId(activities.occurredAt, activities.activityId, position),
+      ).toThrow(BadRequestException);
+      expect(() =>
+        keysetBeforeId(activities.occurredAt, activities.activityId, position),
+      ).toThrow(BadRequestException);
+    },
+  );
 });
 
 /**

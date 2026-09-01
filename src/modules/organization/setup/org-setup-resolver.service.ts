@@ -85,7 +85,8 @@ export class OrgSetupResolverService {
           eq(organizations.id, organizationMembers.orgId),
         )
         .where(eq(organizationMembers.userId, userId))
-        .orderBy(desc(organizationMembers.joinedAt)),
+        .orderBy(desc(organizationMembers.joinedAt))
+        .limit(100),
     );
   }
 

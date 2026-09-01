@@ -4,6 +4,7 @@ import {
   notificationDigestItems,
   notificationDigestRuns,
   notificationPreferences,
+  organizationMembers,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -55,8 +56,7 @@ export class NotificationDigestService {
    */
   async enqueue(input: {
     orgId: string;
-    userId: string;
-    membershipId?: number | null;
+    membershipId: number;
     channel: NotificationChannel;
     eventKey: string;
     entityType?: string | null;
@@ -72,8 +72,7 @@ export class NotificationDigestService {
       .insert(notificationDigestItems)
       .values({
         orgId: input.orgId,
-        userId: input.userId,
-        membershipId: input.membershipId ?? null,
+        membershipId: input.membershipId,
         channel: input.channel,
         eventKey: input.eventKey,
         entityType: input.entityType ?? null,
@@ -87,7 +86,7 @@ export class NotificationDigestService {
       .onConflictDoUpdate({
         target: [
           notificationDigestItems.orgId,
-          notificationDigestItems.userId,
+          notificationDigestItems.membershipId,
           notificationDigestItems.channel,
           notificationDigestItems.coalesceKey,
         ],
@@ -113,8 +112,15 @@ export class NotificationDigestService {
 
     await forEachOrg(this.db, "notification-digest-flush", async (tx, orgId) => {
       const due = await tx
-        .select()
+        .select({ item: notificationDigestItems, userId: organizationMembers.userId })
         .from(notificationDigestItems)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.orgId, notificationDigestItems.orgId),
+            eq(organizationMembers.id, notificationDigestItems.membershipId),
+          ),
+        )
         .where(
           and(
             eq(notificationDigestItems.orgId, orgId),
@@ -129,16 +135,22 @@ export class NotificationDigestService {
       // text: splitting the key back apart on ":" would corrupt any id containing one.
       const byUser = new Map<
         string,
-        { userId: string; channel: NotificationChannel; items: typeof due }
+        { membershipId: number; userId: string; channel: NotificationChannel; items: Array<(typeof due)[number]["item"]> }
       >();
-      for (const item of due) {
-        const key = `${item.userId}\u0000${item.channel}`;
+      for (const row of due) {
+        const item = row.item;
+        const key = `${item.membershipId}\u0000${item.channel}`;
         const bucket = byUser.get(key);
         if (bucket) bucket.items.push(item);
-        else byUser.set(key, { userId: item.userId, channel: item.channel, items: [item] });
+        else byUser.set(key, {
+          membershipId: item.membershipId,
+          userId: row.userId,
+          channel: item.channel,
+          items: [item],
+        });
       }
 
-      for (const { userId, channel, items } of byUser.values()) {
+      for (const { membershipId, userId, channel, items } of byUser.values()) {
         const first = items[0];
         if (!first) continue;
         // The latest deadline in the batch, not an arbitrary member's: windowEnd is the
@@ -191,7 +203,7 @@ export class NotificationDigestService {
           .where(
             and(
               eq(notificationDigestItems.orgId, orgId),
-              eq(notificationDigestItems.userId, userId),
+              eq(notificationDigestItems.membershipId, membershipId),
               // Scoped to this channel: without it, flushing a user's EMAIL bucket also
               // marks their IN_APP items delivered, and those notifications never arrive.
               eq(notificationDigestItems.channel, channel),

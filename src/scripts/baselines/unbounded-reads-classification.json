@@ -1826,12 +1826,12 @@
       "note": "Active geofence list has an explicit 100-row result cap"
     },
     "/hr/time/leave-policies.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Leave policy summary projections and list reads have a hard 100-row result cap"
     },
     "/hr/time/leave-types.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "BOUNDED",
+      "note": "Organization leave-type configuration has a hard 100-row result cap"
     },
     "/hr/time/leaves-page.service.ts": {
       "verdict": "ACTIONABLE",
@@ -2264,9 +2264,8 @@
       "justification": "0 violations in current scan; all reads are already bounded 2026-09-01"
     },
     "/notifications/notification-preference-rules.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "preference rule reads bounded by orgId+eventType; small config rules per org 2026-09-01"
+      "verdict": "BOUNDED",
+      "note": "Self-scoped preference rules now have a hard 100-row result cap"
     },
     "/notifications/notification-preferences.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -2356,8 +2355,8 @@
       "note": "Member picker enforces MAX_MEMBER_RESULTS=100 on the composed query"
     },
     "/organization/setup/org-setup-resolver.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory â€” other lane owns this module)"
+      "verdict": "BOUNDED",
+      "note": "Setup membership discovery now has a hard 100-row result cap"
     },
     "/ownership/ownership-members.helper.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -2482,8 +2481,8 @@
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/fnf.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane â€” paired service+frontend migration required"
+      "verdict": "BOUNDED",
+      "note": "Tenant-scoped settlement lookup is unique and explicitly limited to one row"
     },
     "/payroll/insights/journal-outbox.service.ts": {
       "verdict": "ACTIONABLE",
@@ -2502,12 +2501,12 @@
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/payroll-ai-explain.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane â€” paired service+frontend migration required"
+      "verdict": "BOUNDED",
+      "note": "Payslip evidence line-item projection now has a hard 100-row result cap"
     },
     "/payroll/insights/payroll-calendar-reminder.scheduler.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane â€” paired service+frontend migration required"
+      "verdict": "BOUNDED",
+      "note": "Per-organization owner recipient lookup now has a hard 100-row result cap"
     },
     "/payroll/insights/period-reconciliation.service.ts": {
       "verdict": "ACTIONABLE",
@@ -2707,9 +2706,8 @@
       "justification": "org settings reads bounded by orgId (single-row config lookup per org) 2026-09-01"
     },
     "/support/core/support-ai.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Reads AI suggestions per ticket (findMany without limit); suggestions per ticket are a small set (typically <10)",
-      "justification": "AI support reads bounded by ticketId (single-ticket AI context assembly) 2026-09-01"
+      "verdict": "BOUNDED",
+      "note": "Ticket-scoped AI suggestions have a hard 100-row result cap"
     },
     "/support/core/support-channels.service.ts": {
       "verdict": "FALSE-POSITIVE",

@@ -46,7 +46,7 @@ describe("SupportDraftsService", () => {
       mockDb.query.supportTicketDrafts.findFirst.mockResolvedValueOnce({
         id: 1,
         ticketId: 1,
-        userId: "user1",
+        userMembershipId: 7,
         body: "unsent reply",
         isInternal: false,
       });
@@ -64,8 +64,8 @@ describe("SupportDraftsService", () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it("upserts the draft via onConflictDoUpdate targeting (ticketId, userId)", async () => {
-      mockDb.returning.mockResolvedValueOnce([{ id: 1, ticketId: 1, userId: "user1", body: "draft text" }]);
+    it("upserts the draft via onConflictDoUpdate targeting (ticketId, membershipId)", async () => {
+      mockDb.returning.mockResolvedValueOnce([{ id: 1, ticketId: 1, userMembershipId: 7, body: "draft text" }]);
 
       const result = await service.upsertDraft("org1", 1, "user1", null, { body: "draft text", isInternal: false } as never);
 

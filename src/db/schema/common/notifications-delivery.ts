@@ -275,8 +275,7 @@ export const notificationPreferenceRules = pgTable(
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     scopeType: text("scope_type").$type<"EVENT" | "MODULE" | "CATEGORY">().notNull(),
     scopeKey: text("scope_key").notNull(),
     channel: notificationChannelEnum("channel").notNull(),
@@ -284,8 +283,8 @@ export const notificationPreferenceRules = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
-    uniqueIndex("uniq_notification_pref_rule").on(t.orgId, t.userId, t.scopeType, t.scopeKey, t.channel),
-    index("idx_notification_pref_rule_lookup").on(t.orgId, t.userId, t.scopeType, t.scopeKey),
+    uniqueIndex("uniq_notification_pref_rule").on(t.orgId, t.membershipId, t.scopeType, t.scopeKey, t.channel),
+    index("idx_notification_pref_rule_lookup").on(t.orgId, t.membershipId, t.scopeType, t.scopeKey),
     index("idx_notification_pref_rules_org_membership").on(t.orgId, t.membershipId),
     uniqueIndex("uniq_notification_preference_rules_org_id").on(t.orgId, t.id),
     foreignKey({
@@ -310,8 +309,7 @@ export const notificationConsents = pgTable(
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     channel: notificationChannelEnum("channel").notNull(),
     destination: text("destination").notNull(),
     state: notificationConsentStateEnum("state").notNull(),
@@ -325,7 +323,7 @@ export const notificationConsents = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
-    uniqueIndex("uniq_notification_consents_current").on(t.orgId, t.userId, t.channel, t.destination),
+    uniqueIndex("uniq_notification_consents_current").on(t.orgId, t.membershipId, t.channel, t.destination),
     index("idx_notification_consents_org_membership").on(t.orgId, t.membershipId),
     uniqueIndex("uniq_notification_consents_org_id").on(t.orgId, t.id),
     foreignKey({
@@ -377,8 +375,7 @@ export const notificationDigestItems = pgTable(
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     channel: notificationChannelEnum("channel").notNull(),
     eventKey: text("event_key").notNull(),
     entityType: text("entity_type"),
@@ -396,7 +393,7 @@ export const notificationDigestItems = pgTable(
   (t) => [
     // Partial: a flushed row must not block the next window opening its own.
     uniqueIndex("uniq_notification_digest_open")
-      .on(t.orgId, t.userId, t.channel, t.coalesceKey)
+      .on(t.orgId, t.membershipId, t.channel, t.coalesceKey)
       .where(sql`flushed_at is null`),
     index("idx_notification_digest_due").on(t.orgId, t.deliverAfter).where(sql`flushed_at is null`),
     index("idx_notification_digest_items_org_membership").on(t.orgId, t.membershipId),
@@ -465,14 +462,12 @@ export const broadcastReadReceipts = pgTable(
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     broadcastId: integer("broadcast_id").references(() => broadcasts.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
-    uniqueIndex("uniq_broadcast_read_receipts_org_user_broadcast").on(t.orgId, t.broadcastId, t.userId),
+    uniqueIndex("uniq_broadcast_read_receipts_org_membership_broadcast").on(t.orgId, t.broadcastId, t.membershipId),
     index("idx_broadcast_read_receipts_admin").on(t.orgId, t.broadcastId),
-    index("idx_broadcast_read_receipts_user").on(t.orgId, t.userId),
     index("idx_broadcast_read_receipts_org_membership").on(t.orgId, t.membershipId),
     foreignKey({
       name: "fk_broadcast_read_receipts_actor",

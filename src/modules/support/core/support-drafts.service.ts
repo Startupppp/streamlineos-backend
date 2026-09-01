@@ -17,7 +17,7 @@ export class SupportDraftsService {
     if (!ticket) throw new NotFoundException("Ticket not found");
   }
 
-  async getDraft(orgId: string, ticketId: number, userId: string, membershipId: number | null) {
+  async getDraft(orgId: string, ticketId: number, _userId: string, membershipId: number | null) {
     await this.assertTicketExists(orgId, ticketId);
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const draft = await this.db.query.supportTicketDrafts.findFirst({
@@ -30,21 +30,21 @@ export class SupportDraftsService {
     return draft ?? null;
   }
 
-  async upsertDraft(orgId: string, ticketId: number, userId: string, membershipId: number | null, input: UpsertDraftInput) {
+  async upsertDraft(orgId: string, ticketId: number, _userId: string, membershipId: number | null, input: UpsertDraftInput) {
     await this.assertTicketExists(orgId, ticketId);
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const [draft] = await this.db
       .insert(supportTicketDrafts)
-      .values({ orgId, ticketId, userId, userMembershipId: membershipId, body: input.body, isInternal: input.isInternal })
+      .values({ orgId, ticketId, userMembershipId: membershipId, body: input.body, isInternal: input.isInternal })
       .onConflictDoUpdate({
-        target: [supportTicketDrafts.ticketId, supportTicketDrafts.userId],
-        set: { body: input.body, isInternal: input.isInternal, userMembershipId: membershipId, updatedAt: new Date() },
+        target: [supportTicketDrafts.ticketId, supportTicketDrafts.userMembershipId],
+        set: { body: input.body, isInternal: input.isInternal, updatedAt: new Date() },
       })
       .returning();
     return draft;
   }
 
-  async deleteDraft(orgId: string, ticketId: number, userId: string, membershipId: number | null) {
+  async deleteDraft(orgId: string, ticketId: number, _userId: string, membershipId: number | null) {
     await this.assertTicketExists(orgId, ticketId);
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     await this.db

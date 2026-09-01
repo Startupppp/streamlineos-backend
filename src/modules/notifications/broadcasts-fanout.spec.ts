@@ -226,12 +226,12 @@ describe("BroadcastsService — C21-02 fan-out-on-read", () => {
       const values = jest.fn().mockReturnValue({ onConflictDoNothing });
       db.insert.mockReturnValue({ values });
 
-      const result = await svc.dismiss(ORG, USER_A, 42);
+      const result = await svc.dismiss(ORG, USER_A, 42, 7);
 
       expect(result).toEqual({ success: true });
       expect(db.insert).toHaveBeenCalledTimes(1);
       expect(values).toHaveBeenCalledWith(
-        expect.objectContaining({ orgId: ORG, broadcastId: 42, userId: USER_A }),
+        expect.objectContaining({ orgId: ORG, broadcastId: 42, membershipId: 7 }),
       );
       expect(onConflictDoNothing).toHaveBeenCalledTimes(1);
     });
@@ -241,8 +241,8 @@ describe("BroadcastsService — C21-02 fan-out-on-read", () => {
       const onConflictDoNothing = jest.fn().mockResolvedValue([]);
       db.insert.mockReturnValue({ values: jest.fn().mockReturnValue({ onConflictDoNothing }) });
 
-      await svc.dismiss(ORG, USER_A, 42);
-      await svc.dismiss(ORG, USER_A, 42);
+      await svc.dismiss(ORG, USER_A, 42, 7);
+      await svc.dismiss(ORG, USER_A, 42, 7);
 
       expect(db.insert).toHaveBeenCalledTimes(2);
       expect(onConflictDoNothing).toHaveBeenCalledTimes(2);

@@ -37,7 +37,6 @@ export const supportMacros = pgTable(
     visibility: text("visibility").default("org").notNull(),
     actions: jsonb("actions").$type<MacroActions>().default({}).notNull(),
     usageCount: integer("usage_count").default(0).notNull(),
-    createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

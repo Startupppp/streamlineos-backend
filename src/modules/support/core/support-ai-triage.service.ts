@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
@@ -227,11 +227,18 @@ export class SupportAiTriageService {
     return this.insertSuggestion(user.orgId, ticketId, "reply", { body: gatewayResult.data.trim(), sources, escalated: confidence < confidenceThreshold }, null);
   }
 
-  async suggestMacro(orgId: string, userId: string, ticketId: number) {
+  async suggestMacro(orgId: string, userId: string, ticketId: number, membershipId?: number | null) {
     if (!(await this.isAvailable(orgId))) return null;
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
     const ticket = await this.getTicketOrThrow(orgId, ticketId);
     const macros = await this.db.query.supportMacros.findMany({
-      where: and(eq(supportMacros.orgId, orgId), or(sql`${supportMacros.visibility} != 'private'`, eq(supportMacros.createdBy, userId))!),
+      where: and(
+        eq(supportMacros.orgId, orgId),
+        or(
+          sql`${supportMacros.visibility} != 'private'`,
+          eq(supportMacros.createdByMembershipId, membershipId),
+        )!,
+      ),
       columns: { id: true, title: true, body: true },
       limit: 100,
     });

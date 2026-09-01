@@ -159,7 +159,8 @@ export class PayrollCalendarReminderScheduler implements OnModuleInit, OnModuleD
               eq(organizationMembers.orgId, orgId),
               eq(organizationMembers.isOwner, true),
             ),
-          );
+          )
+          .limit(100);
 
         const ownerIds = ownerRows.map((r) => r.userId);
         if (ownerIds.length === 0) return;

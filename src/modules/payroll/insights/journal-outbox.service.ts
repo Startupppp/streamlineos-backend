@@ -14,43 +14,22 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { JournalService, type JournalLine } from "./journal.service";
 import { findRunForMonth } from "./lib/report-builders";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
+import {
+  journalBatchLineSelection,
+  journalBatchSummarySelection,
+  toJournalBatchSummary,
+  type JournalBatchDetail,
+  type JournalBatchStatus,
+  type JournalBatchSummary,
+  type JournalReconStatus,
+} from "./journal-batch-read-model";
 
-export type JournalBatchStatus = "DRAFT" | "POSTED" | "EXPORTED" | "REVERSED" | "FAILED";
-export type JournalReconStatus = "UNRECONCILED" | "RECONCILED" | "DISPUTED";
-
-export interface JournalBatchSummary {
-  id: number;
-  periodKey: string;
-  version: number;
-  status: JournalBatchStatus;
-  reconciliationStatus: JournalReconStatus;
-  reversalOfBatchId: number | null;
-  provisional: boolean;
-  totalDebits: string;
-  totalCredits: string;
-  lineCount: number;
-  unmappedCodes: string[];
-  runId: number | null;
-  note: string | null;
-  reversalReason: string | null;
-  reconciliationNote: string | null;
-  postedAt: Date | null;
-  exportedAt: Date | null;
-  reversedAt: Date | null;
-  reconciledAt: Date | null;
-  createdAt: Date;
-}
-
-export interface JournalBatchDetail extends JournalBatchSummary {
-  lines: {
-    lineNo: number;
-    account: string;
-    description: string;
-    debit: string;
-    credit: string;
-    costCenter: string | null;
-  }[];
-}
+export type {
+  JournalBatchDetail,
+  JournalBatchStatus,
+  JournalBatchSummary,
+  JournalReconStatus,
+} from "./journal-batch-read-model";
 
 const money = (n: number): string => (Math.round(n * 100) / 100).toFixed(2);
 
@@ -100,7 +79,7 @@ export class JournalOutboxService {
 
     const [rows, countRows] = await Promise.all([
       this.db
-        .select()
+        .select(journalBatchSummarySelection)
         .from(payrollJournalBatches)
         .where(where)
         .orderBy(desc(payrollJournalBatches.createdAt))
@@ -113,7 +92,7 @@ export class JournalOutboxService {
     ]);
 
     return {
-      data: rows.map((r) => this.toSummary(r)),
+      data: rows.map(toJournalBatchSummary),
       total: countRows[0]?.count ?? 0,
       page,
       limit,
@@ -123,19 +102,12 @@ export class JournalOutboxService {
   async get(orgId: string, batchId: number): Promise<JournalBatchDetail> {
     const batch = await this.requireBatch(orgId, batchId);
     const lines = await this.db
-      .select({
-        lineNo: payrollJournalBatchLines.lineNo,
-        account: payrollJournalBatchLines.account,
-        description: payrollJournalBatchLines.description,
-        debit: payrollJournalBatchLines.debit,
-        credit: payrollJournalBatchLines.credit,
-        costCenter: payrollJournalBatchLines.costCenter,
-      })
+      .select(journalBatchLineSelection)
       .from(payrollJournalBatchLines)
       .where(eq(payrollJournalBatchLines.batchId, batchId))
       .orderBy(payrollJournalBatchLines.lineNo);
 
-    return { ...this.toSummary(batch), lines };
+    return { ...toJournalBatchSummary(batch), lines };
   }
 
   /**
@@ -473,28 +445,4 @@ export class JournalOutboxService {
     return batch;
   }
 
-  private toSummary(row: typeof payrollJournalBatches.$inferSelect): JournalBatchSummary {
-    return {
-      id: row.id,
-      periodKey: row.periodKey,
-      version: row.version,
-      status: row.status,
-      reconciliationStatus: row.reconciliationStatus,
-      reversalOfBatchId: row.reversalOfBatchId,
-      provisional: row.provisional,
-      totalDebits: row.totalDebits,
-      totalCredits: row.totalCredits,
-      lineCount: row.lineCount,
-      unmappedCodes: row.unmappedCodes ?? [],
-      runId: row.runId,
-      note: row.note,
-      reversalReason: row.reversalReason,
-      reconciliationNote: row.reconciliationNote,
-      postedAt: row.postedAt,
-      exportedAt: row.exportedAt,
-      reversedAt: row.reversedAt,
-      reconciledAt: row.reconciledAt,
-      createdAt: row.createdAt,
-    };
-  }
 }

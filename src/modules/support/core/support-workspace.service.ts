@@ -76,7 +76,7 @@ export class SupportWorkspaceService {
     return { success: true };
   }
 
-  async listSavedViews(orgId: string, userId: string, membershipId: number | null) {
+  async listSavedViews(orgId: string, _userId: string, membershipId: number | null) {
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const ownerMatch = eq(supportSavedViews.ownerMembershipId, membershipId);
     return this.db.query.supportSavedViews.findMany({
@@ -86,7 +86,7 @@ export class SupportWorkspaceService {
           ownerMatch,
           eq(supportSavedViews.visibility, "team"),
           eq(supportSavedViews.visibility, "global"),
-          isNull(supportSavedViews.ownerId),
+          isNull(supportSavedViews.ownerMembershipId),
         ),
       ),
       orderBy: [asc(supportSavedViews.sortOrder), asc(supportSavedViews.id)],
@@ -94,13 +94,12 @@ export class SupportWorkspaceService {
     });
   }
 
-  async createSavedView(orgId: string, userId: string, membershipId: number | null, input: CreateSavedViewInput) {
+  async createSavedView(orgId: string, _userId: string, membershipId: number | null, input: CreateSavedViewInput) {
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const [view] = await this.db
       .insert(supportSavedViews)
       .values({
         orgId,
-        ownerId: input.visibility === "personal" ? userId : null,
         ownerMembershipId: input.visibility === "personal" ? membershipId : undefined,
         name: input.name,
         filter: input.filter,
@@ -111,7 +110,7 @@ export class SupportWorkspaceService {
     return view;
   }
 
-  async updateSavedView(orgId: string, userId: string, membershipId: number | null, viewId: number, input: UpdateSavedViewInput) {
+  async updateSavedView(orgId: string, _userId: string, membershipId: number | null, viewId: number, input: UpdateSavedViewInput) {
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const view = await this.db.query.supportSavedViews.findFirst({
       where: and(eq(supportSavedViews.id, viewId), eq(supportSavedViews.orgId, orgId)),
@@ -130,7 +129,7 @@ export class SupportWorkspaceService {
     return updated;
   }
 
-  async deleteSavedView(orgId: string, userId: string, membershipId: number | null, viewId: number) {
+  async deleteSavedView(orgId: string, _userId: string, membershipId: number | null, viewId: number) {
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const view = await this.db.query.supportSavedViews.findFirst({
       where: and(eq(supportSavedViews.id, viewId), eq(supportSavedViews.orgId, orgId)),
