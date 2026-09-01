@@ -26,6 +26,7 @@ import {
 } from "../core/dto/kb.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 
 const spaceIdParams = z.object({ spaceId: z.coerce.number().int().positive() }).strict();
@@ -54,7 +55,7 @@ export class KbSpacesController {
     @Body() body: CreateSpaceInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.spaces.create(u.orgId, u.userId, body);
+    return await this.spaces.create(u.orgId, u.userId, body, actingMembershipId(u.principal) ?? undefined);
   }
 
   @Get(":spaceId")

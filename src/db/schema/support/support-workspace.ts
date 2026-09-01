@@ -11,9 +11,10 @@ import {
   uniqueIndex,
   primaryKey,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { supportTickets } from "./tickets";
 
 export const supportSavedViewVisibilityEnum = pgEnum("support_saved_view_visibility", [
@@ -54,6 +55,7 @@ export const supportSavedViews = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     ownerId: text("owner_id").references(() => users.id, { onDelete: "cascade" }),
+    ownerMembershipId: integer("owner_membership_id"),
     name: text("name").notNull(),
     filter: jsonb("filter").$type<Record<string, unknown>>().default({}).notNull(),
     visibility: supportSavedViewVisibilityEnum("visibility").default("personal").notNull(),
@@ -64,6 +66,12 @@ export const supportSavedViews = pgTable(
   (table) => [
     index("idx_support_saved_views_org_owner").on(table.orgId, table.ownerId),
     unique("uniq_support_saved_views_org_id").on(table.orgId, table.id),
+    index("idx_support_saved_views_org_owner_actor").on(table.orgId, table.ownerMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.ownerMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_support_saved_views_owner_actor",
+    }).onDelete("cascade"),
   ],
 );
 
@@ -74,12 +82,19 @@ export const supportTicketWatchers = pgTable(
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     ticketId: integer("ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    userMembershipId: integer("user_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     uniqueIndex("uniq_support_ticket_watchers_ticket_user").on(table.ticketId, table.userId),
     index("idx_support_ticket_watchers_org_ticket").on(table.orgId, table.ticketId),
     unique("uniq_support_ticket_watchers_org_id").on(table.orgId, table.id),
+    index("idx_support_ticket_watchers_org_user_actor").on(table.orgId, table.userMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_support_ticket_watchers_user_actor",
+    }).onDelete("cascade"),
   ],
 );
 

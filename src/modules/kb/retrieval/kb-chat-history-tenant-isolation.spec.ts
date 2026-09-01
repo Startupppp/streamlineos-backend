@@ -21,6 +21,8 @@ function makeFrom(wheres: unknown[]): object {
 describe("KbChatHistoryService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
+  const MEMBERSHIP_ID = 42;
+  const REVOKED_MEMBERSHIP_ID = 99;
 
   function makeDb(wheres: unknown[]) {
     return {
@@ -34,7 +36,7 @@ describe("KbChatHistoryService — cross-tenant isolation", () => {
     const wheres: unknown[] = [];
     const svc = new KbChatHistoryService(makeDb(wheres));
 
-    await svc.list(ATTACKER, "user-1", { limit: 20 });
+    await svc.list(ATTACKER, "user-1", MEMBERSHIP_ID, { limit: 20 });
 
     expect(wheres.length).toBeGreaterThan(0);
     const vals = wheres.flatMap(w => sqlValues(w));
@@ -46,9 +48,20 @@ describe("KbChatHistoryService — cross-tenant isolation", () => {
     const wheres: unknown[] = [];
     const svc = new KbChatHistoryService(makeDb(wheres));
 
-    const result = await svc.list(OWNER, "user-1", { limit: 20 });
+    const result = await svc.list(OWNER, "user-1", MEMBERSHIP_ID, { limit: 20 });
 
     expect(result).toBeDefined();
     expect(result).toHaveProperty("messages");
+  });
+
+  it("scopes list query to the caller membershipId, not userId (revocation)", async () => {
+    const wheres: unknown[] = [];
+    const svc = new KbChatHistoryService(makeDb(wheres));
+
+    await svc.list(OWNER, "user-1", REVOKED_MEMBERSHIP_ID, { limit: 20 });
+
+    const vals = wheres.flatMap(w => sqlValues(w));
+    expect(vals).toContain(REVOKED_MEMBERSHIP_ID);
+    expect(vals).not.toContain(MEMBERSHIP_ID);
   });
 });

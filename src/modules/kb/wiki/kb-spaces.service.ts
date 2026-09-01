@@ -5,15 +5,23 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
-import { kbSpaces, kbSpaceMembers, kbArticles, kbPages } from "../../../db/schema";
+import {
+  kbSpaces,
+  kbSpaceMembers,
+  kbArticles,
+  kbPages,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbAccessService } from "../core/kb-access.service";
-import { applyScope } from "../../access/apply-scope";
+import { actingMembershipId } from "../../../common/auth/principal";
 import type { DataScope } from "../../access/access.types";
 import { kbSlugify } from "../core/kb.util";
-import type { CreateSpaceInput, UpdateSpaceInput } from "../core/dto/kb.schemas";
+import type {
+  CreateSpaceInput,
+  UpdateSpaceInput,
+} from "../core/dto/kb.schemas";
 
 type SpaceRow = typeof kbSpaces.$inferSelect;
 
@@ -51,10 +59,9 @@ export class KbSpacesService {
       inArray(kbSpaces.id, ids),
       isNull(kbSpaces.deletedAt),
     ];
-    if (scope && scope !== "all") {
-      baseConditions.push(
-        applyScope(scope, user.orgId, user.userId, { ownerColumn: kbSpaces.createdById }),
-      );
+    if (scope === "own" || scope === "team") {
+      const membershipId = actingMembershipId(user.principal) ?? 0;
+      baseConditions.push(eq(kbSpaces.createdByMembershipId, membershipId));
     }
 
     const spaces = await this.db
@@ -90,6 +97,7 @@ export class KbSpacesService {
     orgId: string,
     userId: string,
     input: CreateSpaceInput,
+    membershipId?: number,
   ): Promise<SpaceRow> {
     const slug = kbSlugify(input.name);
     if (!slug) throw new ConflictException("Invalid space name");
@@ -111,12 +119,14 @@ export class KbSpacesService {
           icon: input.icon ?? null,
           isPublicHelpCenter: input.isPublicHelpCenter ?? false,
           createdById: userId,
+          createdByMembershipId: membershipId ?? null,
         })
         .returning();
       await tx.insert(kbSpaceMembers).values({
         orgId,
         spaceId: space.id,
         userId,
+        membershipId: membershipId ?? null,
         spaceRole: "admin",
       });
       return space;
@@ -168,7 +178,8 @@ export class KbSpacesService {
       values.name = input.name;
       values.slug = slug;
     }
-    const aclChanged = input.audience !== undefined || input.isPublicHelpCenter !== undefined;
+    const aclChanged =
+      input.audience !== undefined || input.isPublicHelpCenter !== undefined;
     const [updated] = await this.db
       .update(kbSpaces)
       .set(values)
@@ -184,7 +195,9 @@ export class KbSpacesService {
         this.db
           .update(kbArticles)
           .set({ aclRevision: sql`acl_revision + 1` })
-          .where(and(eq(kbArticles.orgId, orgId), eq(kbArticles.spaceId, spaceId))),
+          .where(
+            and(eq(kbArticles.orgId, orgId), eq(kbArticles.spaceId, spaceId)),
+          ),
       ]);
     }
     await this.access.invalidateAccessibleSpaceIds(orgId);

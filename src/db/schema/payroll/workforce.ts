@@ -5,7 +5,7 @@ import {
   payrollWorkerTypeEnum, payFrequencyEnum, taxRegimeTypeEnum,
   salaryProfileStatusEnum, payrollLoanAdjustmentTypeEnum,
 } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { workers } from "../directory/workers";
 import { salaryLoans } from "./claims-and-settlements";
 import { payrollRuns } from "./runs";
@@ -58,6 +58,7 @@ export const employeeSalaryProfiles = pgTable("employee_salary_profiles", {
   status: salaryProfileStatusEnum("status").default("ACTIVE").notNull(),
   effectiveFrom: date("effective_from").notNull(),
   effectiveTo: date("effective_to"),
+  userMembershipId: integer("user_membership_id"),
   policyVersionId: integer("policy_version_id").references(() => payrollPolicyVersions.id, { onDelete: "set null" }),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -67,6 +68,12 @@ export const employeeSalaryProfiles = pgTable("employee_salary_profiles", {
   index("idx_employee_salary_profiles_org_user_effective").on(table.orgId, table.userId, table.effectiveFrom),
   index("idx_employee_salary_profiles_org_worker").on(table.orgId, table.workerId),
   index("idx_employee_salary_profiles_org_status").on(table.orgId, table.status),
+  index("idx_employee_salary_profiles_org_user_actor").on(table.orgId, table.userMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_employee_salary_profiles_user_actor",
+  }).onDelete("set null"),
   uniqueIndex("uniq_esp_org_user_effective_from").on(table.orgId, table.userId, table.effectiveFrom),
   uniqueIndex("uniq_esp_org_worker_effective_from")
     .on(table.orgId, table.workerId, table.effectiveFrom)

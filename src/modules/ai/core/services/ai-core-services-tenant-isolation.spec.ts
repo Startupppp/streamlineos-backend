@@ -95,7 +95,7 @@ describe("ChatHistoryService — tenant isolation", () => {
     };
 
     const service = new ChatHistoryService(db as never);
-    const result = await service.list(ATTACKER_ORG, "user-1", { limit: 5 });
+    const result = await service.list(ATTACKER_ORG, "user-1", 42, { limit: 5 });
 
     const predicate = whereMock.mock.calls[0]?.[0];
     const values = sqlValues(predicate);
@@ -118,11 +118,30 @@ describe("ChatHistoryService — tenant isolation", () => {
     };
 
     const service = new ChatHistoryService(db as never);
-    const result = await service.list(OWNER_ORG, "user-1", { limit: 5 });
+    const result = await service.list(OWNER_ORG, "user-1", 42, { limit: 5 });
 
     expect(result.messages).toHaveLength(1);
     expect(result.messages[0]).toMatchObject({ id: 1, role: "user", content: "hi" });
     expect(typeof result.messages[0]?.createdAt).toBe("string");
+  });
+
+  it("REVOCATION: list scopes to membershipId, not userId", async () => {
+    const MEMBERSHIP_ID = 42;
+    const whereMock = jest.fn().mockReturnValue({
+      orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+    });
+    const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({ where: whereMock }),
+      }),
+    };
+
+    const service = new ChatHistoryService(db as never);
+    await service.list(OWNER_ORG, "user-1", MEMBERSHIP_ID, { limit: 5 });
+
+    const predicate = whereMock.mock.calls[0]?.[0];
+    const values = sqlValues(predicate);
+    expect(values).toContain(MEMBERSHIP_ID);
   });
 });
 

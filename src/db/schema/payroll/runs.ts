@@ -121,6 +121,7 @@ export const payrollRunEmployees = pgTable("payroll_run_employees", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   runId: integer("run_id").references(() => payrollRuns.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "restrict" }),
+  userMembershipId: integer("user_membership_id"),
   workerId: text("worker_id"),
   profileId: integer("profile_id"),
   workerType: payrollWorkerTypeEnum("worker_type").default("EMPLOYEE").notNull(),
@@ -150,6 +151,12 @@ export const payrollRunEmployees = pgTable("payroll_run_employees", {
     .where(sql`worker_id IS NOT NULL`),
   index("idx_payroll_run_employees_org_run").on(table.orgId, table.runId),
   index("idx_payroll_run_employees_org_worker").on(table.orgId, table.workerId),
+  index("idx_payroll_run_employees_org_user_actor").on(table.orgId, table.userMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_payroll_run_employees_user_actor",
+  }).onDelete("set null"),
   check(
     "chk_payroll_run_employees_subject",
     sql`user_id IS NOT NULL OR worker_id IS NOT NULL`,

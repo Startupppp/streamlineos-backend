@@ -58,7 +58,8 @@ export class ChatPresenceService {
       .from(chatUserPresence)
       .innerJoin(organizationMembers, eq(organizationMembers.id, chatUserPresence.membershipId))
       .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(and(eq(chatUserPresence.orgId, orgId), gt(chatUserPresence.lastSeenAt, cutoff)));
+      .where(and(eq(chatUserPresence.orgId, orgId), gt(chatUserPresence.lastSeenAt, cutoff)))
+      .limit(500);
   }
 
   async setStatus(userId: string, orgId: string, body: StatusInput) {
@@ -143,6 +144,7 @@ export class ChatPresenceService {
       .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
       .where(
         and(eq(users.isActive, true), eq(organizationMembers.orgId, orgId)),
-      );
+      )
+      .limit(500);
   }
 }

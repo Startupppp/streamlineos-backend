@@ -13,6 +13,9 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
 describe("AffiliateService — cross-tenant isolation", () => {
   const USER_A = "user-a";
   const USER_B = "user-b";
+  const ORG_A = "org-a";
+  const MEMBERSHIP_A = 42;
+  const MEMBERSHIP_B = 99;
 
   function makeDb(affiliateRow: unknown, commissions: unknown[] = []): { db: Db; where: jest.Mock } {
     const where = jest.fn().mockResolvedValue(affiliateRow ? [affiliateRow] : []);
@@ -29,18 +32,29 @@ describe("AffiliateService — cross-tenant isolation", () => {
     return { db, where };
   }
 
-  it("returns null dashboard for a user with no affiliate record (isolation — no cross-user affiliate data)", async () => {
+  it("returns null dashboard when membershipId does not match (isolation)", async () => {
     const { db } = makeDb(null);
     const svc = new AffiliateService(db);
-    const result = await svc.getDashboard(USER_B);
+    const result = await svc.getDashboard(USER_B, ORG_A, MEMBERSHIP_B);
     expect(result).toBeNull();
   });
 
-  it("returns dashboard for the affiliated user (control — correct user)", async () => {
-    const affiliateRow = { id: 1, userId: USER_A, orgId: "org-1", referralCode: "CODE1", status: "ACTIVE" };
+  it("returns dashboard for the affiliated user (control)", async () => {
+    const affiliateRow = { id: 1, userId: USER_A, orgId: ORG_A, referralCode: "CODE1", status: "ACTIVE" };
     const { db } = makeDb(affiliateRow, [{ id: 1, amount: 100 }]);
     const svc = new AffiliateService(db);
-    const result = await svc.getDashboard(USER_A);
+    const result = await svc.getDashboard(USER_A, ORG_A, MEMBERSHIP_A);
     expect(result).toHaveProperty("affiliate");
+  });
+
+  it("REVOCATION: getDashboard scopes to membershipId, not userId", async () => {
+    const { db, where } = makeDb(null);
+    const svc = new AffiliateService(db);
+    await svc.getDashboard(USER_A, ORG_A, MEMBERSHIP_A);
+
+    const predicate = where.mock.calls[0]?.[0];
+    const values = sqlValues(predicate);
+    expect(values).toContain(MEMBERSHIP_A);
+    expect(values).toContain(ORG_A);
   });
 });

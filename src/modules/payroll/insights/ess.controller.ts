@@ -4,6 +4,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { EssService } from "./ess.service";
 import { EssSelfServiceService } from "./ess-self-service.service";
@@ -32,26 +33,26 @@ export class EssController {
   @Get("overview")
   @RequirePermission("self:payroll")
   getOverview(@CurrentUser() u: CurrentUserContext) {
-    return this.essService.getOverview(u.orgId, u.userId);
+    return this.essService.getOverview(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   @Get("payslips")
   @RequirePermission("self:payslips")
   getPayslips(@CurrentUser() u: CurrentUserContext) {
-    return this.essService.getPayslips(u.orgId, u.userId);
+    return this.essService.getPayslips(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   @Get("salary-structure")
   @RequirePermission("self:payroll")
   getSalaryStructure(@CurrentUser() u: CurrentUserContext) {
-    return this.essService.getSalaryStructure(u.orgId, u.userId);
+    return this.essService.getSalaryStructure(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   @Get("reimbursements")
   @RequirePermission("self:payroll")
   @Validate({ query: listPageQuerySchema })
   listReimbursements(@CurrentUser() u: CurrentUserContext, @Query() query: ListPageQueryInput) {
-    return this.essSelfService.listReimbursements(u.orgId, u.userId, query.page, query.limit);
+    return this.essSelfService.listReimbursements(u.orgId, u.userId, actingMembershipId(u.principal), query.page, query.limit);
   }
 
   @Post("reimbursements")
@@ -62,13 +63,13 @@ export class EssController {
     @CurrentUser() u: CurrentUserContext,
     @Body() body: EssCreateReimbursement,
   ) {
-    return this.essSelfService.createReimbursement(u.orgId, u.userId, body);
+    return this.essSelfService.createReimbursement(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Get("loans")
   @RequirePermission("self:payroll")
   listLoans(@CurrentUser() u: CurrentUserContext) {
-    return this.essSelfService.listLoans(u.orgId, u.userId);
+    return this.essSelfService.listLoans(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   @Post("loans")
@@ -79,7 +80,7 @@ export class EssController {
     @CurrentUser() u: CurrentUserContext,
     @Body() body: EssCreateLoan,
   ) {
-    return this.essSelfService.createLoan(u.orgId, u.userId, body);
+    return this.essSelfService.createLoan(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Get("tax-declaration")
@@ -129,13 +130,13 @@ export class EssController {
   @Get("fnf")
   @RequirePermission("self:payroll")
   getOwnFnf(@CurrentUser() u: CurrentUserContext) {
-    return this.essService.getOwnFnf(u.orgId, u.userId);
+    return this.essService.getOwnFnf(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   /** Illustrative total rewards (salary + benefits + equity units + leave). */
   @Get("total-rewards")
   @RequirePermission("self:payroll")
   getTotalRewards(@CurrentUser() u: CurrentUserContext) {
-    return this.essService.getTotalRewards(u.orgId, u.userId);
+    return this.essService.getTotalRewards(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 }

@@ -3711,6 +3711,139 @@
       "when": 1798000155000,
       "tag": "0844_email_outbox_recipient_user_id",
       "breakpoints": true
+    },
+    {
+      "idx": 657,
+      "version": "7",
+      "when": 1798000201000,
+      "tag": "0845_hr_leave_requests_user_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 658,
+      "version": "7",
+      "when": 1798000202000,
+      "tag": "0846_hr_wfh_requests_user_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 659,
+      "version": "7",
+      "when": 1798000203000,
+      "tag": "0847_hr_attendance_regularizations_user_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 660,
+      "version": "7",
+      "when": 1798000204000,
+      "tag": "0848_hr_documents_user_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 661,
+      "version": "7",
+      "when": 1798000205000,
+      "tag": "0849_hr_cases_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 662,
+      "version": "7",
+      "when": 1798000206000,
+      "tag": "0850_hr_resignations_user_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 663,
+      "version": "7",
+      "when": 1798000207000,
+      "tag": "0851_hr_actor_migrations_batch1_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 673,
+      "version": "7",
+      "when": 1798500000000,
+      "tag": "0852_kb_chat_research_briefs_spaces_membership",
+      "breakpoints": true
+    },
+    {
+      "idx": 674,
+      "version": "7",
+      "when": 1798500001000,
+      "tag": "0853_accounting_billing_membership",
+      "breakpoints": true
+    },
+    {
+      "idx": 675,
+      "version": "7",
+      "when": 1798500002000,
+      "tag": "0854_a4_membership_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 664,
+      "version": "7",
+      "when": 1801000000000,
+      "tag": "0860_pay_claims_user_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 665,
+      "version": "7",
+      "when": 1801001000000,
+      "tag": "0861_pay_expenses_user_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 666,
+      "version": "7",
+      "when": 1801002000000,
+      "tag": "0862_pay_run_employee_inputs_user_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 667,
+      "version": "7",
+      "when": 1801003000000,
+      "tag": "0863_pay_profiles_payslips_user_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 668,
+      "version": "7",
+      "when": 1801004000000,
+      "tag": "0864_pay_hr_input_asset_user_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 669,
+      "version": "7",
+      "when": 1801005000000,
+      "tag": "0865_support_actor_expand",
+      "breakpoints": true
+    },
+    {
+      "idx": 670,
+      "version": "7",
+      "when": 1801006000000,
+      "tag": "0866_pay_support_actor_validate",
+      "breakpoints": true
+    },
+    {
+      "idx": 671,
+      "version": "7",
+      "when": 1802000000001,
+      "tag": "0900_build_actor_membership_ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 672,
+      "version": "7",
+      "when": 1802000000002,
+      "tag": "0901_common_actor_membership_ids",
+      "breakpoints": true
     }
   ]
 }

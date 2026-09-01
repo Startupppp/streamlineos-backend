@@ -1,4 +1,4 @@
-import { boolean, date, decimal, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { boolean, date, decimal, foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
 import { ledgerAccounts } from "./accounting";
@@ -137,12 +137,15 @@ export const finApprovalPolicies = pgTable("fin_approval_policies", {
   minAmount: decimal("min_amount", { precision: 18, scale: 4 }),
   approverRole: text("approver_role"),
   approverUserId: text("approver_user_id").references(() => users.id),
+  approverMembershipId: integer("approver_membership_id"),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_fin_approval_policies_org_id").on(table.orgId, table.id),
   index("idx_fin_approval_policies_org_type").on(table.orgId, table.recordType),
+  index("idx_fin_approval_policies_org_mbr").on(table.orgId, table.approverMembershipId),
+  foreignKey({ columns: [table.orgId, table.approverMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_fin_approval_policies_org_mbr" }).onDelete("set null"),
 ]);
 
 export const finApprovalRequests = pgTable("fin_approval_requests", {
@@ -215,6 +218,7 @@ export const finExchangeRatesRelations = relations(finExchangeRates, ({ one }) =
 export const finApprovalPoliciesRelations = relations(finApprovalPolicies, ({ one }) => ({
   organization: one(organizations, { fields: [finApprovalPolicies.orgId], references: [organizations.id] }),
   approverUser: one(users, { fields: [finApprovalPolicies.approverUserId], references: [users.id] }),
+  approverMember: one(organizationMembers, { fields: [finApprovalPolicies.orgId, finApprovalPolicies.approverMembershipId], references: [organizationMembers.orgId, organizationMembers.id] }),
 }));
 
 export const finApprovalRequestsRelations = relations(finApprovalRequests, ({ one }) => ({

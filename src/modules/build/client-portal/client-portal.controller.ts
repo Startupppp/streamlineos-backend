@@ -17,6 +17,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ClientPortalService } from "./client-portal.service";
 import { createPortalCrSchema, type CreatePortalCrInput } from "./dto/client-portal.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
@@ -30,7 +31,7 @@ export class ClientPortalController {
   @Get("projects")
   @RequirePermission("build:portal:view")
   listPortalProjects(@CurrentUser() u: CurrentUserContext) {
-    return this.svc.listPortalProjects(u.orgId, u.userId);
+    return this.svc.listPortalProjects(u.orgId, actingMembershipId(u.principal), u.userId);
   }
 
   @Get("projects/:projectId/overview")
@@ -40,7 +41,7 @@ export class ClientPortalController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getProjectOverview(u.orgId, u.userId, projectId);
+    return this.svc.getProjectOverview(u.orgId, actingMembershipId(u.principal), u.userId, projectId);
   }
 
   @Get("projects/:projectId/change-requests")
@@ -50,7 +51,7 @@ export class ClientPortalController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listPortalChangeRequests(u.orgId, u.userId, projectId);
+    return this.svc.listPortalChangeRequests(u.orgId, actingMembershipId(u.principal), u.userId, projectId);
   }
 
   @Post("projects/:projectId/change-requests")
@@ -62,6 +63,6 @@ export class ClientPortalController {
     @Body() body: CreatePortalCrInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createPortalChangeRequest(u.orgId, u.userId, projectId, body);
+    return this.svc.createPortalChangeRequest(u.orgId, actingMembershipId(u.principal), u.userId, projectId, body);
   }
 }

@@ -8,7 +8,7 @@ describe("FnfInsightsService.list — pagination cap forwarded to fnfService", (
       {} as never,
     );
     await svc.list("org-1", "u1", true, 1, 200);
-    expect(listFnf.mock.calls[0]?.[4]).toBeLessThanOrEqual(100);
+    expect(listFnf.mock.calls[0]?.[5]).toBeLessThanOrEqual(100);
   });
 
   it("passes page and capped limit to fnfService.listFnf", async () => {
@@ -18,7 +18,7 @@ describe("FnfInsightsService.list — pagination cap forwarded to fnfService", (
       {} as never,
     );
     await svc.list("org-1", "u1", false, 2, 30);
-    expect(listFnf.mock.calls[0]?.[3]).toBe(2);
-    expect(listFnf.mock.calls[0]?.[4]).toBe(30);
+    expect(listFnf.mock.calls[0]?.[4]).toBe(2);
+    expect(listFnf.mock.calls[0]?.[5]).toBe(30);
   });
 });

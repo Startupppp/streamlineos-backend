@@ -57,6 +57,7 @@ import {
 import { ToolAccessService } from "../tool-access.service";
 import { AI_EVENT_TIMEZONE } from "../ai-event-timezone";
 import { Validate } from "../../../../common/validation/validate.decorator";
+import { actingMembershipId } from "../../../../common/auth/principal";
 
 const conversationIdParams = z.object({ conversationId: z.string().min(1) }).strict();
 
@@ -121,7 +122,7 @@ export class ChatAssistantController {
   async getHistory(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = chatHistoryQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException("Invalid query parameters");
-    return this.history.list(u.orgId, u.userId, {
+    return this.history.list(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, {
       cursor: parsed.data.cursor,
       limit: parsed.data.limit,
     });
@@ -130,7 +131,7 @@ export class ChatAssistantController {
   @Delete("history")
   @RequirePermission("ai:chat:use")
   async clearHistory(@CurrentUser() u: CurrentUserContext): Promise<{ success: boolean }> {
-    await this.history.clear(u.orgId, u.userId);
+    await this.history.clear(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0);
     return { success: true };
   }
 
@@ -139,7 +140,7 @@ export class ChatAssistantController {
   async listConversations(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = conversationsListQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException("Invalid query parameters");
-    return this.history.listConversations(u.orgId, u.userId, {
+    return this.history.listConversations(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, {
       cursor: parsed.data.cursor,
       limit: parsed.data.limit,
     });
@@ -152,7 +153,7 @@ export class ChatAssistantController {
   async createConversation(@Body() body: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = conversationCreateSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.history.createConversation(u.orgId, u.userId, parsed.data.title);
+    return this.history.createConversation(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, parsed.data.title);
   }
 
   @Patch("conversations/:conversationId")
@@ -167,7 +168,7 @@ export class ChatAssistantController {
     if (isNaN(conversationId)) throw new BadRequestException("Invalid conversation ID");
     const parsed = conversationRenameSchema.safeParse(body);
     if (!parsed.success) throw new BadRequestException("Invalid request body");
-    return this.history.renameConversation(u.orgId, u.userId, conversationId, parsed.data.title);
+    return this.history.renameConversation(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, conversationId, parsed.data.title);
   }
 
   @Delete("conversations/:conversationId")
@@ -179,7 +180,7 @@ export class ChatAssistantController {
   ): Promise<{ success: boolean }> {
     const conversationId = parseInt(conversationIdParam, 10);
     if (isNaN(conversationId)) throw new BadRequestException("Invalid conversation ID");
-    await this.history.deleteConversation(u.orgId, u.userId, conversationId);
+    await this.history.deleteConversation(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, conversationId);
     return { success: true };
   }
 
@@ -195,7 +196,7 @@ export class ChatAssistantController {
     if (isNaN(conversationId)) throw new BadRequestException("Invalid conversation ID");
     const parsed = conversationMessagesQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException("Invalid query parameters");
-    return this.history.listMessages(u.orgId, u.userId, conversationId, {
+    return this.history.listMessages(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, conversationId, {
       cursor: parsed.data.cursor,
       limit: parsed.data.limit,
     });

@@ -14,7 +14,8 @@ export class WorkflowsSchedulesService {
       .select()
       .from(workflowSchedules)
       .where(eq(workflowSchedules.orgId, orgId))
-      .orderBy(desc(workflowSchedules.createdAt));
+      .orderBy(desc(workflowSchedules.createdAt))
+      .limit(200);
   }
 
   async listSchedules(orgId: string, workflowId: string) {
@@ -32,7 +33,8 @@ export class WorkflowsSchedulesService {
           eq(workflowSchedules.workflowId, workflowId),
           eq(workflowSchedules.orgId, orgId),
         ),
-      );
+      )
+      .limit(100);
   }
 
   async createSchedule(orgId: string, workflowId: string, dto: CreateScheduleDto) {

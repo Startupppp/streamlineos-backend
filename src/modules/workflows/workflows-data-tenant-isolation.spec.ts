@@ -24,7 +24,8 @@ describe("WorkflowsSchedulesService — cross-tenant isolation", () => {
     it("returns schedules for the owning org (control — same-tenant access works)", async () => {
       const scheduleRow = { id: SCHEDULE_ID, orgId: OWNER_ORG, workflowId: WORKFLOW_ID };
       const findFirst = jest.fn().mockResolvedValue({ id: WORKFLOW_ID });
-      const where = jest.fn().mockResolvedValue([scheduleRow]);
+      const limit = jest.fn().mockResolvedValue([scheduleRow]);
+      const where = jest.fn().mockReturnValue({ limit });
       const from = jest.fn().mockReturnValue({ where });
       const db = {
         query: { workflows: { findFirst } },
@@ -102,7 +103,8 @@ describe("WorkflowsSecretsService — cross-tenant isolation and secret redactio
         updatedAt: new Date(),
       };
       const findFirst = jest.fn().mockResolvedValue({ id: WORKFLOW_ID });
-      const where = jest.fn().mockResolvedValue([secretRow]);
+      const limit = jest.fn().mockResolvedValue([secretRow]);
+      const where = jest.fn().mockReturnValue({ limit });
       const from = jest.fn().mockReturnValue({ where });
       const db = {
         query: { workflows: { findFirst } },
@@ -152,7 +154,8 @@ describe("WorkflowsSecretsService — cross-tenant isolation and secret redactio
         createdAt: new Date(),
         updatedAt: new Date(),
       };
-      const orderBy = jest.fn().mockResolvedValue([secretRow]);
+      const limit = jest.fn().mockResolvedValue([secretRow]);
+      const orderBy = jest.fn().mockReturnValue({ limit });
       const where = jest.fn().mockReturnValue({ orderBy });
       const from = jest.fn().mockReturnValue({ where });
       const db = {
@@ -225,7 +228,8 @@ describe("WorkflowsVariablesService — cross-tenant isolation", () => {
 
   describe("listGlobalVariables", () => {
     it("scopes results to the requesting org — never returns another org's variables", async () => {
-      const orderBy = jest.fn().mockResolvedValue([]);
+      const limit = jest.fn().mockResolvedValue([]);
+      const orderBy = jest.fn().mockReturnValue({ limit });
       const where = jest.fn().mockReturnValue({ orderBy });
       const innerJoin2 = jest.fn().mockReturnValue({ where });
       const innerJoin1 = jest.fn().mockReturnValue({ innerJoin: innerJoin2 });

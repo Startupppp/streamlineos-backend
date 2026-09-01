@@ -9,6 +9,7 @@ import { withTenantScopedTools } from "../tenant-scoped-tools";
 import { type Db } from "../../../../db/drizzle.module";
 import { logger } from "../../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../../common/auth/principal";
 import {
   AI_CREDIT_LEDGER,
   type AiCreditLedger,
@@ -72,6 +73,7 @@ export class ChatAssistantService {
     persona?: string,
   ) {
     const { userId, orgId } = actor;
+    const membershipId = actingMembershipId(actor.principal) ?? 0;
 
     const reserveMilli = getReserveEstimateMilli(CHAT_FEATURE);
     const reserved = await this.ledger.reserve({
@@ -95,12 +97,13 @@ export class ChatAssistantService {
         await this.history.appendToConversation(
           orgId,
           userId,
+          membershipId,
           conversationId,
           "user",
           latest.content,
         );
       } else {
-        await this.history.append(orgId, userId, "user", latest.content);
+        await this.history.append(orgId, userId, membershipId, "user", latest.content);
       }
     }
 
@@ -166,12 +169,13 @@ export class ChatAssistantService {
                 await this.history.appendToConversation(
                   orgId,
                   userId,
+                  membershipId,
                   conversationId,
                   "assistant",
                   text,
                 );
               } else {
-                await this.history.append(orgId, userId, "assistant", text);
+                await this.history.append(orgId, userId, membershipId, "assistant", text);
               }
             });
           } catch (error) {

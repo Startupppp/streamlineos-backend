@@ -18,7 +18,7 @@ describe("ClientPortalService — client isolation (assertClientProject)", () =>
     } as unknown as Db;
 
     const svc = new ClientPortalService(mockDb, mockAudit);
-    await expect(svc.listPortalChangeRequests("org-1", "not-the-client", 1)).rejects.toThrow(
+    await expect(svc.listPortalChangeRequests("org-1", null, "not-the-client", 1)).rejects.toThrow(
       NotFoundException,
     );
     expect((mockDb.query.projects.findFirst as jest.Mock)).toHaveBeenCalledTimes(1);
@@ -33,7 +33,7 @@ describe("ClientPortalService — client isolation (assertClientProject)", () =>
 
     const svc = new ClientPortalService(mockDb, mockAudit);
     await expect(
-      svc.createPortalChangeRequest("org-1", "not-the-client", 1, { title: "Add OAuth" }),
+      svc.createPortalChangeRequest("org-1", null, "not-the-client", 1, { title: "Add OAuth" }),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -53,7 +53,7 @@ describe("ClientPortalService — client isolation (assertClientProject)", () =>
     } as unknown as Db;
 
     const svc = new ClientPortalService(mockDb, mockAudit);
-    const result = await svc.listPortalChangeRequests("org-1", "client-user", 1);
+    const result = await svc.listPortalChangeRequests("org-1", null, "client-user", 1);
     expect(Array.isArray(result)).toBe(true);
   });
 });
@@ -70,7 +70,7 @@ describe("ClientPortalService.getProjectOverview — client isolation + field sa
     } as unknown as Db;
 
     const svc = new ClientPortalService(mockDb, mockAudit);
-    await expect(svc.getProjectOverview("org-1", "wrong-client", 1)).rejects.toThrow(NotFoundException);
+    await expect(svc.getProjectOverview("org-1", null, "wrong-client", 1)).rejects.toThrow(NotFoundException);
   });
 
   it("SELECT projection does not include budget or internal fields", async () => {
@@ -83,7 +83,7 @@ describe("ClientPortalService.getProjectOverview — client isolation + field sa
     const mockDb = { select: selectMock } as unknown as Db;
 
     const svc = new ClientPortalService(mockDb, mockAudit);
-    await expect(svc.getProjectOverview("org-1", "client-1", 1)).rejects.toThrow(NotFoundException);
+    await expect(svc.getProjectOverview("org-1", null, "client-1", 1)).rejects.toThrow(NotFoundException);
 
     expect(selectMock).toHaveBeenCalled();
     const projection = (selectMock.mock.calls[0] as [Record<string, unknown>])[0];
@@ -124,7 +124,7 @@ describe("ClientPortalService.getProjectOverview — client isolation + field sa
     const mockDb = { select: selectMock } as unknown as Db;
 
     const svc = new ClientPortalService(mockDb, mockAudit);
-    const result = await svc.getProjectOverview("org-1", "client-user", 1);
+    const result = await svc.getProjectOverview("org-1", null, "client-user", 1);
 
     expect(result).toMatchObject({
       project: { id: 1, name: "Portal Project", key: "PP" },
@@ -150,7 +150,7 @@ describe("ClientPortalService.listPortalProjects — SELECT field safety", () =>
     const mockDb = { select: selectMock } as unknown as Db;
 
     const svc = new ClientPortalService(mockDb, mockAudit);
-    await svc.listPortalProjects("org-1", "client-1");
+    await svc.listPortalProjects("org-1", null, "client-1");
 
     expect(selectMock).toHaveBeenCalledTimes(1);
     const projection = (selectMock.mock.calls[0] as [Record<string, unknown>])[0];

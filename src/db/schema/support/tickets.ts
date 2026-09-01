@@ -1,7 +1,7 @@
-import { pgTable, text, serial, timestamp, boolean, integer, index, unique, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, integer, index, unique, foreignKey, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { supportTicketStatusEnum, supportTicketPriorityEnum } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { clients } from "../crm/contacts";
 
 export const supportTickets = pgTable("support_tickets", {
@@ -9,6 +9,7 @@ export const supportTickets = pgTable("support_tickets", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   clientId: integer("client_id").references(() => clients.id),
   assigneeId: text("assignee_id").references(() => users.id),
+  assigneeMembershipId: integer("assignee_membership_id"),
   title: text("title").notNull(),
   category: text("category"),
   description: text("description"),
@@ -29,15 +30,26 @@ export const supportTickets = pgTable("support_tickets", {
   snoozedUntil: timestamp("snoozed_until"),
   snoozedBy: text("snoozed_by").references(() => users.id),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   sourceChannel: text("source_channel").default("web").notNull(),
   sourceMessageId: text("source_message_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   index("idx_support_tickets_org_status").on(table.orgId, table.status),
-  // org_id leads so the RLS policy (org_id = current_org_id()) is satisfied by the index
-  // and the planner can use it for assignee lookups without a heap fetch.
   index("idx_support_tickets_org_assignee").on(table.orgId, table.assigneeId, table.createdAt),
+  index("idx_support_tickets_org_assignee_actor").on(table.orgId, table.assigneeMembershipId, table.createdAt),
+  index("idx_support_tickets_org_created_actor").on(table.orgId, table.createdByMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.assigneeMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_support_tickets_assignee_actor",
+  }).onDelete("set null"),
+  foreignKey({
+    columns: [table.orgId, table.createdByMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_support_tickets_created_actor",
+  }).onDelete("set null"),
   // Queue view: filter by org + queue + open statuses, order by priority then SLA deadline.
   index("idx_support_tickets_org_queue_status_priority").on(table.orgId, table.queueId, table.status, table.priority, table.createdAt),
   index("idx_support_tickets_client").on(table.clientId),

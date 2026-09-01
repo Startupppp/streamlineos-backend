@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { eq, and, isNull, desc } from "drizzle-orm";
+import { eq, and, isNull, desc, or } from "drizzle-orm";
 import { notificationPreferences, notificationPolicyDefaults, notificationAuditLogs, notificationPreferenceRules, notificationSuppressionRules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -38,16 +38,25 @@ export class NotificationPreferencesService {
     private readonly registry: NotificationEventRegistryService,
   ) {}
 
-  async get(orgId: string, userId: string) {
+  private memberPredicate(userId: string, membershipId: number | null | undefined) {
+    if (membershipId != null)
+      return or(
+        eq(notificationPreferences.membershipId, membershipId),
+        and(isNull(notificationPreferences.membershipId), eq(notificationPreferences.userId, userId)),
+      );
+    return eq(notificationPreferences.userId, userId);
+  }
+
+  async get(orgId: string, userId: string, membershipId?: number | null) {
     const existing = await this.db.query.notificationPreferences.findFirst({
-      where: and(eq(notificationPreferences.userId, userId), eq(notificationPreferences.orgId, orgId)),
+      where: and(eq(notificationPreferences.orgId, orgId), this.memberPredicate(userId, membershipId)),
     });
     return existing ?? { ...DEFAULT_PREFERENCES, userId, orgId };
   }
 
-  async getEffective(orgId: string, userId: string) {
+  async getEffective(orgId: string, userId: string, membershipId?: number | null) {
     const [prefs, orgPolicy] = await Promise.all([
-      this.get(orgId, userId),
+      this.get(orgId, userId, membershipId),
       this.db.query.notificationPolicyDefaults.findFirst({
         where: and(eq(notificationPolicyDefaults.orgId, orgId), eq(notificationPolicyDefaults.scopeType, "ORG"), isNull(notificationPolicyDefaults.scopeId)),
       }),
@@ -70,10 +79,10 @@ export class NotificationPreferencesService {
     });
   }
 
-  async update(orgId: string, userId: string, dto: UpdatePreferenceInput) {
+  async update(orgId: string, userId: string, dto: UpdatePreferenceInput, membershipId?: number | null) {
     const provided = <K extends keyof UpdatePreferenceInput>(key: K) => dto[key] !== undefined;
 
-    const insertValues = { ...DEFAULT_PREFERENCES, userId, orgId, updatedBy: userId, ...dto };
+    const insertValues = { ...DEFAULT_PREFERENCES, userId, orgId, membershipId: membershipId ?? null, updatedBy: userId, ...dto };
     const updateSet: Record<string, unknown> = { updatedAt: new Date(), updatedBy: userId };
     for (const key of Object.keys(dto) as Array<keyof UpdatePreferenceInput>) {
       if (provided(key)) updateSet[key] = dto[key];
@@ -89,7 +98,7 @@ export class NotificationPreferencesService {
     // `notification_preference_rules` ONLY — the JSONB columns below are no longer read.
     // Without this projection the preference centre would still write, still show the
     // toggle as saved, and change nothing about what actually gets sent.
-    await this.projectToRules(orgId, userId, dto);
+    await this.projectToRules(orgId, userId, dto, membershipId);
 
     await this.audit(orgId, userId, "preference.updated", { fields: Object.keys(dto) });
     return result;
@@ -109,6 +118,7 @@ export class NotificationPreferencesService {
     orgId: string,
     userId: string,
     dto: UpdatePreferenceInput,
+    membershipId?: number | null,
   ): Promise<void> {
     const writes: Array<{
       scopeType: "EVENT" | "MODULE" | "CATEGORY";
@@ -173,6 +183,7 @@ export class NotificationPreferencesService {
           off.map((w) => ({
             orgId,
             userId,
+            membershipId: membershipId ?? null,
             scopeType: w.scopeType,
             scopeKey: w.scopeKey,
             channel: w.channel,
@@ -213,19 +224,19 @@ export class NotificationPreferencesService {
       }));
   }
 
-  async updateEventPreference(orgId: string, userId: string, eventKey: string, pref: EventPreferenceInput) {
+  async updateEventPreference(orgId: string, userId: string, eventKey: string, pref: EventPreferenceInput, membershipId?: number | null) {
     this.registry.assertKnown(eventKey);
-    const current = await this.get(orgId, userId);
+    const current = await this.get(orgId, userId, membershipId);
     const eventPrefs: EventPrefMap = { ...((current.eventPreferences as EventPrefMap) ?? {}) };
     eventPrefs[eventKey] = { ...eventPrefs[eventKey], ...pref };
-    const result = await this.update(orgId, userId, { eventPreferences: eventPrefs });
+    const result = await this.update(orgId, userId, { eventPreferences: eventPrefs }, membershipId);
     return result;
   }
 
-  async reset(orgId: string, userId: string) {
+  async reset(orgId: string, userId: string, membershipId?: number | null) {
     await this.db
       .delete(notificationPreferences)
-      .where(and(eq(notificationPreferences.userId, userId), eq(notificationPreferences.orgId, orgId)));
+      .where(and(eq(notificationPreferences.orgId, orgId), this.memberPredicate(userId, membershipId)));
     await this.audit(orgId, userId, "preference.reset");
     return { ...DEFAULT_PREFERENCES, userId, orgId };
   }

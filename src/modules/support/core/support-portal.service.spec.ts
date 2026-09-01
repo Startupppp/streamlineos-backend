@@ -33,7 +33,7 @@ describe("SupportPortalService", () => {
 
   describe("createTicket", () => {
     it("creates the ticket with createdBy = the portal user and channel = portal", async () => {
-      await service.createTicket("org1", "portal-user-1", {
+      await service.createTicket("org1", "portal-user-1", null, {
         title: "My printer is broken",
         category: "general",
         description: "It won't turn on",
@@ -44,6 +44,7 @@ describe("SupportPortalService", () => {
         "portal-user-1",
         { title: "My printer is broken", category: "general", description: "It won't turn on" },
         { channel: "portal" },
+        null,
       );
     });
   });
@@ -52,13 +53,13 @@ describe("SupportPortalService", () => {
     it("throws NotFoundException when the ticket doesn't exist in the org", async () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
 
-      await expect(service.getMyTicket("org1", "portal-user-1", 999)).rejects.toThrow(NotFoundException);
+      await expect(service.getMyTicket("org1", "portal-user-1", null, 999)).rejects.toThrow(NotFoundException);
     });
 
     it("throws ForbiddenException when the ticket belongs to a different portal user", async () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 1, createdBy: "someone-else" });
 
-      await expect(service.getMyTicket("org1", "portal-user-1", 1)).rejects.toThrow(ForbiddenException);
+      await expect(service.getMyTicket("org1", "portal-user-1", null, 1)).rejects.toThrow(ForbiddenException);
     });
 
     it("uses listPublicMessages (never the internal-note-including path) for portal reads", async () => {
@@ -66,7 +67,7 @@ describe("SupportPortalService", () => {
         .mockResolvedValueOnce({ id: 1, createdBy: "portal-user-1" }) // ownership check
         .mockResolvedValueOnce({ id: 1, title: "t", createdBy: "portal-user-1" }); // ticket fetch
 
-      await service.getMyTicket("org1", "portal-user-1", 1);
+      await service.getMyTicket("org1", "portal-user-1", null, 1);
 
       expect(mockTickets.listPublicMessages).toHaveBeenCalledWith("org1", 1);
     });
@@ -77,7 +78,7 @@ describe("SupportPortalService", () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 1, createdBy: "someone-else" });
 
       await expect(
-        service.addMessage("org1", "portal-user-1", 1, { body: "hello" } as never),
+        service.addMessage("org1", "portal-user-1", null, 1, { body: "hello" } as never),
       ).rejects.toThrow(ForbiddenException);
       expect(mockTickets.addMessage).not.toHaveBeenCalled();
     });
@@ -85,7 +86,7 @@ describe("SupportPortalService", () => {
     it("always forces isInternal: false regardless of input", async () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 1, createdBy: "portal-user-1" });
 
-      await service.addMessage("org1", "portal-user-1", 1, { body: "hello" } as never);
+      await service.addMessage("org1", "portal-user-1", null, 1, { body: "hello" } as never);
 
       expect(mockTickets.addMessage).toHaveBeenCalledWith(
         "org1",

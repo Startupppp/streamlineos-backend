@@ -43,8 +43,9 @@ export class ApprovalPoliciesService {
   }
 
   async create(orgId: string, userId: string, input: CreateApprovalPolicyInput) {
+    let approverMembershipId: number | null = null;
     if (input.approverUserId) {
-      await this.assertOrgMember(orgId, input.approverUserId);
+      approverMembershipId = await this.assertOrgMember(orgId, input.approverUserId);
     }
 
     const [policy] = await this.db
@@ -55,6 +56,7 @@ export class ApprovalPoliciesService {
         minAmount: input.minAmount ?? null,
         approverRole: input.approverRole ?? null,
         approverUserId: input.approverUserId ?? null,
+        approverMembershipId,
         isActive: input.isActive ?? true,
       })
       .returning();
@@ -76,8 +78,13 @@ export class ApprovalPoliciesService {
   async update(orgId: string, userId: string, policyId: number, input: UpdateApprovalPolicyInput) {
     const existing = await this.findOrFail(orgId, policyId);
 
-    if (input.approverUserId && input.approverUserId !== existing.approverUserId) {
-      await this.assertOrgMember(orgId, input.approverUserId);
+    let approverMembershipId: number | null | undefined;
+    if (input.approverUserId !== undefined) {
+      if (input.approverUserId && input.approverUserId !== existing.approverUserId) {
+        approverMembershipId = await this.assertOrgMember(orgId, input.approverUserId);
+      } else if (!input.approverUserId) {
+        approverMembershipId = null;
+      }
     }
 
     const [updated] = await this.db
@@ -87,6 +94,7 @@ export class ApprovalPoliciesService {
         ...(input.minAmount !== undefined ? { minAmount: input.minAmount } : {}),
         ...(input.approverRole !== undefined ? { approverRole: input.approverRole } : {}),
         ...(input.approverUserId !== undefined ? { approverUserId: input.approverUserId } : {}),
+        ...(approverMembershipId !== undefined ? { approverMembershipId } : {}),
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
       })
       .where(and(eq(finApprovalPolicies.id, policyId), eq(finApprovalPolicies.orgId, orgId)))
@@ -137,7 +145,7 @@ export class ApprovalPoliciesService {
     return rows[0];
   }
 
-  private async assertOrgMember(orgId: string, userId: string) {
+  private async assertOrgMember(orgId: string, userId: string): Promise<number> {
     const rows = await this.db
       .select({ id: organizationMembers.id })
       .from(organizationMembers)
@@ -152,6 +160,7 @@ export class ApprovalPoliciesService {
     if (!rows[0]) {
       throw new ForbiddenException("Approver user is not a member of this organization");
     }
+    return rows[0].id;
   }
 
   async assertPolicyMinAmountValid(input: CreateApprovalPolicyInput) {

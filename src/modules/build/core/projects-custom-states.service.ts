@@ -17,6 +17,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import type {
   CreateStateInput,
   UpdateCustomStateInput,
@@ -42,10 +43,11 @@ export class ProjectsCustomStatesService {
     if (perms.has("build:manage")) return;
     const project = await this.db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
-      columns: { managerId: true },
+      columns: { managerId: true, managerMembershipId: true },
     });
     if (!project) throw new NotFoundException("Project not found");
-    if (project.managerId === u.userId) return;
+    const callerMid = actingMembershipId(u.principal);
+    if ((callerMid !== null && project.managerMembershipId === callerMid) || project.managerId === u.userId) return;
     const membership = await this.db
       .select({ role: projectMembers.role })
       .from(projectMembers)

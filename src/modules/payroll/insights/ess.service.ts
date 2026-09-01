@@ -62,12 +62,9 @@ export class EssService {
     });
   }
 
-  async getOverview(orgId: string, userId: string) {
-    const pubWhere = and(
-      eq(payslipPublications.userId, userId),
-      eq(payslipPublications.orgId, orgId),
-      eq(payslipPublications.status, "PUBLISHED"),
-    );
+  async getOverview(orgId: string, userId: string, membershipId: number | null) {
+    const pubOwner = membershipId != null ? eq(payslipPublications.userMembershipId, membershipId) : eq(payslipPublications.userId, userId);
+    const pubWhere = and(pubOwner, eq(payslipPublications.orgId, orgId), eq(payslipPublications.status, "PUBLISHED"));
 
     const now = new Date(), yr = now.getFullYear(), mo = now.getMonth() + 1;
     const fyStart = mo >= 4 ? `${yr}-04` : `${yr - 1}-04`;
@@ -90,13 +87,13 @@ export class EssService {
         .innerJoin(payrollRuns, eq(payrollRuns.id, payslipPublications.runId))
         .where(and(pubWhere, gte(payrollRuns.month, fyStart), lte(payrollRuns.month, fyEnd))),
       this.db.query.salaryLoans.findMany({
-        where: and(eq(salaryLoans.userId, userId), eq(salaryLoans.orgId, orgId), inArray(salaryLoans.status, ["APPROVED", "ACTIVE"])),
+        where: and(membershipId != null ? eq(salaryLoans.userMembershipId, membershipId) : eq(salaryLoans.userId, userId), eq(salaryLoans.orgId, orgId), inArray(salaryLoans.status, ["APPROVED", "ACTIVE"])),
         columns: { totalEmis: true, paidEmis: true, emiAmount: true },
       }),
       this.db
         .select({ total: count() })
         .from(reimbursements)
-        .where(and(eq(reimbursements.userId, userId), eq(reimbursements.orgId, orgId), eq(reimbursements.status, "PENDING"))),
+        .where(and(membershipId != null ? eq(reimbursements.userMembershipId, membershipId) : eq(reimbursements.userId, userId), eq(reimbursements.orgId, orgId), eq(reimbursements.status, "PENDING"))),
       this.getActiveWindow(orgId),
       this.db
         .select({ date: payrollCalendarEvents.date, title: payrollCalendarEvents.title })
@@ -117,7 +114,7 @@ export class EssService {
         ? this.db
             .select({ gross: sum(payrollRunEmployees.gross), net: sum(payrollRunEmployees.net) })
             .from(payrollRunEmployees)
-            .where(and(eq(payrollRunEmployees.userId, userId), inArray(payrollRunEmployees.runId, fyPubs.map((p) => p.runId))))
+            .where(and(membershipId != null ? eq(payrollRunEmployees.userMembershipId, membershipId) : eq(payrollRunEmployees.userId, userId), inArray(payrollRunEmployees.runId, fyPubs.map((p) => p.runId))))
         : Promise.resolve([]),
       window ? this.taxService.listMine(orgId, userId) : Promise.resolve([]),
     ]);
@@ -207,7 +204,8 @@ export class EssService {
     };
   }
 
-  async getPayslips(orgId: string, userId: string) {
+  async getPayslips(orgId: string, userId: string, membershipId: number | null) {
+    const pubOwner = membershipId != null ? eq(payslipPublications.userMembershipId, membershipId) : eq(payslipPublications.userId, userId);
     const pubs = await this.db
       .select({
         publicationId: payslipPublications.id,
@@ -218,7 +216,7 @@ export class EssService {
       .from(payslipPublications)
       .innerJoin(payrollRuns, eq(payrollRuns.id, payslipPublications.runId))
       .innerJoin(payrollRunEmployees, eq(payrollRunEmployees.id, payslipPublications.runEmployeeId))
-      .where(and(eq(payslipPublications.userId, userId), eq(payslipPublications.orgId, orgId), eq(payslipPublications.status, "PUBLISHED")))
+      .where(and(pubOwner, eq(payslipPublications.orgId, orgId), eq(payslipPublications.status, "PUBLISHED")))
       .orderBy(desc(payslipPublications.publishedAt))
       .limit(100);
 
@@ -231,13 +229,13 @@ export class EssService {
     }));
   }
 
-  async getSalaryStructure(orgId: string, userId: string) {
+  async getSalaryStructure(orgId: string, userId: string, membershipId: number | null) {
     const toggles = await this.getActiveToggles(orgId);
     if (!toggles.essShowSalaryStructure) throw new ForbiddenException("Salary structure access is disabled");
 
     const profile = await this.db.query.employeeSalaryProfiles.findFirst({
       where: and(
-        eq(employeeSalaryProfiles.userId, userId),
+        membershipId != null ? eq(employeeSalaryProfiles.userMembershipId, membershipId) : eq(employeeSalaryProfiles.userId, userId),
         eq(employeeSalaryProfiles.orgId, orgId),
         eq(employeeSalaryProfiles.status, "ACTIVE"),
       ),
@@ -269,7 +267,7 @@ export class EssService {
     };
   }
 
-  async getOwnFnf(orgId: string, userId: string) {
+  async getOwnFnf(orgId: string, userId: string, membershipId: number | null) {
     const [settlement] = await this.db
       .select({
         id: fnfSettlements.id,
@@ -291,7 +289,7 @@ export class EssService {
       .from(fnfSettlements)
       .where(
         and(
-          eq(fnfSettlements.userId, userId),
+          membershipId != null ? eq(fnfSettlements.userMembershipId, membershipId) : eq(fnfSettlements.userId, userId),
           eq(fnfSettlements.orgId, orgId),
           not(eq(fnfSettlements.status, "DRAFT")),
         ),
@@ -305,7 +303,7 @@ export class EssService {
    * Illustrative total rewards: salary CTC, YTD payslips, benefits, equity units, leave.
    * Not a certified compensation statement; equity is not mark-to-market.
    */
-  async getTotalRewards(orgId: string, userId: string) {
+  async getTotalRewards(orgId: string, userId: string, membershipId: number | null) {
     const now = new Date();
     const yr = now.getFullYear();
     const mo = now.getMonth() + 1;
@@ -316,7 +314,7 @@ export class EssService {
       await Promise.all([
         this.db.query.employeeSalaryProfiles.findFirst({
           where: and(
-            eq(employeeSalaryProfiles.userId, userId),
+            membershipId != null ? eq(employeeSalaryProfiles.userMembershipId, membershipId) : eq(employeeSalaryProfiles.userId, userId),
             eq(employeeSalaryProfiles.orgId, orgId),
             eq(employeeSalaryProfiles.status, "ACTIVE"),
           ),
@@ -328,7 +326,7 @@ export class EssService {
           .innerJoin(payrollRuns, eq(payrollRuns.id, payslipPublications.runId))
           .where(
             and(
-              eq(payslipPublications.userId, userId),
+              membershipId != null ? eq(payslipPublications.userMembershipId, membershipId) : eq(payslipPublications.userId, userId),
               eq(payslipPublications.orgId, orgId),
               eq(payslipPublications.status, "PUBLISHED"),
               gte(payrollRuns.month, fyStart),
@@ -337,7 +335,7 @@ export class EssService {
           ),
         this.db.query.salaryLoans.findMany({
           where: and(
-            eq(salaryLoans.userId, userId),
+            membershipId != null ? eq(salaryLoans.userMembershipId, membershipId) : eq(salaryLoans.userId, userId),
             eq(salaryLoans.orgId, orgId),
             inArray(salaryLoans.status, ["APPROVED", "ACTIVE"]),
           ),
@@ -403,7 +401,7 @@ export class EssService {
         .from(payrollRunEmployees)
         .where(
           and(
-            eq(payrollRunEmployees.userId, userId),
+            membershipId != null ? eq(payrollRunEmployees.userMembershipId, membershipId) : eq(payrollRunEmployees.userId, userId),
             inArray(
               payrollRunEmployees.runId,
               fyPubs.map((p) => p.runId),

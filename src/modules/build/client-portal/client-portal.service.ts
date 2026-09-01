@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import {
   changeRequests,
   projectMilestones,
@@ -21,15 +21,26 @@ export class ClientPortalService {
     private readonly audit: AuditService,
   ) {}
 
-  private async assertClientProject(orgId: string, userId: string, projectId: number) {
+  private clientFilter(membershipId: number | null, userId: string) {
+    return membershipId !== null
+      ? or(eq(projects.clientMembershipId, membershipId), eq(projects.clientId, userId))
+      : eq(projects.clientId, userId);
+  }
+
+  private async assertClientProject(orgId: string, membershipId: number | null, userId: string, projectId: number) {
     const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), eq(projects.clientId, userId), isNull(projects.deletedAt)),
+      where: and(
+        eq(projects.id, projectId),
+        eq(projects.orgId, orgId),
+        this.clientFilter(membershipId, userId),
+        isNull(projects.deletedAt),
+      ),
       columns: { id: true },
     });
     if (!project) throw new NotFoundException("Project not found");
   }
 
-  async listPortalProjects(orgId: string, userId: string) {
+  async listPortalProjects(orgId: string, membershipId: number | null, userId: string) {
     return this.db
       .select({
         id: projects.id,
@@ -40,11 +51,11 @@ export class ClientPortalService {
         targetEndDate: projects.endDate,
       })
       .from(projects)
-      .where(and(eq(projects.orgId, orgId), eq(projects.clientId, userId), isNull(projects.deletedAt)))
+      .where(and(eq(projects.orgId, orgId), this.clientFilter(membershipId, userId), isNull(projects.deletedAt)))
       .limit(100);
   }
 
-  async getProjectOverview(orgId: string, userId: string, projectId: number) {
+  async getProjectOverview(orgId: string, membershipId: number | null, userId: string, projectId: number) {
     const [project] = await this.db
       .select({
         id: projects.id,
@@ -55,7 +66,7 @@ export class ClientPortalService {
         targetEndDate: projects.endDate,
       })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), eq(projects.clientId, userId), isNull(projects.deletedAt)))
+      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), this.clientFilter(membershipId, userId), isNull(projects.deletedAt)))
       .limit(1);
     if (!project) throw new NotFoundException("Project not found");
 
@@ -138,8 +149,8 @@ export class ClientPortalService {
     return { project, milestones, tasks, attachments, comments };
   }
 
-  async listPortalChangeRequests(orgId: string, userId: string, projectId: number) {
-    await this.assertClientProject(orgId, userId, projectId);
+  async listPortalChangeRequests(orgId: string, membershipId: number | null, userId: string, projectId: number) {
+    await this.assertClientProject(orgId, membershipId, userId, projectId);
     return this.db
       .select({
         id: changeRequests.id,
@@ -163,8 +174,8 @@ export class ClientPortalService {
       .limit(100);
   }
 
-  async createPortalChangeRequest(orgId: string, userId: string, projectId: number, input: CreatePortalCrInput) {
-    await this.assertClientProject(orgId, userId, projectId);
+  async createPortalChangeRequest(orgId: string, membershipId: number | null, userId: string, projectId: number, input: CreatePortalCrInput) {
+    await this.assertClientProject(orgId, membershipId, userId, projectId);
     const [cr] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx

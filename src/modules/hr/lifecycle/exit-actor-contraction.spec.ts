@@ -6,7 +6,7 @@
  */
 
 import { ExitService } from "./exit.service";
-import type { ListResignationsQueryInput } from "./dto/exit.schemas";
+import type { ListResignationsQueryInput } from "./dto/hr-lifecycle.schemas";
 
 const ORG_ID = "org-exit-test";
 const USER_ID = "user-exit";

@@ -31,11 +31,12 @@ export class EssSelfServiceService {
   async createReimbursement(
     orgId: string,
     userId: string,
+    membershipId: number | null,
     body: { category: string; amount: number; description?: string; receiptUrl?: string; payrollMonth?: string },
   ) {
     const toggles = await this.ess.getActiveToggles(orgId);
     if (!toggles.essAllowReimbursements) throw new ForbiddenException("Reimbursements are disabled");
-    return this.reimbursementsService.createReimbursement(orgId, userId, {
+    return this.reimbursementsService.createReimbursement(orgId, userId, membershipId, {
       category: body.category,
       amount: body.amount,
       description: body.description,
@@ -44,23 +45,23 @@ export class EssSelfServiceService {
     });
   }
 
-  async listReimbursements(orgId: string, userId: string, page = 1, limit = 50) {
+  async listReimbursements(orgId: string, userId: string, membershipId: number | null, page = 1, limit = 50) {
     const toggles = await this.ess.getActiveToggles(orgId);
     if (!toggles.essAllowReimbursements) throw new ForbiddenException("Reimbursements are disabled");
-    return this.reimbursementsService.listReimbursements(orgId, userId, "own", page, Math.min(limit, 100));
+    return this.reimbursementsService.listReimbursements(orgId, userId, membershipId, "own", page, Math.min(limit, 100));
   }
 
-  async listLoans(orgId: string, userId: string) {
+  async listLoans(orgId: string, userId: string, membershipId: number | null) {
     const toggles = await this.ess.getActiveToggles(orgId);
     if (!toggles.essAllowLoanRequests) throw new ForbiddenException("Loan requests are disabled");
-    const loans = await this.loansService.listLoans(orgId, userId, false);
+    const loans = await this.loansService.listLoans(orgId, userId, membershipId, false);
     return loans.map((l) => ({
       ...l,
       balance: (((l.totalEmis ?? 0) - l.paidEmis) * parseFloat(l.emiAmount ?? "0")).toFixed(2),
     }));
   }
 
-  async createLoan(orgId: string, userId: string, body: { amount: number; reason: string; totalEmis: number }) {
+  async createLoan(orgId: string, userId: string, membershipId: number | null, body: { amount: number; reason: string; totalEmis: number }) {
     const toggles = await this.ess.getActiveToggles(orgId);
     if (!toggles.essAllowLoanRequests) throw new ForbiddenException("Loan requests are disabled");
     return this.loansService.createLoan(orgId, userId, false, { amount: body.amount, reason: body.reason, totalEmis: body.totalEmis });

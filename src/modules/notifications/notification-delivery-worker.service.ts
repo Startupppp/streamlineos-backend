@@ -3,7 +3,7 @@ import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
 import { randomUUID } from "crypto";
 import { and, eq, lte, lt, or, desc, inArray, sql } from "drizzle-orm";
-import { notificationDeliveries, notificationQueue, notificationProviderAccounts } from "../../db/schema";
+import { notificationDeliveries, notificationQueue, notificationProviderAccounts, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { NotificationProviderRegistry } from "./providers/notification-provider-registry.service";
@@ -224,8 +224,25 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
       // is busiest. Membership was checked at enqueue; re-check it here, immediately
       // before handing the payload to a provider. CANCELLED, not DEAD: nothing failed,
       // the recipient simply stopped being entitled to it.
-      const stillActive = await filterOrgMemberIds(this.db, job.orgId, [delivery.userId]);
-      if (stillActive.length === 0) {
+      //
+      // Dual-read: when delivery.membershipId is set (post-backfill rows), check that
+      // specific membership row directly — a user removed and re-invited gets a new
+      // membershipId, so the old delivery references a membership that is now INACTIVE.
+      // Legacy rows (membershipId IS NULL) fall back to the userId predicate so
+      // nothing is lost while the backfill settles.
+      let recipientStillActive: boolean;
+      if (typeof delivery.membershipId === "number") {
+        const memberRow = await this.db
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(and(eq(organizationMembers.id, delivery.membershipId), eq(organizationMembers.status, "ACTIVE")))
+          .limit(1);
+        recipientStillActive = memberRow.length === 1;
+      } else {
+        const active = await filterOrgMemberIds(this.db, job.orgId, [delivery.userId]);
+        recipientStillActive = active.length > 0;
+      }
+      if (!recipientStillActive) {
         await this.db
           .update(notificationDeliveries)
           .set({ status: "CANCELLED", failureCode: "MEMBERSHIP_INACTIVE", updatedAt: new Date() })

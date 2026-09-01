@@ -28,7 +28,7 @@ export class FnfInsightsService {
   ) {}
 
   list(orgId: string, callerId: string, isAdmin: boolean, page = 1, limit = 50) {
-    return this.fnfService.listFnf(orgId, callerId, isAdmin, page, Math.min(limit, 100));
+    return this.fnfService.listFnf(orgId, callerId, null, isAdmin, page, Math.min(limit, 100));
   }
 
   async getOne(orgId: string, settlementId: number) {

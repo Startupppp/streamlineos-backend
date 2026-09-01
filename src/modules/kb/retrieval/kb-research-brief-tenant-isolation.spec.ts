@@ -1,4 +1,5 @@
 import type { Db } from "../../../db/drizzle.module";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { KbResearchBriefService } from "./kb-research-brief.service";
 
 function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
@@ -15,7 +16,7 @@ describe("KbResearchBriefService — cross-tenant isolation", () => {
   const OWNER = "org-owner";
 
   function makeUser(orgId: string) {
-    return { orgId, userId: "user-1" } as never;
+    return { orgId, userId: "user-1", principal: humanSessionPrincipal(1, false) } as never;
   }
 
   const aiJobs = {} as never;

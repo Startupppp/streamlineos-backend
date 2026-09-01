@@ -40,10 +40,13 @@ export interface RoutingOutcome {
 export class SupportMacrosService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listMacros(orgId: string, userId: string, query: ListMacrosInput) {
+  listMacros(orgId: string, userId: string, membershipId: number | null, query: ListMacrosInput) {
+    const privateVisible = membershipId != null
+      ? eq(supportMacros.createdByMembershipId, membershipId)
+      : eq(supportMacros.createdBy, userId);
     const conditions = [
       eq(supportMacros.orgId, orgId),
-      or(sql`${supportMacros.visibility} != 'private'`, eq(supportMacros.createdBy, userId))!,
+      or(sql`${supportMacros.visibility} != 'private'`, privateVisible)!,
     ];
     if (query.category) conditions.push(eq(supportMacros.category, query.category));
     if (query.search) {
@@ -59,7 +62,7 @@ export class SupportMacrosService {
     });
   }
 
-  async createMacro(orgId: string, userId: string, input: CreateMacroInput) {
+  async createMacro(orgId: string, userId: string, membershipId: number | null, input: CreateMacroInput) {
     const [macro] = await this.db
       .insert(supportMacros)
       .values({
@@ -70,6 +73,7 @@ export class SupportMacrosService {
         visibility: input.visibility,
         actions: input.actions,
         createdBy: userId,
+        createdByMembershipId: membershipId ?? undefined,
       })
       .returning();
     return macro;
@@ -101,13 +105,16 @@ export class SupportMacrosService {
    * {{portal.link}} against the given ticket — no side effects, no usage
    * bump. Used for the compose-time preview before an agent sends a reply.
    */
-  async previewMacro(orgId: string, macroId: number, userId: string, ticketId: number): Promise<{ body: string }> {
+  async previewMacro(orgId: string, macroId: number, userId: string, membershipId: number | null, ticketId: number): Promise<{ body: string }> {
     const macro = await this.db.query.supportMacros.findFirst({
       where: and(eq(supportMacros.id, macroId), eq(supportMacros.orgId, orgId)),
-      columns: { id: true, body: true, visibility: true, createdBy: true },
+      columns: { id: true, body: true, visibility: true, createdBy: true, createdByMembershipId: true },
     });
     if (!macro) throw new NotFoundException("Macro not found");
-    if (macro.visibility === "private" && macro.createdBy !== userId) {
+    const isCreator = membershipId != null && macro.createdByMembershipId != null
+      ? macro.createdByMembershipId === membershipId
+      : macro.createdBy === userId;
+    if (macro.visibility === "private" && !isCreator) {
       throw new ForbiddenException("This macro is private to its creator");
     }
 
@@ -122,12 +129,15 @@ export class SupportMacrosService {
    * a public reply or internal note is a choice made at send time, not baked
    * into the macro itself.
    */
-  async applyMacro(orgId: string, macroId: number, userId: string, input: ApplyMacroInput) {
+  async applyMacro(orgId: string, macroId: number, userId: string, membershipId: number | null, input: ApplyMacroInput) {
     const macro = await this.db.query.supportMacros.findFirst({
       where: and(eq(supportMacros.id, macroId), eq(supportMacros.orgId, orgId)),
     });
     if (!macro) throw new NotFoundException("Macro not found");
-    if (macro.visibility === "private" && macro.createdBy !== userId) {
+    const isCreator = membershipId != null && macro.createdByMembershipId != null
+      ? macro.createdByMembershipId === membershipId
+      : macro.createdBy === userId;
+    if (macro.visibility === "private" && !isCreator) {
       throw new ForbiddenException("This macro is private to its creator");
     }
 

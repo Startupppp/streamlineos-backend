@@ -1,8 +1,8 @@
 import {
-  pgTable, serial, text, integer, boolean, decimal, timestamp, index, uniqueIndex, unique,
+  pgTable, serial, text, integer, boolean, decimal, timestamp, index, uniqueIndex, unique, foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { payrollInputSourceEnum } from "./enums";
 import { payrollRuns } from "./runs";
 
@@ -20,6 +20,7 @@ export const payrollInputs = pgTable("payroll_inputs", {
   shiftAllowanceUnits: decimal("shift_allowance_units", { precision: 8, scale: 2 }).notNull().default("0"),
   holidayWorkDays: decimal("holiday_work_days", { precision: 6, scale: 2 }).notNull().default("0"),
   billableHours: decimal("billable_hours", { precision: 8, scale: 2 }).notNull().default("0"),
+  userMembershipId: integer("user_membership_id"),
   isOverride: boolean("is_override").notNull().default(false),
   overrideReason: text("override_reason"),
   overriddenBy: text("overridden_by").references(() => users.id, { onDelete: "set null" }),
@@ -30,6 +31,12 @@ export const payrollInputs = pgTable("payroll_inputs", {
   index("idx_payroll_inputs_run").on(table.runId),
   index("idx_payroll_inputs_org_user").on(table.orgId, table.userId),
   uniqueIndex("uniq_payroll_inputs_run_user").on(table.runId, table.userId),
+  index("idx_payroll_inputs_org_user_actor").on(table.orgId, table.userMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_payroll_inputs_user_actor",
+  }).onDelete("set null"),
 ]);
 
 export const payrollInputsRelations = relations(payrollInputs, ({ one }) => ({

@@ -9,9 +9,15 @@ import type { CreateLoanInput, UpdateLoanInput } from "./dto/payroll.schemas";
 export class LoansService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listLoans(orgId: string, userId: string, isAdmin: boolean, page = 1, limit = 100) {
+  listLoans(orgId: string, userId: string, membershipId: number | null, isAdmin: boolean, page = 1, limit = 100) {
     const conditions = [eq(salaryLoans.orgId, orgId)];
-    if (!isAdmin) conditions.push(eq(salaryLoans.userId, userId));
+    if (!isAdmin) {
+      if (membershipId != null) {
+        conditions.push(eq(salaryLoans.userMembershipId, membershipId));
+      } else {
+        conditions.push(eq(salaryLoans.userId, userId));
+      }
+    }
 
     return this.db.query.salaryLoans.findMany({
       where: and(...conditions),
@@ -30,19 +36,19 @@ export class LoansService {
     const emiAmount = body.amount / body.totalEmis;
     const targetUserId = isAdmin && body.userId ? body.userId : userId;
 
-    if (targetUserId !== userId) {
-      const member = await this.db.query.organizationMembers.findFirst({
-        where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, targetUserId)),
-        columns: { id: true },
-      });
-      if (!member) throw new ForbiddenException("Employee is not a member of this organization");
-    }
+    const targetMember = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, targetUserId)),
+      columns: { id: true },
+    });
+    if (targetUserId !== userId && !targetMember)
+      throw new ForbiddenException("Employee is not a member of this organization");
 
     const [loan] = await this.db
       .insert(salaryLoans)
       .values({
         orgId,
         userId: targetUserId,
+        userMembershipId: targetMember?.id ?? undefined,
         amount: body.amount.toString(),
         reason: body.reason,
         emiAmount: emiAmount.toFixed(2),

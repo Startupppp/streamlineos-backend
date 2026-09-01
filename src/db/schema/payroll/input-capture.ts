@@ -12,9 +12,10 @@ import {
   index,
   uniqueIndex,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 
 export const hrPayrollInputStatusEnum = pgEnum("hr_payroll_input_status", [
   "open",
@@ -87,6 +88,7 @@ export const hrPayrollInputSnapshots = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    userMembershipId: integer("user_membership_id"),
     section: hrPayrollInputSectionEnum("section").notNull(),
     payload: jsonb("payload").notNull(),
     sourceRefs: jsonb("source_refs"),
@@ -104,6 +106,12 @@ export const hrPayrollInputSnapshots = pgTable(
       table.periodId,
       table.userId,
     ),
+    index("idx_hr_payroll_input_snapshots_org_user_actor").on(table.orgId, table.userMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_hr_payroll_input_snapshots_user_actor",
+    }).onDelete("set null"),
   ],
 );
 
@@ -120,6 +128,7 @@ export const hrPayrollAdjustments = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    userMembershipId: integer("user_membership_id"),
     adjustmentType: hrPayrollAdjustmentTypeEnum("adjustment_type").notNull(),
     section: hrPayrollInputSectionEnum("section").notNull(),
     amountCents: bigint("amount_cents", { mode: "number" }),
@@ -146,6 +155,12 @@ export const hrPayrollAdjustments = pgTable(
     index("idx_hr_payroll_adjustments_org_status").on(table.orgId, table.status),
     index("idx_hr_payroll_adjustments_org_period").on(table.orgId, table.periodId),
     index("idx_hr_payroll_adjustments_org_user").on(table.orgId, table.userId),
+    index("idx_hr_payroll_adjustments_org_user_actor").on(table.orgId, table.userMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_hr_payroll_adjustments_user_actor",
+    }).onDelete("set null"),
   ],
 );
 

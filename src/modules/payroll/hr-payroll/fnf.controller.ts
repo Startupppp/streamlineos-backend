@@ -18,6 +18,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { AccessService } from "../../access/access.service";
 import { FnfService } from "./fnf.service";
 import {
@@ -54,7 +55,7 @@ export class HrPayrollFnfController {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       isAdmin = perms.has("hr:payroll:approve");
     }
-    return this.fnf.listFnf(u.orgId, u.userId, isAdmin, query.page ?? 1, query.limit ?? 100);
+    return this.fnf.listFnf(u.orgId, u.userId, actingMembershipId(u.principal), isAdmin, query.page ?? 1, query.limit ?? 100);
   }
 
   @Post()

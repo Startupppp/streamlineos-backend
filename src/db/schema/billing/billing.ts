@@ -2,6 +2,7 @@ import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -24,7 +25,7 @@ import {
   referralStatusEnum,
   revenueEventTypeEnum,
 } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { clientAccounts } from "../crm/contacts";
 import { deals } from "../crm/deals";
 
@@ -193,6 +194,7 @@ export const affiliates = pgTable(
   {
     id: serial("id").primaryKey(),
     userId: text("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+    userMembershipId: integer("user_membership_id"),
     orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
     referralCode: varchar("referral_code", { length: 20 }).notNull().unique(),
     status: affiliateStatusEnum("status").notNull().default("PENDING"),
@@ -209,7 +211,9 @@ export const affiliates = pgTable(
   (t) => [
     index("affiliates_code_idx").on(t.referralCode),
     index("affiliates_user_idx").on(t.userId),
+    index("affiliates_org_mbr_idx").on(t.orgId, t.userMembershipId),
     unique("uniq_affiliates_org_id").on(t.orgId, t.id),
+    foreignKey({ columns: [t.orgId, t.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_affiliates_org_user_mbr" }).onDelete("set null"),
   ],
 );
 

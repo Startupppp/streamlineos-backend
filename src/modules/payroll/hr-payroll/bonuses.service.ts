@@ -13,7 +13,12 @@ export type UpdateBonusResult =
 export class BonusesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listBonuses(orgId: string, userId: string, isAdmin: boolean, page = 1, limit = 100) {
+  listBonuses(orgId: string, userId: string, membershipId: number | null, isAdmin: boolean, page = 1, limit = 100) {
+    const where = isAdmin
+      ? eq(bonuses.orgId, orgId)
+      : membershipId != null
+        ? and(eq(bonuses.orgId, orgId), eq(bonuses.userMembershipId, membershipId))
+        : and(eq(bonuses.orgId, orgId), eq(bonuses.userId, userId));
     return this.db
       .select({
         id: bonuses.id,
@@ -33,11 +38,7 @@ export class BonusesService {
       })
       .from(bonuses)
       .leftJoin(users, eq(bonuses.userId, users.id))
-      .where(
-        isAdmin
-          ? eq(bonuses.orgId, orgId)
-          : and(eq(bonuses.orgId, orgId), eq(bonuses.userId, userId)),
-      )
+      .where(where)
       .orderBy(desc(bonuses.createdAt))
       .limit(limit)
       .offset((page - 1) * limit);
@@ -55,6 +56,7 @@ export class BonusesService {
       .values({
         orgId,
         userId: body.userId,
+        userMembershipId: member.id,
         type: body.type,
         amount: body.amount.toString(),
         reason: body.reason ?? null,

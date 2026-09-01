@@ -19,6 +19,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { ReimbursementsService } from "./reimbursements.service";
 import { resolveReimbursementsScope } from "./reimbursements-scope";
 import { AccessService } from "../../access/access.service";
@@ -52,7 +53,7 @@ export class HrPayrollReimbursementsController {
     @Query() query: ListPageQueryInput,
   ) {
     const scope = await resolveReimbursementsScope(this.access, u);
-    return this.reimbursements.listReimbursements(u.orgId, u.userId, scope, query.page ?? 1, query.limit ?? 100);
+    return this.reimbursements.listReimbursements(u.orgId, u.userId, actingMembershipId(u.principal), scope, query.page ?? 1, query.limit ?? 100);
   }
 
   @Post()
@@ -63,7 +64,7 @@ export class HrPayrollReimbursementsController {
     @Body() body: CreateReimbursementInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reimbursements.createReimbursement(u.orgId, u.userId, body);
+    return this.reimbursements.createReimbursement(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Patch(":reimbursementId")

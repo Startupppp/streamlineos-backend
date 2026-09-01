@@ -78,6 +78,7 @@ export const expenses = pgTable(
       onDelete: "set null",
     }),
     status: expenseStatusEnum("status").default("PENDING").notNull(),
+    userMembershipId: integer("user_membership_id"),
     approverId: text("approver_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -108,7 +109,13 @@ export const expenses = pgTable(
     ),
     index("idx_expenses_category").on(table.categoryId),
     index("idx_expenses_org_receipt_hash").on(table.orgId, table.receiptHash),
+    index("idx_expenses_org_user_actor").on(table.orgId, table.userMembershipId),
     index("idx_expenses_org_approver_actor").on(table.orgId, table.approverMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_expenses_user_actor",
+    }).onDelete("set null"),
     foreignKey({
       columns: [table.orgId, table.approverMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
@@ -132,6 +139,7 @@ export const reimbursements = pgTable(
     description: text("description"),
     receiptUrl: text("receipt_url"),
     status: reimbursementStatusEnum("status").default("PENDING").notNull(),
+    userMembershipId: integer("user_membership_id"),
     payrollMonth: text("payroll_month"),
     approvedBy: text("approved_by").references(() => users.id, {
       onDelete: "set null",
@@ -150,7 +158,13 @@ export const reimbursements = pgTable(
     unique("uniq_reimbursements_org_id").on(table.orgId, table.id),
     index("idx_reimbursements_org").on(table.orgId),
     index("idx_reimbursements_user").on(table.userId),
+    index("idx_reimbursements_org_user_actor").on(table.orgId, table.userMembershipId),
     index("idx_reimbursements_org_approved_actor").on(table.orgId, table.approvedByMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_reimbursements_user_actor",
+    }).onDelete("set null"),
     foreignKey({
       columns: [table.orgId, table.approvedByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
@@ -175,6 +189,7 @@ export const salaryLoans = pgTable(
     totalEmis: integer("total_emis"),
     paidEmis: integer("paid_emis").default(0).notNull(),
     status: loanStatusEnum("status").default("PENDING").notNull(),
+    userMembershipId: integer("user_membership_id"),
     approvedBy: text("approved_by").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -192,6 +207,12 @@ export const salaryLoans = pgTable(
     index("idx_loans_org").on(table.orgId),
     index("idx_loans_user").on(table.userId),
     index("idx_loans_org_status").on(table.orgId, table.status),
+    index("idx_salary_loans_org_user_actor").on(table.orgId, table.userMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_salary_loans_user_actor",
+    }).onDelete("set null"),
   ],
 );
 
@@ -212,6 +233,7 @@ export const bonuses = pgTable(
     month: text("month"),
     taxable: boolean("taxable").default(true).notNull(),
     status: text("status").default("PENDING").notNull(),
+    userMembershipId: integer("user_membership_id"),
     approvedBy: text("approved_by").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -222,6 +244,12 @@ export const bonuses = pgTable(
     unique("uniq_bonuses_org_id").on(table.orgId, table.id),
     index("idx_bonuses_user").on(table.userId),
     index("idx_bonuses_org_status").on(table.orgId, table.status),
+    index("idx_bonuses_org_user_actor").on(table.orgId, table.userMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_bonuses_user_actor",
+    }).onDelete("set null"),
   ],
 );
 
@@ -257,6 +285,7 @@ export const fnfSettlements = pgTable(
       .default("0")
       .notNull(),
     status: fnfStatusEnum("status").default("DRAFT").notNull(),
+    userMembershipId: integer("user_membership_id"),
     approvedBy: text("approved_by").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -287,6 +316,12 @@ export const fnfSettlements = pgTable(
     unique("uniq_fnf_settlements_org_id").on(table.orgId, table.id),
     index("idx_fnf_user").on(table.userId),
     index("idx_fnf_settlements_org_status").on(table.orgId, table.status),
+    index("idx_fnf_settlements_org_user_actor").on(table.orgId, table.userMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_fnf_settlements_user_actor",
+    }).onDelete("set null"),
   ],
 );
 
@@ -303,6 +338,7 @@ export const assetReturns = pgTable(
     assetId: integer("asset_id").references(() => assets.id),
     assetName: text("asset_name").notNull(),
     status: text("status").default("PENDING").notNull(),
+    userMembershipId: integer("user_membership_id"),
     returnedAt: timestamp("returned_at"),
     condition: text("condition"),
     notes: text("notes"),
@@ -312,6 +348,12 @@ export const assetReturns = pgTable(
     unique("uniq_asset_returns_org_id").on(table.orgId, table.id),
     index("idx_asset_returns_user").on(table.userId),
     index("idx_asset_returns_org_status").on(table.orgId, table.status),
+    index("idx_asset_returns_org_user_actor").on(table.orgId, table.userMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_asset_returns_user_actor",
+    }).onDelete("set null"),
   ],
 );
 

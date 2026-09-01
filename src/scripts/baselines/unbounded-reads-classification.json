@@ -31,7 +31,7 @@
     },
     "/build/core/projects-tickets-read.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "Cursor mode exists for board view (paging=cursor); default offset path retained until frontend useTickets hook is coordinated to consume CursorPaginatedResponse \u00e2\u20ac\u201d deadline 2026-12-31"
+      "note": "Cursor mode exists for board view (paging=cursor); default offset path retained until frontend useTickets hook is coordinated to consume CursorPaginatedResponse â€” deadline 2026-12-31"
     },
     "/delegations/delegations.service.ts": {
       "verdict": "ACTIONABLE",
@@ -39,239 +39,239 @@
     },
     "/hr/benefits/hr-benefits-claims.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/benefits/hr-benefits-plans.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/cases/hr-cases.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/cases/hr-disciplinary.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/cases/hr-safety.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/core/hr-effective-changes.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/core/hr-employee-record-lists.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/core/hr-timeline.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-comp/comp-planning.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-comp/devices.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-comp/equity.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-comp/payroll-compliance.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-ops/accommodations/accommodations.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-ops/emergency/emergency.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-ops/event-stream/event-stream.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-ops/identity/identity.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-ops/simulator/simulator.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/forms/hr-forms-submissions.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/forms/hr-forms.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/global/compliance-requirements.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/global/contracts.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/global/work-authorizations.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/governance/delegations/delegations.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/governance/labor/labor.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/governance/legal-holds/legal-holds.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/governance/positions/positions.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/governance/retention/retention.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/import/hr-import.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/lifecycle/onboarding-views.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/lifecycle/termination-read.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/payroll-inputs/payroll-input-snapshots.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/payroll-inputs/payroll-inputs.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/rich-documents.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-offers.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-sourcing.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-talent-pools.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/templates/hr-templates.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/attendance-summary.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/attendance.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/overtime.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/workflows/hr-workflow-definitions.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/workflows/hr-workflow-instances.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/inventory/channels/channels.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/import-export/export.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/import-export/import.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/products/inv-product-catalog.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/replenishment/inv-replenishment.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/reports/inv-reports-extended.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/shipments/carriers.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/shipments/loads.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/shipments/packages.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/shipments/shipments.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/traceability/inv-traceability.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/valuation/inv-valuation.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/warehouses/inv-warehouses.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/webhooks/webhooks.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/kb/help-centre/kb-article-query.service.ts": {
       "verdict": "KEYSET-MIGRATED",
-      "note": "Migrated to (updatedAt DESC, id DESC) keyset cursor; schema changed from page+pageSize to cursor+limit; no active frontend hook \u00e2\u20ac\u201d contract change is safe"
+      "note": "Migrated to (updatedAt DESC, id DESC) keyset cursor; schema changed from page+pageSize to cursor+limit; no active frontend hook â€” contract change is safe"
     },
     "/kb/help-centre/kb-verification.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "Dataset is articles with reviewIntervalDays set and past due \u00e2\u20ac\u201d inherently small (<500/org); NULL lastVerifiedAt sort makes keyset complex; max 100/page means depth \u00e2\u2030\u00a45 covers all cases \u00e2\u20ac\u201d deadline 2026-12-31 to revisit if org sizes grow"
+      "note": "Offset retained; NULL lastVerifiedAt sort makes keyset complex; dataset inherently small (<500/org overdue articles); Math.min(pageSize,100) cap applied; depth bounded in practice — deadline 2026-12-31 to migrate if org sizes grow"
     },
     "/kb/retrieval/kb-search.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "Relevance sort via keywordRank(tsquery) is computed per-query and not stable across pages \u00e2\u20ac\u201d keyset is infeasible; max 50/page enforced by pageSizeField(20,50); search results are inherently shallow"
+      "note": "Offset retained; relevance sort via keywordRank(tsquery) is computed per-query and not stable across pages — keyset is infeasible and would duplicate/skip at page boundaries; input.pageSize capped by schema pageSizeField; search results are inherently shallow"
     },
     "/offer-fulfillment/offer-fulfillment.service.ts": {
       "verdict": "ACTIONABLE",
@@ -279,11 +279,11 @@
     },
     "/organization/core/invitations-read.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/org-membership-read.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/ownership/ownership-transfers.service.ts": {
       "verdict": "ACTIONABLE",
@@ -291,67 +291,67 @@
     },
     "/payroll/filings/filings.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/hr-payroll/bonuses.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/hr-payroll/incentives.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/hr-payroll/salary-structure-templates.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/journal-outbox.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/lib/report-builders.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/reports.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/tax-admin.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/jobs/payroll-jobs.service.ts": {
       "verdict": "KEYSET-MIGRATED",
-      "note": "listFailed: keyset on (createdAt DESC, id DESC); listForResource: keyset on (createdAt ASC, id ASC); no frontend callers \u00e2\u20ac\u201d backend-only migration, no handoff required"
+      "note": "listFailed: keyset on (createdAt DESC, id DESC); listForResource: keyset on (createdAt ASC, id ASC); no frontend callers â€” backend-only migration, no handoff required"
     },
     "/payroll/payout/payslip-templates.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/exceptions.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/inputs.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/salary-profiles.repository.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/setup/components.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/setup/templates.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/portal/access/portal-access.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "portal/actor-cutover lane \u00e2\u20ac\u201d blocked"
+      "note": "portal/actor-cutover lane â€” blocked"
     },
     "/public/kb.service.ts": {
       "verdict": "ACTIONABLE",
@@ -359,15 +359,15 @@
     },
     "/rbac/principal-groups.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "rbac lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "rbac lane (excluded territory â€” other lane owns this module)"
     },
     "/rbac/roles-query.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "rbac lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "rbac lane (excluded territory â€” other lane owns this module)"
     },
     "/rbac/roles.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "rbac lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "rbac lane (excluded territory â€” other lane owns this module)"
     },
     "/settings/settings-automations.service.ts": {
       "verdict": "ACTIONABLE",
@@ -389,23 +389,23 @@
   "unbounded": {
     "/access/access-permission-members.resolver.ts": {
       "verdict": "ACTIONABLE",
-      "note": "access lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "access lane (excluded territory â€” other lane owns this module)"
     },
     "/access/access-permission.resolver.ts": {
       "verdict": "ACTIONABLE",
-      "note": "access lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "access lane (excluded territory â€” other lane owns this module)"
     },
     "/access/denied-modules.resolver.ts": {
       "verdict": "ACTIONABLE",
-      "note": "access lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "access lane (excluded territory â€” other lane owns this module)"
     },
     "/access/entitlements.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "access lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "access lane (excluded territory â€” other lane owns this module)"
     },
     "/access/user-module-access.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "access lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "access lane (excluded territory â€” other lane owns this module)"
     },
     "/accounting/core/accounting-gst.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -628,7 +628,7 @@
     },
     "/build/build-calendar-source.ts": {
       "verdict": "ACTIONABLE",
-      "note": "Fetches tickets with due dates inside a date-range window (calendar start/end); bounded by the query predicate, typically \u00e2\u2030\u00a490 days of data per user"
+      "note": "Fetches tickets with due dates inside a date-range window (calendar start/end); bounded by the query predicate, typically â‰¤90 days of data per user"
     },
     "/build/core/build-automation-runner.service.ts": {
       "verdict": "ACTIONABLE",
@@ -640,7 +640,7 @@
     },
     "/build/core/projects-activity.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "Activity reads all carry .limit() \u00e2\u20ac\u201d gate detected the select chain before the limit clause within the 120-line window; per-ticket activity is small"
+      "note": "Activity reads all carry .limit() â€” gate detected the select chain before the limit clause within the 120-line window; per-ticket activity is small"
     },
     "/build/core/projects-analytics.service.ts": {
       "verdict": "ACTIONABLE",
@@ -728,7 +728,7 @@
     },
     "/build/core/ticket-status.util.ts": {
       "verdict": "ACTIONABLE",
-      "note": "Reads project statuses \u00e2\u20ac\u201d a small per-project config set (canonical statuses + custom overrides, typically <15)"
+      "note": "Reads project statuses â€” a small per-project config set (canonical statuses + custom overrides, typically <15)"
     },
     "/build/entity/build-entity-reads.service.ts": {
       "verdict": "ACTIONABLE",
@@ -763,60 +763,73 @@
       "note": "Has 12 count/sum/groupBy aggregate references; test-run analytics queries produce scalar summaries"
     },
     "/calendar/calendar-conflict.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "has .limit(CONFLICT_SCAN_LIMIT=100) at query line; exception and attendee sub-selects bounded by event ids from the first limited query 2026-09-01"
     },
     "/calendar/calendar-event-source.loader.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "queryVisibleEvents has .limit(2000) at line 122; bounded by date-range window and the 2000 cap; ticket sub-select bounded by entityIds from first query 2026-09-01"
     },
     "/calendar/calendar-source-preferences.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "getDisabledKeys reads per-user source preferences; calendar sources are a small config set (<20); setPreference is a single-row upsert/delete 2026-09-01"
     },
     "/calendar/calendar.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "delegates all read paths to CalendarEventsAggregateService and CalendarConflictService; single-record lookups in write paths; no direct unbounded select 2026-09-01"
     },
     "/calendar/external-calendar-events.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "allConnections bounded by user's 1-3 integration accounts; mappedRows bounded by connection ids via inArray; external events fetched via Composio API, not DB rows 2026-09-01"
     },
     "/careers/careers.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
     },
     "/chat/chat-channels.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "listMemberChannels has .limit(100) on the channels query; memberships sub-select bounded by channelIds inArray; listPublicChannels has .limit(100); unread/lastMessage aggregates bounded by channelIds 2026-09-01"
     },
     "/chat/chat-huddles.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "channelMembers read on huddle start is operational fan-out to insert attendees and send realtime notifications; bounded by channel membership; participants reads bounded by HUDDLE_MESH_MAX_PARTICIPANTS 2026-09-01"
     },
     "/chat/chat-mentions.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "resolveMentionedUserIds reads channel members to resolve @channel mentions; bounded by channel membership count; used only on message send, not a list endpoint 2026-09-01"
     },
     "/chat/chat-notifications.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "publishNewMessageNotification reads channel members for realtime notification fan-out; bounded by channel membership; not a list endpoint 2026-09-01"
     },
     "/chat/chat-presence.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "BOUNDED",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "getOnlineUsers capped at .limit(500) (90-second window already filters); getOrgUsers capped at .limit(500) for @mention autocomplete; searchMessages has Math.min(limit,50); getUnreadTotal is aggregate 2026-09-01"
     },
     "/chat/chat-reactions.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "loadReactions reads reactions per message; bounded by distinct emoji types per message (typically <50); single-message scope 2026-09-01"
     },
     "/chat/chat-reply-reminders.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "processDueReminders has .limit(100) on due reminder fetch; scheduleForMessage reads channel members for reminder fan-out (bounded by membership); processReminder is single-record lookup 2026-09-01"
     },
     "/chat/chat-search.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "searchMessages uses id-keyset cursor (lt(chatMessages.id, cursor)) with limit+1 sentinel and hasMore check; already properly paginated; resolveContentMatch caps SECURITY_DEFINER call at CHAT_SEARCH_ID_CAP=1000 2026-09-01"
     },
     "/clients/client-accounts.service.ts": {
       "verdict": "ACTIONABLE",
@@ -840,103 +853,103 @@
     },
     "/crm/automation-studio/crm-automation-bus.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/automation-studio/crm-sequences-runner.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/consent/crm-consent.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/core/crm-attribution-report.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/core/crm-campaigns.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/core/crm-ce-dashboard.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/core/crm-customer360-finance.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/core/crm-customer360-sections.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/core/crm-customer360.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/core/crm-organizations-insights.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/core/crm-organizations-merge.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/core/crm-organizations.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/core/crm-sales-dashboard.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/core/crm-sla.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/core/crm-support-dashboard.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/core/crm-territories.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/core/crm-web-forms.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/import/crm-import-commit.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/import/crm-import-revert.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/import/import-lookups.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/inbox/crm-inbox-ai-actions.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/metadata/crm-blueprints.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/metadata/crm-data-quality.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/metadata/crm-metadata.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/crm/metadata/crm-validation.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/cron/cron-attendance.service.ts": {
       "verdict": "ACTIONABLE",
@@ -1318,415 +1331,415 @@
     },
     "/hr/analytics-plus/hr-analytics-plus.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/automations/hr-automation-engine.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/benefits/hr-benefits-enrollment.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/benefits/hr-benefits-plans.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/cases/hr-disciplinary.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/config/hr-document-templates.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/config/hr-email-templates.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/config/hr-holidays.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/config/hr-leave-blackout.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/config/hr-salary-structures.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/core/hr-custom-fields.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/core/hr-sensitive-record-compat.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/assets.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/background-verification.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/celebrations.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/employee-analytics.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/employee-bulk-onboarding.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/employee-mutations.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/employee-skills-page-query.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/employees.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/org-structure.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/salary-profile-seed.helper.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-comp/equity.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-comp/payroll-compliance.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-ops/accommodations/accommodations.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-ops/emergency/emergency.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/enterprise-ops/identity/identity.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/global/compliance-requirements.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/governance/labor/labor.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/governance/legal-holds/legal-holds.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/governance/positions/positions-taxonomy.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/governance/positions/positions-workflow-utils.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/helpdesk/hr-helpdesk.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/hr-calendar-source.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/import/hr-import.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/interviews/hr-hiring-flows.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/interviews/hr-interview-booking.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/interviews/hr-interview-scheduling.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/interviews/hr-interviewers.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/interviews/hr-interviews.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/interviews/hr-offers.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/interviews/hr-scorecards.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/lifecycle/hr-analytics.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/lifecycle/hr-dashboard-reports.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/lifecycle/hr-dashboard.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/lifecycle/probation-review-reader.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/lifecycle/resignation-jobs.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/lifecycle/termination-relational-compat.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/lifecycle/termination.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-details.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-initiation-dispatch.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-initiation.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-requirements.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-submission.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-task-dependency-compat.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-task.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-template.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/flow/guided-tour.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/flow/module-checklist.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/payroll-inputs/payroll-input-snapshots.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/payroll-inputs/payroll-inputs-build.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/payroll-inputs/payroll-inputs.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/calibration.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/document-tag-compat.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/engagement-badges.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/engagement-communities-campaigns.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/engagement-mood-polls.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/engagement.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/feedback.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/kpis.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/performance/review-cycles.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/policies/hr-policies.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/policies/hr-policy-conflict.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/policies/hr-policy-evaluation.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-calibration.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-candidate-ai.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-candidate-docs.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-candidate-ops.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-candidate-vault.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-candidates.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-job-boards.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-jobs.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-offers.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-pipeline.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-recruiters.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-referral-checks.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/recruitment/recruitment-requisitions.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/settings-hub/hr-settings-hub.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/attendance-clock.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/attendance-event-writer.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/attendance-summary.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/attendance.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/biometric.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/geofencing.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/leave-policies.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/leave-types.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/leaves-page.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/leaves.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/time/overtime.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/workflows/hr-workflow-definitions.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/workflows/hr-workflow-engine.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/workflows/hr-workflow-instances.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/workflows/hr-workflow-step-runner.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "HR lane \u00e2\u20ac\u201d deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/integrations/core/integrations.service.ts": {
       "verdict": "ACTIONABLE",
@@ -1738,115 +1751,115 @@
     },
     "/inventory/ai/inv-ai.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/channels/channels.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/counts/inv-cycle-counts.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/counts/inv-physical-audits.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/products/inv-product-crud.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/purchase-orders/grn-receive.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/purchase-orders/grn.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/quality/quality-inspections.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/quality/quality-recalls.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/reports/inv-reports-extended.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/reports/inv-reports.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/sales-orders/so-core.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/sales-orders/so-fulfillment.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/sales-orders/so-lifecycle.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/settings/settings.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/shipments/loads.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/shipments/packages.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/shipments/shipments.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/stock-engine/costing-context.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/stock-engine/movement-costing.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/stock-engine/warehouse-scope.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/stock/inv-stock-transfers.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/traceability/inv-traceability.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/traceability/traceability-chain.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/vendors/inv-vendors.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/warehouses/inv-warehouses.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/webhooks/webhook-emitter.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/inventory/webhooks/webhooks.service.ts": {
       "verdict": "EXCLUDED-MODULE",
-      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
+      "note": "CRM/Inventory excluded product domain â€” do not fix in this lane"
     },
     "/invoices/invoices-lifecycle.service.ts": {
       "verdict": "ACTIONABLE",
@@ -1874,7 +1887,7 @@
     },
     "/kb/core/kb-settings.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "Reads org-level KB settings \u00e2\u20ac\u201d a single row per org; flagged for a selectDistinct that returns at most one org"
+      "note": "Reads org-level KB settings â€” a single row per org; flagged for a selectDistinct that returns at most one org"
     },
     "/kb/core/kb-tags.service.ts": {
       "verdict": "ACTIONABLE",
@@ -1886,11 +1899,11 @@
     },
     "/kb/help-centre/kb-articles.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "Unbounded selects are tag lookups and version-number aggregates \u00e2\u20ac\u201d all scoped to a single article; CRUD path, not a list"
+      "note": "Unbounded selects are tag lookups and version-number aggregates â€” all scoped to a single article; CRUD path, not a list"
     },
     "/kb/help-centre/kb-categories.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "Reads categories per space \u00e2\u20ac\u201d a small config hierarchy (typically <50 per space)"
+      "note": "Reads categories per space â€” a small config hierarchy (typically <50 per space)"
     },
     "/kb/help-centre/kb-comments.service.ts": {
       "verdict": "ACTIONABLE",
@@ -1914,7 +1927,7 @@
     },
     "/kb/retrieval/kb-ingestion-checkpoint.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "Reads a single ingestion checkpoint row per org \u00e2\u20ac\u201d select with eq(orgId) returns at most one row"
+      "note": "Reads a single ingestion checkpoint row per org â€” select with eq(orgId) returns at most one row"
     },
     "/kb/retrieval/kb-page-backfill.service.ts": {
       "verdict": "ACTIONABLE",
@@ -1922,7 +1935,7 @@
     },
     "/kb/retrieval/kb-project-access.util.ts": {
       "verdict": "ACTIONABLE",
-      "note": "Reads project IDs accessible to an org for KB scoping \u00e2\u20ac\u201d bounded by project count per org"
+      "note": "Reads project IDs accessible to an org for KB scoping â€” bounded by project count per org"
     },
     "/kb/retrieval/kb-search.service.ts": {
       "verdict": "ACTIONABLE",
@@ -1938,7 +1951,7 @@
     },
     "/kb/wiki/kb-page-comments.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "Reads comments per page \u00e2\u20ac\u201d bounded by the comment thread length, which is small in practice"
+      "note": "Reads comments per page â€” bounded by the comment thread length, which is small in practice"
     },
     "/kb/wiki/kb-page-duplicate.service.ts": {
       "verdict": "ACTIONABLE",
@@ -1954,7 +1967,7 @@
     },
     "/kb/wiki/kb-page-templates.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "Reads page templates per org or space \u00e2\u20ac\u201d a small config set (typically <30)"
+      "note": "Reads page templates per org or space â€” a small config set (typically <30)"
     },
     "/kb/wiki/kb-page-tree.service.ts": {
       "verdict": "ACTIONABLE",
@@ -2017,8 +2030,9 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
     },
     "/mail/mail-accounts.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "listAccounts bounded by user's 1-3 mail integration connections (gmail/outlook inArray filter); assertOwnedConnection uses .limit(1); not a list endpoint 2026-09-01"
     },
     "/mfa/mfa.service.ts": {
       "verdict": "ACTIONABLE",
@@ -2106,59 +2120,59 @@
     },
     "/organization/core/account-organization-index.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/invitation-create.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/lifecycle/organization-legal-hold.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/lifecycle/organization-saga.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/org-lifecycle.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/org-member-authority-queries.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/org-membership-status.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/org-profile.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/org-purge.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/organization-settings.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/hierarchy/org-hierarchy-tree-source.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/setup/announcements.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/setup/org-members.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/setup/org-setup-resolver.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "organization lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/ownership/ownership-members.helper.ts": {
       "verdict": "ACTIONABLE",
@@ -2234,159 +2248,159 @@
     },
     "/payroll/__tests__/payroll-db-integration.e2e-spec.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/filings/filings.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/hr-payroll/bonuses.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/hr-payroll/fnf.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/hr-payroll/tax.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/accounting-mappings.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/calendar.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/ess.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/fnf.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/journal-outbox.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/journal.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/lib/report-builders.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/manager-inbox.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/payroll-ai-explain.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/payroll-calendar-reminder.scheduler.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/period-reconciliation.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/reports.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/tax-windows.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/team-rewards.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/lib/payroll-run-payee.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/approval-actions.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/approvals.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/batch-creator.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/batch-status.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/lib/payout-run-completion.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/locking.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/payout-validation.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/payroll-approver-resolver.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/payslip-bulk-publisher.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/publishing.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/command-center.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/inputs.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/lib/checklist.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/lib/input-puller.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/loan-recovery.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/payroll-run-variance.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/run-batch-loader.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/run-data-loader.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/salary-profiles.repository.ts": {
       "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
+      "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/platform/platform-admin.service.ts": {
       "verdict": "ACTIONABLE",
@@ -2426,19 +2440,19 @@
     },
     "/rbac/assert-role-assignment.ts": {
       "verdict": "ACTIONABLE",
-      "note": "rbac lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "rbac lane (excluded territory â€” other lane owns this module)"
     },
     "/rbac/permission-catalog-sync.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "rbac lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "rbac lane (excluded territory â€” other lane owns this module)"
     },
     "/rbac/role-permission.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "rbac lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "rbac lane (excluded territory â€” other lane owns this module)"
     },
     "/rbac/roles-query.service.ts": {
       "verdict": "ACTIONABLE",
-      "note": "rbac lane (excluded territory \u00e2\u20ac\u201d other lane owns this module)"
+      "note": "rbac lane (excluded territory â€” other lane owns this module)"
     },
     "/realtime/web-push.service.ts": {
       "verdict": "ACTIONABLE",
@@ -2649,20 +2663,24 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
     },
     "/workflows/engine/workflow-schedule-tick.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "tickOrg reads only due schedules (nextRunAt <= now OR NULL) per org via forEachOrg; background cron must process all due schedules; not a list endpoint 2026-09-01"
     },
     "/workflows/workflows-schedules.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "BOUNDED",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "listAllSchedules capped at .limit(200); listSchedules capped at .limit(100); workflow schedules are config, typically <20 per workflow 2026-09-01"
     },
     "/workflows/workflows-secrets.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "BOUNDED",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "listSecrets and listGlobalSecrets capped at .limit(200); workflow secrets are org config, typically <50 2026-09-01"
     },
     "/workflows/workflows-variables.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "BOUNDED",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "listGlobalVariables capped at .limit(200); workflow variables are org config, typically <100 2026-09-01"
     }
   }
 }

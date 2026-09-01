@@ -1,5 +1,5 @@
-import { pgTable, serial, text, integer, boolean, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
-import { organizations, users } from "../common/auth";
+import { pgTable, serial, text, integer, boolean, timestamp, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { clients } from "../crm/contacts";
 
 export const supportAgentSkills = pgTable(
@@ -8,6 +8,7 @@ export const supportAgentSkills = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    userMembershipId: integer("user_membership_id"),
     skill: text("skill").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -15,6 +16,12 @@ export const supportAgentSkills = pgTable(
     uniqueIndex("uniq_support_agent_skills_org_user_skill").on(table.orgId, table.userId, table.skill),
     index("idx_support_agent_skills_org").on(table.orgId, table.skill),
     unique("uniq_support_agent_skills_org_id").on(table.orgId, table.id),
+    index("idx_support_agent_skills_org_user_actor").on(table.orgId, table.userMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_support_agent_skills_user_actor",
+    }).onDelete("cascade"),
   ],
 );
 
@@ -25,12 +32,19 @@ export const supportAgentAvailability = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    userMembershipId: integer("user_membership_id"),
     isAvailable: boolean("is_available").default(true).notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
     uniqueIndex("uniq_support_agent_availability_org_user").on(table.orgId, table.userId),
     unique("uniq_support_agent_avail_org_id").on(table.orgId, table.id),
+    index("idx_support_agent_avail_org_user_actor").on(table.orgId, table.userMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.userMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_support_agent_availability_user_actor",
+    }).onDelete("cascade"),
   ],
 );
 

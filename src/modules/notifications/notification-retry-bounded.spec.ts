@@ -45,6 +45,7 @@ function makeDelivery(attemptCount: number) {
     id: DELIVERY_ID,
     orgId: ORG,
     userId: "user-1",
+    membershipId: null,
     eventKey: "build.ticket.comment",
     channel: "EMAIL",
     provider: "SMTP",

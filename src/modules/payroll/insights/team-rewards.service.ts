@@ -156,7 +156,7 @@ export class TeamRewardsService {
    */
   async getReportTotalRewards(orgId: string, managerUserId: string, reportUserId: string) {
     await this.assertDirectReport(orgId, managerUserId, reportUserId);
-    return this.ess.getTotalRewards(orgId, reportUserId);
+    return this.ess.getTotalRewards(orgId, reportUserId, null);
   }
 
   /**

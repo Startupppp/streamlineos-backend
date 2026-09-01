@@ -145,6 +145,7 @@ export class SupportTicketsService {
       requesterEmail?: string | null;
       requesterName?: string | null;
     },
+    membershipId?: number | null,
   ) {
     const possibleDuplicate = await this.db.query.supportTickets.findFirst({
       where: and(
@@ -200,6 +201,7 @@ export class SupportTicketsService {
           slaDeadline: resolutionDueAt,
           firstResponseDueAt,
           createdBy: userId,
+          createdByMembershipId: membershipId ?? undefined,
           sourceChannel: source?.channel ?? "web",
           sourceMessageId: source?.messageId ?? null,
           requesterEmail: source?.requesterEmail ?? null,

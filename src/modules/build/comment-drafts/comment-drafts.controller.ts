@@ -18,6 +18,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CommentDraftsService } from "./comment-drafts.service";
 import { upsertCommentDraftSchema, type UpsertCommentDraftInput } from "./dto/comment-drafts.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 
 const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
@@ -32,7 +33,7 @@ export class CommentDraftsController {
   @Get("mine")
   @RequirePermission("build:tickets:view")
   listMine(@CurrentUser() u: CurrentUserContext) {
-    return this.svc.listMine(u.orgId, u.userId);
+    return this.svc.listMine(u.orgId, actingMembershipId(u.principal), u.userId);
   }
 
   @Put("tickets/:ticketId")
@@ -43,14 +44,14 @@ export class CommentDraftsController {
     @Body() body: UpsertCommentDraftInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.upsert(u.orgId, u.userId, ticketId, body);
+    return this.svc.upsert(u.orgId, actingMembershipId(u.principal), u.userId, ticketId, body);
   }
 
   @Delete("mine")
   @HttpCode(200)
   @RequirePermission("build:tickets:view")
   deleteAll(@CurrentUser() u: CurrentUserContext) {
-    return this.svc.deleteAllMine(u.orgId, u.userId);
+    return this.svc.deleteAllMine(u.orgId, actingMembershipId(u.principal), u.userId);
   }
 
   @Delete("tickets/:ticketId")
@@ -61,7 +62,7 @@ export class CommentDraftsController {
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteByTicket(u.orgId, u.userId, ticketId);
+    return this.svc.deleteByTicket(u.orgId, actingMembershipId(u.principal), u.userId, ticketId);
   }
 
   @Delete(":draftId")
@@ -72,6 +73,6 @@ export class CommentDraftsController {
     @Param("draftId", ParseIntPipe) draftId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteOne(u.orgId, u.userId, draftId);
+    return this.svc.deleteOne(u.orgId, actingMembershipId(u.principal), u.userId, draftId);
   }
 }
