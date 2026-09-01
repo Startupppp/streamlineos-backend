@@ -156,7 +156,7 @@ export class KbAccessService {
     }
 
     const restrictions = await this.db
-      .select({ userId: kbArticleRestrictions.userId, membershipId: kbArticleRestrictions.membershipId, role: kbArticleRestrictions.role })
+      .select({ membershipId: kbArticleRestrictions.membershipId, role: kbArticleRestrictions.role })
       .from(kbArticleRestrictions)
       .where(
         and(
@@ -171,7 +171,6 @@ export class KbAccessService {
       const allowed = restrictions.some(
         (r) =>
           (membershipId !== null && r.membershipId === membershipId) ||
-          r.userId === user.userId ||
           (r.role !== null && roleSlugs.includes(r.role)),
       );
       if (!allowed) throw new NotFoundException("Article not found");
@@ -206,7 +205,7 @@ export class KbAccessService {
     }
 
     const restrictions = await this.db
-      .select({ userId: kbArticleRestrictions.userId, membershipId: kbArticleRestrictions.membershipId, role: kbArticleRestrictions.role })
+      .select({ membershipId: kbArticleRestrictions.membershipId, role: kbArticleRestrictions.role })
       .from(kbArticleRestrictions)
       .where(
         and(
@@ -221,7 +220,6 @@ export class KbAccessService {
       const allowed = restrictions.some(
         (r) =>
           (membershipId !== null && r.membershipId === membershipId) ||
-          r.userId === user.userId ||
           (r.role !== null && roleSlugs.includes(r.role)),
       );
       if (!allowed) throw new NotFoundException("Article not found");

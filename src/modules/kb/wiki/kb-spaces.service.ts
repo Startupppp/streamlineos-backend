@@ -95,9 +95,8 @@ export class KbSpacesService {
 
   async create(
     orgId: string,
-    userId: string,
     input: CreateSpaceInput,
-    membershipId?: number,
+    membershipId: number,
   ): Promise<SpaceRow> {
     const slug = kbSlugify(input.name);
     if (!slug) throw new ConflictException("Invalid space name");
@@ -118,14 +117,13 @@ export class KbSpacesService {
           audience: input.audience,
           icon: input.icon ?? null,
           isPublicHelpCenter: input.isPublicHelpCenter ?? false,
-          createdById: userId,
-          createdByMembershipId: membershipId ?? null,
+          createdByMembershipId: membershipId,
         })
         .returning();
       await tx.insert(kbSpaceMembers).values({
         orgId,
         spaceId: space.id,
-        membershipId: membershipId ?? null,
+        membershipId,
         spaceRole: "admin",
       });
       return space;

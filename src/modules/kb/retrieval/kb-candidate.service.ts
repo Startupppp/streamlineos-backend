@@ -210,7 +210,7 @@ export class KbCandidateService {
         WHERE ${kar.articleId} = ${kbArticles.id}
           AND ${kar.orgId} = ${orgId}
           AND ${kar.level} = 'view'
-          AND (${membershipMatch}${kar.userId} = ${principal.userId} OR ${
+          AND (${membershipMatch}${
             principal.roleSlugs.length > 0
               ? sql`${kar.role} = ANY(${principal.roleSlugs})`
               : sql`false`

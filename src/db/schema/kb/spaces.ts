@@ -12,7 +12,7 @@ import {
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { kbAudienceEnum, kbSpaceRoleEnum } from "../common/enums";
 
 export const kbSpaces = pgTable(
@@ -27,7 +27,6 @@ export const kbSpaces = pgTable(
     icon: text("icon"),
     branding: jsonb("branding").$type<Record<string, unknown>>(),
     isPublicHelpCenter: boolean("is_public_help_center").default(false).notNull(),
-    createdById: text("created_by_id").references(() => users.id, { onDelete: "set null" }),
     createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -73,7 +72,6 @@ export const kbSpaceMembers = pgTable(
 
 export const kbSpacesRelations = relations(kbSpaces, ({ one, many }) => ({
   organization: one(organizations, { fields: [kbSpaces.orgId], references: [organizations.id] }),
-  createdBy: one(users, { fields: [kbSpaces.createdById], references: [users.id] }),
   createdByMember: one(organizationMembers, { fields: [kbSpaces.orgId, kbSpaces.createdByMembershipId], references: [organizationMembers.orgId, organizationMembers.id] }),
   members: many(kbSpaceMembers),
 }));
