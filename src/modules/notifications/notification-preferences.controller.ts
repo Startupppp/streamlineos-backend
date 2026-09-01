@@ -3,6 +3,7 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { Universal } from "../../common/auth/universal.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { NotificationPreferencesService } from "./notification-preferences.service";
 import { NotificationPreferenceRulesService } from "./notification-preference-rules.service";
 import { preferenceRuleSchema, type PreferenceRuleBody } from "./dto/preference-rule.schemas";
@@ -32,7 +33,7 @@ export class NotificationPreferencesController {
   @Get()
   @Universal()
   get(@CurrentUser() u: CurrentUserContext) {
-    return this.preferences.getEffective(u.orgId, u.userId);
+    return this.preferences.getEffective(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   @Patch()
@@ -42,14 +43,14 @@ export class NotificationPreferencesController {
     @Body() body: UpdatePreferenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.preferences.update(u.orgId, u.userId, body);
+    return this.preferences.update(u.orgId, u.userId, body, actingMembershipId(u.principal));
   }
 
   /** SCH-003. The normalised rules behind the preference centre. */
   @Get("rules")
   @Universal()
   listRules(@CurrentUser() u: CurrentUserContext) {
-    return this.rules.list(u.orgId, u.userId);
+    return this.rules.list(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   @Put("rules")
@@ -60,7 +61,7 @@ export class NotificationPreferencesController {
     @Body() body: PreferenceRuleBody,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.rules.set(u.orgId, u.userId, body);
+    return this.rules.set(u.orgId, u.userId, body, actingMembershipId(u.principal));
   }
 
   @Get("events")
@@ -77,7 +78,7 @@ export class NotificationPreferencesController {
     @Body() body: EventPreferenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.preferences.updateEventPreference(u.orgId, u.userId, eventKey, body);
+    return this.preferences.updateEventPreference(u.orgId, u.userId, eventKey, body, actingMembershipId(u.principal));
   }
 
   @Post("reset")
@@ -85,7 +86,7 @@ export class NotificationPreferencesController {
   @Universal()
   @HttpCode(200)
   reset(@CurrentUser() u: CurrentUserContext) {
-    return this.preferences.reset(u.orgId, u.userId);
+    return this.preferences.reset(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   @Get("suppressions")

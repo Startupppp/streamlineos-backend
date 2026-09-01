@@ -15,6 +15,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { IntegrationsService } from "./integrations.service";
 import {
   finalizeConnectionSchema,
@@ -36,7 +37,7 @@ export class IntegrationsController {
   @Get("connections")
   @RequirePermission("integrations:connections:view")
   listConnections(@CurrentUser() u: CurrentUserContext) {
-    return this.integrations.listConnections(u.orgId, u.userId);
+    return this.integrations.listConnections(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   @Post("connections/initiate")
@@ -58,7 +59,7 @@ export class IntegrationsController {
     @Body() body: FinalizeConnectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.integrations.finalize(u.orgId, u.userId, body.connectedAccountId);
+    return this.integrations.finalize(u.orgId, u.userId, body.connectedAccountId, actingMembershipId(u.principal));
   }
 
   @Delete("connections/:connectionId")
@@ -68,7 +69,7 @@ export class IntegrationsController {
     @Param("connectionId", ParseIntPipe) connectionId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.integrations.disconnect(u.orgId, u.userId, connectionId);
+    return this.integrations.disconnect(u.orgId, u.userId, connectionId, actingMembershipId(u.principal));
   }
 
   @Patch("connections/:connectionId/primary")
@@ -79,6 +80,6 @@ export class IntegrationsController {
     @Param("connectionId", ParseIntPipe) connectionId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.integrations.setPrimary(u.orgId, u.userId, connectionId);
+    return this.integrations.setPrimary(u.orgId, u.userId, connectionId, actingMembershipId(u.principal));
   }
 }

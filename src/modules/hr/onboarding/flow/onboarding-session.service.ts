@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull, or } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { onboardingFlowSessions } from "../../../../db/schema";
@@ -28,11 +28,20 @@ export class OnboardingSessionService {
     private readonly analytics: OnboardingAnalyticsService,
   ) {}
 
-  async getOrCreateSession(orgId: string, userId: string, type: OnboardingFlowType) {
+  private sessionOwnerPredicate(userId: string, membershipId: number | null | undefined) {
+    if (membershipId != null)
+      return or(
+        eq(onboardingFlowSessions.membershipId, membershipId),
+        and(isNull(onboardingFlowSessions.membershipId), eq(onboardingFlowSessions.userId, userId)),
+      );
+    return eq(onboardingFlowSessions.userId, userId);
+  }
+
+  async getOrCreateSession(orgId: string, userId: string, type: OnboardingFlowType, membershipId?: number | null) {
     const existing = await this.db.query.onboardingFlowSessions.findFirst({
       where: and(
         eq(onboardingFlowSessions.orgId, orgId),
-        eq(onboardingFlowSessions.userId, userId),
+        this.sessionOwnerPredicate(userId, membershipId),
         eq(onboardingFlowSessions.type, type),
       ),
       orderBy: desc(onboardingFlowSessions.createdAt),
@@ -43,15 +52,15 @@ export class OnboardingSessionService {
 
     const [created] = await this.db
       .insert(onboardingFlowSessions)
-      .values({ orgId, userId, type, status: "not_started", startedAt: new Date() })
+      .values({ orgId, userId, membershipId: membershipId ?? null, type, status: "not_started", startedAt: new Date() })
       .returning();
 
     await this.analytics.track(orgId, userId, `${type}_started`, { source: "session" });
     return created;
   }
 
-  async patchSession(orgId: string, userId: string, type: OnboardingFlowType, patch: SessionPatch) {
-    const session = await this.getOrCreateSession(orgId, userId, type);
+  async patchSession(orgId: string, userId: string, type: OnboardingFlowType, patch: SessionPatch, membershipId?: number | null) {
+    const session = await this.getOrCreateSession(orgId, userId, type, membershipId);
 
     const [updated] = await this.db
       .update(onboardingFlowSessions)
@@ -70,8 +79,8 @@ export class OnboardingSessionService {
     return updated;
   }
 
-  async completeSession(orgId: string, userId: string, type: OnboardingFlowType) {
-    const session = await this.getOrCreateSession(orgId, userId, type);
+  async completeSession(orgId: string, userId: string, type: OnboardingFlowType, membershipId?: number | null) {
+    const session = await this.getOrCreateSession(orgId, userId, type, membershipId);
     const [updated] = await this.db
       .update(onboardingFlowSessions)
       .set({ status: "completed", completedAt: new Date(), lastSeenAt: new Date() })
@@ -82,8 +91,8 @@ export class OnboardingSessionService {
     return updated;
   }
 
-  async skipSession(orgId: string, userId: string, type: OnboardingFlowType, reason?: string) {
-    const session = await this.getOrCreateSession(orgId, userId, type);
+  async skipSession(orgId: string, userId: string, type: OnboardingFlowType, reason?: string, membershipId?: number | null) {
+    const session = await this.getOrCreateSession(orgId, userId, type, membershipId);
     const [updated] = await this.db
       .update(onboardingFlowSessions)
       .set({

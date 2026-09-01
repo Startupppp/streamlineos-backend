@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { createHash } from "node:crypto";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import * as webpush from "web-push";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -32,10 +32,20 @@ export class WebPushService {
     return Boolean(this.publicKey && this.privateKey);
   }
 
+  private subscriptionPredicate(userId: string, membershipId: number | null | undefined) {
+    if (membershipId != null)
+      return or(
+        eq(pushSubscriptions.membershipId, membershipId),
+        and(isNull(pushSubscriptions.membershipId), eq(pushSubscriptions.userId, userId)),
+      );
+    return eq(pushSubscriptions.userId, userId);
+  }
+
   async sendToUser(
     userId: string,
     payload: PushPayload,
     effect?: { orgId: string; producerEventId: string; effectKey: string },
+    membershipId?: number | null,
   ): Promise<void> {
     if (!this.configured) {
       if (effect) throw new Error("Web Push is not configured");
@@ -49,7 +59,7 @@ export class WebPushService {
         auth: pushSubscriptions.auth,
       })
       .from(pushSubscriptions)
-      .where(eq(pushSubscriptions.userId, userId));
+      .where(this.subscriptionPredicate(userId, membershipId));
 
     if (subs.length === 0) return;
 

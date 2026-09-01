@@ -56,6 +56,7 @@ export class NotificationDigestService {
   async enqueue(input: {
     orgId: string;
     userId: string;
+    membershipId?: number | null;
     channel: NotificationChannel;
     eventKey: string;
     entityType?: string | null;
@@ -72,6 +73,7 @@ export class NotificationDigestService {
       .values({
         orgId: input.orgId,
         userId: input.userId,
+        membershipId: input.membershipId ?? null,
         channel: input.channel,
         eventKey: input.eventKey,
         entityType: input.entityType ?? null,

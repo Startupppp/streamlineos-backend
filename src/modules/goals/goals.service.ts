@@ -204,7 +204,7 @@ export class GoalsService {
     }));
   }
 
-  create(orgId: string, userId: string, input: CreateInput): Promise<typeof okrGoals.$inferSelect> {
+  create(orgId: string, userId: string, input: CreateInput, membershipId?: number | null): Promise<typeof okrGoals.$inferSelect> {
     return this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(okrGoals)
@@ -220,6 +220,7 @@ export class GoalsService {
           parentGoalId: input.parentGoalId ?? null,
           projectId: input.projectId ?? null,
           createdBy: userId,
+          createdByMembershipId: membershipId ?? null,
         })
         .returning();
 

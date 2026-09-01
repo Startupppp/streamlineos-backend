@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -12,6 +12,8 @@ import {
   hrCaseNotes,
   hrCaseDocuments,
 } from "../../../db/schema/hr/cases";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { HrAuditService } from "../core/hr-audit.service";
 import type {
   CreateCaseInput,
@@ -47,8 +49,8 @@ export class HrCasesService {
     input: ListCasesInput,
     membershipId?: number | null,
   ) {
-    const { page, limit, status, category, severity, search, assignedTo } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, status, category, severity, search, assignedTo } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [eq(hrCases.orgId, orgId), isNull(hrCases.deletedAt)];
 
@@ -66,43 +68,33 @@ export class HrCasesService {
     if (severity) conditions.push(eq(hrCases.severity, severity));
     if (assignedTo) conditions.push(eq(hrCases.assignedTo, assignedTo));
     if (search) conditions.push(await this.caseSearchCondition(search));
+    if (pos) conditions.push(keysetBeforeId(hrCases.createdAt, hrCases.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select({
+        id: hrCases.id,
+        caseNumber: hrCases.caseNumber,
+        category: hrCases.category,
+        severity: hrCases.severity,
+        status: hrCases.status,
+        summary: hrCases.summary,
+        anonymous: hrCases.anonymous,
+        confidential: hrCases.confidential,
+        assignedTo: hrCases.assignedTo,
+        subjectEmployeeId: hrCases.subjectEmployeeId,
+        createdAt: hrCases.createdAt,
+        updatedAt: hrCases.updatedAt,
+        resolvedAt: hrCases.resolvedAt,
+      })
+      .from(hrCases)
+      .where(and(...conditions))
+      .orderBy(desc(hrCases.createdAt), desc(hrCases.id))
+      .limit(limit + 1);
 
-    const [rows, totalResult] = await Promise.all([
-      this.db
-        .select({
-          id: hrCases.id,
-          caseNumber: hrCases.caseNumber,
-          category: hrCases.category,
-          severity: hrCases.severity,
-          status: hrCases.status,
-          summary: hrCases.summary,
-          anonymous: hrCases.anonymous,
-          confidential: hrCases.confidential,
-          assignedTo: hrCases.assignedTo,
-          subjectEmployeeId: hrCases.subjectEmployeeId,
-          createdAt: hrCases.createdAt,
-          updatedAt: hrCases.updatedAt,
-          resolvedAt: hrCases.resolvedAt,
-        })
-        .from(hrCases)
-        .where(where)
-        .orderBy(desc(hrCases.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrCases).where(where),
-    ]);
-
-    return {
-      data: rows,
-      pagination: {
-        page,
-        limit,
-        total: totalResult[0]?.total ?? 0,
-        totalPages: Math.ceil((totalResult[0]?.total ?? 0) / limit),
-      },
-    };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   private async caseSearchCondition(search: string): Promise<SQL> {

@@ -17,6 +17,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { GoalsService } from "./goals.service";
 import {
   GoalLinksService,
@@ -71,7 +72,7 @@ export class GoalsController {
     @Body() body: CreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.goals.create(u.orgId, u.userId, body);
+    return this.goals.create(u.orgId, u.userId, body, actingMembershipId(u.principal));
   }
 
   @Get("stats")

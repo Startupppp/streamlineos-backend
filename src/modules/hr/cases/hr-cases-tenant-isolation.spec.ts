@@ -66,7 +66,7 @@ describe("HrDisciplinaryService — cross-tenant isolation", () => {
     const mockAudit = { log: jest.fn() };
     const mockTemplates = { getTemplate: jest.fn() };
     const svc = new HrDisciplinaryService(db, mockAudit as never, mockTemplates as never);
-    await svc.list(ATTACKER, { page: 1, limit: 10 });
+    await svc.list(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -75,7 +75,7 @@ describe("HrDisciplinaryService — cross-tenant isolation", () => {
     const mockAudit = { log: jest.fn() };
     const mockTemplates = { getTemplate: jest.fn() };
     const svc = new HrDisciplinaryService(db, mockAudit as never, mockTemplates as never);
-    await svc.list(OWNER, { page: 1, limit: 10 });
+    await svc.list(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });

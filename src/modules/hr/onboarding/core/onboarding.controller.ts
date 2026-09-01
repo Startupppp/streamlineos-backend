@@ -17,6 +17,7 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { AccessService } from "../../../access/access.service";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../../common/auth/principal";
 import { OnboardingSubmissionService } from "./onboarding-submission.service";
 import { OnboardingDetailsService } from "./onboarding-details.service";
 import { OnboardingTaskService } from "./onboarding-task.service";
@@ -53,9 +54,13 @@ import { z } from "zod";
 import { BodylessAction } from "../../../../common/openapi/zod-operation-contracts";
 
 const moduleKeyParams = z.object({ moduleKey: z.string().min(1) }).strict();
-const moduleKeyitemKeyParams = z.object({ moduleKey: z.string().min(1), itemKey: z.string().min(1) }).strict();
+const moduleKeyitemKeyParams = z
+  .object({ moduleKey: z.string().min(1), itemKey: z.string().min(1) })
+  .strict();
 const tourKeyParams = z.object({ tourKey: z.string().min(1) }).strict();
-const taskIdParams = z.object({ taskId: z.coerce.number().int().positive() }).strict();
+const taskIdParams = z
+  .object({ taskId: z.coerce.number().int().positive() })
+  .strict();
 
 const HR_MODULE_KEY: ModuleKey = "hr";
 
@@ -101,6 +106,7 @@ export class OnboardingController {
       u.orgId,
       u.userId,
       "employee_onboarding",
+      actingMembershipId(u.principal),
     );
   }
 
@@ -116,6 +122,7 @@ export class OnboardingController {
       u.userId,
       "employee_onboarding",
       body,
+      actingMembershipId(u.principal),
     );
   }
 
@@ -135,7 +142,8 @@ export class OnboardingController {
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (this.isHrModuleKey(moduleKey)) await this.assertHrChecklistAccess(u, "view");
+    if (this.isHrModuleKey(moduleKey))
+      await this.assertHrChecklistAccess(u, "view");
     return this.checklists.getChecklist(u.orgId, moduleKey);
   }
 
@@ -149,13 +157,9 @@ export class OnboardingController {
     @Param("itemKey") itemKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (this.isHrModuleKey(moduleKey)) await this.assertHrChecklistAccess(u, "manage");
-    return this.checklists.completeItem(
-      u.orgId,
-      moduleKey,
-      itemKey,
-      u.userId,
-    );
+    if (this.isHrModuleKey(moduleKey))
+      await this.assertHrChecklistAccess(u, "manage");
+    return this.checklists.completeItem(u.orgId, moduleKey, itemKey, u.userId);
   }
 
   @Post("module-checklists/:moduleKey/items/:itemKey/skip")
@@ -168,7 +172,8 @@ export class OnboardingController {
     @Body() body: ChecklistItemSkipInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (this.isHrModuleKey(moduleKey)) await this.assertHrChecklistAccess(u, "manage");
+    if (this.isHrModuleKey(moduleKey))
+      await this.assertHrChecklistAccess(u, "manage");
     return this.checklists.skipItem(
       u.orgId,
       moduleKey,
@@ -187,12 +192,9 @@ export class OnboardingController {
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (this.isHrModuleKey(moduleKey)) await this.assertHrChecklistAccess(u, "manage");
-    return this.checklists.dismissChecklist(
-      u.orgId,
-      moduleKey,
-      u.userId,
-    );
+    if (this.isHrModuleKey(moduleKey))
+      await this.assertHrChecklistAccess(u, "manage");
+    return this.checklists.dismissChecklist(u.orgId, moduleKey, u.userId);
   }
 
   @Post("module-checklists/:moduleKey/restart")
@@ -204,12 +206,9 @@ export class OnboardingController {
     @Param("moduleKey") moduleKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (this.isHrModuleKey(moduleKey)) await this.assertHrChecklistAccess(u, "manage");
-    return this.checklists.restartChecklist(
-      u.orgId,
-      moduleKey,
-      u.userId,
-    );
+    if (this.isHrModuleKey(moduleKey))
+      await this.assertHrChecklistAccess(u, "manage");
+    return this.checklists.restartChecklist(u.orgId, moduleKey, u.userId);
   }
 
   private async assertTourAccess(
@@ -225,7 +224,12 @@ export class OnboardingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("onboarding:tours:view")
   async listTours(@CurrentUser() u: CurrentUserContext) {
-    const tours = await this.tours.listToursForUser(u.orgId, u.userId, u.role);
+    const tours = await this.tours.listToursForUser(
+      u.orgId,
+      u.userId,
+      u.role,
+      actingMembershipId(u.principal),
+    );
     const includeHr = await this.hasHrChecklistAccess(u);
     return includeHr
       ? tours
@@ -247,6 +251,7 @@ export class OnboardingController {
       u.userId,
       tourKey,
       body.currentStep,
+      actingMembershipId(u.principal),
     );
   }
 
@@ -260,7 +265,12 @@ export class OnboardingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.assertTourAccess(tourKey, u, "view");
-    return this.tours.completeTour(u.orgId, u.userId, tourKey);
+    return this.tours.completeTour(
+      u.orgId,
+      u.userId,
+      tourKey,
+      actingMembershipId(u.principal),
+    );
   }
 
   @Post("tours/:tourKey/dismiss")
@@ -273,7 +283,12 @@ export class OnboardingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     await this.assertTourAccess(tourKey, u, "view");
-    return this.tours.dismissTour(u.orgId, u.userId, tourKey);
+    return this.tours.dismissTour(
+      u.orgId,
+      u.userId,
+      tourKey,
+      actingMembershipId(u.principal),
+    );
   }
 
   @Patch("personal-details")

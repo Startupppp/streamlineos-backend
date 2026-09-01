@@ -1,14 +1,25 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { kbArticleTags, kbTags } from "../../../db/schema";
 import { kbSlugify } from "./kb.util";
-import type { CreateTagInput, SetArticleTagsInput } from "./dto/kb-tags.schemas";
+import type {
+  CreateTagInput,
+  SetArticleTagsInput,
+} from "./dto/kb-tags.schemas";
 
 type TagRow = typeof kbTags.$inferSelect;
 
-type ArticleTagRow = Pick<TagRow, "id" | "orgId" | "name" | "slug" | "createdAt">;
+type ArticleTagRow = Pick<
+  TagRow,
+  "id" | "orgId" | "name" | "slug" | "createdAt"
+>;
 
 @Injectable()
 export class KbTagsService {
@@ -19,7 +30,8 @@ export class KbTagsService {
       .select()
       .from(kbTags)
       .where(eq(kbTags.orgId, orgId))
-      .orderBy(asc(kbTags.name));
+      .orderBy(asc(kbTags.name))
+      .limit(500);
   }
 
   async create(orgId: string, input: CreateTagInput): Promise<TagRow> {
@@ -28,7 +40,8 @@ export class KbTagsService {
       where: and(eq(kbTags.orgId, orgId), eq(kbTags.slug, slug)),
       columns: { id: true },
     });
-    if (existing) throw new ConflictException("A tag with this name already exists");
+    if (existing)
+      throw new ConflictException("A tag with this name already exists");
     const [tag] = await this.db
       .insert(kbTags)
       .values({ orgId, name: input.name, slug })
@@ -56,13 +69,27 @@ export class KbTagsService {
       })
       .from(kbTags)
       .innerJoin(kbArticleTags, eq(kbArticleTags.tagId, kbTags.id))
-      .where(and(eq(kbArticleTags.articleId, articleId), eq(kbTags.orgId, orgId)))
-      .orderBy(asc(kbTags.name));
+      .where(
+        and(eq(kbArticleTags.articleId, articleId), eq(kbTags.orgId, orgId)),
+      )
+      .orderBy(asc(kbTags.name))
+      .limit(50);
   }
 
-  async setArticleTags(orgId: string, articleId: number, input: SetArticleTagsInput): Promise<ArticleTagRow[]> {
+  async setArticleTags(
+    orgId: string,
+    articleId: number,
+    input: SetArticleTagsInput,
+  ): Promise<ArticleTagRow[]> {
     return this.db.transaction(async (tx) => {
-      await tx.delete(kbArticleTags).where(and(eq(kbArticleTags.orgId, orgId), eq(kbArticleTags.articleId, articleId)));
+      await tx
+        .delete(kbArticleTags)
+        .where(
+          and(
+            eq(kbArticleTags.orgId, orgId),
+            eq(kbArticleTags.articleId, articleId),
+          ),
+        );
 
       if (input.tagIds.length > 0) {
         await tx
@@ -73,10 +100,19 @@ export class KbTagsService {
       const resolvedTags: ArticleTagRow[] =
         input.tagIds.length > 0
           ? await tx
-              .select({ id: kbTags.id, orgId: kbTags.orgId, name: kbTags.name, slug: kbTags.slug, createdAt: kbTags.createdAt })
+              .select({
+                id: kbTags.id,
+                orgId: kbTags.orgId,
+                name: kbTags.name,
+                slug: kbTags.slug,
+                createdAt: kbTags.createdAt,
+              })
               .from(kbTags)
-              .where(and(eq(kbTags.orgId, orgId), inArray(kbTags.id, input.tagIds)))
+              .where(
+                and(eq(kbTags.orgId, orgId), inArray(kbTags.id, input.tagIds)),
+              )
               .orderBy(asc(kbTags.name))
+              .limit(input.tagIds.length)
           : [];
 
       return resolvedTags;

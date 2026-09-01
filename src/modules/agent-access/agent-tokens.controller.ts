@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post, Use
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { AgentTokensService } from "./agent-tokens.service";
@@ -30,7 +31,7 @@ export class AgentTokensController {
   @RequirePermission("settings:api-tokens:read")
   @Get()
   list(@CurrentUser() u: CurrentUserContext) {
-    return this.svc.list(u.userId, u.orgId);
+    return this.svc.list(u.userId, u.orgId, actingMembershipId(u.principal));
   }
 
   @RequirePermission("settings:api-tokens:write")
@@ -41,6 +42,6 @@ export class AgentTokensController {
     @CurrentUser() u: CurrentUserContext,
     @Param("tokenId", ParseIntPipe) tokenId: number,
   ) {
-    return this.svc.revoke(u.userId, u.orgId, tokenId);
+    return this.svc.revoke(u.userId, u.orgId, tokenId, actingMembershipId(u.principal));
   }
 }

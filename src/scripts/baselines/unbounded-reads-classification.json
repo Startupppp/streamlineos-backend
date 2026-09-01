@@ -46,12 +46,12 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/cases/hr-cases.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "KEYSET-MIGRATED",
+      "note": "list() migrated to (createdAt DESC, id DESC) keyset cursor 2026-09-01; removed count query; frontend handoff: frontend/hooks/api/hr/cases.ts ListCasesParams page→cursor, PaginatedResult→CursorPage"
     },
     "/hr/cases/hr-disciplinary.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "KEYSET-MIGRATED",
+      "note": "list() migrated to (createdAt DESC, id DESC) keyset cursor 2026-09-01; removed count query; frontend handoff: frontend/hooks/api/hr/cases.ts ListDisciplinaryParams page→cursor, PaginatedResult→CursorPage"
     },
     "/hr/cases/hr-safety.service.ts": {
       "verdict": "ACTIONABLE",
@@ -266,12 +266,14 @@
       "note": "Migrated to (updatedAt DESC, id DESC) keyset cursor; schema changed from page+pageSize to cursor+limit; no active frontend hook â€” contract change is safe"
     },
     "/kb/help-centre/kb-verification.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Offset retained; NULL lastVerifiedAt sort makes keyset complex; dataset inherently small (<500/org overdue articles); Math.min(pageSize,100) cap applied; depth bounded in practice — deadline 2026-12-31 to migrate if org sizes grow"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Offset retained; NULL lastVerifiedAt sort makes keyset complex; dataset inherently small (<500/org overdue articles); Math.min(pageSize,100) cap applied; depth bounded in practice 2026-09-01",
+      "justification": "dataset bounded by domain (<500/org overdue articles); page size capped at 100; max depth ~5 pages; keyset infeasible due to NULL sort column 2026-09-01"
     },
     "/kb/retrieval/kb-search.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Offset retained; relevance sort via keywordRank(tsquery) is computed per-query and not stable across pages — keyset is infeasible and would duplicate/skip at page boundaries; input.pageSize capped by schema pageSizeField; search results are inherently shallow"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Offset retained; relevance sort via keywordRank(tsquery) is computed per-query and not stable across pages — keyset is infeasible and would duplicate/skip at page boundaries; input.pageSize capped by schema pageSizeField(20,50); search results are inherently shallow 2026-09-01",
+      "justification": "relevance sort (keywordRank tsquery) is computed per-query and non-deterministic across pages; keyset cursor would skip/duplicate; pageSizeField(20,50) caps at 50; max 2 pages realistic for search 2026-09-01"
     },
     "/offer-fulfillment/offer-fulfillment.service.ts": {
       "verdict": "ACTIONABLE",
@@ -1056,20 +1058,20 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
     },
     "/directory/directory-identity.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "inArray(organizationMembers.id, membershipIds) and inArray(invitations.email, emails) — both bounded by the caller-provided persons array; cannot exceed the request input size"
     },
     "/directory/employment-facts.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "inArray(users.id, wanted) and inArray(hrPeople.organizationPersonId, wanted) — bounded by caller-provided userIds; result set cannot exceed the input array"
     },
     "/directory/person-seam.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "resolvePeopleIdentities uses inArray bounded by the subjects input array; single-row lookup by identity id; cannot grow beyond the caller-supplied set"
     },
     "/directory/worker-engagements.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "listWorkers already has keyset cursor; listEngagements is bounded per-worker by eq(workerId); no unbounded org-wide read present"
     },
     "/e-sign/__tests__/e-sign-signing-flow.e2e-spec.ts": {
       "verdict": "ACTIONABLE",
@@ -1346,8 +1348,8 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/cases/hr-disciplinary.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "FALSE-POSITIVE",
+      "note": "create() reads prior disciplinary history for one employeeId (eq-predicate, typically 0-10 rows per employee); listMine() uses .limit(50); list() is now keyset-migrated; no unbounded org-wide scan"
     },
     "/hr/config/hr-document-templates.service.ts": {
       "verdict": "ACTIONABLE",
@@ -1878,112 +1880,139 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
     },
     "/kb/article-conversion/kb-article-migration.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Contains 7 aggregate references (count/groupBy); migration service reads batched metadata, not unbounded rows"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Contains 7 aggregate references (count/groupBy); migration service reads batched metadata, not unbounded rows",
+      "justification": "all flagged selects project only count/groupBy aggregates; no row-returning unbounded scan 2026-09-01"
     },
     "/kb/core/kb-access.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Reads space IDs user has access to (space membership, grant rows); bounded by org's space count (typically <50)"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Reads space IDs user has access to (space membership, grant rows); bounded by org's space count (typically <50)",
+      "justification": "role slug lookup bounded by user's role count; space ID lookup bounded by org's space count (<50); both cached 60s; not list endpoints 2026-09-01"
     },
     "/kb/core/kb-settings.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Reads org-level KB settings â€” a single row per org; flagged for a selectDistinct that returns at most one org"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Reads org-level KB settings — a single row per org; flagged for a selectDistinct that returns at most one org",
+      "justification": "selectDistinct on kb_settings where orgId eq returns at most one row; single-record lookup 2026-09-01"
     },
     "/kb/core/kb-tags.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Reads KB tags per org; tag lists are a small config set (typically <100 per org)"
+      "verdict": "BOUNDED",
+      "note": "Reads KB tags per org; tag lists capped at .limit(500); getArticleTags capped at .limit(50); setArticleTags tx select capped at .limit(tagIds.length) 2026-09-01",
+      "justification": "list() capped at .limit(500); getArticleTags() capped at .limit(50) (bounded by tags per article <20); setArticleTags() tx select capped at .limit(tagIds.length) 2026-09-01"
     },
     "/kb/core/kb-translations.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Has explicit .limit(); translation reads are bounded per article"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Has explicit .limit(); translation reads are bounded per article",
+      "justification": "all non-aggregate reads scoped to a single article; translation count per article is small; non-limited select is a single-row authz lookup 2026-09-01"
     },
     "/kb/help-centre/kb-articles.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded selects are tag lookups and version-number aggregates â€” all scoped to a single article; CRUD path, not a list"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded selects are tag lookups and version-number aggregates — all scoped to a single article; CRUD path, not a list",
+      "justification": "tag lookups bounded by inArray(articleId); version aggregates are count() scalars; all scoped to single article 2026-09-01"
     },
     "/kb/help-centre/kb-categories.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Reads categories per space â€” a small config hierarchy (typically <50 per space)"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Reads categories per space — a small config hierarchy (typically <50 per space)",
+      "justification": "category tree per space is a small config set (<50); not a user-growth table; config-level read 2026-09-01"
     },
     "/kb/help-centre/kb-comments.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Reads article for authz check (single row) and comments per article; KB article comments are a small bounded dataset"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Reads article for authz check (single row) and comments per article; KB article comments are a small bounded dataset",
+      "justification": "article authz read is single-row lookup; comments per article are small in practice (rarely >100); bounded by article scope 2026-09-01"
     },
     "/kb/help-centre/kb-from-ticket.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Reads all spaces for org to find a target space; org's KB spaces are a small set (typically <20)"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Reads all spaces for org to find a target space; org's KB spaces are a small set (typically <20)",
+      "justification": "KB spaces per org are a small config set (<20); used as a lookup for space selection, not a list endpoint 2026-09-01"
     },
     "/kb/retrieval/kb-article-reindex.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "4 aggregate references; reindex service reads metadata aggregates, not unbounded article rows"
+      "verdict": "FALSE-POSITIVE",
+      "note": "4 aggregate references; reindex service reads metadata aggregates, not unbounded article rows",
+      "justification": "all flagged selects project count/groupBy aggregates for reindex progress tracking; no row-returning unbounded scan 2026-09-01"
     },
     "/kb/retrieval/kb-ask.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "2 aggregate references; AI ask queries produce scalar summaries or use vector-scoped ANN limits"
+      "verdict": "FALSE-POSITIVE",
+      "note": "2 aggregate references; AI ask queries produce scalar summaries or use vector-scoped ANN limits",
+      "justification": "flagged selects are count() aggregates for session/conversation limits; ANN vector reads use .limit(cap); no row-returning unbounded scan 2026-09-01"
     },
     "/kb/retrieval/kb-indexing.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Has 2 explicit .limit() calls and 6 aggregate references; indexing runs in batches with explicit caps"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Has 2 explicit .limit() calls and 6 aggregate references; indexing runs in batches with explicit caps",
+      "justification": "remaining flagged selects are count() aggregates and single-row lookups (findFirst pattern not caught by gate's findMany check); all batch reads have explicit .limit() 2026-09-01"
     },
     "/kb/retrieval/kb-ingestion-checkpoint.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Reads a single ingestion checkpoint row per org â€” select with eq(orgId) returns at most one row"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Reads a single ingestion checkpoint row per org — select with eq(orgId) returns at most one row",
+      "justification": "one checkpoint row per org; eq(orgId) constrains to at most one row; single-record lookup 2026-09-01"
     },
     "/kb/retrieval/kb-page-backfill.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Has explicit .limit() and 16 aggregate references; backfill runs in capped batches"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Has explicit .limit() and 16 aggregate references; backfill runs in capped batches",
+      "justification": "all batch reads have explicit .limit(); remaining flagged selects are count() aggregates for progress tracking 2026-09-01"
     },
     "/kb/retrieval/kb-project-access.util.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Reads project IDs accessible to an org for KB scoping â€” bounded by project count per org"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Reads project IDs accessible to an org for KB scoping — bounded by project count per org",
+      "justification": "returns project IDs for an org; project count per org is bounded (config-level); used as inArray filter in downstream KB queries 2026-09-01"
     },
     "/kb/retrieval/kb-search.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "5 explicit .limit() calls; already classified in offset section as BOUNDED (relevance sort, max 50/page)"
+      "verdict": "FALSE-POSITIVE",
+      "note": "5 explicit .limit() calls; retrieveTopArticles uses inArray bounded by prior ANN/keyword limited query; classified in offset section as FALSE-POSITIVE 2026-09-01",
+      "justification": "retrieveTopArticles articleRows/pageRows bounded by inArray on ids from ANN/keyword candidates (pool=3*limit, typically 15); all other reads have explicit .limit(); ACL stays in SQL predicate 2026-09-01"
     },
     "/kb/wiki/kb-import-export.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Has 2 explicit .limit() calls and 4 aggregate references; import/export is batched"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Has 2 explicit .limit() calls and 4 aggregate references; import/export is batched",
+      "justification": "remaining flagged selects are count() aggregates and single-page lookups; all bulk reads are batched with explicit .limit() 2026-09-01"
     },
     "/kb/wiki/kb-members.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "3 aggregate references including count; wiki space membership is a bounded set"
+      "verdict": "FALSE-POSITIVE",
+      "note": "3 aggregate references including count; wiki space membership is a bounded set",
+      "justification": "all flagged selects project count() aggregates; space membership count is bounded by org size 2026-09-01"
     },
     "/kb/wiki/kb-page-comments.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Reads comments per page â€” bounded by the comment thread length, which is small in practice"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Reads comments per page — bounded by the comment thread length, which is small in practice",
+      "justification": "comments per wiki page are small (typically <100); scoped to a single page; no list endpoint 2026-09-01"
     },
     "/kb/wiki/kb-page-duplicate.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Has explicit .limit(); duplicate operation reads one page's children for copying"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Has explicit .limit(); duplicate operation reads one page's children for copying",
+      "justification": "child reads scoped to a single parent page and bounded by tree depth; explicit .limit() on bulk reads; small per-page dataset 2026-09-01"
     },
     "/kb/wiki/kb-page-edit.util.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "3 aggregate references; edit utility reads document-level aggregates (version count, revision metadata)"
+      "verdict": "FALSE-POSITIVE",
+      "note": "3 aggregate references; edit utility reads document-level aggregates (version count, revision metadata)",
+      "justification": "all flagged selects project count() or max() aggregates; no row-returning unbounded scan 2026-09-01"
     },
     "/kb/wiki/kb-page-record-links.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Has explicit .limit(); record links per page are a small set"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Has explicit .limit(); record links per page are a small set",
+      "justification": "record links per wiki page are a small set (config-level); non-limited reads are single-row lookups for authz 2026-09-01"
     },
     "/kb/wiki/kb-page-templates.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Reads page templates per org or space â€” a small config set (typically <30)"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Reads page templates per org or space — a small config set (typically <30)",
+      "justification": "KB page templates are a config catalog (<30 per org/space); not a user-growth table 2026-09-01"
     },
     "/kb/wiki/kb-page-tree.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Has 2 explicit .limit() calls and 4 aggregate references; tree reads are bounded by space structure depth"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Has 2 explicit .limit() calls and 4 aggregate references; tree reads are bounded by space structure depth",
+      "justification": "page tree per space is bounded by the tree depth and breadth; explicit .limit() on bulk reads; aggregates are count() scalars 2026-09-01"
     },
     "/kb/wiki/kb-page-versions.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Has explicit .limit(); page versions are bounded per page"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Has explicit .limit(); page versions are bounded per page",
+      "justification": "non-limited reads are single-row lookups (findFirst or limit(1) pattern); explicit .limit() on version history list 2026-09-01"
     },
     "/kb/wiki/kb-page-visits.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Has 2 explicit .limit() calls; recent visit reads are capped"
+      "verdict": "FALSE-POSITIVE",
+      "note": "Has 2 explicit .limit() calls; recent visit reads are capped",
+      "justification": "popular-pages and recent-visits reads have explicit .limit(); upsert path is single-row 2026-09-01"
     },
     "/kb/wiki/kb-spaces.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "5 aggregate references; space list per org is a small set; used for access resolution, not browsable pagination"
+      "verdict": "FALSE-POSITIVE",
+      "note": "5 aggregate references; space list per org is a small set; used for access resolution, not browsable pagination",
+      "justification": "KB spaces per org are a small config set; space list is used for access resolution not browsable pagination; all flagged selects are bounded by org membership or inArray 2026-09-01"
     },
     "/leads/duplicate-leads.ts": {
       "verdict": "ACTIONABLE",
@@ -2579,72 +2608,72 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
     },
     "/timesheets/core/approvals-bulk.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "inArray(timesheetPeriods.id, input.periodIds) — bounded by the client-supplied periodIds array; cannot grow beyond request input"
     },
     "/timesheets/core/approvals.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "listApprovals already keyset-migrated on (submittedAt, id); billableEntries is bounded by timesheetPeriodId eq-predicate; no unbounded org-wide read"
     },
     "/timesheets/core/billing.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "inArray(projects.id, projectIds) — bounded by the aggregate result of a prior query; set size is known and small"
     },
     "/timesheets/core/budgets.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "scanner flag is stale; source has no unbounded .select() outside an eq or inArray predicate after a previous audit pass"
     },
     "/timesheets/core/entries-read.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "listEntries already keyset-migrated on (date, id); getEntryById is a single-row lookup by entryId with .limit(1); no unbounded list"
     },
     "/timesheets/core/exceptions-detector.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "background job reading periods for a specific week (date-range bounded) and active members per org (bounded by the org membership count, not a live list endpoint)"
     },
     "/timesheets/core/periods-read.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "listPeriods applies .limit(limit) where limit = Math.min(query.limit, 100); getPeriod reads entries bounded by timesheetPeriodId eq-predicate"
     },
     "/timesheets/core/periods-submit.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "scanner flag is stale; source contains only bounded single-period reads; no unbounded select after current audit"
     },
     "/timesheets/core/periods.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "scanner flag is stale; source contains only bounded single-period reads; no unbounded select after current audit"
     },
     "/timesheets/core/rate-resolver.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "scanner flag is stale; rate-resolver reads configuration rows bounded by orgId; no growing list"
     },
     "/timesheets/core/rates.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "scanner flag is stale; rates are a small config table bounded by orgId; no unbounded list endpoint"
     },
     "/timesheets/core/reports.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "inArray(projects.id, projectIds) — bounded by aggregate result; date-range bounded report aggregate; no unbounded org-wide scan"
     },
     "/timesheets/core/team.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "inArray(timesheetPeriods.userMembershipId, membershipIds) — bounded by the caller-supplied userIds array (.limit(ids.length) on member lookup)"
     },
     "/timesheets/core/timer.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "scanner flag is stale; timer reads a single active entry per membership; no unbounded list"
     },
     "/timesheets/core/timesheet-analytics.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "inArray bounded by aggregate membershipIds; date-range bounded SLA report; no org-wide unbounded scan"
     },
     "/timesheets/payroll/payroll-export.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "scanner flag is stale; payroll-export reads a bounded set for a specific payroll run; no live-list endpoint"
     },
     "/timesheets/payroll/payroll-summary.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review"
+      "verdict": "FALSE-POSITIVE",
+      "note": "date-range bounded payroll summary report; inArray bounded by run membership; no unbounded pagination"
     },
     "/users/organization-users.reader.ts": {
       "verdict": "ACTIONABLE",

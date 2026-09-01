@@ -242,6 +242,7 @@ export class NotificationDispatchService {
         await this.digest.enqueue({
           orgId: input.orgId,
           userId,
+          membershipId: memberIdByUser.get(userId) ?? null,
           channel: "EMAIL",
           eventKey: input.eventKey,
           entityType: input.entityType ?? null,

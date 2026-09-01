@@ -11,7 +11,7 @@
  */
 
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { HrCasesService } from "./hr-cases.service";
 import type { ListCasesInput } from "./dto/hr-cases.schemas";
 import { hrCases } from "../../../db/schema/hr/cases";
@@ -47,33 +47,27 @@ function makeCase(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function buildMockDb(selectRows: unknown[], countRows: unknown[]) {
+function buildMockDb(selectRows: unknown[]) {
   const where = jest.fn().mockReturnThis();
   const orderBy = jest.fn().mockReturnThis();
-  const limitFn = jest.fn().mockReturnThis();
-  const offset = jest.fn().mockResolvedValue(selectRows);
-  const selectCountWhere = jest.fn().mockResolvedValue(countRows);
+  const limitFn = jest.fn().mockResolvedValue(selectRows);
 
   const selectFn = jest.fn().mockReturnValue({
     from: jest.fn().mockReturnValue({
       where: jest.fn().mockReturnValue({
         orderBy: jest.fn().mockReturnValue({
-          limit: jest.fn().mockReturnValue({ offset }),
+          limit: limitFn,
         }),
       }),
     }),
   });
 
-  const selectCount = jest.fn().mockReturnValue({
-    from: jest.fn().mockReturnValue({ where: selectCountWhere }),
-  });
-
   return {
-    select: jest.fn().mockReturnValueOnce(selectFn()).mockReturnValueOnce(selectCount()),
-    execute: jest.fn(),
+    select: jest.fn().mockReturnValue(selectFn()),
+    execute: jest.fn().mockResolvedValue([]),
     _selectFn: selectFn,
     _where: where,
-    _offset: offset,
+    _limitFn: limitFn,
   };
 }
 
@@ -81,8 +75,8 @@ describe("HrCasesService – actor contraction dual-read", () => {
   const mockAudit = { log: jest.fn() };
 
   const baseListInput: ListCasesInput = {
-    page: 1,
     limit: 20,
+    cursor: undefined,
     status: undefined,
     category: undefined,
     severity: undefined,
@@ -94,23 +88,16 @@ describe("HrCasesService – actor contraction dual-read", () => {
     it("emits assignedToMembershipId predicate when membershipId is provided", async () => {
       const row = makeCase();
       const mockDb = {
-        select: jest.fn()
-          .mockReturnValueOnce({
-            from: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({
-                orderBy: jest.fn().mockReturnValue({
-                  limit: jest.fn().mockReturnValue({
-                    offset: jest.fn().mockResolvedValue([row]),
-                  }),
-                }),
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              orderBy: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue([row]),
               }),
             }),
-          })
-          .mockReturnValueOnce({
-            from: jest.fn().mockReturnValue({
-              where: jest.fn().mockResolvedValue([{ total: 1 }]),
-            }),
           }),
+        }),
+        execute: jest.fn().mockResolvedValue([]),
       } as unknown as Parameters<typeof HrCasesService.prototype.list>[0];
 
       const service = new HrCasesService(mockDb as never, mockAudit as never);
@@ -124,29 +111,22 @@ describe("HrCasesService – actor contraction dual-read", () => {
       );
 
       expect(result.data).toHaveLength(1);
-      expect(result.pagination.total).toBe(1);
+      expect(result.pagination.hasMore).toBe(false);
     });
 
     it("falls back to userId-only predicate when membershipId is null", async () => {
       const row = makeCase();
       const mockDb = {
-        select: jest.fn()
-          .mockReturnValueOnce({
-            from: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({
-                orderBy: jest.fn().mockReturnValue({
-                  limit: jest.fn().mockReturnValue({
-                    offset: jest.fn().mockResolvedValue([row]),
-                  }),
-                }),
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              orderBy: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue([row]),
               }),
             }),
-          })
-          .mockReturnValueOnce({
-            from: jest.fn().mockReturnValue({
-              where: jest.fn().mockResolvedValue([{ total: 1 }]),
-            }),
           }),
+        }),
+        execute: jest.fn().mockResolvedValue([]),
       } as unknown as Parameters<typeof HrCasesService.prototype.list>[0];
 
       const service = new HrCasesService(mockDb as never, mockAudit as never);

@@ -227,11 +227,11 @@ export class BroadcastsService {
    * (org_id, broadcast_id, user_id) makes this idempotent: repeating the call
    * produces exactly one receipt row.
    */
-  async dismiss(orgId: string, userId: string, broadcastId: number) {
+  async dismiss(orgId: string, userId: string, broadcastId: number, membershipId?: number | null) {
     await this.findOne(orgId, broadcastId);
     await this.db
       .insert(broadcastReadReceipts)
-      .values({ orgId, broadcastId, userId })
+      .values({ orgId, broadcastId, userId, membershipId: membershipId ?? null })
       .onConflictDoNothing({
         target: [broadcastReadReceipts.orgId, broadcastReadReceipts.broadcastId, broadcastReadReceipts.userId],
       });
@@ -301,7 +301,16 @@ export class BroadcastsService {
    * by the three possible kinds (USER / ROLE / DEPARTMENT). audienceType='all'
    * bypasses the subquery and matches every org member.
    */
-  async listInbox(orgId: string, userId: string, limit: number) {
+  private receiptPredicate(userId: string, membershipId: number | null | undefined) {
+    if (membershipId != null)
+      return or(
+        eq(broadcastReadReceipts.membershipId, membershipId),
+        and(isNull(broadcastReadReceipts.membershipId), eq(broadcastReadReceipts.userId, userId)),
+      );
+    return eq(broadcastReadReceipts.userId, userId);
+  }
+
+  async listInbox(orgId: string, userId: string, limit: number, membershipId?: number | null) {
     const clampedLimit = Math.min(limit, 100);
     const audienceFilter = await this.resolveAudienceFilter(orgId, userId);
 
@@ -322,8 +331,8 @@ export class BroadcastsService {
         broadcastReadReceipts,
         and(
           eq(broadcastReadReceipts.broadcastId, broadcasts.id),
-          eq(broadcastReadReceipts.userId, userId),
           eq(broadcastReadReceipts.orgId, orgId),
+          this.receiptPredicate(userId, membershipId),
         ),
       )
       .where(
@@ -345,6 +354,7 @@ export class BroadcastsService {
     userId: string,
     limit: number,
     cursor: number | null,
+    membershipId?: number | null,
   ) {
     const audienceFilter = await this.resolveAudienceFilter(orgId, userId);
 
@@ -364,8 +374,8 @@ export class BroadcastsService {
         broadcastReadReceipts,
         and(
           eq(broadcastReadReceipts.broadcastId, broadcasts.id),
-          eq(broadcastReadReceipts.userId, userId),
           eq(broadcastReadReceipts.orgId, orgId),
+          this.receiptPredicate(userId, membershipId),
         ),
       )
       .where(

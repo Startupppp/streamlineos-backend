@@ -2257,6 +2257,13 @@
       "breakpoints": true
     },
     {
+      "idx": 676,
+      "version": "7",
+      "when": 1798000156000,
+      "tag": "0591b_gl_ap_ar_bank_tax_chain_repair",
+      "breakpoints": true
+    },
+    {
       "idx": 323,
       "version": "7",
       "when": 1787830395441,

@@ -9,6 +9,8 @@ import { and, count, desc, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrDisciplinaryActions } from "../../../db/schema/hr/cases";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { HrAuditService } from "../core/hr-audit.service";
 import { HrTemplatesService } from "../templates/hr-templates.service";
 import type {
@@ -29,35 +31,25 @@ export class HrDisciplinaryService {
   ) {}
 
   async list(orgId: string, input: ListDisciplinaryInput) {
-    const { page, limit, employeeId, actionType } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, employeeId, actionType } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [eq(hrDisciplinaryActions.orgId, orgId)];
     if (employeeId) conditions.push(eq(hrDisciplinaryActions.employeeId, employeeId));
     if (actionType) conditions.push(eq(hrDisciplinaryActions.actionType, actionType));
+    if (pos) conditions.push(keysetBeforeId(hrDisciplinaryActions.createdAt, hrDisciplinaryActions.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrDisciplinaryActions)
+      .where(and(...conditions))
+      .orderBy(desc(hrDisciplinaryActions.createdAt), desc(hrDisciplinaryActions.id))
+      .limit(limit + 1);
 
-    const [rows, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrDisciplinaryActions)
-        .where(where)
-        .orderBy(desc(hrDisciplinaryActions.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrDisciplinaryActions).where(where),
-    ]);
-
-    return {
-      data: rows,
-      pagination: {
-        page,
-        limit,
-        total: totalResult[0]?.total ?? 0,
-        totalPages: Math.ceil((totalResult[0]?.total ?? 0) / limit),
-      },
-    };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   /** Employee: actions issued against me. */

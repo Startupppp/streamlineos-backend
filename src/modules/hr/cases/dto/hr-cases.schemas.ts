@@ -1,10 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
-
-export const paginationSchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
-});
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createCaseSchema = z.object({
   category: z.enum([
@@ -36,7 +31,9 @@ export const updateCaseSchema = z.object({
   confidential: z.boolean().optional(),
 });
 
-export const listCasesSchema = paginationSchema.extend({
+export const listCasesSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   status: z.enum(["open", "under_investigation", "resolved", "closed", "dismissed"]).optional(),
   category: z.enum([
     "grievance", "disciplinary", "harassment", "ethics",
@@ -79,7 +76,9 @@ export const acknowledgeDisciplinarySchema = z.object({
 });
 export type AcknowledgeDisciplinaryInput = z.infer<typeof acknowledgeDisciplinarySchema>;
 
-export const listDisciplinarySchema = paginationSchema.extend({
+export const listDisciplinarySchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   employeeId: z.string().optional(),
   actionType: z.enum([
     "verbal_warning", "written_warning", "final_warning",
