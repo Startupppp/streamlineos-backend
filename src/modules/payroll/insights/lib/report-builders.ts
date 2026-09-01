@@ -10,6 +10,7 @@ import {
   users,
   employeeSalaryProfiles,
 } from "../../../../db/schema";
+import { readPayrollKeysetBatches } from "../../lib/payroll-keyset-batch";
 
 export type RunRow = typeof payrollRuns.$inferSelect;
 export type LineItemRow = Pick<
@@ -129,42 +130,45 @@ export async function getLineItemsForRun(
       conditions.push(eq(employeeSalaryProfiles.costCenter, filters.costCenter));
   }
 
-  const rows = await db
-    .select({
-      lineItem: {
-        code: payrollLineItems.code,
-        category: payrollLineItems.category,
-        amount: payrollLineItems.amount,
-      },
-      runEmployee: {
-        id: payrollRunEmployees.id,
-        userId: payrollRunEmployees.userId,
-        workerType: payrollRunEmployees.workerType,
-        gross: payrollRunEmployees.gross,
-        net: payrollRunEmployees.net,
-        paidDays: payrollRunEmployees.paidDays,
-        totalDeductions: payrollRunEmployees.totalDeductions,
-        employerContributions: payrollRunEmployees.employerContributions,
-        profileId: payrollRunEmployees.profileId,
-      },
-      userName: users.name,
-      departmentName: orgUnits.name,
-      costCenter: employeeSalaryProfiles.costCenter,
-    })
-    .from(payrollLineItems)
-    .innerJoin(
-      payrollRunEmployees,
-      eq(payrollLineItems.runEmployeeId, payrollRunEmployees.id),
-    )
-    .innerJoin(users, eq(payrollRunEmployees.userId, users.id))
-    .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
-    .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-    .leftJoin(orgUnits, and(orgUnitInOrg(orgId, hrEmployments.departmentId), eq(orgUnits.kind, "DEPARTMENT")))
-    .leftJoin(
-      employeeSalaryProfiles,
-      eq(employeeSalaryProfiles.id, payrollRunEmployees.profileId),
-    )
-    .where(and(...conditions));
+  const rows = await readPayrollKeysetBatches({
+    fetch: (afterId, limit) => db
+      .select({
+        id: payrollLineItems.id,
+        lineItem: {
+          code: payrollLineItems.code,
+          category: payrollLineItems.category,
+          amount: payrollLineItems.amount,
+        },
+        runEmployee: {
+          id: payrollRunEmployees.id,
+          userId: payrollRunEmployees.userId,
+          workerType: payrollRunEmployees.workerType,
+          gross: payrollRunEmployees.gross,
+          net: payrollRunEmployees.net,
+          paidDays: payrollRunEmployees.paidDays,
+          totalDeductions: payrollRunEmployees.totalDeductions,
+          employerContributions: payrollRunEmployees.employerContributions,
+          profileId: payrollRunEmployees.profileId,
+        },
+        userName: users.name,
+        departmentName: orgUnits.name,
+        costCenter: employeeSalaryProfiles.costCenter,
+      })
+      .from(payrollLineItems)
+      .innerJoin(payrollRunEmployees, eq(payrollLineItems.runEmployeeId, payrollRunEmployees.id))
+      .innerJoin(users, eq(payrollRunEmployees.userId, users.id))
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+      .leftJoin(orgUnits, and(orgUnitInOrg(orgId, hrEmployments.departmentId), eq(orgUnits.kind, "DEPARTMENT")))
+      .leftJoin(employeeSalaryProfiles, eq(employeeSalaryProfiles.id, payrollRunEmployees.profileId))
+      .where(and(
+        ...conditions,
+        ...(afterId === null ? [] : [gt(payrollLineItems.id, afterId)]),
+      ))
+      .orderBy(asc(payrollLineItems.id))
+      .limit(limit),
+    idOf: (row) => row.id,
+  });
 
   return rows.map((r) => ({
     lineItem: r.lineItem,

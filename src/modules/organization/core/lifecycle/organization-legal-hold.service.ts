@@ -185,7 +185,8 @@ export class OrganizationLegalHoldService {
               eq(organizationLegalHolds.orgId, orgId),
               isNull(organizationLegalHolds.releasedAt),
             ),
-          ),
+          )
+          .limit(1),
       { orgId },
     );
   }

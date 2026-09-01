@@ -57,8 +57,10 @@ export class HrInterviewsService {
 
   async list(orgId: string, query: InterviewListInput) {
     const conditions = [eq(interviews.orgId, orgId)];
-    if (query.candidateId) conditions.push(eq(interviews.candidateId, query.candidateId));
-    if (query.upcoming === "true") conditions.push(gte(interviews.scheduledAt, new Date()));
+    if (query.candidateId)
+      conditions.push(eq(interviews.candidateId, query.candidateId));
+    if (query.upcoming === "true")
+      conditions.push(gte(interviews.scheduledAt, new Date()));
     if (query.relevant === "true") {
       const now = new Date();
       const todayStart = new Date(now);
@@ -66,7 +68,10 @@ export class HrInterviewsService {
       const todayEnd = new Date(now);
       todayEnd.setHours(23, 59, 59, 999);
       const relevanceFilter = or(
-        and(gte(interviews.scheduledAt, todayStart), lte(interviews.scheduledAt, todayEnd)),
+        and(
+          gte(interviews.scheduledAt, todayStart),
+          lte(interviews.scheduledAt, todayEnd),
+        ),
         and(eq(interviews.result, "PENDING"), lt(interviews.scheduledAt, now)),
       );
       if (relevanceFilter) conditions.push(relevanceFilter);
@@ -76,10 +81,23 @@ export class HrInterviewsService {
 
     const [rows, totalRow] = await Promise.all([
       this.db.query.interviews.findMany({
-        where,
-        with: { candidate: { columns: { id: true, firstName: true, lastName: true, status: true, source: true, externalId: true } }, interviewer: { columns: { id: true, name: true, image: true } }, panelMembers: { columns: { userId: true } } },
-        orderBy: [desc(interviews.scheduledAt)],
         limit: query.limit,
+        where,
+        with: {
+          candidate: {
+            columns: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              status: true,
+              source: true,
+              externalId: true,
+            },
+          },
+          interviewer: { columns: { id: true, name: true, image: true } },
+          panelMembers: { columns: { userId: true } },
+        },
+        orderBy: [desc(interviews.scheduledAt)],
         offset: query.offset,
       }),
       this.db
@@ -105,7 +123,8 @@ export class HrInterviewsService {
     membershipId: number | null,
     query: SelfInterviewListInput,
   ): Promise<AssignedInterviewsPage> {
-    if (membershipId == null) throw new BadRequestException("Organization membership required.");
+    if (membershipId == null)
+      throw new BadRequestException("Organization membership required.");
     const offset = (query.page - 1) * query.pageSize;
     const rows = await this.db.execute<{
       id: number;
@@ -270,20 +289,30 @@ export class HrInterviewsService {
         breached: sql<number>`sum(case when ${candidateSlaTracking.status} = 'BREACHED' then 1 else 0 end)::int`,
       })
       .from(candidateSlaTracking)
-      .where(and(eq(candidateSlaTracking.orgId, orgId), gte(candidateSlaTracking.enteredAt, windowStart)))
+      .where(
+        and(
+          eq(candidateSlaTracking.orgId, orgId),
+          gte(candidateSlaTracking.enteredAt, windowStart),
+        ),
+      )
       .groupBy(monthExpr, candidateSlaTracking.stage);
 
     const grouped: Record<string, Record<string, MonthStage>> = {};
 
     for (const row of rows) {
       if (!grouped[row.month]) grouped[row.month] = {};
-      grouped[row.month][row.stage] = { total: Number(row.total), breached: Number(row.breached) };
+      grouped[row.month][row.stage] = {
+        total: Number(row.total),
+        breached: Number(row.breached),
+      };
     }
 
     const months: string[] = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+      months.push(
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+      );
     }
 
     const allStages = Array.from(
@@ -293,19 +322,24 @@ export class HrInterviewsService {
     const report = months.map((month) => {
       const stageData = allStages.map((stage) => {
         const data = grouped[month]?.[stage] ?? { total: 0, breached: 0 };
-        const breachPct = data.total > 0 ? Math.round((data.breached / data.total) * 100) : 0;
+        const breachPct =
+          data.total > 0 ? Math.round((data.breached / data.total) * 100) : 0;
         return { stage, total: data.total, breached: data.breached, breachPct };
       });
       const totalAll = stageData.reduce((s, d) => s + d.total, 0);
       const breachedAll = stageData.reduce((s, d) => s + d.breached, 0);
       return {
         month,
-        label: new Date(month + "-01").toLocaleString("en-US", { month: "short", year: "numeric" }),
+        label: new Date(month + "-01").toLocaleString("en-US", {
+          month: "short",
+          year: "numeric",
+        }),
         stages: stageData,
         overall: {
           total: totalAll,
           breached: breachedAll,
-          breachPct: totalAll > 0 ? Math.round((breachedAll / totalAll) * 100) : 0,
+          breachPct:
+            totalAll > 0 ? Math.round((breachedAll / totalAll) * 100) : 0,
         },
       };
     });
@@ -338,7 +372,10 @@ export class HrInterviewsService {
     return { report, stages: allStages, stageSummary };
   }
 
-  async buildIcs(orgId: string, interviewId: number): Promise<{ ics: string; fileName: string } | null> {
+  async buildIcs(
+    orgId: string,
+    interviewId: number,
+  ): Promise<{ ics: string; fileName: string } | null> {
     const interview = await this.db.query.interviews.findFirst({
       where: and(eq(interviews.id, interviewId), eq(interviews.orgId, orgId)),
       columns: {
@@ -402,12 +439,18 @@ export class HrInterviewsService {
     if (!interview) return null;
 
     const scorecards = await this.db.query.interviewScorecards.findMany({
+      limit: 100,
       where: eq(interviewScorecards.interviewId, interviewId),
     });
 
-    const submittedScorecards = scorecards.filter((sc) => sc.submittedAt !== null);
+    const submittedScorecards = scorecards.filter(
+      (sc) => sc.submittedAt !== null,
+    );
 
-    const aggregated: Record<string, { total: number; count: number; average: number }> = {};
+    const aggregated: Record<
+      string,
+      { total: number; count: number; average: number }
+    > = {};
     for (const sc of submittedScorecards) {
       for (const [key, value] of Object.entries(sc.ratings)) {
         if (!aggregated[key]) {
@@ -422,7 +465,9 @@ export class HrInterviewsService {
       entry.average = entry.count > 0 ? entry.total / entry.count : 0;
     }
 
-    const recommendationCounts = submittedScorecards.reduce<Record<string, number>>((acc, sc) => {
+    const recommendationCounts = submittedScorecards.reduce<
+      Record<string, number>
+    >((acc, sc) => {
       const rec = sc.recommendation;
       acc[rec] = (acc[rec] ?? 0) + 1;
       return acc;

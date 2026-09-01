@@ -145,6 +145,7 @@ Score the candidate on technicalSkills, experience, communication, cultureFit an
     if (!candidate) throw new NotFoundException("Candidate not found.");
 
     const candidateInterviews = await this.db.query.interviews.findMany({
+      limit: 100,
       where: and(
         eq(interviews.candidateId, candidateId),
         eq(interviews.orgId, orgId),

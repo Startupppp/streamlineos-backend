@@ -67,6 +67,28 @@ describe("MeetingsService.addAttendee — member validation", () => {
   });
 });
 
+describe("MeetingsService.listMeetings — bounded reads", () => {
+  it("rejects overflow instead of silently truncating the meeting list", async () => {
+    const overflow = Array.from({ length: 101 }, (_, id) => ({ id: id + 1 }));
+    const meetingQuery = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue(overflow),
+    };
+    const mockDb = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
+      },
+      select: jest.fn().mockReturnValue(meetingQuery),
+    } as unknown as Db;
+
+    const svc = new MeetingsService(mockDb, mockAudit);
+    await expect(svc.listMeetings("org-1", 1, {})).rejects.toThrow(BadRequestException);
+    expect(meetingQuery.limit).toHaveBeenCalledWith(101);
+  });
+});
+
 describe("MeetingsService.upsertStandup — caller-scoped write", () => {
   it("writes the standup entry for the authenticated caller's userId, not a body-supplied user", async () => {
     const insertReturning = jest.fn().mockResolvedValue([{ id: 1, meetingId: 2, userId: "caller-1" }]);

@@ -39,6 +39,7 @@ export class RecruitmentOffersService {
   async listOffers(orgId: string, candidateId: number) {
     await this.ensureCandidate(orgId, candidateId);
     return this.db.query.candidateOffers.findMany({
+      limit: 100,
       where: and(eq(candidateOffers.candidateId, candidateId), eq(candidateOffers.orgId, orgId)),
       orderBy: [desc(candidateOffers.createdAt)],
     });
@@ -217,6 +218,7 @@ export class RecruitmentOffersService {
   async listVersions(orgId: string, offerId: number) {
     await this.findOffer(orgId, offerId);
     return this.db.query.offerVersions.findMany({
+      limit: 100,
       where: and(eq(offerVersions.offerId, offerId), eq(offerVersions.orgId, orgId)),
       orderBy: [desc(offerVersions.versionNumber)],
     });
@@ -225,6 +227,7 @@ export class RecruitmentOffersService {
   async listNegotiations(orgId: string, offerId: number) {
     await this.findOffer(orgId, offerId);
     return this.db.query.offerNegotiations.findMany({
+      limit: 100,
       where: and(eq(offerNegotiations.offerId, offerId), eq(offerNegotiations.orgId, orgId)),
       orderBy: [asc(offerNegotiations.createdAt)],
     });

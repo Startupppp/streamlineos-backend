@@ -35,6 +35,7 @@ export class RecruitmentCandidateVaultService {
   async listVault(orgId: string, candidateId: number) {
     await this.ensureCandidate(orgId, candidateId);
     return this.db.query.candidateDocumentsVault.findMany({
+      limit: 100,
       where: and(
         eq(candidateDocumentsVault.candidateId, candidateId),
         eq(candidateDocumentsVault.orgId, orgId),
@@ -185,6 +186,7 @@ export class RecruitmentCandidateVaultService {
           .orderBy(desc(auditLogs.createdAt))
           .limit(100),
         this.db.query.interviews.findMany({
+          limit: 100,
           where: and(
             eq(interviews.candidateId, candidateId),
             eq(interviews.orgId, orgId),
@@ -193,6 +195,7 @@ export class RecruitmentCandidateVaultService {
           orderBy: (t, { desc: d }) => [d(t.scheduledAt)],
         }),
         this.db.query.candidateMessages.findMany({
+          limit: 100,
           where: and(
             eq(candidateMessages.candidateId, candidateId),
             eq(candidateMessages.orgId, orgId),
@@ -207,6 +210,7 @@ export class RecruitmentCandidateVaultService {
           orderBy: (t, { desc: d }) => [d(t.sentAt)],
         }),
         this.db.query.candidateDocuments.findMany({
+          limit: 100,
           where: and(
             eq(candidateDocuments.candidateId, candidateId),
             eq(candidateDocuments.orgId, orgId),

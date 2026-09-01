@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -20,6 +21,8 @@ import type {
 } from "./dto/dimensions.schemas";
 
 const DIMENSIONS_CACHE_KEY = (orgId: string) => `acc:dimensions:${orgId}`;
+const DIMENSIONS_PAGE_SIZE = 100;
+const DIMENSION_VALUES_PAGE_SIZE = 500;
 
 @Injectable()
 export class DimensionsService {
@@ -44,7 +47,14 @@ export class DimensionsService {
           })
           .from(accountingDimensions)
           .where(eq(accountingDimensions.orgId, orgId))
-          .orderBy(accountingDimensions.name);
+          .orderBy(accountingDimensions.name)
+          .limit(DIMENSIONS_PAGE_SIZE + 1);
+
+        if (dims.length > DIMENSIONS_PAGE_SIZE) {
+          throw new BadRequestException(
+            `This organisation has more than ${DIMENSIONS_PAGE_SIZE} accounting dimensions; narrow the configuration before loading it.`,
+          );
+        }
 
         const valueCounts = await this.db
           .select({
@@ -159,7 +169,13 @@ export class DimensionsService {
         ),
       )
       .orderBy(accountingDimensionValues.code)
-      .limit(500);
+        .limit(DIMENSION_VALUES_PAGE_SIZE + 1);
+
+    if (rows.length > DIMENSION_VALUES_PAGE_SIZE) {
+      throw new BadRequestException(
+        `This dimension has more than ${DIMENSION_VALUES_PAGE_SIZE} values; use a filtered value lookup before loading it.`,
+      );
+    }
 
     return { items: rows };
   }

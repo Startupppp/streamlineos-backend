@@ -32,6 +32,7 @@ import type {
   PaginationParams,
   VarianceEmployeeRow,
 } from "./reports.service";
+import { readPayrollKeysetBatches } from "../lib/payroll-keyset-batch";
 
 type Pagination = { limit: number; hasMore: boolean; nextCursor: string | null };
 
@@ -231,18 +232,27 @@ export async function getBankPayout(
   if (page.data.length === 0) return { provisional, batches: [] as BankBatchResult[], pagination: page.pagination };
 
   const batchIds = page.data.map((batch) => batch.id);
-  const items = await db
-    .select({
-      batchId: payrollBankBatchItems.batchId,
-      itemAmount: payrollBankBatchItems.amount,
-      accountMasked: payrollBankBatchItems.accountMasked,
-      ifsc: payrollBankBatchItems.ifsc,
-      itemStatus: payrollBankBatchItems.status,
-      userName: users.name,
-    })
-    .from(payrollBankBatchItems)
-    .leftJoin(users, eq(payrollBankBatchItems.userId, users.id))
-    .where(inArray(payrollBankBatchItems.batchId, batchIds));
+  const items = await readPayrollKeysetBatches({
+    fetch: (afterId, pageLimit) => db
+      .select({
+        id: payrollBankBatchItems.id,
+        batchId: payrollBankBatchItems.batchId,
+        itemAmount: payrollBankBatchItems.amount,
+        accountMasked: payrollBankBatchItems.accountMasked,
+        ifsc: payrollBankBatchItems.ifsc,
+        itemStatus: payrollBankBatchItems.status,
+        userName: users.name,
+      })
+      .from(payrollBankBatchItems)
+      .leftJoin(users, eq(payrollBankBatchItems.userId, users.id))
+      .where(and(
+        inArray(payrollBankBatchItems.batchId, batchIds),
+        ...(afterId === null ? [] : [gt(payrollBankBatchItems.id, afterId)]),
+      ))
+      .orderBy(asc(payrollBankBatchItems.id))
+      .limit(pageLimit),
+    idOf: (row) => row.id,
+  });
 
   const itemsByBatch = new Map<number, BankItem[]>();
   for (const item of items) {
@@ -344,7 +354,8 @@ export async function getVariance(
         net: payrollRunEmployees.net,
       })
       .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, previousRun.id), inArray(payrollRunEmployees.userId, currUserIds)));
+      .where(and(eq(payrollRunEmployees.runId, previousRun.id), inArray(payrollRunEmployees.userId, currUserIds)))
+      .limit(currUserIds.length);
     for (const employee of prevEmps) {
       if (employee.userId) prevMap.set(employee.userId, { gross: employee.gross, net: employee.net });
     }

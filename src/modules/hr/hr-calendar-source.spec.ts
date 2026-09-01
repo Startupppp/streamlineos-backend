@@ -63,10 +63,12 @@ function makeChain(rows: unknown[], fields: Record<string, unknown>, wheres: Que
 function buildDb(queryResults: unknown[][], membership: { id: number } | null = { id: 1 }): unknown {
   let callIndex = 0;
   const wheres: QueryWhere[] = [];
+  const chains: Record<string, unknown>[] = [];
   return {
     select: jest.fn().mockImplementation((fields: Record<string, unknown>) => {
       const rows = queryResults[callIndex++] ?? [];
       const chain = makeChain(rows, fields, wheres);
+      chains.push(chain);
       return { from: jest.fn().mockReturnValue(chain) };
     }),
     query: {
@@ -75,6 +77,7 @@ function buildDb(queryResults: unknown[][], membership: { id: number } | null = 
       },
     },
     __wheres: wheres,
+    __chains: chains,
   };
 }
 
@@ -424,5 +427,16 @@ describe("HrCalendarSource", () => {
     expect(event?.category).toBe("attendance");
     expect(event?.allDay).toBe(true);
     expect(event?.start).toEqual(new Date("2026-08-03T12:00:00.000Z"));
+  });
+
+  it("applies a bounded read batch to every growing calendar source query", async () => {
+    const db = buildDb(emptyWith({})) as { __chains: Array<Record<string, jest.Mock>> };
+    const source = await buildSource(db);
+
+    await source.load(ctx);
+
+    const limitedChains = db.__chains.filter((chain) => (chain["limit"] as jest.Mock).mock.calls.length > 0);
+    expect(limitedChains.length).toBeGreaterThanOrEqual(6);
+    expect(limitedChains.every((chain) => (chain["limit"] as jest.Mock).mock.calls[0]?.[0] === 500 || (chain["limit"] as jest.Mock).mock.calls[0]?.[0] === 1)).toBe(true);
   });
 });

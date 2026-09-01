@@ -38,6 +38,7 @@ export class GuidedTourService {
   async listToursForUser(orgId: string, userId: string, role?: string, membershipId?: number | null) {
     await this.ensureHrSetupTourDefinition();
     const tours = await this.db.query.guidedTours.findMany({
+      limit: 100,
       where: and(
         or(eq(guidedTours.orgId, orgId), isNull(guidedTours.orgId)),
         eq(guidedTours.isActive, true),
@@ -46,6 +47,7 @@ export class GuidedTourService {
     const relevant = role ? tours.filter((t) => !t.role || t.role === role) : tours;
 
     const progressRows = await this.db.query.userTourProgress.findMany({
+      limit: 100,
       where: and(eq(userTourProgress.orgId, orgId), this.tourOwnerPredicate(userId, membershipId)),
     });
     const progressByKey = new Map(progressRows.map((p) => [p.tourKey, p]));

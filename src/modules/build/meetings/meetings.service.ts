@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, gte, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
 import {
   projectMeetings,
   meetingAttendees,
@@ -36,6 +36,8 @@ type MeetingPatch = Partial<
     | "sprintId"
   >
 >;
+
+const MEETING_PAGE_SIZE = 100;
 
 @Injectable()
 export class MeetingsService {
@@ -81,24 +83,6 @@ export class MeetingsService {
       return undefined;
     })();
 
-    let hostMeetingIds: number[] | undefined;
-    if (query.hostId) {
-      const rows = await this.db
-        .select({ id: projectMeetings.id })
-        .from(projectMeetings)
-        .where(and(eq(projectMeetings.orgId, orgId), eq(projectMeetings.projectId, projectId), eq(projectMeetings.createdBy, query.hostId), isNull(projectMeetings.deletedAt)));
-      hostMeetingIds = rows.map((r) => r.id);
-    }
-
-    let attendeeMeetingIds: number[] | undefined;
-    if (query.attendeeId) {
-      const rows = await this.db
-        .select({ meetingId: meetingAttendees.meetingId })
-        .from(meetingAttendees)
-        .where(and(eq(meetingAttendees.orgId, orgId), sql`${meetingAttendees.membershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${query.attendeeId} AND status = 'ACTIVE')`));
-      attendeeMeetingIds = rows.map((r) => r.meetingId);
-    }
-
     const meetings = await this.db
       .select()
       .from(projectMeetings)
@@ -110,8 +94,20 @@ export class MeetingsService {
           query.status ? eq(projectMeetings.status, query.status) : undefined,
           query.type ? eq(projectMeetings.type, query.type) : undefined,
           dateClause,
-          hostMeetingIds !== undefined ? (hostMeetingIds.length > 0 ? inArray(projectMeetings.id, hostMeetingIds) : sql`false`) : undefined,
-          attendeeMeetingIds !== undefined ? (attendeeMeetingIds.length > 0 ? inArray(projectMeetings.id, attendeeMeetingIds) : sql`false`) : undefined,
+          query.hostId ? eq(projectMeetings.createdBy, query.hostId) : undefined,
+          query.attendeeId
+            ? sql`EXISTS (
+                SELECT 1
+                FROM ${meetingAttendees} ma
+                INNER JOIN ${organizationMembers} om
+                  ON om.id = ma.membership_id
+                 AND om.org_id = ${orgId}
+                 AND om.user_id = ${query.attendeeId}
+                 AND om.status = 'ACTIVE'
+                WHERE ma.meeting_id = ${projectMeetings.id}
+                  AND ma.org_id = ${orgId}
+              )`
+            : undefined,
           query.hasActionItems === true
             ? sql`EXISTS (SELECT 1 FROM ${meetingActionItems} WHERE ${meetingActionItems.meetingId} = ${projectMeetings.id} AND ${meetingActionItems.orgId} = ${orgId} AND ${meetingActionItems.deletedAt} IS NULL)`
             : undefined,
@@ -120,8 +116,14 @@ export class MeetingsService {
             : undefined,
         ),
       )
-      .orderBy(sql`${projectMeetings.scheduledAt} DESC NULLS LAST`)
-      .limit(100);
+      .orderBy(sql`${projectMeetings.scheduledAt} DESC NULLS LAST`, desc(projectMeetings.id))
+      .limit(MEETING_PAGE_SIZE + 1);
+
+    if (meetings.length > MEETING_PAGE_SIZE) {
+      throw new BadRequestException(
+        `This meeting list exceeds ${MEETING_PAGE_SIZE} records. Add a date, status, type, host, or attendee filter.`,
+      );
+    }
 
     if (meetings.length === 0) return meetings;
     const ids = meetings.map((m) => m.id);
@@ -211,7 +213,8 @@ export class MeetingsService {
             eq(projectMembers.projectId, projectId),
             inArray(organizationMembers.userId, input.attendeeUserIds),
           ),
-        );
+        )
+        .limit(100);
       const memberSet = new Set(members.map((m) => m.userId));
       attendeeMemberships = new Map(members.map((m) => [m.userId, m.membershipId]));
       const invalid = input.attendeeUserIds.filter((id) => !memberSet.has(id));
@@ -327,7 +330,7 @@ export class MeetingsService {
   async addAttendee(orgId: string, userId: string, projectId: number, meetingId: number, input: AddAttendeeInput) {
     await this.loadMeeting(orgId, projectId, meetingId);
     const [member] = await this.db
-      .select({ id: projectMembers.id })
+      .select({ id: projectMembers.id, membershipId: projectMembers.membershipId })
       .from(projectMembers)
       .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.membershipId, sql`(SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${input.userId} AND status = 'ACTIVE')`)))
       .limit(1);
@@ -337,10 +340,7 @@ export class MeetingsService {
       .values({
         orgId,
         meetingId,
-        membershipId: (await this.db.query.organizationMembers.findFirst({
-          where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, input.userId), eq(organizationMembers.status, "ACTIVE")),
-          columns: { id: true },
-        }))?.id ?? 0,
+        membershipId: member.membershipId,
       })
       .onConflictDoNothing();
     return { meetingId, userId: input.userId };

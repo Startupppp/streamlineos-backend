@@ -222,6 +222,7 @@ export class RecruitmentCandidateOpsService {
   async getSla(orgId: string, candidateId: number) {
     await this.ensureCandidate(orgId, candidateId);
     return this.db.query.candidateSlaTracking.findMany({
+      limit: 100,
       where: and(eq(candidateSlaTracking.candidateId, candidateId), eq(candidateSlaTracking.orgId, orgId)),
       orderBy: (t, { asc }) => [asc(t.stage)],
     });

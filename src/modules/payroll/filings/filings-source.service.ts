@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
-import { and, eq, type SQL } from "drizzle-orm";
+import { and, asc, eq, gt, type SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import {
   payrollLineItems,
@@ -12,6 +12,7 @@ import {
 } from "./export-builders";
 import { payrollSubjectKeyFromRunEmployee } from "../lib/payroll-subject";
 import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
+import { readPayrollKeysetBatches } from "../lib/payroll-keyset-batch";
 
 export async function loadStatutorySources(
   db: Db,
@@ -61,21 +62,25 @@ export async function loadStatutorySources(
   }
 
   const [runEmployeeRows, payees] = await Promise.all([
-    db
-      .select({
-        id: payrollRunEmployees.id,
-        userId: payrollRunEmployees.userId,
-        workerId: payrollRunEmployees.workerId,
-        gross: payrollRunEmployees.gross,
-        net: payrollRunEmployees.net,
-      })
-      .from(payrollRunEmployees)
-      .where(
-        and(
+    readPayrollKeysetBatches({
+      fetch: (afterId, limit) => db
+        .select({
+          id: payrollRunEmployees.id,
+          userId: payrollRunEmployees.userId,
+          workerId: payrollRunEmployees.workerId,
+          gross: payrollRunEmployees.gross,
+          net: payrollRunEmployees.net,
+        })
+        .from(payrollRunEmployees)
+        .where(and(
           eq(payrollRunEmployees.orgId, orgId),
           eq(payrollRunEmployees.runId, run.id),
-        ),
-      ),
+          ...(afterId === null ? [] : [gt(payrollRunEmployees.id, afterId)]),
+        ))
+        .orderBy(asc(payrollRunEmployees.id))
+        .limit(limit),
+      idOf: (row) => row.id,
+    }),
     loadRunEmployeePayees(db, orgId, run.id, efService),
   ]);
 
@@ -85,16 +90,24 @@ export async function loadStatutorySources(
 
   const payeeByRunEmployee = new Map(payees.map((payee) => [payee.runEmployeeId, payee]));
 
-  const lineRows = await db
-    .select({
-      runEmployeeId: payrollLineItems.runEmployeeId,
-      code: payrollLineItems.code,
-      amount: payrollLineItems.amount,
-    })
-    .from(payrollLineItems)
-    .where(
-      and(eq(payrollLineItems.orgId, orgId), eq(payrollLineItems.runId, run.id)),
-    );
+  const lineRows = await readPayrollKeysetBatches({
+    fetch: (afterId, limit) => db
+      .select({
+        id: payrollLineItems.id,
+        runEmployeeId: payrollLineItems.runEmployeeId,
+        code: payrollLineItems.code,
+        amount: payrollLineItems.amount,
+      })
+      .from(payrollLineItems)
+      .where(and(
+        eq(payrollLineItems.orgId, orgId),
+        eq(payrollLineItems.runId, run.id),
+        ...(afterId === null ? [] : [gt(payrollLineItems.id, afterId)]),
+      ))
+      .orderBy(asc(payrollLineItems.id))
+      .limit(limit),
+    idOf: (row) => row.id,
+  });
 
   const linesByRe = new Map<number, Record<string, string>>();
   for (const li of lineRows) {

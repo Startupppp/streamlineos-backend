@@ -1,8 +1,4 @@
-import {
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import {
   candidateReferenceChecks,
@@ -31,7 +27,8 @@ export class RecruitmentReferralChecksService {
           eq(candidateReferrals.candidateId, candidateId),
           eq(candidateReferrals.orgId, orgId),
         ),
-      );
+      )
+      .limit(100);
   }
 
   async createReferral(
@@ -93,6 +90,7 @@ export class RecruitmentReferralChecksService {
   async listReferenceChecks(orgId: string, candidateId: number) {
     await this.ensureCandidate(orgId, candidateId, "Candidate not found");
     return this.db.query.candidateReferenceChecks.findMany({
+      limit: 100,
       where: and(
         eq(candidateReferenceChecks.candidateId, candidateId),
         eq(candidateReferenceChecks.orgId, orgId),

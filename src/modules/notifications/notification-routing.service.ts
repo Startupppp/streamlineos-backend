@@ -24,14 +24,21 @@ import {
   type RoutingResult,
   type SuppressionReason,
 } from "./notification.types";
-import { isWithinQuietHours, quietHoursEndAt, type QuietHoursConfig } from "./quiet-hours.util";
+import {
+  isWithinQuietHours,
+  quietHoursEndAt,
+  type QuietHoursConfig,
+} from "./quiet-hours.util";
 
 interface ResolvedPreferences {
   channelEnabled: Record<NotificationChannel, boolean>;
   quietHours: QuietHoursConfig;
   categories: Record<string, boolean>;
   modulePreferences: Record<string, { mode?: string; muted?: boolean }>;
-  eventPreferences: Record<string, { channels?: Record<string, boolean>; muted?: boolean; mode?: string }>;
+  eventPreferences: Record<
+    string,
+    { channels?: Record<string, boolean>; muted?: boolean; mode?: string }
+  >;
   allowCriticalOverride: boolean;
 }
 
@@ -53,9 +60,16 @@ export interface RouteContext {
   suppressedChannels: Map<NotificationChannel, SuppressionReason>;
 }
 
-const PRIORITY_RANK: Record<NotificationPriority, number> = { LOW: 0, NORMAL: 1, HIGH: 2, CRITICAL: 3 };
+const PRIORITY_RANK: Record<NotificationPriority, number> = {
+  LOW: 0,
+  NORMAL: 1,
+  HIGH: 2,
+  CRITICAL: 3,
+};
 
-const FALLBACK_CHAIN: Partial<Record<NotificationChannel, NotificationChannel>> = {
+const FALLBACK_CHAIN: Partial<
+  Record<NotificationChannel, NotificationChannel>
+> = {
   WHATSAPP: "SMS",
   SMS: "EMAIL",
   PUSH: "EMAIL",
@@ -67,7 +81,14 @@ function isHigh(priority: NotificationPriority): boolean {
 }
 
 export function computeRouting(ctx: RouteContext): RoutingResult {
-  const { definition, priority, prefs, orgPolicy, availableChannels, suppressedChannels } = ctx;
+  const {
+    definition,
+    priority,
+    prefs,
+    orgPolicy,
+    availableChannels,
+    suppressedChannels,
+  } = ctx;
   const mandatory = definition.mandatory;
 
   const allowed = new Set<NotificationChannel>(definition.allowedChannels);
@@ -75,17 +96,28 @@ export function computeRouting(ctx: RouteContext): RoutingResult {
 
   let candidates: NotificationChannel[];
   if (orgPolicy?.eventOverride?.channels?.length) {
-    candidates = orgPolicy.eventOverride.channels.filter((c): c is NotificationChannel => ALL_CHANNELS.includes(c as NotificationChannel));
+    candidates = orgPolicy.eventOverride.channels.filter(
+      (c): c is NotificationChannel =>
+        ALL_CHANNELS.includes(c as NotificationChannel),
+    );
   } else if (orgPolicy?.categoryOverride?.channels?.length) {
-    candidates = orgPolicy.categoryOverride.channels.filter((c): c is NotificationChannel => ALL_CHANNELS.includes(c as NotificationChannel));
+    candidates = orgPolicy.categoryOverride.channels.filter(
+      (c): c is NotificationChannel =>
+        ALL_CHANNELS.includes(c as NotificationChannel),
+    );
   } else if (orgPolicy?.moduleOverride?.channels?.length) {
-    candidates = orgPolicy.moduleOverride.channels.filter((c): c is NotificationChannel => ALL_CHANNELS.includes(c as NotificationChannel));
+    candidates = orgPolicy.moduleOverride.channels.filter(
+      (c): c is NotificationChannel =>
+        ALL_CHANNELS.includes(c as NotificationChannel),
+    );
   } else if (orgPolicy?.defaultChannels?.length) {
     candidates = orgPolicy.defaultChannels;
   } else {
     candidates = definition.defaultChannels;
   }
-  candidates = Array.from(new Set<NotificationChannel>([...candidates].filter((c) => allowed.has(c))));
+  candidates = Array.from(
+    new Set<NotificationChannel>([...candidates].filter((c) => allowed.has(c))),
+  );
   if (!candidates.includes("IN_APP")) candidates.unshift("IN_APP");
 
   const userMuted =
@@ -95,13 +127,18 @@ export function computeRouting(ctx: RouteContext): RoutingResult {
       prefs.categories[definition.category] === false ||
       orgPolicy?.eventOverride?.muted === true);
 
-  const eventPrefChannels = prefs.eventPreferences[definition.eventKey]?.channels;
+  const eventPrefChannels =
+    prefs.eventPreferences[definition.eventKey]?.channels;
   const canUserOverride = orgPolicy?.canUserOverride ?? true;
 
   const decisions: ChannelDecision[] = [];
   const sending = new Set<NotificationChannel>();
 
-  const suppress = (channel: NotificationChannel, reason: SuppressionReason, detail?: string): void => {
+  const suppress = (
+    channel: NotificationChannel,
+    reason: SuppressionReason,
+    detail?: string,
+  ): void => {
     if (decisions.some((d) => d.channel === channel)) return;
     decisions.push({ channel, action: "SUPPRESS", reason, detail });
   };
@@ -118,7 +155,12 @@ export function computeRouting(ctx: RouteContext): RoutingResult {
       suppress(channel, "MUTE", "Muted by preference");
       continue;
     }
-    if (eventPrefChannels && canUserOverride && !mandatory && eventPrefChannels[channel] === false) {
+    if (
+      eventPrefChannels &&
+      canUserOverride &&
+      !mandatory &&
+      eventPrefChannels[channel] === false
+    ) {
       suppress(channel, "CHANNEL_DISABLED", "Disabled for this event");
       continue;
     }
@@ -144,11 +186,17 @@ export function computeRouting(ctx: RouteContext): RoutingResult {
   if (mandatory) {
     const hasExternalSend = [...sending].some((c) => c !== "IN_APP");
     if (!hasExternalSend) {
-      const blocked = decisions.filter((d) => d.action === "SUPPRESS" && d.channel !== "IN_APP");
+      const blocked = decisions.filter(
+        (d) => d.action === "SUPPRESS" && d.channel !== "IN_APP",
+      );
       for (const b of blocked) {
         let fallback = FALLBACK_CHAIN[b.channel];
         while (fallback && fallback !== "IN_APP") {
-          if (allowed.has(fallback) && availableChannels.has(fallback) && !sending.has(fallback)) {
+          if (
+            allowed.has(fallback) &&
+            availableChannels.has(fallback) &&
+            !sending.has(fallback)
+          ) {
             send(fallback);
             break;
           }
@@ -159,7 +207,10 @@ export function computeRouting(ctx: RouteContext): RoutingResult {
     if (!sending.has("IN_APP")) send("IN_APP");
   }
 
-  const createInApp = sending.has("IN_APP") || (prefs.channelEnabled.IN_APP && !userMuted) || mandatory;
+  const createInApp =
+    sending.has("IN_APP") ||
+    (prefs.channelEnabled.IN_APP && !userMuted) ||
+    mandatory;
   if (createInApp && !sending.has("IN_APP")) send("IN_APP");
 
   // Quiet hours defer external channels (in-app is always immediate).
@@ -167,7 +218,10 @@ export function computeRouting(ctx: RouteContext): RoutingResult {
   const behavior = definition.quietHoursBehavior;
   const criticalBypass = priority === "CRITICAL" && prefs.allowCriticalOverride;
   const shouldConsiderQuiet =
-    !mandatory && behavior !== "always_bypass" && !criticalBypass && !(behavior === "bypass_if_high" && isHigh(priority));
+    !mandatory &&
+    behavior !== "always_bypass" &&
+    !criticalBypass &&
+    !(behavior === "bypass_if_high" && isHigh(priority));
   if (shouldConsiderQuiet && isWithinQuietHours(ctx.now, prefs.quietHours)) {
     const hasExternal = [...sending].some((c) => c !== "IN_APP");
     if (hasExternal) deferredUntil = quietHoursEndAt(ctx.now, prefs.quietHours);
@@ -176,9 +230,14 @@ export function computeRouting(ctx: RouteContext): RoutingResult {
   const sentChannels = [...sending];
   const externalSent = sentChannels.filter((c) => c !== "IN_APP");
   const reasonParts: string[] = [`You received "${definition.displayName}"`];
-  if (mandatory) reasonParts.push("This is a required security or compliance alert and cannot be muted.");
+  if (mandatory)
+    reasonParts.push(
+      "This is a required security or compliance alert and cannot be muted.",
+    );
   if (externalSent.length) {
-    reasonParts.push(`Delivered via ${sentChannels.join(", ")}${deferredUntil ? " (external channels held until quiet hours end)" : ""}.`);
+    reasonParts.push(
+      `Delivered via ${sentChannels.join(", ")}${deferredUntil ? " (external channels held until quiet hours end)" : ""}.`,
+    );
   } else if (sentChannels.includes("IN_APP")) {
     reasonParts.push("Shown in your in-app inbox.");
   }
@@ -215,7 +274,13 @@ export class NotificationRoutingService {
         const rows = await this.db
           .select({ channel: notificationProviderAccounts.channel })
           .from(notificationProviderAccounts)
-          .where(and(eq(notificationProviderAccounts.orgId, orgId), eq(notificationProviderAccounts.enabled, true)));
+          .where(
+            and(
+              eq(notificationProviderAccounts.orgId, orgId),
+              eq(notificationProviderAccounts.enabled, true),
+            ),
+          )
+          .limit(ALL_CHANNELS.length);
         return rows.map((r) => r.channel);
       },
       CACHE_TTL.MEDIUM,
@@ -292,7 +357,10 @@ export class NotificationRoutingService {
         if (!row) return { policy: null };
         return {
           policy: {
-            defaultChannels: (row.defaultChannels ?? []).filter((c): c is NotificationChannel => ALL_CHANNELS.includes(c as NotificationChannel)),
+            defaultChannels: (row.defaultChannels ?? []).filter(
+              (c): c is NotificationChannel =>
+                ALL_CHANNELS.includes(c as NotificationChannel),
+            ),
             eventOverrides: row.eventOverrides,
             categoryOverrides: row.categoryOverrides,
             moduleOverrides: row.moduleOverrides,
@@ -305,7 +373,10 @@ export class NotificationRoutingService {
     return wrapped.policy;
   }
 
-  private async loadOrgPolicy(orgId: string, def: NotificationEventDefinition): Promise<OrgPolicyResolved | null> {
+  private async loadOrgPolicy(
+    orgId: string,
+    def: NotificationEventDefinition,
+  ): Promise<OrgPolicyResolved | null> {
     const policy = await this.loadOrgPolicyData(orgId);
     if (!policy) return null;
     return {
@@ -322,20 +393,39 @@ export class NotificationRoutingService {
     userIds: string[],
     def: NotificationEventDefinition,
   ): Promise<Map<string, Map<NotificationChannel, SuppressionReason>>> {
-    const perUser = new Map<string, Map<NotificationChannel, SuppressionReason>>();
+    const perUser = new Map<
+      string,
+      Map<NotificationChannel, SuppressionReason>
+    >();
     for (const u of userIds) perUser.set(u, new Map());
     if (userIds.length === 0) return perUser;
 
     const now = new Date();
     const rows = await this.db.query.notificationSuppressionRules.findMany({
+      limit: Math.max(1, userIds.length * ALL_CHANNELS.length * 6),
       where: and(
         eq(notificationSuppressionRules.orgId, orgId),
-        or(isNull(notificationSuppressionRules.userId), inArray(notificationSuppressionRules.userId, userIds)),
-        or(isNull(notificationSuppressionRules.expiresAt), gte(notificationSuppressionRules.expiresAt, now)),
         or(
-          and(eq(notificationSuppressionRules.scopeType, "event"), eq(notificationSuppressionRules.scopeKey, def.eventKey)),
-          and(eq(notificationSuppressionRules.scopeType, "module"), eq(notificationSuppressionRules.scopeKey, def.sourceModule)),
-          and(eq(notificationSuppressionRules.scopeType, "category"), eq(notificationSuppressionRules.scopeKey, def.category)),
+          isNull(notificationSuppressionRules.userId),
+          inArray(notificationSuppressionRules.userId, userIds),
+        ),
+        or(
+          isNull(notificationSuppressionRules.expiresAt),
+          gte(notificationSuppressionRules.expiresAt, now),
+        ),
+        or(
+          and(
+            eq(notificationSuppressionRules.scopeType, "event"),
+            eq(notificationSuppressionRules.scopeKey, def.eventKey),
+          ),
+          and(
+            eq(notificationSuppressionRules.scopeType, "module"),
+            eq(notificationSuppressionRules.scopeKey, def.sourceModule),
+          ),
+          and(
+            eq(notificationSuppressionRules.scopeType, "category"),
+            eq(notificationSuppressionRules.scopeKey, def.category),
+          ),
         ),
       ),
     });
@@ -345,7 +435,8 @@ export class NotificationRoutingService {
       for (const u of applyTo) {
         const m = perUser.get(u);
         if (!m) continue;
-        for (const ch of channels) if (!m.has(ch)) m.set(ch, r.reason as SuppressionReason);
+        for (const ch of channels)
+          if (!m.has(ch)) m.set(ch, r.reason as SuppressionReason);
       }
     }
     return perUser;
@@ -357,10 +448,19 @@ export class NotificationRoutingService {
     def: NotificationEventDefinition,
     perUser: Map<string, Map<NotificationChannel, SuppressionReason>>,
   ): Promise<void> {
-    if (def.rateLimitMax <= 0 || def.rateLimitWindowSeconds <= 0 || userIds.length === 0) return;
+    if (
+      def.rateLimitMax <= 0 ||
+      def.rateLimitWindowSeconds <= 0 ||
+      userIds.length === 0
+    )
+      return;
     const since = new Date(Date.now() - def.rateLimitWindowSeconds * 1000);
     const rows = await this.db
-      .select({ userId: notificationDeliveries.userId, channel: notificationDeliveries.channel, count: sql<number>`count(*)::int` })
+      .select({
+        userId: notificationDeliveries.userId,
+        channel: notificationDeliveries.channel,
+        count: sql<number>`count(*)::int`,
+      })
       .from(notificationDeliveries)
       .where(
         and(
@@ -368,7 +468,13 @@ export class NotificationRoutingService {
           inArray(notificationDeliveries.userId, userIds),
           eq(notificationDeliveries.eventKey, def.eventKey),
           gte(notificationDeliveries.createdAt, since),
-          inArray(notificationDeliveries.status, ["SENT", "DELIVERED", "QUEUED", "SENDING", "PENDING"]),
+          inArray(notificationDeliveries.status, [
+            "SENT",
+            "DELIVERED",
+            "QUEUED",
+            "SENDING",
+            "PENDING",
+          ]),
         ),
       )
       .groupBy(notificationDeliveries.userId, notificationDeliveries.channel);
@@ -394,61 +500,97 @@ export class NotificationRoutingService {
     const results = new Map<string, RoutingResult>();
     if (userIds.length === 0) return results;
 
-    const [availableChannels, orgPolicy, prefRows, ruleRows, tzRows] = await Promise.all([
-      this.loadOrgAvailability(orgId),
-      this.loadOrgPolicy(orgId, definition),
-      this.db
-        .select({
-          userId: notificationPreferences.userId,
-          inAppEnabled: notificationPreferences.inAppEnabled,
-          emailEnabled: notificationPreferences.emailEnabled,
-          pushEnabled: notificationPreferences.pushEnabled,
-          smsEnabled: notificationPreferences.smsEnabled,
-          whatsappEnabled: notificationPreferences.whatsappEnabled,
-          quietHoursStart: notificationPreferences.quietHoursStart,
-          quietHoursEnd: notificationPreferences.quietHoursEnd,
-          quietHoursWeekends: notificationPreferences.quietHoursWeekends,
-          allowCriticalOverride: notificationPreferences.allowCriticalOverride,
-        })
-        .from(notificationPreferences)
-        .where(and(eq(notificationPreferences.orgId, orgId), inArray(notificationPreferences.userId, userIds))),
-      // SCH-003: the normalised replacement for the four JSONB preference blobs.
-      this.db
-        .select({
-          userId: organizationMembers.userId,
-          rule: {
-            scopeType: notificationPreferenceRules.scopeType,
-            scopeKey: notificationPreferenceRules.scopeKey,
-            channel: notificationPreferenceRules.channel,
-            mode: notificationPreferenceRules.mode,
-          },
-        })
-        .from(notificationPreferenceRules)
-        .innerJoin(
-          organizationMembers,
-          and(
-            eq(organizationMembers.orgId, notificationPreferenceRules.orgId),
-            eq(organizationMembers.id, notificationPreferenceRules.membershipId),
-          ),
-        )
-        .where(
-          and(
-            eq(notificationPreferenceRules.orgId, orgId),
-            eq(organizationMembers.status, "ACTIVE"),
-            inArray(organizationMembers.userId, userIds),
-          ),
-        ),
-      // SCH-012: quiet hours resolve from the canonical per-user timezone.
-      // notification_preferences.quiet_hours_timezone defaulted 'UTC' while this
-      // column defaults 'Asia/Kolkata', so an IST user's 22:00-07:00 window was
-      // applied in UTC — silencing the working day and letting the night through.
-      this.db
-        .select({ userId: userPreferences.userId, timezone: userPreferences.timezone })
-        .from(userPreferences)
-        .where(inArray(userPreferences.userId, userIds)),
-    ]);
+    const [availableChannels, orgPolicy, prefRows, ruleRows, tzRows] =
+      await Promise.all([
+        this.loadOrgAvailability(orgId),
+        this.loadOrgPolicy(orgId, definition),
+        this.db
+          .select({
+            userId: notificationPreferences.userId,
+            inAppEnabled: notificationPreferences.inAppEnabled,
+            emailEnabled: notificationPreferences.emailEnabled,
+            pushEnabled: notificationPreferences.pushEnabled,
+            smsEnabled: notificationPreferences.smsEnabled,
+            whatsappEnabled: notificationPreferences.whatsappEnabled,
+            quietHoursStart: notificationPreferences.quietHoursStart,
+            quietHoursEnd: notificationPreferences.quietHoursEnd,
+            quietHoursWeekends: notificationPreferences.quietHoursWeekends,
+            allowCriticalOverride:
+              notificationPreferences.allowCriticalOverride,
+          })
+          .from(notificationPreferences)
+          .where(
+            and(
+              eq(notificationPreferences.orgId, orgId),
+              inArray(notificationPreferences.userId, userIds),
+            ),
+          )
+          .limit(userIds.length),
+        // SCH-003: the normalised replacement for the four JSONB preference blobs.
+        this.db
+          .select({
+            userId: organizationMembers.userId,
+            rule: {
+              scopeType: notificationPreferenceRules.scopeType,
+              scopeKey: notificationPreferenceRules.scopeKey,
+              channel: notificationPreferenceRules.channel,
+              mode: notificationPreferenceRules.mode,
+            },
+          })
+          .from(notificationPreferenceRules)
+          .innerJoin(
+            organizationMembers,
+            and(
+              eq(organizationMembers.orgId, notificationPreferenceRules.orgId),
+              eq(
+                organizationMembers.id,
+                notificationPreferenceRules.membershipId,
+              ),
+            ),
+          )
+          .where(
+            and(
+              eq(notificationPreferenceRules.orgId, orgId),
+              eq(organizationMembers.status, "ACTIVE"),
+              inArray(organizationMembers.userId, userIds),
+              or(
+                and(
+                  eq(notificationPreferenceRules.scopeType, "EVENT"),
+                  eq(notificationPreferenceRules.scopeKey, definition.eventKey),
+                ),
+                and(
+                  eq(notificationPreferenceRules.scopeType, "MODULE"),
+                  eq(
+                    notificationPreferenceRules.scopeKey,
+                    definition.sourceModule,
+                  ),
+                ),
+                and(
+                  eq(notificationPreferenceRules.scopeType, "CATEGORY"),
+                  eq(notificationPreferenceRules.scopeKey, definition.category),
+                ),
+              ),
+            ),
+          )
+          .limit(Math.max(1, userIds.length * ALL_CHANNELS.length * 3)),
+        // SCH-012: quiet hours resolve from the canonical per-user timezone.
+        // notification_preferences.quiet_hours_timezone defaulted 'UTC' while this
+        // column defaults 'Asia/Kolkata', so an IST user's 22:00-07:00 window was
+        // applied in UTC — silencing the working day and letting the night through.
+        this.db
+          .select({
+            userId: userPreferences.userId,
+            timezone: userPreferences.timezone,
+          })
+          .from(userPreferences)
+          .where(inArray(userPreferences.userId, userIds))
+          .limit(userIds.length),
+      ]);
     const prefsByUser = new Map(prefRows.map((r) => [r.userId, r]));
-    const rulesByUser = new Map<string, Array<(typeof ruleRows)[number]["rule"]>>();
+    const rulesByUser = new Map<
+      string,
+      Array<(typeof ruleRows)[number]["rule"]>
+    >();
     for (const row of ruleRows) {
       const bucket = rulesByUser.get(row.userId);
       if (bucket) bucket.push(row.rule);
@@ -458,8 +600,17 @@ export class NotificationRoutingService {
     const routingDefinition = channels
       ? { ...definition, defaultChannels: channels, allowedChannels: channels }
       : definition;
-    const suppressionByUser = await this.loadSuppressionBatch(orgId, userIds, routingDefinition);
-    await this.applyRateLimitsBatch(orgId, userIds, routingDefinition, suppressionByUser);
+    const suppressionByUser = await this.loadSuppressionBatch(
+      orgId,
+      userIds,
+      routingDefinition,
+    );
+    await this.applyRateLimitsBatch(
+      orgId,
+      userIds,
+      routingDefinition,
+      suppressionByUser,
+    );
 
     const now = new Date();
     for (const userId of userIds) {
@@ -467,7 +618,11 @@ export class NotificationRoutingService {
         definition: routingDefinition,
         priority,
         now,
-        prefs: this.resolvePrefs(prefsByUser.get(userId), tzByUser.get(userId), rulesByUser.get(userId) ?? []),
+        prefs: this.resolvePrefs(
+          prefsByUser.get(userId),
+          tzByUser.get(userId),
+          rulesByUser.get(userId) ?? [],
+        ),
         orgPolicy,
         availableChannels,
         suppressedChannels: suppressionByUser.get(userId) ?? new Map(),
@@ -477,8 +632,22 @@ export class NotificationRoutingService {
     return results;
   }
 
-  async route(orgId: string, userId: string, definition: NotificationEventDefinition, priority: NotificationPriority): Promise<RoutingResult> {
+  async route(
+    orgId: string,
+    userId: string,
+    definition: NotificationEventDefinition,
+    priority: NotificationPriority,
+  ): Promise<RoutingResult> {
     const results = await this.routeMany(orgId, [userId], definition, priority);
-    return results.get(userId) ?? { userId, createInApp: true, channels: [], priority, deferredUntil: null, reasonText: "" };
+    return (
+      results.get(userId) ?? {
+        userId,
+        createInApp: true,
+        channels: [],
+        priority,
+        deferredUntil: null,
+        reasonText: "",
+      }
+    );
   }
 }

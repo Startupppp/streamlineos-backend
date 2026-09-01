@@ -23,6 +23,7 @@ export class RecruitmentCalibrationService {
   listCalibration(orgId: string, candidateId: number) {
     return this.db.query.calibrationSessions
       .findMany({
+        limit: 100,
         where: and(
           eq(calibrationSessions.candidateId, candidateId),
           eq(calibrationSessions.orgId, orgId),

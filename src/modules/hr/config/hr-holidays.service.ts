@@ -5,7 +5,10 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import type { CreateHolidayInput, UpdateHolidayInput } from "./dto/holidays.schemas";
+import type {
+  CreateHolidayInput,
+  UpdateHolidayInput,
+} from "./dto/holidays.schemas";
 
 @Injectable()
 export class HrHolidaysService {
@@ -19,7 +22,12 @@ export class HrHolidaysService {
     const endDate = `${year}-12-31`;
 
     return this.db.query.holidays.findMany({
-      where: and(eq(holidays.orgId, orgId), gte(holidays.date, startDate), lte(holidays.date, endDate)),
+      limit: 100,
+      where: and(
+        eq(holidays.orgId, orgId),
+        gte(holidays.date, startDate),
+        lte(holidays.date, endDate),
+      ),
       orderBy: [asc(holidays.date)],
     });
   }
@@ -31,7 +39,12 @@ export class HrHolidaysService {
     const endDate = `${year}-${mm}-${String(lastDay).padStart(2, "0")}`;
 
     return this.db.query.holidays.findMany({
-      where: and(eq(holidays.orgId, orgId), gte(holidays.date, startDate), lte(holidays.date, endDate)),
+      limit: 100,
+      where: and(
+        eq(holidays.orgId, orgId),
+        gte(holidays.date, startDate),
+        lte(holidays.date, endDate),
+      ),
       orderBy: [asc(holidays.date)],
     });
   }
@@ -42,7 +55,10 @@ export class HrHolidaysService {
       .then((row) => row ?? null);
   }
 
-  async create(orgId: string, input: CreateHolidayInput): Promise<{ ok: false } | { ok: true }> {
+  async create(
+    orgId: string,
+    input: CreateHolidayInput,
+  ): Promise<{ ok: false } | { ok: true }> {
     const trimmedName = input.name.trim();
     const duplicate = await this.db.query.holidays.findFirst({
       where: and(
@@ -64,7 +80,13 @@ export class HrHolidaysService {
       isPublic: input.isPublic ?? false,
     });
 
-    void this.announceHoliday(orgId, undefined, input.name, input.date, input.message);
+    void this.announceHoliday(
+      orgId,
+      undefined,
+      input.name,
+      input.date,
+      input.message,
+    );
 
     return { ok: true };
   }
@@ -72,14 +94,20 @@ export class HrHolidaysService {
   update(orgId: string, id: number, input: UpdateHolidayInput) {
     return this.db
       .update(holidays)
-      .set({ name: input.name.trim(), date: input.date, message: input.message?.trim() ?? null })
+      .set({
+        name: input.name.trim(),
+        date: input.date,
+        message: input.message?.trim() ?? null,
+      })
       .where(and(eq(holidays.id, id), eq(holidays.orgId, orgId)))
       .returning()
       .then((rows) => rows[0]);
   }
 
   async remove(orgId: string, id: number) {
-    await this.db.delete(holidays).where(and(eq(holidays.id, id), eq(holidays.orgId, orgId)));
+    await this.db
+      .delete(holidays)
+      .where(and(eq(holidays.id, id), eq(holidays.orgId, orgId)));
     return { success: true };
   }
 

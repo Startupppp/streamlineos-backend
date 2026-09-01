@@ -21,8 +21,7 @@ export async function assertMayAssignRole(
   if (role.rank === ROLE_RANK.MODULE_OWNER)
     throw new ForbiddenException(
       "Module owner roles must be assigned through the ownership service, not the generic role-assignment path",
-    )
-    .limit(500);
+    );
 
   if (actor.isOrgOwner) return;
 

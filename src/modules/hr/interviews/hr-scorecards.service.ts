@@ -28,6 +28,7 @@ export class HrScorecardsService {
 
   listTemplates(orgId: string) {
     return this.db.query.scorecardTemplates.findMany({
+      limit: 100,
       where: eq(scorecardTemplates.orgId, orgId),
       orderBy: (t, { desc }) => [desc(t.createdAt)],
     });

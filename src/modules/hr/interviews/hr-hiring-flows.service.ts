@@ -120,6 +120,7 @@ export class HrHiringFlowsService {
     if (!flow) throw new NotFoundException("Hiring flow not found");
 
     return this.db.query.hiringFlowRounds.findMany({
+      limit: 100,
       where: eq(hiringFlowRounds.flowId, flowId),
       orderBy: (r, { asc }) => [asc(r.orderIndex)],
     });

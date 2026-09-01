@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, gt } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import {
   payrollRunEmployees,
@@ -13,7 +13,7 @@ import {
 import type { PayrollProfileSubject } from "./payroll-subject";
 import type { EmploymentFactsService } from "../../directory/employment-facts.service";
 import type { BankDetails } from "../../directory/employment-facts.types";
-import { PAYROLL_READ_CAP } from "./query-bounds";
+import { readPayrollKeysetBatches } from "./payroll-keyset-batch";
 
 export type { PayrollProfileSubject };
 
@@ -49,38 +49,40 @@ export async function loadRunEmployeePayees(
   runId: number,
   efService: EmploymentFactsService,
 ): Promise<PayrollPayeeDetails[]> {
-  const rows = await db
-    .select({
-      id: payrollRunEmployees.id,
-      userId: payrollRunEmployees.userId,
-      workerId: payrollRunEmployees.workerId,
-      userName: users.name,
-      userEmail: users.email,
-      workerNumber: workers.workerNumber,
-      personDisplayName: organizationPeople.displayName,
-      personFirstName: organizationPeople.firstName,
-      personLastName: organizationPeople.lastName,
-      personWorkEmail: organizationPeople.workEmail,
-      organizationPersonId: workers.organizationPersonId,
-    })
-    .from(payrollRunEmployees)
-    .leftJoin(users, eq(payrollRunEmployees.userId, users.id))
-    .leftJoin(
-      workers,
-      and(
+  const rows = await readPayrollKeysetBatches({
+    fetch: (afterId, limit) => db
+      .select({
+        id: payrollRunEmployees.id,
+        userId: payrollRunEmployees.userId,
+        workerId: payrollRunEmployees.workerId,
+        userName: users.name,
+        userEmail: users.email,
+        workerNumber: workers.workerNumber,
+        personDisplayName: organizationPeople.displayName,
+        personFirstName: organizationPeople.firstName,
+        personLastName: organizationPeople.lastName,
+        personWorkEmail: organizationPeople.workEmail,
+        organizationPersonId: workers.organizationPersonId,
+      })
+      .from(payrollRunEmployees)
+      .leftJoin(users, eq(payrollRunEmployees.userId, users.id))
+      .leftJoin(workers, and(
         eq(workers.workerId, payrollRunEmployees.workerId),
         eq(workers.organizationId, payrollRunEmployees.orgId),
-      ),
-    )
-    .leftJoin(
-      organizationPeople,
-      and(
+      ))
+      .leftJoin(organizationPeople, and(
         eq(organizationPeople.organizationPersonId, workers.organizationPersonId),
         eq(organizationPeople.organizationId, workers.organizationId),
-      ),
-    )
-    .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
-    .limit(PAYROLL_READ_CAP + 1);
+      ))
+      .where(and(
+        eq(payrollRunEmployees.runId, runId),
+        eq(payrollRunEmployees.orgId, orgId),
+        ...(afterId === null ? [] : [gt(payrollRunEmployees.id, afterId)]),
+      ))
+      .orderBy(asc(payrollRunEmployees.id))
+      .limit(limit),
+    idOf: (row) => row.id,
+  });
 
   const userIds = [
     ...new Set(

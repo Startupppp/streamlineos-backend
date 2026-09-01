@@ -1,6 +1,10 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { kpiDefinitions, competencyFrameworks, competencies } from "../../../db/schema";
+import {
+  kpiDefinitions,
+  competencyFrameworks,
+  competencies,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 
@@ -12,7 +16,10 @@ export class KpisService {
     return this.db
       .select()
       .from(kpiDefinitions)
-      .where(and(eq(kpiDefinitions.orgId, orgId), eq(kpiDefinitions.isActive, true)));
+      .where(
+        and(eq(kpiDefinitions.orgId, orgId), eq(kpiDefinitions.isActive, true)),
+      )
+      .limit(100);
   }
 
   createKpi(
@@ -78,6 +85,7 @@ export class KpisService {
 
   listFrameworks(orgId: string) {
     return this.db.query.competencyFrameworks.findMany({
+      limit: 100,
       where: eq(competencyFrameworks.orgId, orgId),
       with: { competencies: true },
     });
@@ -111,15 +119,26 @@ export class KpisService {
     const existing = await this.db
       .select({ id: competencyFrameworks.id })
       .from(competencyFrameworks)
-      .where(and(eq(competencyFrameworks.id, id), eq(competencyFrameworks.orgId, orgId)))
+      .where(
+        and(
+          eq(competencyFrameworks.id, id),
+          eq(competencyFrameworks.orgId, orgId),
+        ),
+      )
       .limit(1);
 
-    if (existing.length === 0) throw new NotFoundException("Framework not found.");
+    if (existing.length === 0)
+      throw new NotFoundException("Framework not found.");
 
     return this.db
       .update(competencyFrameworks)
       .set(data)
-      .where(and(eq(competencyFrameworks.id, id), eq(competencyFrameworks.orgId, orgId)))
+      .where(
+        and(
+          eq(competencyFrameworks.id, id),
+          eq(competencyFrameworks.orgId, orgId),
+        ),
+      )
       .returning();
   }
 
@@ -127,9 +146,15 @@ export class KpisService {
     const framework = await this.db
       .select({ id: competencyFrameworks.id })
       .from(competencyFrameworks)
-      .where(and(eq(competencyFrameworks.id, frameworkId), eq(competencyFrameworks.orgId, orgId)))
+      .where(
+        and(
+          eq(competencyFrameworks.id, frameworkId),
+          eq(competencyFrameworks.orgId, orgId),
+        ),
+      )
       .limit(1);
-    if (framework.length === 0) throw new NotFoundException("Framework not found.");
+    if (framework.length === 0)
+      throw new NotFoundException("Framework not found.");
     return this.db
       .select()
       .from(competencies)
@@ -149,9 +174,15 @@ export class KpisService {
     const framework = await this.db
       .select({ id: competencyFrameworks.id })
       .from(competencyFrameworks)
-      .where(and(eq(competencyFrameworks.id, frameworkId), eq(competencyFrameworks.orgId, orgId)))
+      .where(
+        and(
+          eq(competencyFrameworks.id, frameworkId),
+          eq(competencyFrameworks.orgId, orgId),
+        ),
+      )
       .limit(1);
-    if (framework.length === 0) throw new NotFoundException("Framework not found.");
+    if (framework.length === 0)
+      throw new NotFoundException("Framework not found.");
     return this.db
       .insert(competencies)
       .values({ frameworkId, ...data })

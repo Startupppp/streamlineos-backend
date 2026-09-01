@@ -39,7 +39,7 @@ export const createMeetingSchema = z
     endAt: z.coerce.date().optional(),
     durationMinutes: z.number().int().positive().optional(),
     sprintId: z.number().int().positive().optional(),
-    attendeeUserIds: z.array(z.string().min(1)).optional(),
+    attendeeUserIds: z.array(z.string().min(1)).max(100).optional(),
     recurrenceRule: recurrenceRuleSchema.optional(),
     timezone: z.string().optional(),
   })

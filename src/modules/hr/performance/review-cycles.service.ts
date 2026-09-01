@@ -79,7 +79,8 @@ export class ReviewCyclesService {
     });
     if (!cycle) throw new NotFoundException("Review cycle not found.");
 
-    const reviews = await this.db.query.performanceReviews.findMany({
+      const reviews = await this.db.query.performanceReviews.findMany({
+        limit: 100,
       where: and(
         eq(performanceReviews.orgId, orgId),
         eq(performanceReviews.cycleId, cycleId),

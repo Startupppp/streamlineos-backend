@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, exists, gte, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, exists, gte, lte, or } from "drizzle-orm";
 import { formatInTimeZone } from "date-fns-tz";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -25,6 +25,8 @@ import type {
 import { EmploymentFactsService } from "../directory/employment-facts.service";
 import { WEEKDAY_NAMES, dateOnly, dateAtNoon, enumerateDates, loadAttendanceOnly } from "./hr-calendar-sub-sources";
 import { findActiveHrCalendarMembership } from "./hr-calendar-membership";
+
+const HR_CALENDAR_READ_BATCH_SIZE = 500;
 
 @Injectable()
 export class HrCalendarSource implements CalendarEventSource {
@@ -68,7 +70,9 @@ export class HrCalendarSource implements CalendarEventSource {
         eq(leaveRequests.status, "APPROVED"),
         lte(leaveRequests.startDate, dateOnly(ctx.end)),
         gte(leaveRequests.endDate, dateOnly(ctx.start)),
-      ));
+      ))
+      .orderBy(asc(leaveRequests.id))
+      .limit(HR_CALENDAR_READ_BATCH_SIZE);
 
     return rows.map((leave) => ({
       id: `leave-${leave.id}`,
@@ -116,7 +120,9 @@ export class HrCalendarSource implements CalendarEventSource {
             )),
           ),
         ),
-      ));
+      ))
+      .orderBy(asc(interviews.id))
+      .limit(HR_CALENDAR_READ_BATCH_SIZE);
 
     return rows.map((interview) => {
       const end = new Date(interview.scheduledAt);
@@ -175,7 +181,9 @@ export class HrCalendarSource implements CalendarEventSource {
             lte(leaveRequests.startDate, endStr),
             gte(leaveRequests.endDate, startStr),
           ),
-        ),
+        )
+        .orderBy(asc(leaveRequests.id))
+        .limit(HR_CALENDAR_READ_BATCH_SIZE),
 
       this.db
         .select({
@@ -210,7 +218,9 @@ export class HrCalendarSource implements CalendarEventSource {
               ),
             ),
           ),
-        ),
+        )
+        .orderBy(asc(interviews.id))
+        .limit(HR_CALENDAR_READ_BATCH_SIZE),
 
       this.db
         .select({
@@ -232,7 +242,8 @@ export class HrCalendarSource implements CalendarEventSource {
             lte(attendance.date, endStr),
           ),
         )
-        .orderBy(desc(attendance.createdAt)),
+        .orderBy(desc(attendance.createdAt), asc(attendance.id))
+        .limit(HR_CALENDAR_READ_BATCH_SIZE),
 
       this.db
         .select({ id: wfhRequests.id, date: wfhRequests.date })
@@ -245,7 +256,9 @@ export class HrCalendarSource implements CalendarEventSource {
             gte(wfhRequests.date, startStr),
             lte(wfhRequests.date, endStr),
           ),
-        ),
+        )
+        .orderBy(asc(wfhRequests.id))
+        .limit(HR_CALENDAR_READ_BATCH_SIZE),
 
       this.db
         .select({ timezone: organizations.timezone })
@@ -267,7 +280,9 @@ export class HrCalendarSource implements CalendarEventSource {
             gte(rosterEntries.date, startStr),
             lte(rosterEntries.date, endStr),
           ),
-        ),
+        )
+        .orderBy(asc(rosterEntries.id))
+        .limit(HR_CALENDAR_READ_BATCH_SIZE),
 
       listCompatibleHolidays(this.db, orgId, startStr, endStr),
 

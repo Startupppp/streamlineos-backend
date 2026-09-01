@@ -31,8 +31,9 @@ describe("AnnouncementsService — cross-tenant isolation", () => {
 
   function makeService(rows: unknown[]) {
     const { builder, where } = makeSelectChain(rows);
+    const targetWhere = jest.fn();
     const targetsBuilder: Record<string, unknown> = {
-      from: jest.fn(), where: jest.fn(), limit: jest.fn(),
+      from: jest.fn(), where: targetWhere, limit: jest.fn(),
       then(fn: (v: unknown) => unknown, r?: (e: unknown) => unknown) { return Promise.resolve([]).then(fn, r); },
       catch(fn: (e: unknown) => unknown) { return Promise.resolve([]).catch(fn); },
       finally(fn: () => void) { return Promise.resolve([]).finally(fn); },
@@ -43,7 +44,7 @@ describe("AnnouncementsService — cross-tenant isolation", () => {
       select: jest.fn().mockImplementation(() => { call++; return call === 1 ? builder : targetsBuilder; }),
     } as unknown as Db;
     const svc = new AnnouncementsService(db);
-    return { svc, where };
+    return { svc, where, targetWhere, targetsBuilder };
   }
 
   it("list returns empty for a different org (cross-tenant isolation)", async () => {
@@ -56,8 +57,10 @@ describe("AnnouncementsService — cross-tenant isolation", () => {
   });
 
   it("list returns announcements for the owning org (control)", async () => {
-    const { svc } = makeService([ANN]);
+    const { svc, targetWhere, targetsBuilder } = makeService([ANN]);
     const result = await svc.list(OWNER);
     expect(result).toHaveLength(1);
+    expect(sqlValues(targetWhere.mock.calls[0]?.[0])).toContain(OWNER);
+    expect(targetsBuilder.limit).toHaveBeenCalledWith(1000);
   });
 });

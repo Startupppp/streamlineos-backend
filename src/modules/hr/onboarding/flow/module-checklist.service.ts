@@ -237,6 +237,7 @@ export class ModuleChecklistService {
     const visibleModuleKeys = await this.resolveVisibleModuleKeys(orgId);
     await this.ensureChecklistsForModules(orgId, visibleModuleKeys);
     const checklists = await this.db.query.moduleSetupChecklists.findMany({
+      limit: 100,
       where: eq(moduleSetupChecklists.orgId, orgId),
       with: { items: true },
     });
@@ -287,6 +288,7 @@ export class ModuleChecklistService {
 
   private async recomputeProgress(checklistId: number) {
     const items = await this.db.query.moduleSetupChecklistItems.findMany({
+      limit: 100,
       where: eq(moduleSetupChecklistItems.checklistId, checklistId),
     });
     const total = items.length;

@@ -281,6 +281,7 @@ export class HrWorkflowEngineService {
   async getInstanceTimeline(orgId: string, instanceId: number) {
     const instance = await this.getInstanceOrThrow(orgId, instanceId);
     const actions = await this.db.query.hrWorkflowStepActions.findMany({
+      limit: 100,
       where: and(
         eq(hrWorkflowStepActions.orgId, orgId),
         eq(hrWorkflowStepActions.instanceId, instanceId),
