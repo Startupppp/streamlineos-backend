@@ -12,16 +12,16 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import type { Request } from "express";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { PlatformOperatorAccessService } from "./platform-operator-access.service";
 import {
-  approveGrantSchema,
   createGrantSchema,
   listGrantsQuerySchema,
   listLogsQuerySchema,
   revokeGrantSchema,
-  type ApproveGrantInput,
   type CreateGrantInput,
   type ListGrantsQuery,
   type ListLogsQuery,
@@ -34,9 +34,13 @@ function assertInternalSecret(secret: string | undefined): void {
 }
 
 function ipOf(req: Request): string | undefined {
-  const fwd = req.headers["x-forwarded-for"];
-  const raw = Array.isArray(fwd) ? fwd[0] : fwd;
-  return raw?.split(",")[0]?.trim() ?? req.ip ?? undefined;
+  return req.ip || undefined;
+}
+
+function humanOperatorId(user: CurrentUserContext): string {
+  if (user.principal.kind !== "human-session")
+    throw new UnauthorizedException("Operator administration requires a human session");
+  return user.userId;
 }
 
 @Controller("platform/operator-access")
@@ -51,14 +55,16 @@ export class PlatformOperatorAccessController {
   async createGrant(
     @Headers("x-internal-secret") secret: string | undefined,
     @Body() body: CreateGrantInput,
+    @CurrentUser() user: CurrentUserContext,
     @Req() req: Request,
   ): Promise<{ grantId: string }> {
     assertInternalSecret(secret);
+    const requesterId = humanOperatorId(user);
     const grantId = await this.operatorAccess.createGrant({
       operatorUserId: body.operatorUserId,
       orgId: body.orgId,
       incidentRef: body.incidentRef,
-      grantedBy: body.grantedBy,
+      grantedBy: requesterId,
       scope: body.scope,
       expiresAt: new Date(body.expiresAt),
     });
@@ -68,7 +74,7 @@ export class PlatformOperatorAccessController {
       body.orgId,
       "grant.requested",
       ipOf(req),
-      { incidentRef: body.incidentRef, scope: body.scope, requestedBy: body.grantedBy },
+      { incidentRef: body.incidentRef, scope: body.scope, requestedBy: requesterId },
     );
     return { grantId };
   }
@@ -78,21 +84,21 @@ export class PlatformOperatorAccessController {
   )
   @Post("grants/:grantId/approve")
   @HttpCode(200)
-  @Validate({ body: approveGrantSchema })
   async approveGrant(
     @Headers("x-internal-secret") secret: string | undefined,
     @Param("grantId") grantId: string,
-    @Body() body: ApproveGrantInput,
+    @CurrentUser() user: CurrentUserContext,
     @Req() req: Request,
   ): Promise<{ ok: true }> {
     assertInternalSecret(secret);
+    const approverId = humanOperatorId(user);
     const { orgId, operatorUserId } = await this.operatorAccess.approveGrant(
       grantId,
-      body.approverId,
+      approverId,
     );
     await this.operatorAccess.recordAccess(
       grantId,
-      body.approverId,
+      approverId,
       orgId,
       "grant.approved",
       ipOf(req),

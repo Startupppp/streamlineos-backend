@@ -24,6 +24,7 @@ function makeContext(opts: {
   userId?: string;
   orgId?: string;
   method?: string;
+  principalKind?: "human-session" | "service-api-key";
 }): ExecutionContext {
   const req = {
     user: opts.userId !== undefined
@@ -35,7 +36,7 @@ function makeContext(opts: {
           sessionId: "session-1",
           tokenScopes: null,
           principal: {
-            kind: "human-session" as const,
+            kind: opts.principalKind ?? "human-session",
             membershipId: 1,
             isOrgOwner: false,
           },
@@ -109,6 +110,22 @@ describe("OperatorSessionGuard", () => {
       expect(svc.authorizeRequest).not.toHaveBeenCalled();
     });
 
+    it("(bite proof) rejects a non-human principal even when it names an operator user", async () => {
+      const svc = makeService();
+      const guard = new OperatorSessionGuard(
+        makeReflector("read_customer_data"),
+        svc as unknown as PlatformOperatorAccessService,
+      );
+      await expect(
+        guard.canActivate(makeContext({
+          userId: "op-service",
+          orgId: "org-1",
+          principalKind: "service-api-key",
+        })),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(svc.authorizeRequest).not.toHaveBeenCalled();
+    });
+
     it("(bite proof) throws BadRequestException when no :orgId param on the route", async () => {
       const svc = makeService();
       const guard = new OperatorSessionGuard(
@@ -144,6 +161,29 @@ describe("OperatorSessionGuard", () => {
       const [, , , action] = svc.authorizeRequest.mock.calls[0] as [string, string, string, string];
       expect(action).toContain("operator.");
       expect(action.toLowerCase()).toContain("post");
+    });
+
+    it("sets the request tenant to the granted target org before interceptors open the RLS transaction", async () => {
+      const svc = makeService();
+      const guard = new OperatorSessionGuard(
+        makeReflector("read_customer_data"),
+        svc as unknown as PlatformOperatorAccessService,
+      );
+      const context = makeContext({ userId: "op-alice", orgId: "customer-org" });
+
+      await guard.canActivate(context);
+
+      const request = context.switchToHttp().getRequest<{
+        user: { orgId: string };
+      }>();
+      expect(request.user.orgId).toBe("customer-org");
+      expect(svc.authorizeRequest).toHaveBeenCalledWith(
+        "op-alice",
+        "customer-org",
+        "read_customer_data",
+        expect.any(String),
+        expect.anything(),
+      );
     });
   });
 });

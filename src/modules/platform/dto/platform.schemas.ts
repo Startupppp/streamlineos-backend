@@ -12,7 +12,6 @@ export const createGrantSchema = z.object({
   operatorUserId: z.string().min(1).max(256),
   orgId: z.string().min(1).max(256),
   incidentRef: z.string().min(1).max(500),
-  grantedBy: z.string().min(1).max(256),
   scope: operatorScopeSchema,
   expiresAt: z.string().datetime(),
 }).strict();
@@ -24,12 +23,6 @@ export const revokeGrantSchema = z.object({
 }).strict();
 
 export type RevokeGrantInput = z.infer<typeof revokeGrantSchema>;
-
-export const approveGrantSchema = z.object({
-  approverId: z.string().min(1).max(256),
-}).strict();
-
-export type ApproveGrantInput = z.infer<typeof approveGrantSchema>;
 
 export const grantStatusSchema = z.enum(["pending", "active", "rejected"]);
 
