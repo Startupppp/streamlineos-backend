@@ -140,10 +140,51 @@ jobs:
       - name: Alert self-tests
         run: |
           pnpm alert:queue-age:self-test
+          pnpm alert:job-queue-age:self-test
           pnpm alert:pool-saturation:self-test
           pnpm alert:tenant-cost:self-test
           pnpm alert:dispatch:self-test
           pnpm failure-drill:self-test
+
+      # Every registered alert must reach a runbook heading that exists, and every alert
+      # script must have a biting self-test. check:alert-system runs all of them; the SLO
+      # catalogue spec in the unit suite is what proves the runbook anchors resolve.
+      - name: Alert system registry
+        run: pnpm check:alert-system
+
+      # Every emitted event type has a registered consumer, and every RBAC grant row points
+      # at a permission that still exists. Both were runbook-only until now.
+      - name: Outbox consumer registry
+        run: pnpm check:outbox-consumers:self-test && pnpm check:outbox-consumers
+
+      - name: RBAC referential integrity
+        run: pnpm verify:rbac-integrity:self-test
+
+      # A forward migration must carry a truthful rollback or an explicit irreversible
+      # declaration. The 0143 rollback failed live because a later migration added a partial
+      # index whose enum predicate blocked the column rewrite — this is the gate for that class.
+      - name: Migration rollbacks are truthful
+        run: pnpm check:migration-rollback:self-test && pnpm check:migration-rollback
+
+      # Every table above the size threshold must have a recorded retention decision.
+      # Self-test only here: the live check needs a database.
+      - name: Retention coverage
+        run: pnpm check:retention-coverage:self-test
+
+      # Supply chain. A high or critical advisory in a production dependency, or a copyleft
+      # licence that the product cannot ship under, fails the build.
+      - name: Dependency vulnerabilities
+        run: pnpm check:vulnerabilities:self-test && pnpm check:vulnerabilities
+
+      - name: Dependency licences
+        run: pnpm check:licenses:self-test && pnpm check:licenses
+
+      # Every feature flag must declare an owner and a removal date. Reported, not enforced,
+      # until the feature_flags governance columns are migrated — the gate currently fails
+      # correctly, and turning it red now would only teach people to ignore it.
+      - name: Feature flag governance
+        run: pnpm check:feature-flag-governance:self-test && pnpm check:feature-flag-governance
+        continue-on-error: true
 
       # Cross-tenant negative-test coverage. Reported, not enforced: coverage is 18% (136/773
       # tenant-owned services) and failing the build on a number nobody can move in one commit

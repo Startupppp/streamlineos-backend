@@ -141,6 +141,10 @@ describe("grantablePersonalTokenPermissions — snapshot-driven attenuation", ()
 });
 
 describe("UserApiTokensService.create — scope enforcement prevents token over-escalation", () => {
+  function futureExpiry(): Date {
+    return new Date(Date.now() + 7 * 24 * 3600 * 1000);
+  }
+
   function buildService(snapshotScopes: Record<string, string>) {
     const snapshot = makeSnapshot(snapshotScopes, { hr: true });
     const access = {
@@ -179,6 +183,7 @@ describe("UserApiTokensService.create — scope enforcement prevents token over-
       service.create(makeUser(), {
         name: "Over-scoped token",
         scopes: ["hr:employees:view", "hr:employees:manage"],
+        expiresAt: futureExpiry(),
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -190,6 +195,7 @@ describe("UserApiTokensService.create — scope enforcement prevents token over-
       service.create(makeUser(), {
         name: "Billing token attempt",
         scopes: ["billing:subscription:manage"],
+        expiresAt: futureExpiry(),
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -201,6 +207,7 @@ describe("UserApiTokensService.create — scope enforcement prevents token over-
       service.create(makeUser(), {
         name: "Settings token attempt",
         scopes: ["settings:manage"],
+        expiresAt: futureExpiry(),
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
@@ -214,6 +221,7 @@ describe("UserApiTokensService.create — scope enforcement prevents token over-
     const result = await service.create(makeUser(), {
       name: "Subset token",
       scopes: ["hr:employees:view"],
+      expiresAt: futureExpiry(),
     });
 
     expect(result).toMatchObject({ id: "tok-1", name: "Test token" });
@@ -225,6 +233,7 @@ describe("UserApiTokensService.create — scope enforcement prevents token over-
     const result = await service.create(makeUser(), {
       name: "Fresh token",
       scopes: ["hr:employees:view"],
+      expiresAt: futureExpiry(),
     });
 
     expect(result.lastUsedAt).toBeNull();
@@ -261,9 +270,9 @@ describe("UserApiTokensService.create — scope enforcement prevents token over-
     await service.create(makeUser(), {
       name: "Expiring token",
       scopes: ["hr:employees:view"],
-      expiresAt: expiresAt.toISOString() as never,
+      expiresAt,
     });
 
-    expect(inserted[0]?.expiresAt).toEqual(expiresAt.toISOString());
+    expect(inserted[0]?.expiresAt).toEqual(expiresAt);
   });
 });
