@@ -10,6 +10,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { FinanceReportExportService } from "./finance-report-export.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { createFinanceReportExportJobSchema, finReportExportJobIdParams } from "./dto/finance-report-export.schemas";
 import type { CreateFinanceReportExportJobInput } from "./dto/finance-report-export.schemas";
 
@@ -40,6 +41,7 @@ export class FinanceReportExportController {
   }
 
   @Post("jobs/:jobId/cancel")
+  @BodylessAction()
   @HttpCode(200)
   @RequirePermission("accounting:reports:export")
   @Validate({ params: finReportExportJobIdParams })

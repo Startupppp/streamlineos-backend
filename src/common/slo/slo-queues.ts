@@ -1,0 +1,221 @@
+import {
+  ALERT_RUNBOOK,
+  FAILURE_RUNBOOK,
+  type ServiceLevelObjective,
+  type SloOwner,
+} from "./slo-types";
+
+const OUTBOX_MAX_PENDING_AGE_SECONDS = 300;
+const OUTBOX_MAX_RETRY_PRESSURE = 500;
+const JOB_MAX_PENDING_AGE_SECONDS = 900;
+const DEAD_LETTER_WINDOW_HOURS = 24;
+
+interface QueueSubject {
+  readonly id: string;
+  readonly sourceFile: string;
+  readonly drains: string;
+  readonly owner: SloOwner;
+  readonly channel: "outbox" | "job" | "delivery";
+}
+
+export const QUEUE_SUBJECTS: readonly QueueSubject[] = [
+  {
+    id: "workflow-outbox-relay",
+    sourceFile: "src/common/workflow/workflow-outbox-relay.service.ts",
+    drains: "outbox_events",
+    owner: "delivery-team",
+    channel: "outbox",
+  },
+  {
+    id: "notification-outbox-relay",
+    sourceFile: "src/modules/notifications/notification-outbox-relay.service.ts",
+    drains: "outbox_events",
+    owner: "notifications-team",
+    channel: "outbox",
+  },
+  {
+    id: "chat-fanout-outbox",
+    sourceFile: "src/modules/chat/chat-fanout-outbox.consumer.ts",
+    drains: "outbox_events",
+    owner: "communications-team",
+    channel: "outbox",
+  },
+  {
+    id: "expense-outbox",
+    sourceFile: "src/modules/expenses/expense-outbox.consumer.ts",
+    drains: "outbox_events",
+    owner: "finance-team",
+    channel: "outbox",
+  },
+  {
+    id: "ar-reminder-outbox",
+    sourceFile: "src/modules/finance/ar/reminder-outbox.consumer.ts",
+    drains: "outbox_events",
+    owner: "finance-team",
+    channel: "outbox",
+  },
+  {
+    id: "finance-report-export-outbox",
+    sourceFile: "src/modules/finance/reports/finance-report-export.consumer.ts",
+    drains: "outbox_events",
+    owner: "finance-team",
+    channel: "outbox",
+  },
+  {
+    id: "gdpr-export-outbox",
+    sourceFile: "src/modules/gdpr/gdpr-export-outbox.consumer.ts",
+    drains: "outbox_events",
+    owner: "platform-reliability",
+    channel: "outbox",
+  },
+  {
+    id: "hr-helpdesk-events",
+    sourceFile: "src/modules/hr/helpdesk/hr-helpdesk-events.consumer.ts",
+    drains: "outbox_events",
+    owner: "people-team",
+    channel: "outbox",
+  },
+  {
+    id: "notification-delivery",
+    sourceFile: "src/modules/notifications/notification-delivery-worker.service.ts",
+    drains: "notification_deliveries",
+    owner: "notifications-team",
+    channel: "delivery",
+  },
+  {
+    id: "ai-jobs",
+    sourceFile: "src/modules/ai/jobs/ai-jobs-worker.service.ts",
+    drains: "ai_jobs",
+    owner: "platform-reliability",
+    channel: "job",
+  },
+  {
+    id: "payroll-jobs",
+    sourceFile: "src/modules/payroll/jobs/payroll-jobs-worker.service.ts",
+    drains: "payroll_jobs",
+    owner: "people-team",
+    channel: "job",
+  },
+  {
+    id: "payroll-run-export",
+    sourceFile: "src/modules/payroll/runs/payroll-export-worker.service.ts",
+    drains: "payroll_run_export_jobs",
+    owner: "people-team",
+    channel: "job",
+  },
+  {
+    id: "expense-export",
+    sourceFile: "src/modules/expenses/expense-export-worker.service.ts",
+    drains: "expense_export_jobs",
+    owner: "finance-team",
+    channel: "job",
+  },
+  {
+    id: "finance-report-export",
+    sourceFile: "src/modules/finance/reports/finance-report-export-worker.service.ts",
+    drains: "finance_report_export_jobs",
+    owner: "finance-team",
+    channel: "job",
+  },
+  {
+    id: "hr-export",
+    sourceFile: "src/modules/hr/import/hr-export-worker.service.ts",
+    drains: "hr_export_jobs",
+    owner: "people-team",
+    channel: "job",
+  },
+  {
+    id: "gdpr-export",
+    sourceFile: "src/modules/gdpr/gdpr-export-worker.service.ts",
+    drains: "gdpr_export_jobs",
+    owner: "platform-reliability",
+    channel: "job",
+  },
+  {
+    id: "org-purge",
+    sourceFile: "src/modules/cron/cron-org-purge-worker.service.ts",
+    drains: "organization_purge_confirmations",
+    owner: "platform-reliability",
+    channel: "job",
+  },
+];
+
+function freshnessObjective(subject: QueueSubject): ServiceLevelObjective {
+  if (subject.channel === "outbox")
+    return {
+      id: `queue:${subject.id}:freshness`,
+      kind: "queue",
+      subject: subject.sourceFile,
+      statement: `No ${subject.drains} row stays PENDING longer than ${OUTBOX_MAX_PENDING_AGE_SECONDS}s, and cumulative retry pressure stays at or below ${OUTBOX_MAX_RETRY_PRESSURE}.`,
+      indicator: {
+        kind: "queue-age",
+        maxPendingAgeSeconds: OUTBOX_MAX_PENDING_AGE_SECONDS,
+        maxRetryPressure: OUTBOX_MAX_RETRY_PRESSURE,
+      },
+      owner: subject.owner,
+      alertId: "queue-age",
+      runbookFile: FAILURE_RUNBOOK,
+      runbookAnchor: "#queue-backlog",
+    };
+
+  if (subject.channel === "job")
+    return {
+      id: `queue:${subject.id}:freshness`,
+      kind: "queue",
+      subject: subject.sourceFile,
+      statement: `No ${subject.drains} row stays queued or running longer than ${JOB_MAX_PENDING_AGE_SECONDS}s.`,
+      indicator: {
+        kind: "queue-age",
+        maxPendingAgeSeconds: JOB_MAX_PENDING_AGE_SECONDS,
+        maxRetryPressure: OUTBOX_MAX_RETRY_PRESSURE,
+      },
+      owner: subject.owner,
+      alertId: "job-queue-age",
+      runbookFile: ALERT_RUNBOOK,
+      runbookAnchor: "#job-queue-age",
+    };
+
+  return {
+    id: `queue:${subject.id}:freshness`,
+    kind: "queue",
+    subject: subject.sourceFile,
+    statement: `No ${subject.drains} row reaches DEAD state within a ${DEAD_LETTER_WINDOW_HOURS}h window.`,
+    indicator: {
+      kind: "dead-letter",
+      maxDeadRowsInWindow: 0,
+      windowHours: DEAD_LETTER_WINDOW_HOURS,
+    },
+    owner: subject.owner,
+    alertId: "dead-delivery",
+    runbookFile: ALERT_RUNBOOK,
+    runbookAnchor: "#dead-delivery",
+  };
+}
+
+function durabilityObjective(subject: QueueSubject): ServiceLevelObjective | null {
+  if (subject.channel !== "outbox") return null;
+  return {
+    id: `queue:${subject.id}:durability`,
+    kind: "queue",
+    subject: subject.sourceFile,
+    statement: `No ${subject.drains} row this consumer owns reaches DEAD state within a ${DEAD_LETTER_WINDOW_HOURS}h window.`,
+    indicator: {
+      kind: "dead-letter",
+      maxDeadRowsInWindow: 0,
+      windowHours: DEAD_LETTER_WINDOW_HOURS,
+    },
+    owner: subject.owner,
+    alertId: "dead-outbox",
+    runbookFile: ALERT_RUNBOOK,
+    runbookAnchor: "#dead-outbox",
+  };
+}
+
+export const QUEUE_SLOS: readonly ServiceLevelObjective[] = QUEUE_SUBJECTS.flatMap(
+  (subject) => {
+    const durability = durabilityObjective(subject);
+    return durability === null
+      ? [freshnessObjective(subject)]
+      : [freshnessObjective(subject), durability];
+  },
+);

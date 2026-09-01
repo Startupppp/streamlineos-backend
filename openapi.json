@@ -10651,7 +10651,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:reports:export",
-        "description": "Exposure: permission — accounting:reports:export"
+        "description": "Exposure: permission — accounting:reports:export",
+        "x-bodyless": true
       }
     },
     "/accounting/reports/export/jobs/{jobId}/download": {
@@ -200902,7 +200903,23 @@
             "$ref": "#/components/responses/BadRequest"
           },
           "405": {
-            "description": ""
+            "description": "Method Not Allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "usage": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "usage"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"

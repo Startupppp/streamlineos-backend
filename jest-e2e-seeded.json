@@ -14,5 +14,6 @@
   ],
   "moduleNameMapper": { "^src/(.*)$": "<rootDir>/src/$1", "^test/(.*)$": "<rootDir>/test/$1" },
   "setupFiles": ["dotenv/config"],
-  "maxWorkers": 1
+  "maxWorkers": 1,
+  "testResultsProcessor": "./test/e2e-suite-exit-guard.cjs"
 }

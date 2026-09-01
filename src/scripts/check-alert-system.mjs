@@ -15,6 +15,7 @@ const ALERT_SCRIPTS = [
   "alert-pool-saturation.mjs",
   "alert-tenant-cost.mjs",
   "alert-queue-age.mjs",
+  "alert-job-queue-age.mjs",
   "alert-dispatch.mjs",
   "alert-cell-recovery.mjs",
   "check-alert-ack.mjs",

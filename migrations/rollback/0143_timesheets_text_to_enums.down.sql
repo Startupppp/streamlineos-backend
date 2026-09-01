@@ -60,6 +60,12 @@ ALTER TABLE "timer_sessions" ALTER COLUMN "source"
 ALTER TABLE "timer_sessions" ALTER COLUMN "source" SET DEFAULT 'WEB';
 
 -- ── timesheet_budgets ────────────────────────────────────────────────────────
+-- Migration 0616 added a partial index on timesheet_budgets.status whose
+-- predicate stores a timesheet_budget_status enum literal. PostgreSQL cannot
+-- rewrite that predicate when the column type changes back to text because
+-- there is no `text = timesheet_budget_status` operator. Drop the index first
+-- so the type conversion can proceed; it is invalid in the pre-0143 state anyway.
+DROP INDEX IF EXISTS "uniq_timesheet_budgets_active_project";
 
 ALTER TABLE "timesheet_budgets" ALTER COLUMN "budget_type" DROP DEFAULT;
 ALTER TABLE "timesheet_budgets" ALTER COLUMN "budget_type"

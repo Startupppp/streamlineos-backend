@@ -22,7 +22,7 @@ export {
 } from "./error-classification";
 export { fingerprintOf } from "./error-fingerprint";
 export { currentRelease } from "./release";
-export { redact, truncateForLog } from "./redact";
+export { redact, redactAttributes, truncateForLog } from "./redact";
 export { structuredNestLogger } from "./nest-logger.adapter";
 export { LogSpanExporter } from "./log-span-exporter";
 export { LogErrorReporter } from "./log-error-reporter";

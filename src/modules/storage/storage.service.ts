@@ -12,7 +12,9 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { MediaCompressionService } from "../../common/media/media-compression.service";
@@ -58,6 +60,14 @@ const MIME_MAP: Record<string, string> = {
   ".xls": "application/vnd.ms-excel",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
+
+export const DELETE_BATCH_LIMIT = 1_000;
+
+export interface PurgeOrgPrefixResult {
+  deleted: string[];
+  skipped: string[];
+  failed: Array<{ key: string; reason: string }>;
+}
 
 const PRIVATE_HR_FOLDERS = new Set([
   "documents",
@@ -257,7 +267,9 @@ export class StorageService {
 
     const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
     const rawKey = `${folder}/${randomUUID()}-${sanitizedName}`;
-    const key = placement.keyPrefix ? `${placement.keyPrefix}/${rawKey}` : rawKey;
+    const key = placement.keyPrefix
+      ? `${placement.keyPrefix}/${rawKey}`
+      : rawKey;
 
     await placement.client.send(
       new PutObjectCommand({
@@ -295,7 +307,9 @@ export class StorageService {
     const bucketName = this.requireBucketFrom(placement, bucketOverride);
     const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
     const rawKey = `${folder}/${randomUUID()}-${sanitizedName}`;
-    const key = placement.keyPrefix ? `${placement.keyPrefix}/${rawKey}` : rawKey;
+    const key = placement.keyPrefix
+      ? `${placement.keyPrefix}/${rawKey}`
+      : rawKey;
 
     await placement.client.send(
       new PutObjectCommand({
@@ -384,7 +398,9 @@ export class StorageService {
   ): Promise<void> {
     const placement = await this.placementFor(orgId);
     const bucketName = this.requireBucketFrom(placement, bucketOverride);
-    const resolvedKey = placement.keyPrefix ? `${placement.keyPrefix}/${key}` : key;
+    const resolvedKey = placement.keyPrefix
+      ? `${placement.keyPrefix}/${key}`
+      : key;
     await placement.client.send(
       new PutObjectCommand({
         Bucket: bucketName,
@@ -402,7 +418,11 @@ export class StorageService {
    * it is a link that 404s for every organisation not placed there — so the
    * organisation is a parameter here exactly as it is for the write.
    */
-  async getFileUrl(orgId: string, key: string, expiresIn = 3600): Promise<string> {
+  async getFileUrl(
+    orgId: string,
+    key: string,
+    expiresIn = 3600,
+  ): Promise<string> {
     const placement = await this.placementFor(orgId);
     const bucketName = this.requireBucketFrom(placement);
     const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
@@ -489,5 +509,71 @@ export class StorageService {
     )
       return false;
     return /^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(key);
+  }
+
+  async purgeOrgPrefix(orgId: string): Promise<PurgeOrgPrefixResult> {
+    const placement = await this.placementFor(orgId);
+    const bucketName = this.requireBucketFrom(placement);
+    const rawPrefix = placement.keyPrefix?.replace(/\/$/, "");
+    const prefix = rawPrefix ? `${rawPrefix}/` : undefined;
+
+    const allKeys: string[] = [];
+    let continuationToken: string | undefined;
+
+    do {
+      const res = await placement.client.send(
+        new ListObjectsV2Command({
+          Bucket: bucketName,
+          Prefix: prefix,
+          MaxKeys: DELETE_BATCH_LIMIT,
+          ContinuationToken: continuationToken,
+        }),
+      );
+      for (const obj of res.Contents ?? []) {
+        if (typeof obj.Key === "string" && obj.Key.length > 0)
+          allKeys.push(obj.Key);
+      }
+      continuationToken = res.IsTruncated
+        ? res.NextContinuationToken
+        : undefined;
+    } while (continuationToken !== undefined);
+
+    const deleted: string[] = [];
+    const failed: Array<{ key: string; reason: string }> = [];
+
+    for (let i = 0; i < allKeys.length; i += DELETE_BATCH_LIMIT) {
+      const batch = allKeys.slice(i, i + DELETE_BATCH_LIMIT);
+      try {
+        const res = await placement.client.send(
+          new DeleteObjectsCommand({
+            Bucket: bucketName,
+            Delete: {
+              Objects: batch.map((k) => ({ Key: k })),
+              Quiet: false,
+            },
+          }),
+        );
+        for (const del of res.Deleted ?? []) {
+          if (typeof del.Key === "string") deleted.push(del.Key);
+        }
+        for (const err of res.Errors ?? []) {
+          if (typeof err.Key === "string") {
+            failed.push({
+              key: err.Key,
+              reason: err.Message ?? err.Code ?? "unknown",
+            });
+          }
+        }
+      } catch (err) {
+        for (const key of batch) {
+          failed.push({
+            key,
+            reason: err instanceof Error ? err.message : "unknown",
+          });
+        }
+      }
+    }
+
+    return { deleted, skipped: [], failed };
   }
 }

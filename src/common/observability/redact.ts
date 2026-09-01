@@ -64,6 +64,16 @@ function isSensitive(key: string): boolean {
   return SENSITIVE_SUBSTRINGS.some((needle) => normalised.includes(needle));
 }
 
+export function redactAttributes(
+  attrs: Readonly<Record<string, string | number | boolean>>,
+): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(attrs)) {
+    out[key] = isSensitive(key) ? REDACTED : value;
+  }
+  return out;
+}
+
 export function truncateForLog(value: string): string {
   if (value.length <= MAX_STRING) return value;
   return `${value.slice(0, MAX_STRING)}… [truncated ${value.length - MAX_STRING} chars]`;

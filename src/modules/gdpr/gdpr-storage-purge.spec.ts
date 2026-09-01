@@ -6,12 +6,20 @@ import type { SubjectFileKey } from "../storage/storage-key-catalog";
 import * as storageKeyCatalog from "../storage/storage-key-catalog";
 
 const ORG_A = "org-aaa";
+const ORG_B = "org-bbb";
 const USER_HELD = "user-held";
 const USER_FREE = "user-free";
 const ACTOR = "user-actor";
 
 const SAMPLE_KEY: SubjectFileKey = {
   key: "documents/file.pdf",
+  table: "public.hr_documents",
+  column: "file_key",
+  source: "user-fk",
+};
+
+const FAIL_KEY: SubjectFileKey = {
+  key: "documents/will-fail.pdf",
   table: "public.hr_documents",
   column: "file_key",
   source: "user-fk",
@@ -63,7 +71,7 @@ describe("GdprStoragePurgeService — Item C: physical storage purge", () => {
       const result = await svc.purgeSubjectStorage(USER_FREE, [ORG_A], ACTOR, ORG_A, { dryRun: true });
 
       expect(result.dryRun).toBe(true);
-      expect(result.keysDeleted).toBe(0);
+      expect(result.deleted).toHaveLength(0);
       expect(result.manifest).toHaveLength(1);
       expect(deleteFile).not.toHaveBeenCalled();
     });
@@ -79,7 +87,7 @@ describe("GdprStoragePurgeService — Item C: physical storage purge", () => {
 
       expect(result.blocked).toBe(true);
       expect(result.blockReason).toBe("active-legal-hold");
-      expect(result.keysDeleted).toBe(0);
+      expect(result.deleted).toHaveLength(0);
       expect(deleteFile).not.toHaveBeenCalled();
     });
 
@@ -101,7 +109,7 @@ describe("GdprStoragePurgeService — Item C: physical storage purge", () => {
 
       expect(heldResult.blocked).toBe(true);
       expect(freeResult.blocked).toBe(false);
-      expect(freeResult.keysDeleted).toBe(1);
+      expect(freeResult.deleted).toHaveLength(1);
     });
 
     it("legal hold check includes the org scope — cross-org hold does not block different org", async () => {
@@ -114,6 +122,73 @@ describe("GdprStoragePurgeService — Item C: physical storage purge", () => {
       const result = await svc.purgeSubjectStorage(USER_HELD, ["org-other"], ACTOR, "org-other", { dryRun: false });
 
       expect(result.blocked).toBe(false);
+    });
+  });
+
+  describe("partial failure — Item C (the confirmed defect fix)", () => {
+    it("(bite proof) a failed deleteFile call stays in failed[], NOT in deleted[]", async () => {
+      const db = makeDb([]);
+      const deleteFile = jest.fn().mockImplementation((_orgId: string, key: string) => {
+        if (key === FAIL_KEY.key) return Promise.reject(new Error("AccessDenied"));
+        return Promise.resolve();
+      });
+
+      jest.spyOn(storageKeyCatalog, "enumerateFileKeyColumns").mockResolvedValue([
+        { table: "public.hr_documents", column: "file_key" },
+      ]);
+      jest.spyOn(storageKeyCatalog, "collectSubjectFileKeysWithLegalHold").mockResolvedValue([
+        SAMPLE_KEY,
+        FAIL_KEY,
+      ]);
+
+      const svc = await buildService(db, { deleteFile });
+      const result = await svc.purgeSubjectStorage(USER_FREE, [ORG_A], ACTOR, ORG_A, { dryRun: false });
+
+      expect(result.deleted).toContain(SAMPLE_KEY.key);
+      expect(result.deleted).not.toContain(FAIL_KEY.key);
+      expect(result.failed.map((f) => f.key)).toContain(FAIL_KEY.key);
+      expect(result.failed).toHaveLength(1);
+      expect(result.deleted).toHaveLength(1);
+    });
+
+    it("records the failure reason in the failed entry", async () => {
+      const db = makeDb([]);
+      const deleteFile = jest.fn().mockRejectedValue(new Error("NetworkTimeout"));
+
+      jest.spyOn(storageKeyCatalog, "enumerateFileKeyColumns").mockResolvedValue([
+        { table: "public.hr_documents", column: "file_key" },
+      ]);
+      jest.spyOn(storageKeyCatalog, "collectSubjectFileKeysWithLegalHold").mockResolvedValue([SAMPLE_KEY]);
+
+      const svc = await buildService(db, { deleteFile });
+      const result = await svc.purgeSubjectStorage(USER_FREE, [ORG_A], ACTOR, ORG_A, { dryRun: false });
+
+      expect(result.failed[0]?.reason).toBe("NetworkTimeout");
+      expect(result.deleted).toHaveLength(0);
+    });
+  });
+
+  describe("placement isolation — Item C org-id fix", () => {
+    it("(bite proof) purge calls deleteFile with primaryOrgId, not the first element of orgIds", async () => {
+      const db = makeDb([]);
+      const deleteFile = jest.fn().mockResolvedValue(undefined);
+
+      jest.spyOn(storageKeyCatalog, "enumerateFileKeyColumns").mockResolvedValue([
+        { table: "public.hr_documents", column: "file_key" },
+      ]);
+      jest.spyOn(storageKeyCatalog, "collectSubjectFileKeysWithLegalHold").mockResolvedValue([SAMPLE_KEY]);
+
+      const svc = await buildService(db, { deleteFile });
+      await svc.purgeSubjectStorage(
+        USER_FREE,
+        [ORG_B, ORG_A],
+        ACTOR,
+        ORG_A,
+        { dryRun: false },
+      );
+
+      expect(deleteFile).toHaveBeenCalledWith(ORG_A, SAMPLE_KEY.key);
+      expect(deleteFile).not.toHaveBeenCalledWith(ORG_B, SAMPLE_KEY.key);
     });
   });
 });
@@ -144,6 +219,26 @@ describe("GdprStoragePurgeService — Item D: erasure audit log does not leak PI
     expect(Object.keys(metadata ?? {})).not.toContain("phone");
     expect(Object.keys(metadata ?? {})).not.toContain("subjectEmail");
     expect(Object.keys(metadata ?? {})).not.toContain("subjectName");
+  });
+
+  it("records failedCount in metadata alongside keyCount", async () => {
+    const db = makeDb([]);
+    const insertChain = { values: jest.fn().mockResolvedValue([]) };
+    db.insert = jest.fn().mockReturnValue(insertChain);
+    const deleteFile = jest.fn().mockRejectedValue(new Error("StorageError"));
+
+    jest.spyOn(storageKeyCatalog, "enumerateFileKeyColumns").mockResolvedValue([
+      { table: "public.hr_documents", column: "file_key" },
+    ]);
+    jest.spyOn(storageKeyCatalog, "collectSubjectFileKeysWithLegalHold").mockResolvedValue([SAMPLE_KEY]);
+
+    const svc = await buildService(db, { deleteFile });
+    await svc.purgeSubjectStorage(USER_FREE, [ORG_A], ACTOR, ORG_A, { dryRun: false });
+
+    const insertValues = insertChain.values.mock.calls[0]?.[0] as Record<string, unknown>;
+    const metadata = insertValues?.metadata as Record<string, unknown> | undefined;
+    expect(metadata).toHaveProperty("failedCount", 1);
+    expect(metadata).toHaveProperty("keyCount", 0);
   });
 
   it("records the actor (non-subject) userId, never the subject's PII", async () => {
@@ -201,17 +296,17 @@ describe("GdprStoragePurgeService — Item A: idempotency of repeated purge", ()
     const svc = await buildService(db, { deleteFile });
 
     const first = await svc.purgeSubjectStorage(USER_FREE, [ORG_A], ACTOR, ORG_A, { dryRun: false });
-    expect(first.keysDeleted).toBe(1);
+    expect(first.deleted).toHaveLength(1);
     expect(first.blocked).toBe(false);
 
     const second = await svc.purgeSubjectStorage(USER_FREE, [ORG_A], ACTOR, ORG_A, { dryRun: false });
-    expect(second.keysDeleted).toBe(1);
+    expect(second.deleted).toHaveLength(1);
     expect(second.blocked).toBe(false);
 
     expect(deleteFile).toHaveBeenCalledTimes(2);
   });
 
-  it("reports what was deleted — manifest and keysDeleted are both present in the result", async () => {
+  it("reports what was deleted — deleted and manifest are both present in the result", async () => {
     const db = makeDb([]);
     const deleteFile = jest.fn().mockResolvedValue(undefined);
 
@@ -223,9 +318,11 @@ describe("GdprStoragePurgeService — Item A: idempotency of repeated purge", ()
     const svc = await buildService(db, { deleteFile });
     const result = await svc.purgeSubjectStorage(USER_FREE, [ORG_A], ACTOR, ORG_A, { dryRun: false });
 
-    expect(result).toHaveProperty("keysDeleted");
+    expect(result).toHaveProperty("deleted");
+    expect(result).toHaveProperty("failed");
     expect(result).toHaveProperty("manifest");
-    expect(result.keysDeleted).toBe(1);
+    expect(result.deleted).toHaveLength(1);
+    expect(result.deleted[0]).toBe(SAMPLE_KEY.key);
     expect(result.manifest).toHaveLength(1);
     expect(result.manifest[0]?.key).toBe(SAMPLE_KEY.key);
   });
