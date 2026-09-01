@@ -1,4 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
 import { PayslipDownloadService } from "./payslip-download.service";
 import type { AccessService } from "../../access/access.service";
@@ -12,7 +13,11 @@ describe("PayslipDownloadService — cross-tenant isolation", () => {
   const ATTACKER_USER = "user-attacker";
 
   function makeCaller(orgId: string, userId: string): CurrentUserContext {
-    return { orgId, userId } as CurrentUserContext;
+    return {
+      orgId,
+      userId,
+      principal: humanSessionPrincipal(1, false),
+    } as CurrentUserContext;
   }
 
   function makeDb(publicationRow: unknown, runEmployeeRow: unknown = null): Db {

@@ -9,6 +9,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { AccessService } from "../access/access.service";
 import { resolveGoalsScope } from "./goals-scope";
 import type {
@@ -148,12 +149,20 @@ export class GoalsService {
 
   async list(u: CurrentUserContext, filters: ListInput): Promise<GoalListItem[]> {
     const { orgId, userId } = u;
+    const membershipId = actingMembershipId(u.principal);
     const scope = await resolveGoalsScope(this.access, u);
 
     const conditions: ReturnType<typeof and>[] = [eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)];
 
     if (scope !== "all") {
-      const ownershipFilter = or(eq(okrGoals.ownerId, userId), eq(okrGoals.createdBy, userId));
+      const ownershipFilter = membershipId !== null
+        ? or(
+            eq(okrGoals.ownerMembershipId, membershipId),
+            eq(okrGoals.ownerId, userId),
+            eq(okrGoals.createdByMembershipId, membershipId),
+            eq(okrGoals.createdBy, userId),
+          )
+        : or(eq(okrGoals.ownerId, userId), eq(okrGoals.createdBy, userId));
       if (ownershipFilter) conditions.push(ownershipFilter);
     }
 
@@ -195,7 +204,7 @@ export class GoalsService {
     }));
   }
 
-  create(orgId: string, userId: string, input: CreateInput): Promise<typeof okrGoals.$inferSelect> {
+  create(orgId: string, userId: string, input: CreateInput, membershipId?: number | null): Promise<typeof okrGoals.$inferSelect> {
     return this.db.transaction(async (tx) => {
       const [created] = await tx
         .insert(okrGoals)
@@ -211,6 +220,7 @@ export class GoalsService {
           parentGoalId: input.parentGoalId ?? null,
           projectId: input.projectId ?? null,
           createdBy: userId,
+          createdByMembershipId: membershipId ?? null,
         })
         .returning();
 

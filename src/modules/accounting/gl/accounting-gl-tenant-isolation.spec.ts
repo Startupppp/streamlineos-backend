@@ -61,8 +61,7 @@ describe("GL services — cross-tenant isolation", () => {
       const result = await svc.getGeneralLedger("org-attacker", {
         from: "2024-01-01",
         to: "2024-01-31",
-        page: 1,
-        pageSize: 50,
+        limit: 50,
         format: "json",
       });
 
@@ -91,8 +90,7 @@ describe("GL services — cross-tenant isolation", () => {
       const result = await svc.getGeneralLedger("org-owner", {
         from: "2024-01-01",
         to: "2024-01-31",
-        page: 1,
-        pageSize: 50,
+        limit: 50,
         format: "json",
       });
       expect(result).toBeDefined();

@@ -23,6 +23,7 @@ import {
 import { createReferralSchema } from "./dto/affiliate.schemas";
 import { analyticsQuerySchema } from "./dto/analytics.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
@@ -46,14 +47,14 @@ export class BillingEnterpriseController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:affiliate:manage")
   registerAffiliate(@CurrentUser() u: CurrentUserContext) {
-    return this.affiliate.register(u.userId, u.orgId);
+    return this.affiliate.register(u.userId, u.orgId, actingMembershipId(u.principal) ?? 0);
   }
 
   @Get("affiliate")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:affiliate:manage")
   getAffiliateDashboard(@CurrentUser() u: CurrentUserContext) {
-    return this.affiliate.getDashboard(u.userId);
+    return this.affiliate.getDashboard(u.userId, u.orgId, actingMembershipId(u.principal) ?? 0);
   }
 
   @Post("affiliate/payout-request")

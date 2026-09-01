@@ -18,6 +18,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { AccessService } from "../../access/access.service";
 import { authorize } from "../../access/authorize";
 import { SupportTicketsService } from "./support-tickets.service";
@@ -86,7 +87,7 @@ export class SupportTicketsController {
     @Body() body: CreateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.createTicket(u.orgId, u.userId, body);
+    return this.tickets.createTicket(u.orgId, u.userId, body, undefined, actingMembershipId(u.principal));
   }
 
   @Get("stats")
@@ -230,7 +231,7 @@ export class SupportTicketsController {
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.drafts.getDraft(u.orgId, supportTicketId, u.userId);
+    return this.drafts.getDraft(u.orgId, supportTicketId, u.userId, actingMembershipId(u.principal));
   }
 
   @Put(":supportTicketId/draft")
@@ -241,7 +242,7 @@ export class SupportTicketsController {
     @Body() body: UpsertDraftInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.drafts.upsertDraft(u.orgId, supportTicketId, u.userId, body);
+    return this.drafts.upsertDraft(u.orgId, supportTicketId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Delete(":supportTicketId/draft")
@@ -251,7 +252,7 @@ export class SupportTicketsController {
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.drafts.deleteDraft(u.orgId, supportTicketId, u.userId);
+    return this.drafts.deleteDraft(u.orgId, supportTicketId, u.userId, actingMembershipId(u.principal));
   }
 
   @Get(":supportTicketId/external-links")

@@ -269,7 +269,7 @@ describe("pay-projection-exposure", () => {
         {} as never,
       );
 
-      const result = await service.getOwnFnf("org-1", "u1");
+      const result = await service.getOwnFnf("org-1", "u1", null);
 
       const FNF_KEYS = [
         "assetRecovery",

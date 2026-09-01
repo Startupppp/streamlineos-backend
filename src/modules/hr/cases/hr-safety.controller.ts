@@ -112,7 +112,7 @@ export class HrSafetyController {
     @CurrentUser() user: CurrentUserContext,
     @Body() body: CheckinInput,
   ) {
-    return this.safety.upsertCheckin(user.orgId, user.userId, body);
+    return this.safety.upsertCheckin(user, body);
   }
 
   @Get("wellness/my")
@@ -122,7 +122,7 @@ export class HrSafetyController {
     @Query("fromDate") fromDate?: string,
     @Query("toDate") toDate?: string,
   ) {
-    return this.safety.myCheckins(user.orgId, user.userId, fromDate, toDate);
+    return this.safety.myCheckins(user, fromDate, toDate);
   }
 
   @Get("wellness/trend")

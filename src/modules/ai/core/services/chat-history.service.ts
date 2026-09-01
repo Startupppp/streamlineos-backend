@@ -34,15 +34,16 @@ export interface AiConversationListPage {
 export class ChatHistoryService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async append(orgId: string, userId: string, role: AiChatRole, content: string): Promise<void> {
+  async append(orgId: string, userId: string, membershipId: number, role: AiChatRole, content: string): Promise<void> {
     const trimmed = content.trim();
     if (!trimmed) return;
-    await this.db.insert(aiChatMessages).values({ orgId, userId, role, content: trimmed });
+    await this.db.insert(aiChatMessages).values({ orgId, userId, userMembershipId: membershipId, role, content: trimmed });
   }
 
   async list(
     orgId: string,
     userId: string,
+    membershipId: number,
     opts: { cursor?: number; limit: number },
   ): Promise<ChatHistoryPage> {
     const limit = Math.min(Math.max(opts.limit, 1), MAX_PAGE);
@@ -57,7 +58,7 @@ export class ChatHistoryService {
       .where(
         and(
           eq(aiChatMessages.orgId, orgId),
-          eq(aiChatMessages.userId, userId),
+          eq(aiChatMessages.userMembershipId, membershipId),
           opts.cursor ? lt(aiChatMessages.id, opts.cursor) : undefined,
         ),
       )
@@ -80,15 +81,16 @@ export class ChatHistoryService {
     };
   }
 
-  async clear(orgId: string, userId: string): Promise<void> {
+  async clear(orgId: string, userId: string, membershipId: number): Promise<void> {
     await this.db
       .delete(aiChatMessages)
-      .where(and(eq(aiChatMessages.orgId, orgId), eq(aiChatMessages.userId, userId)));
+      .where(and(eq(aiChatMessages.orgId, orgId), eq(aiChatMessages.userMembershipId, membershipId)));
   }
 
   async listConversations(
     orgId: string,
     userId: string,
+    membershipId: number,
     opts: { cursor?: number; limit: number },
   ): Promise<AiConversationListPage> {
     const limit = Math.min(Math.max(opts.limit, 1), 50);
@@ -115,7 +117,7 @@ export class ChatHistoryService {
         cursorRow
           ? and(
               eq(aiChatConversations.orgId, orgId),
-              eq(aiChatConversations.userId, userId),
+              eq(aiChatConversations.userMembershipId, membershipId),
               or(
                 lt(aiChatConversations.updatedAt, cursorRow.updatedAt),
                 and(
@@ -124,7 +126,7 @@ export class ChatHistoryService {
                 ),
               ),
             )
-          : and(eq(aiChatConversations.orgId, orgId), eq(aiChatConversations.userId, userId)),
+          : and(eq(aiChatConversations.orgId, orgId), eq(aiChatConversations.userMembershipId, membershipId)),
       )
       .orderBy(desc(aiChatConversations.updatedAt), desc(aiChatConversations.id))
       .limit(limit + 1);
@@ -145,10 +147,10 @@ export class ChatHistoryService {
     };
   }
 
-  async createConversation(orgId: string, userId: string, title?: string): Promise<AiConversation> {
+  async createConversation(orgId: string, userId: string, membershipId: number, title?: string): Promise<AiConversation> {
     const rows = await this.db
       .insert(aiChatConversations)
-      .values({ orgId, userId, title: title ?? null })
+      .values({ orgId, userId, userMembershipId: membershipId, title: title ?? null })
       .returning();
     const conv = rows[0];
     if (!conv) throw new Error("Failed to create conversation");
@@ -160,7 +162,7 @@ export class ChatHistoryService {
     };
   }
 
-  async renameConversation(orgId: string, userId: string, id: number, title: string): Promise<AiConversation> {
+  async renameConversation(orgId: string, userId: string, membershipId: number, id: number, title: string): Promise<AiConversation> {
     const [existing] = await this.db
       .select({
         id: aiChatConversations.id,
@@ -171,7 +173,7 @@ export class ChatHistoryService {
         and(
           eq(aiChatConversations.id, id),
           eq(aiChatConversations.orgId, orgId),
-          eq(aiChatConversations.userId, userId),
+          eq(aiChatConversations.userMembershipId, membershipId),
         ),
       )
       .limit(1);
@@ -192,7 +194,7 @@ export class ChatHistoryService {
     };
   }
 
-  async deleteConversation(orgId: string, userId: string, id: number): Promise<void> {
+  async deleteConversation(orgId: string, userId: string, membershipId: number, id: number): Promise<void> {
     const [existing] = await this.db
       .select({ id: aiChatConversations.id })
       .from(aiChatConversations)
@@ -200,7 +202,7 @@ export class ChatHistoryService {
         and(
           eq(aiChatConversations.id, id),
           eq(aiChatConversations.orgId, orgId),
-          eq(aiChatConversations.userId, userId),
+          eq(aiChatConversations.userMembershipId, membershipId),
         ),
       )
       .limit(1);
@@ -213,6 +215,7 @@ export class ChatHistoryService {
   async listMessages(
     orgId: string,
     userId: string,
+    membershipId: number,
     conversationId: number,
     opts: { cursor?: number; limit: number },
   ): Promise<ChatHistoryPage> {
@@ -225,7 +228,7 @@ export class ChatHistoryService {
         and(
           eq(aiChatConversations.id, conversationId),
           eq(aiChatConversations.orgId, orgId),
-          eq(aiChatConversations.userId, userId),
+          eq(aiChatConversations.userMembershipId, membershipId),
         ),
       )
       .limit(1);
@@ -269,6 +272,7 @@ export class ChatHistoryService {
   async appendToConversation(
     orgId: string,
     userId: string,
+    membershipId: number,
     conversationId: number,
     role: AiChatRole,
     content: string,
@@ -276,7 +280,7 @@ export class ChatHistoryService {
     const trimmed = content.trim();
     if (!trimmed) return;
 
-    await this.db.insert(aiChatMessages).values({ orgId, userId, role, content: trimmed, conversationId });
+    await this.db.insert(aiChatMessages).values({ orgId, userId, userMembershipId: membershipId, role, content: trimmed, conversationId });
 
     const now = new Date();
     const [conv] = await this.db

@@ -156,7 +156,7 @@ export class UnifiedInboxService {
             )
           : ([] as NotificationInboxItem[]),
         wantsBroadcasts
-          ? this.fetchBroadcasts(orgId, userId, limit + 1, cursorState.b)
+          ? this.fetchBroadcasts(orgId, userId, limit + 1, cursorState.b, actingMembershipId(user.principal))
           : ([] as BroadcastInboxItem[]),
         wantsMail && canViewMail
           ? this.fetchMail(orgId, userId, actingMembershipId(user.principal), limit + 1, cursorState.m)
@@ -165,7 +165,7 @@ export class UnifiedInboxService {
               nextMailCursor: null as string | null,
             },
         wantsBuildApprovals && canViewBuildApprovals
-          ? this.fetchBuildApprovals(orgId, userId, limit + 1, cursorState.a)
+          ? this.fetchBuildApprovals(orgId, userId, actingMembershipId(user.principal), limit + 1, cursorState.a)
           : ([] as BuildApprovalInboxItem[]),
       ]);
 
@@ -278,12 +278,14 @@ export class UnifiedInboxService {
     userId: string,
     fetchLimit: number,
     cursor: number | null,
+    membershipId?: number | null,
   ): Promise<BroadcastInboxItem[]> {
     const rows = await this.broadcasts.listInboxPage(
       orgId,
       userId,
       fetchLimit,
       cursor,
+      membershipId,
     );
 
     return rows.map(
@@ -428,12 +430,14 @@ export class UnifiedInboxService {
   private async fetchBuildApprovals(
     orgId: string,
     userId: string,
+    membershipId: number | null,
     fetchLimit: number,
     cursor: number | null,
   ): Promise<BuildApprovalInboxItem[]> {
     const rows = await this.buildApprovals.getInboxPage(
       orgId,
       userId,
+      membershipId,
       fetchLimit,
       cursor,
     );

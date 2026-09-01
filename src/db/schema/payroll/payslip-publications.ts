@@ -1,6 +1,6 @@
 import { pgTable, serial, text, integer, timestamp, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { workers } from "../directory/workers";
 import { payslipPublishChannelEnum } from "../common/enums";
 import { payslipPublicationStatusEnum } from "./enums";
@@ -13,6 +13,7 @@ export const payslipPublications = pgTable("payslip_publications", {
   runId: integer("run_id").references(() => payrollRuns.id, { onDelete: "restrict" }).notNull(),
   runEmployeeId: integer("run_employee_id").references(() => payrollRunEmployees.id, { onDelete: "restrict" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "restrict" }),
+  userMembershipId: integer("user_membership_id"),
   workerId: text("worker_id"),
   payslipTemplateId: integer("payslip_template_id").references(() => payslipTemplates.id, { onDelete: "set null" }),
   pdfUrl: text("pdf_url"),
@@ -31,6 +32,12 @@ export const payslipPublications = pgTable("payslip_publications", {
   index("idx_payslip_publications_run").on(table.runId),
   index("idx_payslip_publications_user").on(table.userId),
   index("idx_payslip_publications_org_status").on(table.orgId, table.status),
+  index("idx_payslip_publications_org_user_actor").on(table.orgId, table.userMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_payslip_publications_user_actor",
+  }).onDelete("set null"),
   uniqueIndex("uniq_payslip_publications_run_employee").on(table.runEmployeeId),
   index("idx_payslip_publications_org_worker").on(table.orgId, table.workerId),
   check(

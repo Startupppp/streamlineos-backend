@@ -610,7 +610,7 @@ describe("billing-cycle — annual and monthly purchases are recorded correctly"
 
     const paymentInsert = db._store.allInserts.find((i) => i.table === subscriptionPayments);
     const annualPaise = Math.round(PLAN_PRICES_PAISE.STARTER * 12 * (1 - ANNUAL_DISCOUNT_PCT));
-    expect(paymentInsert?.values.amount).toBe((annualPaise / 100).toFixed(2));
+    expect(paymentInsert?.values.amountPaise).toBe(annualPaise);
   });
 
   it("annual purchase sets currentPeriodEnd twelve months out", async () => {
@@ -635,7 +635,7 @@ describe("billing-cycle — annual and monthly purchases are recorded correctly"
     await svc.verifyAndActivate("org1", "user1", { ...VALID_INPUT, billingCycle: "monthly" });
 
     const paymentInsert = db._store.allInserts.find((i) => i.table === subscriptionPayments);
-    expect(paymentInsert?.values.amount).toBe((PLAN_PRICES_PAISE.STARTER / 100).toFixed(2));
+    expect(paymentInsert?.values.amountPaise).toBe(PLAN_PRICES_PAISE.STARTER);
 
     const subInsert = db._store.allInserts.find((i) => i.table === subscriptions);
     const periodEnd = subInsert?.values.currentPeriodEnd as Date;
@@ -651,7 +651,7 @@ describe("billing-cycle — annual and monthly purchases are recorded correctly"
     await svc.verifyAndActivate("org1", "user1", VALID_INPUT);
 
     const paymentInsert = db._store.allInserts.find((i) => i.table === subscriptionPayments);
-    expect(paymentInsert?.values.amount).toBe((PLAN_PRICES_PAISE.STARTER / 100).toFixed(2));
+    expect(paymentInsert?.values.amountPaise).toBe(PLAN_PRICES_PAISE.STARTER);
   });
 
   it("coupon on annual purchase records the discount actually applied, not null", async () => {
@@ -670,7 +670,7 @@ describe("billing-cycle — annual and monthly purchases are recorded correctly"
     const redemptionInsert = db._store.allInserts.find((i) => i.table === couponRedemptions);
     const annualPaise = Math.round(PLAN_PRICES_PAISE.STARTER * 12 * (1 - ANNUAL_DISCOUNT_PCT));
     const discountPaise = Math.round(annualPaise * 0.1);
-    expect(redemptionInsert?.values.amount).toBe((discountPaise / 100).toFixed(2));
+    expect(redemptionInsert?.values.amountPaise).toBe(discountPaise);
   });
 
   it("coupon on monthly purchase records the monthly discount, not the annual one", async () => {
@@ -684,7 +684,7 @@ describe("billing-cycle — annual and monthly purchases are recorded correctly"
 
     const redemptionInsert = db._store.allInserts.find((i) => i.table === couponRedemptions);
     const discountPaise = Math.round(PLAN_PRICES_PAISE.STARTER * 0.1);
-    expect(redemptionInsert?.values.amount).toBe((discountPaise / 100).toFixed(2));
+    expect(redemptionInsert?.values.amountPaise).toBe(discountPaise);
   });
 });
 

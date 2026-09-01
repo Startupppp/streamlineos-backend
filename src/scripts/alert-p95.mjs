@@ -31,6 +31,7 @@
  */
 import { createInterface } from "node:readline";
 import { createReadStream } from "node:fs";
+import { resolveRouteAttribution, extractNamespaceFromSpanName } from "./route-attribution.mjs";
 
 const args = process.argv.slice(2);
 const top = Math.max(1, parseInt(args.find((a) => a.startsWith("--top="))?.slice(6) ?? "10", 10));
@@ -100,6 +101,8 @@ export function summarise(lines, cutoffMs) {
   const endpoints = [...byEndpoint.entries()]
     .map(([endpoint, { latencies, errors }]) => {
       const sorted = [...latencies].sort((a, b) => a - b);
+      const namespace = extractNamespaceFromSpanName(endpoint);
+      const attribution = namespace !== null ? resolveRouteAttribution(namespace) : { unattributable: true, namespace: null };
       return {
         endpoint,
         requests: sorted.length,
@@ -108,6 +111,7 @@ export function summarise(lines, cutoffMs) {
         p95Ms: percentile(sorted, 0.95),
         p99Ms: percentile(sorted, 0.99),
         maxMs: sorted[sorted.length - 1] ?? null,
+        attribution,
       };
     })
     // Hottest by request count — p95 on a rarely-called endpoint is noise.
@@ -132,6 +136,11 @@ if (args.includes("--self-test")) {
     // A quieter endpoint, numeric id.
     span("GET /invoices/12345", 50),
     span("GET /invoices/67890", 70),
+    // HR endpoint — attributed to people-team.
+    span("GET /hr/employees/8f14e45f-ceea-467a-9a3f-000000000001", 60),
+    span("GET /hr/employees/8f14e45f-ceea-467a-9a3f-000000000002", 80),
+    // Platform surface — attributed to platform-reliability.
+    span("GET /health/ready", 5),
     // Not a span line.
     JSON.stringify({ timestamp: now, level: "error", message: "ERROR_REPORT", sqlstate: "42501" }),
     // Span outside the window.
@@ -141,10 +150,12 @@ if (args.includes("--self-test")) {
   const { spanLines, endpoints } = summarise(fixtureLines, Date.now() - hours * 3_600_000);
   const deals = endpoints.find((e) => e.endpoint === "GET /deals/:id");
   const invoices = endpoints.find((e) => e.endpoint === "GET /invoices/:id");
+  const hrEmployees = endpoints.find((e) => e.endpoint === "GET /hr/employees/:id");
+  const health = endpoints.find((e) => e.endpoint === "GET /health/ready");
 
   const checks = {
-    staleSpanExcluded: spanLines === 22,
-    idsCollapsedToOneEndpoint: endpoints.length === 2,
+    staleSpanExcluded: spanLines === 25,
+    idsCollapsedAndFourEndpoints: endpoints.length === 4,
     hottestFirst: endpoints[0]?.endpoint === "GET /deals/:id",
     dealsRequestCount: deals?.requests === 20,
     // 19×100ms + 1×900ms: nearest-rank p95 of 20 samples is the 19th, still 100.
@@ -152,6 +163,15 @@ if (args.includes("--self-test")) {
     p99CatchesTheOutlier: deals?.p99Ms === 900,
     errorsCounted: deals?.errors === 1,
     quieterEndpointSummarised: invoices?.requests === 2 && invoices?.p95Ms === 70,
+    hrAttributesToPeopleTeam:
+      hrEmployees?.attribution?.module === "hr" &&
+      hrEmployees?.attribution?.owner === "people-team",
+    healthAttributesToPlatform:
+      health?.attribution?.platform === true &&
+      health?.attribution?.owner === "platform-reliability",
+    unattributableEndpointReported: deals?.attribution?.unattributable === true,
+    ownersDifferBetweenHrAndHealth:
+      hrEmployees?.attribution?.owner !== health?.attribution?.owner,
   };
   const pass = Object.values(checks).every(Boolean);
   process.stdout.write(JSON.stringify({ selfTest: true, pass, checks, endpoints }) + "\n");

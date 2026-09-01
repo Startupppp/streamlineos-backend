@@ -76,6 +76,8 @@
     "alert:seam-latency:self-test": "node src/scripts/alert-seam-latency.mjs --self-test",
     "alert:queue-age": "node --env-file-if-exists=.env src/scripts/alert-queue-age.mjs",
     "alert:queue-age:self-test": "node src/scripts/alert-queue-age.mjs --self-test",
+    "alert:job-queue-age": "node --env-file-if-exists=.env src/scripts/alert-job-queue-age.mjs",
+    "alert:job-queue-age:self-test": "node src/scripts/alert-job-queue-age.mjs --self-test",
     "alert:pool-saturation": "node src/scripts/alert-pool-saturation.mjs",
     "alert:pool-saturation:self-test": "node src/scripts/alert-pool-saturation.mjs --self-test",
     "alert:tenant-cost": "node --env-file-if-exists=.env src/scripts/alert-tenant-cost.mjs",
@@ -223,8 +225,33 @@
     "drill:legal-hold": "node --env-file-if-exists=.env src/scripts/drill-legal-hold.mjs",
     "check:migration-ledger": "node --env-file-if-exists=.env src/scripts/check-migration-ledger.mjs",
     "check:migration-ledger:self-test": "node src/scripts/check-migration-ledger.mjs --self-test",
+    "check:spec-typecheck": "node src/scripts/check-spec-typecheck.mjs",
+    "check:spec-typecheck:self-test": "node src/scripts/check-spec-typecheck.mjs --self-test",
+    "check:module-gate": "node src/scripts/check-module-gate.mjs",
+    "check:module-gate:self-test": "node src/scripts/check-module-gate.mjs --self-test",
+    "check:ai-charge": "node src/scripts/check-ai-charge-declared.mjs",
+    "check:ai-charge:self-test": "node src/scripts/check-ai-charge-declared.mjs --self-test",
+    "replay:chain-cold": "node --max-old-space-size=8192 src/scripts/replay-chain-cold.mjs",
+    "check:migration-rollback": "node src/scripts/check-migration-rollback.mjs",
+    "check:migration-rollback:self-test": "node src/scripts/check-migration-rollback.mjs --self-test",
+    "check:retention-coverage": "node --env-file-if-exists=.env src/scripts/check-retention-coverage.mjs",
+    "check:retention-coverage:self-test": "node src/scripts/check-retention-coverage.mjs --self-test",
+    "report:table-growth": "node --env-file-if-exists=.env src/scripts/report-table-growth.mjs",
+    "report:table-growth:self-test": "node src/scripts/report-table-growth.mjs --self-test",
     "check:operation-ids": "node src/scripts/check-operation-ids.mjs",
-    "check:operation-ids:self-test": "node src/scripts/check-operation-ids.mjs --self-test"
+    "check:operation-ids:self-test": "node src/scripts/check-operation-ids.mjs --self-test",
+    "check:vulnerabilities": "node src/scripts/check-vulnerabilities.mjs",
+    "check:vulnerabilities:self-test": "node src/scripts/check-vulnerabilities.mjs --self-test",
+    "check:licenses": "node src/scripts/check-licenses.mjs",
+    "check:licenses:self-test": "node src/scripts/check-licenses.mjs --self-test",
+    "check:feature-flag-governance": "node src/scripts/check-feature-flag-governance.mjs",
+    "check:feature-flag-governance:self-test": "node src/scripts/check-feature-flag-governance.mjs --self-test",
+    "sbom:generate": "node src/scripts/generate-sbom.mjs",
+    "sbom:generate:self-test": "node src/scripts/generate-sbom.mjs --self-test",
+    "artifact:record-hashes": "node src/scripts/record-artifact-hashes.mjs",
+    "artifact:record-hashes:self-test": "node src/scripts/record-artifact-hashes.mjs --self-test",
+    "validate:env": "node -r ts-node/register/transpile-only src/scripts/validate-env.ts",
+    "validate:env:self-test": "node -r ts-node/register/transpile-only src/scripts/validate-env.ts --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",
@@ -323,27 +350,29 @@
       "^.+\\.ts$": [
         "ts-jest",
         {
-          "isolatedModules": true
+          "tsconfig": {
+            "isolatedModules": true
+          }
         }
       ],
       "^.+\\.js$": [
         "ts-jest",
         {
           "tsconfig": {
-            "allowJs": true
+            "allowJs": true,
+            "isolatedModules": true
           },
-          "diagnostics": false,
-          "isolatedModules": true
+          "diagnostics": false
         }
       ],
       "^.+\\.mjs$": [
         "ts-jest",
         {
           "tsconfig": {
-            "allowJs": true
+            "allowJs": true,
+            "isolatedModules": true
           },
-          "diagnostics": false,
-          "isolatedModules": true
+          "diagnostics": false
         }
       ]
     },

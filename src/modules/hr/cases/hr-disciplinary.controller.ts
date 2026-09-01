@@ -51,13 +51,13 @@ export class HrDisciplinaryController {
   @Get("mine")
   @RequirePermission("self:cases")
   listMine(@CurrentUser() user: CurrentUserContext) {
-    return this.disciplinary.listMine(user.orgId, user.userId);
+    return this.disciplinary.listMine(user);
   }
 
   @Get("mine/unacknowledged-count")
   @RequirePermission("self:cases")
   unacknowledgedCount(@CurrentUser() user: CurrentUserContext) {
-    return this.disciplinary.listUnacknowledgedCount(user.orgId, user.userId);
+    return this.disciplinary.listUnacknowledgedCount(user);
   }
 
   @Get(":actionId")

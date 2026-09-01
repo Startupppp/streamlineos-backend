@@ -1,6 +1,6 @@
 import { boolean, date, decimal, foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { accountTypeEnum, journalEntryStatusEnum } from "../common/enums";
 import { clients } from "../crm/contacts";
 import { orgUnits } from "../common/organization";
@@ -48,6 +48,7 @@ export const journalEntries = pgTable("journal_entries", {
   sourceEvent: text("source_event"),
   status: journalEntryStatusEnum("status").default("POSTED").notNull(),
   createdBy: text("created_by").references(() => users.id).notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   approvedBy: text("approved_by").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   postedBy: text("posted_by").references(() => users.id),
@@ -63,7 +64,9 @@ export const journalEntries = pgTable("journal_entries", {
   index("idx_je_org_source").on(table.orgId, table.sourceType, table.sourceId),
   index("idx_je_org_status").on(table.orgId, table.status),
   index("idx_je_org_status_date").on(table.orgId, table.status, table.entryDate),
+  index("idx_je_org_created_by_mbr").on(table.orgId, table.createdByMembershipId),
   foreignKey({ columns: [table.reversedEntryId], foreignColumns: [table.id] }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_je_org_created_by_mbr" }).onDelete("set null"),
 ]);
 
 export const journalLines = pgTable("journal_lines", {
@@ -109,6 +112,7 @@ export const ledgerAccountsRelations = relations(ledgerAccounts, ({ one, many })
 export const journalEntriesRelations = relations(journalEntries, ({ one, many }) => ({
   organization: one(organizations, { fields: [journalEntries.orgId], references: [organizations.id] }),
   creator: one(users, { fields: [journalEntries.createdBy], references: [users.id], relationName: "jeCreatedBy" }),
+  creatorMember: one(organizationMembers, { fields: [journalEntries.orgId, journalEntries.createdByMembershipId], references: [organizationMembers.orgId, organizationMembers.id] }),
   approver: one(users, { fields: [journalEntries.approvedBy], references: [users.id], relationName: "jeApprovedBy" }),
   poster: one(users, { fields: [journalEntries.postedBy], references: [users.id], relationName: "jePostedBy" }),
   lines: many(journalLines),

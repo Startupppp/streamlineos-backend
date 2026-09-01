@@ -27,7 +27,8 @@ export class WorkflowsVariablesService {
       )
       .innerJoin(workflows, eq(workflowVersions.workflowId, workflows.id))
       .where(eq(workflowVariables.orgId, orgId))
-      .orderBy(desc(workflowVariables.createdAt));
+      .orderBy(desc(workflowVariables.createdAt))
+      .limit(200);
   }
 
   async deleteGlobalVariable(orgId: string, variableId: string) {

@@ -22,9 +22,14 @@ export class BuildApprovalsInboxService {
   async getInboxPage(
     orgId: string,
     userId: string,
+    membershipId: number | null,
     limit: number,
     cursor: number | null,
   ): Promise<ApprovalInboxRow[]> {
+    const actorPredicate =
+      membershipId !== null
+        ? eq(projectApprovals.approverMembershipId, membershipId)
+        : eq(projectApprovals.approverId, userId);
     const rows = await this.db
       .select({
         id: projectApprovals.id,
@@ -40,7 +45,7 @@ export class BuildApprovalsInboxService {
       .where(
         and(
           eq(projectApprovals.orgId, orgId),
-          eq(projectApprovals.approverId, userId),
+          actorPredicate,
           inArray(projectApprovals.status, ["pending", "escalated"]),
           isNull(projectApprovals.deletedAt),
           cursor !== null ? lt(projectApprovals.id, cursor) : undefined,

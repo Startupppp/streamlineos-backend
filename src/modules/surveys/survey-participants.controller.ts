@@ -2,6 +2,8 @@ import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseG
 import { z } from "zod";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../common/rbac/module.guard";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -21,8 +23,9 @@ import {
 
 const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 
+@RequireModule("surveys")
 @Controller("surveys/:surveyId/participants")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SurveyParticipantsController {
   constructor(private readonly participants: SurveyParticipantService) {}
 

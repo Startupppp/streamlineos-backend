@@ -4,7 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetAfterValue } from "../../../common/pagination/keyset";
 import {
   hrComplianceRequirements,
   hrComplianceEvents,
@@ -31,29 +33,26 @@ export class ComplianceRequirementsService {
   ) {}
 
   async listRequirements(orgId: string, input: ListComplianceRequirementInput) {
-    const { page, limit, countryCode, category, active } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, countryCode, category, active } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [eq(hrComplianceRequirements.orgId, orgId)];
     if (countryCode) conditions.push(eq(hrComplianceRequirements.countryCode, countryCode));
     if (category) conditions.push(eq(hrComplianceRequirements.category, category));
     if (active !== undefined) conditions.push(eq(hrComplianceRequirements.active, active));
+    if (pos) conditions.push(keysetAfterValue(hrComplianceRequirements.name, hrComplianceRequirements.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrComplianceRequirements)
+      .where(and(...conditions))
+      .orderBy(asc(hrComplianceRequirements.name), asc(hrComplianceRequirements.id))
+      .limit(limit + 1);
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrComplianceRequirements)
-        .where(where)
-        .orderBy(asc(hrComplianceRequirements.name))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrComplianceRequirements).where(where),
-    ]);
-
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: String(row.name),
+      id: String(row.id),
+    }));
   }
 
   async getRequirement(orgId: string, id: number) {
@@ -142,38 +141,37 @@ export class ComplianceRequirementsService {
   }
 
   async listEvents(orgId: string, input: ListComplianceEventsInput) {
-    const { page, limit, requirementId, status, from, to } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, requirementId, status, from, to } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [eq(hrComplianceEvents.orgId, orgId)];
     if (requirementId) conditions.push(eq(hrComplianceEvents.requirementId, requirementId));
     if (status) conditions.push(eq(hrComplianceEvents.status, status));
     if (from) conditions.push(gte(hrComplianceEvents.dueDate, from));
     if (to) conditions.push(lte(hrComplianceEvents.dueDate, to));
+    if (pos) conditions.push(keysetAfterValue(hrComplianceEvents.dueDate, hrComplianceEvents.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select({
+        event: hrComplianceEvents,
+        requirementName: hrComplianceRequirements.name,
+        category: hrComplianceRequirements.category,
+        reminderDaysBefore: hrComplianceRequirements.reminderDaysBefore,
+      })
+      .from(hrComplianceEvents)
+      .leftJoin(hrComplianceRequirements, eq(hrComplianceEvents.requirementId, hrComplianceRequirements.id))
+      .where(and(...conditions))
+      .orderBy(asc(hrComplianceEvents.dueDate), asc(hrComplianceEvents.id))
+      .limit(limit + 1);
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select({
-          event: hrComplianceEvents,
-          requirementName: hrComplianceRequirements.name,
-          category: hrComplianceRequirements.category,
-          reminderDaysBefore: hrComplianceRequirements.reminderDaysBefore,
-        })
-        .from(hrComplianceEvents)
-        .leftJoin(hrComplianceRequirements, eq(hrComplianceEvents.requirementId, hrComplianceRequirements.id))
-        .where(where)
-        .orderBy(asc(hrComplianceEvents.dueDate))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrComplianceEvents).where(where),
-    ]);
+    const page = buildCursorPage(rows, limit, (row) => ({
+      sortValue: String(row.event.dueDate ?? ""),
+      id: String(row.event.id),
+    }));
 
-    const total = totalResult[0]?.total ?? 0;
     return {
-      data: data.map((r) => ({ ...r.event, requirementName: r.requirementName, category: r.category, reminderDaysBefore: r.reminderDaysBefore })),
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      data: page.data.map((r) => ({ ...r.event, requirementName: r.requirementName, category: r.category, reminderDaysBefore: r.reminderDaysBefore })),
+      pagination: page.pagination,
     };
   }
 

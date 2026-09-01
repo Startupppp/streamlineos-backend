@@ -10,6 +10,13 @@
  *   authentication — identity infrastructure (user_id on auth tables)
  *   unknown        — needs manual review
  *
+ * ACTIONABLE = organizational that are NOT allowlisted as historical-display-only
+ * and NOT in an excluded module (CRM, Inventory). The allowlist lives beside this
+ * script in actor-classification-allowlist.json. Every entry is validated for
+ * staleness at startup — an entry referencing a column no longer in the Drizzle
+ * schema or KNOWN_RAW_SQL_ACTOR_FKS causes an immediate hard failure so allowlist
+ * drift is caught before CI can pass on a false zero.
+ *
  * Usage:
  *   node src/scripts/scan-legacy-org-actors.mjs               # print summary
  *   node src/scripts/scan-legacy-org-actors.mjs --emit-baseline  # write JSON
@@ -27,8 +34,17 @@ const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
 const SCHEMA_DIR = join(BACKEND_ROOT, "src", "db", "schema");
 const BASELINE_PATH = join(BACKEND_ROOT, "data", "legacy-actor-baseline.json");
+const ALLOWLIST_PATH = join(SCRIPT_DIR, "actor-classification-allowlist.json");
 
 const HRMS_PHASE1_BARREL = "hrms-phase1-sql-managed.ts";
+
+/**
+ * Modules excluded from the ACTIONABLE count because they are out of scope for
+ * the current actor-contraction program (CRM and Inventory have separate tracks).
+ * These entries are still scanned and appear in the organisational total; they
+ * are simply not counted against the ACTIONABLE gate.
+ */
+const EXCLUDED_MODULES_FROM_SCOPE = new Set(["crm", "inventory"]);
 
 /**
  * Two users.id FKs that are structurally global and must never be counted in
@@ -240,6 +256,49 @@ function scan() {
   return entries;
 }
 
+/**
+ * Load the allowlist from actor-classification-allowlist.json.
+ * Returns a Set of "table.column" keys classified as historical-display-only.
+ * Returns an empty Set if the file does not exist.
+ */
+function loadAllowlist() {
+  if (!existsSync(ALLOWLIST_PATH)) return new Set();
+  const data = JSON.parse(readFileSync(ALLOWLIST_PATH, "utf8"));
+  return new Set((data.entries ?? []).map((e) => `${e.table}.${e.column}`));
+}
+
+/**
+ * Validate that every allowlist entry references a column that actually appears
+ * in the scan (Drizzle-source or KNOWN_RAW_SQL_ACTOR_FKS). Returns an array of
+ * stale keys (present in allowlist but absent from scan). A non-empty result is
+ * a hard failure: an allowlist entry that no longer exists is silently hiding a
+ * regression — it must be removed.
+ */
+function validateAllowlist(allEntries, allowlistSet) {
+  const knownKeys = new Set(allEntries.map((e) => `${e.table}.${e.column}`));
+  const stale = [];
+  for (const key of allowlistSet) {
+    if (!knownKeys.has(key)) stale.push(key);
+  }
+  return stale;
+}
+
+/**
+ * ACTIONABLE entries: organizational FKs that are NOT:
+ *   - in an excluded module (CRM / Inventory — separate program track)
+ *   - in the allowlist (confirmed historical-display-only)
+ * These are the authority-bearing relationships that must migrate to
+ * organization_members.id.
+ */
+function computeActionable(allEntries, allowlistSet) {
+  return allEntries.filter(
+    (e) =>
+      e.class === "organizational" &&
+      !EXCLUDED_MODULES_FROM_SCOPE.has(e.module) &&
+      !allowlistSet.has(`${e.table}.${e.column}`),
+  );
+}
+
 function summarize(entries) {
   const byClass = { organizational: 0, bridge: 0, authentication: 0, unknown: 0 };
   const byModule = {};
@@ -251,24 +310,30 @@ function summarize(entries) {
   return { byClass, byModule };
 }
 
-function printSummary(entries, totals) {
+function printSummary(entries, totals, actionableEntries) {
   console.log("\nLegacy Organization-Actor Scan");
   console.log("=".repeat(54));
-  console.log(`Organizational (to migrate):   ${totals.byClass.organizational}`);
+  console.log(`Organizational (legacy total):  ${totals.byClass.organizational}`);
+  console.log(`  – CRM/Inventory (out of scope): ${entries.filter((e) => e.class === "organizational" && EXCLUDED_MODULES_FROM_SCOPE.has(e.module)).length}`);
+  console.log(`  – Allowlisted display-only:     ${totals.byClass.organizational - entries.filter((e) => e.class === "organizational" && EXCLUDED_MODULES_FROM_SCOPE.has(e.module)).length - actionableEntries.length}`);
+  console.log(`  – ACTIONABLE (must migrate):    ${actionableEntries.length}`);
   console.log(`Bridge (person↔account links): ${totals.byClass.bridge}`);
   console.log(`Authentication (identity):     ${totals.byClass.authentication}`);
   console.log(`Unknown (manual review):       ${totals.byClass.unknown}`);
   console.log(`Total user_id FKs scanned:     ${entries.length}`);
-  console.log("\nBy module (organizational count):");
-  const modules = Object.entries(totals.byModule).sort((a, b) => b[1].organizational - a[1].organizational);
-  for (const [mod, counts] of modules) {
-    if (counts.organizational > 0 || counts.unknown > 0)
-      console.log(`  ${mod.padEnd(22)} org=${counts.organizational}  unknown=${counts.unknown}`);
+  console.log("\nBy module (actionable count):");
+  const byModuleActionable = {};
+  for (const e of actionableEntries) {
+    byModuleActionable[e.module] = (byModuleActionable[e.module] ?? 0) + 1;
+  }
+  const modules = Object.entries(byModuleActionable).sort((a, b) => b[1] - a[1]);
+  for (const [mod, count] of modules) {
+    console.log(`  ${mod.padEnd(22)} actionable=${count}`);
   }
   console.log("");
 }
 
-function selfTest(entries) {
+function selfTest(entries, allowlistSet) {
   const failures = [];
 
   const find = (table, column) =>
@@ -286,8 +351,8 @@ function selfTest(entries) {
       );
   };
 
-  expectClass("hr_effective_dated_changes", "approved_by", "organizational");
-  expectClass("hr_effective_dated_changes", "created_by", "organizational");
+  expectClass("hr_cases", "assigned_to", "organizational");
+  expectClass("hr_wellness_checkins", "user_id", "organizational");
   expectClass("hr_reporting_lines", "created_by", "organizational");
   expectClass("organization_members", "user_id", "bridge");
   expectClass("hr_people", "user_id", "bridge");
@@ -311,12 +376,45 @@ function selfTest(entries) {
     );
   }
 
+  const actionableEntries = computeActionable(entries, allowlistSet);
+
+  const expectActionable = (table, column) => {
+    const inActionable = actionableEntries.some((e) => e.table === table && e.column === column);
+    if (!inActionable)
+      failures.push(`ACTIONABLE MISS  ${table}.${column} — should be ACTIONABLE (authority-bearing, not allowlisted) but is not`);
+  };
+
+  const expectNotActionable = (table, column) => {
+    const inActionable = actionableEntries.some((e) => e.table === table && e.column === column);
+    if (inActionable)
+      failures.push(`FALSE ACTIONABLE  ${table}.${column} — should NOT be ACTIONABLE (allowlisted as display-only) but is`);
+  };
+
+  expectActionable("fin_approval_policies", "approver_user_id");
+  expectActionable("journal_entries", "created_by");
+  expectActionable("projects", "manager_id");
+  expectActionable("support_tickets", "assignee_id");
+  expectActionable("kb_spaces", "created_by_id");
+
+  expectNotActionable("fin_approval_requests", "requested_by");
+  expectNotActionable("journal_entries", "approved_by");
+  expectNotActionable("enterprise_quotes", "approver_id");
+  expectNotActionable("support_ticket_activity", "user_id");
+  expectNotActionable("hr_reporting_lines", "created_by");
+
+  const staleTest = validateAllowlist(entries, new Set(["__no_such_table__.__no_such_col__"]));
+  if (staleTest.length !== 1 || staleTest[0] !== "__no_such_table__.__no_such_col__") {
+    failures.push("STALE-ALLOWLIST DETECTION failed — validateAllowlist did not detect a synthetic stale entry");
+  }
+
   if (failures.length > 0) {
     console.error("\nSELF-TEST FAILURES:");
     for (const f of failures) console.error(`  ✗  ${f}`);
     return false;
   }
-  console.log(`Self-test passed (${entries.length} total FKs found, all known examples verified).`);
+  console.log(
+    `Self-test passed (${entries.length} total FKs found, ${actionableEntries.length} actionable, all known examples verified).`,
+  );
   return true;
 }
 
@@ -325,14 +423,31 @@ const args = process.argv.slice(2);
 const entries = scan();
 const totals = summarize(entries);
 
+const allowlistSet = loadAllowlist();
+
+const staleKeys = validateAllowlist(entries, allowlistSet);
+if (staleKeys.length > 0) {
+  console.error("ALLOWLIST STALE — these entries reference columns no longer in the scan:");
+  for (const key of staleKeys) console.error(`  stale: ${key}`);
+  console.error("Remove stale entries from actor-classification-allowlist.json before proceeding.");
+  process.exit(1);
+}
+
+const actionableEntries = computeActionable(entries, allowlistSet);
+
 if (args.includes("--self-test")) {
-  printSummary(entries, totals);
-  process.exitCode = selfTest(entries) ? 0 : 1;
+  printSummary(entries, totals, actionableEntries);
+  process.exitCode = selfTest(entries, allowlistSet) ? 0 : 1;
 } else if (args.includes("--emit-baseline")) {
-  const payload = { capturedAt: new Date().toISOString(), totals, entries };
+  const payload = {
+    capturedAt: new Date().toISOString(),
+    totals,
+    actionableCount: actionableEntries.length,
+    entries,
+  };
   mkdirSync(join(BACKEND_ROOT, "data"), { recursive: true });
   writeFileSync(BASELINE_PATH, JSON.stringify(payload, null, 2));
-  printSummary(entries, totals);
+  printSummary(entries, totals, actionableEntries);
   console.log(`Baseline written to ${BASELINE_PATH}`);
 } else if (args.includes("--check")) {
   if (!existsSync(BASELINE_PATH)) {
@@ -341,26 +456,32 @@ if (args.includes("--self-test")) {
     process.exitCode = 2;
   } else {
     const baseline = JSON.parse(readFileSync(BASELINE_PATH, "utf8"));
-    const baselineCount = baseline.totals.byClass.organizational;
-    const currentCount = totals.byClass.organizational;
-    printSummary(entries, totals);
-    if (currentCount > baselineCount) {
-      console.error(
-        `RATCHET VIOLATION: organizational legacy-actor count rose from ${baselineCount} to ${currentCount}.`,
-      );
-      console.error("New organizational users.id FKs were added. Migrate them to OrganizationActor first.");
-      process.exitCode = 1;
+    if (typeof baseline.actionableCount !== "number") {
+      console.error("Baseline predates the ACTIONABLE gate — re-run --emit-baseline to regenerate.");
+      process.exitCode = 2;
     } else {
-      const delta = baselineCount - currentCount;
-      console.log(
-        `Ratchet OK: ${currentCount}/${baselineCount} remaining (${delta} migrated since baseline).`,
-      );
+      const baselineActionable = baseline.actionableCount;
+      const currentActionable = actionableEntries.length;
+      printSummary(entries, totals, actionableEntries);
+      if (currentActionable > baselineActionable) {
+        console.error(
+          `RATCHET VIOLATION: ACTIONABLE legacy-actor count rose from ${baselineActionable} to ${currentActionable}.`,
+        );
+        console.error("New authority-bearing users.id FKs were added. Migrate them to organization_members.id first,");
+        console.error("or classify them as display-only in actor-classification-allowlist.json with a justification.");
+        process.exitCode = 1;
+      } else {
+        const delta = baselineActionable - currentActionable;
+        console.log(
+          `Ratchet OK: ${currentActionable}/${baselineActionable} actionable remaining (${delta} migrated since baseline).`,
+        );
+      }
     }
   }
 } else if (args.includes("--catalog")) {
   await reportCatalogGap(entries);
 } else {
-  printSummary(entries, totals);
+  printSummary(entries, totals, actionableEntries);
 }
 
 /**

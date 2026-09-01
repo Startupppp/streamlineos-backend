@@ -64,7 +64,7 @@ describe("SupportWorkspaceService", () => {
       });
 
       await expect(
-        service.updateSavedView("org1", "me", 1, { name: "renamed" } as never),
+        service.updateSavedView("org1", "me", null, 1, { name: "renamed" } as never),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -77,7 +77,7 @@ describe("SupportWorkspaceService", () => {
       mockDb.returning.mockResolvedValueOnce([{ id: 1, name: "renamed" }]);
 
       await expect(
-        service.updateSavedView("org1", "me", 1, { name: "renamed" } as never),
+        service.updateSavedView("org1", "me", null, 1, { name: "renamed" } as never),
       ).resolves.toMatchObject({ id: 1, name: "renamed" });
     });
 
@@ -90,7 +90,7 @@ describe("SupportWorkspaceService", () => {
       mockDb.returning.mockResolvedValueOnce([{ id: 1, name: "renamed" }]);
 
       await expect(
-        service.updateSavedView("org1", "me", 1, { name: "renamed" } as never),
+        service.updateSavedView("org1", "me", null, 1, { name: "renamed" } as never),
       ).resolves.toMatchObject({ id: 1, name: "renamed" });
     });
   });

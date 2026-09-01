@@ -274,6 +274,7 @@ export class CronWeeklyRecapService {
         feature: "final.weekly-recap",
         tier: "standard",
         maxTokens: 1024,
+        charge: false,
         prompt: { system, user },
       });
 

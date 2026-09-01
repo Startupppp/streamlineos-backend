@@ -243,7 +243,7 @@ const schemaCases: SchemaCaseConfig[] = [
   { name: "listTeamsQuerySchema", schema: listTeamsQuerySchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 50 },
   { name: "listTeamMembersQuerySchema", schema: listTeamMembersQuerySchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 50 },
   { name: "listAccountsQuerySchema", schema: listAccountsQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
-  { name: "listCustomersOutstandingQuerySchema", schema: listCustomersOutstandingQuerySchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 20 },
+  { name: "listCustomersOutstandingQuerySchema", schema: listCustomersOutstandingQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
   { name: "listPurchaseBillsQuerySchema", schema: listPurchaseBillsQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
   { name: "listInvoicesSchema", schema: listInvoicesSchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
   { name: "listQuotesSchema", schema: listQuotesSchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 25 },
@@ -291,16 +291,17 @@ describe("migrated schemas — clamp at their ceiling and preserve their own def
   describe("glQuerySchema (requires from/to)", () => {
     const base = { from: "2024-01-01", to: "2024-01-31" };
 
-    it("clamps pageSize above 100 to exactly 100", () => {
-      expect(glQuerySchema.parse({ ...base, pageSize: 999 }).pageSize).toBe(100);
+    it("clamps limit above 100 to exactly 100", () => {
+      expect(glQuerySchema.parse({ ...base, limit: 999 }).limit).toBe(100);
     });
 
-    it("defaults pageSize to 50 when absent", () => {
-      expect(glQuerySchema.parse(base).pageSize).toBe(50);
+    it("defaults limit to 50 when absent", () => {
+      expect(glQuerySchema.parse(base).limit).toBe(50);
     });
 
-    it("defaults page to 1 when absent", () => {
-      expect(glQuerySchema.parse(base).page).toBe(1);
+    it("accepts an optional cursor string", () => {
+      const encoded = Buffer.from("2024-01-15\x0042", "utf8").toString("base64url");
+      expect(glQuerySchema.parse({ ...base, cursor: encoded }).cursor).toBe(encoded);
     });
   });
 

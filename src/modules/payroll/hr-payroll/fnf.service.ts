@@ -42,14 +42,14 @@ const VALID_FNF_TRANSITIONS: Record<FnfStatus, FnfStatus[]> = {
 export class FnfService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  listFnf(orgId: string, userId: string, isAdmin: boolean, page = 1, limit = 100) {
+  listFnf(orgId: string, userId: string, membershipId: number | null, isAdmin: boolean, page = 1, limit = 100) {
+    const ownPredicate = membershipId != null
+      ? eq(fnfSettlements.userMembershipId, membershipId)
+      : eq(fnfSettlements.userId, userId);
     return this.db.query.fnfSettlements.findMany({
       where: isAdmin
         ? eq(fnfSettlements.orgId, orgId)
-        : and(
-            eq(fnfSettlements.orgId, orgId),
-            eq(fnfSettlements.userId, userId),
-          ),
+        : and(eq(fnfSettlements.orgId, orgId), ownPredicate),
       orderBy: [desc(fnfSettlements.createdAt)],
       with: { user: { columns: { name: true, email: true } } },
       limit,
@@ -66,7 +66,7 @@ export class FnfService {
         eq(organizationMembers.userId, body.userId),
         eq(organizationMembers.orgId, orgId),
       ),
-      columns: { userId: true },
+      columns: { userId: true, id: true },
     });
     if (!member) return { ok: false };
 
@@ -96,6 +96,7 @@ export class FnfService {
         orgId,
         status: "DRAFT",
         userId: body.userId,
+        userMembershipId: member.id,
         notes: body.notes ?? null,
         bonusDue: bonusDue.toString(),
         basicDues: basicDues.toString(),

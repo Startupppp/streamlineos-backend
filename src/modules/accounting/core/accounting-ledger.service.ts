@@ -5,9 +5,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, getTableColumns, gt, gte, ilike, isNull, lt, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, getTableColumns, gt, gte, ilike, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { ledgerAccounts, journalEntries, journalLines, finApprovalPolicies, finApprovalRequests, users } from "../../../db/schema";
-import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -116,7 +115,7 @@ export class AccountingLedgerService {
     return updated[0];
   }
 
-  async listJournal(orgId: string, query: ListJournalQuery, scope: DataScope, userId: string) {
+  async listJournal(orgId: string, query: ListJournalQuery, scope: DataScope, userId: string, membershipId: number) {
     const { cursor, limit, from, to, sourceType, status } = query;
     const fromStr = from ? from.toISOString().slice(0, 10) : undefined;
     const toStr = to ? to.toISOString().slice(0, 10) : undefined;
@@ -126,7 +125,8 @@ export class AccountingLedgerService {
     if (toStr) conds.push(lte(journalEntries.entryDate, toStr));
     if (sourceType) conds.push(eq(journalEntries.sourceType, sourceType));
     if (status) conds.push(eq(journalEntries.status, status));
-    conds.push(applyScope(scope, orgId, userId, { ownerColumn: journalEntries.createdBy }));
+    if (scope === "own" || scope === "team") conds.push(eq(journalEntries.createdByMembershipId, membershipId));
+    else if (scope === "none") conds.push(sql`false`);
 
     const pos = decodeCursor(cursor);
     if (pos) {
@@ -152,7 +152,7 @@ export class AccountingLedgerService {
     }));
   }
 
-  async createJournalEntry(orgId: string, userId: string, input: CreateJournalEntryInput) {
+  async createJournalEntry(orgId: string, userId: string, membershipId: number, input: CreateJournalEntryInput) {
     const totalDebit = input.lines.reduce((acc, line) => acc + line.debit, 0);
     const totalCredit = input.lines.reduce((acc, line) => acc + line.credit, 0);
     if (Math.round(totalDebit * 100) !== Math.round(totalCredit * 100)) {
@@ -203,6 +203,7 @@ export class AccountingLedgerService {
           sourceEvent: null,
           status: needsApproval ? "DRAFT" : input.status,
           createdBy: userId,
+          createdByMembershipId: membershipId,
           lines: input.lines.map((line) => ({
             accountCode: line.accountCode,
             debit: line.debit,

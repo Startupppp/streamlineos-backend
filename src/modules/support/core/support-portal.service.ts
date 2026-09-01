@@ -20,7 +20,7 @@ export class SupportPortalService {
     private readonly tickets: SupportTicketsService,
   ) {}
 
-  async createTicket(orgId: string, userId: string, input: CreatePortalTicketInput) {
+  async createTicket(orgId: string, userId: string, membershipId: number | null, input: CreatePortalTicketInput) {
     return this.tickets.createTicket(
       orgId,
       userId,
@@ -31,12 +31,16 @@ export class SupportPortalService {
         customFields: input.customFields,
       },
       { channel: "portal" },
+      membershipId,
     );
   }
 
-  async listMyTickets(orgId: string, userId: string) {
+  async listMyTickets(orgId: string, userId: string, membershipId: number | null) {
+    const ownerPredicate = membershipId != null
+      ? eq(supportTickets.createdByMembershipId, membershipId)
+      : eq(supportTickets.createdBy, userId);
     return this.db.query.supportTickets.findMany({
-      where: and(eq(supportTickets.orgId, orgId), eq(supportTickets.createdBy, userId)),
+      where: and(eq(supportTickets.orgId, orgId), ownerPredicate),
       orderBy: [desc(supportTickets.createdAt)],
       columns: {
         id: true,
@@ -53,8 +57,8 @@ export class SupportPortalService {
     });
   }
 
-  async getMyTicket(orgId: string, userId: string, ticketId: number) {
-    await this.assertOwnTicket(orgId, userId, ticketId);
+  async getMyTicket(orgId: string, userId: string, membershipId: number | null, ticketId: number) {
+    await this.assertOwnTicket(orgId, userId, membershipId, ticketId);
     const [ticket, messages] = await Promise.all([
       this.db.query.supportTickets.findFirst({
         where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
@@ -77,8 +81,8 @@ export class SupportPortalService {
     return { ...ticket, messages };
   }
 
-  async addMessage(orgId: string, userId: string, ticketId: number, input: CreatePortalMessageInput) {
-    await this.assertOwnTicket(orgId, userId, ticketId);
+  async addMessage(orgId: string, userId: string, membershipId: number | null, ticketId: number, input: CreatePortalMessageInput) {
+    await this.assertOwnTicket(orgId, userId, membershipId, ticketId);
     return this.tickets.addMessage(
       orgId,
       ticketId,
@@ -88,12 +92,15 @@ export class SupportPortalService {
     );
   }
 
-  private async assertOwnTicket(orgId: string, userId: string, ticketId: number) {
+  private async assertOwnTicket(orgId: string, userId: string, membershipId: number | null, ticketId: number) {
     const ticket = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-      columns: { id: true, createdBy: true },
+      columns: { id: true, createdBy: true, createdByMembershipId: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
-    if (ticket.createdBy !== userId) throw new ForbiddenException("Not your ticket");
+    const isOwner = membershipId != null && ticket.createdByMembershipId != null
+      ? ticket.createdByMembershipId === membershipId
+      : ticket.createdBy === userId;
+    if (!isOwner) throw new ForbiddenException("Not your ticket");
   }
 }

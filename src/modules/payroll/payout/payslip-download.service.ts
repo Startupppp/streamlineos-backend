@@ -25,6 +25,7 @@ import { EmploymentFactsService } from "../../directory/employment-facts.service
 import type { CalculationSnapshot } from "../payroll.types";
 import type { PayslipTemplateConfig } from "./dto/payout.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { computeSnapshotHash } from "./payslip-bulk-publisher.service";
 
 @Injectable()
@@ -45,6 +46,7 @@ export class PayslipDownloadService {
         id: true,
         orgId: true,
         userId: true,
+        userMembershipId: true,
         workerId: true,
         runId: true,
         runEmployeeId: true,
@@ -55,8 +57,10 @@ export class PayslipDownloadService {
     });
     if (!publication) throw new NotFoundException("Payslip publication not found");
 
-    const isOwnPayslip =
-      publication.userId != null && publication.userId === caller.userId;
+    const callerMembershipId = actingMembershipId(caller.principal);
+    const isOwnPayslip = callerMembershipId != null && publication.userMembershipId != null
+      ? publication.userMembershipId === callerMembershipId
+      : publication.userId != null && publication.userId === caller.userId;
 
     if (!isOwnPayslip) {
       if (publication.orgId !== caller.orgId) {

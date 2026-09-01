@@ -1,10 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
-
-export const paginationSchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
-});
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createPositionSchema = z.object({
   title: z.string().min(1).max(300),
@@ -19,7 +14,9 @@ export const createPositionSchema = z.object({
 
 export const updatePositionSchema = createPositionSchema.partial();
 
-export const listPositionsSchema = paginationSchema.extend({
+export const listPositionsSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   status: z.string().min(1).max(100).optional(),
   departmentId: z.string().uuid().optional(),
 });
@@ -39,7 +36,9 @@ export const updateReorgScenarioSchema = z.object({
   changes: z.record(z.string(), z.unknown()).optional(),
 });
 
-export const listScenariosSchema = paginationSchema.extend({
+export const listScenariosSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   status: z.enum(["draft", "proposed", "applied"]).optional(),
 });
 
@@ -47,6 +46,10 @@ export type CreatePositionInput = z.infer<typeof createPositionSchema>;
 export type UpdatePositionInput = z.infer<typeof updatePositionSchema>;
 export type ListPositionsInput = z.infer<typeof listPositionsSchema>;
 export type AssignPositionInput = z.infer<typeof assignPositionSchema>;
-export type CreateReorgScenarioInput = z.infer<typeof createReorgScenarioSchema>;
-export type UpdateReorgScenarioInput = z.infer<typeof updateReorgScenarioSchema>;
+export type CreateReorgScenarioInput = z.infer<
+  typeof createReorgScenarioSchema
+>;
+export type UpdateReorgScenarioInput = z.infer<
+  typeof updateReorgScenarioSchema
+>;
 export type ListScenariosInput = z.infer<typeof listScenariosSchema>;

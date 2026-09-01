@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   onboardingFlowTypeEnum,
@@ -7,7 +7,7 @@ import {
   moduleSetupChecklistStatusEnum,
   guidedTourProgressStatusEnum,
 } from "./enums";
-import { organizations, users } from "./auth";
+import { organizations, users, organizationMembers } from "./auth";
 
 // Server-persisted onboarding progress: org setup wizard, module setup checklists,
 // guided tours, and payment setup all share this session/step/task model.
@@ -20,6 +20,7 @@ export const onboardingFlowSessions = pgTable("onboarding_flow_sessions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  membershipId: integer("membership_id"),
   type: onboardingFlowTypeEnum("type").notNull(),
   status: onboardingFlowSessionStatusEnum("status").notNull().default("not_started"),
   currentStep: text("current_step"),
@@ -35,7 +36,13 @@ export const onboardingFlowSessions = pgTable("onboarding_flow_sessions", {
 }, (table) => [
   index("idx_onb_flow_sessions_org_user_type").on(table.orgId, table.userId, table.type),
   index("idx_onb_flow_sessions_status").on(table.orgId, table.status),
+  index("idx_onb_flow_sessions_org_membership").on(table.orgId, table.membershipId),
   unique("uniq_onb_flow_sessions_org_id").on(table.orgId, table.id),
+  foreignKey({
+    name: "fk_onboarding_flow_sessions_actor",
+    columns: [table.orgId, table.membershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("cascade"),
 ]);
 
 export const moduleSetupChecklists = pgTable("module_setup_checklists", {
@@ -90,6 +97,7 @@ export const userTourProgress = pgTable("user_tour_progress", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  membershipId: integer("membership_id"),
   tourKey: text("tour_key").notNull(),
   status: guidedTourProgressStatusEnum("status").notNull().default("not_started"),
   currentStep: integer("current_step").notNull().default(0),
@@ -98,7 +106,13 @@ export const userTourProgress = pgTable("user_tour_progress", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uq_user_tour_progress_org_user_tour").on(table.orgId, table.userId, table.tourKey),
+  index("idx_user_tour_progress_org_membership").on(table.orgId, table.membershipId),
   unique("uniq_user_tour_progress_org_id").on(table.orgId, table.id),
+  foreignKey({
+    name: "fk_user_tour_progress_actor",
+    columns: [table.orgId, table.membershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("cascade"),
 ]);
 
 export const onboardingAnalyticsEvents = pgTable("onboarding_analytics_events", {

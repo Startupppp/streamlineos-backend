@@ -1,5 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, desc, inArray, lte, or, sql } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -11,6 +13,8 @@ import { users, organizationMembers } from "../../../db/schema/common/auth";
 import { hrEmployments, hrPeople } from "../../../db/schema";
 import { orgUnits } from "../../../db/schema/common/organization";
 import type { WorkflowInstanceQueryDto } from "./dto/workflow.schemas";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
 import { AccessService } from "../../access/access.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
@@ -36,38 +40,36 @@ export class HrWorkflowInstancesService {
     definitionId: number,
     query: WorkflowInstanceQueryDto,
   ) {
+    const pos = decodeCursor(query.cursor);
     const conditions = [
       eq(hrWorkflowInstances.orgId, orgId),
       eq(hrWorkflowInstances.definitionId, definitionId),
     ];
 
-    if (query.status)
-      conditions.push(eq(hrWorkflowInstances.status, query.status));
-    if (query.objectType)
-      conditions.push(eq(hrWorkflowInstances.objectType, query.objectType));
-
-    const offset = (query.page - 1) * query.limit;
+    if (query.status) conditions.push(eq(hrWorkflowInstances.status, query.status));
+    if (query.objectType) conditions.push(eq(hrWorkflowInstances.objectType, query.objectType));
+    if (pos) conditions.push(keysetBeforeId(hrWorkflowInstances.createdAt, hrWorkflowInstances.id, pos));
 
     const rows = await this.db
       .select()
       .from(hrWorkflowInstances)
       .where(and(...conditions))
-      .orderBy(desc(hrWorkflowInstances.createdAt))
-      .limit(query.limit)
-      .offset(offset);
+      .orderBy(desc(hrWorkflowInstances.createdAt), desc(hrWorkflowInstances.id))
+      .limit(query.limit + 1);
 
-    return { data: rows, page: query.page, limit: query.limit };
+    return buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async listAll(orgId: string, query: WorkflowInstanceQueryDto) {
+    const pos = decodeCursor(query.cursor);
     const conditions = [eq(hrWorkflowInstances.orgId, orgId)];
 
-    if (query.status)
-      conditions.push(eq(hrWorkflowInstances.status, query.status));
-    if (query.objectType)
-      conditions.push(eq(hrWorkflowInstances.objectType, query.objectType));
-
-    const offset = (query.page - 1) * query.limit;
+    if (query.status) conditions.push(eq(hrWorkflowInstances.status, query.status));
+    if (query.objectType) conditions.push(eq(hrWorkflowInstances.objectType, query.objectType));
+    if (pos) conditions.push(keysetBeforeId(hrWorkflowInstances.createdAt, hrWorkflowInstances.id, pos));
 
     const rows = await this.db
       .select({
@@ -89,11 +91,13 @@ export class HrWorkflowInstancesService {
       .from(hrWorkflowInstances)
       .innerJoin(users, eq(users.id, hrWorkflowInstances.requestedBy))
       .where(and(...conditions))
-      .orderBy(desc(hrWorkflowInstances.createdAt))
-      .limit(query.limit)
-      .offset(offset);
+      .orderBy(desc(hrWorkflowInstances.createdAt), desc(hrWorkflowInstances.id))
+      .limit(query.limit + 1);
 
-    return { data: rows, page: query.page, limit: query.limit };
+    return buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async getDetail(orgId: string, instanceId: number) {
@@ -137,16 +141,20 @@ export class HrWorkflowInstancesService {
     };
   }
 
-  async getMyActed(orgId: string, userId: string, page: number, limit: number) {
+  async getMyActed(u: CurrentUserContext, page: number, limit: number) {
     const offset = (page - 1) * limit;
+    const membershipId = actingMembershipId(u.principal);
+    const actorPredicate = membershipId != null
+      ? or(eq(hrWorkflowStepActions.actedByMembershipId, membershipId), eq(hrWorkflowStepActions.actedByUserId, u.userId))!
+      : eq(hrWorkflowStepActions.actedByUserId, u.userId);
 
     const distinctRows = await this.db
       .selectDistinct({ instanceId: hrWorkflowStepActions.instanceId })
       .from(hrWorkflowStepActions)
       .where(
         and(
-          eq(hrWorkflowStepActions.orgId, orgId),
-          eq(hrWorkflowStepActions.actedByUserId, userId),
+          eq(hrWorkflowStepActions.orgId, u.orgId),
+          actorPredicate,
           inArray(hrWorkflowStepActions.action, ["approved", "rejected"]),
         ),
       )
@@ -163,7 +171,7 @@ export class HrWorkflowInstancesService {
         .from(hrWorkflowInstances)
         .where(
           and(
-            eq(hrWorkflowInstances.orgId, orgId),
+            eq(hrWorkflowInstances.orgId, u.orgId),
             inArray(hrWorkflowInstances.id, instanceIds),
           ),
         )
@@ -175,8 +183,8 @@ export class HrWorkflowInstancesService {
         .from(hrWorkflowStepActions)
         .where(
           and(
-            eq(hrWorkflowStepActions.orgId, orgId),
-            eq(hrWorkflowStepActions.actedByUserId, userId),
+            eq(hrWorkflowStepActions.orgId, u.orgId),
+            actorPredicate,
             inArray(hrWorkflowStepActions.action, ["approved", "rejected"]),
           ),
         ),

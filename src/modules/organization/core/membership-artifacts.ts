@@ -1087,6 +1087,596 @@ export const MEMBERSHIP_ARTIFACTS = [
     reason:
       "Three composite FKs (fk_workers_created_actor, fk_workers_updated_actor, fk_workers_archived_actor) are currently RESTRICT in the Drizzle schema. All three are attribution columns; the worker record survives. Pending migration to SET NULL (hrms-phase1 sweep). The directory/workers.ts file IS in the barrel.",
   },
+  {
+    id: "notification_preferences",
+    mechanism: "database-cascade",
+    table: "notification_preferences",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "push_subscriptions",
+    mechanism: "database-cascade",
+    table: "push_subscriptions",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "coupon_redemptions",
+    mechanism: "database-cascade",
+    table: "coupon_redemptions",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "onboarding_flow_sessions",
+    mechanism: "database-cascade",
+    table: "onboarding_flow_sessions",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "user_tour_progress",
+    mechanism: "database-cascade",
+    table: "user_tour_progress",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "notification_deliveries",
+    mechanism: "database-cascade",
+    table: "notification_deliveries",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "notification_preference_rules",
+    mechanism: "database-cascade",
+    table: "notification_preference_rules",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "notification_consents",
+    mechanism: "database-cascade",
+    table: "notification_consents",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "notification_digest_items",
+    mechanism: "database-cascade",
+    table: "notification_digest_items",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "broadcast_read_receipts",
+    mechanism: "database-cascade",
+    table: "broadcast_read_receipts",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "projects",
+    mechanism: "database-cascade",
+    table: "projects",
+    keyedBy: "client_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "ticket_watchers",
+    mechanism: "database-cascade",
+    table: "ticket_watchers",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "ticket_checklist_items",
+    mechanism: "database-cascade",
+    table: "ticket_checklist_items",
+    keyedBy: "assignee_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "ticket_comment_reactions",
+    mechanism: "database-cascade",
+    table: "ticket_comment_reactions",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "okr_goals",
+    mechanism: "database-cascade",
+    table: "okr_goals",
+    keyedBy: "owner_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "project_whiteboard_shares",
+    mechanism: "database-cascade",
+    table: "project_whiteboard_shares",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "test_runs",
+    mechanism: "database-cascade",
+    table: "test_runs",
+    keyedBy: "tester_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "bugs",
+    mechanism: "database-cascade",
+    table: "bugs",
+    keyedBy: "assignee_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "change_requests",
+    mechanism: "database-cascade",
+    table: "change_requests",
+    keyedBy: "approval_owner_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "meeting_attendees",
+    mechanism: "database-cascade",
+    table: "meeting_attendees",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "meeting_standup_entries",
+    mechanism: "database-cascade",
+    table: "meeting_standup_entries",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "project_team_members",
+    mechanism: "database-cascade",
+    table: "project_team_members",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "project_workspace_members",
+    mechanism: "database-cascade",
+    table: "project_workspace_members",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "feedbucket_submissions",
+    mechanism: "database-cascade",
+    table: "feedbucket_submissions",
+    keyedBy: "assignee_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "comment_drafts",
+    mechanism: "database-cascade",
+    table: "comment_drafts",
+    keyedBy: "membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "hr_attendance_regularizations",
+    mechanism: "database-cascade",
+    table: "hr_attendance_regularizations",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "resignations",
+    mechanism: "database-cascade",
+    table: "resignations",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "documents",
+    mechanism: "database-cascade",
+    table: "documents",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "hr_cases",
+    mechanism: "database-cascade",
+    table: "hr_cases",
+    keyedBy: "assigned_to_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "fin_approval_policies",
+    mechanism: "database-cascade",
+    table: "fin_approval_policies",
+    keyedBy: "approver_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "support_tickets",
+    mechanism: "database-cascade",
+    table: "support_tickets",
+    keyedBy: "assignee_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "kb_articles",
+    mechanism: "database-cascade",
+    table: "kb_articles",
+    keyedBy: "owner_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "support_routing_rules",
+    mechanism: "database-cascade",
+    table: "support_routing_rules",
+    keyedBy: "assignee_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "support_saved_views",
+    mechanism: "database-cascade",
+    table: "support_saved_views",
+    keyedBy: "owner_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "support_ticket_watchers",
+    mechanism: "database-cascade",
+    table: "support_ticket_watchers",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "support_agent_skills",
+    mechanism: "database-cascade",
+    table: "support_agent_skills",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "support_agent_availability",
+    mechanism: "database-cascade",
+    table: "support_agent_availability",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "support_message_mentions",
+    mechanism: "database-cascade",
+    table: "support_message_mentions",
+    keyedBy: "mentioned_user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "support_ticket_drafts",
+    mechanism: "database-cascade",
+    table: "support_ticket_drafts",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "kb_chat_conversations",
+    mechanism: "database-cascade",
+    table: "kb_chat_conversations",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "kb_chat_messages",
+    mechanism: "database-cascade",
+    table: "kb_chat_messages",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "kb_research_briefs",
+    mechanism: "database-cascade",
+    table: "kb_research_briefs",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "affiliates",
+    mechanism: "database-cascade",
+    table: "affiliates",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "payroll_inputs",
+    mechanism: "database-cascade",
+    table: "payroll_inputs",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "payslip_publications",
+    mechanism: "database-cascade",
+    table: "payslip_publications",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "payroll_run_employees",
+    mechanism: "database-cascade",
+    table: "payroll_run_employees",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "employee_salary_profiles",
+    mechanism: "database-cascade",
+    table: "employee_salary_profiles",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "hr_payroll_input_snapshots",
+    mechanism: "database-cascade",
+    table: "hr_payroll_input_snapshots",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "hr_payroll_adjustments",
+    mechanism: "database-cascade",
+    table: "hr_payroll_adjustments",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "salary_loans",
+    mechanism: "database-cascade",
+    table: "salary_loans",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "bonuses",
+    mechanism: "database-cascade",
+    table: "bonuses",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "fnf_settlements",
+    mechanism: "database-cascade",
+    table: "fnf_settlements",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "asset_returns",
+    mechanism: "database-cascade",
+    table: "asset_returns",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "hr_wellness_checkins",
+    mechanism: "database-cascade",
+    table: "hr_wellness_checkins",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "hr_mood_checkins",
+    mechanism: "database-cascade",
+    table: "hr_mood_checkins",
+    keyedBy: "user_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "hr_disciplinary_actions",
+    mechanism: "database-cascade",
+    table: "hr_disciplinary_actions",
+    keyedBy: "employee_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "hr_proxy_access",
+    mechanism: "database-cascade",
+    table: "hr_proxy_access",
+    keyedBy: "grantor_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "recognitions",
+    mechanism: "database-cascade",
+    table: "recognitions",
+    keyedBy: "from_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
+  {
+    id: "hr_workflow_delegations",
+    mechanism: "database-cascade",
+    table: "hr_workflow_delegations",
+    keyedBy: "delegator_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
+  },
 ] as const satisfies readonly MembershipArtifact[];
 
 export const MEMBERSHIP_ARTIFACT_IDS = MEMBERSHIP_ARTIFACTS.map(

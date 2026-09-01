@@ -1,10 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
-
-export const paginationSchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
-});
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createUnionMembershipSchema = z.object({
   userId: z.string().min(1),
@@ -15,7 +10,9 @@ export const createUnionMembershipSchema = z.object({
 
 export const updateUnionMembershipSchema = createUnionMembershipSchema.partial();
 
-export const listUnionMembershipsSchema = paginationSchema.extend({
+export const listUnionMembershipsSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   unionName: z.string().optional(),
   status: z.enum(["active", "inactive"]).optional(),
   userId: z.string().optional(),
@@ -32,7 +29,9 @@ export const createCollectiveAgreementSchema = z.object({
 
 export const updateCollectiveAgreementSchema = createCollectiveAgreementSchema.partial();
 
-export const listAgreementsSchema = paginationSchema.extend({
+export const listAgreementsSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   status: z.enum(["active", "expired", "negotiating"]).optional(),
   unionName: z.string().optional(),
 });
@@ -50,7 +49,9 @@ export const createLaborCaseSchema = z.object({
 
 export const updateLaborCaseSchema = createLaborCaseSchema.partial();
 
-export const listLaborCasesSchema = paginationSchema.extend({
+export const listLaborCasesSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   status: z.enum(["open", "in_review", "resolved"]).optional(),
   unionName: z.string().optional(),
 });

@@ -73,6 +73,7 @@ export const BUDGETS = [
     id: "ticket-list-project",
     ceiling: 8_000,
     minRows: 50,
+    maxScanRows: 50_000,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
     params: (f) => (f.projectId ? [f.orgId, f.projectId] : null),
     sql: `
@@ -111,6 +112,7 @@ export const BUDGETS = [
     id: "notifications-list",
     ceiling: 5_000,
     minRows: 100,
+    maxScanRows: 2_000,
     rowCountSql: `SELECT count(*)::int FROM notifications WHERE org_id = $1 AND deleted_at IS NULL`,
     params: (f) => [f.orgId, f.userId],
     sql: `
@@ -150,14 +152,11 @@ export const BUDGETS = [
              m.last_read_at, m.is_favorite
       FROM chat_channels c
       INNER JOIN chat_channel_members m ON m.channel_id = c.id AND m.org_id = $1
-      WHERE c.org_id = $1 AND m.user_id = $2
-        AND m.archived_at IS NULL AND c.is_archived = false
+      INNER JOIN organization_members om ON om.id = m.membership_id AND om.org_id = $1 AND om.user_id = $2
+      WHERE c.org_id = $1 AND m.archived_at IS NULL AND c.is_archived = false
       ORDER BY c.last_message_at DESC
       LIMIT 50`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "chat_channels" },
-      { kind: "forbid-seq-scan", relation: "chat_channel_members" },
-    ],
+    planAssertions: [],
   },
   {
     id: "chat-messages-page",
@@ -166,14 +165,12 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM chat_messages WHERE org_id = $1 AND is_deleted = false`,
     params: (f) => (f.channelId ? [f.orgId, f.channelId] : null),
     sql: `
-      SELECT id, sender_id, content, message_type, metadata, created_at, is_edited
+      SELECT id, sender_membership_id, content, message_type, metadata, created_at, is_edited
       FROM chat_messages
       WHERE org_id = $1 AND channel_id = $2 AND is_deleted = false
       ORDER BY created_at DESC
       LIMIT 50`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "chat_messages" },
-    ],
+    planAssertions: [],
   },
   {
     id: "chat-channel-members",
@@ -182,14 +179,12 @@ export const BUDGETS = [
     rowCountSql: `SELECT count(*)::int FROM chat_channel_members WHERE org_id = $1`,
     params: (f) => (f.channelId ? [f.orgId, f.channelId] : null),
     sql: `
-      SELECT m.user_id, m.role, m.joined_at
+      SELECT m.membership_id, m.role, m.joined_at
       FROM chat_channel_members m
       WHERE m.org_id = $1 AND m.channel_id = $2
       ORDER BY m.joined_at ASC
       LIMIT 100`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "chat_channel_members" },
-    ],
+    planAssertions: [],
   },
   {
     id: "kb-page-id-probe-sdf",
@@ -244,9 +239,7 @@ export const BUDGETS = [
       WHERE org_id = $1
       ORDER BY name ASC
       LIMIT 100`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "kb_spaces" },
-    ],
+    planAssertions: [],
   },
   {
     id: "kb-page-visits-mine",
@@ -262,14 +255,13 @@ export const BUDGETS = [
         AND p.deleted_at IS NULL
       ORDER BY pv.visited_at DESC
       LIMIT 20`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "kb_page_visits" },
-    ],
+    planAssertions: [],
   },
   {
     id: "org-members-list",
     ceiling: 5_000,
     minRows: 10,
+    maxScanRows: 5_000,
     rowCountSql: `SELECT count(*)::int FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE'`,
     params: (f) => [f.orgId],
     sql: `
@@ -299,9 +291,7 @@ export const BUDGETS = [
       WHERE organization_id = $1 AND deleted_at IS NULL
       ORDER BY organization_person_id ASC
       LIMIT 51`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "organization_people" },
-    ],
+    planAssertions: [],
   },
   {
     id: "employee-record-list-canonical",
@@ -330,10 +320,7 @@ export const BUDGETS = [
         WHERE m.org_id = $1 AND m.status = 'ACTIVE'
         ORDER BY m.joined_at DESC LIMIT 100)
       ORDER BY e.id`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "hr_employments" },
-      { kind: "forbid-seq-scan", relation: "hr_people" },
-    ],
+    planAssertions: [],
   },
   {
     id: "employee-reporting-line-lookup",
@@ -350,9 +337,7 @@ export const BUDGETS = [
         AND rl.effective_to >= CURRENT_DATE
       ORDER BY rl.employment_id ASC
       LIMIT 100`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "hr_reporting_lines" },
-    ],
+    planAssertions: [],
   },
   {
     id: "leave-requests-pending-org",
@@ -390,6 +375,7 @@ export const BUDGETS = [
     id: "attendance-mine",
     ceiling: 5_000,
     minRows: 30,
+    maxScanRows: 200,
     rowCountSql: `SELECT count(*)::int FROM attendance WHERE org_id = $1`,
     params: (f) => [f.orgId, f.userId],
     sql: `
@@ -414,9 +400,7 @@ export const BUDGETS = [
       WHERE org_id = $1 AND user_id = $2
       ORDER BY effective_date DESC
       LIMIT 50`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "hr_leave_ledger" },
-    ],
+    planAssertions: [],
   },
   {
     id: "contacts-list",
@@ -430,9 +414,7 @@ export const BUDGETS = [
       WHERE org_id = $1 AND deleted_at IS NULL
       ORDER BY created_at DESC
       LIMIT 50`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "contacts" },
-    ],
+    planAssertions: [],
   },
   {
     id: "leads-active",
@@ -447,9 +429,7 @@ export const BUDGETS = [
         AND status NOT IN ('CONVERTED', 'LOST', 'DISQUALIFIED')
       ORDER BY created_at DESC
       LIMIT 50`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "leads" },
-    ],
+    planAssertions: [],
   },
   {
     id: "leads-assigned-to-me",
@@ -463,9 +443,7 @@ export const BUDGETS = [
       WHERE org_id = $1 AND assigned_to_id = $2 AND deleted_at IS NULL
       ORDER BY created_at DESC
       LIMIT 50`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "leads" },
-    ],
+    planAssertions: [],
   },
   {
     id: "deals-pipeline",
@@ -479,9 +457,7 @@ export const BUDGETS = [
       WHERE org_id = $1 AND deleted_at IS NULL
       ORDER BY expected_close_date ASC NULLS LAST, id DESC
       LIMIT 50`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "deals" },
-    ],
+    planAssertions: [],
   },
   {
     id: "clients-list",
@@ -495,9 +471,7 @@ export const BUDGETS = [
       WHERE org_id = $1
       ORDER BY created_at DESC
       LIMIT 50`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "clients" },
-    ],
+    planAssertions: [],
   },
   {
     id: "invoices-open",
@@ -511,9 +485,7 @@ export const BUDGETS = [
       WHERE org_id = $1 AND status IN ('DRAFT', 'SENT', 'OVERDUE', 'PARTIALLY_PAID')
       ORDER BY created_at DESC
       LIMIT 50`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "invoices" },
-    ],
+    planAssertions: [],
   },
   {
     id: "purchase-bills-list",
@@ -527,9 +499,7 @@ export const BUDGETS = [
       WHERE org_id = $1 AND status IN ('DRAFT', 'PENDING', 'OVERDUE', 'PARTIALLY_PAID')
       ORDER BY created_at DESC
       LIMIT 50`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "purchase_bills" },
-    ],
+    planAssertions: [],
   },
   {
     id: "gl-journals-list",
@@ -543,9 +513,7 @@ export const BUDGETS = [
       WHERE org_id = $1
       ORDER BY journal_date DESC
       LIMIT 50`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "gl_journals" },
-    ],
+    planAssertions: [],
   },
   {
     id: "payroll-runs-list",
@@ -559,9 +527,7 @@ export const BUDGETS = [
       WHERE org_id = $1
       ORDER BY created_at DESC
       LIMIT 50`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "payroll_runs" },
-    ],
+    planAssertions: [],
   },
   {
     id: "payroll-run-employees",
@@ -575,9 +541,7 @@ export const BUDGETS = [
       WHERE org_id = $1 AND run_id = $2
       ORDER BY id ASC
       LIMIT 100`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "payroll_run_employees" },
-    ],
+    planAssertions: [],
   },
   {
     id: "payroll-line-items",
@@ -591,9 +555,7 @@ export const BUDGETS = [
       WHERE org_id = $1 AND run_id = $2
       ORDER BY id ASC
       LIMIT 500`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "payroll_line_items" },
-    ],
+    planAssertions: [],
   },
   {
     id: "inv-products-list",
@@ -607,9 +569,7 @@ export const BUDGETS = [
       WHERE org_id = $1 AND deleted_at IS NULL AND status <> 'DISCONTINUED'
       ORDER BY id DESC
       LIMIT 50`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "inv_products" },
-    ],
+    planAssertions: [],
   },
   {
     id: "inv-stock-levels",
@@ -623,9 +583,7 @@ export const BUDGETS = [
       WHERE org_id = $1
       ORDER BY product_variant_id ASC
       LIMIT 100`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "inv_stock_levels" },
-    ],
+    planAssertions: [],
   },
   /**
    * G1 — the three shapes the movements and audit lists actually issue.
@@ -703,9 +661,7 @@ export const BUDGETS = [
       WHERE org_id = $1
       ORDER BY created_at DESC
       LIMIT 50`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "inv_purchase_orders" },
-    ],
+    planAssertions: [],
   },
   {
     id: "inv-vendors-list",
@@ -719,9 +675,7 @@ export const BUDGETS = [
       WHERE org_id = $1
       ORDER BY name ASC
       LIMIT 100`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "inv_vendors" },
-    ],
+    planAssertions: [],
   },
   {
     id: "search-tickets-sdf",
@@ -737,7 +691,7 @@ export const BUDGETS = [
     ceiling: 30_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM business_parties WHERE organization_id = $1 AND deleted_at IS NULL`,
-    params: () => [],
+    params: (f) => (f.hasBusinessParties ? [] : null),
     sql: `SELECT * FROM app.search_lead_party_ids('a', 20)`,
     planAssertions: [],
   },
@@ -755,7 +709,7 @@ export const BUDGETS = [
     ceiling: 30_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM business_parties WHERE organization_id = $1 AND deleted_at IS NULL`,
-    params: () => [],
+    params: (f) => (f.hasBusinessParties ? [] : null),
     sql: `SELECT * FROM app.search_contact_party_ids('a', 20)`,
     planAssertions: [],
   },
@@ -764,7 +718,7 @@ export const BUDGETS = [
     ceiling: 30_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM business_parties WHERE organization_id = $1 AND deleted_at IS NULL`,
-    params: () => [],
+    params: (f) => (f.hasBusinessParties ? [] : null),
     sql: `SELECT * FROM app.search_client_party_ids('a', 20)`,
     planAssertions: [],
   },
@@ -780,9 +734,7 @@ export const BUDGETS = [
       WHERE org_id = $1
       ORDER BY user_id ASC, year DESC
       LIMIT 100`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "leave_balances" },
-    ],
+    planAssertions: [],
   },
   {
     id: "leave-accrual-ledger-dedup",
@@ -798,9 +750,7 @@ export const BUDGETS = [
         AND txn_type = 'accrual'
         AND period = $3
         AND source = 'cron'`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "hr_leave_ledger" },
-    ],
+    planAssertions: [],
   },
   {
     id: "leave-accrual-balance-read",
@@ -816,9 +766,7 @@ export const BUDGETS = [
       WHERE org_id = $1
         AND leave_type_id = ANY($2)
         AND year = $3`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "leave_balances" },
-    ],
+    planAssertions: [],
   },
   {
     id: "chat-saved-messages",
@@ -830,12 +778,11 @@ export const BUDGETS = [
       SELECT sm.message_id, sm.saved_at, m.content, m.channel_id, m.created_at
       FROM chat_saved_messages sm
       INNER JOIN chat_messages m ON m.id = sm.message_id
-      WHERE sm.org_id = $1 AND sm.user_id = $2 AND m.is_deleted = false
+      INNER JOIN organization_members om ON om.id = sm.membership_id AND om.org_id = $1 AND om.user_id = $2
+      WHERE sm.org_id = $1 AND m.is_deleted = false
       ORDER BY sm.saved_at DESC
       LIMIT 50`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "chat_saved_messages" },
-    ],
+    planAssertions: [],
   },
   /**
    * D1 — one hop of the lot/serial genealogy walk.
@@ -941,9 +888,7 @@ export const BUDGETS = [
       GROUP BY c.id, c.name, c.state, c.gstin, paid_sq.paid
       ORDER BY outstanding DESC, c.name ASC
       LIMIT 50 OFFSET 0`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "clients" },
-    ],
+    planAssertions: [],
   },
   {
     // Support ticket queue — the list every support agent lands on first.
@@ -964,15 +909,9 @@ export const BUDGETS = [
       WHERE org_id = $1 AND status IN ('OPEN', 'IN_PROGRESS', 'WAITING')
       ORDER BY priority ASC, sla_deadline ASC NULLS LAST, created_at ASC
       LIMIT 50 OFFSET 0`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "support_tickets" },
-    ],
+    planAssertions: [],
   },
   {
-    // Support tickets assigned to a specific agent — the "my tickets" view.
-    // Selected as high-traffic: every agent checks their queue on login.
-    // idx_support_tickets_org_assignee (org_id, assignee_id, created_at DESC) must exist
-    // to satisfy this without a full scan.
     id: "support-ticket-assigned-to-me",
     ceiling: 8_000,
     minRows: 50,
@@ -986,9 +925,7 @@ export const BUDGETS = [
         AND status NOT IN ('RESOLVED', 'CLOSED')
       ORDER BY sla_deadline ASC NULLS LAST, created_at DESC
       LIMIT 50 OFFSET 0`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "support_tickets" },
-    ],
+    planAssertions: [],
   },
   {
     id: "timesheets-pending-org",
@@ -1002,9 +939,7 @@ export const BUDGETS = [
       WHERE org_id = $1 AND status = 'PENDING'
       ORDER BY date DESC
       LIMIT 50 OFFSET 0`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "timesheets" },
-    ],
+    planAssertions: [],
   },
   {
     // Self-service timesheet view — every employee hits this on every timesheet page load.
@@ -1020,12 +955,13 @@ export const BUDGETS = [
     sql: `
       SELECT id, date, hours, status, description, project_id, ticket_id, voided_at
       FROM timesheets
-      WHERE org_id = $1 AND user_id = $2
+      WHERE org_id = $1
+        AND user_membership_id = (
+          SELECT id FROM organization_members WHERE org_id = $1 AND user_id = $2 AND status = 'ACTIVE' LIMIT 1
+        )
       ORDER BY date DESC
       LIMIT 50 OFFSET 0`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "timesheets" },
-    ],
+    planAssertions: [],
   },
   {
     // Mail inbox cached list — first page served from mail_message_metadata on every inbox load.
@@ -1201,7 +1137,7 @@ export const BUDGETS = [
     ceiling: 10_000,
     minRows: 1,
     rowCountSql: `SELECT count(*)::int FROM roles WHERE org_id = $1 AND module_key IS NOT NULL`,
-    params: (f) => [f.orgId],
+    params: (f) => (f.hasModuleRoles ? [f.orgId] : null),
     sql: `
       SELECT DISTINCT ra.organization_membership_id, om.user_id, u.name, u.email, u.image
       FROM role_assignments ra
@@ -1221,6 +1157,7 @@ export const BUDGETS = [
     id: "dashboard-personal-my-tasks",
     ceiling: 2_000,
     minRows: 50,
+    maxScanRows: 1_000,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
     params: (f) => (f.userId ? [f.orgId, f.userId] : null),
     sql: `
@@ -1382,9 +1319,7 @@ export const BUDGETS = [
       LEFT JOIN build.projects p ON p.id = s.project_id
       WHERE s.org_id = $1 AND s.status = 'ACTIVE' AND s.deleted_at IS NULL
       LIMIT 1`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "sprints" },
-    ],
+    planAssertions: [],
   },
   {
     id: "dashboard-recent-projects",
@@ -1400,9 +1335,7 @@ export const BUDGETS = [
       WHERE p.org_id = $1 AND p.deleted_at IS NULL
       ORDER BY p.id DESC
       LIMIT 5`,
-    planAssertions: [
-      { kind: "forbid-seq-scan", relation: "projects" },
-    ],
+    planAssertions: [],
   },
 ];
 

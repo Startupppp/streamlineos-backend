@@ -29,7 +29,7 @@ import { z } from "zod";
 
 const rateIdParams = z.object({ rateId: z.coerce.number().int().positive() }).strict();
 
-@RequireModule("build")
+@RequireModule("timesheets")
 @Controller("timesheets/rates")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class RatesController {

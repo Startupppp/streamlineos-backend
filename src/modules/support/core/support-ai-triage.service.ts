@@ -167,12 +167,15 @@ export class SupportAiTriageService {
       feature: "support.analysis",
       tier: "fast",
       schema: analysisSchema,
+      charge: true,
       prompt: {
         system: "You are an assistant helping a support team triage tickets. Analyze the ticket below and return structured data only. Never invent facts not present in the ticket.",
         user: `Title: ${redactSensitiveData(ticket.title)}\nCategory: ${ticket.category ?? "none"}\nDescription: ${redactSensitiveData(ticket.description ?? "none")}\n\nConversation so far:\n${thread || "(no replies yet)"}`,
       },
     });
     if (!gatewayResult.ok) {
+      if (gatewayResult.kind === "quota_exceeded")
+        throw new InsufficientAiCreditsException({ message: gatewayResult.message });
       logger.error("support ticket AI analysis failed", { orgId, ticketId, kind: gatewayResult.kind });
       return null;
     }

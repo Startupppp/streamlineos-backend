@@ -25,8 +25,11 @@ export class ReimbursementsService {
     private readonly automation: AutomationService,
   ) {}
 
-  listReimbursements(orgId: string, userId: string, scope: DataScope, page = 1, limit = 100) {
-    const conditions = [eq(reimbursements.orgId, orgId), applyScope(scope, orgId, userId, { ownerColumn: reimbursements.userId })];
+  listReimbursements(orgId: string, userId: string, membershipId: number | null, scope: DataScope, page = 1, limit = 100) {
+    const ownerPredicate = scope === "own" && membershipId != null
+      ? eq(reimbursements.userMembershipId, membershipId)
+      : applyScope(scope, orgId, userId, { ownerColumn: reimbursements.userId });
+    const conditions = [eq(reimbursements.orgId, orgId), ownerPredicate];
 
     return this.db.query.reimbursements.findMany({
       where: and(...conditions),
@@ -41,12 +44,13 @@ export class ReimbursementsService {
     });
   }
 
-  async createReimbursement(orgId: string, userId: string, body: CreateReimbursementInput) {
+  async createReimbursement(orgId: string, userId: string, membershipId: number | null, body: CreateReimbursementInput) {
     const [record] = await this.db
       .insert(reimbursements)
       .values({
         orgId,
         userId,
+        userMembershipId: membershipId ?? undefined,
         category: body.category,
         amount: body.amount.toString(),
         description: body.description,

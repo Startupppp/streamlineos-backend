@@ -64,6 +64,8 @@ export const hrCases = pgTable("hr_cases", {
   outcome: text("outcome"),
   resolvedAt: timestamp("resolved_at"),
   assignedTo: text("assigned_to").references(() => users.id, { onDelete: "set null" }),
+  assignedToMembershipId: integer("assigned_to_membership_id"),
+  reportedByMembershipId: integer("reported_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
   deletedAt: timestamp("deleted_at"),
@@ -73,6 +75,8 @@ export const hrCases = pgTable("hr_cases", {
   index("idx_hr_cases_org_status").on(table.orgId, table.status),
   index("idx_hr_cases_org_category").on(table.orgId, table.category),
   index("idx_hr_cases_org_assigned").on(table.orgId, table.assignedTo),
+  index("idx_hr_cases_org_assigned_membership").on(table.orgId, table.assignedToMembershipId),
+  index("idx_hr_cases_org_reported_membership").on(table.orgId, table.reportedByMembershipId),
 ]);
 
 export const hrCaseNotes = pgTable("hr_case_notes", {
@@ -108,12 +112,12 @@ export const hrDisciplinaryActions = pgTable("hr_disciplinary_actions", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   caseId: integer("case_id").references(() => hrCases.id, { onDelete: "set null" }),
   employeeId: text("employee_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
+  employeeMembershipId: integer("employee_membership_id"),
   actionType: hrDisciplinaryActionTypeEnum("action_type").notNull(),
   letterRenderId: integer("letter_render_id").references(() => hrTemplateRenders.id, { onDelete: "set null" }),
   effectiveDate: timestamp("effective_date").notNull(),
   issuedBy: text("issued_by").references(() => users.id, { onDelete: "set null" }).notNull(),
   note: text("note"),
-  /** Employee acknowledgment of receipt (not agreement). */
   acknowledgedAt: timestamp("acknowledged_at"),
   acknowledgedBy: text("acknowledged_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -121,6 +125,7 @@ export const hrDisciplinaryActions = pgTable("hr_disciplinary_actions", {
 }, (table) => [
   unique("uniq_hr_disciplinary_actions_org_id").on(table.orgId, table.id),
   index("idx_hr_disciplinary_org_employee").on(table.orgId, table.employeeId),
+  index("idx_hr_disciplinary_org_employee_membership").on(table.orgId, table.employeeMembershipId),
   index("idx_hr_disciplinary_org_case").on(table.orgId, table.caseId),
 ]);
 

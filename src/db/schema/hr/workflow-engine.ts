@@ -128,12 +128,14 @@ export const hrWorkflowStepActions = pgTable("hr_workflow_step_actions", {
   stepOrder: integer("step_order").notNull(),
   approverUserId: text("approver_user_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
   actedByUserId: text("acted_by_user_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
+  actedByMembershipId: integer("acted_by_membership_id"),
   action: hrWorkflowActionEnum("action").notNull(),
   comment: text("comment"),
   actedAt: timestamp("acted_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_hr_workflow_step_actions_org_id").on(table.orgId, table.id),
   index("idx_hr_wf_actions_org_instance").on(table.orgId, table.instanceId),
+  index("idx_hr_wf_actions_org_acted_by_membership").on(table.orgId, table.actedByMembershipId),
 ]);
 
 export const hrWorkflowInstanceAttachments = pgTable("hr_workflow_instance_attachments", {
@@ -157,7 +159,9 @@ export const hrWorkflowDelegations = pgTable("hr_workflow_delegations", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   delegatorUserId: text("delegator_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  delegatorMembershipId: integer("delegator_membership_id"),
   delegateUserId: text("delegate_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  delegateMembershipId: integer("delegate_membership_id"),
   objectType: hrWorkflowObjectTypeEnum("object_type"),
   startsAt: timestamp("starts_at").notNull(),
   endsAt: timestamp("ends_at").notNull(),
@@ -167,6 +171,8 @@ export const hrWorkflowDelegations = pgTable("hr_workflow_delegations", {
 }, (table) => [
   unique("uniq_hr_workflow_delegations_org_id").on(table.orgId, table.id),
   index("idx_hr_wf_delegations_org_delegator_active").on(table.orgId, table.delegatorUserId, table.active),
+  index("idx_hr_wf_delegations_org_delegator_membership").on(table.orgId, table.delegatorMembershipId),
+  index("idx_hr_wf_delegations_org_delegate_membership").on(table.orgId, table.delegateMembershipId),
 ]);
 
 export const hrWorkflowDefinitionsRelations = relations(hrWorkflowDefinitions, ({ many }) => ({

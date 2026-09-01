@@ -5,7 +5,7 @@ import { RATE_LIMIT_TIER } from "../../common/ratelimit/use-rate-limit.decorator
 import { HrEffectiveChangesController } from "./core/hr-effective-changes.controller";
 import { HrPeopleController } from "./core/hr-people.controller";
 import { EmployeesController } from "./directory/employees.controller";
-import { OnboardingController } from "./onboarding/core/onboarding.controller";
+import { HrOnboardingAdminController } from "./onboarding/core/hr-onboarding-admin.controller";
 
 describe("HR expensive command safety", () => {
   it.each([
@@ -29,7 +29,7 @@ describe("HR expensive command safety", () => {
     },
     {
       name: "onboarding reminders",
-      handler: OnboardingController.prototype.sendReminders,
+      handler: HrOnboardingAdminController.prototype.sendReminders,
       command: "hr.onboarding.send-reminders",
       tier: "hr:onboarding-reminders",
     },

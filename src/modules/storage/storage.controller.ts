@@ -246,12 +246,12 @@ export class StorageController {
       throw new ServiceUnavailableException("Storage not available");
     }
 
-    if (isSensitiveKey(keyParam) || orgFromNamespacedKey(keyParam)) {
-      const fileOwner = await this.resolveFileOwner(keyParam);
-      if (fileOwner === null || fileOwner.orgId !== u.orgId) {
-        throw new NotFoundException("Not found");
-      }
+    const fileOwner = await this.resolveFileOwner(keyParam);
+    if (fileOwner !== null) {
+      if (fileOwner.orgId !== u.orgId) throw new NotFoundException("Not found");
       if (requiresDedicatedAccess(fileOwner)) throw new ForbiddenException("Access denied");
+    } else if (isSensitiveKey(keyParam)) {
+      throw new NotFoundException("Not found");
     }
 
     const stream = await this.openStream(u.orgId, keyParam, "Not found");

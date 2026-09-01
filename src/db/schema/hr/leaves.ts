@@ -54,6 +54,8 @@ export const leaveRequests = pgTable("leave_requests", {
   coveringEmployeeId: text("covering_employee_id").references(() => users.id, { onDelete: "set null" }),
   lopDays: decimal("lop_days", { precision: 5, scale: 1 }).default("0").notNull(),
   approverMembershipId: integer("approver_membership_id"),
+  userMembershipId: integer("user_membership_id"),
+  coveringEmployeeMembershipId: integer("covering_employee_membership_id"),
   rowVersion: integer("row_version").default(1).notNull(),
   createdByMembershipId: integer("created_by_membership_id"),
   updatedByMembershipId: integer("updated_by_membership_id"),
@@ -62,6 +64,8 @@ export const leaveRequests = pgTable("leave_requests", {
 }, (table) => [
   unique("uniq_leave_requests_org_id").on(table.orgId, table.id),
   index("idx_leave_requests_user_id").on(table.userId),
+  index("idx_leave_requests_org_user_membership").on(table.orgId, table.userMembershipId),
+  index("idx_leave_requests_org_covering_membership").on(table.orgId, table.coveringEmployeeMembershipId),
   index("idx_leave_requests_org_status").on(table.orgId, table.status),
   index("idx_leave_requests_dates").on(table.startDate, table.endDate),
   index("idx_leave_requests_org_user_status").on(table.orgId, table.userId, table.status),

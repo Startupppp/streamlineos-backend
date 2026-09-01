@@ -1,20 +1,38 @@
-import { Inject, Injectable, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from "@nestjs/common";
 import { and, eq, isNull, desc, SQL, count, inArray } from "drizzle-orm";
+import {
+  decodeCursor,
+  buildCursorPage,
+} from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { hrWorkflowDefinitions, hrWorkflowSteps } from "../../../db/schema/hr/workflow-engine";
-import type { CreateWorkflowDefinitionDto, UpdateWorkflowDefinitionDto, WorkflowDefinitionQueryDto } from "./dto/workflow.schemas";
+import {
+  hrWorkflowDefinitions,
+  hrWorkflowSteps,
+} from "../../../db/schema/hr/workflow-engine";
+import type {
+  CreateWorkflowDefinitionDto,
+  UpdateWorkflowDefinitionDto,
+  WorkflowDefinitionQueryDto,
+} from "./dto/workflow.schemas";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
 import { HrWorkflowApproverService } from "./hr-workflow-approver.service";
 
 interface StepInput {
   stepOrder: number;
   name: string;
-  approverType: typeof hrWorkflowSteps.$inferInsert["approverType"];
+  approverType: (typeof hrWorkflowSteps.$inferInsert)["approverType"];
   approverValue?: string | null;
-  mode?: typeof hrWorkflowSteps.$inferInsert["mode"];
+  mode?: (typeof hrWorkflowSteps.$inferInsert)["mode"];
   slaHours?: number | null;
-  escalationApproverType?: typeof hrWorkflowSteps.$inferInsert["escalationApproverType"];
+  escalationApproverType?: (typeof hrWorkflowSteps.$inferInsert)["escalationApproverType"];
   escalationApproverValue?: string | null;
   condition?: { field: string; operator: string; value: unknown } | null;
 }
@@ -28,18 +46,27 @@ export class HrWorkflowDefinitionsService {
   ) {}
 
   async list(orgId: string, query: WorkflowDefinitionQueryDto) {
+    const pos = decodeCursor(query.cursor);
     const conditions: SQL[] = [
       eq(hrWorkflowDefinitions.orgId, orgId),
       isNull(hrWorkflowDefinitions.deletedAt),
     ];
 
-    if (query.objectType) conditions.push(eq(hrWorkflowDefinitions.objectType, query.objectType));
-    if (query.status) conditions.push(eq(hrWorkflowDefinitions.status, query.status));
+    if (query.objectType)
+      conditions.push(eq(hrWorkflowDefinitions.objectType, query.objectType));
+    if (query.status)
+      conditions.push(eq(hrWorkflowDefinitions.status, query.status));
+    if (pos)
+      conditions.push(
+        keysetBeforeId(
+          hrWorkflowDefinitions.createdAt,
+          hrWorkflowDefinitions.id,
+          pos,
+        ),
+      );
 
-    const offset = (query.page - 1) * query.limit;
-
-    const [rows, [{ total }]] = await Promise.all([
-      this.db.select({
+    const rows = await this.db
+      .select({
         id: hrWorkflowDefinitions.id,
         orgId: hrWorkflowDefinitions.orgId,
         objectType: hrWorkflowDefinitions.objectType,
@@ -50,36 +77,64 @@ export class HrWorkflowDefinitionsService {
         createdAt: hrWorkflowDefinitions.createdAt,
         updatedAt: hrWorkflowDefinitions.updatedAt,
         deletedAt: hrWorkflowDefinitions.deletedAt,
-      }).from(hrWorkflowDefinitions)
-        .where(and(...conditions))
-        .orderBy(desc(hrWorkflowDefinitions.createdAt))
-        .limit(query.limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrWorkflowDefinitions).where(and(...conditions)),
-    ]);
+      })
+      .from(hrWorkflowDefinitions)
+      .where(and(...conditions))
+      .orderBy(
+        desc(hrWorkflowDefinitions.createdAt),
+        desc(hrWorkflowDefinitions.id),
+      )
+      .limit(query.limit + 1);
 
-    const defIds = rows.map((r) => r.id);
-    const stepCountRows = defIds.length > 0
-      ? await this.db.select({ definitionId: hrWorkflowSteps.definitionId, cnt: count() })
-          .from(hrWorkflowSteps)
-          .where(inArray(hrWorkflowSteps.definitionId, defIds))
-          .groupBy(hrWorkflowSteps.definitionId)
-      : [];
-    const stepCountMap = Object.fromEntries(stepCountRows.map((r) => [r.definitionId, r.cnt]));
+    const page = buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
 
-    const withStepCounts = rows.map((row) => ({ ...row, stepCount: stepCountMap[row.id] ?? 0 }));
+    const defIds = page.data.map((r) => r.id);
+    const stepCountRows =
+      defIds.length > 0
+        ? await this.db
+            .select({
+              definitionId: hrWorkflowSteps.definitionId,
+              cnt: count(),
+            })
+            .from(hrWorkflowSteps)
+            .where(inArray(hrWorkflowSteps.definitionId, defIds))
+            .groupBy(hrWorkflowSteps.definitionId)
+        : [];
+    const stepCountMap = Object.fromEntries(
+      stepCountRows.map((r) => [r.definitionId, r.cnt]),
+    );
 
-    return { data: withStepCounts, total, page: query.page, limit: query.limit };
+    return {
+      data: page.data.map((row) => ({
+        ...row,
+        stepCount: stepCountMap[row.id] ?? 0,
+      })),
+      pagination: page.pagination,
+    };
   }
 
   async get(orgId: string, id: number) {
-    const [definition] = await this.db.select().from(hrWorkflowDefinitions)
-      .where(and(eq(hrWorkflowDefinitions.id, id), eq(hrWorkflowDefinitions.orgId, orgId), isNull(hrWorkflowDefinitions.deletedAt)))
+    const [definition] = await this.db
+      .select()
+      .from(hrWorkflowDefinitions)
+      .where(
+        and(
+          eq(hrWorkflowDefinitions.id, id),
+          eq(hrWorkflowDefinitions.orgId, orgId),
+          isNull(hrWorkflowDefinitions.deletedAt),
+        ),
+      )
       .limit(1);
 
-    if (!definition) throw new NotFoundException("Workflow definition not found");
+    if (!definition)
+      throw new NotFoundException("Workflow definition not found");
 
-    const steps = await this.db.select().from(hrWorkflowSteps)
+    const steps = await this.db
+      .select()
+      .from(hrWorkflowSteps)
       .where(eq(hrWorkflowSteps.definitionId, id))
       .orderBy(hrWorkflowSteps.stepOrder);
 
@@ -88,15 +143,18 @@ export class HrWorkflowDefinitionsService {
 
   async create(orgId: string, dto: CreateWorkflowDefinitionDto) {
     try {
-      const [definition] = await this.db.insert(hrWorkflowDefinitions).values({
-        orgId,
-        objectType: dto.objectType,
-        name: dto.name,
-        status: "draft",
-        version: 1,
-        isDefault: dto.isDefault,
-        settings: dto.settings ?? {},
-      }).returning();
+      const [definition] = await this.db
+        .insert(hrWorkflowDefinitions)
+        .values({
+          orgId,
+          objectType: dto.objectType,
+          name: dto.name,
+          status: "draft",
+          version: 1,
+          isDefault: dto.isDefault,
+          settings: dto.settings ?? {},
+        })
+        .returning();
 
       if (!definition) throw new Error("Insert failed");
 
@@ -109,7 +167,9 @@ export class HrWorkflowDefinitionsService {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("23505") || msg.includes("uniq_hr_wf_def")) {
-        throw new ConflictException("A workflow with this name and version already exists for this object type");
+        throw new ConflictException(
+          "A workflow with this name and version already exists for this object type",
+        );
       }
       throw err;
     }
@@ -119,17 +179,27 @@ export class HrWorkflowDefinitionsService {
     const definition = await this.get(orgId, id);
 
     if (definition.status === "active") {
-      throw new BadRequestException("Active definitions cannot be edited. Duplicate and edit the new version.");
+      throw new BadRequestException(
+        "Active definitions cannot be edited. Duplicate and edit the new version.",
+      );
     }
 
-    const updates: Partial<typeof hrWorkflowDefinitions.$inferInsert> = { updatedAt: new Date() };
+    const updates: Partial<typeof hrWorkflowDefinitions.$inferInsert> = {
+      updatedAt: new Date(),
+    };
     if (dto.name !== undefined) updates.name = dto.name;
     if (dto.isDefault !== undefined) updates.isDefault = dto.isDefault;
     if (dto.settings !== undefined) updates.settings = dto.settings;
 
-    await this.db.update(hrWorkflowDefinitions)
+    await this.db
+      .update(hrWorkflowDefinitions)
       .set(updates)
-      .where(and(eq(hrWorkflowDefinitions.id, id), eq(hrWorkflowDefinitions.orgId, orgId)));
+      .where(
+        and(
+          eq(hrWorkflowDefinitions.id, id),
+          eq(hrWorkflowDefinitions.orgId, orgId),
+        ),
+      );
 
     if (dto.isDefault) {
       await this.clearOtherDefaults(orgId, definition.objectType, id);
@@ -150,18 +220,30 @@ export class HrWorkflowDefinitionsService {
       throw new BadRequestException("Cannot activate a workflow with no steps");
     }
 
-    await this.db.update(hrWorkflowDefinitions)
+    await this.db
+      .update(hrWorkflowDefinitions)
       .set({ status: "active", updatedAt: new Date() })
-      .where(and(eq(hrWorkflowDefinitions.id, id), eq(hrWorkflowDefinitions.orgId, orgId)));
+      .where(
+        and(
+          eq(hrWorkflowDefinitions.id, id),
+          eq(hrWorkflowDefinitions.orgId, orgId),
+        ),
+      );
 
     return this.get(orgId, id);
   }
 
   async archive(orgId: string, id: number) {
     await this.get(orgId, id);
-    await this.db.update(hrWorkflowDefinitions)
+    await this.db
+      .update(hrWorkflowDefinitions)
       .set({ status: "archived", isDefault: false, updatedAt: new Date() })
-      .where(and(eq(hrWorkflowDefinitions.id, id), eq(hrWorkflowDefinitions.orgId, orgId)));
+      .where(
+        and(
+          eq(hrWorkflowDefinitions.id, id),
+          eq(hrWorkflowDefinitions.orgId, orgId),
+        ),
+      );
     return this.get(orgId, id);
   }
 
@@ -169,29 +251,37 @@ export class HrWorkflowDefinitionsService {
     const source = await this.get(orgId, id);
 
     const newName = `${source.name} (copy)`;
-    const [newDef] = await this.db.insert(hrWorkflowDefinitions).values({
-      orgId,
-      objectType: source.objectType,
-      name: newName,
-      status: "draft",
-      version: source.version + 1,
-      isDefault: false,
-      settings: source.settings ?? {},
-    }).returning();
+    const [newDef] = await this.db
+      .insert(hrWorkflowDefinitions)
+      .values({
+        orgId,
+        objectType: source.objectType,
+        name: newName,
+        status: "draft",
+        version: source.version + 1,
+        isDefault: false,
+        settings: source.settings ?? {},
+      })
+      .returning();
 
     if (!newDef) throw new Error("Duplicate failed");
 
-    await this.upsertSteps(newDef.id, source.steps.map((s): StepInput => ({
-      stepOrder: s.stepOrder,
-      name: s.name,
-      approverType: s.approverType,
-      approverValue: s.approverValue ?? null,
-      mode: s.mode,
-      slaHours: s.slaHours ?? null,
-      escalationApproverType: s.escalationApproverType,
-      escalationApproverValue: s.escalationApproverValue ?? null,
-      condition: s.condition ?? null,
-    })));
+    await this.upsertSteps(
+      newDef.id,
+      source.steps.map(
+        (s): StepInput => ({
+          stepOrder: s.stepOrder,
+          name: s.name,
+          approverType: s.approverType,
+          approverValue: s.approverValue ?? null,
+          mode: s.mode,
+          slaHours: s.slaHours ?? null,
+          escalationApproverType: s.escalationApproverType,
+          escalationApproverValue: s.escalationApproverValue ?? null,
+          condition: s.condition ?? null,
+        }),
+      ),
+    );
 
     return this.get(orgId, newDef.id);
   }
@@ -199,11 +289,19 @@ export class HrWorkflowDefinitionsService {
   async softDelete(orgId: string, id: number) {
     const definition = await this.get(orgId, id);
     if (definition.status === "active") {
-      throw new BadRequestException("Archive the definition before deleting it");
+      throw new BadRequestException(
+        "Archive the definition before deleting it",
+      );
     }
-    await this.db.update(hrWorkflowDefinitions)
+    await this.db
+      .update(hrWorkflowDefinitions)
       .set({ deletedAt: new Date() })
-      .where(and(eq(hrWorkflowDefinitions.id, id), eq(hrWorkflowDefinitions.orgId, orgId)));
+      .where(
+        and(
+          eq(hrWorkflowDefinitions.id, id),
+          eq(hrWorkflowDefinitions.orgId, orgId),
+        ),
+      );
   }
 
   async simulate(
@@ -221,14 +319,25 @@ export class HrWorkflowDefinitionsService {
       slaHours: s.slaHours,
       escalationApproverType: s.escalationApproverType,
       escalationApproverValue: s.escalationApproverValue,
-      condition: s.condition as { field: string; operator: string; value: unknown } | null,
+      condition: s.condition as {
+        field: string;
+        operator: string;
+        value: unknown;
+      } | null,
     }));
 
     const resolvedSteps = [];
     for (const step of steps) {
-      const conditionPasses = this.evaluateStepCondition(step.condition, input.context ?? {});
+      const conditionPasses = this.evaluateStepCondition(
+        step.condition,
+        input.context ?? {},
+      );
       const approvers = conditionPasses
-        ? await this.approver.resolveApprovers(step, input.subjectEmployeeId, orgId)
+        ? await this.approver.resolveApprovers(
+            step,
+            input.subjectEmployeeId,
+            orgId,
+          )
         : [];
       resolvedSteps.push({
         stepOrder: step.stepOrder,
@@ -257,7 +366,10 @@ export class HrWorkflowDefinitionsService {
   }
 
   private evaluateStepCondition(
-    condition: { field: string; operator: string; value: unknown } | null | undefined,
+    condition:
+      | { field: string; operator: string; value: unknown }
+      | null
+      | undefined,
     context: Record<string, unknown>,
   ): boolean {
     if (!condition) return true;
@@ -274,27 +386,44 @@ export class HrWorkflowDefinitionsService {
       case "lte":
         return Number(actual) <= Number(condition.value);
       case "in":
-        return Array.isArray(condition.value) && condition.value.includes(actual);
+        return (
+          Array.isArray(condition.value) && condition.value.includes(actual)
+        );
       default:
         return true;
     }
   }
 
-  private async clearOtherDefaults(orgId: string, objectType: typeof hrWorkflowDefinitions.$inferSelect["objectType"], excludeId: number) {
-    await this.db.update(hrWorkflowDefinitions)
+  private async clearOtherDefaults(
+    orgId: string,
+    objectType: (typeof hrWorkflowDefinitions.$inferSelect)["objectType"],
+    excludeId: number,
+  ) {
+    await this.db
+      .update(hrWorkflowDefinitions)
       .set({ isDefault: false })
-      .where(and(
-        eq(hrWorkflowDefinitions.orgId, orgId),
-        eq(hrWorkflowDefinitions.objectType, objectType),
-        isNull(hrWorkflowDefinitions.deletedAt),
-      ));
-    await this.db.update(hrWorkflowDefinitions)
+      .where(
+        and(
+          eq(hrWorkflowDefinitions.orgId, orgId),
+          eq(hrWorkflowDefinitions.objectType, objectType),
+          isNull(hrWorkflowDefinitions.deletedAt),
+        ),
+      );
+    await this.db
+      .update(hrWorkflowDefinitions)
       .set({ isDefault: true })
-      .where(and(eq(hrWorkflowDefinitions.id, excludeId), eq(hrWorkflowDefinitions.orgId, orgId)));
+      .where(
+        and(
+          eq(hrWorkflowDefinitions.id, excludeId),
+          eq(hrWorkflowDefinitions.orgId, orgId),
+        ),
+      );
   }
 
   private async upsertSteps(definitionId: number, steps: StepInput[]) {
-    await this.db.delete(hrWorkflowSteps).where(eq(hrWorkflowSteps.definitionId, definitionId));
+    await this.db
+      .delete(hrWorkflowSteps)
+      .where(eq(hrWorkflowSteps.definitionId, definitionId));
 
     if (steps.length > 0) {
       await this.db.insert(hrWorkflowSteps).values(

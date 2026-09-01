@@ -12,7 +12,7 @@ describe("FnfService — cross-tenant isolation", () => {
       },
     } as unknown as Db;
     const svc = new FnfService(db);
-    const result = await svc.listFnf(ATTACKER_ORG, "u1", true);
+    const result = await svc.listFnf(ATTACKER_ORG, "u1", null, true);
     expect(result).toHaveLength(0);
     const call = (db.query.fnfSettlements.findMany as jest.Mock).mock.calls[0]?.[0];
     const vals: unknown[] = [];
@@ -50,7 +50,7 @@ describe("FnfService — cross-tenant isolation", () => {
       },
     } as unknown as Db;
     const svc = new FnfService(db);
-    const result = await svc.listFnf(OWNER_ORG, "u1", true);
+    const result = await svc.listFnf(OWNER_ORG, "u1", null, true);
     expect(result).toHaveLength(1);
   });
 });

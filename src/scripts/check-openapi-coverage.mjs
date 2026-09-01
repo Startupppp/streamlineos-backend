@@ -16,16 +16,22 @@
  *      either the document is stale (run: pnpm openapi:generate) or the
  *      stamping code regressed.
  *
- * What this gate does NOT detect:
- *   - Handlers present in the running app but absent from the committed document
- *     (stale document). That is handled by pnpm openapi:check, which re-generates
- *     and diffs. Run it before this gate in a pre-commit pipeline.
- *   - Documented operations whose handler was deleted (zombies). Also handled by
- *     pnpm openapi:check.
- *   - Missing response schemas. The OperationContract system in
- *     src/common/openapi/ currently only projects request-side schemas (body,
- *     query, params). Response schema injection is not implemented; the 0-count
- *     is by architecture, not a gate regression.
+ *   3. ERROR SHAPES — at least MIN_ERROR_SHAPE_PCT% of operations carry a 4xx
+ *      $ref to a shared error response component.
+ *
+ *   4. RESPONSE SCHEMAS — every operation must have either a 2xx response key
+ *      or a declared response body schema (content) at any status code. An
+ *      operation that genuinely returns a non-2xx status (e.g. 405) is covered
+ *      when its response carries a content schema via @ApiResponse. Gate
+ *      requires exact coverage: N/N, never N-1/N.
+ *
+ *   5. MUTATING REQUEST SCHEMAS — every mutating operation (POST/PUT/PATCH)
+ *      that is not marked @BodylessAction() must carry a request body schema.
+ *      Gate requires exact coverage: N/N, never N-1/N.
+ *
+ * PERCENTAGE REPORTING
+ * Percentages are computed without rounding. "100%" prints only when
+ * numerator === denominator. All other values show two decimal places.
  *
  * VACUITY GUARD
  * Fewer than MIN_OPERATIONS parsed → exit 2 ("document is suspiciously small").
@@ -33,13 +39,12 @@
  * 3,000 to absorb legitimate module deletions without constant maintenance.
  *
  * SELF-TEST (--self-test)
- * Runs five synthetic cases through the same detection functions:
- *   bad-missing-exposure  — an op with no x-exposure → must flag it
- *   bad-invalid-exposure  — an op with x-exposure="UNKNOWN" → must flag it
- *   good-all-valid        — all ops have valid exposure → must pass
- *   good-mixed-exposure   — all four valid values present → must pass
- *   vacuity-trigger       — a document with fewer than MIN_OPERATIONS ops → must
- *                           detect vacuity (the guard function returns true)
+ * Runs synthetic cases through the detection functions and gate logic:
+ *   Exposure checks (5 cases)
+ *   Vacuity checks (4 cases)
+ *   Error-shape checks (2 cases)
+ *   Response-schema checks (3 cases including a gate-bite negative)
+ *   Mutating request-schema checks (3 cases including a gate-bite negative)
  * The self-test fails loudly if any case does not behave as expected.
  *
  * Usage:
@@ -49,7 +54,7 @@
  *
  * Exit codes:
  *   0 — clean (or self-test passed)
- *   1 — exposure violations found (or self-test failed)
+ *   1 — coverage violations found (or self-test failed)
  *   2 — vacuity check failed, document unreadable, or self-test infrastructure error
  */
 
@@ -66,7 +71,16 @@ const MUTATING_METHODS = new Set(["post", "put", "patch"]);
 const VALID_EXPOSURES = new Set(["permissioned", "public", "universal", "in-service"]);
 const MIN_OPERATIONS = 3000;
 const MIN_ERROR_SHAPE_PCT = 95;
-const MIN_MUTATING_REQUEST_SCHEMA_PCT = 60;
+
+/**
+ * Format a coverage percentage. Never prints "100%" unless covered === total.
+ * Returns "100%" only on exact equality; otherwise two decimal places.
+ */
+export function formatPct(covered, total) {
+  if (total === 0) return "100%";
+  if (covered === total) return "100%";
+  return `${((covered / total) * 100).toFixed(2)}%`;
+}
 
 /**
  * Count all HTTP operations across all paths.
@@ -149,6 +163,14 @@ export function findMissingErrorShapes(document) {
   return violations;
 }
 
+/**
+ * Find operations that have no declared response body.
+ * An operation is covered when it has either:
+ *   - a 2xx response key (NestJS Swagger auto-generates these for normal handlers), or
+ *   - any response with a "content" field (covers handlers that genuinely return a
+ *     non-2xx status such as 405 and declare it via @ApiResponse with a schema).
+ * Operations with only $ref error stubs and no declared success schema are flagged.
+ */
 export function findMissingResponseSchemas(document) {
   const violations = [];
   const paths = document.paths;
@@ -164,8 +186,13 @@ export function findMissingResponseSchemas(document) {
           const num = parseInt(code, 10);
           return num >= 200 && num < 300;
         });
-      if (!has2xx) {
-        violations.push({ method: method.toUpperCase(), path: pathTemplate, issue: "no 2xx response body schema" });
+      const hasResponseWithContent = typeof responses === "object" && responses !== null &&
+        Object.values(responses).some((resp) =>
+          typeof resp === "object" && resp !== null &&
+          typeof resp["content"] === "object" && resp["content"] !== null
+        );
+      if (!has2xx && !hasResponseWithContent) {
+        violations.push({ method: method.toUpperCase(), path: pathTemplate, issue: "no declared response body schema" });
       }
     }
   }
@@ -335,7 +362,28 @@ if (SELF_TEST) {
   const rsBadResult = findMissingResponseSchemas(responseSchemaBad);
   if (rsBadResult.length !== 2)
     fail("bad-missing-response-schemas", `expected 2 violations, got ${JSON.stringify(rsBadResult)}`);
-  else pass("bad-missing-response-schemas — ops without 2xx entry are flagged");
+  else pass("bad-missing-response-schemas — ops without 2xx entry or declared content are flagged");
+
+  const responseSchemaWithNon2xx = makeFullDoc([
+    { path: "/a", method: "get", responses: { "200": { description: "OK" } } },
+    { path: "/b", method: "get", responses: { "405": { description: "Method Not Allowed", content: { "application/json": { schema: { type: "object" } } } } } },
+  ]);
+  const rsNon2xxResult = findMissingResponseSchemas(responseSchemaWithNon2xx);
+  if (rsNon2xxResult.length !== 0)
+    fail("good-non-2xx-with-content", `expected 0 violations for non-2xx op with declared content, got ${JSON.stringify(rsNon2xxResult)}`);
+  else pass("good-non-2xx-with-content — 405 op with declared content schema is not flagged");
+
+  const responseNeg = makeFullDoc([
+    { path: "/a", method: "get", responses: { "200": { description: "OK" } } },
+    { path: "/b", method: "post", responses: { "400": { $ref: "#/components/responses/BadRequest" } } },
+  ]);
+  const rsNegViolations = findMissingResponseSchemas(responseNeg);
+  const rsNegTotal = 2;
+  const rsNegCovered = rsNegTotal - rsNegViolations.length;
+  const rsGateWouldFail = rsNegCovered < rsNegTotal;
+  if (!rsGateWouldFail)
+    fail("neg-response-schema-gate", `N-1 coverage (${String(rsNegCovered)}/${String(rsNegTotal)}) should cause the gate to fail`);
+  else pass(`neg-response-schema-gate — gate bites: ${String(rsNegCovered)}/${String(rsNegTotal)} coverage fails (${formatPct(rsNegCovered, rsNegTotal)})`);
 
   const mutatingBodyGood = makeFullDoc([
     { path: "/a", method: "post", requestBody: { required: true, content: {} } },
@@ -356,6 +404,27 @@ if (SELF_TEST) {
   if (mbBadResult.length !== 2)
     fail("bad-mutating-request-schemas", `expected 2 violations (POST and PUT), got ${JSON.stringify(mbBadResult)}`);
   else pass("bad-mutating-request-schemas — POST and PUT without requestBody are flagged; GET ignored");
+
+  const mutatingNegOps = [
+    ...Array.from({ length: 9 }, (_, i) => ({ path: `/covered${String(i)}`, method: "post", requestBody: { required: true, content: {} } })),
+    { path: "/uncovered", method: "post" },
+  ];
+  const mutatingNeg = makeFullDoc(mutatingNegOps);
+  const mbNegViolations = findMissingMutatingRequestSchemas(mutatingNeg);
+  const mbNegTotal = 10;
+  const mbNegCovered = mbNegTotal - mbNegViolations.length;
+  const mbGateWouldFail = mbNegCovered < mbNegTotal;
+  if (!mbGateWouldFail)
+    fail("neg-request-schema-gate", `N-1 coverage (${String(mbNegCovered)}/${String(mbNegTotal)}) should cause the gate to fail`);
+  else pass(`neg-request-schema-gate — gate bites: ${String(mbNegCovered)}/${String(mbNegTotal)} coverage fails (${formatPct(mbNegCovered, mbNegTotal)})`);
+
+  if (formatPct(9, 10) === "100%")
+    fail("formatPct-no-false-100", "formatPct(9, 10) must not return '100%'");
+  else pass(`formatPct-no-false-100 — formatPct(9, 10) = "${formatPct(9, 10)}", not "100%"`);
+
+  if (formatPct(10, 10) !== "100%")
+    fail("formatPct-exact-100", "formatPct(10, 10) must return '100%'");
+  else pass("formatPct-exact-100 — formatPct(10, 10) returns '100%'");
 
   if (failed) {
     process.stderr.write("\nSELF-TEST FAILED\n");
@@ -428,14 +497,14 @@ process.stdout.write(`  OK — all ${String(exposed)} operations are exposure-st
 
 const errorShapeViolations = findMissingErrorShapes(document);
 const errorShapeCovered = totalOperations - errorShapeViolations.length;
-const errorShapePct = totalOperations > 0 ? Math.round((errorShapeCovered / totalOperations) * 100) : 0;
+const errorShapePct = formatPct(errorShapeCovered, totalOperations);
 process.stdout.write(
-  `  error-shapes: ${String(errorShapeCovered)}/${String(totalOperations)} ops have a 4xx $ref (${String(errorShapePct)}%)` +
+  `  error-shapes: ${String(errorShapeCovered)}/${String(totalOperations)} ops have a 4xx $ref (${errorShapePct})` +
   ` [threshold: ${String(MIN_ERROR_SHAPE_PCT)}%]\n`,
 );
-if (errorShapePct < MIN_ERROR_SHAPE_PCT) {
+if (errorShapeCovered < Math.ceil(totalOperations * MIN_ERROR_SHAPE_PCT / 100)) {
   process.stderr.write(
-    `check-openapi-coverage: FAIL — error-shape coverage ${String(errorShapePct)}% is below the ${String(MIN_ERROR_SHAPE_PCT)}% threshold.\n` +
+    `check-openapi-coverage: FAIL — error-shape coverage ${errorShapePct} is below the ${String(MIN_ERROR_SHAPE_PCT)}% threshold.\n` +
     `Run: pnpm openapi:generate to regenerate with applyErrorResponses injecting standard error refs.\n`,
   );
   if (errorShapeViolations.length > 0) {
@@ -450,11 +519,24 @@ if (errorShapePct < MIN_ERROR_SHAPE_PCT) {
 
 const responseSchemaViolations = findMissingResponseSchemas(document);
 const responseSchemaCovered = totalOperations - responseSchemaViolations.length;
-const responseSchemaPct = totalOperations > 0 ? Math.round((responseSchemaCovered / totalOperations) * 100) : 0;
+const responseSchemaPct = formatPct(responseSchemaCovered, totalOperations);
 process.stdout.write(
-  `  response-schemas: ${String(responseSchemaCovered)}/${String(totalOperations)} ops have a 2xx body (${String(responseSchemaPct)}%)` +
-  ` [informational — wire @ResponseSchema() handlers to increase]\n`,
+  `  response-schemas: ${String(responseSchemaCovered)}/${String(totalOperations)} ops have a declared response body (${responseSchemaPct})\n`,
 );
+if (responseSchemaCovered < totalOperations) {
+  process.stderr.write(
+    `check-openapi-coverage: FAIL — response-schema coverage ${String(responseSchemaCovered)}/${String(totalOperations)} is not complete.\n` +
+    `Add @ResponseSchema(schema) to handlers or @ApiResponse({ status, schema }) for non-2xx responses.\n`,
+  );
+  if (responseSchemaViolations.length > 0) {
+    for (const { method, path, issue } of responseSchemaViolations.slice(0, 30)) {
+      process.stderr.write(`  ${method.padEnd(6)} ${path}  — ${issue}\n`);
+    }
+    if (responseSchemaViolations.length > 30)
+      process.stderr.write(`  ... and ${String(responseSchemaViolations.length - 30)} more\n`);
+  }
+  process.exit(1);
+}
 
 const mutatingViolations = findMissingMutatingRequestSchemas(document);
 const mutatingTotal = (() => {
@@ -473,14 +555,13 @@ const mutatingTotal = (() => {
   return n;
 })();
 const mutatingCovered = mutatingTotal - mutatingViolations.length;
-const mutatingPct = mutatingTotal > 0 ? Math.round((mutatingCovered / mutatingTotal) * 100) : 100;
+const mutatingPct = formatPct(mutatingCovered, mutatingTotal);
 process.stdout.write(
-  `  request-schemas (mutating): ${String(mutatingCovered)}/${String(mutatingTotal)} ops have a body schema (${String(mutatingPct)}%)` +
-  ` [threshold: ${String(MIN_MUTATING_REQUEST_SCHEMA_PCT)}%]\n`,
+  `  request-schemas (mutating): ${String(mutatingCovered)}/${String(mutatingTotal)} ops have a body schema (${mutatingPct})\n`,
 );
-if (mutatingPct < MIN_MUTATING_REQUEST_SCHEMA_PCT) {
+if (mutatingCovered < mutatingTotal) {
   process.stderr.write(
-    `check-openapi-coverage: FAIL — mutating request-schema coverage ${String(mutatingPct)}% is below the ${String(MIN_MUTATING_REQUEST_SCHEMA_PCT)}% threshold.\n` +
+    `check-openapi-coverage: FAIL — mutating request-schema coverage ${String(mutatingCovered)}/${String(mutatingTotal)} is not complete.\n` +
     `Add @Validate({ body: schema }) to mutating handlers or mark them @BodylessAction().\n`,
   );
   if (mutatingViolations.length > 0) {
@@ -493,5 +574,5 @@ if (mutatingPct < MIN_MUTATING_REQUEST_SCHEMA_PCT) {
   process.exit(1);
 }
 
-process.stdout.write("  OK — all coverage thresholds met\n");
+process.stdout.write("  OK — all coverage gates passed\n");
 process.exit(0);

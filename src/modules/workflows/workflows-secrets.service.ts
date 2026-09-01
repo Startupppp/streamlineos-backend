@@ -29,7 +29,8 @@ export class WorkflowsSecretsService {
     return this.db
       .select(SECRET_COLUMNS)
       .from(workflowSecrets)
-      .where(eq(workflowSecrets.orgId, orgId));
+      .where(eq(workflowSecrets.orgId, orgId))
+      .limit(200);
   }
 
   async createSecret(orgId: string, workflowId: string, dto: CreateSecretDto) {
@@ -84,7 +85,8 @@ export class WorkflowsSecretsService {
       })
       .from(workflowSecrets)
       .where(eq(workflowSecrets.orgId, orgId))
-      .orderBy(desc(workflowSecrets.createdAt));
+      .orderBy(desc(workflowSecrets.createdAt))
+      .limit(200);
   }
 
   async createGlobalSecret(orgId: string, dto: CreateSecretDto) {

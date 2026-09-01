@@ -19,12 +19,19 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
+import {
+  decodeCursor,
+  buildCursorPage,
+} from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
   hrSafetyIncidents,
   hrWellnessCheckins,
 } from "../../../db/schema/hr/safety";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { HrAuditService } from "../core/hr-audit.service";
 import type {
   CreateIncidentInput,
@@ -52,9 +59,9 @@ export class HrSafetyService {
   ) {}
 
   async listIncidents(orgId: string, input: ListIncidentsInput) {
-    const { page, limit, status, type, severity, search, fromDate, toDate } =
+    const { cursor, limit, status, type, severity, search, fromDate, toDate } =
       input;
-    const offset = (page - 1) * limit;
+    const pos = decodeCursor(cursor);
 
     const conditions = [
       eq(hrSafetyIncidents.orgId, orgId),
@@ -69,41 +76,34 @@ export class HrSafetyService {
       conditions.push(gte(hrSafetyIncidents.occurredAt, new Date(fromDate)));
     if (toDate)
       conditions.push(lte(hrSafetyIncidents.occurredAt, new Date(toDate)));
+    if (pos)
+      conditions.push(
+        keysetBeforeId(hrSafetyIncidents.occurredAt, hrSafetyIncidents.id, pos),
+      );
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select({
+        id: hrSafetyIncidents.id,
+        incidentNumber: hrSafetyIncidents.incidentNumber,
+        type: hrSafetyIncidents.type,
+        location: hrSafetyIncidents.location,
+        occurredAt: hrSafetyIncidents.occurredAt,
+        reportedBy: hrSafetyIncidents.reportedBy,
+        severity: hrSafetyIncidents.severity,
+        status: hrSafetyIncidents.status,
+        medicalAttention: hrSafetyIncidents.medicalAttention,
+        createdAt: hrSafetyIncidents.createdAt,
+        description: hrSafetyIncidents.description,
+      })
+      .from(hrSafetyIncidents)
+      .where(and(...conditions))
+      .orderBy(desc(hrSafetyIncidents.occurredAt), desc(hrSafetyIncidents.id))
+      .limit(limit + 1);
 
-    const [rows, totalResult] = await Promise.all([
-      this.db
-        .select({
-          id: hrSafetyIncidents.id,
-          incidentNumber: hrSafetyIncidents.incidentNumber,
-          type: hrSafetyIncidents.type,
-          location: hrSafetyIncidents.location,
-          occurredAt: hrSafetyIncidents.occurredAt,
-          reportedBy: hrSafetyIncidents.reportedBy,
-          severity: hrSafetyIncidents.severity,
-          status: hrSafetyIncidents.status,
-          medicalAttention: hrSafetyIncidents.medicalAttention,
-          createdAt: hrSafetyIncidents.createdAt,
-          description: hrSafetyIncidents.description,
-        })
-        .from(hrSafetyIncidents)
-        .where(where)
-        .orderBy(desc(hrSafetyIncidents.occurredAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrSafetyIncidents).where(where),
-    ]);
-
-    return {
-      data: rows,
-      pagination: {
-        page,
-        limit,
-        total: totalResult[0]?.total ?? 0,
-        totalPages: Math.ceil((totalResult[0]?.total ?? 0) / limit),
-      },
-    };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.occurredAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   private async incidentSearchCondition(search: string): Promise<SQL> {
@@ -263,12 +263,14 @@ export class HrSafetyService {
     });
   }
 
-  async upsertCheckin(orgId: string, userId: string, input: CheckinInput) {
+  async upsertCheckin(u: CurrentUserContext, input: CheckinInput) {
+    const membershipId = actingMembershipId(u.principal);
     const [row] = await this.db
       .insert(hrWellnessCheckins)
       .values({
-        orgId,
-        userId,
+        orgId: u.orgId,
+        userId: u.userId,
+        userMembershipId: membershipId,
         date: input.date,
         score: input.score,
         flags: input.flags ?? null,
@@ -282,6 +284,7 @@ export class HrSafetyService {
         set: {
           score: input.score,
           flags: input.flags ?? null,
+          ...(membershipId != null && { userMembershipId: membershipId }),
         },
       })
       .returning();
@@ -290,14 +293,17 @@ export class HrSafetyService {
   }
 
   async myCheckins(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     fromDate?: string,
     toDate?: string,
   ) {
+    const membershipId = actingMembershipId(u.principal);
+    const ownerPredicate = membershipId != null
+      ? or(eq(hrWellnessCheckins.userMembershipId, membershipId), eq(hrWellnessCheckins.userId, u.userId))!
+      : eq(hrWellnessCheckins.userId, u.userId);
     const conditions = [
-      eq(hrWellnessCheckins.orgId, orgId),
-      eq(hrWellnessCheckins.userId, userId),
+      eq(hrWellnessCheckins.orgId, u.orgId),
+      ownerPredicate,
     ];
 
     if (fromDate) conditions.push(gte(hrWellnessCheckins.date, fromDate));

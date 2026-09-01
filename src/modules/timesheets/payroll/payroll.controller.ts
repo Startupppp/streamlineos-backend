@@ -40,7 +40,7 @@ import { z } from "zod";
 
 const exportIdParams = z.object({ exportId: z.coerce.number().int().positive() }).strict();
 
-@RequireModule("build")
+@RequireModule("timesheets")
 @Controller("timesheets/payroll")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PayrollController {

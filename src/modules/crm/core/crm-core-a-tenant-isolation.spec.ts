@@ -206,7 +206,7 @@ describe("CrmPeopleService — cross-tenant isolation", () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const db = { query: { crmPeople: { findMany } } } as unknown as Db;
     const svc = new CrmPeopleService(db);
-    const result = await svc.getAllPeopleSlugs(ATTACKER);
+    const result = await svc.getAllPeopleSlugs(ATTACKER, "all");
     expect(Object.keys(result)).toHaveLength(0);
     expect(findMany).toHaveBeenCalled();
     expect(sqlValues(findMany.mock.calls[0]?.[0]?.where)).toContain(ATTACKER);
@@ -217,7 +217,7 @@ describe("CrmPeopleService — cross-tenant isolation", () => {
     const findMany = jest.fn().mockResolvedValue([row]);
     const db = { query: { crmPeople: { findMany } } } as unknown as Db;
     const svc = new CrmPeopleService(db);
-    const result = await svc.getAllPeopleSlugs(OWNER);
+    const result = await svc.getAllPeopleSlugs(OWNER, "all");
     expect(Object.keys(result).length).toBeGreaterThan(0);
   });
 });

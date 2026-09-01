@@ -55,6 +55,9 @@ export const visitSchema = z.object({
 
 export type VisitInput = z.infer<typeof visitSchema>;
 
+export const visitUsageResponseSchema = z.object({ usage: z.string() }).strict();
+export type VisitUsageResponse = z.infer<typeof visitUsageResponseSchema>;
+
 export const listMessagesQuerySchema = z.object({
   status: z.enum(["NEW", "READ", "REPLIED", "ARCHIVED", "ALL"]).optional(),
   topic: z.string().optional(),

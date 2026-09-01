@@ -42,6 +42,7 @@ export const hrMoodCheckins = pgTable(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    userMembershipId: integer("user_membership_id"),
     date: text("date").notNull(),
     mood: integer("mood").notNull(),
     note: text("note"),
@@ -51,6 +52,7 @@ export const hrMoodCheckins = pgTable(
     unique("uniq_hr_mood_checkins_org_id").on(t.orgId, t.id),
     uniqueIndex("uniq_mood_org_user_date").on(t.orgId, t.userId, t.date),
     index("idx_mood_checkins_org_date").on(t.orgId, t.date),
+    index("idx_mood_checkins_org_user_membership").on(t.orgId, t.userMembershipId),
   ],
 );
 

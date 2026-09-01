@@ -251,6 +251,7 @@ export const resignations = pgTable("resignations", {
   exitInterviewDate: timestamp("exit_interview_date"),
   exitInterviewConductedBy: text("exit_interview_conducted_by").references(() => users.id),
   feedback: jsonb("feedback").$type<{ question: string; answer: string }[]>(),
+  userMembershipId: integer("user_membership_id"),
   rowVersion: integer("row_version").default(1).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -258,6 +259,7 @@ export const resignations = pgTable("resignations", {
   unique("uniq_resignations_org_id").on(table.orgId, table.id),
   index("idx_resignations_org").on(table.orgId),
   index("idx_resignations_user").on(table.userId),
+  index("idx_resignations_org_user_membership").on(table.orgId, table.userMembershipId),
   check("chk_resignations_row_version", sql`${table.rowVersion} > 0`),
 ]);
 

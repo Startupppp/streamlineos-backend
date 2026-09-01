@@ -2,6 +2,8 @@ import { Injectable, BadGatewayException, OnModuleInit } from "@nestjs/common";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { outboundRequest, OutboundRequestError } from "../../../../common/http/outbound-request";
+import { callProvider, type FailureClass } from "../../../../common/outbound/call-provider";
+import { ProviderCircuitBreaker } from "../../../../common/outbound/provider-circuit-breaker";
 import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning, type PaymentProviderAdapter, type PaymentProviderRuntime, type PaymentWebhookNormalization } from "../payment-provider-adapter.interface";
 import { webhookEnvelopeSchema } from "../dto/webhook.schemas";
 interface TenantRazorpayCredentials {
@@ -30,6 +32,29 @@ function constantTimeEquals(expected: string, provided: string): boolean {
     return false;
   }
 }
+
+class RazorpayServerError extends Error {
+  constructor(description: string) {
+    super(description);
+    this.name = "RazorpayServerError";
+  }
+}
+
+class RazorpayClientError extends Error {
+  constructor(description: string) {
+    super(description);
+    this.name = "RazorpayClientError";
+  }
+}
+
+function classifyRazorpayError(error: unknown): FailureClass {
+  if (error instanceof RazorpayClientError) return "terminal";
+  if (error instanceof OutboundRequestError) return "retryable";
+  if (error instanceof RazorpayServerError) return "retryable";
+  return "retryable";
+}
+
+const razorpayBreaker = new ProviderCircuitBreaker();
 
 @Injectable()
 export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
@@ -85,11 +110,17 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
       }): Promise<{ providerOrderId: string; raw: unknown }> => {
     if (!keyId || !keySecret) throw new Error("Payment provider credentials are not configured");
     const auth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
-    const MAX_ATTEMPTS = 3;
-    let lastError: unknown;
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      if (attempt > 0) await new Promise<void>((r) => setTimeout(r, 100 * 2 ** (attempt - 1)));
-      try {
+
+    const result = await callProvider(
+      {
+        provider: "razorpay-orders",
+        timeoutMs: 10_000,
+        maxAttempts: 3,
+        baseDelayMs: 200,
+        maxDelayMs: 5_000,
+        classify: classifyRazorpayError,
+      },
+      async () => {
         const response = await outboundRequest("https://api.razorpay.com/v1/orders", {
           provider: "razorpay-tenant",
           timeoutMs: 10_000,
@@ -109,21 +140,22 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
           const raw: unknown = await response.json().catch(() => ({}));
           const parsed = razorpayOrderErrorSchema.safeParse(raw);
           const description = parsed.success ? parsed.data.error?.description ?? "Unknown error" : "Unknown error";
-          const ex = new BadGatewayException(`Razorpay order creation failed: ${description}`);
-          if (response.status >= 500) { lastError = ex; continue; }
-          throw ex;
+          if (response.status >= 500) throw new RazorpayServerError(description);
+          throw new RazorpayClientError(description);
         }
         const data: unknown = await response.json();
-        const order = razorpayOrderResponseSchema.parse(data);
-        return { providerOrderId: order.id, raw: order };
-      } catch (err) {
-        if (err instanceof OutboundRequestError) { lastError = err; continue; }
-        throw err;
-      }
+        return razorpayOrderResponseSchema.parse(data);
+      },
+      razorpayBreaker,
+    );
+
+    if (!result.ok) {
+      const msg = result.kind === "circuit-open"
+        ? `Razorpay circuit breaker open, retry after ${result.retryAfterMs}ms`
+        : `Razorpay order creation failed after ${result.attempts} attempt(s): ${result.error.message}`;
+      throw new BadGatewayException(msg);
     }
-    if (lastError instanceof OutboundRequestError)
-      throw new BadGatewayException(`Razorpay did not respond after ${MAX_ATTEMPTS} attempts: ${lastError.message}`);
-    throw lastError as Error;
+    return { providerOrderId: result.value.id, raw: result.value };
       },
 
       verifyPaymentSignature: (params) => {

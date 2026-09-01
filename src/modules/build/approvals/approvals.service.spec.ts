@@ -20,6 +20,7 @@ const makeApprovalRow = (
   entityId: 1,
   title: "Review this",
   approverId: "approver-1",
+  approverMembershipId: 1,
   requestedById: "user-1",
   status: "pending",
   level: 1,
@@ -91,7 +92,7 @@ describe("ApprovalsService.decideApproval", () => {
       mockChatMessages,
     );
     (mockDb as unknown as { query: { projectApprovals: { findFirst: jest.Mock } } }).query.projectApprovals.findFirst.mockResolvedValue(
-      makeApprovalRow({ approverId: "approver-1" }),
+      makeApprovalRow({ approverId: "approver-1", approverMembershipId: 999 }),
     );
     (mockAccess.holds as jest.Mock).mockResolvedValue(false);
 
@@ -108,7 +109,7 @@ describe("ApprovalsService.decideApproval", () => {
       mockChatChannels,
       mockChatMessages,
     );
-    const approval = makeApprovalRow({ approverId: "approver-1", status: "pending" });
+    const approval = makeApprovalRow({ approverId: "approver-1", approverMembershipId: 999, status: "pending" });
     (mockDb as unknown as { query: { projectApprovals: { findFirst: jest.Mock } } }).query.projectApprovals.findFirst.mockResolvedValue(approval);
     (mockAccess.holds as jest.Mock).mockResolvedValue(true);
     const updateChain = {
@@ -170,5 +171,46 @@ describe("ApprovalsService.decideApproval", () => {
     await expect(
       svc.decideApproval(makeUser({ orgId: "org-2" }), 1, 99, { decision: "approved" }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it("revoked-member: caller whose membershipId no longer matches approverMembershipId is denied without manage permission", async () => {
+    const svc = new ApprovalsService(
+      mockDb,
+      mockAudit,
+      mockAccess,
+      mockChatChannels,
+      mockChatMessages,
+    );
+    (mockDb as unknown as { query: { projectApprovals: { findFirst: jest.Mock } } }).query.projectApprovals.findFirst.mockResolvedValue(
+      makeApprovalRow({ approverMembershipId: 999, status: "pending" }),
+    );
+    (mockAccess.holds as jest.Mock).mockResolvedValue(false);
+
+    await expect(
+      svc.decideApproval(makeUser({ principal: humanSessionPrincipal(1, false) }), 1, 1, { decision: "approved" }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it("approverMembershipId match: caller whose membershipId matches approverMembershipId can decide without manage permission", async () => {
+    const svc = new ApprovalsService(
+      mockDb,
+      mockAudit,
+      mockAccess,
+      mockChatChannels,
+      mockChatMessages,
+    );
+    const approval = makeApprovalRow({ approverMembershipId: 1, status: "pending" });
+    (mockDb as unknown as { query: { projectApprovals: { findFirst: jest.Mock } } }).query.projectApprovals.findFirst.mockResolvedValue(approval);
+    const updateChain = {
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      returning: jest.fn().mockResolvedValue([{ ...approval, status: "approved", decidedAt: new Date() }]),
+    };
+    (mockDb as unknown as { update: jest.Mock }).update = jest.fn().mockReturnValue(updateChain);
+
+    await expect(
+      svc.decideApproval(makeUser({ principal: humanSessionPrincipal(1, false) }), 1, 1, { decision: "approved" }),
+    ).resolves.toBeDefined();
+    expect(mockAccess.holds).not.toHaveBeenCalled();
   });
 });

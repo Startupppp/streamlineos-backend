@@ -63,8 +63,8 @@ describe("LoansService.createLoan — cross-org write guard", () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
-  it("allows a self-service loan request without a membership lookup", async () => {
-    const db = makeDb(undefined, [{ id: 7, userId: "self-user" }]);
+  it("allows a self-service loan request and sets userMembershipId from the caller's own membership", async () => {
+    const db = makeDb({ id: 5 }, [{ id: 7, userId: "self-user" }]);
     const service = new LoansService(db as never);
 
     const result = await service.createLoan("org-a", "self-user", false, {
@@ -74,7 +74,8 @@ describe("LoansService.createLoan — cross-org write guard", () => {
     } as never);
 
     expect(result).toMatchObject({ id: 7 });
-    expect(db.query.organizationMembers.findFirst).not.toHaveBeenCalled();
+    expect(db.query.organizationMembers.findFirst).toHaveBeenCalled();
+    expect(db.insert).toHaveBeenCalled();
   });
 
   it("allows an admin creating a loan for a confirmed org member", async () => {

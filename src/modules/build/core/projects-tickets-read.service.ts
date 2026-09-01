@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { actingMembershipId } from "../../../common/auth/principal";
 import {
   and,
   asc,
@@ -131,17 +132,21 @@ export class ProjectsTicketsReadService {
     orgId: string,
     userId: string,
     projectId: number,
+    membershipId: number | null = null,
   ): Promise<{ hasAccess: boolean; role: string | null }> {
     const [perms, project] = await Promise.all([
       this.access.resolveUserPermissions(orgId, userId),
       this.db.query.projects.findFirst({
         where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-        columns: { managerId: true },
+        columns: { managerId: true, managerMembershipId: true },
       }),
     ]);
     if (!project) return { hasAccess: false, role: null };
     if (perms.has("build:manage")) return { hasAccess: true, role: "OWNER" };
-    if (project.managerId === userId)
+    if (
+      (membershipId !== null && project.managerMembershipId === membershipId) ||
+      project.managerId === userId
+    )
       return { hasAccess: true, role: "MANAGER" };
     const membership = await this.db
       .select({ id: projectMembers.id, role: projectMembers.role })
@@ -204,6 +209,7 @@ export class ProjectsTicketsReadService {
       u.orgId,
       u.userId,
       projectId,
+      actingMembershipId(u.principal),
     );
     if (!hasAccess) throw new NotFoundException("Not found");
 

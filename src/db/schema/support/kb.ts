@@ -13,7 +13,7 @@ import {
   unique,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { kbSpaces } from "../kb/spaces";
 
 export const kbArticleStatusEnum = pgEnum("kb_article_status", ["draft", "in_review", "published", "archived"]);
@@ -76,6 +76,7 @@ export const kbArticles = pgTable(
     visibility: kbArticleVisibilityEnum("visibility").default("internal").notNull(),
     authorId: text("author_id").references(() => users.id, { onDelete: "set null" }),
     ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
+    ownerMembershipId: integer("owner_membership_id"),
     views: integer("views").default(0).notNull(),
     helpfulCount: integer("helpful_count").default(0).notNull(),
     notHelpfulCount: integer("not_helpful_count").default(0).notNull(),
@@ -102,6 +103,12 @@ export const kbArticles = pgTable(
     index("idx_kb_articles_org_status_views").on(table.orgId, table.status, table.views),
     index("idx_kb_articles_fts").using("gin", table.fts),
     unique("uniq_kb_articles_org_id").on(table.orgId, table.id),
+    index("idx_kb_articles_org_owner_actor").on(table.orgId, table.ownerMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.ownerMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_kb_articles_owner_actor",
+    }).onDelete("set null"),
     foreignKey({
       columns: [table.orgId, table.categoryId],
       foreignColumns: [kbCategories.orgId, kbCategories.id],

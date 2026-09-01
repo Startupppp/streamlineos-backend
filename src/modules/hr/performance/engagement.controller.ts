@@ -121,7 +121,7 @@ export class EngagementController {
     @Body() body: CreateRecognitionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.engagement.createRecognition(u.orgId, u.userId, body);
+    return this.engagement.createRecognition(u, body);
   }
 
   @Get("enps")

@@ -1,10 +1,10 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex, numeric, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex, numeric, primaryKey, foreignKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   subscriptionStatusEnum,
   subscriptionPlanEnum,
 } from "./enums";
-import { organizations, users } from "./auth";
+import { organizations, users, organizationMembers } from "./auth";
 
 export const subscriptions = pgTable("subscriptions", {
   id: serial("id").primaryKey(),
@@ -34,7 +34,8 @@ export const subscriptionPayments = pgTable("subscription_payments", {
   subscriptionId: integer("subscription_id").references(() => subscriptions.id, { onDelete: "cascade" }).notNull(),
   razorpayPaymentId: text("razorpay_payment_id"),
   razorpayOrderId: text("razorpay_order_id"),
-  amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
+  amount: numeric("amount", { precision: 15, scale: 2 }),
+  amountPaise: integer("amount_paise").notNull(),
   currency: text("currency").default("INR").notNull(),
   status: text("status").notNull(),
   paidAt: timestamp("paid_at"),
@@ -72,13 +73,21 @@ export const couponRedemptions = pgTable("coupon_redemptions", {
   couponId: integer("coupon_id").references(() => coupons.id, { onDelete: "cascade" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  membershipId: integer("membership_id"),
   amount: numeric("amount", { precision: 15, scale: 2 }),
+  amountPaise: integer("amount_paise").notNull(),
   redeemedAt: timestamp("redeemed_at").defaultNow().notNull(),
 }, (table) => [
   unique("uq_coupon_redemptions_coupon_org").on(table.couponId, table.orgId),
   index("idx_coupon_redemptions_coupon").on(table.couponId),
   index("idx_coupon_redemptions_org").on(table.orgId),
+  index("idx_coupon_redemptions_org_membership").on(table.orgId, table.membershipId),
   unique("uniq_coupon_redemptions_org_id").on(table.orgId, table.id),
+  foreignKey({
+    name: "fk_coupon_redemptions_actor",
+    columns: [table.orgId, table.membershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("set null"),
 ]);
 
 export const subscriptionsRelations = relations(subscriptions, ({ one, many }) => ({

@@ -12,26 +12,26 @@ function generateCode(): string {
 export class AffiliateService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async register(userId: string, orgId: string) {
+  async register(userId: string, orgId: string, membershipId: number) {
     const [existing] = await this.db
       .select()
       .from(affiliates)
-      .where(eq(affiliates.userId, userId));
+      .where(and(eq(affiliates.orgId, orgId), eq(affiliates.userMembershipId, membershipId)));
     if (existing) throw new ConflictException("Already registered as affiliate");
 
     const referralCode = generateCode();
     const [affiliate] = await this.db
       .insert(affiliates)
-      .values({ userId, orgId, referralCode, status: "ACTIVE" })
+      .values({ userId, orgId, referralCode, status: "ACTIVE", userMembershipId: membershipId })
       .returning();
     return affiliate;
   }
 
-  async getDashboard(userId: string) {
+  async getDashboard(userId: string, orgId: string, membershipId: number) {
     const [affiliate] = await this.db
       .select()
       .from(affiliates)
-      .where(eq(affiliates.userId, userId));
+      .where(and(eq(affiliates.orgId, orgId), eq(affiliates.userMembershipId, membershipId)));
     if (!affiliate) return null;
 
     const commissions = await this.db

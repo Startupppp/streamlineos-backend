@@ -1,6 +1,6 @@
 import { Inject, Injectable, BadRequestException } from "@nestjs/common";
 import { inArray, eq, and, sql } from "drizzle-orm";
-import { notifications, notificationDeliveries, notificationQueue, notificationOutbox, notificationPreferences, userPreferences, users } from "../../db/schema";
+import { notifications, notificationDeliveries, notificationQueue, notificationOutbox, notificationPreferences, userPreferences, users, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { buildNotifOutboxDedupeKey, buildNotifIdempotencyKey } from "./notification-dispatch-keys";
@@ -169,6 +169,12 @@ export class NotificationDispatchService {
     const targets = await filterOrgMemberIds(this.db, input.orgId, requested);
     if (targets.length === 0) return result;
 
+    const memberRows = await this.db
+      .select({ userId: organizationMembers.userId, id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, input.orgId), eq(organizationMembers.status, "ACTIVE"), inArray(organizationMembers.userId, targets)));
+    const memberIdByUser = new Map(memberRows.map((r) => [r.userId, r.id]));
+
     const priority = input.priority ?? definition.defaultPriority;
     const emailRows = await this.db
       .select({ id: users.id, email: users.email })
@@ -221,7 +227,7 @@ export class NotificationDispatchService {
           input.entityId,
         );
         if (!visible) {
-          result.suppressed += await this.recordAccessSuppression(input, definition, userId, routingResult.priority);
+          result.suppressed += await this.recordAccessSuppression(input, definition, userId, memberIdByUser.get(userId) ?? null, routingResult.priority);
           return;
         }
       }
@@ -236,6 +242,7 @@ export class NotificationDispatchService {
         await this.digest.enqueue({
           orgId: input.orgId,
           userId,
+          membershipId: memberIdByUser.get(userId) ?? null,
           channel: "EMAIL",
           eventKey: input.eventKey,
           entityType: input.entityType ?? null,
@@ -251,6 +258,7 @@ export class NotificationDispatchService {
         input,
         definition,
         userId,
+        memberIdByUser.get(userId) ?? null,
         routingResult,
         emailMap.get(userId) ?? null,
         templatesByLocale.get(localeByUser.get(userId) ?? "en") ?? new Map(),
@@ -283,6 +291,7 @@ export class NotificationDispatchService {
     input: DispatchEventInput,
     definition: NotificationEventDefinition,
     userId: string,
+    membershipId: number | null,
     priority: NotificationPriority,
   ): Promise<number> {
     const [row] = await this.db
@@ -290,6 +299,7 @@ export class NotificationDispatchService {
       .values({
         orgId: input.orgId,
         userId,
+        membershipId,
         eventKey: input.eventKey,
         channel: "IN_APP",
         provider: "INTERNAL",
@@ -312,6 +322,7 @@ export class NotificationDispatchService {
     input: DispatchEventInput,
     definition: NotificationEventDefinition,
     userId: string,
+    membershipId: number | null,
     routingResult: Awaited<ReturnType<NotificationRoutingService["route"]>>,
     email: string | null,
     templateMap: TemplateMap,
@@ -332,6 +343,7 @@ export class NotificationDispatchService {
         .values({
           orgId: input.orgId,
           userId,
+          membershipId,
           eventKey: input.eventKey,
           channel: "IN_APP",
           provider: "INTERNAL",
@@ -407,6 +419,7 @@ export class NotificationDispatchService {
               : null,
             orgId: input.orgId,
             userId,
+            membershipId,
             eventKey: input.eventKey,
             channel: decision.channel,
             provider: CHANNEL_TO_PROVIDER[decision.channel],

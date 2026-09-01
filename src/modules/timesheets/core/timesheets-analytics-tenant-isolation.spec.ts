@@ -26,9 +26,21 @@ function makeUser(orgId: string): CurrentUserContext {
   return { orgId, userId: ACTOR_ID, principal: { kind: "human-session", membershipId: 1 } } as unknown as CurrentUserContext;
 }
 
+type SelectChain = {
+  then: (fn: (v: unknown[]) => unknown) => Promise<unknown>;
+  catch: (fn: (e: unknown) => unknown) => Promise<unknown>;
+  finally: (fn: () => void) => Promise<unknown[]>;
+  limit: jest.Mock;
+  groupBy: jest.Mock;
+  orderBy: jest.Mock;
+  leftJoin: jest.Mock;
+  innerJoin: jest.Mock;
+  where: jest.Mock;
+};
+
 function makeSelectChain(rows: unknown[] = []) {
   const where = jest.fn();
-  const chain: Record<string, jest.Mock> & { then: unknown; catch: unknown; finally: unknown } = {
+  const chain: SelectChain = {
     then: (fn: (v: unknown[]) => unknown) => Promise.resolve(rows).then(fn),
     catch: (fn: (e: unknown) => unknown) => Promise.resolve(rows).catch(fn),
     finally: (fn: () => void) => Promise.resolve(rows).finally(fn),

@@ -140,18 +140,82 @@ jobs:
       - name: Alert self-tests
         run: |
           pnpm alert:queue-age:self-test
+          pnpm alert:job-queue-age:self-test
           pnpm alert:pool-saturation:self-test
           pnpm alert:tenant-cost:self-test
           pnpm alert:dispatch:self-test
           pnpm failure-drill:self-test
 
-      # Cross-tenant negative-test coverage. Reported, not enforced: coverage is 18% (136/773
-      # tenant-owned services) and failing the build on a number nobody can move in one commit
-      # would train people to ignore it. Flip continue-on-error off once the baseline is raised
-      # and the check compares against a recorded floor rather than demanding completeness.
-      - name: Cross-tenant isolation coverage (reported)
+      # Every registered alert must reach a runbook heading that exists, and every alert
+      # script must have a biting self-test. check:alert-system runs all of them; the SLO
+      # catalogue spec in the unit suite is what proves the runbook anchors resolve.
+      - name: Alert system registry
+        run: pnpm check:alert-system
+
+      # Every emitted event type has a registered consumer, and every RBAC grant row points
+      # at a permission that still exists. Both were runbook-only until now.
+      - name: Outbox consumer registry
+        run: pnpm check:outbox-consumers:self-test && pnpm check:outbox-consumers
+
+      - name: RBAC referential integrity
+        run: pnpm verify:rbac-integrity:self-test
+
+      # `pnpm typecheck` runs tsconfig.build.json, which excludes **/*spec.ts, and ts-jest
+      # transpiles without type-checking — so until now no gate had ever type-checked a spec file.
+      # 18 errors had accumulated, mostly TS2554 arity drift where a service grew a parameter and
+      # the spec kept passing the old list, so the test ran with that argument undefined. Two were
+      # load-bearing: a DataScope gate that was never exercised, and a string written into a
+      # numeric column.
+      - name: Specs type-check
+        run: pnpm check:spec-typecheck:self-test && pnpm check:spec-typecheck
+
+      # A controller must gate on its OWN module. Thirteen timesheets controllers gated on
+      # "build" and eight surveys controllers gated on nothing at all — a paying Timesheets
+      # subscriber was 403'd out of their module while a Build subscriber got it free, and any
+      # authenticated user could reach Surveys without the subscription. check:module-entitlement
+      # only ever validated one module's key round-trip, which is why neither was caught.
+      - name: Controllers gate on their own module
+        run: pnpm check:module-gate:self-test && pnpm check:module-gate
+
+      # Every AI gateway call must declare `charge` explicitly. Absent meant the credit
+      # reservation block was skipped entirely, so the paid provider call went out unmetered and
+      # the feature's AI_FEATURE_COSTS entry was dead. `charge: false` is a valid, auditable
+      # answer for platform-cost background work; absent is not.
+      - name: AI calls declare whether they charge
+        run: pnpm check:ai-charge:self-test && pnpm check:ai-charge
+
+      # A forward migration must carry a truthful rollback or an explicit irreversible
+      # declaration. The 0143 rollback failed live because a later migration added a partial
+      # index whose enum predicate blocked the column rewrite — this is the gate for that class.
+      - name: Migration rollbacks are truthful
+        run: pnpm check:migration-rollback:self-test && pnpm check:migration-rollback
+
+      # Every table above the size threshold must have a recorded retention decision.
+      # Self-test only here: the live check needs a database.
+      - name: Retention coverage
+        run: pnpm check:retention-coverage:self-test
+
+      # Supply chain. A high or critical advisory in a production dependency, or a copyleft
+      # licence that the product cannot ship under, fails the build.
+      - name: Dependency vulnerabilities
+        run: pnpm check:vulnerabilities:self-test && pnpm check:vulnerabilities
+
+      - name: Dependency licences
+        run: pnpm check:licenses:self-test && pnpm check:licenses
+
+      # Every feature flag must declare an owner and a removal date. ENFORCED since 0841 added
+      # the governance columns; the gate had been failing correctly and is now green for real.
+      - name: Feature flag governance
+        run: pnpm check:feature-flag-governance:self-test && pnpm check:feature-flag-governance
+
+      # Cross-tenant negative-test coverage. ENFORCED as of 2026-09-01: measured 895/895
+      # tenant-owned services declare at least one isolation spec. The previous comment here
+      # said 18% (136/773) and set continue-on-error on that basis; both numbers were stale by
+      # a wide margin, so the gate had been passing silently while advertising itself as broken.
+      # Note this gate is STATIC — it proves the spec exists, not that it passes. Execution
+      # proof is the isolation job below, and both are required.
+      - name: Cross-tenant isolation coverage
         run: pnpm check:tenant-isolation:self-test && pnpm check:tenant-isolation
-        continue-on-error: true
   # The golden path, on every pull request.
   #
   # It proves the one thing no unit test can: that buy -> receive -> put away ->

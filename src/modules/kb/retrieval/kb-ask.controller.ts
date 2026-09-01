@@ -33,6 +33,7 @@ import {
 } from "./dto/kb-ai.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 
 const conversationIdParams = z.object({ conversationId: z.coerce.number().int().positive() }).strict();
@@ -53,11 +54,13 @@ export class KbAskController {
   @UseRateLimit("kb:ask")
   @Validate({ body: askSchema })
   async askQuestion(@Body() body: AskInput, @CurrentUser() u: CurrentUserContext): Promise<unknown> {
+    const membershipId = actingMembershipId(u.principal) ?? 0;
     let conversationId = body.conversationId;
     if (conversationId === undefined) {
       const conv = await this.history.createConversation(
         u.orgId,
         u.userId,
+        membershipId,
         body.question.substring(0, 60).trim(),
       );
       conversationId = conv.id;
@@ -65,10 +68,11 @@ export class KbAskController {
 
     const result = await this.ask.ask(u, body);
     try {
-      await this.history.appendToConversation(u.orgId, u.userId, conversationId, "user", body.question);
+      await this.history.appendToConversation(u.orgId, u.userId, membershipId, conversationId, "user", body.question);
       await this.history.appendToConversation(
         u.orgId,
         u.userId,
+        membershipId,
         conversationId,
         "assistant",
         result.answer,
@@ -85,7 +89,7 @@ export class KbAskController {
   async getHistory(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = chatHistoryQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException("Invalid query parameters");
-    return this.history.list(u.orgId, u.userId, {
+    return this.history.list(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, {
       cursor: parsed.data.cursor,
       limit: parsed.data.limit,
     });
@@ -94,7 +98,7 @@ export class KbAskController {
   @Delete("ask/history")
   @RequirePermission("kb:pages:view")
   async clearHistory(@CurrentUser() u: CurrentUserContext): Promise<{ success: boolean }> {
-    await this.history.clear(u.orgId, u.userId);
+    await this.history.clear(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0);
     return { success: true };
   }
 
@@ -103,7 +107,7 @@ export class KbAskController {
   async listConversations(@Query() query: unknown, @CurrentUser() u: CurrentUserContext) {
     const parsed = kbConversationsListQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException("Invalid query parameters");
-    return this.history.listConversations(u.orgId, u.userId, {
+    return this.history.listConversations(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, {
       cursor: parsed.data.cursor,
       limit: parsed.data.limit,
     });
@@ -114,7 +118,7 @@ export class KbAskController {
   @HttpCode(201)
   @Validate({ body: kbConversationCreateSchema })
   async createConversation(@Body() body: { title?: string }, @CurrentUser() u: CurrentUserContext) {
-    return this.history.createConversation(u.orgId, u.userId, body.title);
+    return this.history.createConversation(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, body.title);
   }
 
   @Patch("ask/conversations/:conversationId")
@@ -125,7 +129,7 @@ export class KbAskController {
     @Body() body: { title: string },
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.history.renameConversation(u.orgId, u.userId, conversationId, body.title);
+    return this.history.renameConversation(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, conversationId, body.title);
   }
 
   @Delete("ask/conversations/:conversationId")
@@ -135,7 +139,7 @@ export class KbAskController {
     @Param("conversationId", ParseIntPipe) conversationId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<{ success: boolean }> {
-    await this.history.deleteConversation(u.orgId, u.userId, conversationId);
+    await this.history.deleteConversation(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, conversationId);
     return { success: true };
   }
 
@@ -149,7 +153,7 @@ export class KbAskController {
   ) {
     const parsed = kbConversationMessagesQuerySchema.safeParse(query);
     if (!parsed.success) throw new BadRequestException("Invalid query parameters");
-    return this.history.listMessages(u.orgId, u.userId, conversationId, {
+    return this.history.listMessages(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, conversationId, {
       cursor: parsed.data.cursor,
       limit: parsed.data.limit,
     });

@@ -128,9 +128,30 @@ describe("accounting core services — cross-tenant isolation", () => {
     });
   });
 
-  describe("AccountingLedgerService — isolation via accounting-ledger controller integration", () => {
-    it("isolation covered by accounting-ledger.service.ts — cross-tenant org predicate applied at query level", () => {
-      expect(true).toBe(true);
+  describe("AccountingLedgerService.listJournal — scope isolation", () => {
+    const posting = {
+      seedChartOfAccountsForOrg: jest.fn().mockResolvedValue(undefined),
+    } as unknown as JournalPostingService;
+    const finPosting = {} as unknown as FinancePostingService;
+
+    it("REVOCATION: own scope scopes predicate to membershipId, not userId", async () => {
+      const MEMBERSHIP_ID = 42;
+      const { db, where } = makeSelectDb([]);
+      const svc = new AccountingLedgerService(db, posting, finPosting, audit, dispatch, cache);
+
+      await svc.listJournal("org-owner", { limit: 10 }, "own", "user-1", MEMBERSHIP_ID);
+
+      const predicateValues = sqlValues(where.mock.calls[0]?.[0]);
+      expect(predicateValues).toContain(MEMBERSHIP_ID);
+    });
+
+    it("DENY: none scope returns empty data array", async () => {
+      const { db } = makeSelectDb([]);
+      const svc = new AccountingLedgerService(db, posting, finPosting, audit, dispatch, cache);
+
+      const result = await svc.listJournal("org-attacker", { limit: 10 }, "none", "user-1", 0);
+
+      expect(result.data).toHaveLength(0);
     });
   });
 });

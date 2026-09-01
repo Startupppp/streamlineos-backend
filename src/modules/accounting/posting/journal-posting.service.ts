@@ -19,6 +19,7 @@ export interface DraftEntry {
   orgId: string;
   entryDate: string;
   description?: string | null;
+  createdByMembershipId?: number | null;
   sourceType: string;
   sourceId: string | null;
   sourceEvent: string | null;
@@ -262,6 +263,7 @@ export class JournalPostingService {
             sourceEvent: draft.sourceEvent,
             status: draft.status ?? "POSTED",
             createdBy: draft.createdBy,
+            createdByMembershipId: draft.createdByMembershipId ?? null,
           })
           .returning({ id: journalEntries.id, entryNumber: journalEntries.entryNumber });
 

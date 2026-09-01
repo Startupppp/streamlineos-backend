@@ -21,7 +21,7 @@ describe("SupportPortalService — cross-tenant isolation", () => {
     const db = makeDb([], null);
     const tickets = { createTicket: jest.fn(), addMessage: jest.fn(), listPublicMessages: jest.fn() };
     const svc = new SupportPortalService(db, tickets as never);
-    const result = await svc.listMyTickets(ATTACKER_ORG, USER_ID);
+    const result = await svc.listMyTickets(ATTACKER_ORG, USER_ID, null);
     expect(result).toHaveLength(0);
   });
 
@@ -29,7 +29,7 @@ describe("SupportPortalService — cross-tenant isolation", () => {
     const db = makeDb([{ id: 1, orgId: OWNER_ORG, createdBy: USER_ID }], null);
     const tickets = { createTicket: jest.fn(), addMessage: jest.fn(), listPublicMessages: jest.fn() };
     const svc = new SupportPortalService(db, tickets as never);
-    const result = await svc.listMyTickets(OWNER_ORG, USER_ID);
+    const result = await svc.listMyTickets(OWNER_ORG, USER_ID, null);
     expect(result).toHaveLength(1);
   });
 
@@ -37,6 +37,6 @@ describe("SupportPortalService — cross-tenant isolation", () => {
     const db = makeDb([], null);
     const tickets = { createTicket: jest.fn(), addMessage: jest.fn(), listPublicMessages: jest.fn() };
     const svc = new SupportPortalService(db, tickets as never);
-    await expect(svc.getMyTicket(ATTACKER_ORG, USER_ID, 99)).rejects.toThrow(NotFoundException);
+    await expect(svc.getMyTicket(ATTACKER_ORG, USER_ID, null, 99)).rejects.toThrow(NotFoundException);
   });
 });

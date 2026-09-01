@@ -4,7 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { SQL, and, count, desc, eq } from "drizzle-orm";
+import { SQL, and, desc, eq } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { richDocuments } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -19,47 +21,33 @@ export class RichDocumentsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(orgId: string, query: ListRichDocumentsInput) {
+    const pos = decodeCursor(query.cursor);
     const conditions: SQL[] = [eq(richDocuments.orgId, orgId)];
-    if (query.isPublished !== undefined) {
-      conditions.push(eq(richDocuments.isPublished, query.isPublished));
-    }
+    if (query.isPublished !== undefined) conditions.push(eq(richDocuments.isPublished, query.isPublished));
+    if (pos) conditions.push(keysetBeforeId(richDocuments.updatedAt, richDocuments.id, pos));
 
-    const whereClause = and(...conditions);
-    const offset = (query.page - 1) * query.limit;
+    const rows = await this.db
+      .select({
+        id: richDocuments.id,
+        orgId: richDocuments.orgId,
+        title: richDocuments.title,
+        templateType: richDocuments.templateType,
+        isPublished: richDocuments.isPublished,
+        version: richDocuments.version,
+        createdBy: richDocuments.createdBy,
+        updatedBy: richDocuments.updatedBy,
+        createdAt: richDocuments.createdAt,
+        updatedAt: richDocuments.updatedAt,
+      })
+      .from(richDocuments)
+      .where(and(...conditions))
+      .orderBy(desc(richDocuments.updatedAt), desc(richDocuments.id))
+      .limit(query.limit + 1);
 
-    const [rows, [countRow]] = await Promise.all([
-      this.db
-        .select({
-          id: richDocuments.id,
-          orgId: richDocuments.orgId,
-          title: richDocuments.title,
-          templateType: richDocuments.templateType,
-          isPublished: richDocuments.isPublished,
-          version: richDocuments.version,
-          createdBy: richDocuments.createdBy,
-          updatedBy: richDocuments.updatedBy,
-          createdAt: richDocuments.createdAt,
-          updatedAt: richDocuments.updatedAt,
-        })
-        .from(richDocuments)
-        .where(whereClause)
-        .orderBy(desc(richDocuments.updatedAt))
-        .limit(query.limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(richDocuments).where(whereClause),
-    ]);
-
-    const total = countRow?.total ?? 0;
-
-    return {
-      data: rows,
-      pagination: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        totalPages: Math.ceil(total / query.limit),
-      },
-    };
+    return buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: row.updatedAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async create(orgId: string, userId: string, input: CreateRichDocumentInput) {

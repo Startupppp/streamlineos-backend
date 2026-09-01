@@ -3,7 +3,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, gte, isNull, lte } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, lte } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { hrUnionMemberships, hrCollectiveAgreements, hrLaborCases } from "../../../../db/schema/hr/governance";
@@ -29,22 +31,26 @@ export class LaborService {
   ) {}
 
   async listMemberships(orgId: string, input: ListUnionMembershipsInput) {
-    const { page, limit, unionName, status, userId } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, unionName, status, userId } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [eq(hrUnionMemberships.orgId, orgId), isNull(hrUnionMemberships.deletedAt)];
     if (unionName) conditions.push(eq(hrUnionMemberships.unionName, unionName));
     if (status) conditions.push(eq(hrUnionMemberships.status, status));
     if (userId) conditions.push(eq(hrUnionMemberships.userId, userId));
+    if (pos) conditions.push(keysetBeforeId(hrUnionMemberships.createdAt, hrUnionMemberships.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrUnionMemberships)
+      .where(and(...conditions))
+      .orderBy(desc(hrUnionMemberships.createdAt), desc(hrUnionMemberships.id))
+      .limit(limit + 1);
 
-    const [data, totalResult] = await Promise.all([
-      this.db.select().from(hrUnionMemberships).where(where).orderBy(desc(hrUnionMemberships.createdAt)).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(hrUnionMemberships).where(where),
-    ]);
-
-    return { data, total: totalResult[0]?.total ?? 0, page, limit };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async createMembership(orgId: string, actorId: string, input: CreateUnionMembershipInput, ipAddress?: string) {
@@ -113,21 +119,25 @@ export class LaborService {
   }
 
   async listAgreements(orgId: string, input: ListAgreementsInput) {
-    const { page, limit, status, unionName } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, status, unionName } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [eq(hrCollectiveAgreements.orgId, orgId), isNull(hrCollectiveAgreements.deletedAt)];
     if (status) conditions.push(eq(hrCollectiveAgreements.status, status));
     if (unionName) conditions.push(eq(hrCollectiveAgreements.unionName, unionName));
+    if (pos) conditions.push(keysetBeforeId(hrCollectiveAgreements.createdAt, hrCollectiveAgreements.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrCollectiveAgreements)
+      .where(and(...conditions))
+      .orderBy(desc(hrCollectiveAgreements.createdAt), desc(hrCollectiveAgreements.id))
+      .limit(limit + 1);
 
-    const [data, totalResult] = await Promise.all([
-      this.db.select().from(hrCollectiveAgreements).where(where).orderBy(desc(hrCollectiveAgreements.createdAt)).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(hrCollectiveAgreements).where(where),
-    ]);
-
-    return { data, total: totalResult[0]?.total ?? 0, page, limit };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async listExpiringAgreements(orgId: string, input: ExpiringAgreementsInput) {
@@ -207,21 +217,25 @@ export class LaborService {
   }
 
   async listLaborCases(orgId: string, input: ListLaborCasesInput) {
-    const { page, limit, status, unionName } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, status, unionName } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [eq(hrLaborCases.orgId, orgId), isNull(hrLaborCases.deletedAt)];
     if (status) conditions.push(eq(hrLaborCases.status, status));
     if (unionName) conditions.push(eq(hrLaborCases.unionName, unionName));
+    if (pos) conditions.push(keysetBeforeId(hrLaborCases.createdAt, hrLaborCases.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrLaborCases)
+      .where(and(...conditions))
+      .orderBy(desc(hrLaborCases.createdAt), desc(hrLaborCases.id))
+      .limit(limit + 1);
 
-    const [data, totalResult] = await Promise.all([
-      this.db.select().from(hrLaborCases).where(where).orderBy(desc(hrLaborCases.createdAt)).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(hrLaborCases).where(where),
-    ]);
-
-    return { data, total: totalResult[0]?.total ?? 0, page, limit };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async createLaborCase(orgId: string, actorId: string, input: CreateLaborCaseInput, ipAddress?: string) {

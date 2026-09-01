@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AiJobsService } from "../../ai/jobs/ai-jobs.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import type { KbResearchBriefCreateInput, KbResearchBriefListInput } from "./dto/kb-ai.schemas";
 
 type BriefSummary = {
@@ -37,6 +38,7 @@ export class KbResearchBriefService {
       .values({
         orgId: user.orgId,
         userId: user.userId,
+        userMembershipId: actingMembershipId(user.principal) ?? undefined,
         topic: input.topic,
         spaceId: input.spaceId ?? null,
         status: "queued",
@@ -67,9 +69,10 @@ export class KbResearchBriefService {
     opts: KbResearchBriefListInput,
   ): Promise<{ items: BriefSummary[]; nextCursor: number | null }> {
     const limit = Math.min(opts.limit, 100);
+    const membershipId = actingMembershipId(user.principal) ?? 0;
     const conditions = [
       eq(kbResearchBriefs.orgId, user.orgId),
-      eq(kbResearchBriefs.userId, user.userId),
+      eq(kbResearchBriefs.userMembershipId, membershipId),
     ];
     if (opts.cursor) conditions.push(lt(kbResearchBriefs.id, opts.cursor));
 
@@ -101,6 +104,7 @@ export class KbResearchBriefService {
   }
 
   async getById(user: CurrentUserContext, briefId: number): Promise<BriefDetail> {
+    const membershipId = actingMembershipId(user.principal) ?? 0;
     const rows = await this.db
       .select()
       .from(kbResearchBriefs)
@@ -108,7 +112,7 @@ export class KbResearchBriefService {
         and(
           eq(kbResearchBriefs.id, briefId),
           eq(kbResearchBriefs.orgId, user.orgId),
-          eq(kbResearchBriefs.userId, user.userId),
+          eq(kbResearchBriefs.userMembershipId, membershipId),
         ),
       )
       .limit(1);
@@ -118,6 +122,7 @@ export class KbResearchBriefService {
   }
 
   async rateBrief(user: CurrentUserContext, briefId: number, rating: "helpful" | "not_helpful"): Promise<void> {
+    const membershipId = actingMembershipId(user.principal) ?? 0;
     const existing = await this.db
       .select({ id: kbResearchBriefs.id })
       .from(kbResearchBriefs)
@@ -125,7 +130,7 @@ export class KbResearchBriefService {
         and(
           eq(kbResearchBriefs.id, briefId),
           eq(kbResearchBriefs.orgId, user.orgId),
-          eq(kbResearchBriefs.userId, user.userId),
+          eq(kbResearchBriefs.userMembershipId, membershipId),
         ),
       )
       .limit(1);

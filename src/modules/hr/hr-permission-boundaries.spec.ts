@@ -5,7 +5,7 @@ import { BackgroundVerificationController } from "./directory/background-verific
 import { HrGovernanceDelegationsController } from "./governance/delegations/delegations.controller";
 import { RecruitmentPipelineController } from "./recruitment/recruitment-pipeline.controller";
 import { EmployeesController } from "./directory/employees.controller";
-import { OnboardingController } from "./onboarding/core/onboarding.controller";
+import { HrOnboardingAdminController } from "./onboarding/core/hr-onboarding-admin.controller";
 import { LeavesController } from "./time/leaves.controller";
 
 function permissionFor(handler: object): string | undefined {
@@ -93,7 +93,7 @@ describe("HR least-privilege controller boundaries", () => {
     expect(permissionFor(EmployeesController.prototype.checkEmail)).toBe(
       "hr:onboarding:manage",
     );
-    expect(permissionFor(OnboardingController.prototype.sendReminders)).toBe(
+    expect(permissionFor(HrOnboardingAdminController.prototype.sendReminders)).toBe(
       "hr:onboarding:manage",
     );
   });

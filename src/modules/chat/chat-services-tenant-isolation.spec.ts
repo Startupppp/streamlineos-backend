@@ -43,7 +43,8 @@ beforeEach(() => jest.resetAllMocks());
 
 describe("ChatPresenceService — tenant isolation", () => {
   function makeDb(rows: unknown[]) {
-    const where = jest.fn().mockResolvedValue(rows);
+    const limit = jest.fn().mockResolvedValue(rows);
+    const where = jest.fn().mockReturnValue({ limit });
     const chain2 = { where };
     const chain1 = { innerJoin: jest.fn().mockReturnValue(chain2), where };
     const db = {

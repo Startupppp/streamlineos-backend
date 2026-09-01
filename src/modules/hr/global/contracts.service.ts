@@ -3,7 +3,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, eq, isNull, lte } from "drizzle-orm";
+import { and, asc, eq, isNull, lte } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetAfterValue } from "../../../common/pagination/keyset";
 import { hrContracts } from "../../../db/schema/hr/global-compliance";
 import { hrEmployments, hrPeople } from "../../../db/schema/hr/core-people";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -32,8 +34,8 @@ export class ContractsService {
   ) {}
 
   async list(orgId: string, input: ListContractsInput) {
-    const { page, limit, contractType, status, days } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, contractType, status, days } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [
       eq(hrContracts.orgId, orgId),
@@ -49,21 +51,19 @@ export class ContractsService {
       conditions.push(lte(hrContracts.endDate, cutoff.toISOString().split("T")[0]));
     }
 
-    const where = and(...conditions);
+    if (pos) conditions.push(keysetAfterValue(hrContracts.endDate, hrContracts.id, pos));
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrContracts)
-        .where(where)
-        .orderBy(hrContracts.endDate)
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrContracts).where(where),
-    ]);
+    const rows = await this.db
+      .select()
+      .from(hrContracts)
+      .where(and(...conditions))
+      .orderBy(asc(hrContracts.endDate), asc(hrContracts.id))
+      .limit(limit + 1);
 
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: String(row.endDate ?? ""),
+      id: String(row.id),
+    }));
   }
 
   async getOne(orgId: string, contractId: number) {

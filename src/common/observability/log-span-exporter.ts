@@ -1,3 +1,4 @@
+import { redactAttributes } from "./redact";
 import type { FinishedSpan, SpanExporter } from "./tracing";
 
 /**
@@ -22,7 +23,7 @@ export class LogSpanExporter implements SpanExporter {
         parentSpanId: span.parentSpanId,
         status: span.status,
         latencyMs: span.durationMs,
-        ...span.attributes,
+        ...redactAttributes(span.attributes),
       }) + "\n",
     );
   }

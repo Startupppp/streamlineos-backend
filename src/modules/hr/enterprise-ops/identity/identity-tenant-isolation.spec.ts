@@ -47,14 +47,14 @@ describe("IdentityService — cross-tenant isolation", () => {
   it("hides provisioning records from different org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
     const svc = new IdentityService(db);
-    await svc.listProvisioning(ATTACKER, { page: 1, limit: 10 });
+    await svc.listProvisioning(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
   it("returns provisioning records for owning org (control — same-tenant access works)", async () => {
     const { db, where, findMany } = makeDb([ROW]);
     const svc = new IdentityService(db);
-    await svc.listProvisioning(OWNER, { page: 1, limit: 10 });
+    await svc.listProvisioning(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });

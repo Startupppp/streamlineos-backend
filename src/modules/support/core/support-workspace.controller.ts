@@ -15,6 +15,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { SupportWorkspaceService } from "./support-workspace.service";
 import {
   createQueueSchema,
@@ -83,7 +84,7 @@ export class SupportWorkspaceController {
   @Get("views")
   @RequirePermission("support:tickets:view")
   listSavedViews(@CurrentUser() u: CurrentUserContext) {
-    return this.workspace.listSavedViews(u.orgId, u.userId);
+    return this.workspace.listSavedViews(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   @Post("views")
@@ -94,7 +95,7 @@ export class SupportWorkspaceController {
     @Body() body: CreateSavedViewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.workspace.createSavedView(u.orgId, u.userId, body);
+    return this.workspace.createSavedView(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Patch("views/:viewId")
@@ -105,14 +106,14 @@ export class SupportWorkspaceController {
     @Body() body: UpdateSavedViewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.workspace.updateSavedView(u.orgId, u.userId, viewId, body);
+    return this.workspace.updateSavedView(u.orgId, u.userId, actingMembershipId(u.principal), viewId, body);
   }
 
   @Delete("views/:viewId")
   @RequirePermission("support:tickets:view")
   @Validate({ params: viewIdParams })
   deleteSavedView(@Param("viewId", ParseIntPipe) viewId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.workspace.deleteSavedView(u.orgId, u.userId, viewId);
+    return this.workspace.deleteSavedView(u.orgId, u.userId, actingMembershipId(u.principal), viewId);
   }
 
   @Get("tags")

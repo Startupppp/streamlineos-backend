@@ -41,7 +41,8 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { runInTenantTransaction, runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 
@@ -286,12 +287,15 @@ export class FeedbucketPublicController {
             fileSize: recordingUpload.size,
           });
 
-        if (widget.autoCreateTicket && widget.projectId)
-          void this.autoLinkTicket(widget, submissionId, dto.type, dto.message, {
-            screenshot,
-            screenshotUrl,
-            recordingUrl,
-          });
+        if (widget.autoCreateTicket && widget.projectId) {
+          const deferred = () =>
+            this.autoLinkTicket(widget, submissionId, dto.type, dto.message, {
+              screenshot,
+              screenshotUrl,
+              recordingUrl,
+            });
+          if (!registerAfterCommit(deferred)) void deferred();
+        }
 
         if (widget.createdBy) {
           void this.notifications
@@ -446,44 +450,44 @@ export class FeedbucketPublicController {
       recordingUrl?: string;
     },
   ) {
-    if (!widget.projectId) return;
+    const projectId = widget.projectId;
+    if (!projectId) return;
     try {
-      const actingUserId = widget.createdBy ?? widget.orgId;
-      const parts: string[] = [
-        `<p><strong>Feedback type:</strong> ${escapeHtml(type)}</p>`,
-      ];
-      if (message.trim()) {
-        parts.push(`<p>${escapeHtml(message).replace(/\n/g, "<br>")}</p>`);
-      }
-      if (media.screenshotUrl) {
-        parts.push(
-          `<p><img src="${escapeHtml(media.screenshotUrl)}" alt="Feedback screenshot"></p>`,
+      await runInNewTenantTransaction(this.db, widget.orgId, async () => {
+        const actingUserId = widget.createdBy ?? widget.orgId;
+        const parts: string[] = [
+          `<p><strong>Feedback type:</strong> ${escapeHtml(type)}</p>`,
+        ];
+        if (message.trim())
+          parts.push(`<p>${escapeHtml(message).replace(/\n/g, "<br>")}</p>`);
+        if (media.screenshotUrl)
+          parts.push(
+            `<p><img src="${escapeHtml(media.screenshotUrl)}" alt="Feedback screenshot"></p>`,
+          );
+        if (media.recordingUrl)
+          parts.push(
+            `<p><strong>Screen recording:</strong> <a href="${escapeHtml(media.recordingUrl)}" target="_blank" rel="noopener noreferrer">Watch recording</a></p>`,
+          );
+        const ticket = await this.ticketsService.createFromFeedback(
+          widget.orgId,
+          actingUserId,
+          projectId,
+          {
+            title: message.slice(0, 255) || `${type} feedback`,
+            description: parts.join(""),
+            type: widget.defaultTicketType,
+          },
         );
-      }
-      if (media.recordingUrl) {
-        parts.push(
-          `<p><strong>Screen recording:</strong> <a href="${escapeHtml(media.recordingUrl)}" target="_blank" rel="noopener noreferrer">Watch recording</a></p>`,
-        );
-      }
-      const ticket = await this.ticketsService.createFromFeedback(
-        widget.orgId,
-        actingUserId,
-        widget.projectId,
-        {
-          title: message.slice(0, 255) || `${type} feedback`,
-          description: parts.join(""),
-          type: widget.defaultTicketType,
-        },
-      );
-      await this.db
-        .update(feedbucketSubmissions)
-        .set({ linkedTicketId: ticket.id })
-        .where(
-          and(
-            eq(feedbucketSubmissions.id, submissionId),
-            eq(feedbucketSubmissions.orgId, widget.orgId),
-          ),
-        );
+        await this.db
+          .update(feedbucketSubmissions)
+          .set({ linkedTicketId: ticket.id })
+          .where(
+            and(
+              eq(feedbucketSubmissions.id, submissionId),
+              eq(feedbucketSubmissions.orgId, widget.orgId),
+            ),
+          );
+      });
     } catch (err) {
       this.logger.warn(`linkFeedbackToTicket failed for submission ${submissionId}: ${err instanceof Error ? err.message : String(err)}`);
     }

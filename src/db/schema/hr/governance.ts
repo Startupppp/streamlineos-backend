@@ -171,9 +171,11 @@ export const hrProxyAccess = pgTable(
     grantorUserId: text("grantor_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    grantorMembershipId: integer("grantor_membership_id"),
     proxyUserId: text("proxy_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    proxyMembershipId: integer("proxy_membership_id"),
     scope: hrProxyScopeEnum("scope").notNull(),
     startsAt: timestamp("starts_at").notNull(),
     endsAt: timestamp("ends_at").notNull(),
@@ -188,6 +190,8 @@ export const hrProxyAccess = pgTable(
     unique("uniq_hr_proxy_access_org_id").on(table.orgId, table.id),
     index("idx_hr_proxy_access_org_grantor").on(table.orgId, table.grantorUserId),
     index("idx_hr_proxy_access_org_proxy").on(table.orgId, table.proxyUserId),
+    index("idx_hr_proxy_access_org_grantor_membership").on(table.orgId, table.grantorMembershipId),
+    index("idx_hr_proxy_access_org_proxy_membership").on(table.orgId, table.proxyMembershipId),
   ],
 );
 

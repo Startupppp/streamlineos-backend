@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline";
 import { createReadStream } from "node:fs";
 import process from "node:process";
+import { resolveRouteAttribution, extractNamespaceFromSpanName } from "./route-attribution.mjs";
 
 const SEAM_ATTRIBUTE_KEY = "seam";
 
@@ -26,6 +27,8 @@ function percentile(sortedAscending, fraction) {
   return sortedAscending[Math.min(sortedAscending.length - 1, Math.max(0, rank - 1))];
 }
 
+const ROUTE_SEAMS = new Set(["route.cached.read", "route.write"]);
+
 function summarise(lines, cutoffMs) {
   const bySeam = new Map();
   let seamSpanLines = 0;
@@ -48,16 +51,38 @@ function summarise(lines, cutoffMs) {
     if (!Number.isNaN(ts) && ts < cutoffMs) continue;
 
     seamSpanLines += 1;
-    const bucket = bySeam.get(seamName) ?? { latencies: [], errors: 0 };
+    const bucket = bySeam.get(seamName) ?? { latencies: [], errors: 0, byModule: new Map() };
     bucket.latencies.push(record.latencyMs);
     if (record.status === "error") bucket.errors += 1;
+
+    if (ROUTE_SEAMS.has(seamName)) {
+      const namespace = extractNamespaceFromSpanName(record.name ?? "");
+      if (namespace !== null) {
+        const attrib = resolveRouteAttribution(namespace);
+        const key = attrib.unattributable === true
+          ? `unattributable:${namespace}`
+          : (attrib.module ?? "platform");
+        const existing = bucket.byModule.get(key) ?? { latencies: [], attrib };
+        existing.latencies.push(record.latencyMs);
+        bucket.byModule.set(key, existing);
+      }
+    }
+
     bySeam.set(seamName, bucket);
   }
 
-  const seams = [...bySeam.entries()].map(([seam, { latencies, errors }]) => {
+  const seams = [...bySeam.entries()].map(([seam, { latencies, errors, byModule }]) => {
     const sorted = [...latencies].sort((a, b) => a - b);
     const thresholdMs = SEAM_BUDGETS[seam];
     const p95Ms = percentile(sorted, 0.95);
+
+    const attributedModules = [...byModule.entries()]
+      .map(([, { latencies: ml, attrib }]) => {
+        const s = [...ml].sort((a, b) => a - b);
+        return { ...attrib, requests: ml.length, p95Ms: percentile(s, 0.95) };
+      })
+      .sort((a, b) => b.requests - a.requests);
+
     return {
       seam,
       requests: sorted.length,
@@ -67,6 +92,7 @@ function summarise(lines, cutoffMs) {
       maxMs: sorted[sorted.length - 1] ?? null,
       thresholdMs,
       breached: p95Ms !== null && p95Ms > thresholdMs,
+      ...(attributedModules.length > 0 ? { attributedModules } : {}),
     };
   });
 
@@ -89,11 +115,26 @@ if (args.includes("--self-test")) {
       [SEAM_ATTRIBUTE_KEY]: seamName,
     });
 
+  const routeSeam = (namespace, latencyMs, seamName = "route.cached.read", timestamp = now) =>
+    JSON.stringify({
+      timestamp,
+      level: "info",
+      message: "SPAN",
+      name: `GET /${namespace}/resource`,
+      latencyMs,
+      status: "ok",
+      [SEAM_ATTRIBUTE_KEY]: seamName,
+    });
+
   const fixtureLines = [
     ...Array.from({ length: 10 }, () => seam("db.query.execute", 12)),
     seam("db.query.execute", 5),
     seam("cache.roundtrip", 1.0),
     seam("cache.roundtrip", 0.5),
+    // Route-level seam spans for attribution: hr breaches, chat ok, unknown reported.
+    ...Array.from({ length: 8 }, () => routeSeam("hr", 150)),
+    routeSeam("chat", 80),
+    routeSeam("unknown-ns", 200),
     JSON.stringify({
       timestamp: now,
       level: "info",
@@ -108,12 +149,24 @@ if (args.includes("--self-test")) {
   const cutoff = Date.now() - hours * 3_600_000;
   const { seamSpanLines, seams, breached } = summarise(fixtureLines, cutoff);
   const { seamSpanLines: emptyCount } = summarise([], cutoff);
+  const routeCachedRead = seams.find((s) => s.seam === "route.cached.read");
 
   const checks = {
-    staleAndNonSeamExcluded: seamSpanLines === 13,
+    staleAndNonSeamExcluded: seamSpanLines === 23,
     dbQueryExecuteBreached: breached.some((b) => b.seam === "db.query.execute"),
     cacheRoundtripNotBreached: !breached.some((b) => b.seam === "cache.roundtrip"),
     noSeamSpansWouldExitTwo: emptyCount === 0,
+    routeCachedReadBreached: breached.some((b) => b.seam === "route.cached.read"),
+    hrAttributedToPeopleTeam:
+      routeCachedRead?.attributedModules?.some(
+        (m) => m.module === "hr" && m.owner === "people-team",
+      ) === true,
+    chatAttributedToCommsViaHome:
+      routeCachedRead?.attributedModules?.some(
+        (m) => m.module === "home" && m.owner === "communications-team",
+      ) === true,
+    unattributableNamespaceReported:
+      routeCachedRead?.attributedModules?.some((m) => m.unattributable === true) === true,
   };
 
   const pass = Object.values(checks).every(Boolean);

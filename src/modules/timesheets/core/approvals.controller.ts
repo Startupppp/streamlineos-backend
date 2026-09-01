@@ -35,7 +35,7 @@ import { z } from "zod";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
-@RequireModule("build")
+@RequireModule("timesheets")
 @Controller("timesheets/approvals")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class TimesheetApprovalsController {

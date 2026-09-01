@@ -15,6 +15,7 @@ import { AlumniController } from "./alumni.controller";
 import { HrAnalyticsController } from "./hr-analytics.controller";
 import { HrDashboardController } from "./hr-dashboard.controller";
 import { OnboardingViewsController } from "./onboarding-views.controller";
+import { HrOnboardingDocsAdminController } from "./hr-onboarding-docs-admin.controller";
 import { ProbationController } from "./probation.controller";
 import { ExitService } from "./exit.service";
 import { ExitWriteService } from "./exit-write.service";
@@ -46,6 +47,7 @@ import { EmploymentFactsModule } from "../../directory/employment-facts.module";
     HrAnalyticsController,
     HrDashboardController,
     OnboardingViewsController,
+    HrOnboardingDocsAdminController,
     ProbationController,
   ],
   providers: [

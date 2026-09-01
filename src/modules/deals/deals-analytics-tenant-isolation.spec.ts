@@ -35,7 +35,7 @@ describe("DealsAnalyticsService — cross-tenant isolation", () => {
     const db = { select: jest.fn().mockReturnValue(builder) } as unknown as Db;
     const cache = { cachedVersioned: jest.fn().mockImplementation((_n: string, _k: string, fn: () => unknown) => fn()) };
     const crmMetadata = { getAggregate: jest.fn().mockResolvedValue({ stages: [] }) };
-    const svc = new DealsAnalyticsService(db, cache as never, crmMetadata as never);
+    const svc = new DealsAnalyticsService(db, cache as never, crmMetadata as never, {} as never);
     return { svc, where };
   }
 

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { notificationPreferenceRules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -25,27 +25,30 @@ export interface PreferenceRuleInput {
 export class NotificationPreferenceRulesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  list(orgId: string, userId: string) {
+  private memberPredicate(userId: string, membershipId: number | null | undefined) {
+    if (membershipId != null)
+      return or(
+        eq(notificationPreferenceRules.membershipId, membershipId),
+        and(isNull(notificationPreferenceRules.membershipId), eq(notificationPreferenceRules.userId, userId)),
+      );
+    return eq(notificationPreferenceRules.userId, userId);
+  }
+
+  list(orgId: string, userId: string, membershipId?: number | null) {
     return this.db
       .select()
       .from(notificationPreferenceRules)
-      .where(and(eq(notificationPreferenceRules.orgId, orgId), eq(notificationPreferenceRules.userId, userId)));
+      .where(and(eq(notificationPreferenceRules.orgId, orgId), this.memberPredicate(userId, membershipId)));
   }
 
-  /**
-   * Upsert on the natural key. `mode: "ON"` deletes rather than storing a row: absence
-   * means "fall through to the header defaults", so persisting the default would make
-   * a later change to that default silently not apply to anyone who had ever opened
-   * the preference centre.
-   */
-  async set(orgId: string, userId: string, input: PreferenceRuleInput) {
+  async set(orgId: string, userId: string, input: PreferenceRuleInput, membershipId?: number | null) {
     if (input.mode === "ON") {
       await this.db
         .delete(notificationPreferenceRules)
         .where(
           and(
             eq(notificationPreferenceRules.orgId, orgId),
-            eq(notificationPreferenceRules.userId, userId),
+            this.memberPredicate(userId, membershipId),
             eq(notificationPreferenceRules.scopeType, input.scopeType),
             eq(notificationPreferenceRules.scopeKey, input.scopeKey),
             eq(notificationPreferenceRules.channel, input.channel),
@@ -54,7 +57,7 @@ export class NotificationPreferenceRulesService {
     } else {
       await this.db
         .insert(notificationPreferenceRules)
-        .values({ orgId, userId, ...input, updatedAt: new Date() })
+        .values({ orgId, userId, membershipId: membershipId ?? null, ...input, updatedAt: new Date() })
         .onConflictDoUpdate({
           target: [
             notificationPreferenceRules.orgId,

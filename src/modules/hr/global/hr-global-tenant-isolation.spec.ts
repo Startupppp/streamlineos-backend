@@ -57,7 +57,7 @@ describe("ComplianceRequirementsService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn() };
     const svc = new ComplianceRequirementsService(db, mockAudit as never);
-    await svc.listRequirements(ATTACKER, { page: 1, limit: 10 });
+    await svc.listRequirements(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -65,7 +65,7 @@ describe("ComplianceRequirementsService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockAudit = { log: jest.fn() };
     const svc = new ComplianceRequirementsService(db, mockAudit as never);
-    await svc.listRequirements(OWNER, { page: 1, limit: 10 });
+    await svc.listRequirements(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });
@@ -82,7 +82,7 @@ describe("ContractsService — cross-tenant isolation", () => {
     const mockTemplates = { render: jest.fn() };
     const mockRender = { buildContext: jest.fn() };
     const svc = new ContractsService(db, mockAudit as never, mockAutomation as never, mockTemplates as never, mockRender as never);
-    await svc.list(ATTACKER, { page: 1, limit: 10 });
+    await svc.list(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -93,7 +93,7 @@ describe("ContractsService — cross-tenant isolation", () => {
     const mockTemplates = { render: jest.fn() };
     const mockRender = { buildContext: jest.fn() };
     const svc = new ContractsService(db, mockAudit as never, mockAutomation as never, mockTemplates as never, mockRender as never);
-    await svc.list(OWNER, { page: 1, limit: 10 });
+    await svc.list(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });
@@ -107,7 +107,7 @@ describe("WorkAuthorizationsService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn() };
     const svc = new WorkAuthorizationsService(db, mockAudit as never);
-    await svc.list(ATTACKER, { page: 1, limit: 10 });
+    await svc.list(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -115,7 +115,7 @@ describe("WorkAuthorizationsService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockAudit = { log: jest.fn() };
     const svc = new WorkAuthorizationsService(db, mockAudit as never);
-    await svc.list(OWNER, { page: 1, limit: 10 });
+    await svc.list(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });

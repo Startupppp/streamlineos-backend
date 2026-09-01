@@ -17,6 +17,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportSettingsAuditService } from "./support-settings-audit.service";
 import {
@@ -66,7 +67,7 @@ export class SupportMacrosController {
     @Query() query: ListMacrosInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.macros.listMacros(u.orgId, u.userId, query);
+    return this.macros.listMacros(u.orgId, u.userId, actingMembershipId(u.principal), query);
   }
 
   @Get("macros/usage")
@@ -85,7 +86,7 @@ export class SupportMacrosController {
     @Body() body: CreateMacroInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.macros.createMacro(u.orgId, u.userId, body);
+    return this.macros.createMacro(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Patch("macros/:macroId")
@@ -121,7 +122,7 @@ export class SupportMacrosController {
     @Body() body: ApplyMacroInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.macros.previewMacro(u.orgId, macroId, u.userId, body.ticketId);
+    return this.macros.previewMacro(u.orgId, macroId, u.userId, actingMembershipId(u.principal), body.ticketId);
   }
 
   @Post("macros/:macroId/apply")
@@ -134,7 +135,7 @@ export class SupportMacrosController {
     @Body() body: ApplyMacroInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.macros.applyMacro(u.orgId, macroId, u.userId, body);
+    return this.macros.applyMacro(u.orgId, macroId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Get("routing-rules")

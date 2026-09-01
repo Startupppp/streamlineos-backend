@@ -252,7 +252,7 @@ export class ProjectsTicketCommentsService {
     return { deleted: true };
   }
 
-  async addReaction(commentId: number, userId: string, orgId: string, emoji: string) {
+  async addReaction(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number | null) {
     const comment = await this.db.query.ticketComments.findFirst({
       where: and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, orgId), isNull(ticketComments.deletedAt)),
       columns: { id: true },
@@ -261,19 +261,23 @@ export class ProjectsTicketCommentsService {
 
     const [reaction] = await this.db
       .insert(ticketCommentReactions)
-      .values({ commentId, userId, orgId, emoji })
+      .values({ commentId, userId, orgId, emoji, membershipId: membershipId ?? undefined })
       .onConflictDoNothing()
       .returning();
     return reaction ?? { commentId, userId, emoji };
   }
 
-  async removeReaction(commentId: number, userId: string, orgId: string, emoji: string) {
+  async removeReaction(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number | null) {
+    const actorPredicate =
+      membershipId !== null
+        ? eq(ticketCommentReactions.membershipId, membershipId)
+        : eq(ticketCommentReactions.userId, userId);
     await this.db
       .delete(ticketCommentReactions)
       .where(
         and(
           eq(ticketCommentReactions.commentId, commentId),
-          eq(ticketCommentReactions.userId, userId),
+          actorPredicate,
           eq(ticketCommentReactions.orgId, orgId),
           eq(ticketCommentReactions.emoji, emoji),
         ),

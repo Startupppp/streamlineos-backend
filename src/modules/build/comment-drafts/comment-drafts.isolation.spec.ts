@@ -28,7 +28,7 @@ describe("CommentDraftsService — cross-tenant isolation (BOLA)", () => {
     const svc = new CommentDraftsService(db);
 
     await expect(
-      svc.upsert("org-attacker", "user-1", 999, { body: "draft" }),
+      svc.upsert("org-attacker", null, "user-1", 999, { body: "draft" }),
     ).rejects.toThrow(NotFoundException);
   });
 
@@ -42,7 +42,7 @@ describe("CommentDraftsService — cross-tenant isolation (BOLA)", () => {
 
     const svc = new CommentDraftsService(db);
 
-    await expect(svc.deleteOne("org-attacker", "user-1", 999)).rejects.toThrow(NotFoundException);
+    await expect(svc.deleteOne("org-attacker", null, "user-1", 999)).rejects.toThrow(NotFoundException);
   });
 
   it("listMine returns empty for an org that has no drafts (cross-tenant isolation by predicate)", async () => {
@@ -66,7 +66,7 @@ describe("CommentDraftsService — cross-tenant isolation (BOLA)", () => {
     } as unknown as Db;
 
     const svc = new CommentDraftsService(db);
-    const result = await svc.listMine("org-other", "user-1");
+    const result = await svc.listMine("org-other", null, "user-1");
     expect(result).toEqual([]);
   });
 });

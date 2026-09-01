@@ -71,12 +71,11 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
     // Direct instantiation (not Test.createTestingModule) — this controller's class-level
     // @UseGuards(JwtAuthGuard) pulls in DRIZZLE/Redis-dependent guards that Nest's testing
     // module eagerly tries to resolve on .compile() even when unused by the methods under test.
+    // Constructor order after admin-handler extraction: submission, details, tasks, requirements,
+    // checklists, tours, sessions, access.
     controller = new OnboardingController(
       undefined as never,
-      undefined as never,
-      undefined as never,
       onboarding as never,
-      undefined as never,
       undefined as never,
       undefined as never,
       checklists as unknown as ModuleChecklistService,
@@ -225,13 +224,13 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
     it("saveTourProgress: view permission is enough — a per-user row, unlike the org-wide checklist dismiss", async () => {
       access.resolveUserPermissions.mockResolvedValue(new Map([["hr:employees:view", "all"]]));
       await controller.saveTourProgress("hr_setup", { currentStep: 1 }, ctx());
-      expect(tours.saveProgress).toHaveBeenCalledWith("org-1", "user-1", "hr_setup", 1);
+      expect(tours.saveProgress).toHaveBeenCalledWith("org-1", "user-1", "hr_setup", 1, 1);
     });
 
     it("saveTourProgress: never runs the HR check for a non-HR tourKey (no regression)", async () => {
       await controller.saveTourProgress("product_tour", { currentStep: 1 }, ctx());
       expect(access.resolveUserPermissions).not.toHaveBeenCalled();
-      expect(tours.saveProgress).toHaveBeenCalledWith("org-1", "user-1", "product_tour", 1);
+      expect(tours.saveProgress).toHaveBeenCalledWith("org-1", "user-1", "product_tour", 1, 1);
     });
 
     it("completeTour: rejects tourKey=hr_setup for a caller with no hr:* permission", async () => {
@@ -247,7 +246,7 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
     it("dismissTour: view permission is enough (dismissing my own welcome popup doesn't touch shared org data)", async () => {
       access.resolveUserPermissions.mockResolvedValue(new Map([["hr:employees:view", "all"]]));
       await controller.dismissTour("hr_setup", ctx());
-      expect(tours.dismissTour).toHaveBeenCalledWith("org-1", "user-1", "hr_setup");
+      expect(tours.dismissTour).toHaveBeenCalledWith("org-1", "user-1", "hr_setup", 1);
     });
 
   });

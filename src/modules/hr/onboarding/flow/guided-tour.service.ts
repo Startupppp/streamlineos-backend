@@ -26,7 +26,16 @@ export class GuidedTourService {
       .values({ orgId: null, tourKey: HR_SETUP_TOUR_KEY, moduleKey: "hr", role: null, steps: [], isActive: true });
   }
 
-  async listToursForUser(orgId: string, userId: string, role?: string) {
+  private tourOwnerPredicate(userId: string, membershipId: number | null | undefined) {
+    if (membershipId != null)
+      return or(
+        eq(userTourProgress.membershipId, membershipId),
+        and(isNull(userTourProgress.membershipId), eq(userTourProgress.userId, userId)),
+      );
+    return eq(userTourProgress.userId, userId);
+  }
+
+  async listToursForUser(orgId: string, userId: string, role?: string, membershipId?: number | null) {
     await this.ensureHrSetupTourDefinition();
     const tours = await this.db.query.guidedTours.findMany({
       where: and(
@@ -37,7 +46,7 @@ export class GuidedTourService {
     const relevant = role ? tours.filter((t) => !t.role || t.role === role) : tours;
 
     const progressRows = await this.db.query.userTourProgress.findMany({
-      where: and(eq(userTourProgress.orgId, orgId), eq(userTourProgress.userId, userId)),
+      where: and(eq(userTourProgress.orgId, orgId), this.tourOwnerPredicate(userId, membershipId)),
     });
     const progressByKey = new Map(progressRows.map((p) => [p.tourKey, p]));
 
@@ -47,11 +56,11 @@ export class GuidedTourService {
     }));
   }
 
-  private async getOrCreateProgress(orgId: string, userId: string, tourKey: string) {
+  private async getOrCreateProgress(orgId: string, userId: string, tourKey: string, membershipId?: number | null) {
     const existing = await this.db.query.userTourProgress.findFirst({
       where: and(
         eq(userTourProgress.orgId, orgId),
-        eq(userTourProgress.userId, userId),
+        this.tourOwnerPredicate(userId, membershipId),
         eq(userTourProgress.tourKey, tourKey),
       ),
     });
@@ -59,13 +68,13 @@ export class GuidedTourService {
 
     const [created] = await this.db
       .insert(userTourProgress)
-      .values({ orgId, userId, tourKey, status: "in_progress", currentStep: 0 })
+      .values({ orgId, userId, membershipId: membershipId ?? null, tourKey, status: "in_progress", currentStep: 0 })
       .returning();
     return created;
   }
 
-  async saveProgress(orgId: string, userId: string, tourKey: string, currentStep: number) {
-    const progress = await this.getOrCreateProgress(orgId, userId, tourKey);
+  async saveProgress(orgId: string, userId: string, tourKey: string, currentStep: number, membershipId?: number | null) {
+    const progress = await this.getOrCreateProgress(orgId, userId, tourKey, membershipId);
     const [updated] = await this.db
       .update(userTourProgress)
       .set({ status: "in_progress", currentStep })
@@ -74,8 +83,8 @@ export class GuidedTourService {
     return updated;
   }
 
-  async completeTour(orgId: string, userId: string, tourKey: string) {
-    const progress = await this.getOrCreateProgress(orgId, userId, tourKey);
+  async completeTour(orgId: string, userId: string, tourKey: string, membershipId?: number | null) {
+    const progress = await this.getOrCreateProgress(orgId, userId, tourKey, membershipId);
     const [updated] = await this.db
       .update(userTourProgress)
       .set({ status: "completed", completedAt: new Date() })
@@ -85,8 +94,8 @@ export class GuidedTourService {
     return updated;
   }
 
-  async dismissTour(orgId: string, userId: string, tourKey: string) {
-    const progress = await this.getOrCreateProgress(orgId, userId, tourKey);
+  async dismissTour(orgId: string, userId: string, tourKey: string, membershipId?: number | null) {
+    const progress = await this.getOrCreateProgress(orgId, userId, tourKey, membershipId);
     const [updated] = await this.db
       .update(userTourProgress)
       .set({ status: "dismissed", dismissedAt: new Date() })

@@ -19,13 +19,17 @@ function keyPage(from: number, count: number): Array<Record<string, unknown>> {
 
 function buildDb(pages: Array<Array<Record<string, unknown>>>) {
   const executed: string[] = [];
-  let call = 0;
+  let pageIdx = 0;
   const db = {
     execute: jest.fn((q: ReturnType<typeof buildSubjectKeyQuery>) => {
-      executed.push(render(q).sql);
-      const page =
-        call === 0 ? [{ table: "public.docs", col: "user_id" }] : (pages[call - 1] ?? []);
-      call += 1;
+      const renderedSql = render(q).sql;
+      executed.push(renderedSql);
+      if (renderedSql.includes("pg_constraint"))
+        return Promise.resolve([{ table: "public.docs", col: "user_id" }]);
+      if (renderedSql.includes("a.attname = 'org_id'"))
+        return Promise.resolve([{ table: "public.docs" }]);
+      const page = pages[pageIdx] ?? [];
+      pageIdx += 1;
       return Promise.resolve(page);
     }),
   };
@@ -35,7 +39,7 @@ function buildDb(pages: Array<Array<Record<string, unknown>>>) {
 describe("subject file-key enumeration drains every page", () => {
   it("orders by the key column so the cursor is deterministic", () => {
     const { sql } = render(
-      buildSubjectKeyQuery("public.docs", "file_key", "user_id", USER, USER, "user-col"),
+      buildSubjectKeyQuery("public.docs", "file_key", "user_id", USER, USER, "user-col", true),
     );
 
     expect(sql).toContain('ORDER BY "file_key" ASC');
@@ -43,7 +47,7 @@ describe("subject file-key enumeration drains every page", () => {
 
   it("carries no cursor predicate on the first page", () => {
     const { sql } = render(
-      buildSubjectKeyQuery("public.docs", "file_key", "user_id", USER, USER, "user-col"),
+      buildSubjectKeyQuery("public.docs", "file_key", "user_id", USER, USER, "user-col", true),
     );
 
     expect(sql).not.toContain('"file_key" >');
@@ -51,7 +55,7 @@ describe("subject file-key enumeration drains every page", () => {
 
   it("advances with a strict greater-than on the key column", () => {
     const { sql } = render(
-      buildSubjectKeyQuery("public.docs", "file_key", "user_id", USER, USER, "user-col", "key-000042"),
+      buildSubjectKeyQuery("public.docs", "file_key", "user_id", USER, USER, "user-col", true, "key-000042"),
     );
 
     expect(sql).toContain('"file_key" >');
@@ -60,7 +64,7 @@ describe("subject file-key enumeration drains every page", () => {
 
   it("keeps the legal-hold exclusion in the predicate on a later page too", () => {
     const { sql } = render(
-      buildSubjectKeyQuery("public.docs", "file_key", "user_id", USER, USER, "user-col", "key-000042"),
+      buildSubjectKeyQuery("public.docs", "file_key", "user_id", USER, USER, "user-col", true, "key-000042"),
     );
 
     expect(sql).toContain("hr_legal_holds");

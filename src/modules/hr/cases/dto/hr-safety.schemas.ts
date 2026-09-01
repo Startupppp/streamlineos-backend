@@ -1,10 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
-
-export const paginationSchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
-});
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createIncidentSchema = z.object({
   type: z.enum(["injury", "accident", "near_miss", "hazard", "environmental", "other"]),
@@ -24,7 +19,9 @@ export const updateIncidentSchema = z.object({
   medicalAttention: z.boolean().optional(),
 });
 
-export const listIncidentsSchema = paginationSchema.extend({
+export const listIncidentsSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   status: z.enum(["open", "investigating", "mitigated", "closed"]).optional(),
   type: z.enum(["injury", "accident", "near_miss", "hazard", "environmental", "other"]).optional(),
   severity: z.enum(["low", "medium", "high", "critical"]).optional(),

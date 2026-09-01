@@ -1,11 +1,6 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
-
-export const paginationSchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
-});
 
 export const createProxySchema = z.object({
   proxyUserId: z.string().min(1),
@@ -18,7 +13,9 @@ export const createProxySchema = z.object({
 
 export const updateProxySchema = createProxySchema.partial();
 
-export const listProxiesSchema = paginationSchema.extend({
+export const listProxiesSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   scope: z.enum(["approvals", "hr_admin", "manager_tasks"]).optional(),
   active: queryBoolean.optional(),
 });

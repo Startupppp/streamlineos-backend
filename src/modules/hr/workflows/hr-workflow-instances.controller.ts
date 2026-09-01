@@ -5,6 +5,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
 import {
@@ -66,7 +67,7 @@ export class HrWorkflowInstancesController {
     @CurrentUser() u: CurrentUserContext,
     @Query() query: { page: number; limit: number },
   ) {
-    return this.instancesService.getMyActed(u.orgId, u.userId, query.page, query.limit);
+    return this.instancesService.getMyActed(u, query.page, query.limit);
   }
 
   @Get(":instanceId")
@@ -95,6 +96,7 @@ export class HrWorkflowInstancesController {
       orgId: u.orgId,
       instanceId,
       actorUserId: u.userId,
+      actorMembershipId: actingMembershipId(u.principal),
       action: "approved",
       comment: body.comment,
       attachments: body.attachments,
@@ -116,6 +118,7 @@ export class HrWorkflowInstancesController {
       orgId: u.orgId,
       instanceId,
       actorUserId: u.userId,
+      actorMembershipId: actingMembershipId(u.principal),
       action: "rejected",
       comment: body.comment,
       attachments: body.attachments,
@@ -136,6 +139,7 @@ export class HrWorkflowInstancesController {
       orgId: u.orgId,
       instanceId,
       actorUserId: u.userId,
+      actorMembershipId: actingMembershipId(u.principal),
       action: "cancelled",
       comment: body.comment,
     });
@@ -155,6 +159,7 @@ export class HrWorkflowInstancesController {
       orgId: u.orgId,
       instanceId,
       actorUserId: u.userId,
+      actorMembershipId: actingMembershipId(u.principal),
       action: "reopened",
       comment: body.comment,
     });
@@ -174,6 +179,7 @@ export class HrWorkflowInstancesController {
       orgId: u.orgId,
       instanceId,
       actorUserId: u.userId,
+      actorMembershipId: actingMembershipId(u.principal),
       action: "commented",
       comment: body.comment,
       attachments: body.attachments,

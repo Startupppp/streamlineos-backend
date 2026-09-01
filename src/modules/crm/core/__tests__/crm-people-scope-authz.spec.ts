@@ -21,7 +21,7 @@ function makeDb(person: { id: number; slug: string; name: string; role: string; 
   } as unknown as Db;
 }
 
-function makeService(person: { id: number; slug: string; name: string; role: string } | null) {
+function makeService(person: { id: number; slug: string; name: string; role: string; initials: string; title: string; department: string; email: string; phone?: string; location?: string; joinDate?: string; bio?: string; skills?: string[]; createdAt: Date } | null) {
   return new CrmPeopleService(makeDb(person) as never);
 }
 

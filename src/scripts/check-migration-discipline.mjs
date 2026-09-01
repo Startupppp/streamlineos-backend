@@ -328,6 +328,33 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   "dup-prefix:0432_drop_quiet_hours_timezone.sql",
   "dup-prefix:0700_timesheets_idx_org_status_date.sql",
   "dup-prefix:0701_timesheets_attr_validate.sql",
+  // 0591b, 0649b, 0676b are cold-replay repairs inserted mid-journal so that tables are
+  // created before RLS or policy statements reference them on a fresh DB. Their `when`
+  // is set above the production watermark so production applies them as no-ops (all
+  // statements are idempotent). Array position and `when` answer different questions:
+  // position governs cold replay order; `when` governs whether production applies the
+  // migration. Both entries are intentional and cannot be corrected without breaking one
+  // or the other invariant.
+  "journal-order:0591_tenant_isolation_for_unprotected_tables.sql",
+  "insert-order:0591b_gl_ap_ar_bank_tax_chain_repair.sql",
+  // 0649b inserted between 0649 and 0650 so inv_carton_types and inv_shipment_status_events
+  // exist before 0650 enables RLS on them on a cold replay.
+  "journal-order:0650_tenant_isolation_for_three_unprotected_tables.sql",
+  "insert-order:0649b_inv_carton_shipment_chain_repair.sql",
+  // 0676b inserted between 0676 and 0677 so inv_compliance_documents exists before 0677
+  // and 0666 create policies on it on a cold replay.
+  "journal-order:0677_rls_fix_guc_key.sql",
+  "insert-order:0676b_inv_compliance_documents_chain_repair.sql",
+  // 0677b inserted between 0677 and 0678 so tenant_isolation is dropped before 0678 tries
+  // to CREATE POLICY on feedback_cycle_responses. 0320_recon_phase_a_orgid dynamically
+  // adds org_id, then 0378_rls_remaining_tenant_tables creates the policy, so 0678's
+  // CREATE POLICY fails on a cold replay. 0677b drops it; 0678b recreates and completes.
+  "journal-order:0678_rls_fix_feedback_cycle_responses.sql",
+  "insert-order:0677b_feedback_cycle_responses_policy_repair.sql",
+  // 0678b inserted immediately after 0678 to recreate the policy and index that 0678
+  // commits on cold replay (no-op) and that production never got (0678 also failed there).
+  "journal-order:0680_kb_versions_author_membership.sql",
+  "insert-order:0678b_feedback_cycle_responses_rls_complete.sql",
 ]);
 
 // ─── check functions ──────────────────────────────────────────────────────────

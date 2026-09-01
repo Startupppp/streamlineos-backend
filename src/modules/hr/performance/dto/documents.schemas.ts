@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const DOCUMENT_TYPES = [
   "CONTRACT",
@@ -61,7 +61,7 @@ export const listDocumentsSchema = z
   .strict();
 
 export const listRichDocumentsSchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   isPublished: z
     .enum(["true", "false"])

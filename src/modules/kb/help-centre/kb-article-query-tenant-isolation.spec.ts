@@ -18,12 +18,12 @@ function sqlValues(where: SQL | undefined): unknown[] {
   return dialect.sqlToQuery(where).params;
 }
 
-const listQuery = { page: 1, pageSize: 20 } as Parameters<KbArticleQueryService["list"]>[1];
+const listQuery: Parameters<KbArticleQueryService["list"]>[1] = { limit: 20 };
 
 function build(spaceIds: number[]) {
   const capturedWheres: SQL[] = [];
   const selectChain: Record<string, unknown> = {};
-  for (const method of ["from", "innerJoin", "leftJoin", "orderBy", "limit", "offset"])
+  for (const method of ["from", "innerJoin", "leftJoin", "orderBy", "limit"])
     selectChain[method] = jest.fn().mockReturnValue(selectChain);
   selectChain.where = jest.fn((w: SQL) => {
     capturedWheres.push(w);
@@ -100,7 +100,8 @@ describe("KbArticleQueryService — cross-tenant isolation", () => {
     const result = await service.list(actor(ATTACKER_ORG), listQuery);
 
     expect(result.items).toEqual([]);
-    expect(result.total).toBe(0);
+    expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeNull();
     expect(db.select).not.toHaveBeenCalled();
     expect(capturedWheres).toHaveLength(0);
   });

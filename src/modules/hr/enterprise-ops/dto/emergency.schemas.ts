@@ -1,10 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
-
-const paginationSchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
-});
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createEmergencyEventSchema = z.object({
   name: z.string().min(1).max(300),
@@ -19,7 +14,9 @@ export const updateEmergencyEventSchema = z.object({
   status: z.enum(["active", "resolved"]).optional(),
 });
 
-export const listEmergencyEventsSchema = paginationSchema.extend({
+export const listEmergencyEventsSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   status: z.enum(["active", "resolved"]).optional(),
 });
 

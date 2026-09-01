@@ -22,6 +22,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { resolveProjectsScope } from "./projects-scope";
 import type { ListProjectsInput } from "./dto/projects.schemas";
 
@@ -38,11 +39,12 @@ export class ProjectsQueryService {
     const scope = await resolveProjectsScope(this.access, u);
     const orgId = u.orgId;
     const userId = u.userId;
+    const membershipId = actingMembershipId(u.principal);
     const key = `${userId}:${scope}:${input.status}:${input.search ?? ""}:${input.afterId ?? "first"}:${input.limit}:${input.pmWorkspaceId ?? ""}`;
     return this.cache.cachedVersioned(
       `projects:list:${orgId}`,
       key,
-      () => this.queryProjects(orgId, userId, scope, input),
+      () => this.queryProjects(orgId, userId, membershipId, scope, input),
       CACHE_TTL.SHORT,
     );
   }
@@ -50,6 +52,7 @@ export class ProjectsQueryService {
   private async queryProjects(
     orgId: string,
     userId: string,
+    membershipId: number | null,
     scope: DataScope,
     input: ListProjectsInput,
   ) {
@@ -88,6 +91,7 @@ export class ProjectsQueryService {
         ]),
       );
       const memberScopeCondition = or(
+        membershipId !== null ? eq(projects.managerMembershipId, membershipId) : undefined,
         eq(projects.managerId, userId),
         accessibleProjectIds.length > 0
           ? inArray(projects.id, accessibleProjectIds)
@@ -298,7 +302,10 @@ export class ProjectsQueryService {
     const isOwnerOrAdmin = perms.has("build:manage");
 
     if (!isOwnerOrAdmin) {
-      const isManager = project.managerId === u.userId;
+      const callerMid = actingMembershipId(u.principal);
+      const isManager =
+        (callerMid !== null && project.managerMembershipId === callerMid) ||
+        project.managerId === u.userId;
       if (!isManager) {
         const memberOf = await this.db
           .select({ projectId: projectMembers.projectId })

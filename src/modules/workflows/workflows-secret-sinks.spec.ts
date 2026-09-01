@@ -94,7 +94,8 @@ describe("Secret sink: error message — NotFoundException messages are static a
 
 describe("Secret sink: cache — WorkflowsSecretsService has no Redis/cache injection path", () => {
   it("listGlobalSecrets completes using only the db mock (no cache methods are called)", async () => {
-    const orderBy = jest.fn().mockResolvedValue([]);
+    const limit = jest.fn().mockResolvedValue([]);
+    const orderBy = jest.fn().mockReturnValue({ limit });
     const where = jest.fn().mockReturnValue({ orderBy });
     const from = jest.fn().mockReturnValue({ where });
     const db = { select: jest.fn().mockReturnValue({ from }) } as unknown as Db;

@@ -9,6 +9,9 @@ import process from "node:process";
 import { URL } from "node:url";
 import { Buffer } from "node:buffer";
 
+const FAILURE_RUNBOOK =
+  "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";
+
 const REGISTRY = {
   "dead-outbox": { owner: "platform-reliability", runbookAnchor: "#dead-outbox", severity: "critical" },
   "dead-delivery": { owner: "notifications-team", runbookAnchor: "#dead-delivery", severity: "high" },
@@ -16,7 +19,13 @@ const REGISTRY = {
   "tenant-ctx-errors": { owner: "platform-reliability", runbookAnchor: "#tenant-ctx-errors", severity: "critical" },
   p95: { owner: "platform-reliability", runbookAnchor: "#p95", severity: "high" },
   "seam-latency": { owner: "platform-reliability", runbookAnchor: "#seam-latency", severity: "high" },
-  "queue-age": { owner: "platform-reliability", runbookAnchor: "#queue-backlog", severity: "high" },
+  "queue-age": {
+    owner: "platform-reliability",
+    runbookFile: FAILURE_RUNBOOK,
+    runbookAnchor: "#queue-backlog",
+    severity: "high",
+  },
+  "job-queue-age": { owner: "platform-reliability", runbookAnchor: "#job-queue-age", severity: "high" },
   "pool-saturation": { owner: "platform-reliability", runbookAnchor: "#database-cell-failure", severity: "high" },
   "tenant-cost": { owner: "platform-reliability", runbookAnchor: "#tenant-cost", severity: "high" },
   "cell-recovery": { owner: "platform-reliability", runbookAnchor: "#cell-recovery", severity: "critical" },
@@ -123,7 +132,7 @@ async function dispatch(alertId, payload, { stateFile, windowMs, dryRun, webhook
     alertId,
     owner: entry.owner,
     severity: entry.severity,
-    runbook: `${RUNBOOK_BASE}${entry.runbookAnchor}`,
+    runbook: `${entry.runbookFile ?? RUNBOOK_BASE}${entry.runbookAnchor}`,
     sentAt: new Date().toISOString(),
   };
 

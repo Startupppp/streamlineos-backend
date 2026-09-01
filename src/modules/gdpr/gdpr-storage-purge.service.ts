@@ -21,7 +21,9 @@ export interface PurgeResult {
   blocked: boolean;
   blockReason?: string;
   dryRun: boolean;
-  keysDeleted: number;
+  deleted: string[];
+  skipped: string[];
+  failed: Array<{ key: string; reason: string }>;
   manifest: SubjectFileKey[];
 }
 
@@ -32,7 +34,10 @@ export class GdprStoragePurgeService {
     private readonly storage: StorageService,
   ) {}
 
-  async buildManifest(userId: string, orgIds: string[]): Promise<PurgeManifest> {
+  async buildManifest(
+    userId: string,
+    orgIds: string[],
+  ): Promise<PurgeManifest> {
     const hasHold = await this.hasActiveLegalHold(userId, orgIds);
     if (hasHold) {
       return {
@@ -43,7 +48,12 @@ export class GdprStoragePurgeService {
     }
 
     const columns = await enumerateFileKeyColumns(this.db);
-    const keys = await collectSubjectFileKeysWithLegalHold(this.db, userId, orgIds, columns);
+    const keys = await collectSubjectFileKeysWithLegalHold(
+      this.db,
+      userId,
+      orgIds,
+      columns,
+    );
     return { blocked: false, keys };
   }
 
@@ -61,7 +71,9 @@ export class GdprStoragePurgeService {
         blocked: true,
         blockReason: manifest.blockReason,
         dryRun: options.dryRun,
-        keysDeleted: 0,
+        deleted: [],
+        skipped: [],
+        failed: [],
         manifest: [],
       };
     }
@@ -70,19 +82,29 @@ export class GdprStoragePurgeService {
       return {
         blocked: false,
         dryRun: true,
-        keysDeleted: 0,
+        deleted: [],
+        skipped: [],
+        failed: [],
         manifest: manifest.keys,
       };
     }
 
-    let deleted = 0;
-    const storageOrgId = orgIds[0] ?? primaryOrgId;
+    const deleted: string[] = [];
+    const failed: Array<{ key: string; reason: string }> = [];
+
     for (const entry of manifest.keys) {
+      if (entry.orgId === null) {
+        failed.push({ key: entry.key, reason: "table-has-no-org-id" });
+        continue;
+      }
       try {
-        await this.storage.deleteFile(storageOrgId, entry.key);
-        deleted++;
-      } catch {
-        deleted++;
+        await this.storage.deleteFile(entry.orgId, entry.key);
+        deleted.push(entry.key);
+      } catch (err) {
+        failed.push({
+          key: entry.key,
+          reason: err instanceof Error ? err.message : "unknown",
+        });
       }
     }
 
@@ -90,18 +112,24 @@ export class GdprStoragePurgeService {
       userId,
       actorUserId,
       primaryOrgId,
-      deleted,
+      deleted.length,
+      failed.length,
     );
 
     return {
       blocked: false,
       dryRun: false,
-      keysDeleted: deleted,
+      deleted,
+      skipped: [],
+      failed,
       manifest: manifest.keys,
     };
   }
 
-  private async hasActiveLegalHold(userId: string, orgIds: string[]): Promise<boolean> {
+  private async hasActiveLegalHold(
+    userId: string,
+    orgIds: string[],
+  ): Promise<boolean> {
     const orgId = orgIds[0];
     if (!orgId) return false;
 
@@ -125,7 +153,8 @@ export class GdprStoragePurgeService {
     subjectUserId: string,
     actorUserId: string,
     orgId: string,
-    keyCount: number,
+    deletedCount: number,
+    failedCount: number,
   ) {
     await this.db.insert(auditLogs).values({
       action: "subject.storage.erased",
@@ -134,7 +163,8 @@ export class GdprStoragePurgeService {
       targetId: subjectUserId,
       targetType: "user",
       metadata: {
-        keyCount,
+        keyCount: deletedCount,
+        failedCount,
         subjectUserIdHash: this.hashId(subjectUserId),
       },
       isPlatformEvent: false,

@@ -1,6 +1,6 @@
 import { pgTable, serial, text, jsonb, timestamp, index, integer, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 
 export const KB_CHAT_ROLES = ["user", "assistant"] as const;
 export type KbChatRole = (typeof KB_CHAT_ROLES)[number];
@@ -20,13 +20,16 @@ export const kbChatConversations = pgTable(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    userMembershipId: integer("user_membership_id"),
     title: text("title"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
     index("idx_kb_chat_conversations_org_user_updated").on(table.orgId, table.userId, table.updatedAt),
+    index("idx_kb_chat_conversations_org_mbr").on(table.orgId, table.userMembershipId),
     unique("uniq_kb_chat_conversations_org_id").on(table.orgId, table.id),
+    foreignKey({ columns: [table.orgId, table.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_chat_conv_org_user_mbr" }).onDelete("set null"),
   ],
 );
 
@@ -40,6 +43,7 @@ export const kbChatMessages = pgTable(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    userMembershipId: integer("user_membership_id"),
     role: text("role").$type<KbChatRole>().notNull(),
     content: text("content").notNull(),
     citations: jsonb("citations").$type<KbChatCitation[]>(),
@@ -48,9 +52,11 @@ export const kbChatMessages = pgTable(
   },
   (table) => [
     index("idx_kb_chat_messages_org_user_id").on(table.orgId, table.userId, table.id),
+    index("idx_kb_chat_messages_org_mbr").on(table.orgId, table.userMembershipId),
     index("idx_kb_chat_messages_conversation_id").on(table.conversationId),
     unique("uniq_kb_chat_messages_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.conversationId], foreignColumns: [kbChatConversations.orgId, kbChatConversations.id], name: "fk_kb_chat_messages_org_conversation" }).onDelete("cascade"),
+    foreignKey({ columns: [table.orgId, table.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_chat_msg_org_user_mbr" }).onDelete("set null"),
   ],
 );
 
@@ -63,6 +69,10 @@ export const kbChatConversationsRelations = relations(kbChatConversations, ({ on
     fields: [kbChatConversations.userId],
     references: [users.id],
   }),
+  membership: one(organizationMembers, {
+    fields: [kbChatConversations.orgId, kbChatConversations.userMembershipId],
+    references: [organizationMembers.orgId, organizationMembers.id],
+  }),
   messages: many(kbChatMessages),
 }));
 
@@ -74,6 +84,10 @@ export const kbChatMessagesRelations = relations(kbChatMessages, ({ one }) => ({
   user: one(users, {
     fields: [kbChatMessages.userId],
     references: [users.id],
+  }),
+  membership: one(organizationMembers, {
+    fields: [kbChatMessages.orgId, kbChatMessages.userMembershipId],
+    references: [organizationMembers.orgId, organizationMembers.id],
   }),
   conversation: one(kbChatConversations, {
     fields: [kbChatMessages.conversationId],

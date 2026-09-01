@@ -7,6 +7,7 @@ import { HrDepartmentsController } from "./hr-departments.controller";
 import { HrHolidaysController } from "./hr-holidays.controller";
 import { HrLeaveBlackoutController } from "./hr-leave-blackout.controller";
 import { HrDocumentTypesController } from "./hr-document-types.controller";
+import { HrDocumentTypesAdminController } from "./hr-document-types-admin.controller";
 import { HrDocumentTemplatesController } from "./hr-document-templates.controller";
 import { HrEmailTemplatesController } from "./hr-email-templates.controller";
 import { HrSalaryStructuresController } from "./hr-salary-structures.controller";
@@ -31,6 +32,7 @@ import { HrNotificationPreferencesService } from "./hr-notification-preferences.
     HrHolidaysController,
     HrLeaveBlackoutController,
     HrDocumentTypesController,
+    HrDocumentTypesAdminController,
     HrDocumentTemplatesController,
     HrEmailTemplatesController,
     HrSalaryStructuresController,

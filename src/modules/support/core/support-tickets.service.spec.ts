@@ -352,7 +352,7 @@ describe("SupportTicketsService", () => {
     it("getTicket throws NotFoundException for a ticket belonging to a different org", async () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
 
-      await expect(service.getTicket("org1", 123)).rejects.toThrow(NotFoundException);
+      await expect(service.getTicket("org1", 123, { userId: "user1", scope: "all" })).rejects.toThrow(NotFoundException);
     });
 
     it("listMessages throws NotFoundException for a ticket belonging to a different org", async () => {

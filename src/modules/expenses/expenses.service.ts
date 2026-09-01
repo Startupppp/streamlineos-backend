@@ -121,6 +121,7 @@ export class ExpensesService {
     const cats = await this.db.query.expenseCategories.findMany({
       where: and(eq(expenseCategories.orgId, orgId), eq(expenseCategories.isActive, true)),
       orderBy: [expenseCategories.name],
+      limit: 500,
     });
 
     const now = new Date();
@@ -256,6 +257,8 @@ export class ExpensesService {
 
     const [expenseList, countResult, statsResult, pendingList, categoryList] = await Promise.all([
       this.db.query.expenses.findMany({
+        limit: pageSize,
+        offset,
         where: and(...conditions),
         with: {
           user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } },
@@ -268,8 +271,6 @@ export class ExpensesService {
           orderFn(sortColumn),
           desc(expenses.createdAt),
         ],
-        limit: pageSize,
-        offset,
       }),
       this.db.select({ count: count() }).from(expenses).where(and(...conditions)),
       this.db
@@ -297,11 +298,13 @@ export class ExpensesService {
           project: true,
         },
             orderBy: [desc(expenses.createdAt)],
+            limit: 100,
           })
         : Promise.resolve([]),
       this.db.query.expenseCategories.findMany({
         where: and(eq(expenseCategories.orgId, orgId), eq(expenseCategories.isActive, true)),
         orderBy: [expenseCategories.name],
+        limit: 500,
       }),
     ]);
 

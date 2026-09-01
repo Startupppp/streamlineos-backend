@@ -8,6 +8,7 @@
   Res,
   UseGuards,
   } from "@nestjs/common";
+import { ApiResponse } from "@nestjs/swagger";
 import type { Request, Response } from "express";
 import { Public } from "../../common/auth/public.decorator";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
@@ -65,6 +66,16 @@ export class PlatformController {
   @Public()
   @Get("visit")
   @HttpCode(405)
+  @ApiResponse({
+    status: 405,
+    description: "Method Not Allowed",
+    schema: {
+      type: "object",
+      properties: { usage: { type: "string" } },
+      required: ["usage"],
+      additionalProperties: false,
+    },
+  })
   visitUsage() {
     return { usage: "POST { sessionToken, path, referrer }" };
   }

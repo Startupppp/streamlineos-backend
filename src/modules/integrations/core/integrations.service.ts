@@ -6,7 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, ne, inArray } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, inArray, or } from "drizzle-orm";
 import {
   userIntegrationConnections,
   type IntegrationToolkit,
@@ -44,14 +44,23 @@ export class IntegrationsService {
     private readonly gateway: ComposioGateway,
   ) {}
 
-  listConnections(orgId: string, userId: string) {
+  private ownerPredicate(userId: string, membershipId: number | null | undefined) {
+    if (membershipId != null)
+      return or(
+        eq(userIntegrationConnections.membershipId, membershipId),
+        and(isNull(userIntegrationConnections.membershipId), eq(userIntegrationConnections.userId, userId)),
+      );
+    return eq(userIntegrationConnections.userId, userId);
+  }
+
+  listConnections(orgId: string, userId: string, membershipId?: number | null) {
     return this.db
       .select(CONNECTION_COLUMNS)
       .from(userIntegrationConnections)
       .where(
         and(
           eq(userIntegrationConnections.orgId, orgId),
-          eq(userIntegrationConnections.userId, userId),
+          this.ownerPredicate(userId, membershipId),
         ),
       )
       .orderBy(
@@ -68,7 +77,7 @@ export class IntegrationsService {
     return this.gateway.initiateConnection(userId, toolkit, callbackUrl);
   }
 
-  async finalize(orgId: string, userId: string, connectedAccountId: string) {
+  async finalize(orgId: string, userId: string, connectedAccountId: string, membershipId?: number | null) {
     const account = await this.gateway.getOwnedConnectedAccount(
       userId,
       connectedAccountId,
@@ -94,7 +103,7 @@ export class IntegrationsService {
         .where(
           and(
             eq(userIntegrationConnections.orgId, orgId),
-            eq(userIntegrationConnections.userId, userId),
+            this.ownerPredicate(userId, membershipId),
           ),
         )
         .limit(1);
@@ -103,6 +112,7 @@ export class IntegrationsService {
         .values({
           orgId,
           userId,
+          membershipId: membershipId ?? null,
           toolkit,
           composioConnectedAccountId: account.id,
           accountEmail: email,
@@ -182,8 +192,8 @@ export class IntegrationsService {
     return row;
   }
 
-  async disconnect(orgId: string, userId: string, connectionId: number) {
-    const row = await this.ownedConnection(orgId, userId, connectionId);
+  async disconnect(orgId: string, userId: string, connectionId: number, membershipId?: number | null) {
+    const row = await this.ownedConnection(orgId, userId, connectionId, membershipId);
     await this.db.transaction(async (tx) => {
       await tx
         .delete(userIntegrationConnections)
@@ -191,7 +201,7 @@ export class IntegrationsService {
           and(
             eq(userIntegrationConnections.id, connectionId),
             eq(userIntegrationConnections.orgId, orgId),
-            eq(userIntegrationConnections.userId, userId),
+            this.ownerPredicate(userId, membershipId),
           ),
         );
       if (row.isPrimary) {
@@ -201,7 +211,7 @@ export class IntegrationsService {
           .where(
             and(
               eq(userIntegrationConnections.orgId, orgId),
-              eq(userIntegrationConnections.userId, userId),
+              this.ownerPredicate(userId, membershipId),
             ),
           )
           .orderBy(desc(userIntegrationConnections.createdAt))
@@ -225,8 +235,8 @@ export class IntegrationsService {
     return { deleted: true };
   }
 
-  async setPrimary(orgId: string, userId: string, connectionId: number) {
-    await this.ownedConnection(orgId, userId, connectionId);
+  async setPrimary(orgId: string, userId: string, connectionId: number, membershipId?: number | null) {
+    await this.ownedConnection(orgId, userId, connectionId, membershipId);
     return this.db.transaction(async (tx) => {
       await tx
         .update(userIntegrationConnections)
@@ -234,7 +244,7 @@ export class IntegrationsService {
         .where(
           and(
             eq(userIntegrationConnections.orgId, orgId),
-            eq(userIntegrationConnections.userId, userId),
+            this.ownerPredicate(userId, membershipId),
           ),
         );
       const rows = await tx
@@ -244,7 +254,7 @@ export class IntegrationsService {
           and(
             eq(userIntegrationConnections.id, connectionId),
             eq(userIntegrationConnections.orgId, orgId),
-            eq(userIntegrationConnections.userId, userId),
+            this.ownerPredicate(userId, membershipId),
           ),
         )
         .returning(CONNECTION_COLUMNS);
@@ -259,7 +269,7 @@ export class IntegrationsService {
     throw new BadRequestException(`Unsupported toolkit: ${slug ?? "unknown"}`);
   }
 
-  async ownedConnection(orgId: string, userId: string, connectionId: number) {
+  async ownedConnection(orgId: string, userId: string, connectionId: number, membershipId?: number | null) {
     const rows = await this.db
       .select(OWNED_CONNECTION_COLUMNS)
       .from(userIntegrationConnections)
@@ -267,7 +277,7 @@ export class IntegrationsService {
         and(
           eq(userIntegrationConnections.id, connectionId),
           eq(userIntegrationConnections.orgId, orgId),
-          eq(userIntegrationConnections.userId, userId),
+          this.ownerPredicate(userId, membershipId),
         ),
       )
       .limit(1);

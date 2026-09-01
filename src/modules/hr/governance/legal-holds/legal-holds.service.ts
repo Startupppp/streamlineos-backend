@@ -5,7 +5,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { hrLegalHolds, hrLegalHoldItems } from "../../../../db/schema/hr/governance";
@@ -25,32 +27,25 @@ export class LegalHoldsService {
   ) {}
 
   async list(orgId: string, input: ListLegalHoldsInput) {
-    const { page, limit, status, subjectUserId } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, status, subjectUserId } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [eq(hrLegalHolds.orgId, orgId), isNull(hrLegalHolds.deletedAt)];
     if (status) conditions.push(eq(hrLegalHolds.status, status));
     if (subjectUserId) conditions.push(eq(hrLegalHolds.subjectUserId, subjectUserId));
+    if (pos) conditions.push(keysetBeforeId(hrLegalHolds.createdAt, hrLegalHolds.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrLegalHolds)
+      .where(and(...conditions))
+      .orderBy(desc(hrLegalHolds.createdAt), desc(hrLegalHolds.id))
+      .limit(limit + 1);
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrLegalHolds)
-        .where(where)
-        .orderBy(desc(hrLegalHolds.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrLegalHolds).where(where),
-    ]);
-
-    return {
-      data,
-      total: totalResult[0]?.total ?? 0,
-      page,
-      limit,
-    };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async getById(orgId: string, holdId: number) {

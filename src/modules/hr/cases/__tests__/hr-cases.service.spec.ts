@@ -14,8 +14,7 @@ const mockReturningFn = jest.fn().mockResolvedValue([{ id: 1, caseNumber: "CASE-
 const mockUpdateFn = jest.fn().mockReturnThis();
 const mockSetFn = jest.fn().mockReturnThis();
 const mockOrderByFn = jest.fn().mockReturnThis();
-const mockOffsetFn = jest.fn().mockResolvedValue([]);
-const mockCountFn = jest.fn().mockReturnThis();
+const mockExecuteFn = jest.fn().mockResolvedValue([]);
 
 const mockDb = {
   select: mockSelectFn,
@@ -28,8 +27,7 @@ const mockDb = {
   update: mockUpdateFn,
   set: mockSetFn,
   orderBy: mockOrderByFn,
-  offset: mockOffsetFn,
-  count: mockCountFn,
+  execute: mockExecuteFn,
 };
 
 const mockAudit = { log: jest.fn().mockResolvedValue(undefined) };
@@ -72,7 +70,7 @@ describe("HrCasesService — anonymity guarantee", () => {
     mockUpdateFn.mockReturnThis();
     mockSetFn.mockReturnThis();
     mockOrderByFn.mockReturnThis();
-    mockOffsetFn.mockResolvedValue([]);
+    mockExecuteFn.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -139,6 +137,8 @@ describe("HrCasesService — confidential-tier gating", () => {
     mockReturningFn.mockResolvedValue([{ id: 1, caseNumber: "CASE-ABC123" }]);
     mockUpdateFn.mockReturnThis();
     mockSetFn.mockReturnThis();
+    mockOrderByFn.mockReturnThis();
+    mockExecuteFn.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -191,7 +191,9 @@ describe("HrCasesService — org isolation", () => {
     mockSelectFn.mockReturnThis();
     mockFromFn.mockReturnThis();
     mockWhereFn.mockReturnThis();
+    mockOrderByFn.mockReturnThis();
     mockLimitFn.mockResolvedValue([]);
+    mockExecuteFn.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -276,5 +278,89 @@ describe("HrCasesService — RBAC permission keys", () => {
   it("confidential access uses hr:cases:confidential permission", () => {
     const confidentialPermission = "hr:cases:confidential";
     expect(confidentialPermission).toMatch(/^hr:cases:/);
+  });
+});
+
+describe("HrCasesService — cursor pagination (list)", () => {
+  let service: HrCasesService;
+
+  const listInput = { limit: 20 } as const;
+
+  function makeRow(id: number, createdAt: Date) {
+    return {
+      id,
+      caseNumber: `CASE-${id}`,
+      category: "harassment" as const,
+      severity: "medium" as const,
+      status: "open" as const,
+      summary: "Test",
+      anonymous: false,
+      confidential: false,
+      assignedTo: null,
+      subjectEmployeeId: null,
+      createdAt,
+      updatedAt: createdAt,
+      resolvedAt: null,
+    };
+  }
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    mockSelectFn.mockReturnThis();
+    mockFromFn.mockReturnThis();
+    mockWhereFn.mockReturnThis();
+    mockOrderByFn.mockReturnThis();
+    mockExecuteFn.mockResolvedValue([]);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        HrCasesService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: HrAuditService, useValue: mockAudit },
+      ],
+    }).compile();
+
+    service = module.get(HrCasesService);
+  });
+
+  it("returns hasMore=false and no nextCursor when rows <= limit", async () => {
+    const rows = [makeRow(3, new Date("2024-01-03")), makeRow(2, new Date("2024-01-02"))];
+    mockLimitFn.mockResolvedValueOnce(rows);
+
+    const result = await service.list("org1", "u1", true, listInput);
+
+    expect(result.data).toHaveLength(2);
+    expect(result.pagination.hasMore).toBe(false);
+    expect(result.pagination.nextCursor).toBeNull();
+  });
+
+  it("returns hasMore=true and nextCursor when rows > limit", async () => {
+    const ts = new Date("2024-01-10");
+    const rows = Array.from({ length: 21 }, (_, i) => makeRow(21 - i, ts));
+    mockLimitFn.mockResolvedValueOnce(rows);
+
+    const result = await service.list("org1", "u1", true, listInput);
+
+    expect(result.data).toHaveLength(20);
+    expect(result.pagination.hasMore).toBe(true);
+    expect(typeof result.pagination.nextCursor).toBe("string");
+  });
+
+  it("tie-break: cursor encodes both createdAt and id when two rows share the same timestamp", async () => {
+    const sharedTs = new Date("2024-06-15T12:00:00.000Z");
+    const rowA = makeRow(20, sharedTs);
+    const rowB = makeRow(19, sharedTs);
+    mockLimitFn.mockResolvedValueOnce([rowA, rowB]);
+
+    const page1 = await service.list("org1", "u1", true, { limit: 1 });
+
+    expect(page1.data).toHaveLength(1);
+    expect(page1.data[0]!.id).toBe(20);
+    expect(page1.pagination.hasMore).toBe(true);
+
+    const cursor = page1.pagination.nextCursor!;
+    const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+    expect(decoded).toContain(sharedTs.toISOString());
+    expect(decoded).toContain("20");
   });
 });

@@ -89,6 +89,7 @@ export class HrWorkflowStepRunnerService {
     action: typeof hrWorkflowStepActions.$inferInsert["action"],
     comment?: string,
     attachments?: { url: string; name: string }[],
+    actorMembershipId?: number | null,
   ) {
     await this.db.transaction(async (tx) => {
       const [inserted] = await tx.insert(hrWorkflowStepActions).values({
@@ -97,6 +98,7 @@ export class HrWorkflowStepRunnerService {
         stepOrder,
         approverUserId,
         actedByUserId,
+        actedByMembershipId: actorMembershipId ?? null,
         action,
         comment: comment ?? null,
       }).returning({ id: hrWorkflowStepActions.id });

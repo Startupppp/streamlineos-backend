@@ -1,5 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, notInArray } from "drizzle-orm";
+import { and, desc, eq, notInArray } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import {
@@ -22,29 +24,26 @@ export class IdentityService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listProvisioning(orgId: string, input: ListProvisioningInput) {
-    const { page, limit, userId, triggeredBy, status } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, userId, triggeredBy, status } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [eq(hrAccessProvisioning.orgId, orgId)];
     if (userId) conditions.push(eq(hrAccessProvisioning.userId, userId));
     if (triggeredBy) conditions.push(eq(hrAccessProvisioning.triggeredBy, triggeredBy));
     if (status) conditions.push(eq(hrAccessProvisioning.status, status));
+    if (pos) conditions.push(keysetBeforeId(hrAccessProvisioning.createdAt, hrAccessProvisioning.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrAccessProvisioning)
+      .where(and(...conditions))
+      .orderBy(desc(hrAccessProvisioning.createdAt), desc(hrAccessProvisioning.id))
+      .limit(limit + 1);
 
-    const [rows, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrAccessProvisioning)
-        .where(where)
-        .orderBy(desc(hrAccessProvisioning.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrAccessProvisioning).where(where),
-    ]);
-
-    const total = totalResult[0]?.total ?? 0;
-    return { data: rows, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async createProvisioning(orgId: string, input: CreateProvisioningInput) {

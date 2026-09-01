@@ -77,6 +77,7 @@ export const wfhRequests = pgTable("wfh_requests", {
   status: wfhRequestStatusEnum("status").default("PENDING").notNull(),
   approverId: text("approver_id").references(() => users.id),
   approverMembershipId: integer("approver_membership_id"),
+  userMembershipId: integer("user_membership_id"),
   rejectionReason: text("rejection_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -86,6 +87,7 @@ export const wfhRequests = pgTable("wfh_requests", {
   index("idx_wfh_requests_org_status").on(table.orgId, table.status),
   index("idx_wfh_requests_org_user_status").on(table.orgId, table.userId, table.status),
   index("idx_wfh_requests_org_approver_membership").on(table.orgId, table.approverMembershipId),
+  index("idx_wfh_requests_org_user_membership").on(table.orgId, table.userMembershipId),
   foreignKey({
     columns: [table.orgId, table.approverMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],

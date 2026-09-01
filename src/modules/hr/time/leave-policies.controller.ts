@@ -3,6 +3,7 @@ import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -33,6 +34,7 @@ const updateLeavePolicySchema = createLeavePolicySchema.partial();
 type CreateLeavePolicyBody = z.infer<typeof createLeavePolicySchema>;
 type UpdateLeavePolicyBody = z.infer<typeof updateLeavePolicySchema>;
 
+@RequireModule("hr")
 @UseGuards(JwtAuthGuard)
 @Controller("hr/leave-policies")
 export class LeavePoliciesController {

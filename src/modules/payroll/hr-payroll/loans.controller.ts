@@ -19,6 +19,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { AccessService } from "../../access/access.service";
 import { LoansService } from "./loans.service";
 import {
@@ -56,7 +57,7 @@ export class LoansController {
     @CurrentUser() u: CurrentUserContext,
     @Query() query: ListPageQueryInput,
   ) {
-    return this.loans.listLoans(u.orgId, u.userId, await this.isLoanAdmin(u), query.page ?? 1, query.limit ?? 100);
+    return this.loans.listLoans(u.orgId, u.userId, actingMembershipId(u.principal), await this.isLoanAdmin(u), query.page ?? 1, query.limit ?? 100);
   }
 
   @Post()

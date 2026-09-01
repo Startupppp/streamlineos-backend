@@ -331,7 +331,7 @@ describe("SupportMacrosService — preview/apply/render", () => {
   describe("previewMacro", () => {
     it("throws NotFoundException when the macro doesn't exist in the org", async () => {
       mockDb.query.supportMacros.findFirst.mockResolvedValueOnce(undefined);
-      await expect(service.previewMacro("org1", 1, "user-1", 42)).rejects.toThrow(NotFoundException);
+      await expect(service.previewMacro("org1", 1, "user-1", null, 42)).rejects.toThrow(NotFoundException);
     });
 
     it("throws ForbiddenException when previewing another user's private macro", async () => {
@@ -341,7 +341,7 @@ describe("SupportMacrosService — preview/apply/render", () => {
         visibility: "private",
         createdBy: "someone-else",
       });
-      await expect(service.previewMacro("org1", 1, "user-1", 42)).rejects.toThrow(ForbiddenException);
+      await expect(service.previewMacro("org1", 1, "user-1", null, 42)).rejects.toThrow(ForbiddenException);
     });
 
     it("allows the creator to preview their own private macro", async () => {
@@ -351,7 +351,7 @@ describe("SupportMacrosService — preview/apply/render", () => {
         visibility: "private",
         createdBy: "user-1",
       });
-      const result = await service.previewMacro("org1", 1, "user-1", 42);
+      const result = await service.previewMacro("org1", 1, "user-1", null, 42);
       expect(result.body).toBe("Hi Jane Customer");
     });
 
@@ -367,7 +367,7 @@ describe("SupportMacrosService — preview/apply/render", () => {
         createdBy: "user-1",
       });
 
-      const result = await service.previewMacro("org1", 2, "user-1", 42);
+      const result = await service.previewMacro("org1", 2, "user-1", null, 42);
 
       expect(result.body).toContain("Hi External Requester");
       expect(result.body).toContain("re ticket 42");
@@ -382,7 +382,7 @@ describe("SupportMacrosService — preview/apply/render", () => {
         visibility: "team",
         createdBy: "user-1",
       });
-      const result = await service.previewMacro("org1", 3, "user-1", 42);
+      const result = await service.previewMacro("org1", 3, "user-1", null, 42);
       expect(result.body).toBe("Hello {{unknown.var}}");
     });
 
@@ -394,14 +394,14 @@ describe("SupportMacrosService — preview/apply/render", () => {
         visibility: "team",
         createdBy: "user-1",
       });
-      await expect(service.previewMacro("org1", 1, "user-1", 999)).rejects.toThrow(NotFoundException);
+      await expect(service.previewMacro("org1", 1, "user-1", null, 999)).rejects.toThrow(NotFoundException);
     });
   });
 
   describe("applyMacro", () => {
     it("throws NotFoundException when the macro doesn't exist in the org", async () => {
       mockDb.query.supportMacros.findFirst.mockResolvedValueOnce(undefined);
-      await expect(service.applyMacro("org1", 1, "user-1", { ticketId: 42 })).rejects.toThrow(NotFoundException);
+      await expect(service.applyMacro("org1", 1, "user-1", null, { ticketId: 42 })).rejects.toThrow(NotFoundException);
       expect(mockDb.update).not.toHaveBeenCalled();
     });
 
@@ -413,7 +413,7 @@ describe("SupportMacrosService — preview/apply/render", () => {
         createdBy: "someone-else",
         actions: null,
       });
-      await expect(service.applyMacro("org1", 1, "user-1", { ticketId: 42 })).rejects.toThrow(ForbiddenException);
+      await expect(service.applyMacro("org1", 1, "user-1", null, { ticketId: 42 })).rejects.toThrow(ForbiddenException);
     });
 
     it("applies configured status/priority actions to the ticket and bumps usage count", async () => {
@@ -425,7 +425,7 @@ describe("SupportMacrosService — preview/apply/render", () => {
         actions: { setStatus: "RESOLVED", setPriority: "LOW", isInternal: false },
       });
 
-      const result = await service.applyMacro("org1", 1, "user-1", { ticketId: 42 });
+      const result = await service.applyMacro("org1", 1, "user-1", null, { ticketId: 42 });
 
       expect(mockDb.update).toHaveBeenCalled();
       expect(mockDb.set).toHaveBeenCalledWith(expect.objectContaining({ status: "RESOLVED", priority: "LOW" }));
@@ -443,7 +443,7 @@ describe("SupportMacrosService — preview/apply/render", () => {
         actions: { isInternal: true },
       });
 
-      await service.applyMacro("org1", 1, "user-1", { ticketId: 42 });
+      await service.applyMacro("org1", 1, "user-1", null, { ticketId: 42 });
 
       // only the usage-count update should have fired, not a ticket status/priority update
       expect(mockDb.update).toHaveBeenCalledTimes(1);
@@ -452,7 +452,7 @@ describe("SupportMacrosService — preview/apply/render", () => {
 
   describe("listMacros — private visibility scoping", () => {
     it("includes both non-private macros and the caller's own private macros in the where clause", async () => {
-      await service.listMacros("org1", "user-1", {});
+      await service.listMacros("org1", "user-1", null, {});
       expect(mockDb.query.supportRoutingRules.findMany).not.toHaveBeenCalled();
     });
   });

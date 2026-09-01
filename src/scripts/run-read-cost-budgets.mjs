@@ -32,6 +32,10 @@ export function validateBudgets(budgets) {
           errors.push(`${atag}: relation must be a non-empty string`);
       }
     }
+    if (b.maxScanRows !== undefined) {
+      if (typeof b.maxScanRows !== "number" || b.maxScanRows < 0 || !Number.isFinite(b.maxScanRows))
+        errors.push(`${tag}: maxScanRows must be a finite non-negative number`);
+    }
   }
   return errors;
 }
@@ -127,6 +131,17 @@ async function runBudget(budget, fixtures, dbUrl, ssl, orgId, assumeRole) {
       const scans = extractScans(root1);
       const assertionFailures = checkPlanAssertions(budget.planAssertions, nodes, budget.id);
 
+      const scanRowViolations = [];
+      if (budget.maxScanRows !== undefined) {
+        for (const scan of scans) {
+          const total = scan.actualRows + scan.removedByFilter;
+          if (total > budget.maxScanRows)
+            scanRowViolations.push(
+              `${budget.id}: ${scan.relation} scanned ${total} rows > maxScanRows ${budget.maxScanRows} — index not used or plan regressed`,
+            );
+        }
+      }
+
       return {
         status: "measured",
         run1: { hitBlocks: hit1, readBlocks: read1, totalBlocks: hit1 + read1 },
@@ -134,6 +149,7 @@ async function runBudget(budget, fixtures, dbUrl, ssl, orgId, assumeRole) {
         scans,
         tableRows,
         assertionFailures,
+        scanRowViolations,
       };
     });
   } catch (e) {
@@ -204,13 +220,24 @@ async function main() {
   }
 
   try {
-    // Self-test: use a budget whose params never returns null so the harness always exercises
-    // the breach path. BUDGETS[0] (scoped-board-page) returns null when no project exists,
-    // causing a SKIP that never touches breaches — a guard that cannot fail is useless.
-    // org-members-list uses params: (f) => [f.orgId], which is always non-null.
-    const selfTestBudget = BUDGETS.find((b) => b.id === "org-members-list") ?? BUDGETS[0];
+    // Self-test: run three breach cases, one per ratchet type, to prove every guard can fail.
+    // org-members-list uses params: (f) => [f.orgId], which is always non-null, so it never
+    // skips — a guard that skips never touches the breach path and is useless.
+    //
+    // Breach type 1: block ceiling — impossible ceiling 0; any real query touches >0 blocks.
+    // Breach type 2: plan assertion — require-index-only-scan on organization_members; the plan
+    //   uses Bitmap Heap Scan (not Index Only Scan), so this assertion always fails.
+    // Breach type 3: scan-rows — maxScanRows 0; any real query scans at least 1 row.
+    //
+    // All three must breach; if any passes or skips, the self-test is inconclusive.
+    const selfTestBase = BUDGETS.find((b) => b.id === "org-members-list") ?? BUDGETS[0];
     const budgets = SELF_TEST
-      ? [{ ...selfTestBudget, id: "self-test", ceiling: 0 }]
+      ? [
+          { ...selfTestBase, id: "self-test-ceiling", ceiling: 0 },
+          { ...selfTestBase, id: "self-test-assertion",
+            planAssertions: [{ kind: "require-index-only-scan", relation: "organization_members" }] },
+          { ...selfTestBase, id: "self-test-scan-rows", maxScanRows: 0 },
+        ]
       : filterIds
         ? BUDGETS.filter((b) => filterIds.has(b.id))
         : BUDGETS;
@@ -303,6 +330,11 @@ async function main() {
         WHERE org_id = ${ORG}
         ORDER BY created_at DESC, id DESC
         OFFSET 10 LIMIT 1`)) ?? [null];
+    const [businessPartyRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM business_parties WHERE organization_id = ${ORG} AND deleted_at IS NULL LIMIT 1`)) ?? [null];
+
+    const [moduleRoleRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM roles WHERE org_id = ${ORG} AND module_key IS NOT NULL LIMIT 1`)) ?? [null];
 
     const fixtures = {
         ledgerCursorAt: ledgerCursor?.cursor_at ?? null,
@@ -328,6 +360,8 @@ async function main() {
         hasMailMessages: mailMessageRow !== null && mailMessageRow !== undefined,
         hasCalendarEvents: calEventRow !== null && calEventRow !== undefined,
         hasAnnouncements: announcementRow !== null && announcementRow !== undefined,
+        hasBusinessParties: businessPartyRow !== null && businessPartyRow !== undefined,
+        hasModuleRoles: moduleRoleRow !== null && moduleRoleRow !== undefined,
         period,
       };
 
@@ -397,10 +431,10 @@ async function main() {
         continue;
       }
 
-      const { run1, run2, scans, tableRows, assertionFailures } = result;
+      const { run1, run2, scans, tableRows, assertionFailures, scanRowViolations } = result;
       const totalBlocks = run1.totalBlocks;
       const overCeiling = totalBlocks > budget.ceiling;
-      const ok = !overCeiling && assertionFailures.length === 0;
+      const ok = !overCeiling && assertionFailures.length === 0 && scanRowViolations.length === 0;
 
       if (!SELF_TEST) {
         const primaryScan = scans.length > 0
@@ -419,6 +453,7 @@ async function main() {
           `  ceil=${budget.ceiling}  tbl=${tableRows} scan=${scanTotal} sel=${sel}`,
         );
         for (const f of assertionFailures) console.error(`        assertion: ${f}`);
+        for (const f of scanRowViolations) console.error(`        scan-rows: ${f}`);
       }
 
       if (overCeiling)
@@ -426,24 +461,35 @@ async function main() {
       else if (SELF_TEST && run1.totalBlocks === 0)
         unusable.push(`${budget.id}: run1.totalBlocks=0 — budget measured nothing`);
       for (const f of assertionFailures) breaches.push(f);
+      for (const f of scanRowViolations) breaches.push(f);
     }
 
     if (SELF_TEST) {
       if (unusable.length > 0) {
         console.error(
-          "SELF-TEST INCONCLUSIVE: the fixture never produced a measurement, so the ceiling was never tested.",
+          "SELF-TEST INCONCLUSIVE: one or more breach fixtures were unusable (skipped or measured nothing).",
         );
         for (const u of unusable) console.error(`  UNUSABLE: ${u}`);
         process.exitCode = 1;
         return;
       }
-      if (breaches.length > 0) {
-        console.log("SELF-TEST PASS: breach detected — guard can fail");
+      const EXPECTED_BREACH_IDS = new Set([
+        "self-test-ceiling",
+        "self-test-assertion",
+        "self-test-scan-rows",
+      ]);
+      const breachedIds = new Set(
+        breaches.map((b) => b.split(":")[0].trim()),
+      );
+      const missing = [...EXPECTED_BREACH_IDS].filter((id) => !breachedIds.has(id));
+      if (missing.length === 0) {
+        console.log("SELF-TEST PASS: all 3 breach types detected — ceiling, plan-assertion, scan-rows");
         process.exitCode = 0;
       } else {
         console.error(
-          "SELF-TEST FAIL: impossible ceiling (0) was not detected — guard cannot fail",
+          `SELF-TEST FAIL: ${missing.length} breach type(s) not detected — guard cannot fail for: ${missing.join(", ")}`,
         );
+        for (const b of breaches) console.error(`  BREACH: ${b}`);
         process.exitCode = 1;
       }
       return;

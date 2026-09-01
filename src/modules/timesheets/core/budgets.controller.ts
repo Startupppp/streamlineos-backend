@@ -29,7 +29,7 @@ import { z } from "zod";
 
 const budgetIdParams = z.object({ budgetId: z.coerce.number().int().positive() }).strict();
 
-@RequireModule("build")
+@RequireModule("timesheets")
 @Controller("timesheets/budgets")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class TimesheetBudgetsController {

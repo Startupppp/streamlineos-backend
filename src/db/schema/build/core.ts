@@ -20,7 +20,7 @@ import {
   cycleStatusEnum,
   moduleStatusEnum,
 } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 import { deals } from "../crm/deals";
 import { managedProducts } from "./managed-products";
 import { pmWorkspaces } from "./pm-workspaces";
@@ -36,7 +36,9 @@ export const projects = build.table(
     description: text("description"),
     key: text("key").notNull(),
     clientId: text("client_id").references(() => users.id),
+    clientMembershipId: integer("client_membership_id"),
     managerId: text("manager_id").references(() => users.id),
+    managerMembershipId: integer("manager_membership_id"),
     startDate: timestamp("start_date"),
     endDate: timestamp("end_date"),
     status: projectStatusEnum("status").default("ACTIVE").notNull(),
@@ -74,6 +76,8 @@ export const projects = build.table(
     uniqueIndex("uniq_projects_org_key").on(table.orgId, table.key).where(sql`deleted_at IS NULL`),
     index("idx_projects_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
     index("idx_projects_manager").on(table.managerId),
+    index("idx_projects_org_manager_membership").on(table.orgId, table.managerMembershipId),
+    index("idx_projects_org_client_membership").on(table.orgId, table.clientMembershipId),
     index("idx_projects_deal").on(table.dealId),
     index("idx_projects_managed_product").on(table.managedProductId),
     index("idx_projects_name_trgm").using("gin", table.name.op("gin_trgm_ops")).where(sql`deleted_at IS NULL`),
@@ -83,6 +87,16 @@ export const projects = build.table(
       foreignColumns: [pmWorkspaces.orgId, pmWorkspaces.pmWorkspaceId],
       name: "fk_projects_org_pm_workspace",
     }),
+    foreignKey({
+      name: "fk_projects_manager_actor",
+      columns: [table.orgId, table.managerMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("set null"),
+    foreignKey({
+      name: "fk_projects_client_actor",
+      columns: [table.orgId, table.clientMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("set null"),
   ],
 );
 

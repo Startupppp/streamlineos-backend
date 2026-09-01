@@ -1,10 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
-
-export const paginationSchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
-});
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createAccommodationSchema = z.object({
   userId: z.string().uuid(),
@@ -30,7 +25,9 @@ export const approveAccommodationSchema = z.object({
   })).optional(),
 });
 
-export const listAccommodationsSchema = paginationSchema.extend({
+export const listAccommodationsSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   userId: z.string().uuid().optional(),
   status: z.enum(["requested", "under_review", "approved", "denied", "implemented"]).optional(),
   type: z.enum(["equipment", "schedule", "workspace", "medical_restriction", "other"]).optional(),

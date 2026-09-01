@@ -34,6 +34,7 @@ import {
 } from "./dto/accounting.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 
@@ -93,7 +94,7 @@ export class AccountingLedgerController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveAccountingJournalViewScope(this.access, u);
-    return this.ledger.listJournal(u.orgId, query, scope, u.userId);
+    return this.ledger.listJournal(u.orgId, query, scope, u.userId, actingMembershipId(u.principal) ?? 0);
   }
 
   @Post("journal")
@@ -105,7 +106,7 @@ export class AccountingLedgerController {
     @Body() body: CreateJournalEntryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.ledger.createJournalEntry(u.orgId, u.userId, body);
+    return this.ledger.createJournalEntry(u.orgId, u.userId, actingMembershipId(u.principal) ?? 0, body);
   }
 
   @Get("journal/:entryId")

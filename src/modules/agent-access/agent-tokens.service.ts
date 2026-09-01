@@ -154,7 +154,16 @@ export class AgentTokensService {
     };
   }
 
-  list(userId: string, orgId: string) {
+  private issuerPredicate(userId: string, membershipId: number | null | undefined) {
+    if (membershipId != null)
+      return or(
+        eq(agentTokens.issuerMembershipId, membershipId),
+        and(isNull(agentTokens.issuerMembershipId), eq(agentTokens.userId, userId)),
+      );
+    return eq(agentTokens.userId, userId);
+  }
+
+  list(userId: string, orgId: string, membershipId?: number | null) {
     return this.db
       .select({
         id: agentTokens.id,
@@ -167,13 +176,13 @@ export class AgentTokensService {
         createdAt: agentTokens.createdAt,
       })
       .from(agentTokens)
-      .where(and(eq(agentTokens.userId, userId), eq(agentTokens.orgId, orgId)))
+      .where(and(eq(agentTokens.orgId, orgId), this.issuerPredicate(userId, membershipId)))
       .limit(100);
   }
 
-  async revoke(userId: string, orgId: string, tokenId: number) {
+  async revoke(userId: string, orgId: string, tokenId: number, membershipId?: number | null) {
     const existing = await this.db.query.agentTokens.findFirst({
-      where: and(eq(agentTokens.id, tokenId), eq(agentTokens.userId, userId), eq(agentTokens.orgId, orgId)),
+      where: and(eq(agentTokens.id, tokenId), eq(agentTokens.orgId, orgId), this.issuerPredicate(userId, membershipId)),
       columns: { id: true, issuerMembershipId: true, tokenPrefix: true },
     });
     if (!existing) throw new NotFoundException("Agent token not found");
@@ -181,7 +190,7 @@ export class AgentTokensService {
     await this.db
       .update(agentTokens)
       .set({ revokedAt: new Date() })
-      .where(and(eq(agentTokens.id, tokenId), eq(agentTokens.userId, userId), eq(agentTokens.orgId, orgId)));
+      .where(and(eq(agentTokens.id, tokenId), eq(agentTokens.orgId, orgId), this.issuerPredicate(userId, membershipId)));
 
     this.audit.log({
       action: "agent_token.revoked",

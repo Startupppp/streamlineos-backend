@@ -15,6 +15,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { SupportPortalService } from "./support-portal.service";
 import { SupportCustomFieldsService } from "./support-custom-fields.service";
@@ -45,7 +46,7 @@ export class SupportPortalController {
   @Get("tickets")
   @RequirePermission("support:portal:tickets:view")
   listMyTickets(@CurrentUser() u: CurrentUserContext) {
-    return this.portal.listMyTickets(u.orgId, u.userId);
+    return this.portal.listMyTickets(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   @Get("custom-fields")
@@ -70,14 +71,14 @@ export class SupportPortalController {
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
-    return this.portal.createTicket(u.orgId, u.userId, body);
+    return this.portal.createTicket(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Get("tickets/:ticketId")
   @RequirePermission("support:portal:tickets:view")
   @Validate({ params: ticketIdParams })
   getMyTicket(@Param("ticketId", ParseIntPipe) ticketId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.portal.getMyTicket(u.orgId, u.userId, ticketId);
+    return this.portal.getMyTicket(u.orgId, u.userId, actingMembershipId(u.principal), ticketId);
   }
 
   @Post("tickets/:ticketId/messages")
@@ -90,6 +91,6 @@ export class SupportPortalController {
     @Body() body: CreatePortalMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.portal.addMessage(u.orgId, u.userId, ticketId, body);
+    return this.portal.addMessage(u.orgId, u.userId, actingMembershipId(u.principal), ticketId, body);
   }
 }

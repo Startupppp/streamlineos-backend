@@ -42,9 +42,9 @@ export class PayrollJobsController {
     @Query() query: ListJobsQuery,
   ) {
     if (query.runId) {
-      return this.jobs.listForResource(u.orgId, "payroll_run", String(query.runId), query.page, query.limit);
+      return this.jobs.listForResource(u.orgId, "payroll_run", String(query.runId), query.cursor, query.limit);
     }
-    return this.jobs.listFailed(u.orgId, query.page, query.limit);
+    return this.jobs.listFailed(u.orgId, query.cursor, query.limit);
   }
 
   @Get(":jobId")

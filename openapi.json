@@ -4192,18 +4192,15 @@
         "operationId": "AccountingPayablesReceivablesController_listCustomers",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -5462,18 +5459,15 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -10651,7 +10645,8 @@
         ],
         "x-exposure": "permissioned",
         "x-permission": "accounting:reports:export",
-        "description": "Exposure: permission — accounting:reports:export"
+        "description": "Exposure: permission — accounting:reports:export",
+        "x-bodyless": true
       }
     },
     "/accounting/reports/export/jobs/{jobId}/download": {
@@ -22972,6 +22967,675 @@
         "x-exposure": "permissioned",
         "x-permission": "billing:subscription:view",
         "description": "Exposure: permission — billing:subscription:view"
+      }
+    },
+    "/blog/admin/categories": {
+      "post": {
+        "operationId": "BlogAdminController_createCategory",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:categories:manage",
+        "description": "Exposure: permission — blog:categories:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^#([0-9a-fA-F]{6})$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/blog/admin/categories/{categoryId}": {
+      "patch": {
+        "operationId": "BlogAdminController_updateCategory",
+        "parameters": [
+          {
+            "name": "categoryId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:categories:manage",
+        "description": "Exposure: permission — blog:categories:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^#([0-9a-fA-F]{6})$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "BlogAdminController_deleteCategory",
+        "parameters": [
+          {
+            "name": "categoryId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:categories:manage",
+        "description": "Exposure: permission — blog:categories:manage"
+      }
+    },
+    "/blog/admin/posts": {
+      "get": {
+        "operationId": "BlogAdminController_listPosts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:posts:manage",
+        "description": "Exposure: permission — blog:posts:manage"
+      },
+      "post": {
+        "operationId": "BlogAdminController_createPost",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:posts:manage",
+        "description": "Exposure: permission — blog:posts:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "excerpt": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "contentJson": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "coverImage": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "categoryId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "authorId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "default": "draft",
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "published",
+                      "archived"
+                    ]
+                  },
+                  "isFeatured": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "tags": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "metaTitle": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "metaDescription": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 320
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "slug": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "title",
+                  "excerpt",
+                  "content",
+                  "coverImage"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/blog/admin/posts/{postId}": {
+      "get": {
+        "operationId": "BlogAdminController_getPost",
+        "parameters": [
+          {
+            "name": "postId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:posts:manage",
+        "description": "Exposure: permission — blog:posts:manage"
+      },
+      "patch": {
+        "operationId": "BlogAdminController_updatePost",
+        "parameters": [
+          {
+            "name": "postId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:posts:manage",
+        "description": "Exposure: permission — blog:posts:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "excerpt": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "contentJson": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "coverImage": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "categoryId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "authorId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "default": "draft",
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "published",
+                      "archived"
+                    ]
+                  },
+                  "isFeatured": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "tags": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "metaTitle": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "metaDescription": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 320
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "slug": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "BlogAdminController_deletePost",
+        "parameters": [
+          {
+            "name": "postId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:posts:manage",
+        "description": "Exposure: permission — blog:posts:manage"
       }
     },
     "/blog/by-slug/{slug}": {
@@ -86875,6 +87539,25 @@
         "operationId": "HrBenefitsController_listClaims",
         "parameters": [
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
             "name": "status",
             "in": "query",
             "required": false,
@@ -86895,28 +87578,6 @@
             "required": false,
             "schema": {
               "type": "string"
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 20,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
             }
           }
         ],
@@ -87569,17 +88230,6 @@
                 "perk",
                 "other"
               ]
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
             }
           },
           {
@@ -88784,14 +89434,11 @@
         "operationId": "HrCasesController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -89584,14 +90231,11 @@
         "operationId": "HrDisciplinaryController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -91719,7 +92363,7 @@
         "description": "Exposure: authorized in service — a three-key check in the handler: hr:documents:view scope=all, hr:documents:view or self:onboarding-docs"
       },
       "post": {
-        "operationId": "HrDocumentTypesController_create",
+        "operationId": "HrDocumentTypesAdminController_create",
         "parameters": [],
         "responses": {
           "201": {
@@ -91748,7 +92392,7 @@
           }
         },
         "tags": [
-          "HrDocumentTypes"
+          "HrDocumentTypesAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:documents:manage",
@@ -91838,7 +92482,7 @@
         "description": "Exposure: authorized in service — a three-key check in the handler: hr:documents:view scope=all, hr:documents:view or self:onboarding-docs"
       },
       "patch": {
-        "operationId": "HrDocumentTypesController_update",
+        "operationId": "HrDocumentTypesAdminController_update",
         "parameters": [
           {
             "name": "documentTypeId",
@@ -91881,7 +92525,7 @@
           }
         },
         "tags": [
-          "HrDocumentTypes"
+          "HrDocumentTypesAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:documents:manage",
@@ -91926,7 +92570,7 @@
         }
       },
       "delete": {
-        "operationId": "HrDocumentTypesController_remove",
+        "operationId": "HrDocumentTypesAdminController_remove",
         "parameters": [
           {
             "name": "documentTypeId",
@@ -91969,7 +92613,7 @@
           }
         },
         "tags": [
-          "HrDocumentTypes"
+          "HrDocumentTypesAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:documents:manage",
@@ -93108,6 +93752,25 @@
         "operationId": "HrEffectiveChangesController_list",
         "parameters": [
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
             "name": "employmentId",
             "in": "query",
             "required": false,
@@ -93147,28 +93810,6 @@
                 "approved",
                 "applied"
               ]
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 20,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
             }
           }
         ],
@@ -100390,14 +101031,11 @@
         "operationId": "AccommodationsController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -101155,14 +101793,11 @@
         "operationId": "EmergencyController_listEvents",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -101931,14 +102566,11 @@
         "operationId": "IdentityController_listProvisioning",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -107413,14 +108045,11 @@
         "operationId": "ComplianceController_listEvents",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -107614,14 +108243,11 @@
         "operationId": "ComplianceController_listRequirements",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -108109,14 +108735,11 @@
         "operationId": "ContractsController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -108752,14 +109375,11 @@
         "operationId": "WorkAuthorizationsController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -109179,14 +109799,11 @@
         "operationId": "HrGovernanceDelegationsController_listOrg",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -109484,14 +110101,11 @@
         "operationId": "HrGovernanceDelegationsController_listMy",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -109567,14 +110181,11 @@
         "operationId": "LaborController_listAgreements",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -109913,14 +110524,11 @@
         "operationId": "LaborController_listLaborCases",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -110202,14 +110810,11 @@
         "operationId": "LaborController_listMemberships",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -110493,14 +111098,11 @@
         "operationId": "LegalHoldsController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -111578,14 +112180,11 @@
         "operationId": "PositionsController_list",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -111961,14 +112560,11 @@
         "operationId": "PositionsController_listVacant",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -112036,14 +112632,11 @@
         "operationId": "RetentionController_listPolicies",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -112348,14 +112941,11 @@
         "operationId": "RetentionController_listRequests",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -112686,14 +113276,11 @@
         "operationId": "PositionsController_listScenarios",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -117830,7 +118417,7 @@
     },
     "/hr/onboarding-docs": {
       "get": {
-        "operationId": "OnboardingViewsController_list",
+        "operationId": "HrOnboardingDocsAdminController_list",
         "parameters": [
           {
             "name": "userId",
@@ -117899,14 +118486,14 @@
           }
         },
         "tags": [
-          "OnboardingViews"
+          "HrOnboardingDocsAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
         "description": "Exposure: permission — hr:onboarding:manage"
       },
       "post": {
-        "operationId": "OnboardingViewsController_create",
+        "operationId": "HrOnboardingDocsAdminController_create",
         "parameters": [],
         "responses": {
           "201": {
@@ -117935,7 +118522,7 @@
           }
         },
         "tags": [
-          "OnboardingViews"
+          "HrOnboardingDocsAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -117986,7 +118573,7 @@
     },
     "/hr/onboarding-docs/{docId}": {
       "patch": {
-        "operationId": "OnboardingViewsController_review",
+        "operationId": "HrOnboardingDocsAdminController_review",
         "parameters": [
           {
             "name": "docId",
@@ -118029,7 +118616,7 @@
           }
         },
         "tags": [
-          "OnboardingViews"
+          "HrOnboardingDocsAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -118064,7 +118651,7 @@
     },
     "/hr/onboarding-docs/{docId}/file": {
       "get": {
-        "operationId": "OnboardingViewsController_getFile",
+        "operationId": "HrOnboardingDocsAdminController_getFile",
         "parameters": [
           {
             "name": "docId",
@@ -118101,7 +118688,7 @@
           }
         },
         "tags": [
-          "OnboardingViews"
+          "HrOnboardingDocsAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -118309,7 +118896,7 @@
     },
     "/hr/onboarding-docs/summary": {
       "get": {
-        "operationId": "OnboardingViewsController_summary",
+        "operationId": "HrOnboardingDocsAdminController_summary",
         "parameters": [
           {
             "name": "page",
@@ -118378,7 +118965,7 @@
           }
         },
         "tags": [
-          "OnboardingViews"
+          "HrOnboardingDocsAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -137243,14 +137830,11 @@
         "operationId": "DocumentsController_listRichDocuments",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -137876,14 +138460,11 @@
         "operationId": "HrSafetyController_listIncidents",
         "parameters": [
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -142878,6 +143459,25 @@
         "operationId": "HrWorkflowDefinitionsController_list",
         "parameters": [
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
             "name": "objectType",
             "in": "query",
             "required": false,
@@ -142916,28 +143516,6 @@
                 "active",
                 "archived"
               ]
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
             }
           }
         ],
@@ -143629,6 +144207,25 @@
             }
           },
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
             "name": "status",
             "in": "query",
             "required": false,
@@ -143670,28 +144267,6 @@
                 "termination",
                 "grievance_case"
               ]
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
             }
           }
         ],
@@ -144092,6 +144667,25 @@
         "operationId": "HrWorkflowInstancesController_listAll",
         "parameters": [
           {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            }
+          },
+          {
             "name": "status",
             "in": "query",
             "required": false,
@@ -144133,28 +144727,6 @@
                 "termination",
                 "grievance_case"
               ]
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
             }
           }
         ],
@@ -161052,18 +161624,15 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
-            "name": "pageSize",
+            "name": "limit",
             "in": "query",
             "required": false,
             "schema": {
@@ -178750,7 +179319,7 @@
     },
     "/onboarding": {
       "get": {
-        "operationId": "OnboardingController_getProgress",
+        "operationId": "HrOnboardingAdminController_getProgress",
         "parameters": [],
         "responses": {
           "200": {
@@ -178773,14 +179342,14 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
         "description": "Exposure: permission — hr:onboarding:manage"
       },
       "post": {
-        "operationId": "OnboardingController_initiate",
+        "operationId": "HrOnboardingAdminController_initiate",
         "parameters": [],
         "responses": {
           "201": {
@@ -178809,7 +179378,7 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -178837,7 +179406,7 @@
     },
     "/onboarding/{userId}": {
       "get": {
-        "operationId": "OnboardingController_getUserTasks",
+        "operationId": "HrOnboardingAdminController_getUserTasks",
         "parameters": [
           {
             "name": "userId",
@@ -178873,7 +179442,7 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:tasks:view",
@@ -179550,7 +180119,7 @@
     },
     "/onboarding/reminders": {
       "post": {
-        "operationId": "OnboardingController_sendReminders",
+        "operationId": "HrOnboardingAdminController_sendReminders",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKeyHeader"
@@ -179583,7 +180152,7 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -179633,7 +180202,7 @@
     },
     "/onboarding/requirements/documents": {
       "post": {
-        "operationId": "OnboardingController_ensureRequirementDocuments",
+        "operationId": "HrOnboardingAdminController_ensureRequirementDocuments",
         "parameters": [],
         "responses": {
           "200": {
@@ -179662,7 +180231,7 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -179935,7 +180504,7 @@
     },
     "/onboarding/templates": {
       "get": {
-        "operationId": "OnboardingController_listTemplates",
+        "operationId": "HrOnboardingAdminController_listTemplates",
         "parameters": [],
         "responses": {
           "200": {
@@ -179958,14 +180527,14 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
         "description": "Exposure: permission — hr:onboarding:manage"
       },
       "post": {
-        "operationId": "OnboardingController_createTemplate",
+        "operationId": "HrOnboardingAdminController_createTemplate",
         "parameters": [],
         "responses": {
           "201": {
@@ -179994,7 +180563,7 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -180072,7 +180641,7 @@
     },
     "/onboarding/templates/departments": {
       "get": {
-        "operationId": "OnboardingController_listTemplateDepartments",
+        "operationId": "HrOnboardingAdminController_listTemplateDepartments",
         "parameters": [],
         "responses": {
           "200": {
@@ -180095,7 +180664,7 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -192566,14 +193135,11 @@
             }
           },
           {
-            "name": "page",
+            "name": "cursor",
             "in": "query",
             "required": false,
             "schema": {
-              "default": 1,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 9007199254740991
+              "type": "string"
             }
           },
           {
@@ -200902,7 +201468,23 @@
             "$ref": "#/components/responses/BadRequest"
           },
           "405": {
-            "description": ""
+            "description": "Method Not Allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "usage": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "usage"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
@@ -205469,8 +206051,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string",
-              "minLength": 1
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -205568,8 +206151,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string",
-              "minLength": 1
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {

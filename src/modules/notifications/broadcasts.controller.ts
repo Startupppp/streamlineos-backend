@@ -18,6 +18,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { BroadcastsService } from "./broadcasts.service";
 import {
   createBroadcastSchema,
@@ -69,7 +70,7 @@ export class BroadcastsController {
     @Query() query: ListBroadcastInboxInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.broadcastsService.listInbox(u.orgId, u.userId, query.limit);
+    return this.broadcastsService.listInbox(u.orgId, u.userId, query.limit, actingMembershipId(u.principal));
   }
 
   @Post()
@@ -124,7 +125,7 @@ export class BroadcastsController {
     @Param("broadcastId", ParseIntPipe) broadcastId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.broadcastsService.dismiss(u.orgId, u.userId, broadcastId);
+    return this.broadcastsService.dismiss(u.orgId, u.userId, broadcastId, actingMembershipId(u.principal));
   }
 
   @Post(":broadcastId/cancel")

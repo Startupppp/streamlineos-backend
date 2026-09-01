@@ -8,9 +8,10 @@ import {
   timestamp,
   index,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations, users, organizationMembers } from "../common/auth";
 
 export interface RoutingRuleCondition {
   field: string;
@@ -37,12 +38,19 @@ export const supportMacros = pgTable(
     actions: jsonb("actions").$type<MacroActions>().default({}).notNull(),
     usageCount: integer("usage_count").default(0).notNull(),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
     index("idx_support_macros_org").on(table.orgId),
     unique("uniq_support_macros_org_id").on(table.orgId, table.id),
+    index("idx_support_macros_org_created_actor").on(table.orgId, table.createdByMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.createdByMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_support_macros_created_actor",
+    }).onDelete("set null"),
   ],
 );
 
@@ -54,6 +62,7 @@ export const supportRoutingRules = pgTable(
     name: text("name").notNull(),
     conditions: jsonb("conditions").$type<RoutingRuleCondition[]>().default([]).notNull(),
     assigneeId: text("assignee_id").references(() => users.id, { onDelete: "set null" }),
+    assigneeMembershipId: integer("assignee_membership_id"),
     setPriority: text("set_priority"),
     assignmentMode: text("assignment_mode").default("static").notNull(),
     candidateAgentIds: jsonb("candidate_agent_ids").$type<string[]>().default([]).notNull(),
@@ -67,6 +76,12 @@ export const supportRoutingRules = pgTable(
   (table) => [
     index("idx_support_routing_rules_org_enabled").on(table.orgId, table.isEnabled),
     unique("uniq_support_routing_rules_org_id").on(table.orgId, table.id),
+    index("idx_support_routing_rules_org_assignee_actor").on(table.orgId, table.assigneeMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.assigneeMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_support_routing_rules_assignee_actor",
+    }).onDelete("set null"),
   ],
 );
 

@@ -3,7 +3,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, eq, isNull, lte } from "drizzle-orm";
+import { and, asc, eq, isNull, lte } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetAfterValue } from "../../../common/pagination/keyset";
 import { hrWorkAuthorizations } from "../../../db/schema/hr/global-compliance";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -22,8 +24,8 @@ export class WorkAuthorizationsService {
   ) {}
 
   async list(orgId: string, input: ListWorkAuthInput) {
-    const { page, limit, employmentId, status, days } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, employmentId, status, days } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [
       eq(hrWorkAuthorizations.orgId, orgId),
@@ -39,21 +41,19 @@ export class WorkAuthorizationsService {
       conditions.push(lte(hrWorkAuthorizations.validUntil, cutoff.toISOString().split("T")[0]));
     }
 
-    const where = and(...conditions);
+    if (pos) conditions.push(keysetAfterValue(hrWorkAuthorizations.validUntil, hrWorkAuthorizations.id, pos));
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrWorkAuthorizations)
-        .where(where)
-        .orderBy(hrWorkAuthorizations.validUntil)
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrWorkAuthorizations).where(where),
-    ]);
+    const rows = await this.db
+      .select()
+      .from(hrWorkAuthorizations)
+      .where(and(...conditions))
+      .orderBy(asc(hrWorkAuthorizations.validUntil), asc(hrWorkAuthorizations.id))
+      .limit(limit + 1);
 
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: String(row.validUntil ?? ""),
+      id: String(row.id),
+    }));
   }
 
   async getOne(orgId: string, id: number) {

@@ -33,7 +33,7 @@ import { z } from "zod";
 
 const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
 
-@RequireModule("build")
+@RequireModule("timesheets")
 @Controller("timesheets/entries")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class EntriesController {

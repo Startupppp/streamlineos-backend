@@ -52,7 +52,7 @@ describe("LaborService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn() };
     const svc = new LaborService(db, mockAudit as never);
-    await svc.listMemberships(ATTACKER, { page: 1, limit: 10 });
+    await svc.listMemberships(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -60,7 +60,7 @@ describe("LaborService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockAudit = { log: jest.fn() };
     const svc = new LaborService(db, mockAudit as never);
-    await svc.listMemberships(OWNER, { page: 1, limit: 10 });
+    await svc.listMemberships(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });
@@ -74,7 +74,7 @@ describe("LegalHoldsService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn() };
     const svc = new LegalHoldsService(db, mockAudit as never);
-    await svc.list(ATTACKER, { page: 1, limit: 10 });
+    await svc.list(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -82,7 +82,7 @@ describe("LegalHoldsService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockAudit = { log: jest.fn() };
     const svc = new LegalHoldsService(db, mockAudit as never);
-    await svc.list(OWNER, { page: 1, limit: 10 });
+    await svc.list(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });
@@ -96,7 +96,7 @@ describe("PositionsService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn() };
     const svc = new PositionsService(db, mockAudit as never);
-    await svc.list(ATTACKER, { page: 1, limit: 10 });
+    await svc.list(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -104,7 +104,7 @@ describe("PositionsService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockAudit = { log: jest.fn() };
     const svc = new PositionsService(db, mockAudit as never);
-    await svc.list(OWNER, { page: 1, limit: 10 });
+    await svc.list(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });
@@ -118,7 +118,7 @@ describe("RetentionService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn() };
     const svc = new RetentionService(db, mockAudit as never);
-    await svc.listPolicies(ATTACKER, { page: 1, limit: 10 });
+    await svc.listPolicies(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -126,7 +126,7 @@ describe("RetentionService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockAudit = { log: jest.fn() };
     const svc = new RetentionService(db, mockAudit as never);
-    await svc.listPolicies(OWNER, { page: 1, limit: 10 });
+    await svc.listPolicies(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });

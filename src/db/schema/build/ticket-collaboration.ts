@@ -169,11 +169,18 @@ export const ticketWatchers = build.table(
     userId: text("user_id")
       .references(() => users.id, { onDelete: "cascade" })
       .notNull(),
+    membershipId: integer("membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     uniqueIndex("uniq_ticket_watcher").on(table.ticketId, table.userId),
     index("idx_ticket_watchers_user").on(table.userId),
+    index("idx_ticket_watchers_org_membership").on(table.orgId, table.membershipId),
+    foreignKey({
+      name: "fk_ticket_watchers_actor",
+      columns: [table.orgId, table.membershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("cascade"),
   ],
 );
 
@@ -215,12 +222,19 @@ export const ticketChecklistItems = build.table(
     assigneeId: text("assignee_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    assigneeMembershipId: integer("assignee_membership_id"),
     dueDate: date("due_date"),
     order: integer("order").default(0).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     index("idx_ticket_checklist_items_checklist").on(table.checklistId),
+    index("idx_ticket_checklist_items_org_assignee_membership").on(table.orgId, table.assigneeMembershipId),
+    foreignKey({
+      name: "fk_ticket_checklist_items_assignee_actor",
+      columns: [table.orgId, table.assigneeMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("set null"),
   ],
 );
 
@@ -264,6 +278,7 @@ export const ticketCommentReactions = build.table(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    membershipId: integer("membership_id"),
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
@@ -279,7 +294,13 @@ export const ticketCommentReactions = build.table(
       t.emoji,
     ),
     index("idx_comment_reactions_comment_id").on(t.commentId),
+    index("idx_comment_reactions_org_membership").on(t.orgId, t.membershipId),
     unique("uniq_ticket_comment_reactions_org_id").on(t.orgId, t.id),
+    foreignKey({
+      name: "fk_ticket_comment_reactions_actor",
+      columns: [t.orgId, t.membershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    }).onDelete("cascade"),
   ],
 );
 
