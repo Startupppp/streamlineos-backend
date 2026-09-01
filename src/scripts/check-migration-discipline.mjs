@@ -328,6 +328,14 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   "dup-prefix:0432_drop_quiet_hours_timezone.sql",
   "dup-prefix:0700_timesheets_idx_org_status_date.sql",
   "dup-prefix:0701_timesheets_attr_validate.sql",
+  // 0591b is a cold-replay repair inserted between 0590 and 0591 so that 31 tables are
+  // created before RLS is enabled on them on a fresh DB. Its `when` is set above the
+  // production watermark so production applies it as a no-op (already applied inline).
+  // Array position and `when` answer different questions: position governs cold replay
+  // order; `when` governs whether production applies the migration. Both entries are
+  // intentional and cannot be corrected without breaking one or the other invariant.
+  "journal-order:0591_tenant_isolation_for_unprotected_tables.sql",
+  "insert-order:0591b_gl_ap_ar_bank_tax_chain_repair.sql",
 ]);
 
 // ─── check functions ──────────────────────────────────────────────────────────
