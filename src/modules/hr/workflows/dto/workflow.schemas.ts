@@ -68,6 +68,13 @@ export const WorkflowInstanceQuerySchema = z.object({
   objectType: z.enum(HR_WORKFLOW_OBJECT_TYPES).optional(),
 });
 
+export const WorkflowActedQuerySchema = z
+  .object({
+    cursor: z.string().trim().min(1).max(2048).optional(),
+    limit: pageSizeField(50, 100),
+  })
+  .strict();
+
 export const ActOnInstanceSchema = z.object({
   comment: z.string().optional(),
   attachments: z.array(z.object({ url: z.string().url(), name: z.string() })).optional(),
@@ -96,6 +103,7 @@ export type CreateWorkflowDefinitionDto = z.infer<typeof CreateWorkflowDefinitio
 export type UpdateWorkflowDefinitionDto = z.infer<typeof UpdateWorkflowDefinitionSchema>;
 export type WorkflowDefinitionQueryDto = z.infer<typeof WorkflowDefinitionQuerySchema>;
 export type WorkflowInstanceQueryDto = z.infer<typeof WorkflowInstanceQuerySchema>;
+export type WorkflowActedQueryDto = z.infer<typeof WorkflowActedQuerySchema>;
 export type ActOnInstanceDto = z.infer<typeof ActOnInstanceSchema>;
 export type RejectInstanceDto = z.infer<typeof RejectInstanceSchema>;
 export type CreateDelegationDto = z.infer<typeof CreateDelegationSchema>;

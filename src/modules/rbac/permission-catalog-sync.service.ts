@@ -66,7 +66,7 @@ export class PermissionCatalogSyncService implements OnModuleInit {
     }
 
     const catalogModules = new Set(
-      (await this.db.select({ moduleKey: modulesCatalog.moduleKey }).from(modulesCatalog))
+      (await this.db.select({ moduleKey: modulesCatalog.moduleKey }).from(modulesCatalog).limit(100))
         .map((row) => row.moduleKey),
     );
 
@@ -104,7 +104,7 @@ export class PermissionCatalogSyncService implements OnModuleInit {
       .onConflictDoNothing();
 
     const catalogNames = new Set(PERMISSIONS.map((permission) => permission.name));
-    const stored = await this.db.select({ name: permissions.name }).from(permissions);
+    const stored = await this.db.select({ name: permissions.name }).from(permissions).limit(5000);
     const staleKeys = stored
       .map((row) => row.name)
       .filter((name) => !catalogNames.has(name))
@@ -118,6 +118,7 @@ export class PermissionCatalogSyncService implements OnModuleInit {
           .select({ name: permissions.name })
           .from(permissions)
           .where(inArray(permissions.name, staleKeys))
+          .limit(5000)
           .for("update");
         const lockedKeys = lockedRows.map((row) => row.name);
         const roleReferencedRows = await tx

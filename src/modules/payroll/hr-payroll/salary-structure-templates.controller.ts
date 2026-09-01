@@ -22,10 +22,10 @@ import { SalaryStructureTemplatesService } from "./salary-structure-templates.se
 import {
   createSalaryStructureTemplateSchema,
   updateSalaryStructureTemplateSchema,
-  listPageQuerySchema,
+  cursorListQuerySchema,
   type CreateSalaryStructureTemplateInput,
   type UpdateSalaryStructureTemplateInput,
-  type ListPageQueryInput,
+  type CursorListQueryInput,
 } from "./dto/payroll.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -41,9 +41,9 @@ export class SalaryStructureTemplatesController {
   @Get()
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:salary:view")
-  @Validate({ query: listPageQuerySchema })
-  list(@CurrentUser() u: CurrentUserContext, @Query() query: ListPageQueryInput) {
-    return this.service.list(u.orgId, query.page, query.limit);
+  @Validate({ query: cursorListQuerySchema })
+  list(@CurrentUser() u: CurrentUserContext, @Query() query: CursorListQueryInput) {
+    return this.service.list(u.orgId, query.cursor, query.limit);
   }
 
   @Post()

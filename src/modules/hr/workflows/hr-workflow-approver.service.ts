@@ -121,12 +121,13 @@ export class HrWorkflowApproverService {
 
   async resolveEffectiveActor(
     orgId: string,
-    actorUserId: string,
+    actorMembershipId: number,
     resolvedApprovers: string[],
     _: string,
     objectType: HrWorkflowObjectType,
   ): Promise<string | null> {
-    if (resolvedApprovers.includes(actorUserId)) return actorUserId;
+    const resolvedApproverMembershipIds = await this.membershipIdsForUsers(orgId, resolvedApprovers);
+    if (resolvedApproverMembershipIds.includes(actorMembershipId)) return "authorized";
 
     const now = new Date();
     const delegations = await this.db.select()
@@ -134,7 +135,7 @@ export class HrWorkflowApproverService {
       .where(
         and(
           eq(hrWorkflowDelegations.orgId, orgId),
-          eq(hrWorkflowDelegations.delegateUserId, actorUserId),
+          eq(hrWorkflowDelegations.delegateMembershipId, actorMembershipId),
           eq(hrWorkflowDelegations.active, true),
           lte(hrWorkflowDelegations.startsAt, now),
         ),
@@ -144,9 +145,24 @@ export class HrWorkflowApproverService {
     const validDelegations = delegations.filter((d) => {
       if (d.endsAt < now) return false;
       if (d.objectType !== null && d.objectType !== objectType) return false;
-      return resolvedApprovers.includes(d.delegatorUserId);
+      return d.delegatorMembershipId != null
+        && resolvedApproverMembershipIds.includes(d.delegatorMembershipId);
     });
 
-    return validDelegations.length > 0 ? actorUserId : null;
+    return validDelegations.length > 0 ? "authorized" : null;
+  }
+
+  private async membershipIdsForUsers(orgId: string, userIds: string[]): Promise<number[]> {
+    if (userIds.length === 0) return [];
+    const uniqueUserIds = [...new Set(userIds)];
+    const members = await this.db
+      .select({ membershipId: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(
+        eq(organizationMembers.orgId, orgId),
+        inArray(organizationMembers.userId, uniqueUserIds),
+      ))
+      .limit(uniqueUserIds.length);
+    return members.map((member) => member.membershipId);
   }
 }

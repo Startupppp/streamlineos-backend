@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, desc, eq, getTableColumns, gt, gte, ilike, isNull, lt, lte, or, sql } from "drizzle-orm";
-import { ledgerAccounts, journalEntries, journalLines, finApprovalPolicies, finApprovalRequests, users } from "../../../db/schema";
+import { ledgerAccounts, journalEntries, journalLines, finApprovalPolicies, finApprovalRequests, organizationMembers, users } from "../../../db/schema";
 import type { DataScope } from "../../access/access.types";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -174,7 +174,7 @@ export class AccountingLedgerService {
     const allPolicies = await this.db
       .select({
         id: finApprovalPolicies.id,
-        approverUserId: finApprovalPolicies.approverUserId,
+        approverMembershipId: finApprovalPolicies.approverMembershipId,
         minAmount: finApprovalPolicies.minAmount,
       })
       .from(finApprovalPolicies)
@@ -228,12 +228,18 @@ export class AccountingLedgerService {
           requestedBy: userId,
         });
 
-        if (applicablePolicy.approverUserId) {
+        if (applicablePolicy.approverMembershipId) {
+          const [approver] = await tx
+            .select({ userId: organizationMembers.userId })
+            .from(organizationMembers)
+            .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.id, applicablePolicy.approverMembershipId)))
+            .limit(1);
+          if (!approver) throw new BadRequestException("Approval policy approver membership is no longer active");
           await this.dispatch.emit({
             eventKey: "accounting.approval.requested",
             orgId,
             actorUserId: userId,
-            targetUserIds: [applicablePolicy.approverUserId],
+            targetUserIds: [approver.userId],
             entityType: "journal_entry",
             entityId: String(persisted.id),
             variables: { entryNumber: persisted.entryNumber, amount: entryTotalStr, description: input.description },

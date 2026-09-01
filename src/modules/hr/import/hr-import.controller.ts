@@ -113,7 +113,8 @@ export class HrImportController {
   ) {
     const parsed = entityParamSchema.safeParse(entity);
     if (!parsed.success) throw new BadRequestException(`Invalid entity '${entity}'`);
-    const rows = await this.importService.exportEntity(u.orgId, parsed.data, query);
+    const page = await this.importService.exportEntity(u.orgId, parsed.data, query);
+    const rows = page.data;
     const headers = Object.keys(rows[0] ?? {});
     const csv = toCsv(headers, rows);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
@@ -121,6 +122,10 @@ export class HrImportController {
       "Content-Disposition",
       `attachment; filename="${parsed.data}-export-${new Date().toISOString().split("T")[0]}.csv"`,
     );
+    res.setHeader("X-Has-More", String(page.pagination.hasMore));
+    if (page.pagination.nextCursor) {
+      res.setHeader("X-Next-Cursor", page.pagination.nextCursor);
+    }
     res.send(csv);
   }
 }

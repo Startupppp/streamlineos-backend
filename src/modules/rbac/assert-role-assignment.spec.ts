@@ -35,7 +35,14 @@ describe("assertMayAssignRole — MODULE_OWNER rank is blocked on the generic pa
               roles: { findFirst: roleFindFirst },
               organizationMembers: { findFirst: jest.fn() },
             },
-            select: jest.fn(),
+            select: jest.fn().mockReturnValue({
+              from: jest.fn().mockReturnValue({
+                innerJoin: jest.fn().mockReturnThis(),
+                where: jest.fn().mockReturnValue({
+                  limit: jest.fn().mockResolvedValue([]),
+                }),
+              }),
+            }),
           },
         },
         { provide: CacheService, useValue: {} },

@@ -24,6 +24,7 @@ type PageRow = typeof kbPages.$inferSelect;
 type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 const MAX_TREE_NODES = 2000;
+const EXPIRED_PURGE_BATCH_SIZE = 500;
 
 export function isDescendant(
   allPages: Pick<PageRow, "id" | "parentPageId">[],
@@ -267,38 +268,46 @@ export class KbPageTreeService {
   }
 
   async purgeExpired(orgId: string, olderThan: Date): Promise<number> {
-    const expired = await this.db
-      .select({ id: kbPages.id, title: kbPages.title })
-      .from(kbPages)
-      .where(
-        and(
-          eq(kbPages.orgId, orgId),
-          isNotNull(kbPages.deletedAt),
-          lt(kbPages.deletedAt, olderThan),
-        ),
-      );
+    let purgedCount = 0;
+    for (;;) {
+      const expired = await this.db
+        .select({ id: kbPages.id })
+        .from(kbPages)
+        .where(
+          and(
+            eq(kbPages.orgId, orgId),
+            isNotNull(kbPages.deletedAt),
+            lt(kbPages.deletedAt, olderThan),
+          ),
+        )
+        .orderBy(kbPages.id)
+        .limit(EXPIRED_PURGE_BATCH_SIZE);
 
-    if (expired.length === 0) return 0;
+      if (expired.length === 0) break;
 
-    const ids = expired.map((p) => p.id);
-    await this.db
-      .delete(kbPages)
-      .where(
-        and(
-          eq(kbPages.orgId, orgId),
-          sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
-        ),
-      );
+      const ids = expired.map((p) => p.id);
+      await this.db
+        .delete(kbPages)
+        .where(
+          and(
+            eq(kbPages.orgId, orgId),
+            sql`${kbPages.id} = ANY(ARRAY[${sql.join(ids.map((id) => sql`${id}`), sql`, `)}]::int[])`,
+          ),
+        );
+      purgedCount += ids.length;
+    }
+
+    if (purgedCount === 0) return 0;
 
     this.audit.log({
       action: "kb.page.auto_purged",
       userId: "system",
       orgId,
       resourceType: "kb_page",
-      metadata: { purgedCount: ids.length, olderThan: olderThan.toISOString() },
+      metadata: { purgedCount, olderThan: olderThan.toISOString() },
     });
 
-    return ids.length;
+    return purgedCount;
   }
 
   async move(user: CurrentUserContext, pageId: number, input: MovePageInput): Promise<PageRow> {

@@ -14,7 +14,7 @@ function buildSelectChain(rows: unknown[]) {
   for (const m of ["from", "innerJoin", "where", "orderBy"]) {
     chain[m] = jest.fn().mockReturnValue(chain);
   }
-  chain.limit = jest.fn().mockResolvedValue(rows.slice(0, 1));
+  chain.limit = jest.fn().mockResolvedValue(rows);
   return chain;
 }
 

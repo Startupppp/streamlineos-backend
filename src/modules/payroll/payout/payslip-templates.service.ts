@@ -1,18 +1,25 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, ne } from "drizzle-orm";
+import { and, asc, eq, gt, ne } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payslipTemplates } from "../../../db/schema";
 import { renderPayslipHtml } from "./lib/payslip-renderer";
 import type { CreateTemplateInput, PatchTemplateInput, PayslipTemplateConfig, PreviewTemplateInput } from "./dto/payout.schemas";
 import type { CalculationSnapshot } from "../payroll.types";
+import { buildCursorPage } from "../../../common/pagination/cursor";
+import {
+  decodePayrollIdCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
 
 @Injectable()
 export class PayslipTemplatesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async list(orgId: string, page = 1, limit = 50) {
+  async list(orgId: string, cursor?: string, limit = 50) {
     const cap = Math.min(limit, 100);
+    const cursorScope = ["payslip-templates", orgId] as const;
+    const position = decodePayrollIdCursor(cursor, cursorScope);
 
     const existing = await this.db
       .select({ id: payslipTemplates.id })
@@ -44,16 +51,25 @@ export class PayslipTemplatesService {
           isDefault: false,
         },
       ];
-      return this.db.insert(payslipTemplates).values(defaults).returning();
+      const seeded = await this.db.insert(payslipTemplates).values(defaults).returning();
+      seeded.sort((left, right) => left.id - right.id);
+      return buildCursorPage(seeded, cap, (row) =>
+        payrollCursorPosition(cursorScope, [row.id], row.id),
+      );
     }
 
-    return this.db
+    const conditions = [eq(payslipTemplates.orgId, orgId)];
+    if (position) conditions.push(gt(payslipTemplates.id, position.id));
+    const rows = await this.db
       .select()
       .from(payslipTemplates)
-      .where(eq(payslipTemplates.orgId, orgId))
-      .orderBy(payslipTemplates.id)
-      .limit(cap)
-      .offset((page - 1) * cap);
+      .where(and(...conditions))
+      .orderBy(asc(payslipTemplates.id))
+      .limit(cap + 1);
+
+    return buildCursorPage(rows, cap, (row) =>
+      payrollCursorPosition(cursorScope, [row.id], row.id),
+    );
   }
 
   async create(orgId: string, data: CreateTemplateInput) {

@@ -13,7 +13,12 @@ import { computeTemplatePreview } from "./lib/template-preview";
 import type { ListTemplatesInput, TemplatePreviewInput, DuplicateTemplateInput } from "./dto/setup.schemas";
 import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
 import type { TemplateComponentDef, PayrollToggles } from "../payroll.types";
-import { resolveWindowedTotal, totalOverWindow, withoutTotal } from "../../../common/pagination/window-count";
+import { buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetAfterValue } from "../../../common/pagination/keyset";
+import {
+  decodePayrollTextCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
 
 type TemplateRow = typeof payrollTemplates.$inferSelect;
 
@@ -89,7 +94,7 @@ export class PayrollTemplatesService {
     return recommendedKey != null && key === recommendedKey;
   }
 
-  async list(orgId: string, input: ListTemplatesInput & { country?: string }): Promise<{ items: (TemplateRow & { isRecommended: boolean })[]; total: number }> {
+  async list(orgId: string, input: ListTemplatesInput & { country?: string }) {
     await this.ensureSystemTemplatesExist();
 
     const filters: SQL[] = [or(isNull(payrollTemplates.orgId), eq(payrollTemplates.orgId, orgId)) as SQL];
@@ -109,31 +114,41 @@ export class PayrollTemplatesService {
       );
     }
 
-    const where = and(...filters);
-    const offset = (input.page - 1) * input.pageSize;
+    const country = input.country?.toUpperCase() ?? null;
+    const cursorScope = [
+      "templates",
+      orgId,
+      input.category ?? null,
+      input.complexity ?? null,
+      country,
+      input.search ?? null,
+    ] as const;
+    const position = decodePayrollTextCursor(input.cursor, cursorScope);
+    if (position) {
+      filters.push(
+        keysetAfterValue(payrollTemplates.name, payrollTemplates.id, {
+          sortValue: position.value,
+          id: String(position.id),
+        }),
+      );
+    }
 
     const rows = await this.db
-      .select({ ...getTableColumns(payrollTemplates), total: totalOverWindow })
+      .select(getTableColumns(payrollTemplates))
       .from(payrollTemplates)
-      .where(where)
+      .where(and(...filters))
       .orderBy(asc(payrollTemplates.name), asc(payrollTemplates.id))
-      .limit(input.pageSize)
-      .offset(offset);
+      .limit(input.limit + 1);
 
-    const total = await resolveWindowedTotal(rows, offset, async () => {
-      const [countRow] = await this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(payrollTemplates)
-        .where(where);
-      return Number(countRow?.count ?? 0);
-    });
-
-    const items = withoutTotal(rows).map((row) => ({
+    const page = buildCursorPage(rows, input.limit, (row) =>
+      payrollCursorPosition(cursorScope, [row.name], row.id),
+    );
+    const items = page.data.map((row) => ({
       ...row,
-      isRecommended: this.computeIsRecommended(row, input.country),
+      isRecommended: this.computeIsRecommended(row, country ?? undefined),
     }));
 
-    return { items, total };
+    return { items, pagination: page.pagination };
   }
 
   async getById(orgId: string, templateId: number): Promise<TemplateRow> {

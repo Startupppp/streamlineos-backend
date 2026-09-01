@@ -33,6 +33,7 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { actingMembershipId } from "../../../common/auth/principal";
 
 const interviewIdParams = z.object({ interviewId: z.coerce.number().int().positive() }).strict();
 
@@ -58,7 +59,7 @@ export class HrInterviewSchedulingController {
   @RequirePermission("hr:interviews:manage")
   @Validate({ body: scheduleInterviewSchema })
   schedule(@Body() body: ScheduleInterviewInput, @CurrentUser() u: CurrentUserContext) {
-    return this.scheduling.scheduleInterview(u.orgId, u.userId, body);
+    return this.scheduling.scheduleInterview(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Post("self-schedule")
@@ -66,7 +67,7 @@ export class HrInterviewSchedulingController {
   @RequirePermission("hr:interviews:manage")
   @Validate({ body: selfScheduleSchema })
   selfSchedule(@Body() body: SelfScheduleInput, @CurrentUser() u: CurrentUserContext) {
-    return this.scheduling.selfSchedule(u.orgId, u.userId, body);
+    return this.scheduling.selfSchedule(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Patch(":interviewId")
@@ -91,7 +92,7 @@ export class HrInterviewSchedulingController {
   @RequirePermission("hr:interviews:view")
   @Validate({ params: interviewIdParams })
   getScorecard(@Param("interviewId", ParseIntPipe) interviewId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.results.getScorecard(u.orgId, u.userId, interviewId);
+    return this.results.getScorecard(u.orgId, u.userId, actingMembershipId(u.principal), interviewId);
   }
 
   @Post(":interviewId/scorecard")
@@ -102,6 +103,6 @@ export class HrInterviewSchedulingController {
     @Body() body: SubmitScorecardInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.results.submitScorecard(u.orgId, u.userId, interviewId, body);
+    return this.results.submitScorecard(u.orgId, u.userId, actingMembershipId(u.principal), interviewId, body);
   }
 }

@@ -82,16 +82,20 @@ export const createVisitLogSchema = z.object({
 export type CreateVisitLogInput = z.infer<typeof createVisitLogSchema>;
 
 export const benefitPlansQuerySchema = z.object({
+  cursor: z.string().trim().min(1).max(2048).optional(),
   status: z.enum(["draft", "active", "archived"]).optional(),
   category: z.enum(["health", "life", "accident", "retirement", "wellness", "perk", "other"]).optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();
 export type BenefitPlansQuery = z.infer<typeof benefitPlansQuerySchema>;
 
+export const availableBenefitPlansQuerySchema = benefitPlansQuerySchema.omit({ status: true });
+export type AvailableBenefitPlansQuery = z.infer<typeof availableBenefitPlansQuerySchema>;
+
 export const claimsQuerySchema = z.object({
-  cursor: z.string().optional(),
+  cursor: z.string().trim().min(1).max(2048).optional(),
   limit: pageSizeField(20, 100),
   status: z.enum(["submitted", "in_review", "approved", "rejected", "paid"]).optional(),
-  userId: z.string().optional(),
-});
+  userId: z.string().trim().min(1).optional(),
+}).strict();
 export type ClaimsQuery = z.infer<typeof claimsQuerySchema>;

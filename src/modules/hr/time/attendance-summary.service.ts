@@ -1,5 +1,5 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { toZonedTime } from "date-fns-tz";
 import { attendance, employeeShiftAssignments, hrAttendanceRegularizations, organizationMembers, organizations, rosterEntries, rosters, shiftTemplates, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -9,6 +9,8 @@ import { AttendancePolicyService } from "./attendance-policy.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { attendanceMemberScope, resolveAttendanceReadScope } from "./attendance-scope";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { requireOrganizationMembershipId } from "./organization-membership";
 
 interface ShiftInfo {
   startTime: string;
@@ -38,8 +40,22 @@ export interface BuildAttendanceSummaryParams {
   periodEnd: string;
   employeeId?: string;
   userIds?: string[];
-  page?: number;
+  cursor?: string;
   limit?: number;
+}
+
+function decodeMemberCursor(value: string | undefined) {
+  if (value === undefined) return null;
+  const position = decodeCursor(value);
+  if (!position) throw new BadRequestException("Invalid pagination cursor");
+
+  try {
+    const name: unknown = JSON.parse(position.sortValue);
+    if (name !== null && typeof name !== "string") throw new Error();
+    return { name: name as string | null, userId: position.id };
+  } catch {
+    throw new BadRequestException("Invalid pagination cursor");
+  }
 }
 
 export type BuildScopedAttendanceSummaryParams = Omit<
@@ -48,7 +64,7 @@ export type BuildScopedAttendanceSummaryParams = Omit<
 >;
 
 interface AttendanceSummaryScope {
-  actorUserId: string;
+  actorMembershipId: number;
   dataScope: Awaited<ReturnType<typeof resolveAttendanceReadScope>>;
 }
 
@@ -65,7 +81,12 @@ export class AttendanceSummaryService {
     params: BuildScopedAttendanceSummaryParams,
   ) {
     const dataScope = await resolveAttendanceReadScope(this.access, currentUser);
-    return this.build({ ...params, orgId: currentUser.orgId }, { actorUserId: currentUser.userId, dataScope });
+    const actorMembershipId = await requireOrganizationMembershipId(
+      this.db,
+      currentUser.orgId,
+      currentUser.userId,
+    );
+    return this.build({ ...params, orgId: currentUser.orgId }, { actorMembershipId, dataScope });
   }
 
   buildAttendanceSummary(params: BuildAttendanceSummaryParams) {
@@ -75,13 +96,22 @@ export class AttendanceSummaryService {
   private async build(params: BuildAttendanceSummaryParams, scope?: AttendanceSummaryScope) {
     const { orgId, periodStart, periodEnd, employeeId, userIds: explicitUserIds } = params;
 
-    let members: { userId: string; name: string | null; firstName: string | null; lastName: string | null; email: string }[];
-    let responseLimit: number;
+    let members: { membershipId: number; userId: string; name: string | null; firstName: string | null; lastName: string | null; email: string }[];
+    let pagination: {
+      limit: number;
+      nextCursor: string | null;
+      hasMore: boolean;
+    };
 
     if (explicitUserIds !== undefined) {
-      if (explicitUserIds.length === 0) return { data: [], page: 1, limit: 0 };
+      if (explicitUserIds.length === 0) {
+        return {
+          data: [],
+          pagination: { limit: 0, nextCursor: null, hasMore: false },
+        };
+      }
       members = await this.db
-        .select({ userId: organizationMembers.userId, name: users.name, firstName: users.firstName, lastName: users.lastName, email: users.email })
+        .select({ membershipId: organizationMembers.id, userId: organizationMembers.userId, name: users.name, firstName: users.firstName, lastName: users.lastName, email: users.email })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
         .where(
@@ -92,10 +122,13 @@ export class AttendanceSummaryService {
             inArray(organizationMembers.userId, explicitUserIds),
           ),
         );
-      responseLimit = members.length;
+      pagination = {
+        limit: members.length,
+        nextCursor: null,
+        hasMore: false,
+      };
     } else {
       const pageSize = Math.min(params.limit ?? 50, 100);
-      const offset = ((params.page ?? 1) - 1) * pageSize;
 
       const memberConditions = [
         eq(organizationMembers.orgId, orgId),
@@ -104,29 +137,53 @@ export class AttendanceSummaryService {
       ];
       if (employeeId) memberConditions.push(eq(organizationMembers.userId, employeeId));
       if (scope) {
-        memberConditions.push(attendanceMemberScope(scope.dataScope, orgId, scope.actorUserId));
+        memberConditions.push(attendanceMemberScope(scope.dataScope, scope.actorMembershipId, organizationMembers.id));
+      }
+      const cursorPosition = decodeMemberCursor(params.cursor);
+      if (cursorPosition) {
+        memberConditions.push(
+          cursorPosition.name === null
+            ? and(
+                isNull(users.name),
+                gt(organizationMembers.userId, cursorPosition.userId),
+              )!
+            : or(
+                gt(users.name, cursorPosition.name),
+                isNull(users.name),
+                and(
+                  eq(users.name, cursorPosition.name),
+                  gt(organizationMembers.userId, cursorPosition.userId),
+                ),
+              )!,
+        );
       }
 
-      members = await this.db
-        .select({ userId: organizationMembers.userId, name: users.name, firstName: users.firstName, lastName: users.lastName, email: users.email })
+      const memberRows = await this.db
+        .select({ membershipId: organizationMembers.id, userId: organizationMembers.userId, name: users.name, firstName: users.firstName, lastName: users.lastName, email: users.email })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
         .where(and(...memberConditions))
         .orderBy(asc(users.name), asc(organizationMembers.userId))
-        .limit(pageSize)
-        .offset(offset);
+        .limit(pageSize + 1);
 
-      if (members.length === 0) return { data: [], page: params.page ?? 1, limit: pageSize };
-      responseLimit = pageSize;
+      const page = buildCursorPage(memberRows, pageSize, (member) => ({
+        sortValue: JSON.stringify(member.name),
+        id: member.userId,
+      }));
+      members = page.data;
+      pagination = page.pagination;
+      if (members.length === 0) return { data: [], pagination };
     }
 
     const userIds = members.map((m) => m.userId);
+    const membershipIds = members.map((m) => m.membershipId);
+    const userIdByMembershipId = new Map(members.map((member) => [member.membershipId, member.userId]));
 
     const [orgRow, attendanceRows, regularizationRows, holidayRows] = await Promise.all([
       this.db.select({ timezone: organizations.timezone }).from(organizations).where(eq(organizations.id, orgId)).limit(1),
       this.db
         .select({
-          userId: attendance.userId,
+          membershipId: attendance.userMembershipId,
           date: attendance.date,
           checkIn: attendance.checkIn,
           checkOut: attendance.checkOut,
@@ -137,7 +194,7 @@ export class AttendanceSummaryService {
         .where(
           and(
             eq(attendance.orgId, orgId),
-            inArray(attendance.userId, userIds),
+            inArray(attendance.userMembershipId, membershipIds),
             gte(attendance.date, periodStart),
             lte(attendance.date, periodEnd),
             isNotNull(attendance.checkIn),
@@ -146,7 +203,7 @@ export class AttendanceSummaryService {
 
       this.db
         .select({
-          userId: hrAttendanceRegularizations.userId,
+          membershipId: hrAttendanceRegularizations.userMembershipId,
           attendanceDate: hrAttendanceRegularizations.attendanceDate,
           requestedCheckIn: hrAttendanceRegularizations.requestedCheckIn,
           requestedCheckOut: hrAttendanceRegularizations.requestedCheckOut,
@@ -155,7 +212,7 @@ export class AttendanceSummaryService {
         .where(
           and(
             eq(hrAttendanceRegularizations.orgId, orgId),
-            inArray(hrAttendanceRegularizations.userId, userIds),
+            inArray(hrAttendanceRegularizations.userMembershipId, membershipIds),
             eq(hrAttendanceRegularizations.status, "APPROVED"),
             gte(hrAttendanceRegularizations.attendanceDate, periodStart),
             lte(hrAttendanceRegularizations.attendanceDate, periodEnd),
@@ -173,20 +230,26 @@ export class AttendanceSummaryService {
 
     const attendanceByUser = new Map<string, (typeof attendanceRows)>();
     for (const row of attendanceRows) {
-      const existing = attendanceByUser.get(row.userId) ?? [];
+      if (row.membershipId === null) continue;
+      const userId = userIdByMembershipId.get(row.membershipId);
+      if (!userId) continue;
+      const existing = attendanceByUser.get(userId) ?? [];
       existing.push(row);
-      attendanceByUser.set(row.userId, existing);
+      attendanceByUser.set(userId, existing);
     }
 
     const regularizationsByUser = new Map<string, number>();
     for (const reg of regularizationRows) {
-      regularizationsByUser.set(reg.userId, (regularizationsByUser.get(reg.userId) ?? 0) + 1);
+      if (reg.membershipId === null) continue;
+      const userId = userIdByMembershipId.get(reg.membershipId);
+      if (!userId) continue;
+      regularizationsByUser.set(userId, (regularizationsByUser.get(userId) ?? 0) + 1);
     }
 
     const [rosterRows, shiftAssignmentRows] = await Promise.all([
       this.db
         .select({
-          userId: rosterEntries.userId,
+          membershipId: rosterEntries.userMembershipId,
           startTime: shiftTemplates.startTime,
           endTime: shiftTemplates.endTime,
           breakMinutes: shiftTemplates.breakMinutes,
@@ -195,11 +258,11 @@ export class AttendanceSummaryService {
         .from(rosterEntries)
         .innerJoin(rosters, and(eq(rosters.id, rosterEntries.rosterId), eq(rosters.orgId, orgId)))
         .innerJoin(shiftTemplates, eq(shiftTemplates.id, rosterEntries.shiftId))
-        .where(and(inArray(rosterEntries.userId, userIds), eq(rosterEntries.date, periodStart))),
+        .where(and(eq(rosterEntries.orgId, orgId), inArray(rosterEntries.userMembershipId, membershipIds), eq(rosterEntries.date, periodStart))),
 
       this.db
         .select({
-          userId: employeeShiftAssignments.userId,
+          membershipId: employeeShiftAssignments.userMembershipId,
           startTime: shiftTemplates.startTime,
           endTime: shiftTemplates.endTime,
           breakMinutes: shiftTemplates.breakMinutes,
@@ -209,7 +272,7 @@ export class AttendanceSummaryService {
         .innerJoin(shiftTemplates, eq(shiftTemplates.id, employeeShiftAssignments.shiftId))
         .where(
           and(
-            inArray(employeeShiftAssignments.userId, userIds),
+            inArray(employeeShiftAssignments.userMembershipId, membershipIds),
             eq(employeeShiftAssignments.orgId, orgId),
             eq(employeeShiftAssignments.isActive, true),
             lte(employeeShiftAssignments.effectiveFrom, periodStart),
@@ -220,11 +283,15 @@ export class AttendanceSummaryService {
 
     const rosterShiftByUser = new Map<string, ShiftInfo>();
     for (const r of rosterRows) {
-      if (!rosterShiftByUser.has(r.userId)) rosterShiftByUser.set(r.userId, r);
+      if (r.membershipId === null) continue;
+      const userId = userIdByMembershipId.get(r.membershipId);
+      if (userId && !rosterShiftByUser.has(userId)) rosterShiftByUser.set(userId, r);
     }
     const assignedShiftByUser = new Map<string, ShiftInfo>();
     for (const r of shiftAssignmentRows) {
-      if (!assignedShiftByUser.has(r.userId)) assignedShiftByUser.set(r.userId, r);
+      if (r.membershipId === null) continue;
+      const userId = userIdByMembershipId.get(r.membershipId);
+      if (userId && !assignedShiftByUser.has(userId)) assignedShiftByUser.set(userId, r);
     }
 
     const [attendanceRulesByUser, overtimeRulesByUser] = await Promise.all([
@@ -314,7 +381,7 @@ export class AttendanceSummaryService {
         };
       });
 
-    return { data: results, page: params.page ?? 1, limit: responseLimit };
+    return { data: results, pagination };
   }
 
   private countWorkingDays(start: string, end: string, holidays: Set<string>): number {

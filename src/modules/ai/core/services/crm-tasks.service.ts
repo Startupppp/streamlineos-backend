@@ -189,13 +189,13 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
     const projectTickets = await runInTenantTransaction(this.db, (tx) =>
       tx.query.tickets.findMany({
         where: and(eq(tickets.orgId, orgId), eq(tickets.projectId, projectId), eq(tickets.status, "TODO"), isNull(tickets.deletedAt)),
-        columns: { id: true, title: true, priority: true, assigneeId: true },
+        columns: { id: true, title: true, priority: true, assigneeMembershipId: true },
         limit: 100,
       }),
       { orgId },
     );
 
-    const unassignedTickets = projectTickets.filter((t) => !t.assigneeId);
+    const unassignedTickets = projectTickets.filter((t) => !t.assigneeMembershipId);
 
     return unassignedTickets.slice(0, 5).map((ticket) => ({
       ticketId: ticket.id,
@@ -213,13 +213,14 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
       const [ticketAgg, hoursAgg] = await Promise.all([
         tx
           .select({
-            assigneeId: tickets.assigneeId,
+            assigneeId: organizationMembers.userId,
             activeTickets: count(),
             totalPoints: sum(tickets.points),
             userName: users.firstName,
           })
           .from(tickets)
-          .innerJoin(users, eq(users.id, tickets.assigneeId))
+          .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+          .innerJoin(users, eq(users.id, organizationMembers.userId))
           .where(
             and(
               eq(tickets.orgId, orgId),
@@ -227,7 +228,7 @@ Also return a short summary (2-3 sentences) with overall advice for the rep.`,
               sql`${tickets.status} IN ('TODO', 'IN_PROGRESS', 'IN_REVIEW')`,
             ),
           )
-          .groupBy(tickets.assigneeId, users.firstName)
+          .groupBy(organizationMembers.userId, users.firstName)
           .limit(200),
         tx
           .select({

@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm";
 import {
   projectMembers,
+  organizationMembers,
   projects,
   ticketLabelMappings,
   ticketLabels,
@@ -56,7 +57,10 @@ const WORK_ROW_SELECTION = {
   rank: tickets.rank,
   createdAt: tickets.createdAt,
   updatedAt: tickets.updatedAt,
-  assigneeId: tickets.assigneeId,
+  assigneeId: sql<string | null>`(
+    SELECT user_id FROM organization_members
+    WHERE org_id = ${tickets.orgId} AND id = ${tickets.assigneeMembershipId}
+  )`,
   sprintId: tickets.sprintId,
   cycleId: tickets.cycleId,
   epicId: tickets.epicId,
@@ -123,7 +127,11 @@ export class ProjectsWorkQueryService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   private watches(orgId: string, userId: string): SQL<unknown> {
-    return sql`EXISTS (SELECT 1 FROM ${ticketWatchers} tw WHERE tw.org_id = ${orgId} AND tw.user_id = ${userId} AND tw.ticket_id = ${tickets.id})`;
+    return sql`EXISTS (
+      SELECT 1 FROM ${ticketWatchers} tw
+      JOIN organization_members om ON om.org_id = tw.org_id AND om.id = tw.membership_id
+      WHERE tw.org_id = ${orgId} AND om.user_id = ${userId} AND tw.ticket_id = ${tickets.id}
+    )`;
   }
 
   async searchOrgTickets(
@@ -136,7 +144,11 @@ export class ProjectsWorkQueryService {
       .select({ projectId: projectMembers.projectId })
       .from(projectMembers)
       .where(
-        and(eq(projectMembers.orgId, orgId), eq(projectMembers.userId, userId)),
+        and(
+          eq(projectMembers.orgId, orgId),
+          eq(projectMembers.membershipId, organizationMembers.id),
+          eq(organizationMembers.userId, userId),
+        ),
       );
 
     const ids = memberProjectIds.map((r) => r.projectId);
@@ -202,10 +214,12 @@ export class ProjectsWorkQueryService {
     const memberRows = await this.db
       .select({ projectId: projectMembers.projectId })
       .from(projectMembers)
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
       .where(
         and(
           eq(projectMembers.orgId, u.orgId),
-          eq(projectMembers.userId, u.userId),
+          eq(projectMembers.membershipId, organizationMembers.id),
+          eq(organizationMembers.userId, u.userId),
         ),
       );
 
@@ -276,12 +290,15 @@ export class ProjectsWorkQueryService {
       const unassigned = resolved.includes("__unassigned__");
       const realIds = resolved.filter((id) => id !== "__unassigned__");
       if (unassigned && realIds.length > 0) {
-        const assigneeCondition = or(isNull(tickets.assigneeId), inArray(tickets.assigneeId, realIds));
+        const assigneeCondition = or(
+          isNull(tickets.assigneeMembershipId),
+          sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`,
+        );
         if (assigneeCondition) conditions.push(assigneeCondition);
       } else if (unassigned) {
-        conditions.push(isNull(tickets.assigneeId));
+        conditions.push(isNull(tickets.assigneeMembershipId));
       } else {
-        conditions.push(inArray(tickets.assigneeId, realIds));
+        conditions.push(sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`);
       }
     }
 
@@ -392,7 +409,8 @@ export class ProjectsWorkQueryService {
         .select(WORK_ROW_SELECTION)
         .from(tickets)
         .innerJoin(projects, eq(tickets.projectId, projects.id))
-        .leftJoin(users, eq(tickets.assigneeId, users.id))
+        .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+        .leftJoin(users, eq(organizationMembers.userId, users.id))
         .where(finalWhere)
         .orderBy(...sort.rows)
         .limit(limit + 1),
@@ -462,7 +480,8 @@ export class ProjectsWorkQueryService {
       .select(WORK_ROW_SELECTION)
       .from(tickets)
       .innerJoin(projects, eq(tickets.projectId, projects.id))
-      .leftJoin(users, eq(tickets.assigneeId, users.id))
+      .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+      .leftJoin(users, eq(organizationMembers.userId, users.id))
       .where(and(eq(tickets.orgId, u.orgId), inArray(tickets.id, pageIds)))
       .orderBy(...sort.rows);
 

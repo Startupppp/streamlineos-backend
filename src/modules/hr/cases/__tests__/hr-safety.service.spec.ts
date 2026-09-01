@@ -1,4 +1,5 @@
 import { Test, type TestingModule } from "@nestjs/testing";
+import { BadRequestException } from "@nestjs/common";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { HrSafetyService } from "../hr-safety.service";
 import { HrAuditService } from "../../core/hr-audit.service";
@@ -127,5 +128,38 @@ describe("HrSafetyService — cursor pagination (listIncidents)", () => {
     const page2Ids = page2.data.map((r) => r.id);
     const intersection = page1Ids.filter((id) => page2Ids.includes(id));
     expect(intersection).toHaveLength(0);
+  });
+
+  it("rejects malformed and filter-changed cursors before querying", async () => {
+    await expect(
+      service.listIncidents("org1", { limit: 20, cursor: "not-a-cursor" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(mockSelectFn).not.toHaveBeenCalled();
+
+    const rows = [
+      makeIncident(2, new Date("2024-06-15T12:00:00.000Z")),
+      makeIncident(1, new Date("2024-06-14T12:00:00.000Z")),
+    ];
+    mockLimitFn.mockResolvedValueOnce(rows);
+    const firstPage = await service.listIncidents("org1", {
+      limit: 1,
+      status: "open",
+    });
+
+    await expect(
+      service.listIncidents("org1", {
+        limit: 1,
+        status: "closed",
+        cursor: firstPage.pagination.nextCursor ?? undefined,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      service.listIncidents("org2", {
+        limit: 1,
+        status: "open",
+        cursor: firstPage.pagination.nextCursor ?? undefined,
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(mockSelectFn).toHaveBeenCalledTimes(1);
   });
 });

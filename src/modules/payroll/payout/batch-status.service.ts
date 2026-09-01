@@ -20,6 +20,7 @@ import { PayrollPostingService } from "../payroll-posting.service";
 import { JournalOutboxService } from "../insights/journal-outbox.service";
 import { parseBankReturnCsv } from "./lib/bank-return";
 import { checkRunCompletion, refreshBatchPaidStatus } from "./lib/payout-run-completion";
+import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
 
 @Injectable()
 export class BatchStatusService {
@@ -264,14 +265,15 @@ export class BatchStatusService {
       });
     }
 
-    const items = await this.db
+    const items = requirePayrollReadWithinCap(await this.db
       .select({
         id: payrollBankBatchItems.id,
         userId: payrollBankBatchItems.userId,
         status: payrollBankBatchItems.status,
       })
       .from(payrollBankBatchItems)
-      .where(and(eq(payrollBankBatchItems.batchId, batchId), eq(payrollBankBatchItems.orgId, orgId)));
+      .where(and(eq(payrollBankBatchItems.batchId, batchId), eq(payrollBankBatchItems.orgId, orgId)))
+      .limit(PAYROLL_READ_CAP + 1), "import bank return items");
 
     const byId = new Map(items.map((i) => [i.id, i]));
     const byUser = new Map<string, typeof items>();

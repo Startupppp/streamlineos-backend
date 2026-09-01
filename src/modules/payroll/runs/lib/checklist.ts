@@ -10,6 +10,7 @@ import {
   reimbursements,
   bonuses,
   salaryLoans,
+  organizationMembers,
 } from "../../../../db/schema";
 import { hrPayrollInputPeriods } from "../../../../db/schema/payroll/input-capture";
 import type { PayrollChecklistItem, PayrollToggles } from "../../payroll.types";
@@ -156,8 +157,15 @@ export async function buildRunChecklist(
       .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
 
     const userIds = requirePayrollUserIds(empUserIds.map((r) => r.userId));
+    const memberRows = userIds.length > 0
+      ? await db
+          .select({ membershipId: organizationMembers.id })
+          .from(organizationMembers)
+          .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, userIds)))
+      : [];
+    const membershipIds = memberRows.map((row) => row.membershipId);
 
-    if (userIds.length > 0) {
+    if (membershipIds.length > 0) {
       const activeLoans = await db
         .select({ id: salaryLoans.id, totalEmis: salaryLoans.totalEmis, paidEmis: salaryLoans.paidEmis })
         .from(salaryLoans)
@@ -165,7 +173,7 @@ export async function buildRunChecklist(
           and(
             eq(salaryLoans.orgId, orgId),
             eq(salaryLoans.status, "ACTIVE"),
-            inArray(salaryLoans.userId, userIds),
+            inArray(salaryLoans.userMembershipId, membershipIds),
           ),
         );
 

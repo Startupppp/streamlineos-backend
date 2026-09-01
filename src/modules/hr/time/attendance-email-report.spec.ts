@@ -12,6 +12,10 @@ jest.mock("../../rbac/permissions", () => ({
   isScopable: jest.fn(() => true),
 }));
 
+jest.mock("./organization-membership", () => ({
+  requireOrganizationMembershipId: jest.fn().mockResolvedValue(1),
+}));
+
 import { AttendanceController } from "./attendance.controller";
 import { AttendanceService } from "./attendance.service";
 import { attendanceEmailReportSchema } from "./dto/attendance.schemas";
@@ -200,7 +204,7 @@ describe("AttendanceService.emailReport", () => {
       test.reportQuery.where.mock.calls[0]?.[0],
     );
     expect(whereSql.params).toEqual(
-      expect.arrayContaining(["org-1", "manager-1", "2020-01-01", "2020-01-31"]),
+      expect.arrayContaining(["org-1", 1, "2020-01-01", "2020-01-31"]),
     );
     expect(test.reportQuery.groupBy).toHaveBeenCalled();
     expect(test.reportQuery.limit).toHaveBeenCalledWith(101);

@@ -35,7 +35,8 @@ import { logger } from "../../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { UpdateTaskInput } from "./dto/onboarding.schemas";
 import { resolveCompatibleList } from "../../../../common/db/expand-contract-compat";
-import { loadOnboardingTaskDependencies } from "./onboarding-task-dependency-compat";
+  import { loadOnboardingTaskDependencies } from "./onboarding-task-dependency-compat";
+import { readHrKeysetBatches } from "../../shared/hr-keyset-batch";
 
 const TASKS_VIEW_PERMISSION = "hr:onboarding:tasks:view";
 const TASKS_COMPLETE_PERMISSION = "hr:onboarding:tasks:complete";
@@ -135,21 +136,27 @@ export class OnboardingTaskService {
       ? this.completionScope(currentUser, access)
       : sql<boolean>`false`;
 
-    const tasks = await this.db
-      .select({ ...getTableColumns(onboardingTasks), canComplete })
-      .from(onboardingTasks)
-      .where(
-        and(
-          eq(onboardingTasks.userId, userId),
-          eq(onboardingTasks.orgId, currentUser.orgId),
-          currentUser.userId === userId
-            ? eq(onboardingTasks.userId, currentUser.userId)
-            : applyScope(subjectScope, currentUser.orgId, currentUser.userId, {
-                ownerColumn: onboardingTasks.userId,
-              }),
-        ),
-      )
-      .orderBy(onboardingTasks.createdAt);
+    const tasks = await readHrKeysetBatches(
+      (afterId, batchSize) =>
+        this.db
+          .select({ ...getTableColumns(onboardingTasks), canComplete })
+          .from(onboardingTasks)
+          .where(
+            and(
+              eq(onboardingTasks.userId, userId),
+              eq(onboardingTasks.orgId, currentUser.orgId),
+              afterId ? sql`${onboardingTasks.id} > ${afterId}` : undefined,
+              currentUser.userId === userId
+                ? eq(onboardingTasks.userId, currentUser.userId)
+                : applyScope(subjectScope, currentUser.orgId, currentUser.userId, {
+                    ownerColumn: onboardingTasks.userId,
+                  }),
+            ),
+          )
+          .orderBy(onboardingTasks.id)
+          .limit(batchSize),
+      (task) => task.id,
+    );
     const dependenciesByTaskId = await loadOnboardingTaskDependencies(
       this.db,
       currentUser.orgId,
@@ -269,7 +276,8 @@ export class OnboardingTaskService {
             eq(onboardingTasks.orgId, orgId),
             eq(onboardingTasks.status, "PENDING"),
           ),
-        );
+        )
+        .limit(1);
     if (pending.length > 0) return;
 
     try {
@@ -305,7 +313,8 @@ export class OnboardingTaskService {
       const hrUsers = await this.db
         .select({ id: users.id })
         .from(users)
-        .where(inArray(users.id, hrMembers.map((m) => m.userId)));
+        .where(inArray(users.id, hrMembers.map((m) => m.userId)))
+        .limit(hrMembers.length);
 
       await this.dispatch.emit({
         eventKey: "hr.onboarding.completed",

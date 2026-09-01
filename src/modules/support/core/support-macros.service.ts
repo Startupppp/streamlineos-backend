@@ -10,7 +10,6 @@ import {
   users,
   organizations,
   organizationMembers,
-  type RoutingRuleCondition,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -24,19 +23,11 @@ import type {
   UpdateRoutingRuleInput,
 } from "./dto/support.schemas";
 import { resolveAssignmentModeAgent } from "./support-macros-assignment";
-
-export interface RoutableTicket {
-  title?: string | null;
-  category?: string | null;
-  description?: string | null;
-  priority?: string | null;
-  isVip?: boolean;
-}
-
-export interface RoutingOutcome {
-  assigneeId?: string;
-  setPriority?: string;
-}
+import {
+  matchesRoutingCondition,
+  type RoutableTicket,
+  type RoutingOutcome,
+} from "./support-macros-routing";
 
 @Injectable()
 export class SupportMacrosService {
@@ -285,7 +276,7 @@ export class SupportMacrosService {
       const conditions = Array.isArray(rule.conditions) ? rule.conditions : [];
       if (conditions.length === 0) continue;
 
-      const allMatch = conditions.every((condition) => this.matchesCondition(ticket, condition));
+      const allMatch = conditions.every((condition) => matchesRoutingCondition(ticket, condition));
       if (!allMatch) continue;
 
       const outcome: RoutingOutcome = {};
@@ -414,38 +405,4 @@ export class SupportMacrosService {
     return Boolean(row);
   }
 
-  private resolveField(ticket: RoutableTicket, field: string): string | null {
-    switch (field) {
-      case "title":
-      case "subject":
-        return ticket.title ?? null;
-      case "category":
-        return ticket.category ?? null;
-      case "description":
-        return ticket.description ?? null;
-      case "priority":
-        return ticket.priority ?? null;
-      case "isVip":
-        return ticket.isVip ? "true" : "false";
-      default:
-        return null;
-    }
-  }
-
-  private matchesCondition(ticket: RoutableTicket, condition: RoutingRuleCondition): boolean {
-    const fieldValue = this.resolveField(ticket, condition.field);
-    const actual = (fieldValue ?? "").toLowerCase();
-    const expected = (condition.value ?? "").toLowerCase();
-
-    switch (condition.op) {
-      case "eq":
-        return actual === expected;
-      case "neq":
-        return actual !== expected;
-      case "contains":
-        return actual.includes(expected);
-      default:
-        return false;
-    }
-  }
 }

@@ -146,7 +146,8 @@ export class IntakeService {
     const [item] = await this.db
       .select()
       .from(intakeItems)
-      .where(and(eq(intakeItems.id, requestId), eq(intakeItems.orgId, orgId)));
+      .where(and(eq(intakeItems.id, requestId), eq(intakeItems.orgId, orgId)))
+      .limit(1);
 
     if (!item) throw new NotFoundException("Intake request not found");
     if (item.status !== "pending") {

@@ -10,6 +10,7 @@ import {
   accNumberSequences,
   finApprovalPolicies,
   finApprovalRequests,
+  organizationMembers,
 } from "../../../db/schema";
 import type { NewJournalLine } from "../../../db/schema/accounting/accounting";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -164,7 +165,7 @@ export class FinancePostingService {
       const allPolicies = await tx
         .select({
           id: finApprovalPolicies.id,
-          approverUserId: finApprovalPolicies.approverUserId,
+          approverMembershipId: finApprovalPolicies.approverMembershipId,
           minAmount: finApprovalPolicies.minAmount,
         })
         .from(finApprovalPolicies)
@@ -250,12 +251,23 @@ export class FinancePostingService {
           requestedBy: userId,
         });
 
-        if (applicablePolicy.approverUserId) {
+        if (applicablePolicy.approverMembershipId) {
+          const [approver] = await tx
+            .select({ userId: organizationMembers.userId })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.id, applicablePolicy.approverMembershipId),
+              ),
+            )
+            .limit(1);
+          if (!approver) throw new BadRequestException("Approval policy approver membership is no longer active");
           await this.dispatch.emit({
             eventKey: "accounting.approval.requested",
             orgId,
             actorUserId: userId,
-            targetUserIds: [applicablePolicy.approverUserId],
+            targetUserIds: [approver.userId],
             entityType: "journal_entry",
             entityId: String(inserted.id),
             variables: { entryNumber, amount: entryTotal, description: input.description },

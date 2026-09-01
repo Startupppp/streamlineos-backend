@@ -141,7 +141,8 @@ export class AccessPermissionResolver {
                   gt(roleAssignments.expiresAt, now),
                 ),
               ),
-            ),
+            )
+            .limit(500),
         [] as { roleId: number; expiresAt: Date | null }[],
       ),
       this.safeAccessTableRead(
@@ -159,7 +160,8 @@ export class AccessPermissionResolver {
                   membershipId,
                 ),
               ),
-            ),
+            )
+            .limit(500),
         [] as { principalGroupId: string }[],
       ),
       this.safeAccessTableRead(
@@ -172,7 +174,8 @@ export class AccessPermissionResolver {
                 eq(moduleOwnerships.orgId, orgId),
                 eq(moduleOwnerships.ownerMembershipId, membershipId),
               ),
-            ),
+            )
+            .limit(100),
         [] as { moduleKey: string }[],
       ),
       this.safeAccessTableRead(
@@ -191,7 +194,8 @@ export class AccessPermissionResolver {
                   membershipId,
                 ),
               ),
-            ),
+            )
+            .limit(500),
         [] as { permissionKey: string; scope: DataScope }[],
       ),
     ]);
@@ -211,7 +215,8 @@ export class AccessPermissionResolver {
                 eq(groupRoleAssignments.orgId, orgId),
                 inArray(groupRoleAssignments.principalGroupId, groupIds),
               ),
-            ),
+            )
+            .limit(500),
         [] as { roleId: number }[],
       );
       for (const row of groupRoleRows) roleIds.add(row.roleId);
@@ -271,7 +276,8 @@ export class AccessPermissionResolver {
       const roleRecords = await this.db
         .select({ id: roles.id, slug: roles.slug })
         .from(roles)
-        .where(and(eq(roles.orgId, orgId), inArray(roles.id, roleIdList)));
+        .where(and(eq(roles.orgId, orgId), inArray(roles.id, roleIdList)))
+        .limit(500);
       const roleById = new Map(
         roleRecords.map((record) => [record.id, record]),
       );
@@ -290,7 +296,8 @@ export class AccessPermissionResolver {
                 eq(rolePermissionGrants.orgId, orgId),
                 inArray(rolePermissionGrants.roleId, roleIdList),
               ),
-            ),
+            )
+            .limit(500),
         [],
       );
       const grantsByRole = new Map<
@@ -341,7 +348,8 @@ export class AccessPermissionResolver {
               eq(userDelegations.status, "ACTIVE"),
               gt(userDelegations.endsAt, now),
             ),
-          ),
+          )
+          .limit(500),
       [] as { permissionKey: string; startsAt: Date; endsAt: Date }[],
     );
     for (const row of delegatedPermissionRows) {

@@ -56,21 +56,24 @@ export class ProjectsWriteService {
       if (!hasManage) {
         const project = await this.db.query.projects.findFirst({
           where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-          columns: { managerId: true },
+          columns: { managerMembershipId: true },
         });
         if (!project) {
           throw new ForbiddenException(
             "Only project managers or admins can update project settings.",
           );
         }
-        if (project.managerId !== u.userId) {
+        const callerMembershipId = u.principal.kind === "human-session" || u.principal.kind === "personal-token"
+          ? u.principal.membershipId
+          : null;
+        if (project.managerMembershipId !== callerMembershipId) {
           const membership = await this.db
             .select({ role: projectMembers.role })
             .from(projectMembers)
             .where(
               and(
                 eq(projectMembers.projectId, projectId),
-                eq(projectMembers.userId, u.userId),
+                eq(projectMembers.membershipId, callerMembershipId ?? -1),
               ),
             )
             .limit(1);
@@ -83,14 +86,31 @@ export class ProjectsWriteService {
       }
     }
 
+    const managerMembershipId = body.managerId === undefined
+      ? undefined
+      : body.managerId === null
+        ? null
+        : (await this.db.query.organizationMembers.findFirst({
+            where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, body.managerId), eq(organizationMembers.status, "ACTIVE")),
+            columns: { id: true },
+          }))?.id ?? null;
+    const clientMembershipId = body.clientId === undefined
+      ? undefined
+      : body.clientId === null
+        ? null
+        : (await this.db.query.organizationMembers.findFirst({
+            where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, body.clientId), eq(organizationMembers.status, "ACTIVE")),
+            columns: { id: true },
+          }))?.id ?? null;
+
     const projectFields = {
       ...(body.name !== undefined && { name: body.name }),
       ...(body.description !== undefined && {
         description: body.description,
       }),
       ...(body.status !== undefined && { status: body.status }),
-      ...(body.managerId !== undefined && { managerId: body.managerId }),
-      ...(body.clientId !== undefined && { clientId: body.clientId }),
+      ...(body.managerId !== undefined && { managerMembershipId }),
+      ...(body.clientId !== undefined && { clientMembershipId }),
       ...(body.startDate !== undefined && {
         startDate: body.startDate ? new Date(body.startDate) : null,
       }),
@@ -114,20 +134,22 @@ export class ProjectsWriteService {
         if (body.memberIds !== undefined) {
           const memberIds = body.memberIds;
           const reassignments = body.reassignments;
+          let validMembers: Array<{ id: number; userId: string }> = [];
 
           const existingMembers = await tx
-            .select({ userId: projectMembers.userId })
+            .select({ userId: organizationMembers.userId, membershipId: projectMembers.membershipId })
             .from(projectMembers)
+            .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
             .where(eq(projectMembers.projectId, projectId));
-          const existing = new Set(existingMembers.map((m) => m.userId));
+          const existing = new Map(existingMembers.map((m) => [m.userId, m.membershipId]));
 
           await tx
             .delete(projectMembers)
             .where(eq(projectMembers.projectId, projectId));
 
           if (memberIds.length > 0) {
-            const validMembers = await tx
-              .select({ userId: organizationMembers.userId })
+            validMembers = await tx
+              .select({ id: organizationMembers.id, userId: organizationMembers.userId })
               .from(organizationMembers)
               .where(
                 and(
@@ -141,7 +163,7 @@ export class ProjectsWriteService {
                 validMemberIds.map((userId) => ({
                   orgId,
                   projectId,
-                  userId,
+                  membershipId: validMembers.find((m) => m.userId === userId)?.id ?? 0,
                   role: "CONTRIBUTOR" as const,
                 })),
               );
@@ -149,19 +171,22 @@ export class ProjectsWriteService {
           }
 
           const newMemberSet = new Set(memberIds);
-          const removedMembers = [...existing].filter(
+          const removedMembers = [...existing.keys()].filter(
             (id) => !newMemberSet.has(id),
           );
+          const removedMembershipIds = removedMembers
+            .map((id) => existing.get(id))
+            .filter((id): id is number => id !== undefined);
 
           if (removedMembers.length > 0 && reassignments) {
             const openTickets = await tx
-              .select({ id: tickets.id, assigneeId: tickets.assigneeId })
+              .select({ id: tickets.id, assigneeUserId: sql<string | null>`(SELECT user_id FROM organization_members WHERE org_id = ${orgId} AND id = ${tickets.assigneeMembershipId})` })
               .from(tickets)
               .where(
                 and(
                   eq(tickets.orgId, orgId),
                   eq(tickets.projectId, projectId),
-                  inArray(tickets.assigneeId, removedMembers),
+                  inArray(tickets.assigneeMembershipId, removedMembershipIds),
                   isNull(tickets.deletedAt),
                   ne(tickets.status, "DONE"),
                   ne(tickets.status, "CANCELLED"),
@@ -169,8 +194,8 @@ export class ProjectsWriteService {
               );
             const byNewAssignee = new Map<string | null, number[]>();
             for (const ticket of openTickets) {
-              const newAssignee = ticket.assigneeId
-                ? (reassignments[ticket.assigneeId] ?? null)
+              const newAssignee = ticket.assigneeUserId
+                ? (reassignments[ticket.assigneeUserId] ?? null)
                 : null;
               const ids = byNewAssignee.get(newAssignee) ?? [];
               ids.push(ticket.id);
@@ -179,18 +204,18 @@ export class ProjectsWriteService {
             for (const [newAssignee, ids] of byNewAssignee) {
               await tx
                 .update(tickets)
-                .set({ assigneeId: newAssignee })
+                .set({ assigneeMembershipId: newAssignee ? (validMembers.find((m) => m.userId === newAssignee)?.id ?? null) : null })
                 .where(and(eq(tickets.orgId, orgId), inArray(tickets.id, ids)));
             }
           } else if (removedMembers.length > 0) {
             await tx
               .update(tickets)
-              .set({ assigneeId: null })
+              .set({ assigneeMembershipId: null })
               .where(
                 and(
                   eq(tickets.orgId, orgId),
                   eq(tickets.projectId, projectId),
-                  inArray(tickets.assigneeId, removedMembers),
+                  inArray(tickets.assigneeMembershipId, removedMembershipIds),
                   ne(tickets.status, "DONE"),
                   ne(tickets.status, "CANCELLED"),
                 ),

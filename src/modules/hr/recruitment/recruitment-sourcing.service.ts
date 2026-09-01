@@ -55,13 +55,13 @@ export class RecruitmentSourcingService {
       where: canManage
         ? eq(candidateReferrals.orgId, orgId)
         : and(eq(candidateReferrals.orgId, orgId), eq(candidateReferrals.referredByMembershipId, actorMembershipId!)),
+      limit: 200,
       with: {
         candidate: { columns: { id: true, firstName: true, lastName: true, email: true } },
         referrer: { columns: { id: true, name: true, email: true } },
         jobPosting: { columns: { id: true, title: true } },
       },
       orderBy: [desc(candidateReferrals.createdAt)],
-      limit: 200,
     });
   }
 
@@ -313,13 +313,13 @@ export class RecruitmentSourcingService {
   listExternalReferrals(orgId: string) {
     return this.db.query.externalReferrals.findMany({
       where: eq(externalReferrals.orgId, orgId),
+      limit: 200,
       with: {
         candidate: { columns: { id: true, firstName: true, lastName: true, email: true } },
         referrer: { columns: { id: true, name: true, email: true } },
         jobPosting: { columns: { id: true, title: true } },
       },
       orderBy: [desc(externalReferrals.createdAt)],
-      limit: 200,
     });
   }
 

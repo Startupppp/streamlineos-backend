@@ -130,7 +130,8 @@ export class AccessPermissionMembersResolver {
                 eq(rolePermissionGrants.orgId, orgId),
                 eq(rolePermissionGrants.permissionKey, permissionKey),
               ),
-            ),
+            )
+            .limit(500),
         [] as { roleId: number }[],
       ),
 
@@ -139,7 +140,8 @@ export class AccessPermissionMembersResolver {
           this.db
             .selectDistinct({ roleId: rolePermissionGrants.roleId })
             .from(rolePermissionGrants)
-            .where(eq(rolePermissionGrants.orgId, orgId)),
+            .where(eq(rolePermissionGrants.orgId, orgId))
+            .limit(500),
         [] as { roleId: number }[],
       ),
 
@@ -154,7 +156,8 @@ export class AccessPermissionMembersResolver {
                     eq(roles.orgId, orgId),
                     inArray(roles.slug, slugsWithPermInDefaults),
                   ),
-                ),
+                )
+                .limit(500),
             [] as { roleId: number }[],
           )
         : Promise.resolve([] as { roleId: number }[]),
@@ -339,7 +342,8 @@ export class AccessPermissionMembersResolver {
               eq(userModuleAccess.moduleKey, permModule),
               eq(userModuleAccess.enabled, false),
             ),
-          ),
+          )
+          .limit(candidates.length),
       [] as { userId: string }[],
     );
 

@@ -1,5 +1,5 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { portalMemberships } from "../../../db/schema/portal-access/portal-memberships";
 import { projectClientGrants } from "../../../db/schema/portal-access/project-client-grants";
 import { partyContacts, projects } from "../../../db/schema";
@@ -7,6 +7,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { type PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { AuditService } from "../../../common/audit/audit.service";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeUuid } from "../../../common/pagination/keyset";
 import type {
   ListMembershipsQuery,
   CreateMembershipInput,
@@ -61,13 +63,15 @@ export class PortalAccessService {
   }
 
   async listMemberships(organizationId: string, query: ListMembershipsQuery) {
-    const { page, limit, status } = query;
-    const offset = (page - 1) * limit;
+    const { limit, cursor, status } = query;
+    const position = cursor === undefined ? undefined : decodeCursor(cursor);
+    if (cursor !== undefined && !position) throw new BadRequestException("Invalid pagination cursor");
 
     const conditions = and(
       eq(portalMemberships.organizationId, organizationId),
       isNull(portalMemberships.deletedAt),
       status ? eq(portalMemberships.status, status) : undefined,
+      position ? keysetBeforeUuid(portalMemberships.createdAt, portalMemberships.portalMembershipId, position) : undefined,
     );
 
     const [rows, [totalRow]] = await Promise.all([
@@ -97,21 +101,9 @@ export class PortalAccessService {
         )
         .where(conditions)
         .orderBy(desc(portalMemberships.createdAt), desc(portalMemberships.portalMembershipId))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(portalMemberships).where(conditions),
+        .limit(limit + 1),
     ]);
-
-    const total = Number(totalRow?.total ?? 0);
-    return {
-      data: rows,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    return buildCursorPage(rows, limit, (row) => ({ sortValue: row.createdAt, id: row.portalMembershipId }));
   }
 
   async getMembership(organizationId: string, portalMembershipId: string) {
@@ -205,12 +197,14 @@ export class PortalAccessService {
   }
 
   async listGrants(organizationId: string, query: ListGrantsQuery) {
-    const { page, limit, projectId } = query;
-    const offset = (page - 1) * limit;
+    const { limit, cursor, projectId } = query;
+    const position = cursor === undefined ? undefined : decodeCursor(cursor);
+    if (cursor !== undefined && !position) throw new BadRequestException("Invalid pagination cursor");
 
     const conditions = and(
       eq(projectClientGrants.organizationId, organizationId),
       projectId ? eq(projectClientGrants.projectId, projectId) : undefined,
+      position ? keysetBeforeUuid(projectClientGrants.createdAt, projectClientGrants.projectClientGrantId, position) : undefined,
     );
 
     const [rows, [totalRow]] = await Promise.all([
@@ -245,21 +239,9 @@ export class PortalAccessService {
         )
         .where(conditions)
         .orderBy(desc(projectClientGrants.createdAt), desc(projectClientGrants.projectClientGrantId))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(projectClientGrants).where(conditions),
+        .limit(limit + 1),
     ]);
-
-    const total = Number(totalRow?.total ?? 0);
-    return {
-      data: rows,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    return buildCursorPage(rows, limit, (row) => ({ sortValue: row.createdAt, id: row.projectClientGrantId }));
   }
 
   async getGrant(organizationId: string, projectClientGrantId: string) {

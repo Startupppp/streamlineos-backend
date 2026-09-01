@@ -146,7 +146,7 @@ export const journalBatchListQuerySchema = z.object({
   status: z
     .enum(["DRAFT", "POSTED", "EXPORTED", "REVERSED", "FAILED"])
     .optional(),
-  page: optionalPageNumberField(),
+  cursor: z.string().trim().min(1).max(2048).optional(),
   limit: optionalPageSizeField(),
 });
 export type JournalBatchListQuery = z.infer<typeof journalBatchListQuerySchema>;
@@ -171,7 +171,7 @@ export type RejectDeclarationInput = z.infer<typeof rejectDeclarationSchema>;
 export const taxDeclarationsQuerySchema = z.object({
   financialYear: z.string().trim().max(20).optional(),
   status: z.string().trim().max(30).optional(),
-  page: optionalPageNumberField(),
+  cursor: z.string().trim().min(1).max(2048).optional(),
   limit: optionalPageSizeField(),
 });
 export type TaxDeclarationsQuery = z.infer<typeof taxDeclarationsQuerySchema>;
@@ -195,6 +195,6 @@ export const reportsQuerySchema = z.object({
   costCenter: z.string().trim().max(100).optional(),
   workerType: z.string().trim().max(50).optional(),
   limit: optionalPageSizeField(),
-  offset: z.coerce.number().int().min(0).optional(),
+  cursor: z.string().trim().min(1).max(2048).optional(),
 });
 export type ReportsQuery = z.infer<typeof reportsQuerySchema>;

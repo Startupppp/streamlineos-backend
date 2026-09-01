@@ -287,7 +287,8 @@ export class RolePermissionService {
           eq(rolePermissionGrants.orgId, orgId),
           inArray(rolePermissionGrants.roleId, roleIds),
         ),
-      );
+      )
+      .limit(500);
 
     const grantsByRole = new Map<number, string[]>();
     for (const grant of allGrants) {

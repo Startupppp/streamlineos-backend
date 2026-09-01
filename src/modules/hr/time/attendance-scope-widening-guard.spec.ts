@@ -17,6 +17,10 @@ jest.mock("./attendance-scope", () => ({
   resolveAttendanceScope: jest.fn(),
 }));
 
+jest.mock("./organization-membership", () => ({
+  requireOrganizationMembershipId: jest.fn().mockResolvedValue(1),
+}));
+
 import { resolveAttendanceScope } from "./attendance-scope";
 import { AttendanceReadService } from "./attendance-read.service";
 import { AttendanceRegularizationService } from "./attendance-regularization.service";

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import {
   kbArticleChunks,
   kbArticles,
@@ -16,6 +16,13 @@ export function isPageIndexable(page: {
   deletedAt: Date | null;
 }): boolean {
   return page.status !== "archived" && page.deletedAt === null;
+}
+
+const REINDEX_ALL_BATCH_SIZE = 100;
+
+export interface ReindexAllPagesResult {
+  reindexed: number;
+  nextPageId: number | null;
 }
 
 @Injectable()
@@ -387,19 +394,26 @@ export class KbIndexingService {
     ]);
   }
 
-  async reindexAllPages(orgId?: string): Promise<{ reindexed: number }> {
+  async reindexAllPages(orgId?: string, afterPageId = 0): Promise<ReindexAllPagesResult> {
     const where = orgId
-      ? and(eq(kbPages.orgId, orgId), ne(kbPages.status, "archived"), isNull(kbPages.deletedAt))
-      : and(ne(kbPages.status, "archived"), isNull(kbPages.deletedAt));
+      ? and(eq(kbPages.orgId, orgId), gt(kbPages.id, afterPageId), ne(kbPages.status, "archived"), isNull(kbPages.deletedAt))
+      : and(gt(kbPages.id, afterPageId), ne(kbPages.status, "archived"), isNull(kbPages.deletedAt));
 
     const pages = await this.db
       .select({ id: kbPages.id, orgId: kbPages.orgId })
       .from(kbPages)
-      .where(where);
+      .where(where)
+      .orderBy(asc(kbPages.id))
+      .limit(REINDEX_ALL_BATCH_SIZE + 1);
 
-    for (const page of pages)
+    const batch = pages.slice(0, REINDEX_ALL_BATCH_SIZE);
+
+    for (const page of batch)
       await this.indexPage(page.orgId, page.id);
 
-    return { reindexed: pages.length };
+    return {
+      reindexed: batch.length,
+      nextPageId: pages.length > REINDEX_ALL_BATCH_SIZE ? (batch.at(-1)?.id ?? null) : null,
+    };
   }
 }

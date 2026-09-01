@@ -4,6 +4,7 @@ import {
   supportBusinessHours,
   supportSlaPolicies,
   supportTickets,
+  organizationMembers,
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -307,18 +308,26 @@ export class SupportSlaService {
         category: true,
         priority: true,
         createdAt: true,
-        assigneeId: true,
+        assigneeMembershipId: true,
         firstRespondedAt: true,
         firstResponseDueAt: true,
         slaDeadline: true,
         slaPausedAt: true,
         slaEscalationLevel: true,
       },
+      with: {
+        assigneeMembership: { with: { user: { columns: { id: true } } } },
+      },
     });
+
+    const ticketsForEscalation = tickets.map((ticket) => ({
+      ...ticket,
+      assigneeId: ticket.assigneeMembership?.user?.id ?? null,
+    }));
 
     let escalated = 0;
 
-    for (const ticket of tickets) {
+    for (const ticket of ticketsForEscalation) {
       const risk = this.computeRisk(ticket);
       const newLevel = riskToEscalationLevel(risk);
       const isBreach = risk === "first_response_breached" || risk === "resolution_breached";
@@ -395,7 +404,17 @@ export class SupportSlaService {
 
       await this.db
         .update(supportTickets)
-        .set({ assigneeId: routing.assigneeId, updatedAt: new Date() })
+        .set({
+          assigneeMembershipId: (await this.db.query.organizationMembers.findFirst({
+            where: and(
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.userId, routing.assigneeId),
+              eq(organizationMembers.status, "ACTIVE"),
+            ),
+            columns: { id: true },
+          }))?.id ?? null,
+          updatedAt: new Date(),
+        })
         .where(and(eq(supportTickets.id, ticket.id), eq(supportTickets.orgId, orgId)));
       return routing.assigneeId;
     } catch (error) {

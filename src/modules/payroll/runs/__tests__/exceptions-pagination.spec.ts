@@ -1,8 +1,7 @@
 import { ExceptionsService } from "../exceptions.service";
 
 function makeDb(runRows: unknown[], exceptionRows: unknown[] = []) {
-  const exOffset = jest.fn().mockResolvedValue(exceptionRows);
-  const exLimit = jest.fn().mockReturnValue({ offset: exOffset });
+  const exLimit = jest.fn().mockResolvedValue(exceptionRows);
   const exOrderBy = jest.fn().mockReturnValue({ limit: exLimit });
   const exWhere = jest.fn().mockReturnValue({ orderBy: exOrderBy });
   const exLeftJoin = jest.fn().mockReturnValue({ where: exWhere });
@@ -12,36 +11,50 @@ function makeDb(runRows: unknown[], exceptionRows: unknown[] = []) {
   const runWhere = jest.fn().mockReturnValue({ limit: runLimit });
   const runFrom = jest.fn().mockReturnValue({ where: runWhere });
 
-  const select = jest.fn()
+  const select = jest
+    .fn()
     .mockReturnValueOnce({ from: runFrom })
     .mockReturnValue({ from: exFrom });
 
   return { db: { select } as never, exLimit };
 }
 
-describe("ExceptionsService.listExceptions — pagination cap", () => {
-  const orgId = "org-1";
-  const runId = 10;
-  const run = { id: runId };
+describe("ExceptionsService.listExceptions cursor pagination", () => {
+  const run = { id: 10 };
 
-  it("caps at 100 when caller asks for >100", async () => {
+  it("caps at 100 and requests a sentinel row", async () => {
     const { db, exLimit } = makeDb([run]);
-    const svc = new ExceptionsService(db);
-    await svc.listExceptions(orgId, runId, undefined, undefined, 1, 200);
-    expect(exLimit.mock.calls[0]?.[0]).toBeLessThanOrEqual(100);
+    await new ExceptionsService(db).listExceptions(
+      "org-1",
+      10,
+      undefined,
+      undefined,
+      undefined,
+      200,
+    );
+    expect(exLimit).toHaveBeenCalledWith(101);
   });
 
-  it("uses defaults (page=1, limit=50) when none supplied", async () => {
-    const { db, exLimit } = makeDb([run]);
-    const svc = new ExceptionsService(db);
-    await svc.listExceptions(orgId, runId);
-    expect(exLimit.mock.calls[0]?.[0]).toBe(50);
+  it("returns cursor metadata for the final page", async () => {
+    const { db } = makeDb([run], [
+      {
+        id: 1,
+        severity: "BLOCKER",
+        createdAt: new Date("2026-09-01T00:00:00.000Z"),
+      },
+    ]);
+    const result = await new ExceptionsService(db).listExceptions("org-1", 10);
+    expect(result?.pagination).toEqual({
+      limit: 50,
+      hasMore: false,
+      nextCursor: null,
+    });
   });
 
-  it("returns null when run is not found (cross-tenant isolation)", async () => {
+  it("returns null when the tenant-scoped run is absent", async () => {
     const { db } = makeDb([]);
-    const svc = new ExceptionsService(db);
-    const result = await svc.listExceptions("attacker-org", 999);
-    expect(result).toBeNull();
+    await expect(
+      new ExceptionsService(db).listExceptions("attacker-org", 999),
+    ).resolves.toBeNull();
   });
 });

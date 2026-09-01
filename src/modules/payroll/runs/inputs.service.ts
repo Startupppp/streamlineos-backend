@@ -1,14 +1,20 @@
 import { Injectable, Inject, ForbiddenException } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { payrollInputs, payrollRuns, payrollRunEvents } from "../../../db/schema";
+import { organizationMembers, payrollInputs, payrollRuns, payrollRunEvents } from "../../../db/schema";
 import { users } from "../../../db/schema";
 import type { PatchInputInput, InputsQuery } from "./dto/runs.schemas";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
 import { pullAttendanceInputs } from "./lib/input-puller";
 import type { DataScope } from "../../access/access.types";
-import { applyScope } from "../../access/apply-scope";
+import { buildCursorPage } from "../../../common/pagination/cursor";
+import {
+  decodePayrollTextCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
+
+const inputSortName = sql<string>`coalesce(${users.name}, ${users.email})`;
 
 @Injectable()
 export class InputsService {
@@ -20,6 +26,7 @@ export class InputsService {
     query: InputsQuery,
     scope: DataScope,
     actorUserId: string,
+    actorMembershipId: number | null,
   ) {
     const runCheck = await this.db
       .select({ id: payrollRuns.id, status: payrollRuns.status })
@@ -33,15 +40,29 @@ export class InputsService {
       throw new ForbiddenException("Not authorized to filter payroll inputs for another payee");
     }
 
+    if (actorMembershipId == null) throw new ForbiddenException("Organization membership required");
     const conditions = [
       eq(payrollInputs.runId, runId),
       eq(payrollInputs.orgId, orgId),
-      applyScope(scope, orgId, actorUserId, { ownerColumn: payrollInputs.userId }),
+      scope === "all" ? eq(payrollInputs.orgId, orgId) : eq(payrollInputs.userMembershipId, actorMembershipId),
     ];
-    if (query.userId) conditions.push(eq(payrollInputs.userId, query.userId));
+    if (query.userId) conditions.push(eq(payrollInputs.userMembershipId, actorMembershipId));
 
-    const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 50, 100);
+    const cursorScope = [
+      "run-inputs",
+      orgId,
+      runId,
+      query.userId ?? null,
+      scope,
+      actorMembershipId,
+    ] as const;
+    const position = decodePayrollTextCursor(query.cursor, cursorScope);
+    if (position) {
+      conditions.push(
+        sql`(${inputSortName}, ${payrollInputs.id}) > (${position.value}, ${position.id})`,
+      );
+    }
 
     const rows = await this.db
       .select({
@@ -65,11 +86,16 @@ export class InputsService {
       .from(payrollInputs)
       .innerJoin(users, eq(users.id, payrollInputs.userId))
       .where(and(...conditions))
-      .orderBy(users.name)
-      .limit(limit)
-      .offset((page - 1) * limit);
+      .orderBy(asc(inputSortName), asc(payrollInputs.id))
+      .limit(limit + 1);
 
-    return rows;
+    return buildCursorPage(rows, limit, (row) =>
+      payrollCursorPosition(
+        cursorScope,
+        [row.userName ?? row.userEmail],
+        row.id,
+      ),
+    );
   }
 
   async patchInput(
@@ -172,6 +198,10 @@ export class InputsService {
             orgId,
             runId,
             userId,
+            userMembershipId: (await tx.query.organizationMembers.findFirst({
+              where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)),
+              columns: { id: true },
+            }))?.id,
             source: pulled.source,
             scheduledDays: pulled.scheduledDays,
             paidDays: pulled.paidDays,

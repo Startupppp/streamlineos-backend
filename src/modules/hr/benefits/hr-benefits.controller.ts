@@ -17,6 +17,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { HrBenefitsPlansService } from "./hr-benefits-plans.service";
 import { HrBenefitsEnrollmentService } from "./hr-benefits-enrollment.service";
 import { HrBenefitsClaimsService } from "./hr-benefits-claims.service";
@@ -32,6 +33,7 @@ import {
   reviewClaimSchema,
   setPayoutRouteSchema,
   benefitPlansQuerySchema,
+  availableBenefitPlansQuerySchema,
   claimsQuerySchema,
   type CreateBenefitPlanInput,
   type PatchBenefitPlanInput,
@@ -44,6 +46,7 @@ import {
   type ReviewClaimInput,
   type SetPayoutRouteInput,
   type BenefitPlansQuery,
+  type AvailableBenefitPlansQuery,
   type ClaimsQuery,
 } from "./dto/benefits.schemas";
 import { AccessService } from "../../access/access.service";
@@ -76,8 +79,12 @@ export class HrBenefitsController {
   @Get("plans/available")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
-  listActivePlans(@CurrentUser() u: CurrentUserContext) {
-    return this.plans.listPlans(u.orgId, { status: "active", limit: 100 });
+  @Validate({ query: availableBenefitPlansQuerySchema })
+  listActivePlans(
+    @CurrentUser() u: CurrentUserContext,
+    @Query() query: AvailableBenefitPlansQuery,
+  ) {
+    return this.plans.listPlans(u.orgId, { ...query, status: "active" });
   }
 
   @Get("plans")
@@ -186,7 +193,7 @@ export class HrBenefitsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
   getMyBenefits(@CurrentUser() u: CurrentUserContext) {
-    return this.enrollment.getMyBenefits(u.orgId, u.userId);
+    return this.enrollment.getMyBenefits(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   @Post("enroll")
@@ -198,7 +205,7 @@ export class HrBenefitsController {
     @CurrentUser() u: CurrentUserContext,
     @Body() body: EnrollInput,
   ) {
-    return this.enrollment.enroll(u.orgId, u.userId, body);
+    return this.enrollment.enroll(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Post("waive")
@@ -210,14 +217,14 @@ export class HrBenefitsController {
     @CurrentUser() u: CurrentUserContext,
     @Body() body: WaiveInput,
   ) {
-    return this.enrollment.waive(u.orgId, u.userId, body);
+    return this.enrollment.waive(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Get("dependents")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
   listDependents(@CurrentUser() u: CurrentUserContext) {
-    return this.enrollment.listDependents(u.orgId, u.userId);
+    return this.enrollment.listDependents(u.orgId, u.userId, actingMembershipId(u.principal));
   }
 
   @Post("dependents")
@@ -229,7 +236,7 @@ export class HrBenefitsController {
     @CurrentUser() u: CurrentUserContext,
     @Body() body: CreateDependentInput,
   ) {
-    return this.enrollment.addDependent(u.orgId, u.userId, body);
+    return this.enrollment.addDependent(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Patch("dependents/:depId")
@@ -241,7 +248,7 @@ export class HrBenefitsController {
     @Param("depId", ParseIntPipe) depId: number,
     @Body() body: PatchDependentInput,
   ) {
-    return this.enrollment.updateDependent(u.orgId, u.userId, depId, body);
+    return this.enrollment.updateDependent(u.orgId, u.userId, actingMembershipId(u.principal), depId, body);
   }
 
   @Delete("dependents/:depId")
@@ -252,7 +259,7 @@ export class HrBenefitsController {
     @CurrentUser() u: CurrentUserContext,
     @Param("depId", ParseIntPipe) depId: number,
   ) {
-    return this.enrollment.deleteDependent(u.orgId, u.userId, depId);
+    return this.enrollment.deleteDependent(u.orgId, u.userId, actingMembershipId(u.principal), depId);
   }
 
   @Get("claims")
@@ -264,7 +271,7 @@ export class HrBenefitsController {
     @Query() query: ClaimsQuery,
   ) {
     const isAdmin = await this.isAdmin(u);
-    return this.claims.listClaims(u.orgId, query, u.userId, isAdmin);
+    return this.claims.listClaims(u.orgId, query, u.userId, actingMembershipId(u.principal), isAdmin);
   }
 
   @Post("claims")
@@ -276,7 +283,7 @@ export class HrBenefitsController {
     @CurrentUser() u: CurrentUserContext,
     @Body() body: SubmitClaimInput,
   ) {
-    return this.claims.submitClaim(u.orgId, u.userId, body);
+    return this.claims.submitClaim(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Patch("claims/:claimId/review")
@@ -288,7 +295,7 @@ export class HrBenefitsController {
     @Param("claimId", ParseIntPipe) claimId: number,
     @Body() body: ReviewClaimInput,
   ) {
-    return this.claims.reviewClaim(u.orgId, claimId, u.userId, body);
+    return this.claims.reviewClaim(u.orgId, claimId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Patch("claims/:claimId/payout-route")

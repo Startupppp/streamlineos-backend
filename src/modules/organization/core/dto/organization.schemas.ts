@@ -1,6 +1,6 @@
 import { ORG_MEMBER_ROLE_VALUES } from "../../../../common/rbac/org-roles";
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createOrganizationSchema = z.object({
   name: z.string().min(1).max(100),
@@ -19,7 +19,7 @@ export const createOrganizationSchema = z.object({
 });
 
 export const listMembersSchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().min(1).max(2048).optional(),
   limit: pageSizeField(20, 100),
   search: z.string().trim().optional(),
   userIds: z

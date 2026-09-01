@@ -4047,6 +4047,13 @@
       "when": 1803000010018,
       "tag": "0925_hr_attendance_regularization_decision_actors",
       "breakpoints": true
+    },
+    {
+      "idx": 707,
+      "version": "7",
+      "when": 1803000010019,
+      "tag": "0926_s03_actor_fk_contract",
+      "breakpoints": true
     }
   ]
 }

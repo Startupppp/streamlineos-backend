@@ -1,10 +1,11 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, jsonb, index, unique } from "drizzle-orm/pg-core";
+import { integer, pgTable, text, serial, timestamp, boolean, decimal, jsonb, index, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../common/auth";
 
 export const travelRequests = pgTable("travel_requests", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   purpose: text("purpose").notNull(),
   destination: text("destination").notNull(),
   departureDate: text("departure_date").notNull(),
@@ -17,9 +18,11 @@ export const travelRequests = pgTable("travel_requests", {
   perDiem: decimal("per_diem", { precision: 15, scale: 2 }),
   itinerary: jsonb("itinerary").$type<{ date: string; activity: string; location: string }[]>().default([]).notNull(),
   status: text("status").default("DRAFT").notNull(),
-  managerApproverId: text("manager_approver_id").references(() => users.id),
+  managerApproverId: text("manager_approver_id"),
+  managerApproverMembershipId: integer("manager_approver_membership_id"),
   managerApprovedAt: timestamp("manager_approved_at"),
-  financeApproverId: text("finance_approver_id").references(() => users.id),
+  financeApproverId: text("finance_approver_id"),
+  financeApproverMembershipId: integer("finance_approver_membership_id"),
   financeApprovedAt: timestamp("finance_approved_at"),
   rejectionReason: text("rejection_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

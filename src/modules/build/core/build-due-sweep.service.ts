@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
-import { sprints, tickets } from "../../../db/schema";
+import { organizationMembers, sprints, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { forEachOrg } from "../../../common/tenant";
@@ -60,7 +60,7 @@ export class BuildDueSweepService {
         eq(tickets.orgId, orgId),
         isNull(tickets.deletedAt),
         isNotNull(tickets.dueDate),
-        isNotNull(tickets.assigneeId),
+        isNotNull(tickets.assigneeMembershipId),
         ne(tickets.status, "DONE"),
       );
 
@@ -69,9 +69,10 @@ export class BuildDueSweepService {
           id: tickets.id,
           title: tickets.title,
           dueDate: tickets.dueDate,
-          assigneeId: tickets.assigneeId,
+          assigneeId: organizationMembers.userId,
         })
         .from(tickets)
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
         .where(and(base, eq(tickets.dueDate, entersWindow)))
         .limit(500);
 
@@ -80,9 +81,10 @@ export class BuildDueSweepService {
           id: tickets.id,
           title: tickets.title,
           dueDate: tickets.dueDate,
-          assigneeId: tickets.assigneeId,
+          assigneeId: organizationMembers.userId,
         })
         .from(tickets)
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
         .where(and(base, eq(tickets.dueDate, slippedYesterday)))
         .limit(500);
 
@@ -119,14 +121,15 @@ export class BuildDueSweepService {
 
       for (const sprint of ending) {
         const owners = await tx
-          .selectDistinct({ assigneeId: tickets.assigneeId })
+          .selectDistinct({ assigneeId: organizationMembers.userId })
           .from(tickets)
+          .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
           .where(
             and(
               eq(tickets.orgId, orgId),
               eq(tickets.sprintId, sprint.id),
               isNull(tickets.deletedAt),
-              isNotNull(tickets.assigneeId),
+              isNotNull(tickets.assigneeMembershipId),
               ne(tickets.status, "DONE"),
             ),
           );

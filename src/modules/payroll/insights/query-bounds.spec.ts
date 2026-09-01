@@ -60,7 +60,7 @@ describe("Payroll insights query bounds", () => {
   it("manager inbox fetches at most one latest payslip and declaration per bounded report", () => {
     const source = readFileSync(require.resolve("./manager-inbox.service"), "utf8");
     expect(source).toContain(".limit(directReportIds.length)");
-    expect(source.match(/\.selectDistinctOn\(/g)).toHaveLength(2);
+    expect(source.match(/\.selectDistinctOn\(/g)).toHaveLength(1);
     expect(source).toContain("asc(payslipPublications.userId)");
     expect(source).toContain("asc(taxDeclarations.userId)");
   });

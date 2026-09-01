@@ -44,7 +44,7 @@ export class PayrollFilingsController {
   @RequirePermission("payroll:tax:view")
   @Validate({ query: listFilingsQuerySchema })
   list(@CurrentUser() u: CurrentUserContext, @Query() query: ListFilingsQuery) {
-    return this.service.list(u.orgId, query.page, query.limit);
+    return this.service.list(u.orgId, query.cursor, query.limit);
   }
 
   @Get("capabilities")

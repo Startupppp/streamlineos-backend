@@ -1,8 +1,10 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { kbArticleFeedback, kbArticles, kbCategories, kbSpaces } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetBeforeId } from "../../common/pagination/keyset";
 import type { KbFeedbackInput, KbListInput } from "./dto/public.schemas";
 
 @Injectable()
@@ -10,7 +12,9 @@ export class KbService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(input: KbListInput) {
-    const { org, categoryId, search, page, pageSize } = input;
+    const { org, categoryId, search, pageSize, cursor } = input;
+    const position = cursor === undefined ? undefined : decodeCursor(cursor);
+    if (cursor !== undefined && !position) throw new BadRequestException("Invalid pagination cursor");
 
     const categories = await this.db
       .select({
@@ -59,12 +63,11 @@ export class KbService {
       })
       .from(kbArticles)
       .innerJoin(kbSpaces, eq(kbArticles.spaceId, kbSpaces.id))
-      .where(and(...conditions))
-      .orderBy(desc(kbArticles.publishedAt))
-      .limit(pageSize)
-      .offset((page - 1) * pageSize);
+      .where(and(...conditions, position ? keysetBeforeId(kbArticles.publishedAt, kbArticles.id, position) : undefined))
+      .orderBy(desc(kbArticles.publishedAt), desc(kbArticles.id))
+      .limit(pageSize + 1);
 
-    return { categories, articles };
+    return { categories, ...buildCursorPage(articles, pageSize, (article) => ({ sortValue: article.publishedAt!, id: String(article.id) })) };
   }
 
   async getArticle(slug: string, org: string) {

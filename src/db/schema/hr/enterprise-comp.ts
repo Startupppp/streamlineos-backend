@@ -96,7 +96,8 @@ export const hrDeviceEmployeeMappings = pgTable(
       .references(() => hrTimeDevices.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
+    userMembershipId: integer("user_membership_id"),
     biometricId: text("biometric_id"),
     effectiveFrom: date("effective_from"),
     effectiveTo: date("effective_to"),
@@ -159,7 +160,8 @@ export const hrArrearsAdjustments = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
+    userMembershipId: integer("user_membership_id"),
     reason: text("reason").notNull(),
     amountCents: bigint("amount_cents", { mode: "number" }).notNull(),
     sourcePeriod: text("source_period").notNull(),
@@ -249,7 +251,8 @@ export const hrCompRecommendations = pgTable(
       .references(() => hrCompCycles.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
+    userMembershipId: integer("user_membership_id"),
     currentSalaryCents: bigint("current_salary_cents", { mode: "number" }).notNull(),
     recommendedIncreaseCents: bigint("recommended_increase_cents", { mode: "number" }).notNull(),
     recommendedPct: numeric("recommended_pct", { precision: 8, scale: 4 }).notNull(),
@@ -319,7 +322,8 @@ export const hrEquityGrants = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
+    userMembershipId: integer("user_membership_id"),
     grantType: hrEquityGrantTypeEnum("grant_type").notNull(),
     units: integer("units").notNull(),
     strikePriceCents: bigint("strike_price_cents", { mode: "number" }),

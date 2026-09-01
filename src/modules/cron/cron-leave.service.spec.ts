@@ -12,11 +12,17 @@ function makeDb(
   existingLedger: unknown[],
   existingBalances: unknown[],
 ) {
-  const where = jest.fn()
-    .mockResolvedValueOnce(policies)
-    .mockResolvedValueOnce(members)
-    .mockResolvedValueOnce(existingLedger)
-    .mockResolvedValueOnce(existingBalances);
+  const results = [policies, members, existingLedger, existingBalances];
+  let resultIndex = 0;
+  const chain: Record<string, unknown> = {
+    from: jest.fn().mockReturnThis(),
+    innerJoin: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockReturnThis(),
+    then: (resolve: (value: unknown) => unknown) => Promise.resolve(results[resultIndex++]).then(resolve),
+  };
+  const where = jest.fn().mockReturnValue(chain);
+  chain.where = where;
 
   const txOnConflict = jest.fn().mockResolvedValue(undefined);
   const txValues = jest.fn().mockReturnValue({ onConflictDoNothing: txOnConflict });
@@ -28,9 +34,7 @@ function makeDb(
   );
 
   const db = {
-    select: jest.fn().mockReturnThis(),
-    from: jest.fn().mockReturnThis(),
-    innerJoin: jest.fn().mockReturnThis(),
+    select: jest.fn().mockReturnValue(chain),
     where,
     transaction,
   };
@@ -150,9 +154,17 @@ describe("CronLeaveService.accrueMonthlyLeaves", () => {
     );
 
     const db = {
-      select: jest.fn().mockReturnThis(),
-      from: jest.fn().mockReturnThis(),
-      innerJoin: jest.fn().mockReturnThis(),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          innerJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              orderBy: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue([{ userId: "u1" }]),
+              }),
+            }),
+          }),
+        }),
+      }),
       where,
       transaction,
     };

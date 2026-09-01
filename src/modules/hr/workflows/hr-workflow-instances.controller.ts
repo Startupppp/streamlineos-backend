@@ -11,9 +11,11 @@ import { pageNumberField, pageSizeField } from "../../../common/pagination/list-
 import {
   ActOnInstanceSchema,
   RejectInstanceSchema,
+  WorkflowActedQuerySchema,
   WorkflowInstanceQuerySchema,
   type ActOnInstanceDto,
   type RejectInstanceDto,
+  type WorkflowActedQueryDto,
   type WorkflowInstanceQueryDto,
 } from "./dto/workflow.schemas";
 import { HrWorkflowInstancesService } from "./hr-workflow-instances.service";
@@ -56,18 +58,18 @@ export class HrWorkflowInstancesController {
     @CurrentUser() u: CurrentUserContext,
     @Query() query: { page: number; limit: number },
   ) {
-    return this.instancesService.getInbox(u.orgId, u.userId, query.page, query.limit);
+    return this.instancesService.getInbox(u, query.page, query.limit);
   }
 
   @Get("acted")
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:workflows:approve")
-  @Validate({ query: PaginationSchema })
+  @Validate({ query: WorkflowActedQuerySchema })
   acted(
     @CurrentUser() u: CurrentUserContext,
-    @Query() query: { page: number; limit: number },
+    @Query() query: WorkflowActedQueryDto,
   ) {
-    return this.instancesService.getMyActed(u, query.page, query.limit);
+    return this.instancesService.getMyActed(u, query);
   }
 
   @Get(":instanceId")

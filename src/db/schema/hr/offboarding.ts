@@ -102,7 +102,8 @@ export const onboardingTemplateSteps = pgTable("onboarding_template_steps", {
 
 export const onboardingTasks = pgTable("onboarding_tasks", {
   id: serial("id").primaryKey(),
-  userId: text("user_id").notNull().references(() => users.id),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   orgId: text("org_id").notNull().references(() => organizations.id),
   templateStepId: integer("template_step_id").references(() => onboardingTemplateSteps.id),
   title: text("title").notNull(),
@@ -180,7 +181,8 @@ export const documentTypeRoles = pgTable("document_type_roles", {
 export const onboardingDocuments = pgTable("onboarding_documents", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   documentTypeId: integer("document_type_id").references(() => documentTypes.id).notNull(),
   fileUrl: text("file_url").notNull(),
   fileName: text("file_name").notNull(),
@@ -230,7 +232,7 @@ export const documentAuditLogs = pgTable("document_audit_logs", {
 export const resignations = pgTable("resignations", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  userId: text("user_id").notNull(),
   reason: text("reason"),
   reasonCategory: text("reason_category"),
   lastWorkingDate: date("last_working_date"),
@@ -260,6 +262,11 @@ export const resignations = pgTable("resignations", {
   index("idx_resignations_org").on(table.orgId),
   index("idx_resignations_user").on(table.userId),
   index("idx_resignations_org_user_membership").on(table.orgId, table.userMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_resignations_user_actor",
+  }).onDelete("set null"),
   check("chk_resignations_row_version", sql`${table.rowVersion} > 0`),
 ]);
 
@@ -268,7 +275,8 @@ export const exitChecklists = pgTable("exit_checklists", {
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   resignationId: integer("resignation_id").notNull(),
   item: text("item").notNull(),
-  assignedTo: text("assigned_to").references(() => users.id),
+  assignedTo: text("assigned_to"),
+  assignedToMembershipId: integer("assigned_to_membership_id"),
   status: exitChecklistStatusEnum("status").default("PENDING").notNull(),
   completedAt: timestamp("completed_at"),
   notes: text("notes"),
@@ -284,7 +292,8 @@ export const exitChecklists = pgTable("exit_checklists", {
 export const terminations = pgTable("terminations", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   reasons: text("reasons").array().notNull().default([]),
   detailedExplanation: text("detailed_explanation").notNull(),
   effectiveDate: date("effective_date").notNull(),
@@ -314,7 +323,8 @@ export const terminations = pgTable("terminations", {
 export const alumniProfiles = pgTable("alumni_profiles", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   currentCompany: text("current_company"),
   currentRole: text("current_role"),
   linkedinUrl: text("linkedin_url"),
@@ -331,7 +341,8 @@ export const alumniProfiles = pgTable("alumni_profiles", {
 export const backgroundVerifications = pgTable("background_verifications", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   type: text("type").notNull(),
   status: text("status").default("PENDING").notNull(),
   provider: text("provider"),
@@ -349,7 +360,8 @@ export const backgroundVerifications = pgTable("background_verifications", {
 export const certifications = pgTable("certifications", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   name: text("name").notNull(),
   issuingOrganization: text("issuing_organization"),
   issueDate: date("issue_date"),

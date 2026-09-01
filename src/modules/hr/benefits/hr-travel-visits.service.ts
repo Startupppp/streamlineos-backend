@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -23,12 +23,14 @@ export class HrTravelVisitsService {
       .limit(200);
   }
 
-  async addVisit(orgId: string, userId: string, data: CreateVisitLogInput) {
+  async addVisit(orgId: string, userId: string, membershipId: number | null, data: CreateVisitLogInput) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const [log] = await this.db
       .insert(hrTravelVisitLogs)
       .values({
         orgId,
         userId,
+        userMembershipId: membershipId,
         travelRequestId: data.travelRequestId,
         visitedAt: new Date(data.visitedAt),
         location: data.location,

@@ -21,6 +21,7 @@ SET "assigned_to_membership_id" = om.id
 FROM "organization_members" om
 WHERE om.org_id = c.org_id
   AND om.user_id = c.assigned_to
+  AND om.status = 'ACTIVE'
   AND c.assigned_to IS NOT NULL
   AND c."assigned_to_membership_id" IS NULL;
 
@@ -30,6 +31,7 @@ SET "reported_by_membership_id" = om.id
 FROM "organization_members" om
 WHERE om.org_id = c.org_id
   AND om.user_id = c.reported_by
+  AND om.status = 'ACTIVE'
   AND c.reported_by IS NOT NULL
   AND c."reported_by_membership_id" IS NULL;
 

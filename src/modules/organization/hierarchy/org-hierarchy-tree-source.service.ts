@@ -147,7 +147,8 @@ export class OrgHierarchyTreeSourceService {
       .select(ORG_TREE_READ_COLUMNS)
       .from(orgUnits)
       .leftJoin(headMember, eq(headMember.id, orgUnits.headMembershipId))
-      .where(this.treeFilter(orgId));
+      .where(this.treeFilter(orgId))
+      .limit(10000);
   }
 
   private loadClosureRows(orgId: string): Promise<ClosureTreeRow[]> {
@@ -172,7 +173,8 @@ export class OrgHierarchyTreeSourceService {
           eq(closureParentRows.depth, 1),
         ),
       )
-      .where(this.treeFilter(orgId));
+      .where(this.treeFilter(orgId))
+      .limit(10000);
   }
 
   private treeFilter(orgId: string) {

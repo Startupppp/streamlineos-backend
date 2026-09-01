@@ -152,6 +152,19 @@ describe("ChatHuddlesService", () => {
   });
 
   describe("joinHuddle", () => {
+    it("limits participant reads to the mesh cap plus a sentinel", async () => {
+      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ membershipId: 1 });
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
+      mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue([{ membershipId: 2 }]);
+
+      await service.joinHuddle(1, "user2", "org1");
+
+      expect(mockDb.query.chatHuddleParticipants.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: HUDDLE_MESH_MAX_PARTICIPANTS + 1 }),
+      );
+    });
+
     it("throws NotFoundException if huddle not found or inactive", async () => {
       mockDb.query.chatHuddles.findFirst.mockResolvedValue(null);
       await expect(service.joinHuddle(1, "user1", "org1")).rejects.toThrow(NotFoundException);
@@ -232,6 +245,20 @@ describe("ChatHuddlesService", () => {
   });
 
   describe("inviteToHuddle", () => {
+    it("limits the free-plan participant check to the threshold sentinel", async () => {
+      mockPlanLimits.resolveTier.mockResolvedValue({ tier: "FREE", plan: "FREE" });
+      mockDb.query.chatHuddles.findFirst.mockResolvedValue({ id: 1, channelId: 1, status: "active" });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ membershipId: 1 });
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ isArchived: false });
+      mockDb.query.chatHuddleParticipants.findMany.mockResolvedValue([{ id: 1 }]);
+
+      await service.inviteToHuddle(1, "user1", "org1", ["user3"]);
+
+      expect(mockDb.query.chatHuddleParticipants.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 3 }),
+      );
+    });
+
     it("throws NotFoundException if huddle not found", async () => {
       mockDb.query.chatHuddles.findFirst.mockResolvedValue(null);
       await expect(service.inviteToHuddle(1, "user1", "org1", ["user2"])).rejects.toThrow(NotFoundException);

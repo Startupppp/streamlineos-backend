@@ -59,9 +59,9 @@ const CHECKS = [
       select t.id, count(*) over () total
       from build.tickets t
       where t.org_id = $1 and t.project_id = $2 and t.deleted_at is null
-        and (t.assignee_id = $3 or t.reporter_id = $3
+        and (t.assignee_membership_id = $3
              or exists (select 1 from build.ticket_assignees ta
-                        where ta.org_id = $1 and ta.user_id = $3 and ta.ticket_id = t.id))
+                        where ta.org_id = $1 and ta.membership_id = $3 and ta.ticket_id = t.id))
       order by t.rank asc, t.created_at desc, t.id asc
       limit 50 offset 0`,
   },
@@ -74,11 +74,11 @@ const CHECKS = [
       select u.id, count(*) over () total from (
         (select t.id as id, t.due_date as due_date, t.priority as priority
          from build.tickets t inner join build.projects p on p.id = t.project_id
-         where t.org_id = $1 and p.status <> 'ARCHIVED' and t.deleted_at is null and t.assignee_id = $2)
+         where t.org_id = $1 and p.status <> 'ARCHIVED' and t.deleted_at is null and t.assignee_membership_id = $2)
         union
         (select t.id as id, t.due_date as due_date, t.priority as priority
          from build.tickets t inner join build.projects p on p.id = t.project_id
-         inner join build.ticket_assignees ta on ta.ticket_id = t.id and ta.org_id = $1 and ta.user_id = $2
+         inner join build.ticket_assignees ta on ta.ticket_id = t.id and ta.org_id = $1 and ta.membership_id = $2
          where t.org_id = $1 and p.status <> 'ARCHIVED' and t.deleted_at is null)
       ) u
       order by u.due_date asc nulls last,
@@ -107,17 +107,16 @@ async function main() {
       where org_id = ${ORG} and deleted_at is null
       group by project_id order by n desc limit 1`;
     const [collaborator] = await tx`
-      select ta.user_id, count(*)::int n from build.ticket_assignees ta
+      select ta.membership_id, count(*)::int n from build.ticket_assignees ta
       join build.tickets t on t.id = ta.ticket_id and t.org_id = ta.org_id
       where ta.org_id = ${ORG}
-        and t.assignee_id is distinct from ta.user_id
-        and t.reporter_id is distinct from ta.user_id
-      group by ta.user_id order by n desc limit 1`;
+        and t.assignee_membership_id is distinct from ta.membership_id
+      group by ta.membership_id order by n desc limit 1`;
     const [participant] = collaborator
       ? [collaborator]
       : await tx`
-          select user_id, count(*)::int n from build.ticket_assignees
-          where org_id = ${ORG} group by user_id order by n desc limit 1`;
+          select membership_id, count(*)::int n from build.ticket_assignees
+          where org_id = ${ORG} group by membership_id order by n desc limit 1`;
     if (!project || !participant) {
       const missing = [!project && "build.tickets", !participant && "build.ticket_assignees"]
         .filter(Boolean)
@@ -128,15 +127,15 @@ async function main() {
       );
     }
     const [spread] = await tx`
-      select count(*)::int total, count(distinct user_id)::int users
+      select count(*)::int total, count(distinct membership_id)::int users
       from build.ticket_assignees where org_id = ${ORG}`;
     const [held] = await tx`
       select count(*)::int n from build.ticket_assignees
-      where org_id = ${ORG} and user_id = ${participant.user_id}`;
+      where org_id = ${ORG} and membership_id = ${participant.membership_id}`;
     return {
       projectId: project.project_id,
       projectTickets: project.n,
-      userId: participant.user_id,
+      userId: participant.membership_id,
       participationOrgWide: participant.n,
       participantShare: spread.total > 0 ? held.n / spread.total : 0,
       distinctParticipants: spread.users,
@@ -175,7 +174,7 @@ async function main() {
     else if (!node.executed)
       failures.push(
         `${check.id}: the ${check.requireIndexOnlyOn} branch was planned but NEVER EXECUTED, so its access path is unproven. ` +
-          `The fixture participant reaches every row through tickets.assignee_id/reporter_id, so the OR short-circuits before the semi-join. ` +
+          `The fixture participant reaches every row through tickets.assignee_membership_id, so the OR short-circuits before the semi-join. ` +
           `Seed a participant who appears ONLY in ${check.requireIndexOnlyOn} (pnpm seed:build-load creates one) or this assertion is vacuous.`,
       );
     else if (!node.type.startsWith("Index Only Scan"))

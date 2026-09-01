@@ -64,7 +64,8 @@ export class PaymentRunExecutorService {
       .from(finPaymentRunItems)
       .where(
         and(eq(finPaymentRunItems.runId, runId), eq(finPaymentRunItems.status, "PENDING")),
-      );
+      )
+      .limit(1000);
 
     const today = new Date().toISOString().slice(0, 10);
     await this.journalPosting.seedChartOfAccountsForOrg(orgId);
@@ -82,9 +83,10 @@ export class PaymentRunExecutorService {
     const billMap = new Map<number, typeof purchaseBills.$inferSelect>();
     if (billIds.length > 0) {
       const bills = await this.db
-        .select()
-        .from(purchaseBills)
-        .where(and(inArray(purchaseBills.id, billIds), eq(purchaseBills.orgId, orgId)));
+      .select()
+      .from(purchaseBills)
+      .where(and(inArray(purchaseBills.id, billIds), eq(purchaseBills.orgId, orgId)))
+      .limit(billIds.length);
       for (const b of bills) billMap.set(b.id, b);
     }
 

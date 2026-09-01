@@ -173,14 +173,12 @@ describe("HR Time services — cross-tenant isolation", () => {
     it("scopes attendance status to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, findMany } = makeDb([]);
       const svc = new AttendanceReadService(db, {} as never, {} as never);
-      await svc.status(ATTACKER, "user-1");
-      expect(findMany).toHaveBeenCalled();
-      const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
-      expect(sqlValues(call?.where)).toContain(ATTACKER);
+      await expect(svc.status(ATTACKER, "user-1")).rejects.toMatchObject({ status: 404 });
+      expect(findMany).not.toHaveBeenCalled();
     });
 
     it("returns attendance status for the owning org (CONTROL)", async () => {
-      const { db, findMany } = makeDb([{ id: 1, orgId: OWNER, userId: "user-1" }]);
+      const { db, findMany } = makeDb([{ id: 1, orgId: OWNER, userId: "user-1", status: "ACTIVE" }]);
       const svc = new AttendanceReadService(db, {} as never, {} as never);
       await svc.status(OWNER, "user-1");
       expect(findMany).toHaveBeenCalled();
@@ -355,14 +353,14 @@ describe("HR Time services — cross-tenant isolation", () => {
       const mockApprovers = { resolve: jest.fn().mockResolvedValue(null) };
       const mockEmployment = { getFacts: jest.fn().mockResolvedValue({ managerId: null }) };
       const svc = new LeavesPageService(db, mockApprovers as never, mockEmployment as never);
-      await svc.pageData(ATTACKER, "user-1");
+      await expect(svc.pageData(ATTACKER, "user-1")).rejects.toMatchObject({ status: 404 });
       expect(where).toHaveBeenCalled();
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
       expect(allValues).toContain(ATTACKER);
     });
 
     it("returns leave page data for the owning org (CONTROL)", async () => {
-      const { db } = makeDb([{ id: 1, orgId: OWNER }]);
+      const { db } = makeDb([{ id: 1, orgId: OWNER, userId: "user-1", status: "ACTIVE" }]);
       const mockApprovers = { resolve: jest.fn().mockResolvedValue(null) };
       const mockEmployment = { getFacts: jest.fn().mockResolvedValue({ managerId: null }) };
       const svc = new LeavesPageService(db, mockApprovers as never, mockEmployment as never);

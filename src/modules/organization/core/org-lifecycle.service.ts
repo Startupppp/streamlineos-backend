@@ -60,7 +60,8 @@ export class OrgLifecycleService {
     const members = await db
       .select({ userId: organizationMembers.userId })
       .from(organizationMembers)
-      .where(eq(organizationMembers.orgId, orgId));
+      .where(eq(organizationMembers.orgId, orgId))
+      .limit(10000);
     return members.map((m) => m.userId);
   }
 
@@ -163,7 +164,8 @@ export class OrgLifecycleService {
             eq(organizations.status, "ARCHIVED"),
           ),
         )
-        .orderBy(desc(organizationMembers.joinedAt)),
+        .orderBy(desc(organizationMembers.joinedAt))
+        .limit(100),
     );
 
     return rows.map((row) => ({

@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, inArray, lte, not, sum } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, lte, not, sql, sum } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -63,7 +63,8 @@ export class EssService {
   }
 
   async getOverview(orgId: string, userId: string, membershipId: number | null) {
-    const pubOwner = membershipId != null ? eq(payslipPublications.userMembershipId, membershipId) : eq(payslipPublications.userId, userId);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
+    const pubOwner = eq(payslipPublications.userMembershipId, membershipId);
     const pubWhere = and(pubOwner, eq(payslipPublications.orgId, orgId), eq(payslipPublications.status, "PUBLISHED"));
 
     const now = new Date(), yr = now.getFullYear(), mo = now.getMonth() + 1;
@@ -71,7 +72,7 @@ export class EssService {
     const fyEnd = mo >= 4 ? `${yr + 1}-03` : `${yr}-03`;
     const today = now.toISOString().slice(0, 10);
 
-    const [toggles, [latestPub], fyPubs, activeLoans, [pendingRow], window, [nextPayEvent]] = await Promise.all([
+    const [toggles, [latestPub], fyPubs, [activeLoanRow], [pendingRow], window, [nextPayEvent]] = await Promise.all([
       this.getActiveToggles(orgId),
       this.db
         .select({ id: payslipPublications.id, publishedAt: payslipPublications.publishedAt, month: payrollRuns.month, net: payrollRunEmployees.net })
@@ -86,14 +87,16 @@ export class EssService {
         .from(payslipPublications)
         .innerJoin(payrollRuns, eq(payrollRuns.id, payslipPublications.runId))
         .where(and(pubWhere, gte(payrollRuns.month, fyStart), lte(payrollRuns.month, fyEnd))),
-      this.db.query.salaryLoans.findMany({
-        where: and(membershipId != null ? eq(salaryLoans.userMembershipId, membershipId) : eq(salaryLoans.userId, userId), eq(salaryLoans.orgId, orgId), inArray(salaryLoans.status, ["APPROVED", "ACTIVE"])),
-        columns: { totalEmis: true, paidEmis: true, emiAmount: true },
-      }),
+      this.db
+        .select({
+          balance: sql<string>`coalesce(sum((coalesce(${salaryLoans.totalEmis}, 0) - coalesce(${salaryLoans.paidEmis}, 0)) * coalesce(${salaryLoans.emiAmount}, 0)::numeric), 0)::text`,
+        })
+        .from(salaryLoans)
+        .where(and(eq(salaryLoans.userMembershipId, membershipId), eq(salaryLoans.orgId, orgId), inArray(salaryLoans.status, ["APPROVED", "ACTIVE"]))),
       this.db
         .select({ total: count() })
         .from(reimbursements)
-        .where(and(membershipId != null ? eq(reimbursements.userMembershipId, membershipId) : eq(reimbursements.userId, userId), eq(reimbursements.orgId, orgId), eq(reimbursements.status, "PENDING"))),
+        .where(and(eq(reimbursements.userMembershipId, membershipId ?? 0), eq(reimbursements.orgId, orgId), eq(reimbursements.status, "PENDING"))),
       this.getActiveWindow(orgId),
       this.db
         .select({ date: payrollCalendarEvents.date, title: payrollCalendarEvents.title })
@@ -114,7 +117,7 @@ export class EssService {
         ? this.db
             .select({ gross: sum(payrollRunEmployees.gross), net: sum(payrollRunEmployees.net) })
             .from(payrollRunEmployees)
-            .where(and(membershipId != null ? eq(payrollRunEmployees.userMembershipId, membershipId) : eq(payrollRunEmployees.userId, userId), inArray(payrollRunEmployees.runId, fyPubs.map((p) => p.runId))))
+            .where(and(eq(payrollRunEmployees.userMembershipId, membershipId), inArray(payrollRunEmployees.runId, fyPubs.map((p) => p.runId))))
         : Promise.resolve([]),
       window ? this.taxService.listMine(orgId, userId) : Promise.resolve([]),
     ]);
@@ -125,9 +128,7 @@ export class EssService {
       ytdNet = parseFloat(ytdRows[0].net ?? "0").toFixed(2);
     }
 
-    const activeLoanBalance = activeLoans
-      .reduce((acc, l) => acc + ((l.totalEmis ?? 0) - l.paidEmis) * parseFloat(l.emiAmount ?? "0"), 0)
-      .toFixed(2);
+    const activeLoanBalance = (parseFloat(activeLoanRow?.balance ?? "0") || 0).toFixed(2);
 
     const declarationStatus: string | null = window
       ? declarations.find((d) => d.financialYear === window.financialYear)?.status ?? null
@@ -205,7 +206,8 @@ export class EssService {
   }
 
   async getPayslips(orgId: string, userId: string, membershipId: number | null) {
-    const pubOwner = membershipId != null ? eq(payslipPublications.userMembershipId, membershipId) : eq(payslipPublications.userId, userId);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
+    const pubOwner = eq(payslipPublications.userMembershipId, membershipId);
     const pubs = await this.db
       .select({
         publicationId: payslipPublications.id,
@@ -230,12 +232,13 @@ export class EssService {
   }
 
   async getSalaryStructure(orgId: string, userId: string, membershipId: number | null) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
     const toggles = await this.getActiveToggles(orgId);
     if (!toggles.essShowSalaryStructure) throw new ForbiddenException("Salary structure access is disabled");
 
     const profile = await this.db.query.employeeSalaryProfiles.findFirst({
       where: and(
-        membershipId != null ? eq(employeeSalaryProfiles.userMembershipId, membershipId) : eq(employeeSalaryProfiles.userId, userId),
+        eq(employeeSalaryProfiles.userMembershipId, membershipId),
         eq(employeeSalaryProfiles.orgId, orgId),
         eq(employeeSalaryProfiles.status, "ACTIVE"),
       ),
@@ -253,7 +256,8 @@ export class EssService {
       })
       .from(employeeSalaryProfileComponents)
       .innerJoin(salaryComponents, eq(salaryComponents.id, employeeSalaryProfileComponents.componentId))
-      .where(eq(employeeSalaryProfileComponents.profileId, profile.id));
+      .where(eq(employeeSalaryProfileComponents.profileId, profile.id))
+      .limit(500);
 
     return {
       profile: {
@@ -289,7 +293,7 @@ export class EssService {
       .from(fnfSettlements)
       .where(
         and(
-          membershipId != null ? eq(fnfSettlements.userMembershipId, membershipId) : eq(fnfSettlements.userId, userId),
+          eq(fnfSettlements.userMembershipId, membershipId ?? 0),
           eq(fnfSettlements.orgId, orgId),
           not(eq(fnfSettlements.status, "DRAFT")),
         ),
@@ -310,11 +314,11 @@ export class EssService {
     const fyStart = mo >= 4 ? `${yr}-04` : `${yr - 1}-04`;
     const fyEnd = mo >= 4 ? `${yr + 1}-03` : `${yr}-03`;
 
-    const [profile, fyPubs, activeLoans, benefitRows, equityRows, leaveRows] =
+    const [profile, fyPubs, [activeLoanRow], benefitRows, equityRows, leaveRows] =
       await Promise.all([
         this.db.query.employeeSalaryProfiles.findFirst({
           where: and(
-            membershipId != null ? eq(employeeSalaryProfiles.userMembershipId, membershipId) : eq(employeeSalaryProfiles.userId, userId),
+            eq(employeeSalaryProfiles.userMembershipId, membershipId),
             eq(employeeSalaryProfiles.orgId, orgId),
             eq(employeeSalaryProfiles.status, "ACTIVE"),
           ),
@@ -326,21 +330,23 @@ export class EssService {
           .innerJoin(payrollRuns, eq(payrollRuns.id, payslipPublications.runId))
           .where(
             and(
-              membershipId != null ? eq(payslipPublications.userMembershipId, membershipId) : eq(payslipPublications.userId, userId),
+              eq(payslipPublications.userMembershipId, membershipId),
               eq(payslipPublications.orgId, orgId),
               eq(payslipPublications.status, "PUBLISHED"),
               gte(payrollRuns.month, fyStart),
               lte(payrollRuns.month, fyEnd),
             ),
           ),
-        this.db.query.salaryLoans.findMany({
-          where: and(
-            membershipId != null ? eq(salaryLoans.userMembershipId, membershipId) : eq(salaryLoans.userId, userId),
+        this.db
+          .select({
+            balance: sql<string>`coalesce(sum((coalesce(${salaryLoans.totalEmis}, 0) - coalesce(${salaryLoans.paidEmis}, 0)) * coalesce(${salaryLoans.emiAmount}, 0)::numeric), 0)::text`,
+          })
+          .from(salaryLoans)
+          .where(and(
+            eq(salaryLoans.userMembershipId, membershipId),
             eq(salaryLoans.orgId, orgId),
             inArray(salaryLoans.status, ["APPROVED", "ACTIVE"]),
-          ),
-          columns: { totalEmis: true, paidEmis: true, emiAmount: true },
-        }),
+          )),
         this.db
           .select({
             planName: hrBenefitPlans.name,
@@ -357,7 +363,8 @@ export class EssService {
               eq(hrBenefitEnrollments.userId, userId),
               eq(hrBenefitEnrollments.status, "active"),
             ),
-          ),
+          )
+          .limit(100),
         this.db
           .select({
             grantType: hrEquityGrants.grantType,
@@ -373,7 +380,8 @@ export class EssService {
               eq(hrEquityGrants.userId, userId),
               eq(hrEquityGrants.status, "active"),
             ),
-          ),
+          )
+          .limit(100),
         this.db
           .select({
             leaveType: leaveTypes.name,
@@ -387,7 +395,8 @@ export class EssService {
               eq(leaveBalances.userId, userId),
               eq(leaveBalances.year, yr),
             ),
-          ),
+          )
+          .limit(100),
       ]);
 
     let ytdGross = 0;
@@ -401,7 +410,7 @@ export class EssService {
         .from(payrollRunEmployees)
         .where(
           and(
-            membershipId != null ? eq(payrollRunEmployees.userMembershipId, membershipId) : eq(payrollRunEmployees.userId, userId),
+            eq(payrollRunEmployees.userMembershipId, membershipId),
             inArray(
               payrollRunEmployees.runId,
               fyPubs.map((p) => p.runId),
@@ -412,11 +421,7 @@ export class EssService {
       ytdNet = parseFloat(ytd?.net ?? "0") || 0;
     }
 
-    const activeLoanBalance = activeLoans.reduce(
-      (acc, l) =>
-        acc + ((l.totalEmis ?? 0) - (l.paidEmis ?? 0)) * parseFloat(l.emiAmount ?? "0"),
-      0,
-    );
+    const activeLoanBalance = parseFloat(activeLoanRow?.balance ?? "0") || 0;
 
     const annualCtc =
       profile?.annualCtc != null ? parseFloat(profile.annualCtc) || null : null;

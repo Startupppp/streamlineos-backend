@@ -1,5 +1,13 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, or, isNull } from "drizzle-orm";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { and, asc, desc, eq, or, isNull, sql } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetAfterValue } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -13,25 +21,81 @@ import type {
   BenefitPlansQuery,
 } from "./dto/benefits.schemas";
 
+type BenefitPlansCursorScope = {
+  orgId: string;
+  status: string | null;
+  category: string | null;
+};
+
+function invalidBenefitPlansCursor(): never {
+  throw new BadRequestException({
+    code: "INVALID_BENEFIT_PLANS_CURSOR",
+    message: "The benefit plans cursor is invalid or expired.",
+  });
+}
+
+function decodeBenefitPlansCursor(
+  value: string | undefined,
+  expected: BenefitPlansCursorScope,
+) {
+  if (!value) return null;
+  const position = decodeCursor(value);
+  if (!position) return invalidBenefitPlansCursor();
+
+  try {
+    const scope: unknown = JSON.parse(position.id);
+    if (
+      !Array.isArray(scope) ||
+      scope.length !== 4 ||
+      typeof scope[0] !== "number" ||
+      !Number.isSafeInteger(scope[0]) ||
+      scope[0] < 1 ||
+      scope[1] !== expected.orgId ||
+      scope[2] !== expected.status ||
+      scope[3] !== expected.category
+    )
+      return invalidBenefitPlansCursor();
+    return { sortValue: position.sortValue, id: String(scope[0]) };
+  } catch {
+    return invalidBenefitPlansCursor();
+  }
+}
+
 @Injectable()
 export class HrBenefitsPlansService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listPlans(orgId: string, query: BenefitPlansQuery) {
-    const { status, category, limit } = query;
+    const { cursor, status, category, limit } = query;
+    const cursorScope = {
+      orgId,
+      status: status ?? null,
+      category: category ?? null,
+    };
+    const position = decodeBenefitPlansCursor(cursor, cursorScope);
 
     const conditions = [eq(hrBenefitPlans.orgId, orgId)];
     if (status) conditions.push(eq(hrBenefitPlans.status, status));
     if (category) conditions.push(eq(hrBenefitPlans.category, category));
+    if (position)
+      conditions.push(keysetAfterValue(hrBenefitPlans.name, hrBenefitPlans.id, position));
 
     const rows = await this.db
       .select()
       .from(hrBenefitPlans)
       .where(and(...conditions))
-      .orderBy(asc(hrBenefitPlans.name))
-      .limit(limit);
+      .orderBy(asc(hrBenefitPlans.name), asc(hrBenefitPlans.id))
+      .limit(limit + 1);
 
-    return { data: rows };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.name,
+      id: JSON.stringify([
+        row.id,
+        cursorScope.orgId,
+        cursorScope.status,
+        cursorScope.category,
+      ]),
+    }));
   }
 
   async getPlan(orgId: string, planId: number) {
@@ -133,8 +197,11 @@ export class HrBenefitsPlansService {
    */
   async checkEnrollmentWindowOpen(orgId: string, planId: number): Promise<boolean> {
     const now = new Date();
-    const windows = await this.db
-      .select()
+    const [summary] = await this.db
+      .select({
+        configured: sql<number>`count(*)::int`,
+        open: sql<number>`count(*) filter (where ${hrBenefitEnrollmentWindows.status} = 'open' and ${hrBenefitEnrollmentWindows.opensAt} <= ${now} and ${hrBenefitEnrollmentWindows.closesAt} >= ${now})::int`,
+      })
       .from(hrBenefitEnrollmentWindows)
       .where(
         and(
@@ -143,9 +210,7 @@ export class HrBenefitsPlansService {
         ),
       );
 
-    if (windows.length === 0) return true;
-    return windows.some(
-      (window) => window.status === "open" && window.opensAt <= now && window.closesAt >= now,
-    );
+    if (!summary || summary.configured === 0) return true;
+    return summary.open > 0;
   }
 }

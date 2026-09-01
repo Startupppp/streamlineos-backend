@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, lt } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, lt } from "drizzle-orm";
 import {
   calendarEvents,
   chatChannelMembers,
@@ -93,6 +93,7 @@ export class ChatHuddlesService {
     const remaining = await this.db.query.chatHuddleParticipants.findMany({
       where: and(eq(chatHuddleParticipants.huddleId, huddle.id), isNull(chatHuddleParticipants.leftAt)),
       columns: { id: true },
+      limit: 1,
     });
 
     if (remaining.length === 0 || huddle.startedAt < twelveHoursAgo) {
@@ -145,11 +146,28 @@ export class ChatHuddlesService {
       columns: { name: true },
     });
 
-    const channelMembers = await this.db
-      .select({ userId: organizationMembers.userId, membershipId: chatChannelMembers.membershipId })
-      .from(chatChannelMembers)
-      .innerJoin(organizationMembers, eq(organizationMembers.id, chatChannelMembers.membershipId))
-      .where(and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)));
+    // A channel can outlive the original small-team assumption. Walk the
+    // membership keyset so huddle creation never drops attendees at a hard cap.
+    const channelMembers: Array<{ userId: string; membershipId: number }> = [];
+    let afterMembershipId: number | null = null;
+    const batchSize = 500;
+    for (;;) {
+      const batch = await this.db
+        .select({ userId: organizationMembers.userId, membershipId: chatChannelMembers.membershipId })
+        .from(chatChannelMembers)
+        .innerJoin(organizationMembers, eq(organizationMembers.id, chatChannelMembers.membershipId))
+        .where(and(
+          eq(chatChannelMembers.orgId, orgId),
+          eq(chatChannelMembers.channelId, channelId),
+          afterMembershipId === null ? undefined : gt(chatChannelMembers.membershipId, afterMembershipId),
+        ))
+        .orderBy(asc(chatChannelMembers.membershipId))
+        .limit(batchSize);
+      channelMembers.push(...batch);
+      if (batch.length < batchSize) break;
+      afterMembershipId = batch[batch.length - 1]?.membershipId ?? afterMembershipId;
+      if (afterMembershipId === null) break;
+    }
 
     const starterMembershipId = channelMembers.find((m) => m.userId === userId)?.membershipId ?? null;
     if (!starterMembershipId) throw new BadRequestException("Active membership required to start a huddle");
@@ -249,6 +267,7 @@ export class ChatHuddlesService {
     const activeParticipants = await this.db.query.chatHuddleParticipants.findMany({
       where: and(eq(chatHuddleParticipants.huddleId, huddleId), isNull(chatHuddleParticipants.leftAt)),
       columns: { membershipId: true },
+      limit: HUDDLE_MESH_MAX_PARTICIPANTS + 1,
     });
     const alreadyActive = activeParticipants.some((p) => p.membershipId === callerMembershipId);
     if (!alreadyActive) {
@@ -305,6 +324,7 @@ export class ChatHuddlesService {
     const remaining = await this.db.query.chatHuddleParticipants.findMany({
       where: and(eq(chatHuddleParticipants.huddleId, huddleId), isNull(chatHuddleParticipants.leftAt)),
       columns: { membershipId: true },
+      limit: 1,
     });
 
     if (remaining.length === 0) {
@@ -384,6 +404,7 @@ export class ChatHuddlesService {
       const activeParticipants = await this.db.query.chatHuddleParticipants.findMany({
         where: and(eq(chatHuddleParticipants.huddleId, huddleId), isNull(chatHuddleParticipants.leftAt)),
         columns: { id: true },
+        limit: FREE_HUDDLE_MAX_PARTICIPANTS + 1,
       });
       if (activeParticipants.length >= FREE_HUDDLE_MAX_PARTICIPANTS) {
         throw new ForbiddenException(FREE_HUDDLE_UPGRADE_MESSAGE);

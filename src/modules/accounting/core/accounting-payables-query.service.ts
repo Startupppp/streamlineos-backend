@@ -75,7 +75,7 @@ const BILL_COLUMNS = {
 export class AccountingPayablesQueryService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listPurchaseBills(orgId: string, query: ListPurchaseBillsQuery, scope: DataScope, userId: string) {
+  async listPurchaseBills(orgId: string, query: ListPurchaseBillsQuery, scope: DataScope, membershipId: number | null) {
     const { cursor, limit, q, status, vendorId } = query;
     const conds = [eq(purchaseBills.orgId, orgId)];
     if (status) {
@@ -87,7 +87,13 @@ export class AccountingPayablesQueryService {
     }
     if (vendorId) conds.push(eq(purchaseBills.vendorId, vendorId));
     if (q) conds.push(ilike(purchaseBills.billNumber, `%${escapeLike(q)}%`));
-    conds.push(applyScope(scope, orgId, userId, { ownerColumn: purchaseBills.createdBy }));
+    conds.push(
+      scope === "all"
+        ? sql`true`
+        : scope === "none" || membershipId === null
+          ? sql`false`
+          : applyScope(scope, orgId, String(membershipId), { ownerColumn: purchaseBills.createdByMembershipId }),
+    );
     const pos = decodeCursor(cursor);
     if (pos) {
       const cursorId = Number(pos.id);

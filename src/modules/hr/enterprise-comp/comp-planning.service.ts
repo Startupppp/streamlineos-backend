@@ -1,5 +1,7 @@
 import { Inject, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
-import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -21,6 +23,13 @@ import type {
   CreateBudgetPoolInput,
 } from "./dto/enterprise-comp.schemas";
 
+function decodePaginationCursor(cursor: string | undefined) {
+  if (cursor === undefined) return null;
+  const position = decodeCursor(cursor);
+  if (!position) throw new BadRequestException("Invalid pagination cursor");
+  return position;
+}
+
 @Injectable()
 export class CompPlanningService {
   constructor(
@@ -36,19 +45,25 @@ export class CompPlanningService {
   }
 
   async listCycles(orgId: string, input: ListCompCyclesInput) {
-    const { page, limit, status, fiscalYear } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, status, fiscalYear } = input;
     const conditions = [eq(hrCompCycles.orgId, orgId)];
     if (status) conditions.push(eq(hrCompCycles.status, status));
     if (fiscalYear) conditions.push(eq(hrCompCycles.fiscalYear, fiscalYear));
-    const where = and(...conditions);
+    const position = decodePaginationCursor(cursor);
+    if (position)
+      conditions.push(keysetBeforeId(hrCompCycles.createdAt, hrCompCycles.id, position));
 
-    const [data, totalResult] = await Promise.all([
-      this.db.select().from(hrCompCycles).where(where).orderBy(desc(hrCompCycles.createdAt)).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(hrCompCycles).where(where),
-    ]);
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    const rows = await this.db
+      .select()
+      .from(hrCompCycles)
+      .where(and(...conditions))
+      .orderBy(desc(hrCompCycles.createdAt), desc(hrCompCycles.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (cycle) => ({
+      sortValue: cycle.createdAt.toISOString(),
+      id: String(cycle.id),
+    }));
   }
 
   async getCycle(orgId: string, cycleId: number) {
@@ -91,16 +106,19 @@ export class CompPlanningService {
   }
 
   async listRecommendations(orgId: string, input: ListRecommendationsInput) {
-    const { page, limit, cycleId, userId, status } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, cycleId, userId, status } = input;
     const conditions = [eq(hrCompRecommendations.orgId, orgId)];
     if (cycleId) conditions.push(eq(hrCompRecommendations.cycleId, cycleId));
     if (userId) conditions.push(eq(hrCompRecommendations.userId, userId));
     if (status) conditions.push(eq(hrCompRecommendations.status, status));
-    const where = and(...conditions);
+    const position = decodePaginationCursor(cursor);
+    if (position)
+      conditions.push(
+        keysetBeforeId(hrCompRecommendations.createdAt, hrCompRecommendations.id, position),
+      );
 
-    const [data, totalResult] = await Promise.all([
-      this.db.select({
+    const rows = await this.db
+      .select({
         id: hrCompRecommendations.id,
         cycleId: hrCompRecommendations.cycleId,
         userId: hrCompRecommendations.userId,
@@ -112,11 +130,16 @@ export class CompPlanningService {
         hrCalibratedCents: hrCompRecommendations.hrCalibratedCents,
         status: hrCompRecommendations.status,
         createdAt: hrCompRecommendations.createdAt,
-      }).from(hrCompRecommendations).where(where).orderBy(desc(hrCompRecommendations.createdAt)).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(hrCompRecommendations).where(where),
-    ]);
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+      })
+      .from(hrCompRecommendations)
+      .where(and(...conditions))
+      .orderBy(desc(hrCompRecommendations.createdAt), desc(hrCompRecommendations.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (recommendation) => ({
+      sortValue: recommendation.createdAt.toISOString(),
+      id: String(recommendation.id),
+    }));
   }
 
   async updateRecommendation(orgId: string, recId: number, actorId: string, input: UpdateRecommendationInput) {

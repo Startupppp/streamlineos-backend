@@ -5,6 +5,7 @@ import { type Db } from "../../../db/drizzle.module";
 import type { TenantTx } from "../../../db/drizzle.types";
 import {
   projectMembers,
+  organizationMembers,
   projects,
   ticketActivityLog,
   tickets,
@@ -64,7 +65,7 @@ export class BuildEntityActions {
       columns: {
         id: true,
         status: true,
-        assigneeId: true,
+        assigneeMembershipId: true,
         dueDate: true,
         projectId: true,
       },
@@ -77,7 +78,7 @@ export class BuildEntityActions {
     if (actionId === "status")
       return this.changeStatus(actor, ticket.id, ticket.projectId, ticket.status, input);
     if (actionId === "assign")
-      return this.assign(actor, ticket.id, ticket.projectId, ticket.assigneeId, input);
+      return this.assign(actor, ticket.id, ticket.projectId, ticket.assigneeMembershipId, input);
     if (actionId === "due-date")
       return this.setDueDate(actor, ticket.id, ticket.projectId, ticket.dueDate, input);
 
@@ -92,7 +93,7 @@ export class BuildEntityActions {
     const membership = await this.db.query.projectMembers.findFirst({
       where: and(
         eq(projectMembers.projectId, projectId),
-        eq(projectMembers.userId, actor.userId),
+        eq(projectMembers.membershipId, actor.membershipId ?? -1),
       ),
       columns: { projectId: true },
     });
@@ -154,7 +155,7 @@ export class BuildEntityActions {
     actor: EntityActor,
     ticketId: number,
     projectId: number,
-    currentAssigneeId: string | null,
+    currentAssigneeId: number | null,
     input: Record<string, unknown>,
   ): Promise<EntityActionResult> {
     const assigneeId = text(input, "assigneeId");
@@ -163,11 +164,15 @@ export class BuildEntityActions {
     // The same set the action's declared option source offers. Without this,
     // submission accepted anyone the picker would never have shown - including
     // someone outside the project, who cannot open the ticket they were given.
-    const assignable = await this.db.query.projectMembers.findFirst({
+    const targetActor = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, actor.orgId), eq(organizationMembers.userId, assigneeId), eq(organizationMembers.status, "ACTIVE")),
+      columns: { id: true },
+    });
+    const assignable = targetActor && await this.db.query.projectMembers.findFirst({
       where: and(
         eq(projectMembers.orgId, actor.orgId),
         eq(projectMembers.projectId, projectId),
-        eq(projectMembers.userId, assigneeId),
+        eq(projectMembers.membershipId, targetActor.id),
       ),
       columns: { projectId: true },
     });
@@ -176,7 +181,7 @@ export class BuildEntityActions {
     await this.db.transaction(async (tx) => {
       await tx
         .update(tickets)
-        .set({ assigneeId, updatedAt: new Date() })
+        .set({ assigneeMembershipId: targetActor.id, updatedAt: new Date() })
         .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, actor.orgId)));
 
       await this.logActivity(
@@ -184,7 +189,7 @@ export class BuildEntityActions {
         actor,
         ticketId,
         "assignee_changed",
-        currentAssigneeId,
+        currentAssigneeId === null ? null : String(currentAssigneeId),
         assigneeId,
       );
     });

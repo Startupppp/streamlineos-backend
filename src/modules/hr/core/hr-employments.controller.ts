@@ -56,14 +56,6 @@ export class HrEmploymentsController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     const scope = await resolveEmployeesScope(this.access, currentUser);
-    if (query.page !== undefined) {
-      return this.employeeRecordLists.listEmploymentsPage(
-        currentUser.orgId,
-        currentUser.userId,
-        { page: query.page, limit: query.limit },
-        scope,
-      );
-    }
     return this.employeeRecordLists.listEmploymentsCursor(
       currentUser.orgId,
       currentUser.userId,

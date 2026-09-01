@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -35,6 +36,55 @@ type EmploymentSnapshot = {
   jobLevelId: number | null;
   locationId: string | null;
 };
+
+type EffectiveChangeCursorScope = {
+  orgId: string;
+  employmentId: number | null;
+  changeType: string | null;
+  status: string | null;
+};
+
+function invalidEffectiveChangeCursor(): never {
+  throw new BadRequestException({
+    code: "INVALID_EFFECTIVE_CHANGE_CURSOR",
+    message: "The effective change cursor is invalid or expired.",
+  });
+}
+
+function isBusinessDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function decodeEffectiveChangeCursor(
+  value: string | undefined,
+  expected: EffectiveChangeCursorScope,
+) {
+  if (!value) return null;
+  const position = decodeCursor(value);
+  if (!position || !isBusinessDate(position.sortValue))
+    return invalidEffectiveChangeCursor();
+
+  try {
+    const scope: unknown = JSON.parse(position.id);
+    if (
+      !Array.isArray(scope) ||
+      scope.length !== 5 ||
+      typeof scope[0] !== "number" ||
+      !Number.isSafeInteger(scope[0]) ||
+      scope[0] < 1 ||
+      scope[1] !== expected.orgId ||
+      scope[2] !== expected.employmentId ||
+      scope[3] !== expected.changeType ||
+      scope[4] !== expected.status
+    )
+      return invalidEffectiveChangeCursor();
+    return { sortValue: position.sortValue, id: String(scope[0]) };
+  } catch {
+    return invalidEffectiveChangeCursor();
+  }
+}
 
 @Injectable()
 export class HrEffectiveChangesService {
@@ -185,7 +235,13 @@ export class HrEffectiveChangesService {
 
   async list(orgId: string, input: ListEffectiveDateChangesInput) {
     const { cursor, limit, employmentId, changeType, status } = input;
-    const pos = decodeCursor(cursor);
+    const cursorScope = {
+      orgId,
+      employmentId: employmentId ?? null,
+      changeType: changeType ?? null,
+      status: status ?? null,
+    };
+    const pos = decodeEffectiveChangeCursor(cursor, cursorScope);
     const conditions = [eq(hrEffectiveDatedChanges.orgId, orgId)];
     if (employmentId) conditions.push(eq(hrEffectiveDatedChanges.employmentId, employmentId));
     if (changeType) conditions.push(eq(hrEffectiveDatedChanges.changeType, changeType));
@@ -201,7 +257,13 @@ export class HrEffectiveChangesService {
 
     return buildCursorPage(rows, limit, (row) => ({
       sortValue: String(row.effectiveFrom),
-      id: String(row.id),
+      id: JSON.stringify([
+        row.id,
+        cursorScope.orgId,
+        cursorScope.employmentId,
+        cursorScope.changeType,
+        cursorScope.status,
+      ]),
     }));
   }
 

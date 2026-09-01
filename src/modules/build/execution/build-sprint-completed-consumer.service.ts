@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
-import { tickets } from "../../../db/schema";
+import { organizationMembers, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InboxConsumer } from "../../../common/outbox/inbox-consumer";
@@ -67,14 +67,15 @@ export class BuildSprintCompletedConsumerService
     // the event is a milestone signal for every participant, not a warning about
     // remaining work.
     const owners = await this.db
-      .selectDistinct({ assigneeId: tickets.assigneeId })
+      .selectDistinct({ assigneeId: organizationMembers.userId })
       .from(tickets)
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
       .where(
         and(
           eq(tickets.orgId, orgId),
           eq(tickets.sprintId, sprintId),
           isNull(tickets.deletedAt),
-          isNotNull(tickets.assigneeId),
+          isNotNull(tickets.assigneeMembershipId),
         ),
       );
 

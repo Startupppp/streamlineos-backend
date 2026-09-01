@@ -77,7 +77,8 @@ export class OrganizationSagaService {
       .select()
       .from(organizationSagaSteps)
       .where(eq(organizationSagaSteps.sagaId, saga.sagaId))
-      .orderBy(organizationSagaSteps.position);
+      .orderBy(organizationSagaSteps.position)
+      .limit(100);
 
     return { saga, steps };
   }
@@ -165,7 +166,8 @@ export class OrganizationSagaService {
           eq(organizationSagaSteps.state, "DONE"),
         ),
       )
-      .orderBy(desc(organizationSagaSteps.position));
+      .orderBy(desc(organizationSagaSteps.position))
+      .limit(100);
 
     for (const step of doneSteps) {
       const compensator = compensators[step.stepName];

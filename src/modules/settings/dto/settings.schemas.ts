@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const createApiKeySchema = z.object({
   name: z.string().min(1).max(100),
@@ -215,7 +215,7 @@ export const updateUserRoleSchema = z.object({
 });
 
 export const listAutomationsQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
 });
 

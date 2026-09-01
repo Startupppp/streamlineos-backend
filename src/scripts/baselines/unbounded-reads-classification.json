@@ -292,35 +292,43 @@
       "note": "Offset pagination; needs keyset migration or proven depth bound"
     },
     "/payroll/filings/filings.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "KEYSET-MIGRATED",
+      "proof": "Scoped (createdAt DESC, id DESC) cursor with limit+1 sentinel and 100-row cap",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/hr-payroll/bonuses.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "KEYSET-MIGRATED",
+      "proof": "Scoped (createdAt DESC, id DESC) cursor preserves admin and member visibility",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/hr-payroll/incentives.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "KEYSET-MIGRATED",
+      "proof": "Scoped (createdAt DESC, id DESC) cursor preserves status filtering",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/hr-payroll/salary-structure-templates.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "KEYSET-MIGRATED",
+      "proof": "Scoped (createdAt DESC, id DESC) cursor with limit+1 sentinel",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/journal-outbox.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "KEYSET-MIGRATED",
+      "proof": "Scoped (createdAt DESC, id DESC) cursor preserves period and status filters",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/lib/report-builders.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "KEYSET-MIGRATED",
+      "proof": "Report employee ids use monotonic id cursors and limit+1 sentinel batches",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/reports.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "KEYSET-MIGRATED",
+      "proof": "Report lists use scoped id or aggregate-key cursors with limit+1 sentinels",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/tax-admin.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "KEYSET-MIGRATED",
+      "proof": "Scoped mixed-direction (createdAt DESC, id ASC) cursor preserves filters",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/jobs/payroll-jobs.service.ts": {
@@ -328,27 +336,33 @@
       "note": "listFailed: keyset on (createdAt DESC, id DESC); listForResource: keyset on (createdAt ASC, id ASC); no frontend callers â€” backend-only migration, no handoff required"
     },
     "/payroll/payout/payslip-templates.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "KEYSET-MIGRATED",
+      "proof": "Scoped id ASC cursor with limit+1 sentinel and 100-row cap",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/exceptions.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "KEYSET-MIGRATED",
+      "proof": "Scoped (severity ASC, createdAt ASC, id ASC) cursor preserves run filters",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/inputs.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "KEYSET-MIGRATED",
+      "proof": "Scoped (displayName ASC, id ASC) cursor preserves DataScope and payee filter",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/salary-profiles.repository.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "KEYSET-MIGRATED",
+      "proof": "Scoped (displayName ASC, id ASC) cursor preserves DataScope and filters",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/setup/components.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "KEYSET-MIGRATED",
+      "proof": "Scoped (sortOrder ASC, name ASC, id ASC) cursor preserves filters",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/setup/templates.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "KEYSET-MIGRATED",
+      "proof": "Scoped (name ASC, id ASC) cursor preserves global and tenant templates plus filters",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/portal/access/portal-access.service.ts": {
@@ -390,11 +404,11 @@
   },
   "unbounded": {
     "/access/access-permission-members.resolver.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "access lane (excluded territory â€” other lane owns this module)"
     },
     "/access/access-permission.resolver.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "access lane (excluded territory â€” other lane owns this module)"
     },
     "/access/denied-modules.resolver.ts": {
@@ -402,7 +416,7 @@
       "note": "Denied-module resolution is capped to the finite 100-module catalog"
     },
     "/access/entitlements.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "access lane (excluded territory â€” other lane owns this module)"
     },
     "/access/user-module-access.service.ts": {
@@ -460,7 +474,7 @@
       "justification": "seed account lookups inArray bounded by purpose count; entry lines bounded by single entry"
     },
     "/accounting/settings/accounting-settings.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "listSequences bounded by Object.keys(SEQUENCE_DEFAULTS) (10-15 sequence types)"
     },
@@ -470,7 +484,7 @@
       "justification": "CoA tree bounded at 50-500 accounts per org; cached 120s"
     },
     "/accounting/settings/dimensions.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "dimensions 3-10 per org cached; values 10-200 per dimension bounded config catalog"
     },
@@ -700,7 +714,7 @@
       "justification": "L45 listFields reads customFieldDefinitions per project+entityType (small config set <100); L146 reads field values per ticket bounded by field count 2026-09-01"
     },
     "/build/core/projects-custom-states.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "BOUNDED",
       "note": "Reads project statuses (small config set per project, typically <10); has explicit .limit() calls",
       "justification": "project status config set is bounded by system design (<20 statuses per project); explicit .limit() on main paginated paths; per-project status reads are config-sized 2026-09-01"
     },
@@ -720,7 +734,7 @@
       "justification": "L82 sprint scope events bounded by sprintId (one sprint); L217 daily snapshots bounded by date-range window (query.days rows); L262 sprint velocity bounded by sprint count; L450/L462 grouped per-sprint ticket aggregates 2026-09-01"
     },
     "/build/core/projects-ticket-comments.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "BOUNDED",
       "note": "Has explicit .limit() on comment reads; per-ticket comments are a small dataset",
       "justification": "L285 reads comments for a single ticket to resolve @mentions; bounded by comment count per ticket; not a list endpoint 2026-09-01"
     },
@@ -814,7 +828,7 @@
       "justification": "has 2 explicit .limit(); violations bounded per project whiteboard scope; gate missed limit placement 2026-09-01"
     },
     "/build/execution/workspace.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "BOUNDED",
       "note": "Has 3 explicit .limit() calls and 2 aggregate references; workspace reads are per-project config",
       "justification": "has 3 explicit .limit() + 2 aggregates; workspace config bounded per project; gate missed limit placement past 120-line window 2026-09-01"
     },
@@ -824,7 +838,7 @@
       "justification": "has explicit .limit(); violations are per-project/ticket incident reads; gate missed limit placement 2026-09-01"
     },
     "/build/meetings/meetings.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "BOUNDED",
       "note": "Has 2 explicit .limit() calls and 9 aggregate references; meeting records are bounded per project",
       "justification": "per-meeting sub-reads (attendees, action items, standup entries) bounded by meeting scope; 9 aggregate projections (count); attendees/items per meeting bounded by meeting design 2026-09-01"
     },
@@ -835,13 +849,13 @@
     },
     "/calendar/calendar-conflict.service.ts": {
       "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "has .limit(CONFLICT_SCAN_LIMIT=100) at query line; exception and attendee sub-selects bounded by event ids from the first limited query 2026-09-01"
+      "note": "Conflict candidate reads are tenant-scoped and now consumed in keyset batches",
+      "justification": "checkConflictsInTx uses limit(100) batches with stable startDate/id ordering and resumes until exhaustion; remaining bounded sub-reads are keyed by the complete candidate set 2026-09-01"
     },
     "/calendar/calendar-event-source.loader.ts": {
       "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "queryVisibleEvents has .limit(2000) at line 122; bounded by date-range window and the 2000 cap; ticket sub-select bounded by entityIds from first query 2026-09-01"
+      "note": "Visible events are tenant-scoped and now consumed in keyset batches",
+      "justification": "queryVisibleEvents uses limit(500) batches with stable startDate/id ordering and resumes until exhaustion; the prior 2000-row cap was removed 2026-09-01"
     },
     "/calendar/calendar-source-preferences.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -869,9 +883,9 @@
       "justification": "listMemberChannels has .limit(100) on the channels query; memberships sub-select bounded by channelIds inArray; listPublicChannels has .limit(100); unread/lastMessage aggregates bounded by channelIds 2026-09-01"
     },
     "/chat/chat-huddles.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "ACTIONABLE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "channelMembers read on huddle start is operational fan-out to insert attendees and send realtime notifications; bounded by channel membership; participants reads bounded by HUDDLE_MESH_MAX_PARTICIPANTS 2026-09-01"
+      "justification": "Participant capacity checks are bounded, but startHuddle deliberately enumerates every channel member to create attendees and send notifications; this fan-out remains actionable until it is streamed or chunked 2026-09-01"
     },
     "/chat/chat-mentions.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -1059,9 +1073,9 @@
       "justification": "called from CronLeaveService.runMonthlyLeaveReset within forEachOrg; L41 reads annual leave policies per org (small config set 5-20 types); bounded per-org 2026-09-01"
     },
     "/cron/cron-leave.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "L104 reads ALL active organizationMembers per org for leave accrual inside per-org cron; genuinely unbounded for large orgs - needs cursor batching (e.g. ACCRUAL_BATCH_SIZE pattern); confirmed real growth table 2026-09-01"
+      "justification": "Accrual and expiry sweep rows are keyset-batched at ACCRUAL_BATCH_SIZE; used leave is restricted to the current balance batch 2026-09-01"
     },
     "/cron/cron-notifications.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -1094,9 +1108,9 @@
       "justification": "L120/L138/L141 read clientAccounts, csatResponses, supportTickets for org; full-dataset aggregate required for accurate health score computation; analytics pattern - reads bounded by org scope; date filter on csatResponses acceptable loss here 2026-09-01"
     },
     "/customer-executive/customer-executive.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "L168 getSlaReport reads ALL supportTickets for org (eq orgId, no date/status filter, no limit); supportTickets is a genuine growth table; needs date-window filter or paginated SLA report approach 2026-09-01"
+      "justification": "Survey response detail and SLA ticket reads have explicit hard windows (500 and 5000 rows) 2026-09-01"
     },
     "/dashboard/dashboard-availability.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -1260,7 +1274,7 @@
       "justification": "background notification sweep for bills due in 3 days; must process all"
     },
     "/finance/ap/payment-run-executor.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "items for one payment run user-selected; bills inArray bounded by pendingItems"
     },
@@ -1270,17 +1284,17 @@
       "justification": "items for one run bounded; createRun bill scan filtered by criteria"
     },
     "/finance/ap/recurring-bills.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "listTemplates already has limit(pageLimit+1) after orderBy; scanner misses limit outside 10-line window. runDueRecurringBills is background cron"
     },
     "/finance/ap/vendor-credits.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "single-record selects keyed on vendorCreditId via WHERE id=x"
     },
     "/finance/ap/vendor-payments-allocations.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "SUM aggregate for payment balance; allocations bounded by single payment"
     },
@@ -1300,7 +1314,7 @@
       "justification": "single credit-note selects; invoices for one note bounded by note line items"
     },
     "/finance/ar/recurring-invoices.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "listTemplates already has limit(pageLimit+1); scanner misses limit outside 10-line window. runDue is background cron"
     },
@@ -1320,7 +1334,7 @@
       "justification": "inArray(categoryIds) account lookup bounded by asset category count"
     },
     "/finance/assets/assets.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "all selects in this file already have limits or are aggregate projections"
     },
@@ -1340,7 +1354,7 @@
       "justification": "lookups within one reconciliation session keyed on specific transaction IDs"
     },
     "/finance/banking/reconciliation-workspace.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "workspace and transaction selects for one reconciliation period"
     },
@@ -1670,12 +1684,12 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/onboarding/core/onboarding-task.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "KEYSET-MIGRATED",
+      "note": "Complete employee task reads use tenant-scoped ascending id keyset batches; dependency expansion follows the returned task ids without a data-loss cap"
     },
     "/hr/onboarding/core/onboarding-template.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "KEYSET-MIGRATED",
+      "note": "Department, template and template-step reads use tenant-scoped ascending id keyset batches; steps are fully reassembled by sortOrder"
     },
     "/hr/onboarding/flow/guided-tour.service.ts": {
       "verdict": "ACTIONABLE",
@@ -1796,6 +1810,10 @@
     "/hr/recruitment/recruitment-requisitions.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+    },
+    "/hr/recruitment/recruitment-sourcing.service.ts": {
+      "verdict": "BOUNDED",
+      "note": "Candidate and external referral lists each have explicit 200-row result caps"
     },
     "/hr/settings-hub/hr-settings-hub.service.ts": {
       "verdict": "ACTIONABLE",
@@ -2273,9 +2291,9 @@
       "justification": "L281 reads notificationSuppressionRules for org check; suppression rules are small per-org config set; bounded by configured suppression rules 2026-09-01"
     },
     "/notifications/notification-routing.service.ts": {
-      "verdict": "FALSE-POSITIVE",
+      "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "L215 reads notificationProviderAccounts for specific user+org (1-3 accounts per user); L400 reads preferences bounded by inArray(userIds) from prior query; all reads bounded by notification routing context 2026-09-01"
+      "justification": "routeMany reads only the explicit preference fields consumed by resolvePrefs; result cardinality is bounded by the caller's already-resolved recipient set and rules are scoped by org plus those recipients 2026-09-01"
     },
     "/notifications/notification-template-renderer.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -2303,11 +2321,11 @@
       "justification": "deal-closed consumer reads bounded by dealId (single-deal processing context) 2026-09-01"
     },
     "/organization/core/account-organization-index.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/invitation-create.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/lifecycle/organization-legal-hold.service.ts": {
@@ -2315,35 +2333,35 @@
       "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/lifecycle/organization-saga.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/org-lifecycle.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/org-member-authority-queries.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/org-membership-status.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/org-profile.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/org-purge.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/core/organization-settings.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/hierarchy/org-hierarchy-tree-source.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "organization lane (excluded territory â€” other lane owns this module)"
     },
     "/organization/setup/announcements.service.ts": {
@@ -2409,9 +2427,9 @@
       "justification": "legacy org reads bounded by orgId (single-record lookup) 2026-09-01"
     },
     "/party/party-legacy-seam.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "L121 reads ALL parties for org; L262/L280/L298/L315 read all leads/clients/contacts/crmOrganizations with party joins for org; seam does org-wide entity reconciliation; needs cursor-based batching for large orgs 2026-09-01"
+      "justification": "Legacy id resolution chunks input ids at 500, map reads are limited per chunk, and NOT EXISTS probes are limited to one row; count paths are aggregates 2026-09-01"
     },
     "/party/party-legacy-writer.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -2477,7 +2495,7 @@
       "note": "List is capped at 500; unique mutations use LIMIT 1; month generation reads only distinct scheduled event types"
     },
     "/payroll/insights/ess.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/fnf.service.ts": {
@@ -2509,7 +2527,7 @@
       "note": "Per-organization owner recipient lookup now has a hard 100-row result cap"
     },
     "/payroll/insights/period-reconciliation.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/reports.service.ts": {
@@ -2525,7 +2543,7 @@
       "note": "Direct-report reads are input-bounded with explicit overflow guards; organization compression probes one row above its supported 10000-profile bound"
     },
     "/payroll/lib/payroll-run-payee.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/approval-actions.service.ts": {
@@ -2537,35 +2555,35 @@
       "note": "Blocker detection uses a one-row aggregate and approval listing probes one row above the supported 20-stage workflow bound"
     },
     "/payroll/payout/batch-creator.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/batch-status.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/lib/payout-run-completion.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/locking.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/payout-validation.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/payroll-approver-resolver.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/payslip-bulk-publisher.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/payout/publishing.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/command-center.service.ts": {
@@ -2581,7 +2599,7 @@
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/lib/input-puller.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/loan-recovery.service.ts": {
@@ -2593,7 +2611,7 @@
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/run-batch-loader.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/runs/run-data-loader.service.ts": {
@@ -2650,19 +2668,19 @@
       "justification": "quote lifecycle reads bounded by quoteId+orgId (single-record state machine) 2026-09-01"
     },
     "/rbac/assert-role-assignment.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "rbac lane (excluded territory â€” other lane owns this module)"
     },
     "/rbac/permission-catalog-sync.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "rbac lane (excluded territory â€” other lane owns this module)"
     },
     "/rbac/role-permission.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "rbac lane (excluded territory â€” other lane owns this module)"
     },
     "/rbac/roles-query.service.ts": {
-      "verdict": "ACTIONABLE",
+      "verdict": "BOUNDED",
       "note": "rbac lane (excluded territory â€” other lane owns this module)"
     },
     "/realtime/web-push.service.ts": {
@@ -2926,6 +2944,26 @@
       "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "listGlobalVariables capped at .limit(200); workflow variables are org config, typically <100 2026-09-01"
+    },
+    "/build/core/projects-tickets-read.query.ts": {
+      "verdict": "BOUNDED",
+      "note": "Shared ticket query receives a caller-enforced page limit and is not an unbounded endpoint"
+    },
+    "/hr/time/attendance-email-report.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Recipient lookup is bounded by the caller-supplied recipient list and active tenant membership"
+    },
+    "/support/core/support-macros-assignment.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Assignment lookups are bounded by the caller-supplied candidate list and tenant scope"
+    },
+    "/payroll/filings/filings-source.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Payroll-run employee and line-item reads remain unbounded; Session 05 owns the migration and must preserve complete statutory export semantics"
+    },
+    "/payroll/insights/reports-read.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Payroll report batch-item and prior-run employee reads remain unbounded; Session 05 owns the migration and must preserve complete report semantics"
     }
   }
 }

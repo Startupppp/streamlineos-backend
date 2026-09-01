@@ -49,8 +49,8 @@ export class AccountingPayablesService {
     private readonly fx: FxService,
   ) {}
 
-  listPurchaseBills(orgId: string, q: ListPurchaseBillsQuery, scope: DataScope, userId: string) {
-    return this.query.listPurchaseBills(orgId, q, scope, userId);
+  listPurchaseBills(orgId: string, q: ListPurchaseBillsQuery, scope: DataScope, membershipId: number | null) {
+    return this.query.listPurchaseBills(orgId, q, scope, membershipId);
   }
 
   getPurchaseBill(orgId: string, billId: number) {

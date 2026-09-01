@@ -1,7 +1,7 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, sql } from "drizzle-orm";
 import { decodeCursor, buildCursorPage } from "../../../../common/pagination/cursor";
-import { keysetBeforeId } from "../../../../common/pagination/keyset";
+import { keysetBeforeUuid } from "../../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import {
@@ -28,10 +28,13 @@ export class EmergencyService {
   async listEvents(orgId: string, input: ListEmergencyEventsInput) {
     const { cursor, limit, status } = input;
     const pos = decodeCursor(cursor);
+    if (cursor !== undefined && !pos)
+      throw new BadRequestException("Invalid pagination cursor");
 
     const conditions = [eq(hrEmergencyEvents.orgId, orgId)];
     if (status) conditions.push(eq(hrEmergencyEvents.status, status));
-    if (pos) conditions.push(keysetBeforeId(hrEmergencyEvents.createdAt, hrEmergencyEvents.id, pos));
+    if (pos)
+      conditions.push(keysetBeforeUuid(hrEmergencyEvents.createdAt, hrEmergencyEvents.id, pos));
 
     const rows = await this.db
       .select()

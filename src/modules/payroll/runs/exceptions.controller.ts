@@ -46,7 +46,14 @@ export class ExceptionsController {
     @Query() query: ExceptionFilterInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const result = await this.exceptionsService.listExceptions(u.orgId, runId, query.severity, query.status, query.page, query.limit);
+    const result = await this.exceptionsService.listExceptions(
+      u.orgId,
+      runId,
+      query.severity,
+      query.status,
+      query.cursor,
+      query.limit,
+    );
     if (!result) throw new NotFoundException("Payroll run not found");
     return result;
   }

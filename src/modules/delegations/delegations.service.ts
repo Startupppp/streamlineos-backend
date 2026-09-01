@@ -7,7 +7,6 @@ import {
 import {
   and,
   asc,
-  count,
   desc,
   eq,
   gt,
@@ -43,6 +42,8 @@ import {
   assertDelegationPolicy,
   assertDelegationTarget,
 } from "./delegation-policy";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetBefore } from "../../common/pagination/keyset";
 
 type DelegationRow = typeof userDelegations.$inferSelect;
 type DelegationDirection = "received" | "given";
@@ -166,7 +167,7 @@ export class DelegationsService {
     if (!actorMembership) {
       return {
         data: [],
-        pagination: { page: query.page, limit: query.limit, total: 0, totalPages: 0 },
+        pagination: { limit: query.limit, nextCursor: null, hasMore: false },
       };
     }
     const actorMembershipId = actorMembership.id;
@@ -197,6 +198,7 @@ export class DelegationsService {
           )`,
         )
       : undefined;
+    const position = decodeCursor(query.cursor);
     const conditions = and(
       eq(userDelegations.orgId, orgId),
       eq(actorColumn, actorMembershipId),
@@ -208,40 +210,29 @@ export class DelegationsService {
           )
         : undefined,
       participantSearch,
+      position
+        ? keysetBefore(userDelegations.createdAt, userDelegations.id, position)
+        : undefined,
     );
-    const offset = (query.page - 1) * query.limit;
 
-    const [rows, [totalRow]] = await Promise.all([
-      this.db
-        .select()
-        .from(userDelegations)
-        .where(conditions)
-        .orderBy(desc(userDelegations.createdAt), desc(userDelegations.id))
-        .limit(query.limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(userDelegations)
-        .where(conditions),
-    ]);
-    const total = Number(totalRow?.total ?? 0);
-    const data = await this.withPermissions(rows, now);
+    const rows = await this.db
+      .select()
+      .from(userDelegations)
+      .where(conditions)
+      .orderBy(desc(userDelegations.createdAt), desc(userDelegations.id))
+      .limit(query.limit + 1);
+    const page = buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: row.id,
+    }));
 
-    return {
-      data,
-      pagination: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        totalPages: Math.ceil(total / query.limit),
-      },
-    };
+    return { ...page, data: await this.withPermissions(page.data, now) };
   }
 
   async list(
     orgId: string,
     userId: string,
-    query: ListDelegationsQuery = { page: 1, limit: 20 },
+    query: ListDelegationsQuery = { limit: 20 },
   ) {
     return this.listPage(orgId, userId, "received", query);
   }
@@ -249,7 +240,7 @@ export class DelegationsService {
   async listGiven(
     orgId: string,
     delegatorId: string,
-    query: ListDelegationsQuery = { page: 1, limit: 20 },
+    query: ListDelegationsQuery = { limit: 20 },
   ) {
     return this.listPage(orgId, delegatorId, "given", query);
   }

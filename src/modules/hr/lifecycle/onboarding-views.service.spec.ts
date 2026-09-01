@@ -37,25 +37,15 @@ describe("OnboardingViewsService scope and atomic writes", () => {
       leftJoin: jest.fn(),
       where: jest.fn(),
       orderBy: jest.fn(),
-      limit: jest.fn(),
-      offset: jest.fn().mockResolvedValue([]),
+      limit: jest.fn().mockResolvedValue([]),
     };
     rowsChain.from.mockReturnValue(rowsChain);
     rowsChain.innerJoin.mockReturnValue(rowsChain);
     rowsChain.leftJoin.mockReturnValue(rowsChain);
     rowsChain.where.mockReturnValue(rowsChain);
     rowsChain.orderBy.mockReturnValue(rowsChain);
-    rowsChain.limit.mockReturnValue(rowsChain);
-    const countChain = {
-      from: jest.fn(),
-      where: jest.fn().mockResolvedValue([{ total: 0 }]),
-    };
-    countChain.from.mockReturnValue(countChain);
     const db = {
-      select: jest
-        .fn()
-        .mockReturnValueOnce(rowsChain)
-        .mockReturnValueOnce(countChain),
+      select: jest.fn().mockReturnValue(rowsChain),
     };
     const scopeSpy = jest.spyOn(applyScopeModule, "applyScope");
     const service = new OnboardingViewsService(
@@ -68,10 +58,13 @@ describe("OnboardingViewsService scope and atomic writes", () => {
         "org-1",
         "actor-1",
         true,
-        { page: 1, limit: 20, userId: "other-user" },
+        { limit: 20, userId: "other-user" },
         "team",
       ),
-    ).resolves.toMatchObject({ data: [], pagination: { total: 0 } });
+    ).resolves.toMatchObject({
+      data: [],
+      pagination: { limit: 20, nextCursor: null, hasMore: false },
+    });
     expect(scopeSpy).toHaveBeenCalledWith(
       "team",
       "org-1",

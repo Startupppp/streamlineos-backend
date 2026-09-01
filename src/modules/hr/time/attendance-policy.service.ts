@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { employeeShiftAssignments, rosterEntries, rosters, shiftTemplates } from "../../../db/schema";
 import { HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.service";
+import { requireOrganizationMembershipId } from "./organization-membership";
 
 const DEFAULT_GRACE_MINUTES = 15;
 const DEFAULT_SHIFT_START = "09:00";
@@ -134,6 +135,7 @@ export class AttendancePolicyService {
   }
 
   async getEffectiveShift(orgId: string, employeeId: string, date: string): Promise<EffectiveShift | null> {
+    const employeeMembershipId = await requireOrganizationMembershipId(this.db, orgId, employeeId);
     const rosterShiftRows = await this.db
       .select({
         startTime: shiftTemplates.startTime,
@@ -144,7 +146,11 @@ export class AttendancePolicyService {
       .from(rosterEntries)
       .innerJoin(rosters, and(eq(rosters.id, rosterEntries.rosterId), eq(rosters.orgId, orgId)))
       .innerJoin(shiftTemplates, eq(shiftTemplates.id, rosterEntries.shiftId))
-      .where(and(eq(rosterEntries.userId, employeeId), eq(rosterEntries.date, date)))
+      .where(and(
+        eq(rosterEntries.orgId, orgId),
+        eq(rosterEntries.userMembershipId, employeeMembershipId),
+        eq(rosterEntries.date, date),
+      ))
       .limit(1);
 
     const rosterShift = rosterShiftRows[0];
@@ -168,7 +174,7 @@ export class AttendancePolicyService {
       .innerJoin(shiftTemplates, eq(shiftTemplates.id, employeeShiftAssignments.shiftId))
       .where(
         and(
-          eq(employeeShiftAssignments.userId, employeeId),
+          eq(employeeShiftAssignments.userMembershipId, employeeMembershipId),
           eq(employeeShiftAssignments.orgId, orgId),
           eq(employeeShiftAssignments.isActive, true),
           lte(employeeShiftAssignments.effectiveFrom, date),

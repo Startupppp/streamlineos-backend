@@ -278,7 +278,8 @@ export class OrganizationSettingsService {
       this.db
         .select({ domain: organizationAllowedEmailDomains.domain })
         .from(organizationAllowedEmailDomains)
-        .where(eq(organizationAllowedEmailDomains.orgId, orgId)),
+        .where(eq(organizationAllowedEmailDomains.orgId, orgId))
+        .limit(100),
     ]);
     if (!data) return null;
 
@@ -299,7 +300,8 @@ export class OrganizationSettingsService {
       .select()
       .from(orgHolidays)
       .where(eq(orgHolidays.orgId, orgId))
-      .orderBy(orgHolidays.date);
+      .orderBy(orgHolidays.date)
+      .limit(1000);
   }
 
   async createHoliday(orgId: string, userId: string, input: CreateHolidayInput) {
@@ -345,7 +347,8 @@ export class OrganizationSettingsService {
       .select()
       .from(orgCustomDomains)
       .where(eq(orgCustomDomains.orgId, orgId))
-      .orderBy(orgCustomDomains.createdAt);
+      .orderBy(orgCustomDomains.createdAt)
+      .limit(100);
   }
 
   async addCustomDomain(orgId: string, userId: string, input: AddCustomDomainInput) {

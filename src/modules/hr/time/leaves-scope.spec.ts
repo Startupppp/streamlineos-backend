@@ -78,15 +78,15 @@ describe("resolveLeavesViewScope", () => {
 
   it("binds own-scope decisions to the server-assigned approver", () => {
     const compiled = new PgDialect().sqlToQuery(
-      leaveApprovalScope("own", "o1", "approver-1"),
+      leaveApprovalScope("own", 7),
     );
-    expect(compiled.params).toEqual(["approver-1"]);
+    expect(compiled.params).toEqual([7]);
   });
 
   it("requires approver assignment and falls back to own when no team members are resolved", () => {
     const compiled = new PgDialect().sqlToQuery(
-      leaveApprovalScope("team", "o1", "approver-1"),
+      leaveApprovalScope("team", 7),
     );
-    expect(compiled.params).toEqual(["approver-1", "approver-1"]);
+    expect(compiled.params).toEqual([7, 7]);
   });
 });

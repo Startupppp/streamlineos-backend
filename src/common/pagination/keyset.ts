@@ -102,6 +102,35 @@ export function keysetBefore(
   return sql`(${sortColumn}, ${idColumn}) < (${sql.param(at(position), sortColumn)}, ${sql.param(position.id, idColumn)})`;
 }
 
+/** Text sort value with a UUID tie-breaker, read ascending. */
+export function keysetAfterValueUuid(
+  sortColumn: PgColumn,
+  idColumn: PgColumn,
+  position: KeysetPosition,
+): SQL {
+  return sql`(${sortColumn}, ${idColumn}) > (${sql.param(String(position.sortValue), sortColumn)}, ${sql.param(uuidId(position), idColumn)})`;
+}
+
+/** A computed text sort expression with a numeric tie-breaker, read ascending. */
+export function keysetAfterValueExpression(
+  sortExpression: SQL,
+  sortEncoderColumn: PgColumn,
+  idColumn: PgColumn,
+  position: KeysetPosition,
+): SQL {
+  return sql`(${sortExpression}, ${idColumn}) > (${sql.param(String(position.sortValue), sortEncoderColumn)}, ${sql.param(numericId(position), idColumn)})`;
+}
+
+/** A computed text sort expression with a text tie-breaker, read ascending. */
+export function keysetAfterTextExpression(
+  sortExpression: SQL,
+  sortEncoderColumn: PgColumn,
+  idColumn: PgColumn,
+  position: KeysetPosition,
+): SQL {
+  return sql`(${sortExpression}, ${idColumn}) > (${sql.param(String(position.sortValue), sortEncoderColumn)}, ${sql.param(position.id, idColumn)})`;
+}
+
 /** Newest-first timestamp keyset whose tie-breaker is a PostgreSQL UUID. */
 export function keysetBeforeUuid(
   sortColumn: PgColumn,
@@ -109,6 +138,14 @@ export function keysetBeforeUuid(
   position: KeysetPosition,
 ): SQL {
   return sql`(${sortColumn}, ${idColumn}) < (${sql.param(at(position), sortColumn)}, ${sql.param(uuidId(position), idColumn)})`;
+}
+
+export function keysetBeforeUuidValue(
+  sortColumn: PgColumn,
+  idColumn: PgColumn,
+  position: KeysetPosition,
+): SQL {
+  return sql`(${sortColumn}, ${idColumn}) < (${sql.param(String(position.sortValue), sortColumn)}, ${sql.param(uuidId(position), idColumn)})`;
 }
 
 /**

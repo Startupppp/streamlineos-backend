@@ -46,19 +46,22 @@ export class ProjectsBudgetService {
         id: true,
         budgetMinor: true,
         budgetCurrency: true,
-        managerId: true,
+        managerMembershipId: true,
       },
     });
     if (!project) throw new NotFoundException("Project not found");
 
-    if (!isOwnerOrAdmin && project.managerId !== u.userId) {
+    const callerMembershipId = u.principal.kind === "human-session" || u.principal.kind === "personal-token"
+      ? u.principal.membershipId
+      : null;
+    if (!isOwnerOrAdmin && project.managerMembershipId !== callerMembershipId) {
       const memberOf = await this.db
         .select({ projectId: projectMembers.projectId })
         .from(projectMembers)
         .where(
           and(
             eq(projectMembers.orgId, u.orgId),
-            eq(projectMembers.userId, u.userId),
+            eq(projectMembers.membershipId, callerMembershipId ?? -1),
             eq(projectMembers.projectId, projectId),
           ),
         );
@@ -81,27 +84,30 @@ export class ProjectsBudgetService {
         eq(projectMembers.orgId, orgId),
         eq(projectMembers.projectId, projectId),
       ),
-      columns: { userId: true, hourlyRateMinor: true },
+      columns: { membershipId: true, hourlyRateMinor: true },
     });
 
-    const memberUserIds = members.map((m) => m.userId);
+    const memberMembershipIds = members.map((m) => m.membershipId);
     const memberOrgMembers =
-      memberUserIds.length > 0
+      memberMembershipIds.length > 0
         ? await this.db
             .select({ id: organizationMembers.id, userId: organizationMembers.userId })
             .from(organizationMembers)
             .where(
               and(
                 eq(organizationMembers.orgId, orgId),
-                inArray(organizationMembers.userId, memberUserIds),
+                inArray(organizationMembers.id, memberMembershipIds),
               ),
             )
-            .limit(memberUserIds.length)
+            .limit(memberMembershipIds.length)
         : [];
 
     const membershipIdToUserId = new Map(memberOrgMembers.map((m) => [m.id, m.userId]));
     const memberRates = new Map(
-      members.map((m): [string, number] => [m.userId, m.hourlyRateMinor ?? 0]),
+      members.flatMap((m): Array<[string, number]> => {
+        const userId = membershipIdToUserId.get(m.membershipId);
+        return userId ? [[userId, m.hourlyRateMinor ?? 0]] : [];
+      }),
     );
     const membershipIds = memberOrgMembers.map((m) => m.id);
 

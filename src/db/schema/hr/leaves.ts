@@ -22,7 +22,8 @@ export const leaveTypes = pgTable("leave_types", {
 export const leaveBalances = pgTable("leave_balances", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   leaveTypeId: integer("leave_type_id").references(() => leaveTypes.id, { onDelete: "cascade" }).notNull(),
   balance: decimal("balance", { precision: 6, scale: 2 }).default("0").notNull(),
   year: integer("year").notNull(),
@@ -36,7 +37,8 @@ export const leaveBalances = pgTable("leave_balances", {
 export const leaveRequests = pgTable("leave_requests", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // Stable display/delivery identity. Membership columns carry tenant authority.
+  userId: text("user_id").notNull(),
   workerId: text("worker_id"),
   workerEngagementId: text("worker_engagement_id"),
   leaveTypeId: integer("leave_type_id").references(() => leaveTypes.id, { onDelete: "restrict" }).notNull(),
@@ -45,13 +47,13 @@ export const leaveRequests = pgTable("leave_requests", {
   reason: text("reason"),
   priority: text("priority").$type<LeaveRequestPriority>().default("MEDIUM").notNull(),
   status: leaveStatusEnum("status").default("PENDING").notNull(),
-  approverId: text("approver_id").references(() => users.id, { onDelete: "set null" }),
+  approverId: text("approver_id"),
   rejectionReason: text("rejection_reason"),
   managerComment: text("manager_comment"),
   attachmentUrl: text("attachment_url"),
   isHalfDay: boolean("is_half_day").default(false).notNull(),
   halfDayPeriod: text("half_day_period").$type<LeaveHalfDayPeriod>(),
-  coveringEmployeeId: text("covering_employee_id").references(() => users.id, { onDelete: "set null" }),
+  coveringEmployeeId: text("covering_employee_id"),
   lopDays: decimal("lop_days", { precision: 5, scale: 1 }).default("0").notNull(),
   approverMembershipId: integer("approver_membership_id"),
   userMembershipId: integer("user_membership_id"),
@@ -77,6 +79,16 @@ export const leaveRequests = pgTable("leave_requests", {
     table.orgId,
     table.workerEngagementId,
   ),
+  foreignKey({
+    columns: [table.orgId, table.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_leave_requests_user_actor",
+  }).onDelete("set null"),
+  foreignKey({
+    columns: [table.orgId, table.coveringEmployeeMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_leave_requests_covering_actor",
+  }).onDelete("set null"),
   foreignKey({
     columns: [table.orgId, table.workerId],
     foreignColumns: [workers.organizationId, workers.workerId],

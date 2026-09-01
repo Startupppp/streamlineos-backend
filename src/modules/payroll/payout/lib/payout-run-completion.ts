@@ -16,6 +16,7 @@ import type { JournalOutboxService } from "../../insights/journal-outbox.service
 import { registerAfterCommit } from "../../../../common/tenant/tenant-context";
 import { logSideEffectFailure } from "../../../../common/logger/side-effect";
 import { runInNewTenantTransaction } from "../../../../common/tenant";
+import { PAYROLL_READ_CAP } from "../../lib/query-bounds";
 
 export interface RunCompletionDeps {
   db: Db;
@@ -113,7 +114,8 @@ export async function checkRunCompletion(
   const allBatches = await deps.db
     .select({ id: payrollBankBatches.id })
     .from(payrollBankBatches)
-    .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, runId)));
+    .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, runId)))
+    .limit(PAYROLL_READ_CAP + 1);
 
   const batchIds = allBatches.map(b => b.id);
   if (batchIds.length === 0) return;
@@ -143,7 +145,8 @@ export async function checkRunCompletion(
         inArray(payrollBankBatchItems.batchId, batchIds),
         eq(payrollBankBatchItems.status, "PAID"),
       ),
-    );
+    )
+    .limit(PAYROLL_READ_CAP + 1);
 
   const paidRunEmployeeIds = paidRunEmployees.map((r) => r.runEmployeeId);
 

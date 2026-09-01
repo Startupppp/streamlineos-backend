@@ -64,7 +64,7 @@ export const hrSafetyIncidents = pgTable("hr_safety_incidents", {
 export const hrWellnessCheckins = pgTable("hr_wellness_checkins", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").notNull(),
   userMembershipId: integer("user_membership_id"),
   date: text("date").notNull(),
   score: integer("score").notNull(),

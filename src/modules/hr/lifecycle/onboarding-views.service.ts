@@ -1,5 +1,5 @@
-import { ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
-import { SQL, aliasedTable, and, count, desc, eq, ilike, inArray, ne, or, sql } from "drizzle-orm";
+import { BadRequestException, ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import { SQL, aliasedTable, and, asc, count, desc, eq, gt, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
   documentAuditLogs,
@@ -22,8 +22,24 @@ import type {
   OnboardingDocsSummaryQueryInput,
   ReviewOnboardingDocInput,
 } from "./dto/hr-lifecycle.schemas";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 const reviewerUsers = aliasedTable(users, "reviewer");
+
+function decodeOnboardingSummaryCursor(value: string | undefined) {
+  if (value === undefined) return null;
+  const position = decodeCursor(value);
+  if (!position) throw new BadRequestException("Invalid pagination cursor");
+
+  try {
+    const name: unknown = JSON.parse(position.sortValue);
+    if (name !== null && typeof name !== "string") throw new Error();
+    return { name: name as string | null, userId: position.id };
+  } catch {
+    throw new BadRequestException("Invalid pagination cursor");
+  }
+}
 
 @Injectable()
 export class OnboardingViewsService {
@@ -102,8 +118,19 @@ export class OnboardingViewsService {
       else 'PENDING'
     end`;
     if (query.status) conditions.push(sql`${derivedStatus} = ${query.status}`);
-
-    const offset = (query.page - 1) * query.limit;
+    const rowConditions = [...conditions];
+    const cursorPosition = decodeOnboardingSummaryCursor(query.cursor);
+    if (cursorPosition) {
+      rowConditions.push(
+        cursorPosition.name === null
+          ? and(isNull(users.name), gt(users.id, cursorPosition.userId))!
+          : or(
+              gt(users.name, cursorPosition.name),
+              isNull(users.name),
+              and(eq(users.name, cursorPosition.name), gt(users.id, cursorPosition.userId)),
+            )!,
+      );
+    }
 
     const [rows, [countRow]] = await Promise.all([
       this.db
@@ -128,10 +155,9 @@ export class OnboardingViewsService {
         .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .leftJoin(documentStats, eq(documentStats.userId, users.id))
         .innerJoin(mandatoryTotals, sql`true`)
-        .where(and(...conditions))
-        .orderBy(users.name)
-        .limit(query.limit)
-        .offset(offset),
+        .where(and(...rowConditions))
+        .orderBy(asc(users.name), asc(users.id))
+        .limit(query.limit + 1),
       this.db
         .select({ total: count() })
         .from(users)
@@ -147,14 +173,16 @@ export class OnboardingViewsService {
     ]);
 
     const total = countRow?.total ?? 0;
+    const page = buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: JSON.stringify(row.userName),
+      id: row.userId,
+    }));
 
     return {
-      data: rows,
+      data: page.data,
       pagination: {
-        page: query.page,
-        limit: query.limit,
+        ...page.pagination,
         total,
-        totalPages: Math.ceil(total / query.limit),
       },
     };
   }
@@ -174,58 +202,54 @@ export class OnboardingViewsService {
       conditions.push(eq(onboardingDocuments.userId, actorUserId));
     }
     if (query.status) conditions.push(eq(onboardingDocuments.status, query.status));
+    const position = decodeCursor(query.cursor);
+    if (query.cursor !== undefined && !position) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
+    if (position) {
+      conditions.push(
+        keysetBeforeId(
+          onboardingDocuments.createdAt,
+          onboardingDocuments.id,
+          position,
+        ),
+      );
+    }
 
-    const whereClause = and(...conditions);
-    const offset = (query.page - 1) * query.limit;
+    const rows = await this.db
+      .select({
+        id: onboardingDocuments.id,
+        orgId: onboardingDocuments.orgId,
+        userId: onboardingDocuments.userId,
+        employeeName: users.name,
+        documentTypeId: onboardingDocuments.documentTypeId,
+        documentTypeName: documentTypes.name,
+        isMandatory: documentTypes.isMandatory,
+        hasFile: sql<boolean>`${onboardingDocuments.fileUrl} <> ''`,
+        fileName: onboardingDocuments.fileName,
+        fileSize: onboardingDocuments.fileSize,
+        mimeType: onboardingDocuments.mimeType,
+        version: onboardingDocuments.version,
+        status: onboardingDocuments.status,
+        reviewedBy: onboardingDocuments.reviewedBy,
+        reviewedAt: onboardingDocuments.reviewedAt,
+        remarks: onboardingDocuments.remarks,
+        createdAt: onboardingDocuments.createdAt,
+        updatedAt: onboardingDocuments.updatedAt,
+        reviewerName: reviewerUsers.name,
+      })
+      .from(onboardingDocuments)
+      .innerJoin(documentTypes, eq(onboardingDocuments.documentTypeId, documentTypes.id))
+      .innerJoin(users, eq(onboardingDocuments.userId, users.id))
+      .leftJoin(reviewerUsers, eq(onboardingDocuments.reviewedBy, reviewerUsers.id))
+      .where(and(...conditions))
+      .orderBy(desc(onboardingDocuments.createdAt), desc(onboardingDocuments.id))
+      .limit(query.limit + 1);
 
-    const [rows, [countRow]] = await Promise.all([
-      this.db
-        .select({
-          id: onboardingDocuments.id,
-          orgId: onboardingDocuments.orgId,
-          userId: onboardingDocuments.userId,
-          employeeName: users.name,
-          documentTypeId: onboardingDocuments.documentTypeId,
-          documentTypeName: documentTypes.name,
-          isMandatory: documentTypes.isMandatory,
-          hasFile: sql<boolean>`${onboardingDocuments.fileUrl} <> ''`,
-          fileName: onboardingDocuments.fileName,
-          fileSize: onboardingDocuments.fileSize,
-          mimeType: onboardingDocuments.mimeType,
-          version: onboardingDocuments.version,
-          status: onboardingDocuments.status,
-          reviewedBy: onboardingDocuments.reviewedBy,
-          reviewedAt: onboardingDocuments.reviewedAt,
-          remarks: onboardingDocuments.remarks,
-          createdAt: onboardingDocuments.createdAt,
-          updatedAt: onboardingDocuments.updatedAt,
-          reviewerName: reviewerUsers.name,
-        })
-        .from(onboardingDocuments)
-        .innerJoin(documentTypes, eq(onboardingDocuments.documentTypeId, documentTypes.id))
-        .innerJoin(users, eq(onboardingDocuments.userId, users.id))
-        .leftJoin(reviewerUsers, eq(onboardingDocuments.reviewedBy, reviewerUsers.id))
-        .where(whereClause)
-        .orderBy(desc(onboardingDocuments.createdAt))
-        .limit(query.limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(onboardingDocuments)
-        .where(whereClause),
-    ]);
-
-    const total = countRow?.total ?? 0;
-
-    return {
-      data: rows,
-      pagination: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        totalPages: Math.ceil(total / query.limit),
-      },
-    };
+    return buildCursorPage(rows, query.limit, (document) => ({
+      sortValue: document.createdAt.toISOString(),
+      id: String(document.id),
+    }));
   }
 
   async getFileReference(

@@ -71,7 +71,7 @@ export class HrEmployeeSubroutesController {
   ) {
     const scope = await resolveEmployeesScope(this.access, u);
     return this.timeline.getHistory(u.orgId, u.userId, employeeId, scope, query.type, {
-      page: query.page,
+      cursor: query.cursor,
       limit: query.limit,
     });
   }

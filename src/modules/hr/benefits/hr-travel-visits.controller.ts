@@ -14,6 +14,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { HrTravelVisitsService } from "./hr-travel-visits.service";
 import { createVisitLogSchema, type CreateVisitLogInput } from "./dto/benefits.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -45,6 +46,6 @@ export class HrTravelVisitsController {
     @CurrentUser() u: CurrentUserContext,
     @Body() body: CreateVisitLogInput,
   ) {
-    return this.service.addVisit(u.orgId, u.userId, body);
+    return this.service.addVisit(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 }

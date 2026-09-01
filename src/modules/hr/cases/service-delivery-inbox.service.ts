@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrCases } from "../../../db/schema/hr/cases";
@@ -88,10 +88,9 @@ export class ServiceDeliveryInboxService {
         inArray(hrCases.status, ["open", "under_investigation"]),
       ];
       if (!hasConfidential) {
-        const assigneeMatch =
-          membershipId != null
-            ? or(eq(hrCases.assignedToMembershipId, membershipId), eq(hrCases.assignedTo, userId))
-            : eq(hrCases.assignedTo, userId);
+        const assigneeMatch = membershipId != null
+          ? eq(hrCases.assignedToMembershipId, membershipId)
+          : sql`false`;
         const vis = or(eq(hrCases.confidential, false), assigneeMatch);
         if (vis) caseConditions.push(vis);
       }
@@ -293,8 +292,8 @@ export class ServiceDeliveryInboxService {
           eq(hrCases.orgId, orgId),
           isNull(hrCases.deletedAt),
           membershipId != null
-            ? or(eq(hrCases.reportedByMembershipId, membershipId), eq(hrCases.reportedBy, userId))!
-            : eq(hrCases.reportedBy, userId),
+            ? eq(hrCases.reportedByMembershipId, membershipId)
+            : sql`false`,
           inArray(hrCases.status, ["open", "under_investigation"]),
         ),
       )

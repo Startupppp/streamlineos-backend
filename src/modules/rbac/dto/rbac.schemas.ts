@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 /** "team" resolves teammates from org_unit_members (kind = TEAM) inside applyScope. */
 export const dataScopeSchema = z.enum(["all", "team", "own", "none"]);
@@ -52,14 +52,14 @@ export const roleMemberSchema = z.discriminatedUnion("principalType", [
 ]);
 
 export const simulationCandidatesQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20),
   search: z.string().trim().max(100).optional(),
 });
 
 export const listRolesQuerySchema = z
   .object({
-    page: pageNumberField,
+    cursor: z.string().optional(),
     limit: pageSizeField(20),
     search: z.string().trim().max(100).optional(),
   })

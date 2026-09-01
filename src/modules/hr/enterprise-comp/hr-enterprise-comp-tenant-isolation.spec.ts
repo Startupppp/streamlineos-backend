@@ -1,4 +1,7 @@
+import { BadRequestException } from "@nestjs/common";
+import { decodeCursor } from "../../../common/pagination/cursor";
 import type { Db } from "../../../db/drizzle.module";
+import { CompPlanningService } from "./comp-planning.service";
 import { DevicesService } from "./devices.service";
 import { EquityService } from "./equity.service";
 import { PayrollComplianceService } from "./payroll-compliance.service";
@@ -59,13 +62,13 @@ function isolationArg(where: jest.Mock, findMany: jest.Mock): unknown {
 describe("DevicesService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
-  const ROW = { id: 1, orgId: OWNER };
+  const ROW = { id: 1, orgId: OWNER, createdAt: new Date("2026-08-20T09:00:00.000Z") };
 
   it("hides time devices from different org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn() };
     const svc = new DevicesService(db, mockAudit as never);
-    await svc.listDevices(ATTACKER, { page: 1, limit: 10 });
+    await svc.listDevices(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -73,8 +76,40 @@ describe("DevicesService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockAudit = { log: jest.fn() };
     const svc = new DevicesService(db, mockAudit as never);
-    await svc.listDevices(OWNER, { page: 1, limit: 10 });
+    await svc.listDevices(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
+  });
+
+  it("uses the kept row for the next cursor and rejects malformed cursors", async () => {
+    const next = { id: 2, orgId: OWNER, createdAt: new Date("2026-08-20T08:00:00.000Z") };
+    const { db } = makeDb([ROW, next]);
+    const svc = new DevicesService(db, { log: jest.fn() } as never);
+
+    const page = await svc.listDevices(OWNER, { limit: 1, status: "active" });
+    expect(page.data).toEqual([ROW]);
+    expect(page.pagination).toMatchObject({ limit: 1, hasMore: true });
+    expect(decodeCursor(page.pagination.nextCursor)).toEqual({
+      sortValue: ROW.createdAt.toISOString(),
+      id: String(ROW.id),
+    });
+    await expect(
+      svc.listDevices(OWNER, { limit: 10, cursor: "malformed" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe("CompPlanningService cursor validation", () => {
+  it("rejects malformed cursors with a semantic 400", async () => {
+    const { db } = makeDb([]);
+    const svc = new CompPlanningService(
+      db,
+      { log: jest.fn() } as never,
+      {} as never,
+    );
+
+    await expect(
+      svc.listCycles("org-owner", { limit: 10, cursor: "malformed" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
 
@@ -98,6 +133,14 @@ describe("EquityService — cross-tenant isolation", () => {
     await svc.listGrants(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
+
+  it("rejects malformed cursors with a semantic 400", async () => {
+    const { db } = makeDb([]);
+    const svc = new EquityService(db, { log: jest.fn() } as never);
+    await expect(
+      svc.listGrants(OWNER, { limit: 10, cursor: "malformed" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
 });
 
 describe("PayrollComplianceService — cross-tenant isolation", () => {
@@ -109,7 +152,7 @@ describe("PayrollComplianceService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn() };
     const svc = new PayrollComplianceService(db, mockAudit as never);
-    await svc.listVarianceApprovals(ATTACKER, { page: 1, limit: 10 });
+    await svc.listVarianceApprovals(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -117,8 +160,16 @@ describe("PayrollComplianceService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockAudit = { log: jest.fn() };
     const svc = new PayrollComplianceService(db, mockAudit as never);
-    await svc.listVarianceApprovals(OWNER, { page: 1, limit: 10 });
+    await svc.listVarianceApprovals(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
+  });
+
+  it("rejects malformed cursors with a semantic 400", async () => {
+    const { db } = makeDb([]);
+    const svc = new PayrollComplianceService(db, { log: jest.fn() } as never);
+    await expect(
+      svc.listComplianceTasks(OWNER, { limit: 10, cursor: "malformed" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });
 

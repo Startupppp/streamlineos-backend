@@ -8,6 +8,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { BillingService } from "./billing.service";
 import { MarketplaceService } from "./marketplace.service";
 import { AiCreditsService } from "./ai-credits.service";
+import { AiCreditsPacksService } from "./ai-credits-packs.service";
 import { AiCreditsUsageService } from "./ai-credits-usage.service";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
 import { aiCreditsUsageQuerySchema, autoTopUpSchema, listTransactionsSchema, purchaseAiPackSchema, type PurchaseAiPackInput } from "./dto/ai-credits.schemas";
@@ -24,6 +25,7 @@ export class BillingMarketplaceController {
     private readonly billing: BillingService,
     private readonly marketplace: MarketplaceService,
     private readonly aiCredits: AiCreditsService,
+    private readonly aiCreditPacks: AiCreditsPacksService,
     private readonly aiCreditsUsage: AiCreditsUsageService,
     private readonly providers: PaymentProviderResolver,
   ) {}
@@ -91,7 +93,7 @@ export class BillingMarketplaceController {
     @Query() query: ReturnType<typeof listTransactionsSchema.parse>,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.aiCredits.listTransactions(u.orgId, query.page, query.limit);
+    return this.aiCreditPacks.listTransactions(u.orgId, query);
   }
 
   @Get("ai-credits/usage")

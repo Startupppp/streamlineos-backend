@@ -387,20 +387,20 @@ export class TimesheetsService {
         isNull(tickets.deletedAt),
       ),
       columns: { projectId: true },
-      with: { project: { columns: { managerId: true, managerMembershipId: true, id: true } } },
+      with: { project: { columns: { managerMembershipId: true, id: true } } },
     });
     if (!ticket?.project) throw new NotFoundException("Ticket not found");
 
     const isOwnerOrAdmin = await this.access.holds(user, "build:manage");
     const isManager =
       (membershipId !== null && ticket.project.managerMembershipId === membershipId) ||
-      ticket.project.managerId === user.userId;
+      false;
 
     if (!isOwnerOrAdmin && !isManager) {
       const membership = await this.db.query.projectMembers.findFirst({
         where: and(
           eq(projectMembers.projectId, ticket.project.id),
-          eq(projectMembers.userId, user.userId),
+          eq(projectMembers.membershipId, membershipId ?? -1),
         ),
       });
       if (!membership) {

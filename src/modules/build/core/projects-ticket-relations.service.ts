@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, isNull, or } from "drizzle-orm";
-import { projectMembers, tickets, workItemRelations } from "../../../db/schema";
+import { organizationMembers, projectMembers, tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -18,15 +18,16 @@ export class ProjectsTicketRelationsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   private async requireMember(
+    orgId: string,
     projectId: number,
     userId: string,
   ): Promise<void> {
-    const member = await this.db.query.projectMembers.findFirst({
-      where: and(
-        eq(projectMembers.projectId, projectId),
-        eq(projectMembers.userId, userId),
-      ),
-    });
+    const [member] = await this.db
+      .select({ id: projectMembers.id })
+      .from(projectMembers)
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.id, projectMembers.membershipId), eq(organizationMembers.userId, userId)))
+      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.projectId, projectId)))
+      .limit(1);
     if (!member) throw new ForbiddenException("Not a project member.");
   }
 
@@ -84,7 +85,7 @@ export class ProjectsTicketRelationsService {
     projectId: number,
     ticketId: number,
   ) {
-    await this.requireMember(projectId, u.userId);
+    await this.requireMember(u.orgId, projectId, u.userId);
     await this.requireProjectTicket(u.orgId, projectId, ticketId);
 
     const relatedTicketSelect = {
@@ -148,7 +149,7 @@ export class ProjectsTicketRelationsService {
     ticketId: number,
     body: AddRelationInput,
   ) {
-    await this.requireMember(projectId, u.userId);
+    await this.requireMember(u.orgId, projectId, u.userId);
     await this.requireProjectTicket(u.orgId, projectId, ticketId);
 
     if (body.relatedTicketId === ticketId) {
@@ -235,7 +236,7 @@ export class ProjectsTicketRelationsService {
     ticketId: number,
     relatedId: number,
   ) {
-    await this.requireMember(projectId, u.userId);
+    await this.requireMember(u.orgId, projectId, u.userId);
     await this.requireProjectTicket(u.orgId, projectId, ticketId);
 
     if (!relatedId)

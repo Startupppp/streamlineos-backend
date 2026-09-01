@@ -19,42 +19,11 @@ function cursorQueryDb(records: Array<{ id: number }>) {
   query.where.mockReturnValue(query);
   query.orderBy.mockReturnValue(query);
   return {
-    db: { select: jest.fn().mockReturnValue(query) },
-    query,
-  };
-}
-
-function legacyPeoplePageDb() {
-  const dataQuery = {
-    from: jest.fn(),
-    innerJoin: jest.fn(),
-    where: jest.fn(),
-    orderBy: jest.fn(),
-    limit: jest.fn(),
-    offset: jest.fn().mockResolvedValue([{ id: 44 }]),
-  };
-  dataQuery.from.mockReturnValue(dataQuery);
-  dataQuery.innerJoin.mockReturnValue(dataQuery);
-  dataQuery.where.mockReturnValue(dataQuery);
-  dataQuery.orderBy.mockReturnValue(dataQuery);
-  dataQuery.limit.mockReturnValue(dataQuery);
-
-  const totalQuery = {
-    from: jest.fn(),
-    innerJoin: jest.fn(),
-    where: jest.fn().mockResolvedValue([{ total: 21 }]),
-  };
-  totalQuery.from.mockReturnValue(totalQuery);
-  totalQuery.innerJoin.mockReturnValue(totalQuery);
-
-  return {
     db: {
-      select: jest
-        .fn()
-        .mockReturnValueOnce(dataQuery)
-        .mockReturnValueOnce(totalQuery),
+      select: jest.fn().mockReturnValue(query),
+      execute: jest.fn().mockResolvedValue(records),
     },
-    dataQuery,
+    query,
   };
 }
 
@@ -75,8 +44,13 @@ describe("HrEmployeeRecordListsService cursor contracts", () => {
     expect(result.data).toHaveLength(2);
     expect(result.pageInfo).toMatchObject({ limit: 2, hasMore: true });
     expect(
-      decodePeopleListCursor(result.pageInfo.nextCursor ?? ""),
-    ).toEqual({ personId: 12 });
+      decodePeopleListCursor(result.pageInfo.nextCursor ?? "", {
+        orgId: "org-1",
+        actorUserId: "actor-1",
+        scope: "all",
+        search: null,
+      }),
+    ).toMatchObject({ personId: 12 });
   });
 
   it("returns a bounded employment cursor page with a descriptive boundary", async () => {
@@ -94,8 +68,12 @@ describe("HrEmployeeRecordListsService cursor contracts", () => {
     expect(query.limit).toHaveBeenCalledWith(2);
     expect(result.data).toHaveLength(1);
     expect(
-      decodeEmploymentListCursor(result.pageInfo.nextCursor ?? ""),
-    ).toEqual({ employmentId: 31 });
+      decodeEmploymentListCursor(result.pageInfo.nextCursor ?? "", {
+        orgId: "org-1",
+        actorUserId: "actor-1",
+        scope: "own",
+      }),
+    ).toMatchObject({ employmentId: 31 });
   });
 
   it("defensively caps direct service calls at one hundred records", async () => {
@@ -113,24 +91,28 @@ describe("HrEmployeeRecordListsService cursor contracts", () => {
     expect(result.pageInfo.limit).toBe(100);
   });
 
-  it("preserves the explicit page compatibility response", async () => {
-    const { db, dataQuery } = legacyPeoplePageDb();
+  it("rejects a people cursor after its search scope changes", async () => {
+    const { db } = cursorQueryDb([{ id: 11 }, { id: 12 }]);
     const service = new HrEmployeeRecordListsService(db as never);
-
-    const result = await service.listPeoplePage(
+    const firstPage = await service.listPeopleCursor(
       "org-1",
       "actor-1",
-      { page: 2, limit: 20 },
+      { limit: 1, search: "Ada" },
       "all",
     );
 
-    expect(db.select).toHaveBeenCalledTimes(2);
-    expect(dataQuery.offset).toHaveBeenCalledWith(20);
-    expect(result.pagination).toEqual({
-      page: 2,
-      limit: 20,
-      total: 21,
-      totalPages: 2,
-    });
+    await expect(
+      service.listPeopleCursor(
+        "org-1",
+        "actor-1",
+        {
+          cursor: firstPage.pageInfo.nextCursor ?? undefined,
+          limit: 1,
+          search: "Grace",
+        },
+        "all",
+      ),
+    ).rejects.toMatchObject({ response: { code: "INVALID_PEOPLE_CURSOR" } });
+    expect(db.select).toHaveBeenCalledTimes(1);
   });
 });

@@ -267,6 +267,7 @@ export const jobRecruiters = pgTable("job_recruiters", {
   uniqueIndex("uq_job_recruiters_job_user").on(table.jobPostingId, table.userId),
   index("idx_job_recruiters_job").on(table.jobPostingId),
   index("idx_job_recruiters_user").on(table.userId),
+  index("idx_job_recruiters_org_job_user").on(table.orgId, table.jobPostingId, table.userId),
 ]);
 
 export const recruiterActivityLog = pgTable("recruiter_activity_log", {

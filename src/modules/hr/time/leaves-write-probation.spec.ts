@@ -7,6 +7,10 @@ import type { ProbationCoverage } from "../lifecycle/probation-coverage";
 import { LeavesWriteService } from "./leaves-write.service";
 import { PROBATION_LEAVE_REFUSAL } from "./probation-leave-restriction";
 
+jest.mock("./organization-membership", () => ({
+  requireOrganizationMembershipId: jest.fn().mockResolvedValue(1),
+}));
+
 const USER: CurrentUserContext = {
   userId: "employee-1",
   orgId: "org-1",

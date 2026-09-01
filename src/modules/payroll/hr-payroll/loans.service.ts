@@ -12,11 +12,8 @@ export class LoansService {
   listLoans(orgId: string, userId: string, membershipId: number | null, isAdmin: boolean, page = 1, limit = 100) {
     const conditions = [eq(salaryLoans.orgId, orgId)];
     if (!isAdmin) {
-      if (membershipId != null) {
-        conditions.push(eq(salaryLoans.userMembershipId, membershipId));
-      } else {
-        conditions.push(eq(salaryLoans.userId, userId));
-      }
+      if (membershipId === null) throw new ForbiddenException("Organization membership required");
+      conditions.push(eq(salaryLoans.userMembershipId, membershipId));
     }
 
     return this.db.query.salaryLoans.findMany({
@@ -32,8 +29,9 @@ export class LoansService {
     });
   }
 
-  async createLoan(orgId: string, userId: string, isAdmin: boolean, body: CreateLoanInput) {
+  async createLoan(orgId: string, userId: string, membershipId: number | null, isAdmin: boolean, body: CreateLoanInput) {
     const emiAmount = body.amount / body.totalEmis;
+    if (!isAdmin && membershipId === null) throw new ForbiddenException("Organization membership required");
     const targetUserId = isAdmin && body.userId ? body.userId : userId;
 
     const targetMember = await this.db.query.organizationMembers.findFirst({
@@ -48,7 +46,7 @@ export class LoansService {
       .values({
         orgId,
         userId: targetUserId,
-        userMembershipId: targetMember?.id ?? undefined,
+        userMembershipId: targetMember?.id ?? (targetUserId === userId ? membershipId : undefined),
         amount: body.amount.toString(),
         reason: body.reason,
         emiAmount: emiAmount.toFixed(2),

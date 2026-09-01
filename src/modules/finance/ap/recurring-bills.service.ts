@@ -205,7 +205,8 @@ export class RecurringBillsService {
           eq(finRecurringBillTemplates.isActive, true),
           lte(finRecurringBillTemplates.nextRunDate, today),
         ),
-      );
+      )
+      .limit(1000);
 
     for (const template of due) {
       if (template.endDate && template.endDate < today) {

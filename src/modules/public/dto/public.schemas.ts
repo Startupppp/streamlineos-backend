@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const applySchema = z.object({
   name: z.string().min(1).max(200).trim(),
@@ -38,8 +38,8 @@ export const kbListQuerySchema = z.object({
   org: z.string().min(1),
   categoryId: z.coerce.number().int().positive().optional(),
   search: z.string().trim().min(1).max(200).optional(),
-  page: pageNumberField,
   pageSize: pageSizeField(50, 100),
+  cursor: z.string().optional(),
 });
 
 export const orgQuerySchema = z.object({

@@ -65,7 +65,8 @@ export class OrgPurgeService {
     const members = await db
       .select({ userId: organizationMembers.userId })
       .from(organizationMembers)
-      .where(eq(organizationMembers.orgId, orgId));
+      .where(eq(organizationMembers.orgId, orgId))
+      .limit(10000);
     return members.map((m) => m.userId);
   }
 

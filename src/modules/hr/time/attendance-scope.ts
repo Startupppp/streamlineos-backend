@@ -1,9 +1,10 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { DataScope } from "../../access/access.types";
 import { AccessService } from "../../access/access.service";
-import { applyScope } from "../../access/apply-scope";
 import { isScopable } from "../../rbac/permissions";
-import { organizationMembers } from "../../../db/schema";
+import { attendance } from "../../../db/schema";
+import { eq, sql } from "drizzle-orm";
+import type { PgColumn } from "drizzle-orm/pg-core";
 
 export const ATTENDANCE_PERMISSION = "hr:attendance:manage";
 
@@ -25,8 +26,15 @@ export async function resolveAttendanceReadScope(
   return manageScope === "none" ? "own" : manageScope;
 }
 
-export function attendanceMemberScope(scope: DataScope, orgId: string, actorUserId: string) {
-  return applyScope(scope, orgId, actorUserId, {
-    ownerColumn: organizationMembers.userId,
-  });
+export function attendanceMemberScope(
+  scope: DataScope,
+  actorMembershipId?: number | null,
+  ownerColumn: PgColumn = attendance.userMembershipId,
+) {
+  if (scope === "all") return sql`true`;
+  if (actorMembershipId == null) return sql`false`;
+  if (scope === "own" || scope === "team") {
+    return eq(ownerColumn, actorMembershipId);
+  }
+  return sql`false`;
 }

@@ -10,6 +10,7 @@ import { keysetBeforeId } from "../../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { hrProxyAccess } from "../../../../db/schema/hr/governance";
+import { organizationMembers } from "../../../../db/schema/common/auth";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../../common/auth/principal";
 import { HrAuditService } from "../../core/hr-audit.service";
@@ -27,14 +28,11 @@ export class DelegationsService {
     const pos = decodeCursor(cursor);
     const now = new Date();
     const membershipId = actingMembershipId(u.principal);
-    const actorPredicate = membershipId != null
-      ? or(
-          eq(hrProxyAccess.grantorMembershipId, membershipId),
-          eq(hrProxyAccess.proxyMembershipId, membershipId),
-          eq(hrProxyAccess.grantorUserId, u.userId),
-          eq(hrProxyAccess.proxyUserId, u.userId),
-        )!
-      : or(eq(hrProxyAccess.grantorUserId, u.userId), eq(hrProxyAccess.proxyUserId, u.userId))!;
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
+    const actorPredicate = or(
+      eq(hrProxyAccess.grantorMembershipId, membershipId),
+      eq(hrProxyAccess.proxyMembershipId, membershipId),
+    )!;
 
     const conditions = [
       eq(hrProxyAccess.orgId, u.orgId),
@@ -83,6 +81,15 @@ export class DelegationsService {
 
   async create(u: CurrentUserContext, input: CreateProxyInput, ipAddress?: string) {
     const membershipId = actingMembershipId(u.principal);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
+    const proxyMember = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, u.orgId),
+        eq(organizationMembers.userId, input.proxyUserId),
+      ),
+      columns: { id: true },
+    });
+    if (!proxyMember) throw new NotFoundException("Proxy user is not a member of this organization");
     const [proxy] = await this.db
       .insert(hrProxyAccess)
       .values({
@@ -90,6 +97,7 @@ export class DelegationsService {
         grantorUserId: u.userId,
         grantorMembershipId: membershipId,
         proxyUserId: input.proxyUserId,
+        proxyMembershipId: proxyMember.id,
         scope: input.scope,
         startsAt: new Date(input.startsAt),
         endsAt: new Date(input.endsAt),
@@ -113,17 +121,32 @@ export class DelegationsService {
     return proxy!;
   }
 
-  async update(orgId: string, proxyId: number, userId: string, input: UpdateProxyInput, ipAddress?: string) {
+  async update(orgId: string, proxyId: number, userId: string, membershipId: number | null, input: UpdateProxyInput, ipAddress?: string) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const existing = await this.getById(orgId, proxyId);
 
-    if (existing.grantorUserId !== userId) {
+    if (existing.grantorMembershipId !== membershipId) {
       throw new ForbiddenException("Only the grantor can modify this proxy");
+    }
+
+    const proxyMember = input.proxyUserId === undefined
+      ? null
+      : await this.db.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, input.proxyUserId),
+        ),
+        columns: { id: true },
+      });
+    if (input.proxyUserId !== undefined && !proxyMember) {
+      throw new NotFoundException("Proxy user is not a member of this organization");
     }
 
     const [updated] = await this.db
       .update(hrProxyAccess)
       .set({
         ...(input.proxyUserId !== undefined && { proxyUserId: input.proxyUserId }),
+        ...(proxyMember && { proxyMembershipId: proxyMember.id }),
         ...(input.scope !== undefined && { scope: input.scope }),
         ...(input.startsAt !== undefined && { startsAt: new Date(input.startsAt) }),
         ...(input.endsAt !== undefined && { endsAt: new Date(input.endsAt) }),
@@ -147,10 +170,11 @@ export class DelegationsService {
     return updated!;
   }
 
-  async revoke(orgId: string, proxyId: number, userId: string, isAdmin: boolean, ipAddress?: string) {
+  async revoke(orgId: string, proxyId: number, userId: string, membershipId: number | null, isAdmin: boolean, ipAddress?: string) {
+    if (!isAdmin && membershipId == null) throw new ForbiddenException("Organization membership required.");
     const existing = await this.getById(orgId, proxyId);
 
-    if (!isAdmin && existing.grantorUserId !== userId) {
+    if (!isAdmin && existing.grantorMembershipId !== membershipId) {
       throw new ForbiddenException("Only the grantor or an admin can revoke this proxy");
     }
 

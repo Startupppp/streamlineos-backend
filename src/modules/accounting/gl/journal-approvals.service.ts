@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { journalEntries, finApprovalRequests } from "../../../db/schema";
+import { journalEntries, finApprovalRequests, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -78,7 +78,7 @@ export class JournalApprovalsService {
     comment: string | undefined,
   ) {
     const entry = await this.db
-      .select({ id: journalEntries.id, orgId: journalEntries.orgId, createdBy: journalEntries.createdBy })
+      .select({ id: journalEntries.id, orgId: journalEntries.orgId, createdByMembershipId: journalEntries.createdByMembershipId })
       .from(journalEntries)
       .where(and(eq(journalEntries.id, entryId), eq(journalEntries.orgId, orgId)))
       .limit(1);
@@ -116,7 +116,15 @@ export class JournalApprovalsService {
         .where(and(eq(journalEntries.id, entryId), eq(journalEntries.orgId, orgId)));
     });
 
-    const targetUserIds = [entry[0].createdBy];
+    const [creator] = entry[0].createdByMembershipId
+      ? await this.db
+          .select({ userId: organizationMembers.userId })
+          .from(organizationMembers)
+          .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.id, entry[0].createdByMembershipId)))
+          .limit(1)
+      : [];
+    if (!creator) throw new NotFoundException("Journal creator membership not found");
+    const targetUserIds = [creator.userId];
 
     await this.dispatch.emit({
       eventKey: "accounting.approval.decided",

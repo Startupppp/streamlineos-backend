@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import {
   organizationMembers,
@@ -59,7 +59,7 @@ export class WhiteboardSharingService {
         projectWhiteboardShares,
         and(
           eq(projectWhiteboardShares.whiteboardId, projectWhiteboards.id),
-          eq(projectWhiteboardShares.userId, u.userId),
+          sql`${projectWhiteboardShares.membershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${u.userId} AND status = 'ACTIVE')`,
         ),
       )
       .where(
@@ -161,11 +161,12 @@ export class WhiteboardSharingService {
   ) {
     const board = await this.requireManageAccess(u, projectId, whiteboardId);
     const { shares } = input;
+    let members: Array<{ id: number; userId: string }> = [];
 
     if (shares.length > 0) {
       const userIds = shares.map((s) => s.userId);
-      const members = await this.db
-        .select({ userId: organizationMembers.userId })
+      members = await this.db
+        .select({ id: organizationMembers.id, userId: organizationMembers.userId })
         .from(organizationMembers)
         .where(
           and(
@@ -194,7 +195,7 @@ export class WhiteboardSharingService {
           filteredShares.map((s) => ({
             orgId: u.orgId,
             whiteboardId,
-            userId: s.userId,
+            membershipId: members.find((m) => m.userId === s.userId)?.id ?? 0,
             role: s.role,
             createdBy: u.userId,
           })),
@@ -204,13 +205,14 @@ export class WhiteboardSharingService {
 
     return this.db
       .select({
-        userId: projectWhiteboardShares.userId,
+        userId: organizationMembers.userId,
         role: projectWhiteboardShares.role,
         name: users.name,
         email: users.email,
       })
       .from(projectWhiteboardShares)
-      .innerJoin(users, eq(users.id, projectWhiteboardShares.userId))
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectWhiteboardShares.orgId), eq(organizationMembers.id, projectWhiteboardShares.membershipId)))
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(eq(projectWhiteboardShares.whiteboardId, whiteboardId));
   }
 
@@ -226,7 +228,7 @@ export class WhiteboardSharingService {
       .where(
         and(
           eq(projectWhiteboardShares.whiteboardId, whiteboardId),
-          eq(projectWhiteboardShares.userId, targetUserId),
+          sql`${projectWhiteboardShares.membershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${targetUserId} AND status = 'ACTIVE')`,
         ),
       );
     return { success: true };

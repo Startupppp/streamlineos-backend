@@ -31,6 +31,7 @@ import {
 } from "./hr-interviews.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { actingMembershipId } from "../../../common/auth/principal";
 
 const interviewIdParams = z.object({ interviewId: z.coerce.number().int().positive() }).strict();
 
@@ -49,7 +50,7 @@ export class EmployeeRecruitmentController {
     @Query() query: SelfInterviewListInput,
     @CurrentUser() user: CurrentUserContext,
   ): Promise<AssignedInterviewsPage> {
-    return this.interviews.listMine(user.orgId, user.userId, query);
+    return this.interviews.listMine(user.orgId, actingMembershipId(user.principal), query);
   }
 
   @Post(":interviewId/scorecard")
@@ -62,7 +63,7 @@ export class EmployeeRecruitmentController {
   ): Promise<unknown> {
     const assigned = await this.interviews.isAssignedTo(
       user.orgId,
-      user.userId,
+      actingMembershipId(user.principal),
       interviewId,
     );
     if (!assigned) {
@@ -71,6 +72,7 @@ export class EmployeeRecruitmentController {
     return this.results.submitScorecard(
       user.orgId,
       user.userId,
+      actingMembershipId(user.principal),
       interviewId,
       body,
     );

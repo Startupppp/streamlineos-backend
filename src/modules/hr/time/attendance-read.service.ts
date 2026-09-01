@@ -8,6 +8,7 @@ import { formatDateOnly, getTodayString } from "../../../common/date";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveAttendanceScope } from "./attendance-scope";
 import { AttendancePolicyService } from "./attendance-policy.service";
+import { requireOrganizationMembershipId } from "./organization-membership";
 
 type AttendanceStatus = "OFFLINE" | "PRESENT" | "ON_BREAK" | "CHECKED_OUT";
 
@@ -20,12 +21,13 @@ export class AttendanceReadService {
   ) {}
 
   async status(orgId: string, userId: string) {
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
     const today = getTodayString();
     const now = new Date();
 
     const todayLogs = await this.db.query.attendance.findMany({
       where: and(
-        eq(attendance.userId, userId),
+        eq(attendance.userMembershipId, userMembershipId),
         eq(attendance.date, today),
         eq(attendance.orgId, orgId),
       ),
@@ -66,7 +68,7 @@ export class AttendanceReadService {
     }
 
     const logs = await this.db.query.attendance.findMany({
-      where: and(eq(attendance.userId, userId), eq(attendance.orgId, orgId)),
+      where: and(eq(attendance.userMembershipId, userMembershipId), eq(attendance.orgId, orgId)),
       orderBy: [desc(attendance.createdAt)],
       limit: 10,
     });
@@ -113,13 +115,15 @@ export class AttendanceReadService {
         "Not authorized to view other users' logs.",
       );
     }
-    return this.getAttendanceLogs(u.orgId, userId, year, month);
+    const userMembershipId = await requireOrganizationMembershipId(this.db, u.orgId, userId);
+    return this.getAttendanceLogs(u.orgId, userMembershipId, year, month);
   }
 
   async history(orgId: string, userId: string, page: number, limit: number) {
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
     const where = and(
       eq(attendance.orgId, orgId),
-      eq(attendance.userId, userId),
+      eq(attendance.userMembershipId, userMembershipId),
     );
     const offset = (page - 1) * limit;
     const [data, totalRows] = await Promise.all([
@@ -145,7 +149,7 @@ export class AttendanceReadService {
 
   private getAttendanceLogs(
     orgId: string,
-    userId: string,
+    userMembershipId: number,
     year?: number,
     month?: number,
   ) {
@@ -154,7 +158,7 @@ export class AttendanceReadService {
       const endDate = new Date(year, month + 1, 0);
       return this.db.query.attendance.findMany({
         where: and(
-          eq(attendance.userId, userId),
+          eq(attendance.userMembershipId, userMembershipId),
           eq(attendance.orgId, orgId),
           gte(attendance.date, formatDateOnly(startDate)),
           lte(attendance.date, formatDateOnly(endDate)),
@@ -165,7 +169,7 @@ export class AttendanceReadService {
     }
 
     return this.db.query.attendance.findMany({
-      where: and(eq(attendance.userId, userId), eq(attendance.orgId, orgId)),
+      where: and(eq(attendance.userMembershipId, userMembershipId), eq(attendance.orgId, orgId)),
       orderBy: [desc(attendance.createdAt)],
       limit: 30,
     });
@@ -189,9 +193,10 @@ export class AttendanceReadService {
     const lastDay = new Date(year, month + 1, 0).getDate();
     const endDate = `${year}-${mm}-${String(lastDay).padStart(2, "0")}`;
 
+    const targetMembershipId = await requireOrganizationMembershipId(this.db, u.orgId, targetUserId);
     return this.db.query.attendance.findMany({
       where: and(
-        eq(attendance.userId, targetUserId),
+        eq(attendance.userMembershipId, targetMembershipId),
         eq(attendance.orgId, u.orgId),
         gte(attendance.date, startDate),
         lte(attendance.date, endDate),
@@ -210,6 +215,7 @@ export class AttendanceReadService {
     }
 
     const orgId = u.orgId;
+    const targetMembershipId = await requireOrganizationMembershipId(this.db, orgId, targetUserId);
     const startDate = `${year}-01-01`;
     const endDate = `${year}-12-31`;
 
@@ -223,7 +229,7 @@ export class AttendanceReadService {
       .where(
         and(
           eq(attendance.orgId, orgId),
-          eq(attendance.userId, targetUserId),
+          eq(attendance.userMembershipId, targetMembershipId),
           gte(attendance.date, startDate),
           lte(attendance.date, endDate),
         ),

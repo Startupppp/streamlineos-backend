@@ -1,5 +1,5 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, desc, inArray, lte, or, sql } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { and, eq, desc, gt, inArray, lte, or } from "drizzle-orm";
 import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -12,7 +12,10 @@ import {
 import { users, organizationMembers } from "../../../db/schema/common/auth";
 import { hrEmployments, hrPeople } from "../../../db/schema";
 import { orgUnits } from "../../../db/schema/common/organization";
-import type { WorkflowInstanceQueryDto } from "./dto/workflow.schemas";
+import type {
+  WorkflowActedQueryDto,
+  WorkflowInstanceQueryDto,
+} from "./dto/workflow.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
@@ -141,81 +144,91 @@ export class HrWorkflowInstancesService {
     };
   }
 
-  async getMyActed(u: CurrentUserContext, page: number, limit: number) {
-    const offset = (page - 1) * limit;
+  async getMyActed(u: CurrentUserContext, query: WorkflowActedQueryDto) {
+    const position = decodeCursor(query.cursor);
+    if (query.cursor !== undefined && !position) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
+    const cursorInstanceId = position ? Number(position.id) : null;
+    if (
+      position &&
+      (!Number.isSafeInteger(cursorInstanceId) ||
+        cursorInstanceId <= 0 ||
+        position.sortValue !== position.id)
+    ) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
+
     const membershipId = actingMembershipId(u.principal);
-    const actorPredicate = membershipId != null
-      ? or(eq(hrWorkflowStepActions.actedByMembershipId, membershipId), eq(hrWorkflowStepActions.actedByUserId, u.userId))!
-      : eq(hrWorkflowStepActions.actedByUserId, u.userId);
+    if (membershipId == null) throw new BadRequestException("Organization membership required");
+    const actorPredicate = eq(hrWorkflowStepActions.actedByMembershipId, membershipId);
+
+    const actionConditions = [
+      eq(hrWorkflowStepActions.orgId, u.orgId),
+      actorPredicate,
+      inArray(hrWorkflowStepActions.action, ["approved", "rejected"]),
+    ];
+    if (cursorInstanceId !== null) {
+      actionConditions.push(gt(hrWorkflowStepActions.instanceId, cursorInstanceId));
+    }
 
     const distinctRows = await this.db
       .selectDistinct({ instanceId: hrWorkflowStepActions.instanceId })
       .from(hrWorkflowStepActions)
+      .where(and(...actionConditions))
+      .orderBy(hrWorkflowStepActions.instanceId)
+      .limit(query.limit + 1);
+
+    const page = buildCursorPage(distinctRows, query.limit, (row) => ({
+      sortValue: String(row.instanceId),
+      id: String(row.instanceId),
+    }));
+
+    const instanceIds = page.data.map((row) => row.instanceId);
+    if (instanceIds.length === 0) {
+      return { data: [], pagination: page.pagination };
+    }
+
+    const rows = await this.db
+      .select()
+      .from(hrWorkflowInstances)
       .where(
         and(
-          eq(hrWorkflowStepActions.orgId, u.orgId),
-          actorPredicate,
-          inArray(hrWorkflowStepActions.action, ["approved", "rejected"]),
+          eq(hrWorkflowInstances.orgId, u.orgId),
+          inArray(hrWorkflowInstances.id, instanceIds),
         ),
       )
-      .orderBy(hrWorkflowStepActions.instanceId)
-      .limit(limit)
-      .offset(offset);
+      .orderBy(desc(hrWorkflowInstances.updatedAt));
 
-    const instanceIds = distinctRows.map((r) => r.instanceId);
-    if (instanceIds.length === 0) return { data: [], page, limit, total: 0 };
-
-    const [rows, [{ total }]] = await Promise.all([
-      this.db
-        .select()
-        .from(hrWorkflowInstances)
-        .where(
-          and(
-            eq(hrWorkflowInstances.orgId, u.orgId),
-            inArray(hrWorkflowInstances.id, instanceIds),
-          ),
-        )
-        .orderBy(desc(hrWorkflowInstances.updatedAt)),
-      this.db
-        .select({
-          total: sql<number>`count(distinct ${hrWorkflowStepActions.instanceId})::int`,
-        })
-        .from(hrWorkflowStepActions)
-        .where(
-          and(
-            eq(hrWorkflowStepActions.orgId, u.orgId),
-            actorPredicate,
-            inArray(hrWorkflowStepActions.action, ["approved", "rejected"]),
-          ),
-        ),
-    ]);
-
-    return { data: rows, page, limit, total: total ?? 0 };
+    return { data: rows, pagination: page.pagination };
   }
 
-  async getInbox(orgId: string, userId: string, page: number, limit: number) {
+  async getInbox(u: CurrentUserContext, page: number, limit: number) {
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId == null) throw new BadRequestException("Organization membership required");
+    const { orgId } = u;
     const now = new Date();
     const delegations = await this.db
       .select({
-        delegatorUserId: hrWorkflowDelegations.delegatorUserId,
+        delegatorMembershipId: hrWorkflowDelegations.delegatorMembershipId,
         endsAt: hrWorkflowDelegations.endsAt,
       })
       .from(hrWorkflowDelegations)
       .where(
         and(
           eq(hrWorkflowDelegations.orgId, orgId),
-          eq(hrWorkflowDelegations.delegateUserId, userId),
+          eq(hrWorkflowDelegations.delegateMembershipId, membershipId),
           eq(hrWorkflowDelegations.active, true),
           lte(hrWorkflowDelegations.startsAt, now),
         ),
       )
       .limit(50);
 
-    const allUserIds = [
-      userId,
+    const allMembershipIds = [
+      membershipId,
       ...delegations
-        .filter((d) => d.endsAt >= now)
-        .map((d) => d.delegatorUserId),
+        .filter((d) => d.endsAt >= now && d.delegatorMembershipId != null)
+        .map((d) => d.delegatorMembershipId as number),
     ];
 
     const candidates = await this.db
@@ -253,20 +266,36 @@ export class HrWorkflowInstancesService {
       candidates.map((i) => i.subjectEmployeeId),
     );
 
+    const approversByInstance = new Map<number, string[]>();
+    for (const instance of candidates) {
+      const steps = (instance.definitionSnapshot as { steps: ResolvedStep[] }).steps;
+      const currentStep = steps.find((s) => s.stepOrder === instance.currentStepOrder);
+      if (!currentStep) continue;
+      approversByInstance.set(
+        instance.id,
+        this.resolveApproversFromCache(currentStep, instance.subjectEmployeeId, cache),
+      );
+    }
+
+    const approverUserIds = [...new Set([...approversByInstance.values()].flat())];
+    const approverMembers = approverUserIds.length === 0
+      ? []
+      : await this.db
+        .select({ userId: organizationMembers.userId, membershipId: organizationMembers.id })
+        .from(organizationMembers)
+        .where(and(
+          eq(organizationMembers.orgId, orgId),
+          inArray(organizationMembers.userId, approverUserIds),
+        ));
+    const membershipIdByUserId = new Map(approverMembers.map((member) => [member.userId, member.membershipId]));
+
     const myInstances: (typeof candidates)[number][] = [];
     for (const instance of candidates) {
-      const steps = (instance.definitionSnapshot as { steps: ResolvedStep[] })
-        .steps;
-      const currentStep = steps.find(
-        (s) => s.stepOrder === instance.currentStepOrder,
-      );
-      if (!currentStep) continue;
-      const approvers = this.resolveApproversFromCache(
-        currentStep,
-        instance.subjectEmployeeId,
-        cache,
-      );
-      if (approvers.some((id) => allUserIds.includes(id)))
+      const approvers = approversByInstance.get(instance.id) ?? [];
+      if (approvers.some((userId) => {
+        const approverMembershipId = membershipIdByUserId.get(userId);
+        return approverMembershipId != null && allMembershipIds.includes(approverMembershipId);
+      }))
         myInstances.push(instance);
       if (myInstances.length >= limit * page) break;
     }

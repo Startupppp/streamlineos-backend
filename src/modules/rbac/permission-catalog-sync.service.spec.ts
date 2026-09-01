@@ -48,8 +48,10 @@ describe("PermissionCatalogSyncService.sync — administering module column", ()
 
     const db = {
       select: () => ({
-        from: () =>
-          Promise.resolve(catalogModules.map((moduleKey) => ({ moduleKey }))),
+        from: () => ({
+          limit: () =>
+            Promise.resolve(catalogModules.map((moduleKey) => ({ moduleKey }))),
+        }),
       }),
       insert: () => ({
         values: (rows: Array<Record<string, unknown>>) => {

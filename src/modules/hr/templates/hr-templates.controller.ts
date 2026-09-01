@@ -23,11 +23,13 @@ import {
   createTemplateSchema,
   renderTemplateSchema,
   templateListQuerySchema,
+  templateRendersQuerySchema,
   transitionTemplateSchema,
   updateTemplateSchema,
   type CreateTemplateInput,
   type RenderTemplateInput,
   type TemplateListQuery,
+  type TemplateRendersQuery,
   type TransitionTemplateInput,
   type UpdateTemplateInput,
 } from "./dto/hr-templates.schemas";
@@ -146,11 +148,12 @@ export class HrTemplatesController {
 
   @Get(":templateId/renders")
   @RequirePermission("hr:templates:view")
-  @Validate({ params: templateIdParams })
+  @Validate({ params: templateIdParams, query: templateRendersQuerySchema })
   listRenders(
     @Param("templateId", ParseIntPipe) templateId: number,
+    @Query() query: TemplateRendersQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.listRenders(u.orgId, templateId);
+    return this.service.listRenders(u.orgId, templateId, query);
   }
 }

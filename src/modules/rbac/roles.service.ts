@@ -58,6 +58,8 @@ import type {
   SetRolePermissionsInput,
   UpdateRoleInput,
 } from "./dto/rbac.schemas";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetAfterValueExpression } from "../../common/pagination/keyset";
 
 const CATALOG_KEYS = new Set(PERMISSIONS.map((permission) => permission.name));
 
@@ -101,17 +103,23 @@ export class RolesService {
   }
 
   async getRoles(orgId: string, input: ListRolesQuery) {
-    const offset = (input.page - 1) * input.limit;
     const search = input.search?.trim();
-    const where = search
+    const baseWhere = search
       ? and(
           eq(roles.orgId, orgId),
           ilike(roles.name, `%${escapeLike(search)}%`),
         )
       : eq(roles.orgId, orgId);
+    const normalizedName = sql<string>`lower(${roles.name})`;
+    const position = decodeCursor(input.cursor);
+    const where = and(
+      baseWhere,
+      position
+        ? keysetAfterValueExpression(normalizedName, roles.name, roles.id, position)
+        : undefined,
+    );
 
-    const [pageRows, totalRows] = await Promise.all([
-      this.db
+    const rows = await this.db
         .select({
           id: roles.id,
           name: roles.name,
@@ -125,6 +133,7 @@ export class RolesService {
           createdAt: roles.createdAt,
           updatedAt: roles.updatedAt,
           description: roles.description,
+          cursorSortValue: normalizedName,
           explicitPermissionCount: count(rolePermissionGrants.id),
           universalGrantCount: sql<number>`count(${rolePermissionGrants.id}) filter (where ${inArray(rolePermissionGrants.permissionKey, [...UNIVERSAL_MEMBER_PERMISSIONS])})`,
           memberCount: sql<number>`(
@@ -144,14 +153,14 @@ export class RolesService {
         )
         .where(where)
         .groupBy(roles.id)
-        .orderBy(asc(sql`lower(${roles.name})`), asc(roles.id))
-        .limit(input.limit)
-        .offset(offset),
-      this.db.select({ value: count() }).from(roles).where(where),
-    ]);
-    const total = Number(totalRows[0]?.value ?? 0);
-    const data = pageRows.map(
-      ({ explicitPermissionCount, universalGrantCount, memberCount, ...role }) => {
+        .orderBy(asc(normalizedName), asc(roles.id))
+        .limit(input.limit + 1);
+    const page = buildCursorPage(rows, input.limit, (row) => ({
+      sortValue: row.cursorSortValue,
+      id: String(row.id),
+    }));
+    const data = page.data.map(
+      ({ explicitPermissionCount, universalGrantCount, memberCount, cursorSortValue: _cursor, ...role }) => {
         const explicitCount = Number(explicitPermissionCount);
         const permissionCount =
           explicitCount > 0
@@ -166,15 +175,7 @@ export class RolesService {
       },
     );
 
-    return {
-      data,
-      pagination: {
-        page: input.page,
-        limit: input.limit,
-        total,
-        totalPages: Math.ceil(total / input.limit),
-      },
-    };
+    return { data, pagination: page.pagination };
   }
 
   async getRole(orgId: string, roleId: number) {

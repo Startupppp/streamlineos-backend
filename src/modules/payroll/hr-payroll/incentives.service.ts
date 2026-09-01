@@ -14,6 +14,12 @@ import type {
   ApproveIncentiveInput,
   IncentivesQueryInput,
 } from "./dto/payroll.schemas";
+import { buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
+import {
+  decodePayrollTimestampCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
 
 type IncentiveStatus = (typeof incentiveStatusEnum.enumValues)[number];
 
@@ -29,22 +35,26 @@ export class IncentivesService {
   ) {}
 
   async getIncentives(orgId: string, params: IncentivesQueryInput) {
-    const page = params.page ?? 1;
     const limit = Math.min(params.limit ?? 20, 100);
-    const offset = (page - 1) * limit;
+    const status = params.status && isIncentiveStatus(params.status) ? params.status : null;
+    const cursorScope = ["incentives", orgId, status] as const;
+    const position = decodePayrollTimestampCursor(params.cursor, cursorScope);
 
     const conditions = [eq(incentives.orgId, orgId)];
-    if (params.status && isIncentiveStatus(params.status)) {
-      conditions.push(eq(incentives.status, params.status));
+    if (status) {
+      conditions.push(eq(incentives.status, status));
+    }
+    if (position) {
+      conditions.push(
+        keysetBeforeId(incentives.createdAt, incentives.id, {
+          sortValue: position.createdAt,
+          id: String(position.id),
+        }),
+      );
     }
 
-    const [[countResult], rows] = await Promise.all([
-      this.db
-        .select({ count: sql<number>`count(*)` })
-        .from(incentives)
-        .where(and(...conditions)),
-      this.db
-        .select({
+    const rows = await this.db
+      .select({
           id: incentives.id,
           orgId: incentives.orgId,
           salesRepId: incentives.salesRepId,
@@ -58,19 +68,19 @@ export class IncentivesService {
           createdAt: incentives.createdAt,
           salesRepName: users.name,
           salesRepImage: users.image,
-        })
-        .from(incentives)
-        .innerJoin(users, eq(incentives.salesRepId, users.id))
-        .where(and(...conditions))
-        .orderBy(desc(incentives.createdAt))
-        .limit(limit)
-        .offset(offset),
-    ]);
+      })
+      .from(incentives)
+      .innerJoin(users, eq(incentives.salesRepId, users.id))
+      .where(and(...conditions))
+      .orderBy(desc(incentives.createdAt), desc(incentives.id))
+      .limit(limit + 1);
 
-    const total = Number(countResult?.count ?? 0);
+    const page = buildCursorPage(rows, limit, (row) =>
+      payrollCursorPosition(cursorScope, [row.createdAt.toISOString()], row.id),
+    );
 
     return {
-      incentives: rows.map((r) => ({
+      incentives: page.data.map((r) => ({
         id: r.id,
         orgId: r.orgId,
         salesRepId: r.salesRepId,
@@ -88,9 +98,7 @@ export class IncentivesService {
           image: r.salesRepImage,
         },
       })),
-      total,
-      page,
-      totalPages: Math.ceil(total / limit),
+      pagination: page.pagination,
     };
   }
 

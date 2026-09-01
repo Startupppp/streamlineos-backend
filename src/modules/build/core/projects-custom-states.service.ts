@@ -43,18 +43,18 @@ export class ProjectsCustomStatesService {
     if (perms.has("build:manage")) return;
     const project = await this.db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.orgId, u.orgId), isNull(projects.deletedAt)),
-      columns: { managerId: true, managerMembershipId: true },
+      columns: { managerMembershipId: true },
     });
     if (!project) throw new NotFoundException("Project not found");
     const callerMid = actingMembershipId(u.principal);
-    if ((callerMid !== null && project.managerMembershipId === callerMid) || project.managerId === u.userId) return;
+    if (callerMid !== null && project.managerMembershipId === callerMid) return;
     const membership = await this.db
       .select({ role: projectMembers.role })
       .from(projectMembers)
       .where(
         and(
           eq(projectMembers.projectId, projectId),
-          eq(projectMembers.userId, u.userId),
+          eq(projectMembers.membershipId, callerMid ?? -1),
         ),
       )
       .limit(1);
@@ -74,7 +74,8 @@ export class ProjectsCustomStatesService {
           eq(projectStatuses.orgId, orgId),
         ),
       )
-      .orderBy(projectStatuses.order);
+      .orderBy(projectStatuses.order)
+      .limit(100);
   }
 
   async createCustomState(
@@ -220,7 +221,8 @@ export class ProjectsCustomStatesService {
           eq(projectStatuses.orgId, orgId),
         ),
       )
-      .orderBy(projectStatuses.order);
+      .orderBy(projectStatuses.order)
+      .limit(100);
 
     const remaining = siblings.filter((s) => s.id !== stateId);
     if (remaining.length === 0) {

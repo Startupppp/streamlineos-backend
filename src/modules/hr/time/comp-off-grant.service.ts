@@ -47,7 +47,7 @@ export class CompOffGrantService {
     const maxAccrual = await this.resolveMaxAccrual(currentUser.orgId, input.userId);
     const result = await this.db.transaction(async (tx) => {
       const [target] = await tx
-        .select({ userId: organizationMembers.userId })
+        .select({ userId: organizationMembers.userId, membershipId: organizationMembers.id })
         .from(organizationMembers)
         .where(
           and(
@@ -97,7 +97,7 @@ export class CompOffGrantService {
         .where(
           and(
             eq(leaveBalances.orgId, currentUser.orgId),
-            eq(leaveBalances.userId, input.userId),
+            eq(leaveBalances.userMembershipId, target.membershipId),
             eq(leaveBalances.leaveTypeId, compOffType.id),
             eq(leaveBalances.year, new Date().getFullYear()),
           ),
@@ -119,6 +119,7 @@ export class CompOffGrantService {
         await tx.insert(leaveBalances).values({
           orgId: currentUser.orgId,
           userId: input.userId,
+          userMembershipId: target.membershipId,
           leaveTypeId: compOffType.id,
           balance: String(input.days),
           year: new Date().getFullYear(),

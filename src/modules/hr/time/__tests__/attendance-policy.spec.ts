@@ -3,6 +3,10 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { AttendancePolicyService } from "../attendance-policy.service";
 import { HrPolicyEvaluationService } from "../../policies/hr-policy-evaluation.service";
 
+jest.mock("../organization-membership", () => ({
+  requireOrganizationMembershipId: jest.fn().mockResolvedValue(1),
+}));
+
 const mockLimitFn = jest.fn().mockResolvedValue([]);
 const mockWhereFn = jest.fn().mockReturnThis();
 const mockSelectFn = jest.fn().mockReturnThis();

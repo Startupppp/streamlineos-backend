@@ -3,6 +3,10 @@ process.env.APP_URL ??= "http://localhost:1000";
 import { AttendanceClockService } from "./attendance-clock.service";
 import type { PreparedAttendanceCommand } from "./attendance-event-writer.service";
 
+jest.mock("./organization-membership", () => ({
+  requireOrganizationMembershipId: jest.fn().mockResolvedValue(1),
+}));
+
 function limitedQuery<Row>(rows: readonly Row[]) {
   const query = {
     from: jest.fn(),

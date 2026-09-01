@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   Controller,
   HttpCode,
   HttpStatus,
   Param,
   ParseIntPipe,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -43,7 +45,11 @@ export class KbPageIndexingController {
   @HttpCode(HttpStatus.OK)
   async reindexAllPages(
     @CurrentUser() user: CurrentUserContext,
-  ): Promise<{ reindexed: number }> {
-    return this.indexing.reindexAllPages(user.orgId);
+    @Query("afterPageId") afterPageId?: string,
+  ): Promise<{ reindexed: number; nextPageId: number | null }> {
+    const cursor = afterPageId === undefined ? 0 : Number(afterPageId);
+    if (!Number.isSafeInteger(cursor) || cursor < 0)
+      throw new BadRequestException("afterPageId must be a non-negative integer");
+    return this.indexing.reindexAllPages(user.orgId, cursor);
   }
 }

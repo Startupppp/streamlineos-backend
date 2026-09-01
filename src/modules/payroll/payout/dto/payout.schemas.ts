@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const payslipConfigSchema = z.object({
   accent: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional().default("#0f2b7f"),
@@ -94,7 +94,7 @@ export const publishSchema = z.object({
 export type PublishInput = z.infer<typeof publishSchema>;
 
 export const listPayslipTemplatesQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().trim().min(1).max(2048).optional(),
   limit: pageSizeField(50, 100),
 });
 export type ListPayslipTemplatesQuery = z.infer<typeof listPayslipTemplatesQuerySchema>;

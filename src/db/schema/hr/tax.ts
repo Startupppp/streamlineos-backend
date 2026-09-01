@@ -4,7 +4,8 @@ import { organizations, users } from "../common/auth";
 export const taxDeclarations = pgTable("tax_declarations", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   financialYear: text("financial_year").notNull(),
   regime: text("regime").default("NEW").notNull(),
   hra: decimal("hra", { precision: 15, scale: 2 }).default("0").notNull(),

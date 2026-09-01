@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, isNotNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
 import {
   hrEmployments,
   hrPeople,
@@ -68,10 +68,8 @@ export class ExitService {
     const offset = (params.page - 1) * limit;
     const conditions = [eq(resignations.orgId, orgId)];
     if (!isAdmin) {
-      const ownerPredicate =
-        membershipId != null
-          ? or(eq(resignations.userMembershipId, membershipId), eq(resignations.userId, userId))!
-          : eq(resignations.userId, userId);
+      if (membershipId == null) throw new ForbiddenException("Organization membership required.");
+      const ownerPredicate = eq(resignations.userMembershipId, membershipId);
       conditions.push(ownerPredicate);
     }
     if (params.status) conditions.push(eq(resignations.status, params.status));
@@ -114,7 +112,7 @@ export class ExitService {
     };
   }
 
-  async getDetail(orgId: string, userId: string, isAdmin: boolean, resignationId: number) {
+  async getDetail(orgId: string, userId: string, isAdmin: boolean, resignationId: number, membershipId?: number | null) {
     const data = await this.db.query.resignations.findFirst({
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
       with: {
@@ -126,7 +124,7 @@ export class ExitService {
     });
     if (!data) throw new NotFoundException("Resignation not found.");
 
-    if (!isAdmin && data.userId !== userId) {
+    if (!isAdmin && (membershipId == null || data.userMembershipId !== membershipId)) {
       throw new ForbiddenException("Forbidden");
     }
 
@@ -146,15 +144,16 @@ export class ExitService {
     userId: string,
     isAdmin: boolean,
     resignationId: number,
+    membershipId?: number | null,
   ): Promise<{ id: number; fileUrl: string }> {
     const record = await this.db.query.resignations.findFirst({
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
-      columns: { id: true, userId: true, resignationLetterUrl: true },
+      columns: { id: true, userMembershipId: true, resignationLetterUrl: true },
     });
     if (!record?.resignationLetterUrl) {
       throw new NotFoundException("Resignation letter not found.");
     }
-    if (!isAdmin && record.userId !== userId) {
+    if (!isAdmin && (membershipId == null || record.userMembershipId !== membershipId)) {
       throw new ForbiddenException("Forbidden");
     }
     return { id: record.id, fileUrl: record.resignationLetterUrl };
@@ -211,14 +210,14 @@ export class ExitService {
     return "pending";
   }
 
-  async getLetter(orgId: string, userId: string, isAdmin: boolean, resignationId: number) {
+  async getLetter(orgId: string, userId: string, isAdmin: boolean, resignationId: number, membershipId?: number | null) {
     const resignation = await this.db.query.resignations.findFirst({
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
       with: { user: { columns: { id: true, name: true } } },
     });
     if (!resignation) throw new NotFoundException("Resignation not found.");
 
-    if (!isAdmin && resignation.userId !== userId) {
+    if (!isAdmin && (membershipId == null || resignation.userMembershipId !== membershipId)) {
       throw new ForbiddenException("Forbidden");
     }
 
@@ -243,7 +242,7 @@ export class ExitService {
     return { html: letterHtml };
   }
 
-  async getProgress(orgId: string, userId: string, isAdmin: boolean, resignationId: number) {
+  async getProgress(orgId: string, userId: string, isAdmin: boolean, resignationId: number, membershipId?: number | null) {
     const record = await this.db.query.resignations.findFirst({
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
       with: {
@@ -253,7 +252,7 @@ export class ExitService {
     });
     if (!record) throw new NotFoundException("Not found.");
 
-    if (!isAdmin && record.userId !== userId) {
+    if (!isAdmin && (membershipId == null || record.userMembershipId !== membershipId)) {
       throw new ForbiddenException("Access denied.");
     }
 
@@ -317,13 +316,13 @@ export class ExitService {
     };
   }
 
-  async withdraw(orgId: string, userId: string, isAdmin: boolean, resignationId: number) {
+  async withdraw(orgId: string, userId: string, isAdmin: boolean, resignationId: number, membershipId?: number | null) {
     const record = await this.db.query.resignations.findFirst({
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
     });
     if (!record) throw new NotFoundException("Resignation not found.");
 
-    if (!isAdmin && record.userId !== userId) {
+    if (!isAdmin && (membershipId == null || record.userMembershipId !== membershipId)) {
       throw new ForbiddenException("You can only withdraw your own resignation.");
     }
 

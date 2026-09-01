@@ -81,6 +81,7 @@ export class EntitlementsService implements OnModuleInit {
       const rows = await this.db.query.modulesCatalog.findMany({
         where: eq(modulesCatalog.isCore, true),
         columns: { moduleKey: true },
+        limit: 100,
       });
       const declared = new Set(coreModuleIds());
       const stored = new Set(rows.map((r) => r.moduleKey));
@@ -132,6 +133,7 @@ export class EntitlementsService implements OnModuleInit {
               () =>
                 this.db.query.orgModules.findMany({
                   where: eq(orgModules.orgId, orgId),
+                  limit: 100,
                 }),
               [],
             );
@@ -283,7 +285,8 @@ export class EntitlementsService implements OnModuleInit {
       return tx
         .select({ userId: organizationMembers.userId })
         .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")));
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE")))
+        .limit(10000);
     }, { orgId });
 
     this.moduleMapCache.delete(orgId);

@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException, BadRequestException } from "@nestjs/common";
-import { and, count, desc, eq, lte, sql } from "drizzle-orm";
+import { and, desc, eq, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -100,23 +100,23 @@ export class EquityService {
     if (userId) conditions.push(eq(hrEquityGrants.userId, userId));
     if (status) conditions.push(eq(hrEquityGrants.status, status));
     if (grantType) conditions.push(eq(hrEquityGrants.grantType, grantType));
-    const baseWhere = and(...conditions);
     const position = decodeCursor(cursor);
-    const where = and(
-      baseWhere,
-      position ? keysetBeforeId(hrEquityGrants.createdAt, hrEquityGrants.id, position) : undefined,
-    );
+    if (cursor !== undefined && !position)
+      throw new BadRequestException("Invalid pagination cursor");
+    if (position)
+      conditions.push(keysetBeforeId(hrEquityGrants.createdAt, hrEquityGrants.id, position));
 
-    const [data, totalResult] = await Promise.all([
-      this.db.select().from(hrEquityGrants).where(where).orderBy(desc(hrEquityGrants.createdAt), desc(hrEquityGrants.id)).limit(limit + 1),
-      this.db.select({ total: count() }).from(hrEquityGrants).where(baseWhere),
-    ]);
-    const total = totalResult[0]?.total ?? 0;
-    const page = buildCursorPage(data, limit, (grant) => ({
+    const rows = await this.db
+      .select()
+      .from(hrEquityGrants)
+      .where(and(...conditions))
+      .orderBy(desc(hrEquityGrants.createdAt), desc(hrEquityGrants.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (grant) => ({
       sortValue: grant.createdAt.toISOString(),
       id: String(grant.id),
     }));
-    return { data: page.data, total, pagination: page.pagination };
   }
 
   async getGrant(orgId: string, grantId: number) {

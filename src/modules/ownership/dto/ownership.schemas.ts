@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 
 export const setModuleOwnerSchema = z.object({
   ownerMembershipId: z.number().int().positive(),
@@ -24,7 +24,7 @@ export const declineTransferSchema = z.object({
 export const listTransfersSchema = z.object({
   scope: z.enum(["ORGANIZATION", "MODULE"]).optional(),
   status: z.enum(["PENDING", "ACCEPTED", "DECLINED", "CANCELLED", "EXPIRED"]).optional(),
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
 });
 

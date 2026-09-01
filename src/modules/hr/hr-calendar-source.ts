@@ -24,6 +24,7 @@ import type {
 } from "../calendar/calendar-event-source";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
 import { WEEKDAY_NAMES, dateOnly, dateAtNoon, enumerateDates, loadAttendanceOnly } from "./hr-calendar-sub-sources";
+import { findActiveHrCalendarMembership } from "./hr-calendar-membership";
 
 @Injectable()
 export class HrCalendarSource implements CalendarEventSource {
@@ -47,14 +48,7 @@ export class HrCalendarSource implements CalendarEventSource {
   }
 
   private async loadLeaves(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
-    const membership = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, ctx.orgId),
-        eq(organizationMembers.userId, ctx.userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-      columns: { id: true },
-    });
+    const membership = await findActiveHrCalendarMembership(this.db, ctx.orgId, ctx.userId);
     if (!membership) return [];
     const rows = await this.db
       .select({
@@ -93,14 +87,7 @@ export class HrCalendarSource implements CalendarEventSource {
   }
 
   private async loadInterviews(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
-    const membership = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, ctx.orgId),
-        eq(organizationMembers.userId, ctx.userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-      columns: { id: true },
-    });
+    const membership = await findActiveHrCalendarMembership(this.db, ctx.orgId, ctx.userId);
     if (!membership) return [];
     const rows = await this.db
       .select({
@@ -151,14 +138,7 @@ export class HrCalendarSource implements CalendarEventSource {
     const { orgId, userId, start, end } = ctx;
     const startStr = dateOnly(start);
     const endStr = dateOnly(end);
-    const membership = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-      columns: { id: true },
-    });
+    const membership = await findActiveHrCalendarMembership(this.db, orgId, userId);
     if (!membership) return [];
     const policyDate = dateOnly(end.getTime() < Date.now() ? end : new Date());
 

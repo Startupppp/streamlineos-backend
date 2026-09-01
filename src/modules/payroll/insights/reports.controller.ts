@@ -30,8 +30,8 @@ function setCsvHeaders(res: Response, name: string): void {
   res.setHeader("Content-Disposition", `attachment; filename="${name}.csv"`);
 }
 
-function pagination(q: ReportsQuery): { limit: number; offset: number } {
-  return { limit: q.limit ?? 100, offset: q.offset ?? 0 };
+function pagination(q: ReportsQuery): { limit: number; cursor?: string } {
+  return { limit: q.limit ?? 100, cursor: q.cursor };
 }
 
 @RequireModule("payroll")

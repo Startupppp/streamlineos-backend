@@ -13,6 +13,7 @@ import {
 import type { PayrollProfileSubject } from "./payroll-subject";
 import type { EmploymentFactsService } from "../../directory/employment-facts.service";
 import type { BankDetails } from "../../directory/employment-facts.types";
+import { PAYROLL_READ_CAP } from "./query-bounds";
 
 export type { PayrollProfileSubject };
 
@@ -78,7 +79,8 @@ export async function loadRunEmployeePayees(
         eq(organizationPeople.organizationId, workers.organizationId),
       ),
     )
-    .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+    .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
+    .limit(PAYROLL_READ_CAP + 1);
 
   const userIds = [
     ...new Set(

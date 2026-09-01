@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   moduleOwnerships,
   organizationMembers,
@@ -33,6 +33,8 @@ import type {
 } from "./dto/ownership.schemas";
 import { canTransferModuleOwnership } from "../module-access/module-standing";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetBeforeUuid } from "../../common/pagination/keyset";
 
 @Injectable()
 export class OwnershipTransfersService {
@@ -300,7 +302,7 @@ export class OwnershipTransfersService {
 
   async listTransfers(orgId: string, filters: ListTransfersInput) {
     const hash = stableHash({
-      page: filters.page,
+      cursor: filters.cursor ?? null,
       limit: filters.limit,
       scope: filters.scope ?? null,
       status: filters.status ?? null,
@@ -315,16 +317,17 @@ export class OwnershipTransfersService {
   }
 
   private async fetchTransfers(orgId: string, filters: ListTransfersInput) {
-    const offset = (filters.page - 1) * filters.limit;
-
     const conditions = [eq(ownershipTransfers.orgId, orgId)];
     if (filters.scope)
       conditions.push(eq(ownershipTransfers.scope, filters.scope));
     if (filters.status)
       conditions.push(eq(ownershipTransfers.status, filters.status));
+    const position = decodeCursor(filters.cursor);
+    if (position) {
+      conditions.push(keysetBeforeUuid(ownershipTransfers.initiatedAt, ownershipTransfers.id, position));
+    }
 
-    const [rows, countResult] = await Promise.all([
-      this.db
+    const rows = await this.db
         .select({
           id: ownershipTransfers.id,
           scope: ownershipTransfers.scope,
@@ -340,26 +343,13 @@ export class OwnershipTransfersService {
         })
         .from(ownershipTransfers)
         .where(and(...conditions))
-        .orderBy(desc(ownershipTransfers.initiatedAt))
-        .limit(filters.limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(ownershipTransfers)
-        .where(and(...conditions)),
-    ]);
+        .orderBy(desc(ownershipTransfers.initiatedAt), desc(ownershipTransfers.id))
+        .limit(filters.limit + 1);
 
-    const total = countResult[0]?.total ?? 0;
-
-    return {
-      data: rows,
-      pagination: {
-        page: filters.page,
-        limit: filters.limit,
-        total,
-        totalPages: Math.ceil(total / filters.limit),
-      },
-    };
+    return buildCursorPage(rows, filters.limit, (row) => ({
+      sortValue: row.initiatedAt.toISOString(),
+      id: row.id,
+    }));
   }
 
   async listIncomingTransfers(orgId: string, userId: string) {

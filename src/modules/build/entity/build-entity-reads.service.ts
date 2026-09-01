@@ -1,6 +1,7 @@
-import { and, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import {
   projectIncidents,
+  organizationMembers,
   projectMembers,
   projectReleases,
   projects,
@@ -121,7 +122,7 @@ export class BuildEntityReadsService {
       .where(
         and(
           eq(projectMembers.orgId, orgId),
-          eq(projectMembers.userId, userId),
+          sql`(${projectMembers.membershipId} = (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId} AND status = 'ACTIVE'))`,
           inArray(projectMembers.projectId, projectIds),
         ),
       );
@@ -134,7 +135,7 @@ export class BuildEntityReadsService {
   ): Promise<EntityOption[]> {
     const rows = await this.db
       .select({
-        userId: projectMembers.userId,
+        userId: organizationMembers.userId,
         name: users.name,
         firstName: users.firstName,
         lastName: users.lastName,
@@ -142,7 +143,8 @@ export class BuildEntityReadsService {
         image: users.image,
       })
       .from(projectMembers)
-      .innerJoin(users, eq(users.id, projectMembers.userId))
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(
         and(
           eq(projectMembers.orgId, actor.orgId),
@@ -245,13 +247,13 @@ export class BuildEntityReadsService {
         .where(
           and(
             eq(ticketAssignees.orgId, orgId),
-            eq(ticketAssignees.userId, userId),
+            eq(ticketAssignees.membershipId, actor.membershipId ?? -1),
             inArray(ticketAssignees.ticketId, ids),
           ),
         );
       const assignedIds = assigned.map((row) => row.ticketId);
       const reachable = or(
-        eq(tickets.assigneeId, userId),
+        sql`${tickets.assigneeMembershipId} = ${actor.membershipId ?? -1}`,
         eq(tickets.reporterId, userId),
         ...(assignedIds.length > 0 ? [inArray(tickets.id, assignedIds)] : []),
       );

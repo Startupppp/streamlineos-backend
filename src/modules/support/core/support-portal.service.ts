@@ -95,7 +95,7 @@ export class SupportPortalService {
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const ticket = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-      columns: { id: true, createdBy: true, createdByMembershipId: true },
+      columns: { id: true, createdByMembershipId: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
     const isOwner = ticket.createdByMembershipId === membershipId;

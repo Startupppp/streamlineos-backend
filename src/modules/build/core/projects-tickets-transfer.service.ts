@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, or, sql } from "drizzle-orm";
 import {
   projectMembers,
+  organizationMembers,
   projects,
   projectStatuses,
   ticketAssignees,
@@ -45,9 +46,9 @@ export class ProjectsTicketsTransferService {
     const scopeClause =
       scope !== "all"
         ? or(
-            eq(tickets.assigneeId, u.userId),
+            sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${u.userId} AND status = 'ACTIVE')`,
             eq(tickets.reporterId, u.userId),
-            sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta WHERE ta.org_id = ${u.orgId} AND ta.user_id = ${u.userId} AND ta.ticket_id = ${tickets.id})`,
+            sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id WHERE ta.org_id = ${u.orgId} AND om.user_id = ${u.userId} AND ta.ticket_id = ${tickets.id})`,
           )
         : undefined;
 
@@ -66,7 +67,8 @@ export class ProjectsTicketsTransferService {
         assigneeEmail: users.email,
       })
       .from(tickets)
-      .leftJoin(users, eq(tickets.assigneeId, users.id))
+      .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+      .leftJoin(users, eq(organizationMembers.userId, users.id))
       .where(
         and(
           eq(tickets.orgId, u.orgId),
@@ -110,9 +112,10 @@ export class ProjectsTicketsTransferService {
         .from(projectStatuses)
         .where(and(eq(projectStatuses.orgId, u.orgId), eq(projectStatuses.projectId, projectId))),
       this.db
-        .select({ userId: projectMembers.userId, email: users.email })
+        .select({ userId: organizationMembers.userId, email: users.email })
         .from(projectMembers)
-        .innerJoin(users, eq(projectMembers.userId, users.id))
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
         .where(eq(projectMembers.projectId, projectId)),
     ]);
 
@@ -151,7 +154,9 @@ export class ProjectsTicketsTransferService {
         status: row.status ?? defaultStatus,
         priority: row.priority ?? "MEDIUM",
         points: row.points ?? undefined,
-        assigneeId,
+        assigneeMembershipId: assigneeId
+          ? (await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, assigneeId), eq(organizationMembers.status, "ACTIVE")), columns: { id: true } }))?.id ?? null
+          : null,
         dueDate: row.dueDate ?? undefined,
         reporterId: u.userId,
         rowIndex: i + 1,

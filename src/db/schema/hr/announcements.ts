@@ -37,11 +37,14 @@ export const announcementTargets = pgTable("announcement_targets", {
 
 export const announcementReads = pgTable("announcement_reads", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id"),
   announcementId: integer("announcement_id").references(() => announcements.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   readAt: timestamp("read_at").defaultNow().notNull(),
 }, (table) => [
   uniqueIndex("idx_announcement_reads_unique").on(table.announcementId, table.userId),
   index("idx_announcement_reads_announcement").on(table.announcementId),
   index("idx_announcement_reads_user").on(table.userId),
+  index("idx_announcement_reads_org_user").on(table.orgId, table.userId),
 ]);

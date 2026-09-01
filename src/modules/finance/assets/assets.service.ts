@@ -78,7 +78,8 @@ export class AssetsService {
       .select()
       .from(accDepreciationSchedules)
       .where(and(eq(accDepreciationSchedules.assetId, assetId), eq(accDepreciationSchedules.orgId, orgId)))
-      .orderBy(accDepreciationSchedules.periodKey);
+      .orderBy(accDepreciationSchedules.periodKey)
+      .limit(1200);
 
     return { ...row, schedules };
   }

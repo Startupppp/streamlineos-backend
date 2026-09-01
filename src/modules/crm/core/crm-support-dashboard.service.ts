@@ -125,15 +125,22 @@ export class CrmSupportDashboardService {
         .limit(8),
 
       this.db
-        .select({ assigneeId: supportTickets.assigneeId, cnt: count() })
+        .select({ assigneeId: organizationMembers.userId, cnt: count() })
         .from(supportTickets)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.orgId, supportTickets.orgId),
+            eq(organizationMembers.id, supportTickets.assigneeMembershipId),
+          ),
+        )
         .where(
           and(
             eq(supportTickets.orgId, orgId),
-            isNotNull(supportTickets.assigneeId),
+            isNotNull(supportTickets.assigneeMembershipId),
           ),
         )
-        .groupBy(supportTickets.assigneeId)
+        .groupBy(organizationMembers.userId)
         .orderBy(desc(count()))
         .limit(10),
 

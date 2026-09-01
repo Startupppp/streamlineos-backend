@@ -18,11 +18,12 @@ function buildMockDb(ownerMembershipId: number | null = 42, mockRoleId: number |
   const findFirst = jest.fn();
   const findMany = jest.fn().mockResolvedValue([]);
   const orgFindFirst = jest.fn();
+  const activeMemberRows = [{ userId: "member-1" }, { userId: "member-2" }];
 
   const limit = jest.fn()
     .mockResolvedValueOnce(ownerMembershipId !== null ? [{ ownerMembershipId }] : [])
-    .mockResolvedValue(mockRoleId !== null ? [{ id: mockRoleId }] : []);
-  const activeMemberRows = [{ userId: "member-1" }, { userId: "member-2" }];
+    .mockResolvedValueOnce(mockRoleId !== null ? [{ id: mockRoleId }] : [])
+    .mockResolvedValue(activeMemberRows);
   const txWhere = jest.fn().mockReturnValue({
     limit,
     then: (resolve: (rows: { userId: string }[]) => unknown) => resolve(activeMemberRows),

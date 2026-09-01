@@ -17,6 +17,7 @@ import {
   type CreateTemplateInput,
   type RenderTemplateInput,
   type TemplateListQuery,
+  type TemplateRendersQuery,
   type UpdateTemplateInput,
 } from "./dto/hr-templates.schemas";
 import { TEMPLATE_VARIABLES } from "./hr-template-variables";
@@ -249,17 +250,42 @@ export class HrTemplatesService {
     return { outputHtml, renderedSubject, renderId: renderRow?.id, templateVersion: template.version };
   }
 
-  async listRenders(orgId: string, templateId: number, page = 1, limit = 50) {
+  async listRenders(
+    orgId: string,
+    templateId: number,
+    query: TemplateRendersQuery,
+  ) {
     await this.getById(orgId, templateId);
-    const safeLimit = Math.min(limit, 100);
-    const offset = (page - 1) * safeLimit;
-    return this.db
+    const position = decodeCursor(query.cursor);
+    if (query.cursor !== undefined && !position) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
+
+    const conditions = [
+      eq(hrTemplateRenders.orgId, orgId),
+      eq(hrTemplateRenders.templateId, templateId),
+    ];
+    if (position) {
+      conditions.push(
+        keysetBeforeId(
+          hrTemplateRenders.createdAt,
+          hrTemplateRenders.id,
+          position,
+        ),
+      );
+    }
+
+    const rows = await this.db
       .select()
       .from(hrTemplateRenders)
-      .where(and(eq(hrTemplateRenders.orgId, orgId), eq(hrTemplateRenders.templateId, templateId)))
-      .orderBy(desc(hrTemplateRenders.createdAt))
-      .limit(safeLimit)
-      .offset(offset);
+      .where(and(...conditions))
+      .orderBy(desc(hrTemplateRenders.createdAt), desc(hrTemplateRenders.id))
+      .limit(query.limit + 1);
+
+    return buildCursorPage(rows, query.limit, (render) => ({
+      sortValue: render.createdAt.toISOString(),
+      id: String(render.id),
+    }));
   }
 
   async seedDefaults(orgId: string, userId: string) {

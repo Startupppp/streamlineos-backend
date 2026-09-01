@@ -116,19 +116,23 @@ export const attendanceAnalyticsQuerySchema = z.object({
   month: z.coerce.number().int().optional(),
 });
 
-export const listOnboardingDocsQuerySchema = z.object({
-  userId: z.string().optional(),
-  status: z.enum(["PENDING", "SUBMITTED", "APPROVED", "REJECTED", "RE_UPLOAD_REQUESTED"]).optional(),
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
-});
+export const listOnboardingDocsQuerySchema = z
+  .object({
+    userId: z.string().optional(),
+    status: z.enum(["PENDING", "SUBMITTED", "APPROVED", "REJECTED", "RE_UPLOAD_REQUESTED"]).optional(),
+    cursor: z.string().trim().min(1).max(2048).optional(),
+    limit: pageSizeField(20, 100),
+  })
+  .strict();
 
-export const onboardingDocsSummaryQuerySchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
-  status: z.enum(["PENDING", "IN_PROGRESS", "SUBMITTED", "APPROVED"]).optional(),
-  search: z.string().max(200).optional(),
-});
+export const onboardingDocsSummaryQuerySchema = z
+  .object({
+    cursor: z.string().trim().min(1).max(2048).optional(),
+    limit: pageSizeField(20, 100),
+    status: z.enum(["PENDING", "IN_PROGRESS", "SUBMITTED", "APPROVED"]).optional(),
+    search: z.string().max(200).optional(),
+  })
+  .strict();
 
 const onboardingFileReferenceSchema = z
   .string()

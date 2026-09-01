@@ -57,7 +57,7 @@ export class HrWorkflowDelegationsController {
     @Param("delegationId", ParseIntPipe) delegationId: number,
     @Body() body: UpdateDelegationDto,
   ) {
-    return this.delegationsService.update(u.orgId, u.userId, delegationId, body);
+    return this.delegationsService.update(u, delegationId, body);
   }
 
   @Delete(":delegationId")
@@ -69,6 +69,6 @@ export class HrWorkflowDelegationsController {
     @CurrentUser() u: CurrentUserContext,
     @Param("delegationId", ParseIntPipe) delegationId: number,
   ) {
-    return this.delegationsService.remove(u.orgId, u.userId, delegationId);
+    return this.delegationsService.remove(u, delegationId);
   }
 }

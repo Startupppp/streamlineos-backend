@@ -19,6 +19,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { leaveApprovalScope, resolveLeavesViewScope } from "./leaves-scope";
 import type { DataScope } from "../../access/access.types";
 import { LeaveLedgerService } from "./leave-ledger.service";
+import { requireOrganizationMembershipId } from "./organization-membership";
 
 const TEAM_LEAVES_CAP = 500;
 
@@ -55,10 +56,11 @@ export class LeavesService {
     private readonly employment: EmploymentFactsService,
   ) {}
 
-  balance(orgId: string, userId: string) {
+  async balance(orgId: string, userId: string) {
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
     return this.db.query.leaveBalances.findMany({
       where: and(
-        eq(leaveBalances.userId, userId),
+        eq(leaveBalances.userMembershipId, userMembershipId),
         eq(leaveBalances.orgId, orgId),
         eq(leaveBalances.year, new Date().getFullYear()),
       ),
@@ -71,9 +73,10 @@ export class LeavesService {
     userId: string,
     query: { cursor?: number; limit: number },
   ) {
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
     const rows = await this.db.query.leaveRequests.findMany({
       where: and(
-        eq(leaveRequests.userId, userId),
+        eq(leaveRequests.userMembershipId, userMembershipId),
         eq(leaveRequests.orgId, orgId),
         query.cursor ? lt(leaveRequests.id, query.cursor) : undefined,
       ),
@@ -106,11 +109,12 @@ export class LeavesService {
 
     const orgId = u.orgId;
     const userId = u.userId;
+    const userMembershipId = await requireOrganizationMembershipId(this.db, orgId, userId);
     const isAll = scope === "all";
 
     const baseConditions: SQL[] = isAll
       ? [eq(leaveRequests.orgId, orgId)]
-      : [eq(leaveRequests.orgId, orgId), eq(leaveRequests.approverId, userId)];
+      : [eq(leaveRequests.orgId, orgId), eq(leaveRequests.approverMembershipId, userMembershipId)];
 
     const pendingConditions: SQL[] = [...baseConditions, eq(leaveRequests.status, "PENDING")];
 
@@ -143,13 +147,22 @@ export class LeavesService {
     const reportingUserIds = await this.employment.getDirectReportUserIds(orgId, userId);
 
     if (reportingUserIds.length === 0) return base;
+    const reporteeMemberships = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.status, "ACTIVE"),
+        inArray(organizationMembers.userId, reportingUserIds),
+      ));
+    if (reporteeMemberships.length === 0) return base;
     const alreadyFetchedIds = new Set(base.map((r) => r.id));
 
     const reporteeRequests = await this.db.query.leaveRequests.findMany({
       where: and(
         eq(leaveRequests.orgId, orgId),
         eq(leaveRequests.status, "PENDING"),
-        inArray(leaveRequests.userId, reportingUserIds),
+        inArray(leaveRequests.userMembershipId, reporteeMemberships.map((member) => member.id)),
       ),
       with: TEAM_RELATIONS,
       orderBy: [desc(leaveRequests.createdAt)],
@@ -213,23 +226,24 @@ export class LeavesService {
     const scope = await resolveLeavesViewScope(this.access, u);
     if (scope === "none") throw new ForbiddenException("Forbidden");
 
+    const actorMembershipId = await requireOrganizationMembershipId(this.db, u.orgId, u.userId);
     return this.cache.cachedVersioned(
       CACHE_KEYS.leaveAnalyticsNamespace(u.orgId),
-      scope === "all" ? `${scope}:${year}` : `${scope}:${u.userId}:${year}`,
-      () => this.queryAnalytics(u.orgId, u.userId, scope, year),
+      scope === "all" ? `${scope}:${year}` : `${scope}:${actorMembershipId}:${year}`,
+      () => this.queryAnalytics(u.orgId, actorMembershipId, scope, year),
       CACHE_TTL.MEDIUM,
     );
   }
 
   private async queryAnalytics(
     orgId: string,
-    actorUserId: string,
+    actorMembershipId: number,
     scope: DataScope,
     year: number,
   ) {
     const yearStart = `${year}-01-01`;
     const yearEnd = `${year}-12-31`;
-    const visible = leaveApprovalScope(scope, orgId, actorUserId);
+    const visible = leaveApprovalScope(scope, actorMembershipId);
 
     const [byDept, monthly, byType, deptAvgDays] = await Promise.all([
       this.db
@@ -241,7 +255,7 @@ export class LeavesService {
           rejected: sql<number>`SUM(CASE WHEN ${leaveRequests.status} = 'REJECTED' THEN 1 ELSE 0 END)`.mapWith(Number),
         })
         .from(leaveRequests)
-        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, leaveRequests.orgId), eq(organizationMembers.userId, leaveRequests.userId)))
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, leaveRequests.orgId), eq(organizationMembers.id, leaveRequests.userMembershipId)))
         .innerJoin(orgUnitMembers, eq(orgUnitMembers.membershipId, organizationMembers.id))
         .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
         .where(
@@ -303,7 +317,7 @@ export class LeavesService {
           ), 1)`.mapWith(Number),
         })
         .from(leaveRequests)
-        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, leaveRequests.orgId), eq(organizationMembers.userId, leaveRequests.userId)))
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, leaveRequests.orgId), eq(organizationMembers.id, leaveRequests.userMembershipId)))
         .innerJoin(orgUnitMembers, eq(orgUnitMembers.membershipId, organizationMembers.id))
         .innerJoin(orgUnits, eq(orgUnits.id, orgUnitMembers.orgUnitId))
         .where(

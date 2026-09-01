@@ -11,33 +11,34 @@ describe("leaveApprovalScope, the predicate leave analytics must apply", () => {
   const cases: DataScope[] = ["all", "team", "own", "none"];
 
   it.each(cases)("renders a predicate for %s", (scope) => {
-    expect(render(leaveApprovalScope(scope, "org-1", "u-1"))).toBeTruthy();
+    expect(render(leaveApprovalScope(scope, 1))).toBeTruthy();
   });
 
   it("does not narrow an all-scoped approver", () => {
-    expect(render(leaveApprovalScope("all", "org-1", "u-1"))).toBe("true");
+    expect(render(leaveApprovalScope("all", 1))).toBe("true");
   });
 
   it("denies a none-scoped caller in SQL, not only at the guard", () => {
-    expect(render(leaveApprovalScope("none", "org-1", "u-1"))).toBe("false");
+    expect(render(leaveApprovalScope("none", 1))).toBe("false");
   });
 
   it("narrows an own-scoped approver to requests they approve", () => {
-    const rendered = render(leaveApprovalScope("own", "org-1", "u-1"));
-    expect(rendered).toContain("approver_id");
+    const rendered = render(leaveApprovalScope("own", 1));
+    expect(rendered).toContain("approver_membership_id");
+    expect(rendered).not.toContain('"approver_id"');
     expect(rendered).not.toBe("true");
   });
 
   it("narrows a team-scoped approver, and still requires them as approver", () => {
-    const rendered = render(leaveApprovalScope("team", "org-1", "u-1"));
-    expect(rendered).toContain("approver_id");
+    const rendered = render(leaveApprovalScope("team", 1));
+    expect(rendered).toContain("approver_membership_id");
     expect(rendered).not.toBe("true");
   });
 
   // The bug was not a missing predicate, it was a predicate that never reached the query
   it("distinguishes own from all, which is the whole defect", () => {
-    expect(render(leaveApprovalScope("own", "org-1", "u-1"))).not.toBe(
-      render(leaveApprovalScope("all", "org-1", "u-1")),
+    expect(render(leaveApprovalScope("own", 1))).not.toBe(
+      render(leaveApprovalScope("all", 1)),
     );
   });
 });

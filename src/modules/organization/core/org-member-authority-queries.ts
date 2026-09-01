@@ -17,6 +17,7 @@ export async function queryOwnedModuleKeys(
         eq(moduleOwnerships.ownerMembershipId, membershipId),
       ),
     )
+    .limit(100)
     .for("update");
   return rows.map((r) => r.moduleKey);
 }
@@ -42,6 +43,7 @@ export async function queryPrivilegedRoleNames(
         eq(roleAssignments.organizationMembershipId, membershipId),
         lte(roles.rank, ROLE_RANK.MODULE_ADMIN),
       ),
-    );
+    )
+    .limit(100);
   return rows.map((r) => r.name);
 }

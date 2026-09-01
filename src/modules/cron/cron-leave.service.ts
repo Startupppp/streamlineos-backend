@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gt, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, lte, sql } from "drizzle-orm";
 import {
   leaveBalances,
   leaveRequests,
@@ -23,6 +23,7 @@ function buildPeriodLabel(year: number, month: number): string {
 }
 
 const ACCRUAL_BATCH_SIZE = 500;
+const POLICY_LIMIT = 100;
 
 @Injectable()
 export class CronLeaveService {
@@ -95,109 +96,105 @@ export class CronLeaveService {
           eq(leavePolicies.accrualType, "MONTHLY"),
           eq(leavePolicies.isActive, true),
         ),
-      );
+      )
+      .limit(POLICY_LIMIT);
 
     if (monthlyPolicies.length === 0) return { accruedCount: 0 };
 
     const leaveTypeIds = monthlyPolicies.map((p) => p.leaveTypeId);
 
-    const activeMembers = await this.db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)));
-
-    if (activeMembers.length === 0) return { accruedCount: 0 };
-
-    const existingLedgerEntries = await this.db
-      .select({
-        userId: hrLeaveLedger.userId,
-        leaveTypeId: hrLeaveLedger.leaveTypeId,
-      })
-      .from(hrLeaveLedger)
-      .where(
-        and(
-          eq(hrLeaveLedger.orgId, orgId),
-          inArray(hrLeaveLedger.leaveTypeId, leaveTypeIds),
-          eq(hrLeaveLedger.txnType, "accrual"),
-          eq(hrLeaveLedger.period, periodLabel),
-          eq(hrLeaveLedger.source, "cron"),
-        ),
-      );
-
-    const alreadyAccruedSet = new Set(
-      existingLedgerEntries.map((e) => `${e.userId}:${e.leaveTypeId}`),
-    );
-
-    const existingBalances = await this.db
-      .select({
-        userId: leaveBalances.userId,
-        leaveTypeId: leaveBalances.leaveTypeId,
-        balance: leaveBalances.balance,
-      })
-      .from(leaveBalances)
-      .where(
-        and(
-          eq(leaveBalances.orgId, orgId),
-          inArray(leaveBalances.leaveTypeId, leaveTypeIds),
-          eq(leaveBalances.year, year),
-        ),
-      );
-
-    const balanceMap = new Map(
-      existingBalances.map((b) => [`${b.userId}:${b.leaveTypeId}`, Number(b.balance)]),
-    );
-
-    type AccrualCandidate = {
-      userId: string;
-      leaveTypeId: number;
-      rate: number;
-      maxBalance: number | null;
-      newBalance: number;
-      granted: number;
-      hasExistingBalance: boolean;
-    };
-
-    const candidates: AccrualCandidate[] = [];
-
-    for (const policy of monthlyPolicies) {
-      const rate = Number(policy.accrualRate);
-      if (!Number.isFinite(rate) || rate <= 0) continue;
-      const maxBalance =
-        policy.maxBalance !== null && Number.isFinite(Number(policy.maxBalance))
-          ? Number(policy.maxBalance)
-          : null;
-
-      for (const member of activeMembers) {
-        const key = `${member.userId}:${policy.leaveTypeId}`;
-        if (alreadyAccruedSet.has(key)) continue;
-
-        const current = balanceMap.get(key) ?? 0;
-        const next =
-          maxBalance !== null ? Math.min(current + rate, maxBalance) : current + rate;
-        const granted = next - current;
-        if (granted <= 0) continue;
-
-        candidates.push({
-          userId: member.userId,
-          leaveTypeId: policy.leaveTypeId,
-          rate,
-          maxBalance,
-          newBalance: next,
-          granted,
-          hasExistingBalance: balanceMap.has(key),
-        });
-      }
-    }
-
-    if (candidates.length === 0) return { accruedCount: 0 };
-
     let accruedCount = 0;
 
-    for (let i = 0; i < candidates.length; i += ACCRUAL_BATCH_SIZE) {
-      const batch = candidates.slice(i, i + ACCRUAL_BATCH_SIZE);
+    // Page the growing membership table before forming the policy × member
+    // candidate set. Each page is complete and tenant-scoped, so large orgs
+    // cannot turn one monthly run into an unbounded read or heap allocation.
+    let memberCursor: string | undefined;
+    while (true) {
+      const activeMembers = await this.db
+        .select({ userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(users.isActive, true),
+            memberCursor ? gt(users.id, memberCursor) : undefined,
+          ),
+        )
+        .orderBy(asc(users.id))
+        .limit(ACCRUAL_BATCH_SIZE);
 
-      await this.db.transaction(async (tx) => {
+      if (activeMembers.length === 0) break;
+
+      const memberIds = activeMembers.map((member) => member.userId);
+      const existingLedgerEntries = await this.db
+        .select({ userId: hrLeaveLedger.userId, leaveTypeId: hrLeaveLedger.leaveTypeId })
+        .from(hrLeaveLedger)
+        .where(
+          and(
+            eq(hrLeaveLedger.orgId, orgId),
+            inArray(hrLeaveLedger.userId, memberIds),
+            inArray(hrLeaveLedger.leaveTypeId, leaveTypeIds),
+            eq(hrLeaveLedger.txnType, "accrual"),
+            eq(hrLeaveLedger.period, periodLabel),
+            eq(hrLeaveLedger.source, "cron"),
+          ),
+        )
+        .limit(ACCRUAL_BATCH_SIZE * POLICY_LIMIT);
+      const alreadyAccruedSet = new Set(
+        existingLedgerEntries.map((entry) => `${entry.userId}:${entry.leaveTypeId}`),
+      );
+
+      const existingBalances = await this.db
+        .select({ userId: leaveBalances.userId, leaveTypeId: leaveBalances.leaveTypeId, balance: leaveBalances.balance })
+        .from(leaveBalances)
+        .where(
+          and(
+            eq(leaveBalances.orgId, orgId),
+            inArray(leaveBalances.userId, memberIds),
+            inArray(leaveBalances.leaveTypeId, leaveTypeIds),
+            eq(leaveBalances.year, year),
+          ),
+        )
+        .limit(ACCRUAL_BATCH_SIZE * POLICY_LIMIT);
+      const balanceMap = new Map(
+        existingBalances.map((balance) => [
+          `${balance.userId}:${balance.leaveTypeId}`,
+          Number(balance.balance),
+        ]),
+      );
+
+      const candidates: Array<{
+        userId: string;
+        leaveTypeId: number;
+        rate: number;
+        maxBalance: number | null;
+        newBalance: number;
+        granted: number;
+        hasExistingBalance: boolean;
+      }> = [];
+      for (const policy of monthlyPolicies) {
+        const rate = Number(policy.accrualRate);
+        if (!Number.isFinite(rate) || rate <= 0) continue;
+        const maxBalance =
+          policy.maxBalance !== null && Number.isFinite(Number(policy.maxBalance))
+            ? Number(policy.maxBalance)
+            : null;
+        for (const member of activeMembers) {
+          const key = `${member.userId}:${policy.leaveTypeId}`;
+          if (alreadyAccruedSet.has(key)) continue;
+          const current = balanceMap.get(key) ?? 0;
+          const next = maxBalance !== null ? Math.min(current + rate, maxBalance) : current + rate;
+          const granted = next - current;
+          if (granted > 0)
+            candidates.push({ userId: member.userId, leaveTypeId: policy.leaveTypeId, rate, maxBalance, newBalance: next, granted, hasExistingBalance: balanceMap.has(key) });
+        }
+      }
+
+      if (candidates.length > 0) {
+        const batch = candidates;
+
+        await this.db.transaction(async (tx) => {
         const newBalanceRows = batch
           .filter((c) => !c.hasExistingBalance)
           .map((c) => ({
@@ -247,9 +244,13 @@ export class CronLeaveService {
         }));
 
         await tx.insert(hrLeaveLedger).values(ledgerRows);
-      });
+        });
 
-      accruedCount += batch.length;
+        accruedCount += batch.length;
+      }
+
+      memberCursor = activeMembers[activeMembers.length - 1].userId;
+      if (activeMembers.length < ACCRUAL_BATCH_SIZE) break;
     }
 
     return { accruedCount };
@@ -277,73 +278,86 @@ export class CronLeaveService {
           eq(leavePolicies.accrualType, "MONTHLY"),
           eq(leavePolicies.isActive, true),
         ),
-      );
+      )
+      .limit(POLICY_LIMIT);
 
     if (monthlyPolicies.length === 0) return { expiredCount: 0 };
 
     const monthlyLeaveTypeIds = monthlyPolicies.map((p) => p.leaveTypeId);
     const policyByTypeId = new Map(monthlyPolicies.map((p) => [p.leaveTypeId, p]));
 
-    const positiveBalances = await this.db.query.leaveBalances.findMany({
-      where: and(
-        eq(leaveBalances.orgId, orgId),
-        inArray(leaveBalances.leaveTypeId, monthlyLeaveTypeIds),
-        eq(leaveBalances.year, prevMonthYear),
-        gt(leaveBalances.balance, "0"),
-      ),
-      columns: { id: true, orgId: true, userId: true, leaveTypeId: true, balance: true },
-    });
-    if (positiveBalances.length === 0) return { expiredCount: 0 };
-
-    const usedLeaveResults = await this.db
-      .select({ userId: leaveRequests.userId, leaveTypeId: leaveRequests.leaveTypeId })
-      .from(leaveRequests)
-      .where(
-        and(
-          eq(leaveRequests.orgId, orgId),
-          inArray(leaveRequests.leaveTypeId, monthlyLeaveTypeIds),
-          eq(leaveRequests.status, "APPROVED"),
-          gte(leaveRequests.startDate, monthStartStr),
-          lte(leaveRequests.endDate, monthEndStr),
-        ),
-      )
-      .groupBy(leaveRequests.userId, leaveRequests.leaveTypeId);
-
-    const usedSet = new Set(usedLeaveResults.map((r) => `${r.userId}:${r.leaveTypeId}`));
-
     let expiredCount = 0;
-    for (const bal of positiveBalances) {
-      if (usedSet.has(`${bal.userId}:${bal.leaveTypeId}`)) continue;
+    let balanceCursor: number | undefined;
+    while (true) {
+      const positiveBalances = await this.db
+        .select({ id: leaveBalances.id, orgId: leaveBalances.orgId, userId: leaveBalances.userId, leaveTypeId: leaveBalances.leaveTypeId, balance: leaveBalances.balance })
+        .from(leaveBalances)
+        .where(
+          and(
+            eq(leaveBalances.orgId, orgId),
+            inArray(leaveBalances.leaveTypeId, monthlyLeaveTypeIds),
+            eq(leaveBalances.year, prevMonthYear),
+            gt(leaveBalances.balance, "0"),
+            balanceCursor !== undefined ? gt(leaveBalances.id, balanceCursor) : undefined,
+          ),
+        )
+        .orderBy(asc(leaveBalances.id))
+        .limit(ACCRUAL_BATCH_SIZE);
+      if (positiveBalances.length === 0) break;
 
-      const policy = policyByTypeId.get(bal.leaveTypeId);
-      if (!policy || policy.orgId !== bal.orgId) continue;
+      const usedLeaveResults = await this.db
+        .select({ userId: leaveRequests.userId, leaveTypeId: leaveRequests.leaveTypeId })
+        .from(leaveRequests)
+        .where(
+          and(
+            eq(leaveRequests.orgId, orgId),
+            inArray(leaveRequests.userId, positiveBalances.map((balance) => balance.userId)),
+            inArray(leaveRequests.leaveTypeId, monthlyLeaveTypeIds),
+            eq(leaveRequests.status, "APPROVED"),
+            gte(leaveRequests.startDate, monthStartStr),
+            lte(leaveRequests.endDate, monthEndStr),
+          ),
+        )
+        .groupBy(leaveRequests.userId, leaveRequests.leaveTypeId)
+        .limit(ACCRUAL_BATCH_SIZE * POLICY_LIMIT);
+      const usedSet = new Set(usedLeaveResults.map((r) => `${r.userId}:${r.leaveTypeId}`));
 
-      const expiryAmount = Number(policy.accrualRate ?? 1);
-      const newBalance = Math.max(0, Number(bal.balance) - expiryAmount);
-      const deducted = Number(bal.balance) - newBalance;
-      if (deducted <= 0) continue;
+      for (const bal of positiveBalances) {
+        if (usedSet.has(`${bal.userId}:${bal.leaveTypeId}`)) continue;
 
-      await this.db.transaction(async (tx) => {
-        await tx
-          .update(leaveBalances)
-          .set({ balance: newBalance.toString() })
-          .where(eq(leaveBalances.id, bal.id));
+        const policy = policyByTypeId.get(bal.leaveTypeId);
+        if (!policy || policy.orgId !== bal.orgId) continue;
 
-        await tx.insert(hrLeaveLedger).values({
-          orgId: bal.orgId,
-          userId: bal.userId,
-          leaveTypeId: bal.leaveTypeId,
-          txnType: "expiry",
-          days: String(deducted),
-          effectiveDate: monthEndStr,
-          period: periodLabel,
-          source: "cron",
-          note: "Monthly leave expiry",
-          payrollStatus: "pending",
+        const expiryAmount = Number(policy.accrualRate ?? 1);
+        const newBalance = Math.max(0, Number(bal.balance) - expiryAmount);
+        const deducted = Number(bal.balance) - newBalance;
+        if (deducted <= 0) continue;
+
+        await this.db.transaction(async (tx) => {
+          await tx
+            .update(leaveBalances)
+            .set({ balance: newBalance.toString() })
+            .where(eq(leaveBalances.id, bal.id));
+
+          await tx.insert(hrLeaveLedger).values({
+            orgId: bal.orgId,
+            userId: bal.userId,
+            leaveTypeId: bal.leaveTypeId,
+            txnType: "expiry",
+            days: String(deducted),
+            effectiveDate: monthEndStr,
+            period: periodLabel,
+            source: "cron",
+            note: "Monthly leave expiry",
+            payrollStatus: "pending",
+          });
         });
-      });
 
-      expiredCount++;
+        expiredCount++;
+      }
+
+      balanceCursor = positiveBalances[positiveBalances.length - 1]?.id;
+      if (positiveBalances.length < ACCRUAL_BATCH_SIZE) break;
     }
 
     return { expiredCount };

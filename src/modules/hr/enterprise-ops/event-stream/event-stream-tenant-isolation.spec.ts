@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import { EventStreamService } from "./event-stream.service";
 
@@ -74,5 +75,27 @@ describe("EventStreamService — cross-tenant isolation", () => {
     expect(result.data).toEqual([ROW]);
     expect(result.pagination).toMatchObject({ limit: 1, hasMore: true });
     expect(result.pagination.nextCursor).toEqual(expect.any(String));
+  });
+
+  it("preserves export filters, trims its sentinel, and rejects malformed cursors", async () => {
+    const { db, where, findMany } = makeDb([ROW, OLDER_ROW]);
+    const svc = new EventStreamService(db);
+
+    const result = await svc.exportEvents(OWNER, {
+      limit: 1,
+      eventType: "employee.updated",
+      entityType: "employee",
+    });
+    expect(result.data).toEqual([ROW]);
+    expect(result.pagination).toMatchObject({ limit: 1, hasMore: true });
+    const values = sqlValues(isolationArg(where, findMany));
+    expect(values).toContain("employee.updated");
+    expect(values).toContain("employee");
+    await expect(
+      svc.listEvents(OWNER, { limit: 10, cursor: "malformed" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      svc.exportEvents(OWNER, { limit: 10, cursor: "malformed" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

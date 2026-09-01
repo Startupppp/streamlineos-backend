@@ -21,6 +21,7 @@ import { PayrollPostingService } from "../payroll-posting.service";
 import { toPaise } from "../runs/lib/money";
 import { payrollSubjectKeyFromRunEmployee } from "../lib/payroll-subject";
 import { systemActor } from "../../../common/auth/system-actor";
+import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
 
 function fiscalYearFromMonth(month: string): string {
   const [y, m] = month.split("-").map(Number);
@@ -124,7 +125,7 @@ export class LockingService {
     month: string,
   ): Promise<void> {
     const fy = fiscalYearFromMonth(month);
-    const emps = await tx
+    const emps = requirePayrollReadWithinCap(await tx
       .select({
         userId: payrollRunEmployees.userId,
         workerId: payrollRunEmployees.workerId,
@@ -132,7 +133,8 @@ export class LockingService {
         gross: payrollRunEmployees.gross,
       })
       .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
+      .limit(PAYROLL_READ_CAP + 1), "write TDS ledger");
 
     for (const emp of emps) {
       if (!emp.userId && !emp.workerId) continue;

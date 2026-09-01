@@ -9,6 +9,13 @@ import { LEAVES_PERMISSION } from "../leaves-scope";
 import { LeavesService } from "../leaves.service";
 import { LeavesWriteService } from "../leaves-write.service";
 
+jest.mock("../organization-membership", () => ({
+  requireOrganizationMembershipId: jest.fn(
+    (_db: unknown, _orgId: string, userId: string) =>
+      Promise.resolve({ "hr-1": 11, "manager-a": 21, "manager-b": 22 }[userId] ?? 1),
+  ),
+}));
+
 const ORG_ID = "org-1";
 
 function makeUser(userId: string): CurrentUserContext {
@@ -107,6 +114,7 @@ describe("leave analytics filtered read-after-write", () => {
             id: 7,
             orgId: ORG_ID,
             userId: "employee-1",
+            userMembershipId: 1,
             leaveTypeId: 1,
             startDate: "2026-01-05",
             endDate: "2026-01-06",
@@ -202,7 +210,7 @@ describe("leave analytics filtered read-after-write", () => {
     expect(viewKeys.sort()).toEqual([
       `${namespace}:v0:all:2025`,
       `${namespace}:v0:all:2026`,
-      `${namespace}:v0:team:hr-1:2026`,
+      `${namespace}:v0:team:11:2026`,
     ]);
     expect(viewKeys.every((key) => key.includes(ORG_ID))).toBe(true);
   });
@@ -221,8 +229,8 @@ describe("leave analytics filtered read-after-write", () => {
     const resultB = await readerB.analytics(managerB, 2026);
 
     const namespace = CACHE_KEYS.leaveAnalyticsNamespace(ORG_ID);
-    const keyA = `${namespace}:v0:own:manager-a:2026`;
-    const keyB = `${namespace}:v0:own:manager-b:2026`;
+    const keyA = `${namespace}:v0:own:21:2026`;
+    const keyB = `${namespace}:v0:own:22:2026`;
 
     expect(keyA).not.toBe(keyB);
     expect(redis.store.has(keyA)).toBe(true);

@@ -23,6 +23,12 @@ import {
   type JournalBatchSummary,
   type JournalReconStatus,
 } from "./journal-batch-read-model";
+import { buildCursorPage, type CursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
+import {
+  decodePayrollTimestampCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
 
 export type {
   JournalBatchDetail,
@@ -63,10 +69,16 @@ export class JournalOutboxService {
 
   async list(
     orgId: string,
-    filters: { periodKey?: string; status?: JournalBatchStatus; page?: number; limit?: number },
-  ): Promise<{ data: JournalBatchSummary[]; total: number; page: number; limit: number }> {
-    const page = Math.max(1, filters.page ?? 1);
+    filters: { periodKey?: string; status?: JournalBatchStatus; cursor?: string; limit?: number },
+  ): Promise<CursorPage<JournalBatchSummary>> {
     const limit = Math.min(100, Math.max(1, filters.limit ?? 25));
+    const cursorScope = [
+      "journal-batches",
+      orgId,
+      filters.periodKey ?? null,
+      filters.status ?? null,
+    ] as const;
+    const position = decodePayrollTimestampCursor(filters.cursor, cursorScope);
 
     const conditions = [eq(payrollJournalBatches.orgId, orgId)];
     if (filters.periodKey) {
@@ -75,27 +87,32 @@ export class JournalOutboxService {
     if (filters.status) {
       conditions.push(eq(payrollJournalBatches.status, filters.status));
     }
-    const where = and(...conditions);
+    if (position) {
+      conditions.push(
+        keysetBeforeId(
+          payrollJournalBatches.createdAt,
+          payrollJournalBatches.id,
+          { sortValue: position.createdAt, id: String(position.id) },
+        ),
+      );
+    }
+    const rows = await this.db
+      .select(journalBatchSummarySelection)
+      .from(payrollJournalBatches)
+      .where(and(...conditions))
+      .orderBy(
+        desc(payrollJournalBatches.createdAt),
+        desc(payrollJournalBatches.id),
+      )
+      .limit(limit + 1);
 
-    const [rows, countRows] = await Promise.all([
-      this.db
-        .select(journalBatchSummarySelection)
-        .from(payrollJournalBatches)
-        .where(where)
-        .orderBy(desc(payrollJournalBatches.createdAt))
-        .limit(limit)
-        .offset((page - 1) * limit),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(payrollJournalBatches)
-        .where(where),
-    ]);
+    const page = buildCursorPage(rows, limit, (row) =>
+      payrollCursorPosition(cursorScope, [row.createdAt.toISOString()], row.id),
+    );
 
     return {
-      data: rows.map(toJournalBatchSummary),
-      total: countRows[0]?.count ?? 0,
-      page,
-      limit,
+      data: page.data.map(toJournalBatchSummary),
+      pagination: page.pagination,
     };
   }
 

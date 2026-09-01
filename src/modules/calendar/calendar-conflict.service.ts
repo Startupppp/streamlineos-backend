@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
+import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or } from "drizzle-orm";
 import { calendarEvents, calendarEventExceptions, eventAttendees, leaveRequests, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db, TenantTx } from "../../db/drizzle.types";
@@ -10,7 +10,7 @@ import {
   type CalendarOccurrence,
 } from "./calendar-occurrence.service";
 
-const CONFLICT_SCAN_LIMIT = 100;
+const CONFLICT_SCAN_BATCH_SIZE = 100;
 
 @Injectable()
 export class CalendarConflictService {
@@ -44,21 +44,36 @@ export class CalendarConflictService {
     });
     const callerMembershipId = callerMember?.id ?? 0;
 
-    const rows = await tx
-      .select({
-        id: calendarEvents.id,
-        title: calendarEvents.title,
-        startDate: calendarEvents.startDate,
-        endDate: calendarEvents.endDate,
-        allDay: calendarEvents.allDay,
-        timezone: calendarEvents.timezone,
-        orgId: calendarEvents.orgId,
-        createdByMembershipId: calendarEvents.createdByMembershipId,
-        rrule: calendarEvents.rrule,
-        recurrenceEnd: calendarEvents.recurrenceEnd,
-      })
-      .from(calendarEvents)
-      .where(
+    const rows: Array<{
+      id: number;
+      title: string;
+      startDate: Date;
+      endDate: Date;
+      allDay: boolean | null;
+      timezone: string | null;
+      orgId: string;
+      createdByMembershipId: number;
+      rrule: string | null;
+      recurrenceEnd: Date | null;
+    }> = [];
+    let after: { startDate: Date; id: number } | null = null;
+    for (;;) {
+      // .limit(CONFLICT_SCAN_BATCH_SIZE) below is intentional: the keyset loop consumes every batch.
+      const batch = await tx
+        .select({
+          id: calendarEvents.id,
+          title: calendarEvents.title,
+          startDate: calendarEvents.startDate,
+          endDate: calendarEvents.endDate,
+          allDay: calendarEvents.allDay,
+          timezone: calendarEvents.timezone,
+          orgId: calendarEvents.orgId,
+          createdByMembershipId: calendarEvents.createdByMembershipId,
+          rrule: calendarEvents.rrule,
+          recurrenceEnd: calendarEvents.recurrenceEnd,
+        })
+        .from(calendarEvents)
+        .where(
         and(
           eq(calendarEvents.orgId, orgId),
           or(
@@ -76,9 +91,22 @@ export class CalendarConflictService {
               ),
             ),
           ),
+          after === null
+            ? undefined
+            : or(
+                gt(calendarEvents.startDate, after.startDate),
+                and(eq(calendarEvents.startDate, after.startDate), gt(calendarEvents.id, after.id)),
+              ),
         ),
       )
-      .limit(CONFLICT_SCAN_LIMIT);
+        .orderBy(asc(calendarEvents.startDate), asc(calendarEvents.id))
+        .limit(CONFLICT_SCAN_BATCH_SIZE);
+      rows.push(...batch);
+      if (batch.length < CONFLICT_SCAN_BATCH_SIZE) break;
+      const last = batch[batch.length - 1];
+      if (!last) break;
+      after = { startDate: last.startDate, id: last.id };
+    }
 
     if (rows.length === 0) return [];
 

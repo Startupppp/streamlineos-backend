@@ -7,7 +7,7 @@ function makeSelectChain(rows: unknown[]) {
   chain.from = jest.fn().mockReturnValue(chain);
   chain.innerJoin = jest.fn().mockReturnValue(chain);
   chain.where = jest.fn().mockReturnValue(chain);
-  chain.orderBy = jest.fn().mockResolvedValue(rows);
+  chain.orderBy = jest.fn().mockReturnValue(chain);
   chain.limit = jest.fn().mockResolvedValue(rows);
   return chain;
 }

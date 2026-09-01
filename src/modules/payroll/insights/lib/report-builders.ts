@@ -1,4 +1,4 @@
-import { eq, and, asc, inArray } from "drizzle-orm";
+import { eq, and, asc, gt, inArray } from "drizzle-orm";
 import { livePersonOfUser, primaryEmploymentOfPerson, orgUnitInOrg } from "../../../directory/employment-query";
 import type { Db } from "../../../../db/drizzle.module";
 import { hrEmployments, hrPeople } from "../../../../db/schema/hr/core-people";
@@ -72,9 +72,12 @@ export async function getRunEmployeeIds(
   runId: number,
   filters: LineItemFilters,
   limit: number,
-  offset: number,
+  afterId: number | null,
 ): Promise<number[]> {
-  const conditions = [eq(payrollRunEmployees.runId, runId)];
+  const conditions = [
+    eq(payrollRunEmployees.orgId, orgId),
+    eq(payrollRunEmployees.runId, runId),
+  ];
   if (filters.workerType)
     conditions.push(
       eq(
@@ -84,6 +87,7 @@ export async function getRunEmployeeIds(
     );
   if (filters.department) conditions.push(eq(orgUnits.name, filters.department));
   if (filters.costCenter) conditions.push(eq(employeeSalaryProfiles.costCenter, filters.costCenter));
+  if (afterId !== null) conditions.push(gt(payrollRunEmployees.id, afterId));
 
   const rows = await db
     .selectDistinct({ id: payrollRunEmployees.id })
@@ -95,8 +99,7 @@ export async function getRunEmployeeIds(
     .leftJoin(employeeSalaryProfiles, eq(employeeSalaryProfiles.id, payrollRunEmployees.profileId))
     .where(and(...conditions))
     .orderBy(asc(payrollRunEmployees.id))
-    .limit(limit)
-    .offset(offset);
+    .limit(limit);
 
   return rows.map((r) => r.id);
 }

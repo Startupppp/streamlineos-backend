@@ -13,6 +13,7 @@ import {
   leavePolicies,
   leaveRequests,
   leaveTypes,
+  organizationMembers,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -38,6 +39,7 @@ import {
   OrganizationActorError,
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
+import { requireOrganizationMembershipId } from "./organization-membership";
 
 interface LeaveRow {
   userId: string;
@@ -66,6 +68,11 @@ export class LeavesWriteService {
   }
 
   async create(currentUser: CurrentUserContext, body: CreateLeaveInput) {
+    const userMembershipId = await requireOrganizationMembershipId(
+      this.db,
+      currentUser.orgId,
+      currentUser.userId,
+    );
     const approver = await this.approvers.resolve(currentUser.orgId, currentUser.userId);
     if (!approver) {
       throw new ConflictException(
@@ -128,7 +135,7 @@ export class LeavesWriteService {
         .from(leaveBalances)
         .where(
           and(
-            eq(leaveBalances.userId, currentUser.userId),
+            eq(leaveBalances.userMembershipId, userMembershipId),
             eq(leaveBalances.orgId, currentUser.orgId),
             eq(leaveBalances.leaveTypeId, body.leaveTypeId),
             eq(leaveBalances.year, new Date().getFullYear()),
@@ -153,7 +160,7 @@ export class LeavesWriteService {
       const [overlapping, blackout] = await Promise.all([
         tx.query.leaveRequests.findFirst({
           where: and(
-            eq(leaveRequests.userId, currentUser.userId),
+            eq(leaveRequests.userMembershipId, userMembershipId),
             eq(leaveRequests.orgId, currentUser.orgId),
             lte(leaveRequests.startDate, endStr),
             gte(leaveRequests.endDate, startStr),
@@ -184,7 +191,7 @@ export class LeavesWriteService {
 
       const serializedOverlap = await tx.query.leaveRequests.findFirst({
         where: and(
-          eq(leaveRequests.userId, currentUser.userId),
+          eq(leaveRequests.userMembershipId, userMembershipId),
           eq(leaveRequests.orgId, currentUser.orgId),
           lte(leaveRequests.startDate, endStr),
           gte(leaveRequests.endDate, startStr),
@@ -201,6 +208,7 @@ export class LeavesWriteService {
         .values({
           orgId: currentUser.orgId,
           userId: currentUser.userId,
+          userMembershipId,
           leaveTypeId: body.leaveTypeId,
           startDate: startStr,
           endDate: endStr,
@@ -208,6 +216,8 @@ export class LeavesWriteService {
           priority: body.priority,
           approverId: approver.id,
           approverMembershipId,
+          createdByMembershipId: userMembershipId,
+          updatedByMembershipId: userMembershipId,
           attachmentUrl: body.attachmentUrl ?? null,
           isHalfDay: body.isHalfDay,
           halfDayPeriod: body.halfDayPeriod ?? null,
@@ -265,13 +275,18 @@ export class LeavesWriteService {
   }
 
   async cancel(currentUser: CurrentUserContext, leaveId: number) {
+    const userMembershipId = await requireOrganizationMembershipId(
+      this.db,
+      currentUser.orgId,
+      currentUser.userId,
+    );
     const existing = await this.db.transaction(async (tx) => {
       const current = await tx.query.leaveRequests.findFirst({
         where: and(eq(leaveRequests.id, leaveId), eq(leaveRequests.orgId, currentUser.orgId)),
       });
 
       if (!current) return null;
-      if (current.userId !== currentUser.userId) {
+      if (current.userMembershipId !== userMembershipId) {
         throw new ForbiddenException("You can only cancel your own leave requests.");
       }
 
@@ -284,13 +299,14 @@ export class LeavesWriteService {
         .set({
           status: "CANCELLED",
           rowVersion: current.rowVersion + 1,
+          updatedByMembershipId: userMembershipId,
           updatedAt: new Date(),
         })
         .where(
           and(
             eq(leaveRequests.id, leaveId),
             eq(leaveRequests.orgId, currentUser.orgId),
-            eq(leaveRequests.userId, currentUser.userId),
+            eq(leaveRequests.userMembershipId, userMembershipId),
             eq(leaveRequests.status, "PENDING"),
             eq(leaveRequests.rowVersion, current.rowVersion),
           ),
@@ -336,17 +352,20 @@ export class LeavesWriteService {
       : [];
     if (peerIds.length === 0) return [];
 
-    const conflicts = await this.db.query.leaveRequests.findMany({
-      where: and(
+    const conflicts = await this.db
+      .select({ userId: leaveRequests.userId })
+      .from(leaveRequests)
+      .innerJoin(organizationMembers, eq(organizationMembers.id, leaveRequests.userMembershipId))
+      .where(and(
         eq(leaveRequests.orgId, orgId),
         eq(leaveRequests.status, "APPROVED"),
-        inArray(leaveRequests.userId, peerIds),
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.status, "ACTIVE"),
+        inArray(organizationMembers.userId, peerIds),
         lte(leaveRequests.startDate, endDate),
         gte(leaveRequests.endDate, startDate),
-      ),
-      columns: { userId: true },
-      limit: 10,
-    });
+      ))
+      .limit(10);
 
     return [...new Set(conflicts.map((c) => c.userId))];
   }

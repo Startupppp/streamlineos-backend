@@ -21,7 +21,7 @@ describe("AttendanceSummaryController scope boundary", () => {
       periodStart: "2026-08-01",
       periodEnd: "2026-08-31",
       employeeId: "target-1",
-      page: 1,
+      cursor: undefined,
       limit: 50,
     };
 

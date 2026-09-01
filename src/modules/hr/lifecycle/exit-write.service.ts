@@ -35,6 +35,7 @@ import { transitionResignation } from "./lifecycle-transition";
 
 export interface ExitActor {
   userId: string;
+  membershipId: number | null;
   role: string;
   isApprover: boolean;
 }
@@ -62,11 +63,12 @@ export class ExitWriteService {
     return permanentDays ?? fallbackDays;
   }
 
-  async create(orgId: string, actorUserId: string, input: ResignationCreateInput) {
+  async create(orgId: string, actorUserId: string, actorMembershipId: number | null, input: ResignationCreateInput) {
+    if (actorMembershipId == null) throw new ForbiddenException("Organization membership required.");
     const existing = await this.db.query.resignations.findFirst({
       where: and(
         eq(resignations.orgId, orgId),
-        eq(resignations.userId, actorUserId),
+        eq(resignations.userMembershipId, actorMembershipId),
         inArray(resignations.status, ["SUBMITTED", "PENDING_HR", "HR_APPROVED"]),
       ),
       columns: { id: true },
@@ -82,6 +84,7 @@ export class ExitWriteService {
       .values({
         orgId,
         userId: actorUserId,
+        userMembershipId: actorMembershipId,
         reason: input.reason,
         reasonCategory: input.reasonCategory,
         lastWorkingDate: input.lastWorkingDate,
@@ -184,7 +187,7 @@ export class ExitWriteService {
     }
 
     if (input.status === "WITHDRAWN") {
-      if (existing.userId !== actor.userId) throw new ForbiddenException("Only the employee can withdraw.");
+      if (actor.membershipId == null || existing.userMembershipId !== actor.membershipId) throw new ForbiddenException("Only the employee can withdraw.");
       if (existing.status === "FINAL_APPROVED" || existing.status === "COMPLETED" || existing.status === "IN_PROGRESS") {
         throw new BadRequestException("Cannot withdraw after FINAL approval.");
       }

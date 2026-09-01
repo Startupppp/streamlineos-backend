@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const aiCreditsUsageQuerySchema = z.object({
   days: z.coerce.number().refine((v) => v === 7 || v === 30 || v === 90, {
@@ -23,6 +23,6 @@ export const autoTopUpSchema = z.object({
 });
 
 export const listTransactionsSchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20),
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
 });

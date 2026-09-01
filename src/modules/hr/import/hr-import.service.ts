@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -24,7 +24,10 @@ import type {
   ListImportJobsInput,
 } from "./dto/import-job.dto";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
-import { keysetBeforeUuid } from "../../../common/pagination/keyset";
+import {
+  keysetBeforeId,
+  keysetBeforeUuid,
+} from "../../../common/pagination/keyset";
 
 @Injectable()
 export class HrImportService {
@@ -270,45 +273,95 @@ export class HrImportService {
       });
     }
 
-    const { page, limit } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit } = input;
+    const position = decodeCursor(cursor);
+    if (cursor !== undefined && !position) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
 
     if (entity === "attendance") {
-      return this.db
+      const rows = await this.db
         .select()
         .from(attendance)
-        .where(eq(attendance.orgId, orgId))
+        .where(
+          and(
+            eq(attendance.orgId, orgId),
+            position
+              ? keysetBeforeId(attendance.createdAt, attendance.id, position)
+              : undefined,
+          ),
+        )
         .orderBy(desc(attendance.createdAt), desc(attendance.id))
-        .limit(limit)
-        .offset(offset);
+        .limit(limit + 1);
+      return buildCursorPage(rows, limit, (row) => ({
+        sortValue: row.createdAt.toISOString(),
+        id: String(row.id),
+      }));
     }
     if (entity === "assets") {
-      return this.db
+      const rows = await this.db
         .select()
         .from(assets)
-        .where(eq(assets.orgId, orgId))
+        .where(
+          and(
+            eq(assets.orgId, orgId),
+            position
+              ? keysetBeforeId(assets.createdAt, assets.id, position)
+              : undefined,
+          ),
+        )
         .orderBy(desc(assets.createdAt), desc(assets.id))
-        .limit(limit)
-        .offset(offset);
+        .limit(limit + 1);
+      return buildCursorPage(rows, limit, (row) => ({
+        sortValue: row.createdAt.toISOString(),
+        id: String(row.id),
+      }));
     }
     if (entity === "leave_balances") {
-      return this.db
+      const cursorId = position ? Number(position.id) : null;
+      if (
+        position &&
+        (!Number.isSafeInteger(cursorId) ||
+          cursorId <= 0 ||
+          position.sortValue !== position.id)
+      ) {
+        throw new BadRequestException("Invalid pagination cursor");
+      }
+      const rows = await this.db
         .select()
         .from(leaveBalances)
-        .where(eq(leaveBalances.orgId, orgId))
+        .where(
+          and(
+            eq(leaveBalances.orgId, orgId),
+            cursorId !== null ? gt(leaveBalances.id, cursorId) : undefined,
+          ),
+        )
         .orderBy(asc(leaveBalances.id))
-        .limit(limit)
-        .offset(offset);
+        .limit(limit + 1);
+      return buildCursorPage(rows, limit, (row) => ({
+        sortValue: String(row.id),
+        id: String(row.id),
+      }));
     }
     if (entity === "document_metadata") {
-      return this.db
+      const rows = await this.db
         .select()
         .from(documents)
-        .where(and(eq(documents.orgId, orgId)))
+        .where(
+          and(
+            eq(documents.orgId, orgId),
+            position
+              ? keysetBeforeId(documents.createdAt, documents.id, position)
+              : undefined,
+          ),
+        )
         .orderBy(desc(documents.createdAt), desc(documents.id))
-        .limit(limit)
-        .offset(offset);
+        .limit(limit + 1);
+      return buildCursorPage(rows, limit, (row) => ({
+        sortValue: row.createdAt.toISOString(),
+        id: String(row.id),
+      }));
     }
-    return [];
+    return buildCursorPage([], limit, () => ({ sortValue: "", id: "" }));
   }
 }

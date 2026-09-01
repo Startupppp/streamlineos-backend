@@ -68,7 +68,7 @@ export class LoansController {
     @Body() body: CreateLoanInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.loans.createLoan(u.orgId, u.userId, await this.isLoanAdmin(u), body);
+    return this.loans.createLoan(u.orgId, u.userId, actingMembershipId(u.principal), await this.isLoanAdmin(u), body);
   }
 
   @Patch(":loanId")

@@ -20,9 +20,12 @@ export const feedbackCycles = pgTable("feedback_cycles", {
 
 export const feedbackCycleRequests = pgTable("feedback_cycle_requests", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id"),
   cycleId: integer("cycle_id").references(() => feedbackCycles.id, { onDelete: "cascade" }).notNull(),
-  subjectId: text("subject_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  reviewerId: text("reviewer_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  subjectId: text("subject_id").notNull(),
+  subjectMembershipId: integer("subject_membership_id"),
+  reviewerId: text("reviewer_id").notNull(),
+  reviewerMembershipId: integer("reviewer_membership_id"),
   relationship: text("relationship").notNull(),
   status: text("status").default("PENDING").notNull(),
   submittedAt: timestamp("submitted_at"),
@@ -30,6 +33,7 @@ export const feedbackCycleRequests = pgTable("feedback_cycle_requests", {
 }, (table) => [
   uniqueIndex("uniq_fb_cycle_req_cycle_sub_rev").on(table.cycleId, table.subjectId, table.reviewerId),
   index("idx_fb_cycle_requests_reviewer").on(table.reviewerId, table.status),
+  index("idx_fb_cycle_requests_org_cycle_reviewer").on(table.orgId, table.cycleId, table.reviewerId),
 ]);
 
 export const feedbackCycleResponses = pgTable("feedback_cycle_responses", {

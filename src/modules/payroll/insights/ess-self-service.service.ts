@@ -64,7 +64,7 @@ export class EssSelfServiceService {
   async createLoan(orgId: string, userId: string, membershipId: number | null, body: { amount: number; reason: string; totalEmis: number }) {
     const toggles = await this.ess.getActiveToggles(orgId);
     if (!toggles.essAllowLoanRequests) throw new ForbiddenException("Loan requests are disabled");
-    return this.loansService.createLoan(orgId, userId, false, { amount: body.amount, reason: body.reason, totalEmis: body.totalEmis });
+    return this.loansService.createLoan(orgId, userId, membershipId, false, { amount: body.amount, reason: body.reason, totalEmis: body.totalEmis });
   }
 
   async getTaxDeclaration(orgId: string, userId: string) {

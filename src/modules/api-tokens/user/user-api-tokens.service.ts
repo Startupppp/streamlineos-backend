@@ -1,10 +1,11 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { userApiTokens } from "../../../db/schema/common/auth-session-security";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -22,6 +23,34 @@ import type {
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { grantablePersonalTokenPermissions } from "./personal-token-scope-policy";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBefore } from "../../../common/pagination/keyset";
+
+function decodeUserTokenCursor(cursor: string | undefined, userId: string) {
+  if (!cursor) return null;
+
+  const position = decodeCursor(cursor);
+  if (!position) throw new BadRequestException("Invalid pagination cursor");
+
+  let scope: unknown;
+  try {
+    scope = JSON.parse(position.id);
+  } catch {
+    throw new BadRequestException("Invalid pagination cursor");
+  }
+
+  if (
+    !Array.isArray(scope) ||
+    scope.length !== 2 ||
+    scope[0] !== userId ||
+    typeof scope[1] !== "string" ||
+    scope[1].length === 0
+  ) {
+    throw new BadRequestException("Invalid pagination cursor");
+  }
+
+  return { sortValue: position.sortValue, id: scope[1] };
+}
 
 @Injectable()
 export class UserApiTokensService {
@@ -93,43 +122,35 @@ export class UserApiTokensService {
   }
 
   async list(userId: string, query: ListUserApiTokensInput) {
-    const filters = and(
+    const cursor = decodeUserTokenCursor(query.cursor, userId);
+    const filters = [
       eq(userApiTokens.userId, userId),
       isNull(userApiTokens.revokedAt),
-    );
-    const offset = (query.page - 1) * query.limit;
-    const [data, [{ total }]] = await Promise.all([
-      this.db
-        .select({
-          id: userApiTokens.id,
-          userId: userApiTokens.userId,
-          name: userApiTokens.name,
-          prefix: userApiTokens.prefix,
-          scopes: userApiTokens.scopes,
-          expiresAt: userApiTokens.expiresAt,
-          lastUsedAt: userApiTokens.lastUsedAt,
-          createdAt: userApiTokens.createdAt,
-        })
-        .from(userApiTokens)
-        .where(filters)
-        .orderBy(desc(userApiTokens.createdAt), desc(userApiTokens.id))
-        .limit(query.limit)
-        .offset(offset),
-      this.db
-        .select({ total: sql<number>`count(*)::int` })
-        .from(userApiTokens)
-        .where(filters),
-    ]);
+    ];
+    if (cursor) {
+      filters.push(keysetBefore(userApiTokens.createdAt, userApiTokens.id, cursor));
+    }
 
-    return {
-      data,
-      pagination: {
-        page: query.page,
-        limit: query.limit,
-        total,
-        totalPages: Math.ceil(total / query.limit),
-      },
-    };
+    const data = await this.db
+      .select({
+        id: userApiTokens.id,
+        userId: userApiTokens.userId,
+        name: userApiTokens.name,
+        prefix: userApiTokens.prefix,
+        scopes: userApiTokens.scopes,
+        expiresAt: userApiTokens.expiresAt,
+        lastUsedAt: userApiTokens.lastUsedAt,
+        createdAt: userApiTokens.createdAt,
+      })
+      .from(userApiTokens)
+      .where(and(...filters))
+      .orderBy(desc(userApiTokens.createdAt), desc(userApiTokens.id))
+      .limit(query.limit + 1);
+
+    return buildCursorPage(data, query.limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: JSON.stringify([userId, row.id]),
+    }));
   }
 
   async revoke(userId: string, tokenId: string) {

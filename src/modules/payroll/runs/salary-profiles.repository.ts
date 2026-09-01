@@ -1,5 +1,5 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { and, count, desc, eq, ilike, or } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -13,6 +13,20 @@ import {
 import type { DataScope } from "../../access/access.types";
 import { applyScope } from "../../access/apply-scope";
 import type { ListProfilesQuery } from "./dto/runs.schemas";
+import { buildCursorPage } from "../../../common/pagination/cursor";
+import {
+  decodePayrollTextCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
+
+const profileSortName = sql<string>`coalesce(
+  ${users.name},
+  ${organizationPeople.displayName},
+  nullif(concat_ws(' ', ${organizationPeople.firstName}, ${organizationPeople.lastName}), ''),
+  ${users.email},
+  ${organizationPeople.workEmail},
+  ''
+)`;
 
 const SALARY_PROFILE_COLUMNS = {
   id: employeeSalaryProfiles.id,
@@ -40,6 +54,17 @@ export class SalaryProfilesRepository {
     ];
     if (query.workerType) conditions.push(eq(employeeSalaryProfiles.workerType, query.workerType));
     if (query.costCenter) conditions.push(eq(employeeSalaryProfiles.costCenter, query.costCenter));
+    const cursorScope = [
+      "salary-profiles",
+      orgId,
+      scope,
+      userId,
+      query.search ?? null,
+      query.workerType ?? null,
+      query.status ?? "ACTIVE",
+      query.costCenter ?? null,
+    ] as const;
+    const position = decodePayrollTextCursor(query.cursor, cursorScope);
 
     const search = query.search
       ? or(
@@ -52,6 +77,11 @@ export class SalaryProfilesRepository {
         )
       : undefined;
     const finalConditions = search ? [...conditions, search] : conditions;
+    if (position) {
+      finalConditions.push(
+        sql`(${profileSortName}, ${employeeSalaryProfiles.id}) > (${position.value}, ${position.id})`,
+      );
+    }
     const joins = (queryBuilder: ReturnType<Db["select"]>) =>
       queryBuilder
         .from(employeeSalaryProfiles)
@@ -64,27 +94,28 @@ export class SalaryProfilesRepository {
             eq(organizationPeople.organizationId, workers.organizationId),
           ),
         );
-    const [rows, [totalRow]] = await Promise.all([
-      joins(
-        this.db.select({
-          ...SALARY_PROFILE_COLUMNS,
-          userName: users.name,
-          userEmail: users.email,
-          workerDisplayName: organizationPeople.displayName,
-          workerFirstName: organizationPeople.firstName,
-          workerLastName: organizationPeople.lastName,
-          workerEmail: organizationPeople.workEmail,
-        }),
-      )
-        .where(and(...finalConditions))
-        .orderBy(users.name, organizationPeople.displayName)
-        .limit(query.limit)
-        .offset((query.page - 1) * query.limit),
-      joins(this.db.select({ total: count() })).where(and(...finalConditions)),
-    ]);
+    const rows = await joins(
+      this.db.select({
+        ...SALARY_PROFILE_COLUMNS,
+        userName: users.name,
+        userEmail: users.email,
+        workerDisplayName: organizationPeople.displayName,
+        workerFirstName: organizationPeople.firstName,
+        workerLastName: organizationPeople.lastName,
+        workerEmail: organizationPeople.workEmail,
+        sortName: profileSortName,
+      }),
+    )
+      .where(and(...finalConditions))
+      .orderBy(asc(profileSortName), asc(employeeSalaryProfiles.id))
+      .limit(query.limit + 1);
+
+    const page = buildCursorPage(rows, query.limit, (row) =>
+      payrollCursorPosition(cursorScope, [row.sortName], row.id),
+    );
 
     return {
-      data: rows.map((row) => ({
+      data: page.data.map((row) => ({
         id: row.id,
         userId: row.userId,
         workerId: row.workerId,
@@ -101,9 +132,7 @@ export class SalaryProfilesRepository {
           ([row.workerFirstName, row.workerLastName].filter(Boolean).join(" ") || null),
         userEmail: row.userEmail ?? row.workerEmail,
       })),
-      total: totalRow?.total ?? 0,
-      page: query.page,
-      limit: query.limit,
+      pagination: page.pagination,
     };
   }
 

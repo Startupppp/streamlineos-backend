@@ -7,6 +7,7 @@ import {
   meetingStandupEntries,
   projects,
   projectMembers,
+  organizationMembers,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -94,7 +95,7 @@ export class MeetingsService {
       const rows = await this.db
         .select({ meetingId: meetingAttendees.meetingId })
         .from(meetingAttendees)
-        .where(and(eq(meetingAttendees.orgId, orgId), eq(meetingAttendees.userId, query.attendeeId)));
+        .where(and(eq(meetingAttendees.orgId, orgId), sql`${meetingAttendees.membershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${query.attendeeId} AND status = 'ACTIVE')`));
       attendeeMeetingIds = rows.map((r) => r.meetingId);
     }
 
@@ -174,7 +175,8 @@ export class MeetingsService {
       this.db
         .select()
         .from(meetingAttendees)
-        .where(and(eq(meetingAttendees.meetingId, meetingId), eq(meetingAttendees.orgId, orgId))),
+        .where(and(eq(meetingAttendees.meetingId, meetingId), eq(meetingAttendees.orgId, orgId)))
+        .limit(100),
       this.db
         .select()
         .from(meetingActionItems)
@@ -184,29 +186,34 @@ export class MeetingsService {
             eq(meetingActionItems.orgId, orgId),
             isNull(meetingActionItems.deletedAt),
           ),
-        ),
+        )
+        .limit(100),
       this.db
         .select()
         .from(meetingStandupEntries)
-        .where(and(eq(meetingStandupEntries.meetingId, meetingId), eq(meetingStandupEntries.orgId, orgId))),
+        .where(and(eq(meetingStandupEntries.meetingId, meetingId), eq(meetingStandupEntries.orgId, orgId)))
+        .limit(100),
     ]);
     return { ...meeting, attendees, actionItems, standupEntries };
   }
 
   async createMeeting(orgId: string, userId: string, projectId: number, input: CreateMeetingInput) {
     await this.assertProject(orgId, projectId);
+    let attendeeMemberships = new Map<string, number>();
 
     if (input.attendeeUserIds && input.attendeeUserIds.length > 0) {
       const members = await this.db
-        .select({ userId: projectMembers.userId })
+        .select({ userId: organizationMembers.userId, membershipId: projectMembers.membershipId })
         .from(projectMembers)
+        .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
         .where(
           and(
             eq(projectMembers.projectId, projectId),
-            inArray(projectMembers.userId, input.attendeeUserIds),
+            inArray(organizationMembers.userId, input.attendeeUserIds),
           ),
         );
       const memberSet = new Set(members.map((m) => m.userId));
+      attendeeMemberships = new Map(members.map((m) => [m.userId, m.membershipId]));
       const invalid = input.attendeeUserIds.filter((id) => !memberSet.has(id));
       if (invalid.length > 0) throw new BadRequestException(`Users are not project members: ${invalid.join(", ")}`);
     }
@@ -242,7 +249,11 @@ export class MeetingsService {
 
       if (input.attendeeUserIds && input.attendeeUserIds.length > 0) {
         await tx.insert(meetingAttendees).values(
-          input.attendeeUserIds.map((uid) => ({ orgId, meetingId: created.id, userId: uid })),
+          input.attendeeUserIds.map((uid) => ({
+            orgId,
+            meetingId: created.id,
+            membershipId: attendeeMemberships.get(uid) ?? 0,
+          })),
         ).onConflictDoNothing();
       }
 
@@ -318,12 +329,19 @@ export class MeetingsService {
     const [member] = await this.db
       .select({ id: projectMembers.id })
       .from(projectMembers)
-      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, input.userId)))
+      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.membershipId, sql`(SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${input.userId} AND status = 'ACTIVE')`)))
       .limit(1);
     if (!member) throw new BadRequestException("User is not a project member");
     await this.db
       .insert(meetingAttendees)
-      .values({ orgId, meetingId, userId: input.userId })
+      .values({
+        orgId,
+        meetingId,
+        membershipId: (await this.db.query.organizationMembers.findFirst({
+          where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, input.userId), eq(organizationMembers.status, "ACTIVE")),
+          columns: { id: true },
+        }))?.id ?? 0,
+      })
       .onConflictDoNothing();
     return { meetingId, userId: input.userId };
   }
@@ -335,7 +353,7 @@ export class MeetingsService {
       .where(
         and(
           eq(meetingAttendees.meetingId, meetingId),
-          eq(meetingAttendees.userId, attendeeUserId),
+          sql`${meetingAttendees.membershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${attendeeUserId} AND status = 'ACTIVE')`,
           eq(meetingAttendees.orgId, orgId),
         ),
       );

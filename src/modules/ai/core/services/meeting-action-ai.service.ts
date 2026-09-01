@@ -4,6 +4,7 @@ import {
   meetingActionItems,
   meetingAttendees,
   projectMeetings,
+  organizationMembers,
   users,
 } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
@@ -55,7 +56,14 @@ export class MeetingActionAiService {
             name: users.name,
           })
           .from(meetingAttendees)
-          .innerJoin(users, eq(users.id, meetingAttendees.userId))
+          .innerJoin(
+            organizationMembers,
+            and(
+              eq(organizationMembers.orgId, meetingAttendees.orgId),
+              eq(organizationMembers.id, meetingAttendees.membershipId),
+            ),
+          )
+          .innerJoin(users, eq(users.id, organizationMembers.userId))
           .where(and(eq(meetingAttendees.meetingId, meetingId), eq(meetingAttendees.orgId, orgId)))
           .limit(20),
         this.db

@@ -84,8 +84,16 @@ export const templateListQuerySchema = z.object({
   limit: pageSizeField(50, 100),
 });
 
+export const templateRendersQuerySchema = z
+  .object({
+    cursor: z.string().trim().min(1).max(2048).optional(),
+    limit: pageSizeField(50, 100),
+  })
+  .strict();
+
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;
 export type UpdateTemplateInput = z.infer<typeof updateTemplateSchema>;
 export type TransitionTemplateInput = z.infer<typeof transitionTemplateSchema>;
 export type RenderTemplateInput = z.infer<typeof renderTemplateSchema>;
 export type TemplateListQuery = z.infer<typeof templateListQuerySchema>;
+export type TemplateRendersQuery = z.infer<typeof templateRendersQuerySchema>;

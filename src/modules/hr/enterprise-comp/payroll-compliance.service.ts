@@ -1,5 +1,7 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetAfterValue, keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -18,6 +20,19 @@ import type {
   UpdateComplianceTaskInput,
   ListComplianceTasksInput,
 } from "./dto/enterprise-comp.schemas";
+
+function decodePaginationCursor(cursor: string | undefined) {
+  if (cursor === undefined) return null;
+  const position = decodeCursor(cursor);
+  if (!position) throw new BadRequestException("Invalid pagination cursor");
+  return position;
+}
+
+function isDateOnly(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
 
 const COUNTRY_PRESET_TASKS: Record<string, { name: string; dueDayOfMonth: number }[]> = {
   IN: [
@@ -57,19 +72,34 @@ export class PayrollComplianceService {
   }
 
   async listVarianceApprovals(orgId: string, input: ListVarianceApprovalsInput) {
-    const { page, limit, status, payrollPeriodKey } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, status, payrollPeriodKey } = input;
     const conditions = [eq(hrPayrollVarianceApprovals.orgId, orgId)];
     if (status) conditions.push(eq(hrPayrollVarianceApprovals.status, status));
     if (payrollPeriodKey) conditions.push(eq(hrPayrollVarianceApprovals.payrollPeriodKey, payrollPeriodKey));
-    const where = and(...conditions);
+    const position = decodePaginationCursor(cursor);
+    if (position)
+      conditions.push(
+        keysetBeforeId(
+          hrPayrollVarianceApprovals.createdAt,
+          hrPayrollVarianceApprovals.id,
+          position,
+        ),
+      );
 
-    const [data, totalResult] = await Promise.all([
-      this.db.select().from(hrPayrollVarianceApprovals).where(where).orderBy(desc(hrPayrollVarianceApprovals.createdAt)).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(hrPayrollVarianceApprovals).where(where),
-    ]);
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    const rows = await this.db
+      .select()
+      .from(hrPayrollVarianceApprovals)
+      .where(and(...conditions))
+      .orderBy(
+        desc(hrPayrollVarianceApprovals.createdAt),
+        desc(hrPayrollVarianceApprovals.id),
+      )
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (approval) => ({
+      sortValue: approval.createdAt.toISOString(),
+      id: String(approval.id),
+    }));
   }
 
   async resolveVarianceApproval(orgId: string, id: number, actorId: string, input: ResolveVarianceInput) {
@@ -94,19 +124,27 @@ export class PayrollComplianceService {
   }
 
   async listArrears(orgId: string, input: ListArrearsInput) {
-    const { page, limit, userId, status } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, userId, status } = input;
     const conditions = [eq(hrArrearsAdjustments.orgId, orgId)];
     if (userId) conditions.push(eq(hrArrearsAdjustments.userId, userId));
     if (status) conditions.push(eq(hrArrearsAdjustments.status, status));
-    const where = and(...conditions);
+    const position = decodePaginationCursor(cursor);
+    if (position)
+      conditions.push(
+        keysetBeforeId(hrArrearsAdjustments.createdAt, hrArrearsAdjustments.id, position),
+      );
 
-    const [data, totalResult] = await Promise.all([
-      this.db.select().from(hrArrearsAdjustments).where(where).orderBy(desc(hrArrearsAdjustments.createdAt)).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(hrArrearsAdjustments).where(where),
-    ]);
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    const rows = await this.db
+      .select()
+      .from(hrArrearsAdjustments)
+      .where(and(...conditions))
+      .orderBy(desc(hrArrearsAdjustments.createdAt), desc(hrArrearsAdjustments.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (adjustment) => ({
+      sortValue: adjustment.createdAt.toISOString(),
+      id: String(adjustment.id),
+    }));
   }
 
   async applyArrears(orgId: string, id: number, actorId: string) {
@@ -125,19 +163,30 @@ export class PayrollComplianceService {
   }
 
   async listComplianceTasks(orgId: string, input: ListComplianceTasksInput) {
-    const { page, limit, countryCode, status } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, countryCode, status } = input;
     const conditions = [eq(hrPayrollComplianceTasks.orgId, orgId)];
     if (countryCode) conditions.push(eq(hrPayrollComplianceTasks.countryCode, countryCode));
     if (status) conditions.push(eq(hrPayrollComplianceTasks.status, status));
-    const where = and(...conditions);
+    const position = decodePaginationCursor(cursor);
+    if (position) {
+      if (!isDateOnly(position.sortValue))
+        throw new BadRequestException("Invalid pagination cursor");
+      conditions.push(
+        keysetAfterValue(hrPayrollComplianceTasks.dueDate, hrPayrollComplianceTasks.id, position),
+      );
+    }
 
-    const [data, totalResult] = await Promise.all([
-      this.db.select().from(hrPayrollComplianceTasks).where(where).orderBy(hrPayrollComplianceTasks.dueDate).limit(limit).offset(offset),
-      this.db.select({ total: count() }).from(hrPayrollComplianceTasks).where(where),
-    ]);
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    const rows = await this.db
+      .select()
+      .from(hrPayrollComplianceTasks)
+      .where(and(...conditions))
+      .orderBy(asc(hrPayrollComplianceTasks.dueDate), asc(hrPayrollComplianceTasks.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (task) => ({
+      sortValue: task.dueDate,
+      id: String(task.id),
+    }));
   }
 
   async updateComplianceTask(orgId: string, id: number, actorId: string, input: UpdateComplianceTaskInput) {

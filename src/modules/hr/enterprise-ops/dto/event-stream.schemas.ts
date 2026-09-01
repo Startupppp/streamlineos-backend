@@ -1,14 +1,12 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const paginationSchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
 });
 
-export const listEventsSchema = z.object({
-  cursor: z.string().optional(),
-  limit: pageSizeField(20, 100),
+export const listEventsSchema = paginationSchema.extend({
   eventType: z.string().optional(),
   entityType: z.string().optional(),
   entityId: z.string().optional(),

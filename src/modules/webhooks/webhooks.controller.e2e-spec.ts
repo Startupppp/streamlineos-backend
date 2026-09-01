@@ -12,6 +12,7 @@ describe("Webhooks auth (e2e)", () => {
   type Method = "get" | "post" | "patch" | "delete";
   const routes: ReadonlyArray<[Method, string]> = [
     ["get", "/webhooks"],
+    ["get", "/webhooks/1/logs"],
     ["post", "/webhooks"],
     ["get", "/webhooks/1"],
     ["patch", "/webhooks/1"],

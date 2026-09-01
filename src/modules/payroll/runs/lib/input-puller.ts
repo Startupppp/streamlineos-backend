@@ -95,7 +95,8 @@ export async function loadLockedSectionsByUser(
         eq(hrPayrollInputSnapshots.periodId, periodId),
         inArray(hrPayrollInputSnapshots.userId, userIds),
       ),
-    );
+    )
+    .limit(Math.max(1, userIds.length * 100));
 
   for (const snap of snaps) {
     if (!snap.payload || typeof snap.payload !== "object") continue;
@@ -326,7 +327,8 @@ export async function loadLiveAttendanceByUser(
           gte(attendance.date, monthStart),
           lte(attendance.date, monthEnd),
         ),
-      ),
+      )
+      .limit(Math.max(1, userIds.length * totalDays)),
     db
       .select({ userId: leaveRequests.userId, lopDays: leaveRequests.lopDays })
       .from(leaveRequests)
@@ -338,7 +340,8 @@ export async function loadLiveAttendanceByUser(
           gte(leaveRequests.startDate, monthStart),
           lte(leaveRequests.endDate, monthEnd),
         ),
-      ),
+      )
+      .limit(Math.max(1, userIds.length * totalDays * 2)),
   ]);
 
   const attendanceByUser = new Map<string, LiveAttendanceRow[]>();

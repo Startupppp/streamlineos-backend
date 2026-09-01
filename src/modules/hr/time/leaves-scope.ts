@@ -16,30 +16,26 @@ export async function resolveLeavesViewScope(
   return resolved.get(LEAVES_PERMISSION) ?? "none";
 }
 
-function employeeOwnerPredicate(actorUserId: string, actorMembershipId?: number | null): SQL {
-  return actorMembershipId != null
-    ? or(eq(leaveRequests.userMembershipId, actorMembershipId), eq(leaveRequests.userId, actorUserId))!
-    : eq(leaveRequests.userId, actorUserId);
+function employeeOwnerPredicate(actorMembershipId?: number | null): SQL {
+  if (actorMembershipId == null) return sql`false`;
+  return eq(leaveRequests.userMembershipId, actorMembershipId);
 }
 
 /** A derived approver is exclusive for scoped approvers; all-scope HR can override. */
 export function leaveApprovalScope(
   scope: DataScope,
-  orgId: string,
-  actorUserId: string,
   actorMembershipId?: number | null,
 ): SQL {
-  const approverMatch =
-    actorMembershipId != null
-      ? or(eq(leaveRequests.approverMembershipId, actorMembershipId), eq(leaveRequests.approverId, actorUserId))!
-      : eq(leaveRequests.approverId, actorUserId);
+  const approverMatch = actorMembershipId != null
+    ? eq(leaveRequests.approverMembershipId, actorMembershipId)
+    : sql`false`;
   switch (scope) {
     case "all":
       return sql`true`;
     case "team":
       return and(
         approverMatch,
-        employeeOwnerPredicate(actorUserId, actorMembershipId),
+        employeeOwnerPredicate(actorMembershipId),
       )!;
     case "own":
       return approverMatch;
@@ -54,7 +50,6 @@ export function leaveApprovalScope(
 
 export function leaveEmployeeScope(
   scope: DataScope,
-  actorUserId: string,
   actorMembershipId?: number | null,
 ): SQL {
   switch (scope) {
@@ -62,7 +57,7 @@ export function leaveEmployeeScope(
       return sql`true`;
     case "team":
     case "own":
-      return employeeOwnerPredicate(actorUserId, actorMembershipId);
+      return employeeOwnerPredicate(actorMembershipId);
     case "none":
       return sql`false`;
     default: {

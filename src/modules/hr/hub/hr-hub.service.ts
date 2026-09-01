@@ -121,7 +121,7 @@ export class HrHubService {
         this.holidays.listByYear(user.orgId, year),
       ),
       this.capture(capabilities.canAttendanceView, () =>
-        this.attendance.teamStatus(user, { page: 1, limit: 1 }),
+        this.attendance.teamStatus(user, { limit: 1 }),
       ),
       this.capture(capabilities.canCases, () =>
         this.opsInbox.getOpsInbox(user.orgId, user.userId),

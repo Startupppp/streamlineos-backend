@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField, optionalPageNumberField } from "../../../../common/pagination/list-query.schema";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const paginationSchema = z.object({
   page: pageNumberField,
@@ -8,7 +8,6 @@ export const paginationSchema = z.object({
 
 const cursorListFields = {
   cursor: z.string().trim().min(1).max(2048).optional(),
-  page: optionalPageNumberField(),
   limit: pageSizeField(20),
 };
 
@@ -17,19 +16,11 @@ export const listPeopleSchema = z
     ...cursorListFields,
     search: z.string().trim().min(1).max(200).optional(),
   })
-  .strict()
-  .refine((query) => query.cursor === undefined || query.page === undefined, {
-    path: ["cursor"],
-    message: "Cursor and page pagination cannot be combined.",
-  });
+  .strict();
 
 export const listEmploymentsSchema = z
   .object(cursorListFields)
-  .strict()
-  .refine((query) => query.cursor === undefined || query.page === undefined, {
-    path: ["cursor"],
-    message: "Cursor and page pagination cannot be combined.",
-  });
+  .strict();
 
 export const createPersonSchema = z.object({
   firstName: z.string().min(1).max(100),
@@ -138,7 +129,7 @@ export const createEffectiveDateChangeSchema = z
   });
 
 export const listEffectiveDateChangesSchema = z.object({
-  cursor: z.string().optional(),
+  cursor: z.string().trim().min(1).max(2048).optional(),
   limit: pageSizeField(20, 100),
   employmentId: z.coerce.number().int().positive().optional(),
   changeType: z.enum([
@@ -146,7 +137,7 @@ export const listEffectiveDateChangesSchema = z.object({
     "employment_type", "compensation", "work_schedule", "policy_assignment",
   ]).optional(),
   status: z.enum(["draft", "approved", "applied"]).optional(),
-});
+}).strict();
 
 export const applyDueChangesSchema = z
   .object({
@@ -207,9 +198,9 @@ export const listAuditLogsSchema = z.object({
 
 export const historyTypeSchema = z.object({
   type: z.enum(["manager", "department"]),
-  page: pageNumberField,
+  cursor: z.string().trim().min(1).max(2048).optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();
 
 export type CreatePersonInput = z.infer<typeof createPersonSchema>;
 export type UpdatePersonInput = z.infer<typeof updatePersonSchema>;

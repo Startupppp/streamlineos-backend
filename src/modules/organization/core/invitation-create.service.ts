@@ -149,7 +149,8 @@ export class InvitationCreateService {
     const allowedDomainRows = await this.db
       .select({ domain: organizationAllowedEmailDomains.domain })
       .from(organizationAllowedEmailDomains)
-      .where(eq(organizationAllowedEmailDomains.orgId, orgId));
+      .where(eq(organizationAllowedEmailDomains.orgId, orgId))
+      .limit(100);
 
     if (allowedDomainRows.length > 0) {
       const emailDomain = email.split("@")[1]?.toLowerCase();

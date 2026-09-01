@@ -32,7 +32,7 @@ import type {
 } from "./dto/approvals.schemas";
 
 type ApprovalPatch = Partial<
-  Pick<typeof projectApprovals.$inferInsert, "approverId" | "approverMembershipId" | "dueAt" | "status">
+  Pick<typeof projectApprovals.$inferInsert, "approverMembershipId" | "dueAt" | "status">
 >;
 
 const DECIDABLE = new Set<string>(["pending", "escalated", "changes_requested"]);
@@ -170,7 +170,7 @@ export class ApprovalsService {
         eq(projectApprovals.projectId, projectId),
         eq(projectApprovals.entityType, input.entityType),
         eq(projectApprovals.entityId, input.entityId),
-        eq(projectApprovals.approverId, input.approverId),
+        eq(projectApprovals.approverMembershipId, approverActor.membershipId),
         inArray(projectApprovals.status, ["pending", "requested", "escalated"]),
         isNull(projectApprovals.deletedAt),
       ),
@@ -191,7 +191,6 @@ export class ApprovalsService {
         entityId: input.entityId,
         title: input.title,
         reason: input.reason ?? null,
-        approverId: input.approverId,
         approverMembershipId: approverActor.membershipId,
         dueAt: input.dueAt ?? null,
         level: input.level ?? 1,
@@ -276,7 +275,6 @@ export class ApprovalsService {
     if (input.approverId !== undefined) {
       try {
         const actor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId: input.approverId });
-        patch.approverId = input.approverId;
         patch.approverMembershipId = actor.membershipId;
       } catch (e) {
         if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);

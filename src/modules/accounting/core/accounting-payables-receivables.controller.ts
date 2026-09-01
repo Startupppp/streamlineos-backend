@@ -40,6 +40,7 @@ import {
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { actingMembershipId } from "../../../common/auth/principal";
 
 const billIdParams = z.object({ billId: z.coerce.number().int().positive() }).strict();
 const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
@@ -64,7 +65,7 @@ export class AccountingPayablesReceivablesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolveAccountingJournalViewScope(this.access, u);
-    return this.payables.listPurchaseBills(u.orgId, query, scope, u.userId);
+    return this.payables.listPurchaseBills(u.orgId, query, scope, actingMembershipId(u.principal));
   }
 
   @Post("purchase-bills")

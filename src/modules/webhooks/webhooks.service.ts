@@ -1,5 +1,5 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq } from "drizzle-orm";
 import { randomBytes } from "crypto";
 
 import {
@@ -17,34 +17,38 @@ import {
 import { type Db } from "../../db/drizzle.module";
 import { webhookEndpoints, webhookLogs } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetBeforeId } from "../../common/pagination/keyset";
 
 @Injectable()
 export class WebhooksService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(orgId: string, filters: ListInput) {
-    const where = eq(webhookEndpoints.orgId, orgId);
-    const [endpoints, [{ total }]] = await Promise.all([
-      this.db.query.webhookEndpoints.findMany({
-        where,
-        orderBy: [desc(webhookEndpoints.createdAt), desc(webhookEndpoints.id)],
-        limit: filters.limit,
-        offset: (filters.page - 1) * filters.limit,
-      }),
-      this.db
-        .select({ total: sql<number>`count(*)::int` })
-        .from(webhookEndpoints)
-        .where(where),
-    ]);
+    const position = decodeCursor(filters.cursor);
+    if (filters.cursor !== undefined && !position) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
+
+    const conditions = [eq(webhookEndpoints.orgId, orgId)];
+    if (position) {
+      conditions.push(
+        keysetBeforeId(webhookEndpoints.createdAt, webhookEndpoints.id, position),
+      );
+    }
+    const endpoints = await this.db.query.webhookEndpoints.findMany({
+      where: and(...conditions),
+      orderBy: [desc(webhookEndpoints.createdAt), desc(webhookEndpoints.id)],
+      limit: filters.limit + 1,
+    });
+    const page = buildCursorPage(endpoints, filters.limit, (endpoint) => ({
+      sortValue: endpoint.createdAt.toISOString(),
+      id: String(endpoint.id),
+    }));
 
     return {
-      data: endpoints.map(({ secret: _, ...rest }) => rest),
-      pagination: {
-        total,
-        page: filters.page,
-        limit: filters.limit,
-        totalPages: Math.ceil(total / filters.limit),
-      },
+      data: page.data.map(({ secret: _, ...rest }) => rest),
+      pagination: page.pagination,
     };
   }
 
@@ -126,35 +130,37 @@ export class WebhooksService {
     const endpoint = await this.getEndpoint(orgId, endpointId);
     if (!endpoint) return null;
 
-    const where = and(
+    const position = decodeCursor(filters.cursor);
+    if (filters.cursor !== undefined && !position) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
+
+    const conditions = [
       eq(webhookLogs.endpointId, endpointId),
       eq(webhookLogs.orgId, orgId),
-    );
-    const [logs, [{ total }]] = await Promise.all([
-      this.db
-        .select()
-        .from(webhookLogs)
-        .where(where)
-        .orderBy(desc(webhookLogs.createdAt))
-        .limit(filters.limit)
-        .offset((filters.page - 1) * filters.limit),
-      this.db
-        .select({ total: sql<number>`count(*)::int` })
-        .from(webhookLogs)
-        .where(where),
-    ]);
+    ];
+    if (position) {
+      conditions.push(
+        keysetBeforeId(webhookLogs.createdAt, webhookLogs.id, position),
+      );
+    }
+    const logs = await this.db
+      .select()
+      .from(webhookLogs)
+      .where(and(...conditions))
+      .orderBy(desc(webhookLogs.createdAt), desc(webhookLogs.id))
+      .limit(filters.limit + 1);
+    const page = buildCursorPage(logs, filters.limit, (log) => ({
+      sortValue: log.createdAt.toISOString(),
+      id: String(log.id),
+    }));
 
     return {
-      data: logs.map((log) => ({
+      data: page.data.map((log) => ({
         ...log,
         responseBody: log.responseBody?.slice(0, WEBHOOK_RESPONSE_BODY_LIMIT) ?? null,
       })),
-      pagination: {
-        total,
-        page: filters.page,
-        limit: filters.limit,
-        totalPages: Math.ceil(total / filters.limit),
-      },
+      pagination: page.pagination,
     };
   }
 }

@@ -20,15 +20,15 @@ export const updateIncidentSchema = z.object({
 });
 
 export const listIncidentsSchema = z.object({
-  cursor: z.string().optional(),
+  cursor: z.string().trim().min(1).max(2048).optional(),
   limit: pageSizeField(20, 100),
   status: z.enum(["open", "investigating", "mitigated", "closed"]).optional(),
   type: z.enum(["injury", "accident", "near_miss", "hazard", "environmental", "other"]).optional(),
   severity: z.enum(["low", "medium", "high", "critical"]).optional(),
-  search: z.string().max(200).optional(),
+  search: z.string().trim().min(1).max(200).optional(),
   fromDate: z.string().optional(),
   toDate: z.string().optional(),
-});
+}).strict();
 
 export const checkinSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),

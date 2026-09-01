@@ -140,7 +140,8 @@ export class RecurringInvoicesService {
     const templates = await this.db
       .select()
       .from(finRecurringInvoiceTemplates)
-      .where(and(...conditions));
+      .where(and(...conditions))
+      .limit(1000);
 
     const results: { templateId: number; invoiceId?: number; error?: string }[] = [];
     for (const tpl of templates) {

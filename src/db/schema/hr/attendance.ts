@@ -9,7 +9,9 @@ import type { AttendanceRecordStatus } from "./attendance-status";
 export const attendance = pgTable("attendance", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // Stable display/delivery identity. Tenant authority is userMembershipId.
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   workerId: text("worker_id"),
   workerEngagementId: text("worker_engagement_id"),
   date: date("date").notNull(),
@@ -28,6 +30,12 @@ export const attendance = pgTable("attendance", {
   unique("uniq_attendance_org_id").on(table.orgId, table.id),
   index("idx_attendance_org_date_status").on(table.orgId, table.date, table.status),
   index("idx_attendance_org_user_date").on(table.orgId, table.userId, table.date),
+  index("idx_attendance_org_user_membership_date").on(table.orgId, table.userMembershipId, table.date),
+  foreignKey({
+    columns: [table.orgId, table.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_attendance_user_actor",
+  }).onDelete("set null"),
   index("idx_attendance_org_worker_date").on(table.orgId, table.workerId, table.date),
   index("idx_attendance_org_engagement_date").on(table.orgId, table.workerEngagementId, table.date),
   foreignKey({
@@ -71,11 +79,12 @@ export const holidays = pgTable("holidays", {
 export const wfhRequests = pgTable("wfh_requests", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  // Stable display/delivery identity. Tenant authority is userMembershipId.
+  userId: text("user_id").notNull(),
   date: date("date").notNull(),
   reason: text("reason"),
   status: wfhRequestStatusEnum("status").default("PENDING").notNull(),
-  approverId: text("approver_id").references(() => users.id),
+  approverId: text("approver_id"),
   approverMembershipId: integer("approver_membership_id"),
   userMembershipId: integer("user_membership_id"),
   rejectionReason: text("rejection_reason"),
@@ -93,18 +102,24 @@ export const wfhRequests = pgTable("wfh_requests", {
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_wfh_requests_approver_actor",
   }).onDelete("restrict"),
+  foreignKey({
+    columns: [table.orgId, table.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_wfh_requests_user_actor",
+  }).onDelete("set null"),
 ]);
 
 export const helpdeskTickets = pgTable("helpdesk_tickets", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").notNull().references(() => users.id),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   title: text("title").notNull(),
   description: text("description"),
   category: text("category"),
   priority: ticketPriorityEnum("priority").default("MEDIUM").notNull(),
   status: ticketStatusEnum("status").default("TODO").notNull(),
-  assigneeId: text("assignee_id").references(() => users.id),
+  assigneeId: text("assignee_id"),
   assigneeMembershipId: integer("assignee_membership_id"),
   isConfidential: boolean("is_confidential").default(false).notNull(),
   slaDueAt: timestamp("sla_due_at"),
@@ -130,7 +145,8 @@ export const hrHelpdeskRouting = pgTable("hr_helpdesk_routing", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   category: text("category").notNull(),
-  assigneeUserId: text("assignee_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  assigneeUserId: text("assignee_user_id").notNull(),
+  assigneeMembershipId: integer("assignee_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -143,7 +159,8 @@ export const hrHelpdeskComments = pgTable("hr_helpdesk_comments", {
   id: serial("id").primaryKey(),
   ticketId: integer("ticket_id").references(() => helpdeskTickets.id, { onDelete: "cascade" }).notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  authorId: text("author_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  authorId: text("author_id").notNull(),
+  authorMembershipId: integer("author_membership_id"),
   body: text("body").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
@@ -154,7 +171,8 @@ export const hrHelpdeskComments = pgTable("hr_helpdesk_comments", {
 export const employeeDevices = pgTable("employee_devices", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   deviceType: text("device_type").notNull(),
   deviceName: text("device_name").notNull(),
   serialNumber: text("serial_number"),

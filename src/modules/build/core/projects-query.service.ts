@@ -206,7 +206,7 @@ export class ProjectsQueryService {
       const arr = membersMap.get(m.projectId);
       if (arr && arr.length < 5) {
         arr.push({
-          id: m.membershipId,
+          id: organizationMembers.userId,
           firstName: m.firstName,
           lastName: m.lastName,
           image: m.image,

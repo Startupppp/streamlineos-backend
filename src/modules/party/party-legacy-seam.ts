@@ -111,6 +111,7 @@ const PARTY_COLUMNS = {
  * still terminates.
  */
 const MAX_MERGE_HOPS = 8;
+const LEGACY_LOOKUP_BATCH_SIZE = 500;
 
 function unresolved(ref: LegacyPartyRef): LegacyPartyResolution {
   return { status: "unresolved", ref };
@@ -273,7 +274,8 @@ async function selectThroughMap(
           eq(leadPartyMap.organizationId, organizationId),
           inArray(leadPartyMap.leadId, legacyIds),
         ),
-      );
+      )
+      .limit(LEGACY_LOOKUP_BATCH_SIZE);
 
   if (kind === "CLIENT")
     return db
@@ -291,7 +293,8 @@ async function selectThroughMap(
           eq(clientPartyMap.organizationId, organizationId),
           inArray(clientPartyMap.clientId, legacyIds),
         ),
-      );
+      )
+      .limit(LEGACY_LOOKUP_BATCH_SIZE);
 
   if (kind === "CONTACT")
     return db
@@ -309,7 +312,8 @@ async function selectThroughMap(
           eq(contactPartyMap.organizationId, organizationId),
           inArray(contactPartyMap.contactId, legacyIds),
         ),
-      );
+      )
+      .limit(LEGACY_LOOKUP_BATCH_SIZE);
 
   return db
     .select({ ...PARTY_COLUMNS, legacyId: crmOrgPartyMap.crmOrganizationId })
@@ -324,9 +328,10 @@ async function selectThroughMap(
     .where(
       and(
         eq(crmOrgPartyMap.organizationId, organizationId),
-        inArray(crmOrgPartyMap.crmOrganizationId, legacyIds),
-      ),
-    );
+          inArray(crmOrgPartyMap.crmOrganizationId, legacyIds),
+        ),
+      )
+      .limit(LEGACY_LOOKUP_BATCH_SIZE);
 }
 
 /**
@@ -346,8 +351,14 @@ export async function resolveLegacyPartyIds(
   const ids = [...new Set(legacyIds)].filter((id) => Number.isInteger(id));
   if (!organizationId || ids.length === 0) return resolved;
 
-  for (const row of await selectThroughMap(db, organizationId, kind, ids))
-    resolved.set(row.legacyId, row.partyId);
+  for (let start = 0; start < ids.length; start += LEGACY_LOOKUP_BATCH_SIZE)
+    for (const row of await selectThroughMap(
+      db,
+      organizationId,
+      kind,
+      ids.slice(start, start + LEGACY_LOOKUP_BATCH_SIZE),
+    ))
+      resolved.set(row.legacyId, row.partyId);
 
   return resolved;
 }
@@ -376,7 +387,8 @@ export async function countUnmappedLegacyRows(
           eq(leadPartyMap.organizationId, leads.orgId),
           eq(leadPartyMap.leadId, leads.id),
         ),
-      ),
+      )
+      .limit(1),
   );
   const unmappedClients = notExists(
     db
@@ -387,7 +399,8 @@ export async function countUnmappedLegacyRows(
           eq(clientPartyMap.organizationId, clients.orgId),
           eq(clientPartyMap.clientId, clients.id),
         ),
-      ),
+      )
+      .limit(1),
   );
   const unmappedContacts = notExists(
     db
@@ -398,7 +411,8 @@ export async function countUnmappedLegacyRows(
           eq(contactPartyMap.organizationId, contacts.orgId),
           eq(contactPartyMap.contactId, contacts.id),
         ),
-      ),
+      )
+      .limit(1),
   );
 
   const unmappedOrganisations = notExists(
@@ -410,7 +424,8 @@ export async function countUnmappedLegacyRows(
           eq(crmOrgPartyMap.organizationId, crmOrganizations.orgId),
           eq(crmOrgPartyMap.crmOrganizationId, crmOrganizations.id),
         ),
-      ),
+      )
+      .limit(1),
   );
 
   const [lead] = await db

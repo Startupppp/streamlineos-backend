@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm";
 import {
   projectMembers,
+  organizationMembers,
   tickets,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -117,7 +118,8 @@ export class ProjectsTicketsQueryService {
       const member = await this.db.query.projectMembers.findFirst({
         where: and(
           eq(projectMembers.projectId, projectId),
-          eq(projectMembers.userId, u.userId),
+          eq(projectMembers.membershipId, organizationMembers.id),
+          eq(organizationMembers.userId, u.userId),
         ),
         columns: { id: true },
       });
@@ -197,7 +199,7 @@ export class ProjectsTicketsQueryService {
       }
 
       const updateData: Partial<typeof tickets.$inferInsert> = { updatedAt: new Date() };
-      if (body.assigneeId !== undefined) updateData.assigneeId = body.assigneeId;
+      if (body.assigneeId !== undefined) updateData.assigneeMembershipId = body.assigneeId === null ? null : sql`(SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${body.assigneeId} AND status = 'ACTIVE')`;
       if (body.status !== undefined) updateData.status = body.status;
       if (body.sprintId !== undefined) updateData.sprintId = body.sprintId;
       if (body.priority !== undefined) updateData.priority = body.priority;

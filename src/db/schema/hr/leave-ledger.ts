@@ -49,7 +49,8 @@ export const hrLeaveLedger = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
+    userMembershipId: integer("user_membership_id"),
     leaveTypeId: integer("leave_type_id")
       .notNull()
       .references(() => leaveTypes.id, { onDelete: "restrict" }),

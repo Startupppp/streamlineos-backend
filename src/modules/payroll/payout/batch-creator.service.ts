@@ -5,7 +5,7 @@ import {
   InternalServerErrorException,
   Logger,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.types";
 import {
@@ -24,6 +24,7 @@ import type { PayoutBatchFormat } from "./dto/payout.schemas";
 import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
 import { defaultFormatFromCurrency, csvHeader, csvRow } from "./lib/payout-csv";
 import { toPaise, fromPaise } from "../runs/lib/money";
+import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
 
 function isDuplicateKeyError(err: unknown): boolean {
   return typeof err === "object" && err !== null && "code" in err && err.code === "23505";
@@ -75,7 +76,7 @@ export class BatchCreatorService {
       );
     }
 
-    const employees = await this.db
+    const employees = requirePayrollReadWithinCap(await this.db
       .select({
         id: payrollRunEmployees.id,
         userId: payrollRunEmployees.userId,
@@ -88,12 +89,13 @@ export class BatchCreatorService {
         holdReason: payrollRunEmployees.holdReason,
       })
       .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
+      .limit(PAYROLL_READ_CAP + 1), "create payout batch employees");
 
     const payees = await loadRunEmployeePayees(this.db, orgId, runId, this.efService);
     const payeeByRunEmployee = new Map(payees.map((payee) => [payee.runEmployeeId, payee]));
 
-    const alreadyPaidRows = await this.db
+    const alreadyPaidRows = requirePayrollReadWithinCap(await this.db
       .select({ runEmployeeId: payrollBankBatchItems.runEmployeeId })
       .from(payrollBankBatchItems)
       .innerJoin(payrollBankBatches, eq(payrollBankBatchItems.batchId, payrollBankBatches.id))
@@ -103,7 +105,8 @@ export class BatchCreatorService {
           eq(payrollBankBatches.orgId, orgId),
           eq(payrollBankBatchItems.status, "PAID"),
         ),
-      );
+      )
+      .limit(PAYROLL_READ_CAP + 1), "create payout batch paid employees");
     const alreadyPaidRunEmployeeIds = new Set(alreadyPaidRows.map((r) => r.runEmployeeId));
 
     const eligible = employees.filter((e) => {
@@ -131,7 +134,7 @@ export class BatchCreatorService {
     const narrationLabel = `Salary ${month}`.trim();
 
     const [seqRow] = await this.db
-      .select({ count: payrollBankBatches.id })
+      .select({ count: count() })
       .from(payrollBankBatches)
       .where(and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, runId)));
     const baseSeq = seqRow?.count ?? 0;
@@ -148,9 +151,10 @@ export class BatchCreatorService {
           where: and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.idempotencyKey, subKey)),
         });
         if (existingBatch) {
-          const batchItems = await this.db.query.payrollBankBatchItems.findMany({
+          const batchItems = requirePayrollReadWithinCap(await this.db.query.payrollBankBatchItems.findMany({
             where: eq(payrollBankBatchItems.batchId, existingBatch.id),
-          });
+            limit: PAYROLL_READ_CAP + 1,
+          }), "replay payout batch items");
           results.push({ batch: existingBatch, items: batchItems, fileUrl: null, currencyCode, replayed: true });
           groupIdx++;
           continue;
@@ -249,9 +253,10 @@ export class BatchCreatorService {
             where: and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.idempotencyKey, subKey)),
           });
           if (racedBatch) {
-            const racedItems = await this.db.query.payrollBankBatchItems.findMany({
+            const racedItems = requirePayrollReadWithinCap(await this.db.query.payrollBankBatchItems.findMany({
               where: eq(payrollBankBatchItems.batchId, racedBatch.id),
-            });
+              limit: PAYROLL_READ_CAP + 1,
+            }), "replay raced payout batch items");
             results.push({ batch: racedBatch, items: racedItems, fileUrl: null, currencyCode, replayed: true });
             groupIdx++;
             continue;
@@ -286,9 +291,10 @@ export class BatchCreatorService {
           this.logger.warn("createBatch: no ambient tenant context; CSV upload skipped for batch", { batchId, orgId });
       }
 
-      const batchItems = await this.db.query.payrollBankBatchItems.findMany({
+      const batchItems = requirePayrollReadWithinCap(await this.db.query.payrollBankBatchItems.findMany({
         where: eq(payrollBankBatchItems.batchId, newBatch.id),
-      });
+        limit: PAYROLL_READ_CAP + 1,
+      }), "load payout batch items");
 
       results.push({ batch: newBatch, items: batchItems, fileUrl: null, currencyCode, replayed: false });
       groupIdx++;

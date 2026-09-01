@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
@@ -202,6 +202,8 @@ export class SimulatorService {
     const conditions = [eq(hrSimulations.orgId, orgId)];
     if (type) conditions.push(eq(hrSimulations.type, type));
     const position = decodeCursor(cursor);
+    if (cursor !== undefined && !position)
+      throw new BadRequestException("Invalid pagination cursor");
     if (position)
       conditions.push(keysetBeforeUuid(hrSimulations.createdAt, hrSimulations.id, position));
 

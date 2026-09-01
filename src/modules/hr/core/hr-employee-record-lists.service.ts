@@ -2,7 +2,6 @@ import { Inject, Injectable } from "@nestjs/common";
 import {
   and,
   asc,
-  count,
   eq,
   gt,
   ilike,
@@ -99,16 +98,6 @@ type CursorListResponse<RecordType> = {
   };
 };
 
-type LegacyPageResponse<RecordType> = {
-  data: RecordType[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
-};
-
 function boundPageLimit(requestedLimit: number): number {
   return Math.min(Math.max(requestedLimit, 1), MAX_PAGE_LIMIT);
 }
@@ -125,12 +114,17 @@ export class HrEmployeeRecordListsService {
   ): Promise<CursorListResponse<PersonListRecord>> {
     const pageLimit = boundPageLimit(query.limit);
     const conditions = this.peopleConditions(orgId, actorUserId, scope);
-    if (query.search)
-      conditions.push(await this.personSearchCondition(query.search));
     if (query.cursor) {
-      const cursor = decodePeopleListCursor(query.cursor);
+      const cursor = decodePeopleListCursor(query.cursor, {
+        orgId,
+        actorUserId,
+        scope,
+        search: query.search ?? null,
+      });
       conditions.push(gt(hrPeople.id, cursor.personId));
     }
+    if (query.search)
+      conditions.push(await this.personSearchCondition(query.search));
 
     const result = await this.db
       .select(PERSON_VIEW_COLUMNS)
@@ -150,49 +144,14 @@ export class HrEmployeeRecordListsService {
         hasMore,
         nextCursor:
           hasMore && lastPerson
-            ? encodePeopleListCursor({ personId: lastPerson.id })
+            ? encodePeopleListCursor({
+                personId: lastPerson.id,
+                orgId,
+                actorUserId,
+                scope,
+                search: query.search ?? null,
+              })
             : null,
-      },
-    };
-  }
-
-  async listPeoplePage(
-    orgId: string,
-    actorUserId: string,
-    query: Pick<ListPeopleInput, "limit" | "page" | "search"> & {
-      page: number;
-    },
-    scope: DataScope,
-  ): Promise<LegacyPageResponse<PersonListRecord>> {
-    const pageLimit = boundPageLimit(query.limit);
-    const conditions = this.peopleConditions(orgId, actorUserId, scope);
-    if (query.search)
-      conditions.push(await this.personSearchCondition(query.search));
-    const where = and(...conditions);
-    const [data, totalRows] = await Promise.all([
-      this.db
-        .select(PERSON_VIEW_COLUMNS)
-        .from(hrPeople)
-        .innerJoin(organizationPeople, PERSON_JOIN_COND)
-        .where(where)
-        .orderBy(asc(organizationPeople.firstName), asc(hrPeople.id))
-        .limit(pageLimit)
-        .offset((query.page - 1) * pageLimit),
-      this.db
-        .select({ total: count() })
-        .from(hrPeople)
-        .innerJoin(organizationPeople, PERSON_JOIN_COND)
-        .where(where),
-    ]);
-    const total = totalRows[0]?.total ?? 0;
-
-    return {
-      data,
-      pagination: {
-        page: query.page,
-        limit: pageLimit,
-        total,
-        totalPages: Math.ceil(total / pageLimit),
       },
     };
   }
@@ -206,7 +165,11 @@ export class HrEmployeeRecordListsService {
     const pageLimit = boundPageLimit(query.limit);
     const conditions = this.employmentConditions(orgId, actorUserId, scope);
     if (query.cursor) {
-      const cursor = decodeEmploymentListCursor(query.cursor);
+      const cursor = decodeEmploymentListCursor(query.cursor, {
+        orgId,
+        actorUserId,
+        scope,
+      });
       conditions.push(gt(hrEmployments.id, cursor.employmentId));
     }
 
@@ -236,49 +199,11 @@ export class HrEmployeeRecordListsService {
           hasMore && lastEmployment
             ? encodeEmploymentListCursor({
                 employmentId: lastEmployment.id,
+                orgId,
+                actorUserId,
+                scope,
               })
             : null,
-      },
-    };
-  }
-
-  async listEmploymentsPage(
-    orgId: string,
-    actorUserId: string,
-    query: Pick<ListEmploymentsInput, "limit" | "page"> & { page: number },
-    scope: DataScope,
-  ): Promise<LegacyPageResponse<EmploymentListRecord>> {
-    const pageLimit = boundPageLimit(query.limit);
-    const conditions = this.employmentConditions(orgId, actorUserId, scope);
-    const where = and(...conditions);
-    const employmentJoin = and(
-      eq(hrPeople.orgId, hrEmployments.orgId),
-      eq(hrPeople.id, hrEmployments.personId),
-    );
-    const [data, totalRows] = await Promise.all([
-      this.db
-        .select(EMPLOYMENT_VIEW_COLUMNS)
-        .from(hrEmployments)
-        .innerJoin(hrPeople, employmentJoin)
-        .where(where)
-        .orderBy(asc(hrEmployments.id))
-        .limit(pageLimit)
-        .offset((query.page - 1) * pageLimit),
-      this.db
-        .select({ total: count() })
-        .from(hrEmployments)
-        .innerJoin(hrPeople, employmentJoin)
-        .where(where),
-    ]);
-    const total = totalRows[0]?.total ?? 0;
-
-    return {
-      data,
-      pagination: {
-        page: query.page,
-        limit: pageLimit,
-        total,
-        totalPages: Math.ceil(total / pageLimit),
       },
     };
   }

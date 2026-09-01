@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   offerFulfillmentComponents,
   crmProducts,
@@ -18,6 +18,8 @@ import type {
   ListOfferFulfillmentQuery,
   UpdateOfferFulfillmentInput,
 } from "./dto/offer-fulfillment.schemas";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetBeforeValue } from "../../common/pagination/keyset";
 
 const PG_UNIQUE_VIOLATION = "23505";
 
@@ -88,32 +90,31 @@ export class OfferFulfillmentService {
   }
 
   async listComponents(orgId: string, query: ListOfferFulfillmentQuery) {
-    const { page, limit, crmOfferId, invSkuId, status } = query;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, crmOfferId, invSkuId, status } = query;
+    const position = decodeCursor(cursor);
     const conditions = and(
       eq(offerFulfillmentComponents.orgId, orgId),
       crmOfferId ? eq(offerFulfillmentComponents.crmOfferId, crmOfferId) : undefined,
       invSkuId ? eq(offerFulfillmentComponents.invSkuId, invSkuId) : undefined,
       status ? eq(offerFulfillmentComponents.status, status) : undefined,
+      position
+        ? keysetBeforeValue(
+            offerFulfillmentComponents.offerFulfillmentComponentId,
+            offerFulfillmentComponents.offerFulfillmentComponentId,
+            position,
+          )
+        : undefined,
     );
-    const [rows, [totalRow]] = await Promise.all([
-      this.db
+    const rows = await this.db
         .select()
         .from(offerFulfillmentComponents)
         .where(conditions)
         .orderBy(desc(offerFulfillmentComponents.offerFulfillmentComponentId))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(offerFulfillmentComponents)
-        .where(conditions),
-    ]);
-    const total = Number(totalRow?.total ?? 0);
-    return {
-      data: rows,
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
-    };
+        .limit(limit + 1);
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: String(row.offerFulfillmentComponentId),
+      id: String(row.offerFulfillmentComponentId),
+    }));
   }
 
   async getComponent(orgId: string, offerFulfillmentComponentId: number) {

@@ -67,46 +67,67 @@ export class CalendarEventSourceLoader {
     return { eventsData, linkedTicketMap };
   }
 
-  private queryVisibleEvents(
+  private async queryVisibleEvents(
     orgId: string,
     userId: string,
     callerMembershipId: number,
     start: Date,
     end: Date,
   ) {
-    return this.database
-      .select({
-        id: calendarEvents.id,
-        title: calendarEvents.title,
-        description: calendarEvents.description,
-        location: calendarEvents.location,
-        meetingUrl: calendarEvents.meetingUrl,
-        startDate: calendarEvents.startDate,
-        endDate: calendarEvents.endDate,
-        allDay: calendarEvents.allDay,
-        color: calendarEvents.color,
-        category: calendarEvents.category,
-        entityType: calendarEvents.entityType,
-        entityId: calendarEvents.entityId,
-        visibility: calendarEvents.visibility,
-        creatorName: users.name,
-        rsvpStatus: callerAtt.status,
-      })
-      .from(calendarEvents)
-      .leftJoin(
-        creatorMember,
-        and(eq(creatorMember.orgId, calendarEvents.orgId), eq(creatorMember.id, calendarEvents.createdByMembershipId)),
-      )
-      .leftJoin(users, eq(users.id, creatorMember.userId))
-      .leftJoin(
-        callerAtt,
-        and(
-          eq(callerAtt.orgId, calendarEvents.orgId),
-          eq(callerAtt.eventId, calendarEvents.id),
-          eq(callerAtt.membershipId, callerMembershipId),
-        ),
-      )
-      .where(
+    const events: Array<{
+      id: number;
+      title: string;
+      description: string | null;
+      location: string | null;
+      meetingUrl: string | null;
+      startDate: Date;
+      endDate: Date;
+      allDay: boolean | null;
+      color: string | null;
+      category: string | null;
+      entityType: string | null;
+      entityId: string | null;
+      visibility: string;
+      creatorName: string | null;
+      rsvpStatus: string | null;
+    }> = [];
+    let after: { startDate: Date; id: number } | null = null;
+    const batchSize = 500;
+    for (;;) {
+      // .limit(batchSize) below is intentional: the keyset loop consumes every batch.
+      const batch = await this.database
+        .select({
+          id: calendarEvents.id,
+          title: calendarEvents.title,
+          description: calendarEvents.description,
+          location: calendarEvents.location,
+          meetingUrl: calendarEvents.meetingUrl,
+          startDate: calendarEvents.startDate,
+          endDate: calendarEvents.endDate,
+          allDay: calendarEvents.allDay,
+          color: calendarEvents.color,
+          category: calendarEvents.category,
+          entityType: calendarEvents.entityType,
+          entityId: calendarEvents.entityId,
+          visibility: calendarEvents.visibility,
+          creatorName: users.name,
+          rsvpStatus: callerAtt.status,
+        })
+        .from(calendarEvents)
+        .leftJoin(
+          creatorMember,
+          and(eq(creatorMember.orgId, calendarEvents.orgId), eq(creatorMember.id, calendarEvents.createdByMembershipId)),
+        )
+        .leftJoin(users, eq(users.id, creatorMember.userId))
+        .leftJoin(
+          callerAtt,
+          and(
+            eq(callerAtt.orgId, calendarEvents.orgId),
+            eq(callerAtt.eventId, calendarEvents.id),
+            eq(callerAtt.membershipId, callerMembershipId),
+          ),
+        )
+        .where(
         and(
           eq(calendarEvents.orgId, orgId),
           lt(calendarEvents.startDate, end),
@@ -116,9 +137,22 @@ export class CalendarEventSourceLoader {
             eq(calendarEvents.createdByMembershipId, callerMembershipId),
             isNotNull(callerAtt.id),
           ),
+          after === null
+            ? undefined
+            : or(
+                gt(calendarEvents.startDate, after.startDate),
+                and(eq(calendarEvents.startDate, after.startDate), gt(calendarEvents.id, after.id)),
+              ),
         ),
       )
-      .orderBy(asc(calendarEvents.startDate))
-      .limit(2000);
+        .orderBy(asc(calendarEvents.startDate), asc(calendarEvents.id))
+        .limit(batchSize);
+      events.push(...batch);
+      if (batch.length < batchSize) break;
+      const last = batch[batch.length - 1];
+      if (!last) break;
+      after = { startDate: last.startDate, id: last.id };
+    }
+    return events;
   }
 }

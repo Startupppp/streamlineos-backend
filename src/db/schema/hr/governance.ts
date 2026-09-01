@@ -10,9 +10,10 @@ import {
   index,
   uniqueIndex,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizationMembers, organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
 import { hrJobLevels } from "./core-org";
 
@@ -67,7 +68,8 @@ export const hrLegalHolds = pgTable(
     orgId: text("org_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    subjectUserId: text("subject_user_id").references(() => users.id, { onDelete: "set null" }),
+    subjectUserId: text("subject_user_id"),
+    subjectMembershipId: integer("subject_membership_id"),
     reason: text("reason").notNull(),
     status: hrLegalHoldStatusEnum("status").notNull().default("active"),
     placedBy: text("placed_by").references(() => users.id, { onDelete: "set null" }),
@@ -143,7 +145,8 @@ export const hrDataRequests = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     subjectUserId: text("subject_user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "restrict" }),
+      ,
+    subjectMembershipId: integer("subject_membership_id"),
     type: hrDataRequestTypeEnum("type").notNull(),
     status: hrDataRequestStatusEnum("status").notNull().default("pending"),
     requestedBy: text("requested_by").references(() => users.id, { onDelete: "set null" }),
@@ -170,11 +173,11 @@ export const hrProxyAccess = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     grantorUserId: text("grantor_user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
     grantorMembershipId: integer("grantor_membership_id"),
     proxyUserId: text("proxy_user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
     proxyMembershipId: integer("proxy_membership_id"),
     scope: hrProxyScopeEnum("scope").notNull(),
     startsAt: timestamp("starts_at").notNull(),
@@ -192,6 +195,16 @@ export const hrProxyAccess = pgTable(
     index("idx_hr_proxy_access_org_proxy").on(table.orgId, table.proxyUserId),
     index("idx_hr_proxy_access_org_grantor_membership").on(table.orgId, table.grantorMembershipId),
     index("idx_hr_proxy_access_org_proxy_membership").on(table.orgId, table.proxyMembershipId),
+    foreignKey({
+      columns: [table.orgId, table.grantorMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_hr_proxy_access_grantor_actor",
+    }).onDelete("set null"),
+    foreignKey({
+      columns: [table.orgId, table.proxyMembershipId],
+      foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+      name: "fk_hr_proxy_access_proxy_actor",
+    }).onDelete("set null"),
   ],
 );
 
@@ -252,7 +265,8 @@ export const hrUnionMemberships = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+      ,
+    userMembershipId: integer("user_membership_id"),
     unionName: text("union_name").notNull(),
     memberSince: timestamp("member_since").notNull(),
     status: hrUnionMembershipStatusEnum("status").notNull().default("active"),

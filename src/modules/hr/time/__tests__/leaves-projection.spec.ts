@@ -1,5 +1,9 @@
 import { LeavesService } from "../leaves.service";
 
+jest.mock("../organization-membership", () => ({
+  requireOrganizationMembershipId: jest.fn().mockResolvedValue(1),
+}));
+
 describe("LeavesService user projection", () => {
   it("projects public user fields for this-week leave rows", async () => {
     const findMany = jest.fn().mockResolvedValue([]);

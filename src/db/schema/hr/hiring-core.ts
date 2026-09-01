@@ -1,7 +1,7 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { jobPostingStatusEnum } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizationMembers, organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
 
 export const hiringFlows = pgTable("hiring_flows", {
@@ -9,12 +9,15 @@ export const hiringFlows = pgTable("hiring_flows", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   isDefault: boolean("is_default").notNull().default(false),
-  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdBy: text("created_by").notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_hiring_flows_org_id").on(table.orgId, table.id),
   index("idx_hiring_flows_org").on(table.orgId),
+  index("idx_hiring_flows_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
+  foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hiring_flows_created_by_actor" }).onDelete("restrict"),
 ]);
 
 export const scorecardTemplates = pgTable("scorecard_templates", {
@@ -23,12 +26,15 @@ export const scorecardTemplates = pgTable("scorecard_templates", {
   name: text("name").notNull(),
   criteria: jsonb("criteria").$type<Array<{ name: string; weight: number }>>().notNull().default([]),
   isActive: boolean("is_active").notNull().default(true),
-  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdBy: text("created_by").notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_scorecard_templates_org_id").on(table.orgId, table.id),
   index("idx_scorecard_templates_org").on(table.orgId),
+  index("idx_scorecard_templates_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
+  foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_scorecard_templates_created_by_actor" }).onDelete("restrict"),
 ]);
 
 export const hiringFlowRounds = pgTable("hiring_flow_rounds", {
@@ -79,7 +85,8 @@ export const jobPostings = pgTable("job_postings", {
   openings: integer("openings").default(1).notNull(),
   applicationDeadline: date("application_deadline"),
   closingDate: timestamp("closing_date"),
-  postedBy: text("posted_by").references(() => users.id),
+  postedBy: text("posted_by"),
+  postedByMembershipId: integer("posted_by_membership_id"),
   externalPostingIds: jsonb("external_posting_ids").$type<Record<string, string>>(),
   isInternal: boolean("is_internal").notNull().default(false),
   screeningQuestions: jsonb("screening_questions").$type<ScreeningQuestion[]>(),
@@ -90,6 +97,8 @@ export const jobPostings = pgTable("job_postings", {
   index("idx_job_postings_org").on(table.orgId),
   index("idx_job_postings_status").on(table.status),
   index("idx_job_postings_org_status").on(table.orgId, table.status),
+  index("idx_job_postings_org_posted_by_membership").on(table.orgId, table.postedByMembershipId),
+  foreignKey({ columns: [table.orgId, table.postedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_job_postings_posted_by_actor" }).onDelete("restrict"),
 ]);
 
 export const candidateSources = pgTable("candidate_sources", {
@@ -101,13 +110,16 @@ export const candidateSources = pgTable("candidate_sources", {
   meta: jsonb("meta").$type<Record<string, unknown>>(),
   lastSyncedAt: timestamp("last_synced_at"),
   lastSyncCount: integer("last_sync_count").default(0).notNull(),
-  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdBy: text("created_by").notNull(),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_candidate_sources_org_id").on(table.orgId, table.id),
   index("idx_candidate_sources_org").on(table.orgId),
   uniqueIndex("uq_candidate_sources_org_platform").on(table.orgId, table.platform),
+  index("idx_candidate_sources_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
+  foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_candidate_sources_created_by_actor" }).onDelete("restrict"),
 ]);
 
 export const hiringFlowsRelations = relations(hiringFlows, ({ one, many }) => ({

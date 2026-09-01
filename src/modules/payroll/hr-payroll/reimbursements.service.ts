@@ -26,7 +26,8 @@ export class ReimbursementsService {
   ) {}
 
   listReimbursements(orgId: string, userId: string, membershipId: number | null, scope: DataScope, page = 1, limit = 100) {
-    const ownerPredicate = scope === "own" && membershipId != null
+    if (scope === "own" && membershipId === null) throw new ForbiddenException("Organization membership required");
+    const ownerPredicate = scope === "own"
       ? eq(reimbursements.userMembershipId, membershipId)
       : applyScope(scope, orgId, userId, { ownerColumn: reimbursements.userId });
     const conditions = [eq(reimbursements.orgId, orgId), ownerPredicate];
@@ -45,12 +46,13 @@ export class ReimbursementsService {
   }
 
   async createReimbursement(orgId: string, userId: string, membershipId: number | null, body: CreateReimbursementInput) {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const [record] = await this.db
       .insert(reimbursements)
       .values({
         orgId,
         userId,
-        userMembershipId: membershipId ?? undefined,
+        userMembershipId: membershipId,
         category: body.category,
         amount: body.amount.toString(),
         description: body.description,

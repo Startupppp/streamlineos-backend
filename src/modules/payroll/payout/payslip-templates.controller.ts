@@ -44,7 +44,7 @@ export class PayslipTemplatesController {
   @RequirePermission("payroll:payslips:view")
   @Validate({ query: listPayslipTemplatesQuerySchema })
   list(@CurrentUser() u: CurrentUserContext, @Query() query: ListPayslipTemplatesQuery) {
-    return this.templates.list(u.orgId, query.page, query.limit);
+    return this.templates.list(u.orgId, query.cursor, query.limit);
   }
 
   @Post("preview")

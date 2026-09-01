@@ -98,7 +98,8 @@ export class OrgMembershipStatusService {
             ),
           )
           .where(and(eq(users.id, userId), isNull(users.deletedAt)))
-          .orderBy(desc(organizationMembers.joinedAt)),
+        .orderBy(desc(organizationMembers.joinedAt))
+        .limit(100),
       ),
     );
 

@@ -57,9 +57,8 @@ export class HrDisciplinaryService {
   /** Employee: actions issued against me. */
   async listMine(u: CurrentUserContext) {
     const membershipId = actingMembershipId(u.principal);
-    const employeePredicate = membershipId != null
-      ? or(eq(hrDisciplinaryActions.employeeMembershipId, membershipId), eq(hrDisciplinaryActions.employeeId, u.userId))!
-      : eq(hrDisciplinaryActions.employeeId, u.userId);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
+    const employeePredicate = eq(hrDisciplinaryActions.employeeMembershipId, membershipId);
     return this.db
       .select({
         id: hrDisciplinaryActions.id,
@@ -228,9 +227,8 @@ export class HrDisciplinaryService {
 
   async listUnacknowledgedCount(u: CurrentUserContext) {
     const membershipId = actingMembershipId(u.principal);
-    const employeePredicate = membershipId != null
-      ? or(eq(hrDisciplinaryActions.employeeMembershipId, membershipId), eq(hrDisciplinaryActions.employeeId, u.userId))!
-      : eq(hrDisciplinaryActions.employeeId, u.userId);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required");
+    const employeePredicate = eq(hrDisciplinaryActions.employeeMembershipId, membershipId);
     const [row] = await this.db
       .select({ total: count() })
       .from(hrDisciplinaryActions)

@@ -84,15 +84,15 @@ describe("resolveAttendanceScope", () => {
 
   it("binds own summary reads to the authenticated user", () => {
     const compiled = new PgDialect().sqlToQuery(
-      attendanceMemberScope("own", "o1", "u1"),
+      attendanceMemberScope("own", 7),
     );
-    expect(compiled.params).toEqual(["u1"]);
+    expect(compiled.params).toEqual([7]);
   });
 
   it("falls back to owner-only when no team members are resolved", () => {
     const compiled = new PgDialect().sqlToQuery(
-      attendanceMemberScope("team", "o1", "manager-1"),
+      attendanceMemberScope("team", 7),
     );
-    expect(compiled.params).toEqual(["manager-1"]);
+    expect(compiled.params).toEqual([7]);
   });
 });

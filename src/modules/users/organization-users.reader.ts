@@ -1,5 +1,5 @@
-import { NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import {
   hrEmployments,
@@ -16,6 +16,8 @@ import { membershipStatusToUserStatus } from "../organization/core/org-membershi
 import type { ListUsersInput } from "./dto/users.schemas";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../directory/employment-query";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetBeforeId, keysetBeforeUuidValue } from "../../common/pagination/keyset";
 
 export class OrganizationUsersReader {
   constructor(
@@ -25,8 +27,8 @@ export class OrganizationUsersReader {
 
   async listUsers(orgId: string, params: ListUsersInput) {
     const {
-      page,
       limit,
+      cursor,
       search,
       status,
       role,
@@ -37,7 +39,8 @@ export class OrganizationUsersReader {
       sortBy,
       sortOrder,
     } = params;
-    const offset = (page - 1) * limit;
+    const position = cursor === undefined ? undefined : decodeCursor(cursor);
+    if (cursor !== undefined && !position) throw new BadRequestException("Invalid pagination cursor");
 
     const conditions = [eq(organizationMembers.orgId, orgId)];
 
@@ -99,6 +102,14 @@ export class OrganizationUsersReader {
         : sortBy === "status"
           ? sortDir(organizationMembers.status)
           : sortDir(organizationMembers.joinedAt);
+    const cursorCondition = position
+      ? sortBy === "name"
+        ? keysetBeforeUuidValue(users.name, users.id, position)
+        : sortBy === "status"
+          ? keysetBeforeUuidValue(organizationMembers.status, users.id, position)
+          : keysetBeforeId(organizationMembers.joinedAt, organizationMembers.id, position)
+      : undefined;
+    if (cursorCondition) conditions.push(cursorCondition);
 
     const teamsSubquery = this.database
       .select({
@@ -117,6 +128,7 @@ export class OrganizationUsersReader {
     const [data, countResult] = await Promise.all([
       this.database
         .select({
+          membershipId: organizationMembers.id,
           id: users.id,
           email: users.email,
           name: users.name,
@@ -145,23 +157,18 @@ export class OrganizationUsersReader {
         .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .leftJoin(teamsSubquery, eq(teamsSubquery.userId, users.id))
         .where(and(...conditions))
-        .orderBy(sortExpr)
-        .limit(limit)
-        .offset(offset),
-      this.database
-        .select({ total: count() })
-        .from(organizationMembers)
-        .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
-        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-        .where(and(...conditions)),
+        .orderBy(sortExpr, sortBy === "name" ? sortDir(users.id) : sortBy === "status" ? sortDir(users.id) : sortDir(organizationMembers.id))
+        .limit(limit + 1),
     ]);
-
-    const total = countResult[0]?.total ?? 0;
     const factsMap = await this.employment.getFactsBatch(orgId, data.map((r) => r.id));
 
+    const page = buildCursorPage(data, limit, (row) => ({
+      sortValue: sortBy === "name" ? row.name : sortBy === "status" ? row.membershipStatus : row.joinedAt,
+      id: sortBy === "name" || sortBy === "status" ? row.id : String(row.membershipId),
+    }));
     return {
-      data: data.map((row) => {
+      ...page,
+      data: page.data.map((row) => {
         const { membershipStatus, membershipLeftAt, teamNames, ...rest } = row;
         const userStatus = membershipStatusToUserStatus(membershipStatus);
         const facts = factsMap.get(row.id);
@@ -177,12 +184,6 @@ export class OrganizationUsersReader {
           teams: teamNames ? teamNames.split(",") : [],
         };
       }),
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
     };
   }
 

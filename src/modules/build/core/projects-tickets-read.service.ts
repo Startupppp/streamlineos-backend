@@ -128,14 +128,14 @@ export class ProjectsTicketsReadService {
       this.access.resolveUserPermissions(orgId, userId),
       this.db.query.projects.findFirst({
         where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-        columns: { managerId: true, managerMembershipId: true },
+        columns: { managerMembershipId: true },
       }),
     ]);
     if (!project) return { hasAccess: false, role: null };
     if (perms.has("build:manage")) return { hasAccess: true, role: "OWNER" };
     if (
       (membershipId !== null && project.managerMembershipId === membershipId) ||
-      project.managerId === userId
+      sql`${projects.managerMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId} AND status = 'ACTIVE')`
     )
       return { hasAccess: true, role: "MANAGER" };
     const membership = await this.db
@@ -152,7 +152,7 @@ export class ProjectsTicketsReadService {
       .where(
         and(
           eq(projectMembers.projectId, projectId),
-          eq(projectMembers.userId, userId),
+          eq(projectMembers.membershipId, organizationMembers.id),
         ),
       )
       .limit(1);
@@ -170,7 +170,7 @@ export class ProjectsTicketsReadService {
         and(
           eq(projectTeamAssignments.projectId, projectId),
           eq(projectTeamAssignments.orgId, orgId),
-          eq(projectTeamMembers.userId, userId),
+          eq(projectTeamMembers.membershipId, organizationMembers.id),
         ),
       )
       .limit(1);
@@ -233,9 +233,9 @@ export class ProjectsTicketsReadService {
     const scopeClause =
       scope !== "all"
         ? or(
-            eq(tickets.assigneeId, u.userId),
+            sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${u.userId} AND status = 'ACTIVE')`,
             eq(tickets.reporterId, u.userId),
-            sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta WHERE ta.org_id = ${u.orgId} AND ta.user_id = ${u.userId} AND ta.ticket_id = ${tickets.id})`,
+            sql`EXISTS (SELECT 1 FROM ${ticketAssignees} ta JOIN organization_members om ON om.org_id = ta.org_id AND om.id = ta.membership_id WHERE ta.org_id = ${u.orgId} AND om.user_id = ${u.userId} AND ta.ticket_id = ${tickets.id})`,
           )
         : undefined;
 
@@ -279,14 +279,14 @@ export class ProjectsTicketsReadService {
       const realIds = resolved.filter((id) => id !== "__unassigned__");
       if (unassigned && realIds.length > 0) {
         const assigneeCondition = or(
-          isNull(tickets.assigneeId),
-          inArray(tickets.assigneeId, realIds),
+          isNull(tickets.assigneeMembershipId),
+          sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`,
         );
         if (assigneeCondition) filterConditions.push(assigneeCondition);
       } else if (unassigned) {
-        filterConditions.push(isNull(tickets.assigneeId));
+        filterConditions.push(isNull(tickets.assigneeMembershipId));
       } else {
-        filterConditions.push(inArray(tickets.assigneeId, realIds));
+        filterConditions.push(sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id IN (${sql.join(realIds.map((id) => sql`${id}`), sql`, `)}))`);
       }
     }
 

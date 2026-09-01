@@ -58,9 +58,7 @@ export class PayslipDownloadService {
     if (!publication) throw new NotFoundException("Payslip publication not found");
 
     const callerMembershipId = actingMembershipId(caller.principal);
-    const isOwnPayslip = callerMembershipId != null && publication.userMembershipId != null
-      ? publication.userMembershipId === callerMembershipId
-      : publication.userId != null && publication.userId === caller.userId;
+    const isOwnPayslip = callerMembershipId != null && publication.userMembershipId === callerMembershipId;
 
     if (!isOwnPayslip) {
       if (publication.orgId !== caller.orgId) {

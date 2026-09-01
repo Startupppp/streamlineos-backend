@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, ilike, isNull, sql } from "drizzle-orm";
-import { bugs, projects } from "../../../db/schema";
+import { bugs, organizationMembers, projects } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -31,7 +31,7 @@ export class BugsService {
     ];
     if (query.status) conditions.push(eq(bugs.status, query.status));
     if (query.severity) conditions.push(eq(bugs.severity, query.severity));
-    if (query.assigneeId) conditions.push(eq(bugs.assigneeId, query.assigneeId));
+    if (query.assigneeId) conditions.push(sql`${bugs.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${query.assigneeId} AND status = 'ACTIVE')`);
     if (query.q) conditions.push(ilike(bugs.title, `%${query.q}%`));
     return this.db
       .select()
@@ -63,6 +63,12 @@ export class BugsService {
         .from(bugs)
         .where(and(eq(bugs.projectId, projectId), eq(bugs.orgId, orgId)));
       const nextNumber = (maxRow?.maxNum ?? 0) + 1;
+      const assigneeMembershipId = input.assigneeId
+        ? (await tx.query.organizationMembers.findFirst({
+            where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, input.assigneeId), eq(organizationMembers.status, "ACTIVE")),
+            columns: { id: true },
+          }))?.id ?? null
+        : null;
       return tx
         .insert(bugs)
         .values({
@@ -81,7 +87,7 @@ export class BugsService {
           browserDevice: input.browserDevice,
           affectedReleaseId: input.affectedReleaseId ?? null,
           fixedReleaseId: input.fixedReleaseId ?? null,
-          assigneeId: input.assigneeId ?? null,
+          assigneeMembershipId,
           qaOwnerId: input.qaOwnerId ?? null,
           linkedTicketId: input.linkedTicketId ?? null,
           linkedTestCaseId: input.linkedTestCaseId ?? null,

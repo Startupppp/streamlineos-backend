@@ -58,6 +58,11 @@ const EXCLUDED_GLOBAL_FKS = new Set([
   "organizations.purge_scheduled_by",
   "subprocessors.updated_by",
   "hrms_migration_profiles.changed_by_platform_user_id",
+  // Retired by 0916_support_remaining_actor_drop.sql.  The bootstrap
+  // migration (0000) remains in the repository for chain reproducibility, so
+  // exclude these historical users FKs from the live actor inventory.
+  "support_tickets.assignee_id",
+  "support_tickets.created_by",
 ]);
 
 /**
@@ -97,8 +102,6 @@ const KNOWN_RAW_SQL_ACTOR_FKS = [
   { table: "crm_commission_earnings", column: "user_id", module: "crm" },
   { table: "crm_commission_plan_versions", column: "created_by", module: "crm" },
   { table: "crm_commission_plans", column: "created_by", module: "crm" },
-  { table: "employee_career_plans", column: "mentor_id", module: "hr" },
-  { table: "employee_career_plans", column: "user_id", module: "hr" },
   { table: "learning_paths", column: "created_by", module: "hr" },
   { table: "expense_export_jobs", column: "requested_by", module: "payroll" },
   { table: "inv_ai_feedback", column: "user_id", module: "inventory" },
@@ -393,7 +396,8 @@ function selfTest(entries, allowlistSet) {
   expectActionable("fin_approval_policies", "approver_user_id");
   expectActionable("journal_entries", "created_by");
   expectActionable("projects", "manager_id");
-  expectActionable("support_tickets", "assignee_id");
+  expectNotActionable("support_tickets", "assignee_id");
+  expectNotActionable("support_tickets", "created_by");
   expectActionable("kb_spaces", "created_by_id");
 
   expectNotActionable("fin_approval_requests", "requested_by");

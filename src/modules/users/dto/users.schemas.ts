@@ -3,8 +3,8 @@ import { pageNumberField, pageSizeField } from "../../../common/pagination/list-
 import { ORG_MEMBER_ROLES, ORG_MEMBER_ROLE_VALUES} from "../../../common/rbac/org-roles";
 
 export const listUsersSchema = z.object({
-  page: pageNumberField,
   limit: pageSizeField(20, 100),
+  cursor: z.string().optional(),
   search: z.string().optional(),
   status: z.enum(["active", "suspended", "archived"]).optional(),
   role: z.string().optional(),
@@ -99,7 +99,7 @@ export const bulkActionSchema = z.object({
 export type BulkActionInput = z.infer<typeof bulkActionSchema>;
 
 export const listLoginHistorySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
   success: z.enum(["true", "false"]).optional().transform((v) => (v === undefined ? undefined : v === "true")),
 });

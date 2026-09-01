@@ -4,6 +4,7 @@ import {
   supportTicketMessages,
   supportTicketAttachments,
   supportTickets,
+  organizationMembers,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -83,11 +84,15 @@ export class SupportTicketMessagesService {
         id: true,
         status: true,
         title: true,
-        createdBy: true,
-        assigneeId: true,
+        createdByMembershipId: true,
+        assigneeMembershipId: true,
         firstRespondedAt: true,
         priority: true,
         category: true,
+      },
+      with: {
+        creatorMembership: { with: { user: { columns: { id: true } } } },
+        assigneeMembership: { with: { user: { columns: { id: true } } } },
       },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
@@ -160,7 +165,7 @@ export class SupportTicketMessagesService {
       status: ticket.status,
       priority: ticket.priority,
       category: ticket.category ?? null,
-      assigneeId: ticket.assigneeId ?? null,
+      assigneeId: ticket.assigneeMembership?.user?.id ?? null,
       isInternal: input.isInternal,
       messageBody: input.body,
     };
@@ -171,7 +176,7 @@ export class SupportTicketMessagesService {
     if (!registerAfterCommit(automationTask)) void automationTask();
 
     const isFirstAgentReply =
-      !input.isInternal && !ticket.firstRespondedAt && userId !== null && userId !== ticket.createdBy;
+      !input.isInternal && !ticket.firstRespondedAt && userId !== null && userId !== ticket.creatorMembership?.user?.id;
 
     if (ticket.status === "OPEN" || isFirstAgentReply) {
       const followUp: Partial<typeof supportTickets.$inferInsert> = { updatedAt: new Date() };
@@ -188,7 +193,11 @@ export class SupportTicketMessagesService {
         this.notifications
           .sendReplyEmail(
             orgId,
-            { title: ticket.title, createdBy: ticket.createdBy, assigneeId: ticket.assigneeId },
+            {
+              title: ticket.title,
+              createdBy: ticket.creatorMembership?.user?.id ?? null,
+              assigneeId: ticket.assigneeMembership?.user?.id ?? null,
+            },
             ticketId,
             userId,
             input.body,

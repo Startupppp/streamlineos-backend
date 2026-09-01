@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../common/pagination/list-query.schema";
 import { assertSafeWebhookUrl } from "../../../common/security/ssrf-guard";
 
 export const WEBHOOK_RESPONSE_BODY_LIMIT = 2000;
@@ -23,14 +23,14 @@ const webhookUrl = z
 
 export const listSchema = z
   .object({
-    page: pageNumberField,
+    cursor: z.string().optional(),
     limit: pageSizeField(20),
   })
   .strict();
 
 export const logsSchema = z
   .object({
-    page: pageNumberField,
+    cursor: z.string().optional(),
     limit: pageSizeField(20),
   })
   .strict();

@@ -56,9 +56,15 @@ export const listPageQuerySchema = z.object({
 });
 export type ListPageQueryInput = z.infer<typeof listPageQuerySchema>;
 
+export const cursorListQuerySchema = z.object({
+  cursor: z.string().trim().min(1).max(2048).optional(),
+  limit: optionalPageSizeField(),
+});
+export type CursorListQueryInput = z.infer<typeof cursorListQuerySchema>;
+
 export const incentivesQuerySchema = z.object({
   status: z.string().optional(),
-  page: optionalPageNumberField(),
+  cursor: z.string().trim().min(1).max(2048).optional(),
   limit: optionalPageSizeField(),
 });
 export type IncentivesQueryInput = z.infer<typeof incentivesQuerySchema>;

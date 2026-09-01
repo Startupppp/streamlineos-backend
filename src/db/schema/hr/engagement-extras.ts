@@ -10,9 +10,10 @@ import {
   index,
   uniqueIndex,
   unique,
+  foreignKey,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizationMembers, organizations, users } from "../common/auth";
 
 export const rewardPointSourceEnum = pgEnum("reward_point_source", [
   "kudos",
@@ -40,7 +41,7 @@ export const hrMoodCheckins = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
+      
       .notNull(),
     userMembershipId: integer("user_membership_id"),
     date: text("date").notNull(),
@@ -53,6 +54,8 @@ export const hrMoodCheckins = pgTable(
     uniqueIndex("uniq_mood_org_user_date").on(t.orgId, t.userId, t.date),
     index("idx_mood_checkins_org_date").on(t.orgId, t.date),
     index("idx_mood_checkins_org_user_membership").on(t.orgId, t.userMembershipId),
+    uniqueIndex("uniq_mood_org_membership_date").on(t.orgId, t.userMembershipId, t.date),
+    foreignKey({ columns: [t.orgId, t.userMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_mood_checkins_user_actor" }).onDelete("restrict"),
   ],
 );
 
@@ -85,16 +88,19 @@ export const hrBadgeAwards = pgTable("hr_badge_awards", {
     .references(() => hrBadges.id, { onDelete: "cascade" })
     .notNull(),
   userId: text("user_id")
-    .references(() => users.id, { onDelete: "cascade" })
+    
     .notNull(),
-  awardedBy: text("awarded_by")
-    .references(() => users.id, { onDelete: "set null" }),
+  userMembershipId: integer("user_membership_id"),
+  awardedBy: text("awarded_by"),
+  awardedByMembershipId: integer("awarded_by_membership_id"),
   reason: text("reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   unique("uniq_hr_badge_awards_org_id").on(t.orgId, t.id),
   index("idx_badge_awards_org_user").on(t.orgId, t.userId),
   index("idx_badge_awards_badge").on(t.badgeId),
+  index("idx_badge_awards_org_awarded_by_membership").on(t.orgId, t.awardedByMembershipId),
+  foreignKey({ columns: [t.orgId, t.awardedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_badge_awards_awarded_by_actor" }).onDelete("restrict"),
 ]);
 
 export const hrRewardPointsLedger = pgTable("hr_reward_points_ledger", {
@@ -103,8 +109,9 @@ export const hrRewardPointsLedger = pgTable("hr_reward_points_ledger", {
     .references(() => organizations.id, { onDelete: "cascade" })
     .notNull(),
   userId: text("user_id")
-    .references(() => users.id, { onDelete: "cascade" })
+    
     .notNull(),
+  userMembershipId: integer("user_membership_id"),
   points: integer("points").notNull(),
   source: rewardPointSourceEnum("source").notNull(),
   sourceId: text("source_id"),
@@ -127,14 +134,16 @@ export const hrPolls = pgTable(
     options: jsonb("options").$type<string[]>().notNull(),
     status: pollStatusEnum("status").default("draft").notNull(),
     anonymous: boolean("anonymous").default(false).notNull(),
-    createdBy: text("created_by")
-      .references(() => users.id, { onDelete: "set null" }),
+    createdBy: text("created_by"),
+    createdByMembershipId: integer("created_by_membership_id"),
     closesAt: timestamp("closes_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
     unique("uniq_hr_polls_org_id").on(t.orgId, t.id),
     index("idx_hr_polls_org_status").on(t.orgId, t.status),
+    index("idx_hr_polls_org_created_by_membership").on(t.orgId, t.createdByMembershipId),
+    foreignKey({ columns: [t.orgId, t.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_polls_created_by_actor" }).onDelete("restrict"),
   ],
 );
 
@@ -142,18 +151,21 @@ export const hrPollVotes = pgTable(
   "hr_poll_votes",
   {
     id: serial("id").primaryKey(),
+    orgId: text("org_id"),
     pollId: integer("poll_id")
       .references(() => hrPolls.id, { onDelete: "cascade" })
       .notNull(),
     userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
+      
       .notNull(),
+    userMembershipId: integer("user_membership_id"),
     optionIndex: integer("option_index").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
     uniqueIndex("uniq_poll_vote_poll_user").on(t.pollId, t.userId),
     index("idx_poll_votes_poll").on(t.pollId),
+    index("idx_poll_votes_org_poll_user").on(t.orgId, t.pollId, t.userId),
   ],
 );
 
@@ -166,8 +178,8 @@ export const hrCommunities = pgTable(
       .notNull(),
     name: text("name").notNull(),
     description: text("description"),
-    createdBy: text("created_by")
-      .references(() => users.id, { onDelete: "set null" }),
+    createdBy: text("created_by"),
+    createdByMembershipId: integer("created_by_membership_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -178,6 +190,8 @@ export const hrCommunities = pgTable(
     unique("uniq_hr_communities_org_id").on(t.orgId, t.id),
     uniqueIndex("uniq_community_org_name").on(t.orgId, t.name),
     index("idx_communities_org").on(t.orgId),
+    index("idx_communities_org_created_by_membership").on(t.orgId, t.createdByMembershipId),
+    foreignKey({ columns: [t.orgId, t.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_communities_created_by_actor" }).onDelete("restrict"),
   ],
 );
 
@@ -185,12 +199,14 @@ export const hrCommunityMembers = pgTable(
   "hr_community_members",
   {
     id: serial("id").primaryKey(),
+    orgId: text("org_id"),
     communityId: integer("community_id")
       .references(() => hrCommunities.id, { onDelete: "cascade" })
       .notNull(),
     userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
+      
       .notNull(),
+    userMembershipId: integer("user_membership_id"),
     role: communityMemberRoleEnum("role").default("member").notNull(),
     joinedAt: timestamp("joined_at").defaultNow().notNull(),
   },
@@ -198,6 +214,7 @@ export const hrCommunityMembers = pgTable(
     uniqueIndex("uniq_community_member").on(t.communityId, t.userId),
     index("idx_community_members_community").on(t.communityId),
     index("idx_community_members_user").on(t.userId),
+    index("idx_community_members_org_community_user").on(t.orgId, t.communityId, t.userId),
   ],
 );
 
@@ -212,8 +229,8 @@ export const hrCampaigns = pgTable("hr_campaigns", {
   endsAt: timestamp("ends_at"),
   status: campaignStatusEnum("status").default("draft").notNull(),
   audience: jsonb("audience").$type<{ type: string; ids?: string[] }>(),
-  createdBy: text("created_by")
-    .references(() => users.id, { onDelete: "set null" }),
+  createdBy: text("created_by"),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
@@ -222,6 +239,8 @@ export const hrCampaigns = pgTable("hr_campaigns", {
 }, (t) => [
   unique("uniq_hr_campaigns_org_id").on(t.orgId, t.id),
   index("idx_campaigns_org_status").on(t.orgId, t.status),
+  index("idx_campaigns_org_created_by_membership").on(t.orgId, t.createdByMembershipId),
+  foreignKey({ columns: [t.orgId, t.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_campaigns_created_by_actor" }).onDelete("restrict"),
 ]);
 
 export const hrMoodCheckinsRelations = relations(hrMoodCheckins, ({ one }) => ({

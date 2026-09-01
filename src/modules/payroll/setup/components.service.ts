@@ -5,14 +5,18 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { SQL, and, count, eq, getTableColumns, ilike, or } from "drizzle-orm";
+import { SQL, and, asc, eq, getTableColumns, ilike, or, sql } from "drizzle-orm";
 import { salaryComponents, employeeSalaryProfileComponents } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { validateFormula } from "./lib/template-preview";
 import type { ListComponentsInput, CreateComponentInput, UpdateComponentInput } from "./dto/setup.schemas";
-import { resolveWindowedTotal, totalOverWindow, withoutTotal } from "../../../common/pagination/window-count";
+import { buildCursorPage } from "../../../common/pagination/cursor";
+import {
+  decodePayrollNumberTextCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
 
 type ComponentRow = typeof salaryComponents.$inferSelect;
 
@@ -20,7 +24,7 @@ type ComponentRow = typeof salaryComponents.$inferSelect;
 export class PayrollComponentsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async list(orgId: string, input: ListComponentsInput): Promise<{ items: ComponentRow[]; total: number }> {
+  async list(orgId: string, input: ListComponentsInput) {
     const filters: SQL[] = [eq(salaryComponents.orgId, orgId)];
 
     if (input.type) {
@@ -38,26 +42,35 @@ export class PayrollComponentsService {
       );
     }
 
-    const where = and(...filters);
-    const offset = (input.page - 1) * input.pageSize;
+    const cursorScope = [
+      "components",
+      orgId,
+      input.type ?? null,
+      input.active ?? null,
+      input.search ?? null,
+    ] as const;
+    const position = decodePayrollNumberTextCursor(input.cursor, cursorScope);
+    if (position) {
+      filters.push(
+        sql`(${salaryComponents.sortOrder}, ${salaryComponents.name}, ${salaryComponents.id}) > (${position.numberValue}, ${position.textValue}, ${position.id})`,
+      );
+    }
 
     const rows = await this.db
-      .select({ ...getTableColumns(salaryComponents), total: totalOverWindow })
+      .select(getTableColumns(salaryComponents))
       .from(salaryComponents)
-      .where(where)
-      .orderBy(salaryComponents.sortOrder, salaryComponents.name)
-      .limit(input.pageSize)
-      .offset(offset);
+      .where(and(...filters))
+      .orderBy(
+        asc(salaryComponents.sortOrder),
+        asc(salaryComponents.name),
+        asc(salaryComponents.id),
+      )
+      .limit(input.limit + 1);
 
-    const total = await resolveWindowedTotal(rows, offset, async () => {
-      const [totalRow] = await this.db
-        .select({ total: count() })
-        .from(salaryComponents)
-        .where(where);
-      return Number(totalRow?.total ?? 0);
-    });
-
-    return { items: withoutTotal(rows), total };
+    const page = buildCursorPage(rows, input.limit, (row) =>
+      payrollCursorPosition(cursorScope, [row.sortOrder, row.name], row.id),
+    );
+    return { items: page.data, pagination: page.pagination };
   }
 
   async create(u: CurrentUserContext, input: CreateComponentInput): Promise<ComponentRow> {

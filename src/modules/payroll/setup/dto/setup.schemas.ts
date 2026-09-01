@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { PAYROLL_TOGGLE_KEYS, PAYROLL_TEMPLATE_KEYS } from "../../payroll.types";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
 
@@ -12,8 +12,8 @@ export const listTemplatesSchema = z.object({
   complexity: z.enum(["SIMPLE", "MODERATE", "ADVANCED"]).optional(),
   country: z.string().trim().max(10).optional(),
   search: z.string().trim().max(200).optional(),
-  page: pageNumberField,
-  pageSize: pageSizeField(20, 100),
+  cursor: z.string().trim().min(1).max(2048).optional(),
+  limit: pageSizeField(20, 100),
 });
 export type ListTemplatesInput = z.infer<typeof listTemplatesSchema>;
 
@@ -108,8 +108,8 @@ export const listComponentsSchema = z.object({
   type: z.string().trim().optional(),
   active: queryBoolean.optional(),
   search: z.string().trim().max(200).optional(),
-  page: pageNumberField,
-  pageSize: pageSizeField(50, 100),
+  cursor: z.string().trim().min(1).max(2048).optional(),
+  limit: pageSizeField(50, 100),
 });
 export type ListComponentsInput = z.infer<typeof listComponentsSchema>;
 

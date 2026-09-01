@@ -19,6 +19,7 @@ import { RequirePermission } from "../../../access/require-permission.decorator"
 import { RequireModule } from "../../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../../common/auth/principal";
 import { DelegationsService } from "./delegations.service";
 import {
   createProxySchema,
@@ -79,7 +80,7 @@ export class HrGovernanceDelegationsController {
     @Body() body: UpdateProxyInput,
     @Req() req: Request,
   ) {
-    return this.service.update(user.orgId, proxyId, user.userId, body, req.ip);
+    return this.service.update(user.orgId, proxyId, user.userId, actingMembershipId(user.principal), body, req.ip);
   }
 
   @Delete(":proxyId")
@@ -92,6 +93,6 @@ export class HrGovernanceDelegationsController {
     @Req() req: Request,
   ) {
     const isAdmin = user.isOrgOwner;
-    await this.service.revoke(user.orgId, proxyId, user.userId, isAdmin, req.ip);
+    await this.service.revoke(user.orgId, proxyId, user.userId, actingMembershipId(user.principal), isAdmin, req.ip);
   }
 }

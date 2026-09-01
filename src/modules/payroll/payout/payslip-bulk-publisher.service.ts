@@ -34,6 +34,7 @@ import {
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import type { CalculationSnapshot, PayrollToggles } from "../payroll.types";
 import type { PayslipTemplateConfig } from "./dto/payout.schemas";
+import { PAYROLL_READ_CAP } from "../lib/query-bounds";
 
 export function computeSnapshotHash(snapshot: CalculationSnapshot): string {
   return createHash("sha256")
@@ -115,6 +116,7 @@ export class PayslipBulkPublisherService {
           .select({ userId: userPreferences.userId, language: userPreferences.language })
           .from(userPreferences)
           .where(inArray(userPreferences.userId, recipientUserIds))
+          .limit(recipientUserIds.length)
       : [];
     const localeByUserId = new Map(
       localeRows.map((row) => [row.userId, row.language]),
@@ -128,7 +130,8 @@ export class PayslipBulkPublisherService {
         currency: payrollRunEmployees.currency,
       })
       .from(payrollRunEmployees)
-      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)));
+      .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
+      .limit(PAYROLL_READ_CAP + 1);
 
     const snapshotByRunEmployee = new Map(
       runEmployees.map((row) => [row.id, row] as const),
@@ -146,6 +149,7 @@ export class PayslipBulkPublisherService {
     const existingPubs = await this.db.query.payslipPublications.findMany({
       where: and(eq(payslipPublications.runId, runId), eq(payslipPublications.orgId, orgId)),
       columns: { runEmployeeId: true, attemptCount: true, status: true },
+      limit: PAYROLL_READ_CAP + 1,
     });
     const attemptCountByRunEmployee = new Map(
       existingPubs.map((p) => [p.runEmployeeId, p.attemptCount] as const),
@@ -303,6 +307,7 @@ export class PayslipBulkPublisherService {
     const allPublications = await this.db.query.payslipPublications.findMany({
       where: and(eq(payslipPublications.runId, runId), eq(payslipPublications.orgId, orgId)),
       columns: { status: true },
+      limit: PAYROLL_READ_CAP + 1,
     });
     const allPublished = allPublications.length >= totalRunEmployeeCount &&
       allPublications.every(p => p.status === "PUBLISHED");

@@ -8,6 +8,8 @@ import { npsBreakdown, npsScore, type NpsCategory } from "./nps.helpers";
 import type { CreateSurveyInput, UpdateSurveyInput } from "./dto/customer-executive.schemas";
 
 const TREND_WINDOW = 50;
+const SURVEY_RESPONSE_WINDOW = 500;
+const SLA_TICKET_WINDOW = 5000;
 
 const SLA_TARGETS: Record<string, { firstResponse: number; resolution: number }> = {
   URGENT: { firstResponse: 2, resolution: 8 },
@@ -87,7 +89,8 @@ export class CustomerExecutiveService {
     const activeSurveys = await this.db
       .select({ id: npsSurveys.id })
       .from(npsSurveys)
-      .where(and(eq(npsSurveys.orgId, orgId), eq(npsSurveys.status, "active")));
+      .where(and(eq(npsSurveys.orgId, orgId), eq(npsSurveys.status, "active")))
+      .limit(200);
 
     const activeIds = new Set(activeSurveys.map((s) => s.id));
 
@@ -131,7 +134,8 @@ export class CustomerExecutiveService {
       .select()
       .from(npsResponses)
       .where(and(eq(npsResponses.surveyId, surveyId), eq(npsResponses.orgId, orgId)))
-      .orderBy(desc(npsResponses.createdAt));
+      .orderBy(desc(npsResponses.createdAt))
+      .limit(SURVEY_RESPONSE_WINDOW);
 
     const breakdown = npsBreakdown(responses.map((r) => r.category as NpsCategory));
 
@@ -168,7 +172,9 @@ export class CustomerExecutiveService {
     const tickets = await this.db
       .select()
       .from(supportTickets)
-      .where(eq(supportTickets.orgId, orgId));
+      .where(eq(supportTickets.orgId, orgId))
+      .orderBy(desc(supportTickets.createdAt))
+      .limit(SLA_TICKET_WINDOW);
 
     const now = Date.now();
 

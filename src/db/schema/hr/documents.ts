@@ -1,7 +1,7 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, integer, date, index, foreignKey, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { documentTypeEnum, ackStatusEnum } from "../common/enums";
-import { organizations, users } from "../common/auth";
+import { organizationMembers, organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
 
 export const richDocuments = pgTable("rich_documents", {
@@ -25,7 +25,7 @@ export const richDocuments = pgTable("rich_documents", {
 export const documents = pgTable("documents", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id"),
   departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
   name: text("name").notNull(),
   description: text("description"),
@@ -54,6 +54,11 @@ export const documents = pgTable("documents", {
   index("idx_documents_user").on(table.userId),
   index("idx_documents_expiry").on(table.expiryDate),
   index("idx_documents_org_user_membership").on(table.orgId, table.userMembershipId),
+  foreignKey({
+    columns: [table.orgId, table.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_documents_user_actor",
+  }).onDelete("set null"),
 ]);
 
 export const handbookVersions = pgTable("handbook_versions", {
@@ -76,7 +81,8 @@ export const policyAcknowledgments = pgTable("policy_acknowledgments", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   documentId: integer("document_id").references(() => documents.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   status: ackStatusEnum("status").default("PENDING").notNull(),
   acknowledgedAt: timestamp("acknowledged_at"),
   ipAddress: text("ip_address"),
@@ -122,11 +128,15 @@ export const teamEvents = pgTable("team_events", {
 
 export const teamEventParticipants = pgTable("team_event_participants", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id"),
   eventId: integer("event_id").references(() => teamEvents.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   status: text("status").default("GOING").notNull(),
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
-});
+}, (table) => [
+  index("idx_team_event_participants_org_event_user").on(table.orgId, table.eventId, table.userId),
+]);
 
 export const richDocumentsRelations = relations(richDocuments, ({ one }) => ({
   organization: one(organizations, { fields: [richDocuments.orgId], references: [organizations.id] }),

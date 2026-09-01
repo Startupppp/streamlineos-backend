@@ -27,8 +27,8 @@ import {
   patchBonusSchema,
   type CreateBonusInput,
   type PatchBonusInput,
-  listPageQuerySchema,
-  type ListPageQueryInput,
+  cursorListQuerySchema,
+  type CursorListQueryInput,
 } from "./dto/payroll.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -46,17 +46,23 @@ export class BonusesController {
 
   @Get()
   @RequirePermission("hr:payroll:view")
-  @Validate({ query: listPageQuerySchema })
+  @Validate({ query: cursorListQuerySchema })
   async list(
     @CurrentUser() u: CurrentUserContext,
-    @Query() query: ListPageQueryInput,
+    @Query() query: CursorListQueryInput,
   ) {
     let isAdmin = u.isOrgOwner;
     if (!isAdmin) {
       const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
       isAdmin = perms.has("hr:payroll:approve");
     }
-    return this.bonuses.listBonuses(u.orgId, u.userId, actingMembershipId(u.principal), isAdmin, query.page ?? 1, query.limit ?? 100);
+    return this.bonuses.listBonuses(
+      u.orgId,
+      actingMembershipId(u.principal),
+      isAdmin,
+      query.cursor,
+      query.limit ?? 100,
+    );
   }
 
   @Post()

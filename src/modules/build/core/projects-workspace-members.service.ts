@@ -46,11 +46,11 @@ export class ProjectsWorkspaceMembersService {
         )
       : undefined;
     const conds = [eq(projectWorkspaceMembers.orgId, orgId), searchCond];
-    if (pos) conds.push(keysetAfter(projectWorkspaceMembers.addedAt, projectWorkspaceMembers.userId, pos));
+    if (pos) conds.push(keysetAfter(projectWorkspaceMembers.addedAt, organizationMembers.userId, pos));
 
     const rows = await this.db
       .select({
-        id: projectWorkspaceMembers.userId,
+        id: organizationMembers.userId,
         role: projectWorkspaceMembers.role,
         addedAt: projectWorkspaceMembers.addedAt,
         name: users.name,
@@ -60,9 +60,10 @@ export class ProjectsWorkspaceMembersService {
         image: users.image,
       })
       .from(projectWorkspaceMembers)
-      .innerJoin(users, eq(users.id, projectWorkspaceMembers.userId))
+      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectWorkspaceMembers.orgId), eq(organizationMembers.id, projectWorkspaceMembers.membershipId)))
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(and(...conds))
-      .orderBy(asc(projectWorkspaceMembers.addedAt), asc(projectWorkspaceMembers.userId))
+      .orderBy(asc(projectWorkspaceMembers.addedAt), asc(organizationMembers.userId))
       .limit(limit + 1);
 
     const hasMore = rows.length > limit;
@@ -72,7 +73,7 @@ export class ProjectsWorkspaceMembersService {
     const teamRows = userIds.length
       ? await this.db
           .select({
-            userId: projectTeamMembers.userId,
+            userId: organizationMembers.userId,
             teamName: projectTeams.name,
           })
           .from(projectTeamMembers)
@@ -83,10 +84,11 @@ export class ProjectsWorkspaceMembersService {
               isNull(projectTeams.deletedAt),
             ),
           )
+          .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectTeamMembers.orgId), eq(organizationMembers.id, projectTeamMembers.membershipId)))
           .where(
             and(
               eq(projectTeamMembers.orgId, orgId),
-              inArray(projectTeamMembers.userId, userIds),
+              inArray(organizationMembers.userId, userIds),
             ),
           )
       : [];
@@ -112,7 +114,7 @@ export class ProjectsWorkspaceMembersService {
 
   async add(orgId: string, actorId: string, input: AddWorkspaceMemberInput) {
     const [orgMember] = await this.db
-      .select({ userId: organizationMembers.userId })
+      .select({ id: organizationMembers.id, userId: organizationMembers.userId })
       .from(organizationMembers)
       .where(
         and(
@@ -131,7 +133,7 @@ export class ProjectsWorkspaceMembersService {
       const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
       const [row] = await this.db
         .insert(projectWorkspaceMembers)
-        .values({ orgId, pmWorkspaceId, userId: input.userId, role: input.role })
+        .values({ orgId, pmWorkspaceId, membershipId: orgMember.id, role: input.role })
         .returning();
       this.audit.log({
         action: "project_workspace.member_added",
@@ -156,13 +158,19 @@ export class ProjectsWorkspaceMembersService {
   }
 
   async remove(orgId: string, actorId: string, userId: string) {
+    const [orgMember] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+    if (!orgMember) return;
     await this.db.transaction(async (tx) => {
       await tx
         .delete(projectWorkspaceMembers)
         .where(
           and(
             eq(projectWorkspaceMembers.orgId, orgId),
-            eq(projectWorkspaceMembers.userId, userId),
+            eq(projectWorkspaceMembers.membershipId, orgMember.id),
           ),
         );
       await tx
@@ -170,7 +178,7 @@ export class ProjectsWorkspaceMembersService {
         .where(
           and(
             eq(projectTeamMembers.orgId, orgId),
-            eq(projectTeamMembers.userId, userId),
+            eq(projectTeamMembers.membershipId, orgMember.id),
           ),
         );
     });
@@ -184,13 +192,19 @@ export class ProjectsWorkspaceMembersService {
   }
 
   async isWorkspaceMember(orgId: string, userId: string): Promise<boolean> {
+    const [orgMember] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+    if (!orgMember) return false;
     const [row] = await this.db
       .select({ id: projectWorkspaceMembers.id })
       .from(projectWorkspaceMembers)
       .where(
         and(
           eq(projectWorkspaceMembers.orgId, orgId),
-          eq(projectWorkspaceMembers.userId, userId),
+          eq(projectWorkspaceMembers.membershipId, orgMember.id),
         ),
       )
       .limit(1);

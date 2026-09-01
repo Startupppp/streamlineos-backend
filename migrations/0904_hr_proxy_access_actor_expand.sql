@@ -25,6 +25,7 @@ SET "grantor_membership_id" = om.id
 FROM "organization_members" om
 WHERE om.org_id = pa.org_id
   AND om.user_id = pa.grantor_user_id
+  AND om.status = 'ACTIVE'
   AND pa."grantor_membership_id" IS NULL;
 
 --> statement-breakpoint
@@ -33,6 +34,7 @@ SET "proxy_membership_id" = om.id
 FROM "organization_members" om
 WHERE om.org_id = pa.org_id
   AND om.user_id = pa.proxy_user_id
+  AND om.status = 'ACTIVE'
   AND pa."proxy_membership_id" IS NULL;
 
 --> statement-breakpoint

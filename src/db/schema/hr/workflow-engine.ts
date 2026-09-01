@@ -1,6 +1,6 @@
 import { pgTable, pgEnum, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizationMembers, organizations, users } from "../common/auth";
 
 export const hrWorkflowObjectTypeEnum = pgEnum("hr_workflow_object_type", [
   "leave_request",
@@ -106,8 +106,10 @@ export const hrWorkflowInstances = pgTable("hr_workflow_instances", {
   definitionSnapshot: jsonb("definition_snapshot").$type<{ steps: unknown[] }>().notNull(),
   objectType: hrWorkflowObjectTypeEnum("object_type").notNull(),
   objectId: text("object_id").notNull(),
-  requestedBy: text("requested_by").references(() => users.id, { onDelete: "restrict" }).notNull(),
-  subjectEmployeeId: text("subject_employee_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
+  requestedBy: text("requested_by").notNull(),
+  requestedByMembershipId: integer("requested_by_membership_id"),
+  subjectEmployeeId: text("subject_employee_id").notNull(),
+  subjectEmployeeMembershipId: integer("subject_employee_membership_id"),
   context: jsonb("context").$type<Record<string, unknown>>().default({}).notNull(),
   status: hrWorkflowInstanceStatusEnum("status").default("pending").notNull(),
   currentStepOrder: integer("current_step_order").default(1).notNull(),
@@ -119,6 +121,10 @@ export const hrWorkflowInstances = pgTable("hr_workflow_instances", {
   index("idx_hr_wf_inst_org_obj").on(table.orgId, table.objectType, table.objectId),
   index("idx_hr_wf_inst_org_status").on(table.orgId, table.status),
   index("idx_hr_wf_inst_org_requester").on(table.orgId, table.requestedBy),
+  index("idx_hr_wf_inst_org_requester_membership").on(table.orgId, table.requestedByMembershipId),
+  index("idx_hr_wf_inst_org_subject_membership").on(table.orgId, table.subjectEmployeeMembershipId),
+  foreignKey({ columns: [table.orgId, table.requestedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_workflow_instances_requested_by_actor" }).onDelete("restrict"),
+  foreignKey({ columns: [table.orgId, table.subjectEmployeeMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_workflow_instances_subject_actor" }).onDelete("restrict"),
 ]);
 
 export const hrWorkflowStepActions = pgTable("hr_workflow_step_actions", {
@@ -126,8 +132,9 @@ export const hrWorkflowStepActions = pgTable("hr_workflow_step_actions", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   instanceId: integer("instance_id").references(() => hrWorkflowInstances.id, { onDelete: "cascade" }).notNull(),
   stepOrder: integer("step_order").notNull(),
-  approverUserId: text("approver_user_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
-  actedByUserId: text("acted_by_user_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
+  approverUserId: text("approver_user_id").notNull(),
+  approverMembershipId: integer("approver_membership_id"),
+  actedByUserId: text("acted_by_user_id").notNull(),
   actedByMembershipId: integer("acted_by_membership_id"),
   action: hrWorkflowActionEnum("action").notNull(),
   comment: text("comment"),
@@ -136,6 +143,9 @@ export const hrWorkflowStepActions = pgTable("hr_workflow_step_actions", {
   unique("uniq_hr_workflow_step_actions_org_id").on(table.orgId, table.id),
   index("idx_hr_wf_actions_org_instance").on(table.orgId, table.instanceId),
   index("idx_hr_wf_actions_org_acted_by_membership").on(table.orgId, table.actedByMembershipId),
+  index("idx_hr_wf_actions_org_approver_membership").on(table.orgId, table.approverMembershipId),
+  foreignKey({ columns: [table.orgId, table.approverMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_workflow_step_actions_approver_actor" }).onDelete("restrict"),
+  foreignKey({ columns: [table.orgId, table.actedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_workflow_step_actions_acted_by_actor" }).onDelete("restrict"),
 ]);
 
 export const hrWorkflowInstanceAttachments = pgTable("hr_workflow_instance_attachments", {
@@ -158,9 +168,9 @@ export const hrWorkflowInstanceAttachments = pgTable("hr_workflow_instance_attac
 export const hrWorkflowDelegations = pgTable("hr_workflow_delegations", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  delegatorUserId: text("delegator_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  delegatorUserId: text("delegator_user_id").notNull(),
   delegatorMembershipId: integer("delegator_membership_id"),
-  delegateUserId: text("delegate_user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  delegateUserId: text("delegate_user_id").notNull(),
   delegateMembershipId: integer("delegate_membership_id"),
   objectType: hrWorkflowObjectTypeEnum("object_type"),
   startsAt: timestamp("starts_at").notNull(),
@@ -173,6 +183,8 @@ export const hrWorkflowDelegations = pgTable("hr_workflow_delegations", {
   index("idx_hr_wf_delegations_org_delegator_active").on(table.orgId, table.delegatorUserId, table.active),
   index("idx_hr_wf_delegations_org_delegator_membership").on(table.orgId, table.delegatorMembershipId),
   index("idx_hr_wf_delegations_org_delegate_membership").on(table.orgId, table.delegateMembershipId),
+  foreignKey({ columns: [table.orgId, table.delegatorMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_workflow_delegations_delegator_actor" }).onDelete("restrict"),
+  foreignKey({ columns: [table.orgId, table.delegateMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_hr_workflow_delegations_delegate_actor" }).onDelete("restrict"),
 ]);
 
 export const hrWorkflowDefinitionsRelations = relations(hrWorkflowDefinitions, ({ many }) => ({

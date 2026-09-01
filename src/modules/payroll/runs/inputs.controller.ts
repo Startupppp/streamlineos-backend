@@ -19,6 +19,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { AccessService } from "../../access/access.service";
 import { resolvePayrollRunsViewScope } from "../payroll-scope";
 import { InputsService } from "./inputs.service";
@@ -53,7 +54,7 @@ export class InputsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const scope = await resolvePayrollRunsViewScope(this.access, u);
-    const result = await this.inputsService.listInputs(u.orgId, runId, query, scope, u.userId);
+    const result = await this.inputsService.listInputs(u.orgId, runId, query, scope, u.userId, actingMembershipId(u.principal));
     if (!result) throw new NotFoundException("Payroll run not found");
     return result;
   }

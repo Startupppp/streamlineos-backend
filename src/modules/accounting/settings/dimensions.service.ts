@@ -158,7 +158,8 @@ export class DimensionsService {
           eq(accountingDimensionValues.dimensionId, dimensionId),
         ),
       )
-      .orderBy(accountingDimensionValues.code);
+      .orderBy(accountingDimensionValues.code)
+      .limit(500);
 
     return { items: rows };
   }

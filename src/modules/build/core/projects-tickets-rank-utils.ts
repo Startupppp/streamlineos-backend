@@ -79,7 +79,7 @@ export async function rankTicket(
   projectId: number,
   ticketId: number,
   body: RankTicketInput,
-  context: { userId: string; isOrgOwner: boolean },
+  context: { userId: string; isOrgOwner: boolean; membershipId?: number },
 ) {
   const [targetRow] = await db
     .select({ id: tickets.id, status: tickets.status, rank: tickets.rank })
@@ -150,7 +150,7 @@ export async function rankTicket(
       .where(
         and(
           eq(projectMembers.projectId, projectId),
-          eq(projectMembers.userId, context.userId),
+          eq(projectMembers.membershipId, context.membershipId ?? -1),
         ),
       )
       .limit(1);

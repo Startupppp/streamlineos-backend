@@ -102,9 +102,10 @@ export class HrInterviewsService {
 
   async listMine(
     orgId: string,
-    userId: string,
+    membershipId: number | null,
     query: SelfInterviewListInput,
   ): Promise<AssignedInterviewsPage> {
+    if (membershipId == null) throw new BadRequestException("Organization membership required.");
     const offset = (query.page - 1) * query.pageSize;
     const rows = await this.db.execute<{
       id: number;
@@ -139,16 +140,16 @@ export class HrInterviewsService {
       LEFT JOIN job_postings jp
         ON jp.id = i.job_posting_id AND jp.org_id = ${orgId}
       LEFT JOIN interview_scorecards sc
-        ON sc.interview_id = i.id AND sc.interviewer_id = ${userId}
+        ON sc.interview_id = i.id AND sc.interviewer_membership_id = ${membershipId}
       WHERE i.org_id = ${orgId}
         AND (
-          i.interviewer_id = ${userId}
+          i.interviewer_membership_id = ${membershipId}
           OR EXISTS (
             SELECT 1
             FROM interview_panel_members ipm
             WHERE ipm.org_id = ${orgId}
               AND ipm.interview_id = i.id
-              AND ipm.user_id = ${userId}
+              AND ipm.user_membership_id = ${membershipId}
           )
         )
       ORDER BY i.scheduled_at DESC
@@ -178,22 +179,23 @@ export class HrInterviewsService {
 
   async isAssignedTo(
     orgId: string,
-    userId: string,
+    membershipId: number | null,
     interviewId: number,
   ): Promise<boolean> {
+    if (membershipId == null) return false;
     const rows = await this.db.execute<{ id: number }>(sql`
       SELECT i.id
       FROM interviews i
       WHERE i.org_id = ${orgId}
         AND i.id = ${interviewId}
         AND (
-          i.interviewer_id = ${userId}
+          i.interviewer_membership_id = ${membershipId}
           OR EXISTS (
             SELECT 1
             FROM interview_panel_members ipm
             WHERE ipm.org_id = ${orgId}
               AND ipm.interview_id = i.id
-              AND ipm.user_id = ${userId}
+              AND ipm.user_membership_id = ${membershipId}
           )
         )
       LIMIT 1

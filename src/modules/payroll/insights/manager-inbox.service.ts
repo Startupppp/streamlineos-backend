@@ -103,6 +103,7 @@ export class ManagerInboxService {
       : await this.db
           .select({
             id: users.id,
+            membershipId: organizationMembers.id,
             name: users.name,
             email: users.email,
           })
@@ -139,38 +140,40 @@ export class ManagerInboxService {
     }
 
     const reportIds = reports.map((r) => r.id);
+    const reportMembershipIds = reports.map((r) => r.membershipId);
+    const userIdByMembershipId = new Map(reports.map((r) => [r.membershipId, r.id]));
     const nameByUser = new Map(reports.map((r) => [r.id, r.name]));
 
     const [reimbRows, loanRows, pubs, taxRows, pendingReimbList, pendingLoanList] =
       await Promise.all([
         this.db
-          .selectDistinctOn([payslipPublications.userId], {
-            userId: reimbursements.userId,
+          .select({
+            membershipId: reimbursements.userMembershipId,
             total: count(),
           })
           .from(reimbursements)
           .where(
             and(
               eq(reimbursements.orgId, orgId),
-              inArray(reimbursements.userId, reportIds),
+              inArray(reimbursements.userMembershipId, reportMembershipIds),
               eq(reimbursements.status, "PENDING"),
             ),
           )
-          .groupBy(reimbursements.userId),
+          .groupBy(reimbursements.userMembershipId),
         this.db
           .select({
-            userId: salaryLoans.userId,
+            membershipId: salaryLoans.userMembershipId,
             total: count(),
           })
           .from(salaryLoans)
           .where(
             and(
               eq(salaryLoans.orgId, orgId),
-              inArray(salaryLoans.userId, reportIds),
+              inArray(salaryLoans.userMembershipId, reportMembershipIds),
               eq(salaryLoans.status, "PENDING"),
             ),
           )
-          .groupBy(salaryLoans.userId),
+          .groupBy(salaryLoans.userMembershipId),
         this.db
           .select({
             userId: payslipPublications.userId,
@@ -217,7 +220,7 @@ export class ManagerInboxService {
           .where(
             and(
               eq(reimbursements.orgId, orgId),
-              inArray(reimbursements.userId, reportIds),
+              inArray(reimbursements.userMembershipId, reportMembershipIds),
               eq(reimbursements.status, "PENDING"),
             ),
           )
@@ -236,7 +239,7 @@ export class ManagerInboxService {
           .where(
             and(
               eq(salaryLoans.orgId, orgId),
-              inArray(salaryLoans.userId, reportIds),
+              inArray(salaryLoans.userMembershipId, reportMembershipIds),
               eq(salaryLoans.status, "PENDING"),
             ),
           )
@@ -244,8 +247,8 @@ export class ManagerInboxService {
           .limit(50),
       ]);
 
-    const reimbByUser = new Map(reimbRows.map((r) => [r.userId, Number(r.total)]));
-    const loanByUser = new Map(loanRows.map((r) => [r.userId, Number(r.total)]));
+    const reimbByUser = new Map(reimbRows.map((r) => [userIdByMembershipId.get(r.membershipId), Number(r.total)]));
+    const loanByUser = new Map(loanRows.map((r) => [userIdByMembershipId.get(r.membershipId), Number(r.total)]));
 
     const latestPayslipByUser = new Map<
       string,

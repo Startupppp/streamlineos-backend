@@ -23,6 +23,7 @@ import { EmploymentFactsService } from "../../directory/employment-facts.service
 import { PayslipBulkPublisherService } from "./payslip-bulk-publisher.service";
 import { PayslipDownloadService } from "./payslip-download.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { PAYROLL_READ_CAP } from "../lib/query-bounds";
 
 @Injectable()
 export class PublishingService {
@@ -57,6 +58,7 @@ export class PublishingService {
 
     const rows = await this.db.query.payslipPublications.findMany({
       where: and(eq(payslipPublications.runId, runId), eq(payslipPublications.orgId, orgId)),
+      limit: PUBLICATION_LIST_CAP,
       columns: {
         id: true,
         userId: true,
@@ -71,7 +73,6 @@ export class PublishingService {
         attemptCount: true,
         lastAttemptAt: true,
       },
-      limit: PUBLICATION_LIST_CAP,
     });
     return { items: rows, truncated: rows.length === PUBLICATION_LIST_CAP };
   }
@@ -84,6 +85,7 @@ export class PublishingService {
         eq(payslipPublications.status, "FAILED"),
       ),
       columns: { runEmployeeId: true },
+      limit: PAYROLL_READ_CAP + 1,
     });
     if (failed.length === 0) {
       return { published: 0, total: 0, runStatus: null as string | null, retried: 0 };

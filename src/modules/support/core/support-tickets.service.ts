@@ -210,7 +210,6 @@ export class SupportTicketsService {
             : null,
           slaDeadline: resolutionDueAt,
           firstResponseDueAt,
-          createdBy: userId,
           createdByMembershipId: membershipId,
           sourceChannel: source?.channel ?? "web",
           sourceMessageId: source?.messageId ?? null,
@@ -278,6 +277,10 @@ export class SupportTicketsService {
   async updateTicket(orgId: string, ticketId: number, userId: string, input: UpdateTicketInput) {
     const ticket = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+      with: {
+        assigneeMembership: { with: { user: { columns: { id: true } } } },
+        creatorMembership: { with: { user: { columns: { id: true } } } },
+      },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
@@ -342,7 +345,7 @@ export class SupportTicketsService {
       }
     });
 
-    await this.activity.logTicketActivity(orgId, ticketId, userId, ticket, input);
+    await this.activity.logTicketActivity(orgId, ticketId, userId, { ...ticket, assigneeId: ticket.assigneeMembership?.user?.id ?? null }, input);
     if (input.customFields) {
       await this.customFields.setFieldValues(orgId, ticketId, input.customFields, false);
     }
@@ -378,7 +381,7 @@ export class SupportTicketsService {
     if (input.status) {
       const statusNotifTask = () =>
         this.notifications
-          .sendStatusEmail(orgId, ticket.createdBy, userId, ticket.title, ticketId, input.status!)
+          .sendStatusEmail(orgId, ticket.creatorMembership?.user?.id ?? null, userId, ticket.title, ticketId, input.status!)
           .catch(logSideEffectFailure("support assignment notification", { orgId, ticketId }));
       if (!registerAfterCommit(statusNotifTask)) void statusNotifTask();
     }

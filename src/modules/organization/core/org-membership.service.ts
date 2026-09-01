@@ -102,11 +102,11 @@ export class OrgMembershipService {
   }
 
   async listMembers(orgId: string, input: ListMembersInput) {
-    const { page, search, userIds } = input;
+    const { cursor, search, userIds } = input;
     const limit = Math.min(input.limit, 100);
     const includeInactive = input.includeInactive === true;
     const hash = stableHash({
-      page,
+      cursor: cursor ?? null,
       limit,
       search: search ?? null,
       userIds: userIds ? [...userIds].sort() : null,
@@ -116,7 +116,7 @@ export class OrgMembershipService {
       orgId,
       "org:members:list",
       hash,
-      () => this.membershipRead.list(orgId, page, limit, search, userIds, includeInactive),
+      () => this.membershipRead.list(orgId, cursor, limit, search, userIds, includeInactive),
       60,
     );
   }

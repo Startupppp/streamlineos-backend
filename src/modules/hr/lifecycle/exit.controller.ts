@@ -87,7 +87,7 @@ export class ExitController {
         "The organization owner cannot submit a resignation through this system.",
       );
     }
-    return this.exitWrite.create(currentUser.orgId, currentUser.userId, body);
+    return this.exitWrite.create(currentUser.orgId, currentUser.userId, actingMembershipId(currentUser.principal), body);
   }
 
   @Patch(":resignationId/hr-review")
@@ -122,8 +122,9 @@ export class ExitController {
   ) {
     return this.exitWrite.update(
       currentUser.orgId,
-      { userId: currentUser.userId, role: currentUser.role, isApprover: await this.isExitAdmin(currentUser) },
+      { userId: currentUser.userId, membershipId: actingMembershipId(currentUser.principal), role: currentUser.role, isApprover: await this.isExitAdmin(currentUser) },
       resignationId,
+      actingMembershipId(currentUser.principal),
       body,
     );
   }
@@ -152,7 +153,13 @@ export class ExitController {
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.exit.getLetter(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), resignationId);
+    return this.exit.getLetter(
+      currentUser.orgId,
+      currentUser.userId,
+      await this.isExitAdmin(currentUser),
+      resignationId,
+      actingMembershipId(currentUser.principal),
+    );
   }
 
   @Get(":resignationId/file")
@@ -167,6 +174,7 @@ export class ExitController {
       currentUser.userId,
       await this.isExitAdmin(currentUser),
       resignationId,
+      actingMembershipId(currentUser.principal),
     );
     const fileKey = this.storage.getFileKeyFromUrl(record.fileUrl);
     if (!this.storage.isValidFileKey(fileKey)) {
@@ -192,7 +200,7 @@ export class ExitController {
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.exit.getProgress(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), resignationId);
+    return this.exit.getProgress(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), resignationId, actingMembershipId(currentUser.principal));
   }
 
   @Patch(":resignationId/withdraw")
@@ -203,7 +211,7 @@ export class ExitController {
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.exit.withdraw(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), resignationId);
+    return this.exit.withdraw(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), resignationId, actingMembershipId(currentUser.principal));
   }
 
   @Get(":resignationId")
@@ -213,6 +221,6 @@ export class ExitController {
     @Param("resignationId", ParseIntPipe) resignationId: number,
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
-    return this.exit.getDetail(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), resignationId);
+    return this.exit.getDetail(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), resignationId, actingMembershipId(currentUser.principal));
   }
 }

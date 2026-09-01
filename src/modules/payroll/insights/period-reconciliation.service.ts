@@ -92,10 +92,11 @@ export class PeriodReconciliationService {
           itemCount: payrollBankBatches.itemCount,
         })
         .from(payrollBankBatches)
-        .where(
+      .where(
           and(eq(payrollBankBatches.orgId, orgId), eq(payrollBankBatches.runId, run.id)),
         )
-        .orderBy(desc(payrollBankBatches.createdAt));
+        .orderBy(desc(payrollBankBatches.createdAt))
+        .limit(100);
 
       if (payoutBatches.length > 0) {
         const batchIds = payoutBatches.map((b) => b.id);

@@ -123,13 +123,15 @@ export const createAttendanceRegularizationSchema = z
     },
   );
 
-export const teamStatusQuerySchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(50, 100),
-  search: z.string().trim().min(1).max(200).optional(),
-  status: z.enum(["PRESENT", "ON_BREAK", "CHECKED_OUT", "OFFLINE"]).optional(),
-  departmentId: z.string().min(1).optional(),
-});
+export const teamStatusQuerySchema = z
+  .object({
+    cursor: z.string().trim().min(1).max(2048).optional(),
+    limit: pageSizeField(50, 100),
+    search: z.string().trim().min(1).max(200).optional(),
+    status: z.enum(["PRESENT", "ON_BREAK", "CHECKED_OUT", "OFFLINE"]).optional(),
+    departmentId: z.string().min(1).optional(),
+  })
+  .strict();
 
 export const ATTENDANCE_REPORT_RECIPIENT_LIMIT = 10;
 export const ATTENDANCE_REPORT_MAX_DAYS = 31;

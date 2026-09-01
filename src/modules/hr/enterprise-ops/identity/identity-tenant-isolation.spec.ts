@@ -1,3 +1,5 @@
+import { BadRequestException } from "@nestjs/common";
+import { encodeCursor } from "../../../../common/pagination/cursor";
 import type { Db } from "../../../../db/drizzle.module";
 import { IdentityService } from "./identity.service";
 
@@ -56,5 +58,22 @@ describe("IdentityService — cross-tenant isolation", () => {
     const svc = new IdentityService(db);
     await svc.listProvisioning(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
+  });
+
+  it("accepts UUID keysets and rejects malformed cursors", async () => {
+    const { db, where, findMany } = makeDb([]);
+    const svc = new IdentityService(db);
+    const cursor = encodeCursor({
+      sortValue: "2026-08-20T09:00:00.000Z",
+      id: "0198d510-9d64-7f53-8bd6-aef1c1b695d2",
+    });
+
+    await svc.listProvisioning(OWNER, { limit: 10, cursor, status: "pending" });
+    const values = sqlValues(isolationArg(where, findMany));
+    expect(values).toContain(OWNER);
+    expect(values).toContain("pending");
+    await expect(
+      svc.listProvisioning(OWNER, { limit: 10, cursor: "malformed" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
@@ -32,6 +32,8 @@ import {
 } from "../../common/hr/sync-canonical-employment-fields";
 import { syncCanonicalReportingLine } from "../../common/hr/sync-canonical-reporting-line";
 import { UserActivityService } from "./user-activity.service";
+import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
+import { keysetBefore } from "../../common/pagination/keyset";
 
 const EXPORT_HISTORY_LIMIT = 500;
 
@@ -193,37 +195,30 @@ export class UserProfileService {
   ) {
     await this.assertMember(orgId, userId);
 
-    const { page, limit, success: successFilter } = params;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, success: successFilter } = params;
 
     const conditions = [eq(loginHistory.userId, userId)];
     if (successFilter !== undefined) {
       conditions.push(eq(loginHistory.success, successFilter));
     }
 
-    const [data, countResult] = await Promise.all([
-      this.db
-        .select()
-        .from(loginHistory)
-        .where(and(...conditions))
-        .orderBy(desc(loginHistory.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(loginHistory)
-        .where(and(...conditions)),
-    ]);
+    const position = decodeCursor(cursor);
+    if (position) {
+      conditions.push(keysetBefore(loginHistory.createdAt, loginHistory.id, position));
+    }
 
-    return {
-      data: data.map(withClientInfo),
-      pagination: {
-        page,
-        limit,
-        total: countResult[0]?.total ?? 0,
-        totalPages: Math.ceil((countResult[0]?.total ?? 0) / limit),
-      },
-    };
+    const rows = await this.db
+      .select()
+      .from(loginHistory)
+      .where(and(...conditions))
+      .orderBy(desc(loginHistory.createdAt), desc(loginHistory.id))
+      .limit(limit + 1);
+    const page = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: row.id,
+    }));
+
+    return { ...page, data: page.data.map(withClientInfo) };
   }
 
   async getMembership(orgId: string, userId: string) {
@@ -365,7 +360,7 @@ export class UserProfileService {
       this.getMembership(orgId, userId),
       this.getPreferences(orgId, userId),
       this.getUserSessions(orgId, userId),
-      this.getLoginHistory(orgId, userId, { page: 1, limit: EXPORT_HISTORY_LIMIT, success: undefined }),
+      this.getLoginHistory(orgId, userId, { limit: EXPORT_HISTORY_LIMIT, success: undefined }),
       this.activity.getUserAuditLog(orgId, userId, { limit: EXPORT_HISTORY_LIMIT }),
     ]);
 

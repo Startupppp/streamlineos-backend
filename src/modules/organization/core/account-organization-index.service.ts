@@ -51,7 +51,8 @@ export class AccountOrganizationIndexService {
             eq(accountOrganizationIndex.organizationStatus, "ACTIVE"),
           ),
         )
-        .orderBy(desc(accountOrganizationIndex.joinedAt)),
+        .orderBy(desc(accountOrganizationIndex.joinedAt))
+        .limit(100),
     );
   }
 
@@ -109,7 +110,8 @@ export class AccountOrganizationIndexService {
           organizations,
           eq(organizations.id, organizationMembers.orgId),
         )
-        .where(eq(organizationMembers.userId, userId));
+        .where(eq(organizationMembers.userId, userId))
+        .limit(100);
 
       if (live.length === 0) {
         await tx
@@ -161,7 +163,8 @@ export class AccountOrganizationIndexService {
               live.map((m) => m.orgId),
             ),
           ),
-        );
+        )
+        .limit(100);
     });
   }
 
@@ -186,7 +189,8 @@ export class AccountOrganizationIndexService {
             organizations,
             eq(organizations.id, organizationMembers.orgId),
           )
-          .where(eq(organizationMembers.orgId, orgId));
+          .where(eq(organizationMembers.orgId, orgId))
+          .limit(10000);
 
         if (!members.length) return;
 

@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { SQL, and, count, desc, eq, gte, lte, or, sql } from "drizzle-orm";
 import { certifications, documents, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -30,9 +30,8 @@ function documentOwnerPredicate(
   membershipId?: number | null,
 ): SQL {
   if (scope === "own") {
-    return membershipId != null
-      ? or(eq(documents.userMembershipId, membershipId), eq(documents.userId, userId))!
-      : eq(documents.userId, userId);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
+    return eq(documents.userMembershipId, membershipId);
   }
   return applyScope(scope, orgId, userId, { ownerColumn: documents.userId });
 }
@@ -209,20 +208,18 @@ export class DocumentsService {
     membershipId?: number | null,
   ) {
     const targetUserId = input.userId ?? userId;
-
-    if (targetUserId !== userId) {
-      const targetMember = await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.userId, targetUserId),
-          eq(organizationMembers.orgId, orgId),
-          applyScope(scope, orgId, userId, {
-            ownerColumn: organizationMembers.userId,
-          }),
-        ),
-      });
-      if (!targetMember) {
-        throw new NotFoundException("Target user not found in your organization.");
-      }
+    const targetMember = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.userId, targetUserId),
+        eq(organizationMembers.orgId, orgId),
+        applyScope(scope, orgId, userId, {
+          ownerColumn: organizationMembers.userId,
+        }),
+      ),
+      columns: { id: true },
+    });
+    if (!targetMember) {
+      throw new NotFoundException("Target user not found in your organization.");
     }
 
     const document = await runInTenantTransaction(
@@ -233,6 +230,7 @@ export class DocumentsService {
           .values({
             orgId,
             userId: targetUserId,
+            userMembershipId: targetMember.id,
             name: input.name,
             type: input.type,
             fileUrl: input.fileUrl,
@@ -291,16 +289,19 @@ export class DocumentsService {
     });
     if (!doc) throw new NotFoundException("Document not found.");
 
-    if (input.userId) {
-      const targetMember = await this.db.query.organizationMembers.findFirst({
+    const requestedUserId = input.userId;
+    const targetMember = requestedUserId === undefined
+      ? null
+      : await this.db.query.organizationMembers.findFirst({
         where: and(
           eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, input.userId),
+          eq(organizationMembers.userId, requestedUserId),
           applyScope(scope, orgId, userId, {
             ownerColumn: organizationMembers.userId,
           }),
         ),
       });
+    if (requestedUserId !== undefined) {
       if (!targetMember) {
         throw new NotFoundException("Target user not found in your permitted scope.");
       }
@@ -318,7 +319,10 @@ export class DocumentsService {
               : {}),
             ...(input.type !== undefined ? { type: input.type } : {}),
             ...(input.category !== undefined ? { category: input.category ?? null } : {}),
-            ...(input.userId !== undefined ? { userId: input.userId ?? null } : {}),
+            ...(input.userId !== undefined ? {
+              userId: input.userId ?? null,
+              userMembershipId: targetMember?.id ?? null,
+            } : {}),
             ...(input.isPublic !== undefined ? { isPublic: input.isPublic } : {}),
             ...(input.tags !== undefined ? { tags: input.tags } : {}),
             ...(input.expiryDate !== undefined

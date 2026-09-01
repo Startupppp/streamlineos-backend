@@ -6,7 +6,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import {
+  keysetBeforeId,
+  keysetBeforeValue,
+} from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrPayrollInputPeriods, hrPayrollInputSnapshots, hrPayrollAdjustments } from "../../../db/schema/payroll/input-capture";
@@ -44,28 +49,35 @@ export class PayrollInputsService {
   ) {}
 
   async listPeriods(orgId: string, input: ListPeriodsInput) {
-    const { page, limit, status } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, status } = input;
+    const position = decodeCursor(cursor);
+    if (cursor !== undefined && !position) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
 
     const conditions = [eq(hrPayrollInputPeriods.orgId, orgId)];
     if (status) conditions.push(eq(hrPayrollInputPeriods.status, status));
+    if (position) {
+      conditions.push(
+        keysetBeforeValue(
+          hrPayrollInputPeriods.periodKey,
+          hrPayrollInputPeriods.id,
+          position,
+        ),
+      );
+    }
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrPayrollInputPeriods)
-        .where(and(...conditions))
-        .orderBy(desc(hrPayrollInputPeriods.periodKey))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(hrPayrollInputPeriods)
-        .where(and(...conditions)),
-    ]);
+    const rows = await this.db
+      .select()
+      .from(hrPayrollInputPeriods)
+      .where(and(...conditions))
+      .orderBy(desc(hrPayrollInputPeriods.periodKey), desc(hrPayrollInputPeriods.id))
+      .limit(limit + 1);
 
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    return buildCursorPage(rows, limit, (period) => ({
+      sortValue: period.periodKey,
+      id: String(period.id),
+    }));
   }
 
   async createPeriod(orgId: string, actorId: string, input: CreatePeriodInput) {
@@ -312,42 +324,52 @@ export class PayrollInputsService {
 
   async listAdjustments(orgId: string, periodId: number, input: SectionQueryInput) {
     await this.getPeriod(orgId, periodId);
-    const { page, limit } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit } = input;
+    const position = decodeCursor(cursor);
+    if (cursor !== undefined && !position) {
+      throw new BadRequestException("Invalid pagination cursor");
+    }
 
     const conditions = [
       eq(hrPayrollAdjustments.orgId, orgId),
       eq(hrPayrollAdjustments.periodId, periodId),
     ];
+    if (position) {
+      conditions.push(
+        keysetBeforeId(
+          hrPayrollAdjustments.createdAt,
+          hrPayrollAdjustments.id,
+          position,
+        ),
+      );
+    }
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select({
-          id: hrPayrollAdjustments.id,
-          userId: hrPayrollAdjustments.userId,
-          adjustmentType: hrPayrollAdjustments.adjustmentType,
-          section: hrPayrollAdjustments.section,
-          amountCents: hrPayrollAdjustments.amountCents,
-          days: hrPayrollAdjustments.days,
-          reason: hrPayrollAdjustments.reason,
-          status: hrPayrollAdjustments.status,
-          createdAt: hrPayrollAdjustments.createdAt,
-          userName: users.name,
-          userFirstName: users.firstName,
-          userLastName: users.lastName,
-          userEmail: users.email,
-        })
-        .from(hrPayrollAdjustments)
-        .innerJoin(users, eq(users.id, hrPayrollAdjustments.userId))
-        .where(and(...conditions))
-        .orderBy(desc(hrPayrollAdjustments.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrPayrollAdjustments).where(and(...conditions)),
-    ]);
+    const rows = await this.db
+      .select({
+        id: hrPayrollAdjustments.id,
+        userId: hrPayrollAdjustments.userId,
+        adjustmentType: hrPayrollAdjustments.adjustmentType,
+        section: hrPayrollAdjustments.section,
+        amountCents: hrPayrollAdjustments.amountCents,
+        days: hrPayrollAdjustments.days,
+        reason: hrPayrollAdjustments.reason,
+        status: hrPayrollAdjustments.status,
+        createdAt: hrPayrollAdjustments.createdAt,
+        userName: users.name,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+        userEmail: users.email,
+      })
+      .from(hrPayrollAdjustments)
+      .innerJoin(users, eq(users.id, hrPayrollAdjustments.userId))
+      .where(and(...conditions))
+      .orderBy(desc(hrPayrollAdjustments.createdAt), desc(hrPayrollAdjustments.id))
+      .limit(limit + 1);
 
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    return buildCursorPage(rows, limit, (adjustment) => ({
+      sortValue: adjustment.createdAt.toISOString(),
+      id: String(adjustment.id),
+    }));
   }
 
   async createAdjustment(orgId: string, actorId: string, input: CreateAdjustmentInput) {

@@ -49,7 +49,7 @@ export class TaxAdminController {
     return this.service.listDeclarations(
       u.orgId,
       query,
-      query.page ?? 1,
+      query.cursor,
       query.limit ?? 50,
     );
   }

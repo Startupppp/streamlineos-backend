@@ -22,19 +22,24 @@ export const reviewCycles = pgTable("review_cycles", {
   templateId: integer("template_id").references(() => hrTemplates.id, { onDelete: "set null" }),
   templateVersion: integer("template_version"),
   ratingScale: jsonb("rating_scale").$type<{ points: number; labels: Record<string, string> }>(),
-  createdBy: text("created_by").references(() => users.id),
+  // Immutable display identity; membership owns tenant authority.
+  createdBy: text("created_by"),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_review_cycles_org_id").on(table.orgId, table.id),
   index("idx_review_cycles_org").on(table.orgId),
+  index("idx_review_cycles_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
+  foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_review_cycles_created_by_actor" }).onDelete("restrict"),
 ]);
 
 export const performanceReviews = pgTable("performance_reviews", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").notNull().references(() => users.id),
-  reviewerId: text("reviewer_id").references(() => users.id),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
+  reviewerId: text("reviewer_id"),
   reviewerMembershipId: integer("reviewer_membership_id"),
   cycleId: integer("cycle_id").references(() => reviewCycles.id),
   periodStart: date("period_start").notNull(),
@@ -66,8 +71,10 @@ export const performanceReviews = pgTable("performance_reviews", {
 export const oneOnOneMeetings = pgTable("one_on_one_meetings", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  managerId: text("manager_id").references(() => users.id).notNull(),
-  employeeId: text("employee_id").references(() => users.id).notNull(),
+  managerId: text("manager_id").notNull(),
+  managerMembershipId: integer("manager_membership_id"),
+  employeeId: text("employee_id").notNull(),
+  employeeMembershipId: integer("employee_membership_id"),
   scheduledAt: timestamp("scheduled_at").notNull(),
   duration: integer("duration").default(30).notNull(),
   status: meetingStatusEnum("status").default("SCHEDULED").notNull(),
@@ -87,7 +94,8 @@ export const oneOnOneMeetings = pgTable("one_on_one_meetings", {
 export const goals = pgTable("goals", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   title: text("title").notNull(),
   description: text("description"),
   type: text("type").default("OKR").notNull(),
@@ -125,9 +133,12 @@ export const keyResults = pgTable("key_results", {
 export const performanceImprovementPlans = pgTable("performance_improvement_plans", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
-  managerId: text("manager_id").references(() => users.id).notNull(),
-  hrRepId: text("hr_rep_id").references(() => users.id),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
+  managerId: text("manager_id").notNull(),
+  managerMembershipId: integer("manager_membership_id"),
+  hrRepId: text("hr_rep_id"),
+  hrRepMembershipId: integer("hr_rep_membership_id"),
   reason: text("reason").notNull(),
   objectives: jsonb("objectives").$type<{ objective: string; metric: string; deadline: string }[]>(),
   startDate: date("start_date").notNull(),
@@ -149,29 +160,37 @@ export const pulseSurveys = pgTable("pulse_surveys", {
   questions: jsonb("questions").$type<{ id: string; text: string; type: "rating" | "text" | "choice"; options?: string[] }[]>(),
   status: surveyStatusEnum("status").default("DRAFT").notNull(),
   isAnonymous: boolean("is_anonymous").default(true).notNull(),
-  createdBy: text("created_by").references(() => users.id),
+  createdBy: text("created_by"),
+  createdByMembershipId: integer("created_by_membership_id"),
   closesAt: timestamp("closes_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_pulse_surveys_org_id").on(table.orgId, table.id),
   index("idx_surveys_org").on(table.orgId),
+  index("idx_surveys_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
+  foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_pulse_surveys_created_by_actor" }).onDelete("restrict"),
 ]);
 
 export const surveyResponses = pgTable("survey_responses", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id"),
   surveyId: integer("survey_id").references(() => pulseSurveys.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id),
+  userId: text("user_id"),
+  userMembershipId: integer("user_membership_id"),
   answers: jsonb("answers").$type<{ questionId: string; value: string | number }[]>(),
   submittedAt: timestamp("submitted_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_survey_responses_survey").on(table.surveyId),
+  index("idx_survey_responses_org_survey").on(table.orgId, table.surveyId),
 ]);
 
 export const feedbackRequests = pgTable("feedback_requests", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  subjectUserId: text("subject_user_id").references(() => users.id).notNull(),
-  reviewerUserId: text("reviewer_user_id").references(() => users.id).notNull(),
+  subjectUserId: text("subject_user_id").notNull(),
+  subjectMembershipId: integer("subject_membership_id"),
+  reviewerUserId: text("reviewer_user_id").notNull(),
+  reviewerMembershipId: integer("reviewer_membership_id"),
   type: feedbackTypeEnum("type").notNull(),
   cycleId: integer("cycle_id").references(() => reviewCycles.id),
   ratings: jsonb("ratings").$type<{ category: string; score: number; comment?: string }[]>(),
@@ -185,12 +204,17 @@ export const feedbackRequests = pgTable("feedback_requests", {
   unique("uniq_feedback_requests_org_id").on(table.orgId, table.id),
   index("idx_feedback_subject").on(table.subjectUserId),
   index("idx_feedback_reviewer").on(table.reviewerUserId),
+  index("idx_feedback_org_subject_membership").on(table.orgId, table.subjectMembershipId),
+  index("idx_feedback_org_reviewer_membership").on(table.orgId, table.reviewerMembershipId),
+  foreignKey({ columns: [table.orgId, table.subjectMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_feedback_requests_subject_actor" }).onDelete("restrict"),
+  foreignKey({ columns: [table.orgId, table.reviewerMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_feedback_requests_reviewer_actor" }).onDelete("restrict"),
 ]);
 
 export const enpsScores = pgTable("enps_scores", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id),
+  userId: text("user_id"),
+  userMembershipId: integer("user_membership_id"),
   score: integer("score").notNull(),
   comment: text("comment"),
   isAnonymous: boolean("is_anonymous").default(true).notNull(),
@@ -204,9 +228,9 @@ export const enpsScores = pgTable("enps_scores", {
 export const recognitions = pgTable("recognitions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  fromUserId: text("from_user_id").references(() => users.id).notNull(),
+  fromUserId: text("from_user_id").notNull(),
   fromMembershipId: integer("from_membership_id"),
-  toUserId: text("to_user_id").references(() => users.id).notNull(),
+  toUserId: text("to_user_id").notNull(),
   toMembershipId: integer("to_membership_id"),
   message: text("message").notNull(),
   category: text("category").default("KUDOS").notNull(),
@@ -218,12 +242,15 @@ export const recognitions = pgTable("recognitions", {
   index("idx_recognitions_to_user").on(table.toUserId),
   index("idx_recognitions_org_from_membership").on(table.orgId, table.fromMembershipId),
   index("idx_recognitions_org_to_membership").on(table.orgId, table.toMembershipId),
+  foreignKey({ columns: [table.orgId, table.fromMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_recognitions_from_actor" }).onDelete("restrict"),
+  foreignKey({ columns: [table.orgId, table.toMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_recognitions_to_actor" }).onDelete("restrict"),
 ]);
 
 export const employeeSkills = pgTable("employee_skills", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   skillName: text("skill_name").notNull(),
   level: integer("level").default(1).notNull(),
   verifiedBy: text("verified_by").references(() => users.id),
@@ -243,23 +270,29 @@ export const skillAssessments = pgTable("skill_assessments", {
   questions: jsonb("questions").$type<{ id: string; question: string; options: string[]; correctIndex: number }[]>(),
   passingScore: integer("passing_score").default(70).notNull(),
   timeLimit: integer("time_limit"),
-  createdBy: text("created_by").references(() => users.id),
+  createdBy: text("created_by"),
+  createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
   unique("uniq_skill_assessments_org_id").on(table.orgId, table.id),
   index("idx_skill_assessments_org").on(table.orgId),
+  index("idx_skill_assessments_org_created_by_membership").on(table.orgId, table.createdByMembershipId),
+  foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_skill_assessments_created_by_actor" }).onDelete("restrict"),
 ]);
 
 export const assessmentAttempts = pgTable("assessment_attempts", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id"),
   assessmentId: integer("assessment_id").references(() => skillAssessments.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id).notNull(),
+  userId: text("user_id").notNull(),
+  userMembershipId: integer("user_membership_id"),
   answers: jsonb("answers").$type<{ questionId: string; selectedIndex: number }[]>(),
   score: integer("score"),
   passed: boolean("passed").default(false).notNull(),
   completedAt: timestamp("completed_at").defaultNow().notNull(),
 }, (table) => [
   index("idx_assessment_attempts_user").on(table.userId),
+  index("idx_assessment_attempts_org_assessment_user").on(table.orgId, table.assessmentId, table.userId),
 ]);
 
 export const reviewCyclesRelations = relations(reviewCycles, ({ one, many }) => ({
@@ -335,7 +368,8 @@ export const hrCalibrationEntries = pgTable("hr_calibration_entries", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   cycleId: integer("cycle_id").references(() => reviewCycles.id, { onDelete: "cascade" }).notNull(),
-  employeeId: text("employee_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  employeeId: text("employee_id").notNull(),
+  employeeMembershipId: integer("employee_membership_id"),
   preRating: numeric("pre_rating", { precision: 3, scale: 1 }),
   postRating: numeric("post_rating", { precision: 3, scale: 1 }),
   calibratedBy: text("calibrated_by").references(() => users.id, { onDelete: "set null" }),

@@ -2,7 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, isNull, gte, lte, lt, ne, notInArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
-import { projects, tickets, sprints, changeRequests, projectApprovals, roadmapItems, users, projectRisks, projectDecisions } from "../../../../db/schema";
+import { projects, tickets, sprints, changeRequests, projectApprovals, roadmapItems, organizationMembers, users, projectRisks, projectDecisions } from "../../../../db/schema";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import {
@@ -63,7 +63,7 @@ export class ProjectsAiService {
     const nowStr = new Date().toISOString().split("T")[0];
     return this.db
       .select({
-        assigneeId: tickets.assigneeId,
+        assigneeId: organizationMembers.userId,
         assigneeName: sql<string | null>`COALESCE(NULLIF(TRIM(CONCAT(${users.firstName}, ' ', ${users.lastName})), ''), ${users.name})`,
         total: count(),
         done: count(sql`CASE WHEN ${tickets.status} = 'DONE' THEN 1 END`),
@@ -71,9 +71,10 @@ export class ProjectsAiService {
         overdue: count(sql`CASE WHEN ${tickets.dueDate} IS NOT NULL AND ${tickets.dueDate} < ${nowStr} AND ${tickets.status} != 'DONE' THEN 1 END`),
       })
       .from(tickets)
-      .leftJoin(users, eq(users.id, tickets.assigneeId))
+      .leftJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
+      .leftJoin(users, eq(users.id, organizationMembers.userId))
       .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
-      .groupBy(tickets.assigneeId, users.firstName, users.lastName, users.name)
+      .groupBy(organizationMembers.userId, users.firstName, users.lastName, users.name)
       .limit(50);
   }
 

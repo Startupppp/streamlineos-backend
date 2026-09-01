@@ -109,7 +109,7 @@ export const commandCenterQuerySchema = z.object({
 export type CommandCenterQuery = z.infer<typeof commandCenterQuerySchema>;
 
 export const listProfilesQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().trim().min(1).max(2048).optional(),
   limit: pageSizeField(20, 100),
   search: z.string().optional(),
   workerType: z.enum(["EMPLOYEE", "CONTRACTOR", "CONSULTANT", "INTERN", "EOR"]).optional(),
@@ -141,7 +141,7 @@ export type PatchProfileInput = z.infer<typeof patchProfileSchema>;
 
 export const inputsQuerySchema = z.object({
   userId: z.string().optional(),
-  page: pageNumberField,
+  cursor: z.string().trim().min(1).max(2048).optional(),
   limit: pageSizeField(50, 100),
 });
 export type InputsQuery = z.infer<typeof inputsQuerySchema>;
@@ -149,7 +149,7 @@ export type InputsQuery = z.infer<typeof inputsQuerySchema>;
 export const exceptionFilterSchema = z.object({
   severity: z.enum(["BLOCKER", "WARNING", "INFO"]).optional(),
   status: z.enum(["OPEN", "RESOLVED", "OVERRIDDEN"]).optional(),
-  page: pageNumberField,
+  cursor: z.string().trim().min(1).max(2048).optional(),
   limit: pageSizeField(50, 100),
 });
 export type ExceptionFilterInput = z.infer<typeof exceptionFilterSchema>;

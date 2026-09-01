@@ -37,7 +37,8 @@ export class ReconciliationWorkspaceService {
             eq(finBankTransactions.status, "UNMATCHED"),
           ),
         )
-        .orderBy(desc(finBankTransactions.txnDate)),
+        .orderBy(desc(finBankTransactions.txnDate))
+        .limit(100),
       this.db
         .select()
         .from(finBankTransactions)
@@ -48,7 +49,8 @@ export class ReconciliationWorkspaceService {
             eq(finBankTransactions.status, "SUGGESTED"),
           ),
         )
-        .orderBy(desc(finBankTransactions.txnDate)),
+        .orderBy(desc(finBankTransactions.txnDate))
+        .limit(100),
       this.db
         .select({ total: count() })
         .from(finBankTransactions)
@@ -71,7 +73,8 @@ export class ReconciliationWorkspaceService {
               eq(finReconciliationMatches.orgId, orgId),
               eq(finReconciliationMatches.bankTransactionId, txn.id),
             ),
-          );
+          )
+          .limit(100);
         return { ...txn, suggestedMatches: matches };
       }),
     );

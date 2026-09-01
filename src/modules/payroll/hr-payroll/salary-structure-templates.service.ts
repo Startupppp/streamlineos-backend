@@ -3,14 +3,32 @@ import { and, desc, eq } from "drizzle-orm";
 import { salaryStructureTemplates } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
+import {
+  decodePayrollTimestampCursor,
+  payrollCursorPosition,
+} from "../payroll-cursor";
 
 @Injectable()
 export class SalaryStructureTemplatesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  list(orgId: string, page = 1, limit = 50) {
+  async list(orgId: string, cursor?: string, limit = 50) {
     const cap = Math.min(limit, 100);
-    return this.db
+    const cursorScope = ["salary-structure-templates", orgId] as const;
+    const position = decodePayrollTimestampCursor(cursor, cursorScope);
+    const conditions = [eq(salaryStructureTemplates.orgId, orgId)];
+    if (position) {
+      conditions.push(
+        keysetBeforeId(
+          salaryStructureTemplates.createdAt,
+          salaryStructureTemplates.id,
+          { sortValue: position.createdAt, id: String(position.id) },
+        ),
+      );
+    }
+    const rows = await this.db
       .select({
         id: salaryStructureTemplates.id,
         orgId: salaryStructureTemplates.orgId,
@@ -29,10 +47,13 @@ export class SalaryStructureTemplatesService {
         createdAt: salaryStructureTemplates.createdAt,
       })
       .from(salaryStructureTemplates)
-      .where(eq(salaryStructureTemplates.orgId, orgId))
-      .orderBy(desc(salaryStructureTemplates.createdAt))
-      .limit(cap)
-      .offset((page - 1) * cap);
+      .where(and(...conditions))
+      .orderBy(desc(salaryStructureTemplates.createdAt), desc(salaryStructureTemplates.id))
+      .limit(cap + 1);
+
+    return buildCursorPage(rows, cap, (row) =>
+      payrollCursorPosition(cursorScope, [row.createdAt.toISOString()], row.id),
+    );
   }
 
   async create(

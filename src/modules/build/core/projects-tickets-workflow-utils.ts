@@ -149,7 +149,7 @@ export async function assertTransitionAllowed(
     ) {
       const ticketRows = await db
         .select({
-          assigneeId: tickets.assigneeId,
+          assigneeMembershipId: tickets.assigneeMembershipId,
           dueDate: tickets.dueDate,
           priority: tickets.priority,
           points: tickets.points,
@@ -166,7 +166,7 @@ export async function assertTransitionAllowed(
         const row = ticketRows[0];
         const missing: string[] = [];
         for (const field of transition.requiredFields) {
-          if (field === "assigneeId" && !row.assigneeId) missing.push(field);
+          if (field === "assigneeId" && !row.assigneeMembershipId) missing.push(field);
           else if (field === "dueDate" && !row.dueDate) missing.push(field);
           else if (field === "priority" && !row.priority) missing.push(field);
           else if (

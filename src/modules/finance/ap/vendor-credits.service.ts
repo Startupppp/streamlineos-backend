@@ -112,7 +112,8 @@ export class VendorCreditsService {
     const items = await this.db
       .select()
       .from(vendorCreditItems)
-      .where(eq(vendorCreditItems.vendorCreditId, vendorCreditId));
+      .where(eq(vendorCreditItems.vendorCreditId, vendorCreditId))
+      .limit(1000);
 
     return { ...header, items };
   }

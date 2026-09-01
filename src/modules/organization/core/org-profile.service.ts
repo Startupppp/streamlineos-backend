@@ -91,7 +91,8 @@ export class OrgProfileService {
             isNull(organizations.deletedAt),
           ),
         )
-        .orderBy(desc(organizationMembers.joinedAt)),
+        .orderBy(desc(organizationMembers.joinedAt))
+        .limit(100),
     );
 
     return memberships.map((m) => ({
@@ -126,7 +127,8 @@ export class OrgProfileService {
       if (!membership)
         throw new BadRequestException(
           "You are not a member of this organization",
-        );
+        )
+        .limit(100);
 
       if (membership.status === "SUSPENDED")
         throw new ConflictException(
@@ -399,7 +401,8 @@ export class OrgProfileService {
           eq(organizationMembers.status, "ACTIVE"),
         ),
       )
-      .where(eq(users.id, userId));
+      .where(eq(users.id, userId))
+      .limit(1);
 
     if (!user) return null;
 
@@ -411,7 +414,8 @@ export class OrgProfileService {
         logo: organizations.logo,
       })
       .from(organizations)
-      .where(eq(organizations.id, orgId));
+      .where(eq(organizations.id, orgId))
+      .limit(1);
 
     const [membership] = await this.db
       .select({
@@ -425,7 +429,8 @@ export class OrgProfileService {
           eq(organizationMembers.orgId, orgId),
           eq(organizationMembers.status, "ACTIVE"),
         ),
-      );
+      )
+      .limit(1);
 
     return {
       user,

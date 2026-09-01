@@ -1,0 +1,2 @@
+-- 0910 is a destructive actor-contract cutover. Restore from backup or use a
+-- forward fix; recreating users.id authority is intentionally unsupported.

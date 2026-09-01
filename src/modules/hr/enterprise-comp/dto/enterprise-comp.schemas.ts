@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const paginationSchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
 });
 
@@ -175,9 +175,7 @@ export const updateEquityGrantSchema = z.object({
   boardApprovedAt: z.string().optional(),
 });
 
-export const listEquityGrantsSchema = z.object({
-  cursor: z.string().optional(),
-  limit: pageSizeField(20, 100),
+export const listEquityGrantsSchema = paginationSchema.extend({
   userId: z.string().optional(),
   status: z.enum(["active", "exercised", "cancelled", "expired"]).optional(),
   grantType: z.enum(["ISO", "NSO", "RSU", "other"]).optional(),

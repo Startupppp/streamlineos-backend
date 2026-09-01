@@ -83,6 +83,8 @@ describe("LeavesWriteService server-derived approver", () => {
         users: { findFirst: jest.fn().mockResolvedValue(undefined) },
       },
       select: jest.fn()
+        .mockReturnValueOnce(selectChain([{ id: 1, orgId: "org-1", userId: "employee-1", role: "MEMBER", isOwner: false, status: "ACTIVE" }]))
+        .mockReturnValueOnce(selectChain([]))
         .mockReturnValueOnce(selectChain([{ id: 5, orgId: "org-1", userId: "manager-1", role: "MEMBER", isOwner: false, status: "ACTIVE" }]))
         .mockReturnValueOnce(selectChain([]))
         .mockReturnValueOnce(selectChain([{ probationRestricted: false }])),

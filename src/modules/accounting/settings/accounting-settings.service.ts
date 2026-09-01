@@ -156,7 +156,8 @@ export class AccountingSettingsService {
     const rows = await this.db
       .select()
       .from(accNumberSequences)
-      .where(eq(accNumberSequences.orgId, orgId));
+      .where(eq(accNumberSequences.orgId, orgId))
+      .limit(100);
 
     const byType = new Map(rows.map((r) => [r.entityType, r]));
     const all = Object.keys(SEQUENCE_DEFAULTS).map((entityType) => {

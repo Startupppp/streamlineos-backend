@@ -99,6 +99,14 @@ BEGIN
 END $$;
 
 --> statement-breakpoint
+ALTER TABLE "notification_read_watermarks"
+  DROP CONSTRAINT IF EXISTS "uniq_notification_read_watermarks_org_user";
+ALTER TABLE "notification_preferences"
+  DROP CONSTRAINT IF EXISTS "uniq_notification_preferences_org_user";
+ALTER TABLE "user_tour_progress"
+  DROP CONSTRAINT IF EXISTS "uq_user_tour_progress_org_user_tour";
+
+--> statement-breakpoint
 DROP INDEX IF EXISTS "idx_notifications_list_cursor";
 DROP INDEX IF EXISTS "idx_notifications_unread_count";
 DROP INDEX IF EXISTS "idx_notifications_user_archived";

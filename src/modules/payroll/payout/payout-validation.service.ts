@@ -24,6 +24,7 @@ import {
 
 import { loadRunEmployeePayees } from "../lib/payroll-run-payee";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
+import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
 
 
 
@@ -96,7 +97,7 @@ export class PayoutValidationService {
 
       loadRunEmployeePayees(this.db, orgId, runId, this.efService),
 
-      this.db
+      requirePayrollReadWithinCap(this.db
 
         .select({
 
@@ -114,7 +115,8 @@ export class PayoutValidationService {
 
         .from(payrollRunEmployees)
 
-        .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId))),
+        .where(and(eq(payrollRunEmployees.runId, runId), eq(payrollRunEmployees.orgId, orgId)))
+        .limit(PAYROLL_READ_CAP + 1), "validate payout employees"),
 
     ]);
 

@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { formatInTimeZone } from "date-fns-tz";
 import type { Db } from "../../db/drizzle.module";
-import { attendance, organizations, wfhRequests } from "../../db/schema";
+import { attendance, organizationMembers, organizations, wfhRequests } from "../../db/schema";
 import type { AttendancePolicyService } from "./time/attendance-policy.service";
 import type { CalendarEventProjection, CalendarSourceContext } from "../calendar/calendar-event-source";
 
@@ -34,6 +34,15 @@ export async function loadAttendanceOnly(
   const startStr = dateOnly(ctx.start);
   const endStr = dateOnly(ctx.end);
   const policyDate = dateOnly(ctx.end.getTime() < Date.now() ? ctx.end : new Date());
+  const membership = await db.query.organizationMembers.findFirst({
+    where: and(
+      eq(organizationMembers.orgId, ctx.orgId),
+      eq(organizationMembers.userId, ctx.userId),
+      eq(organizationMembers.status, "ACTIVE"),
+    ),
+    columns: { id: true },
+  });
+  if (!membership) return [];
 
   const [attendanceData, wfhData, organizationData, attendanceRules] = await Promise.all([
     db
@@ -50,7 +59,7 @@ export async function loadAttendanceOnly(
       .from(attendance)
       .where(and(
         eq(attendance.orgId, ctx.orgId),
-        eq(attendance.userId, ctx.userId),
+        eq(attendance.userMembershipId, membership.id),
         gte(attendance.date, startStr),
         lte(attendance.date, endStr),
       ))
@@ -60,7 +69,7 @@ export async function loadAttendanceOnly(
       .from(wfhRequests)
       .where(and(
         eq(wfhRequests.orgId, ctx.orgId),
-        eq(wfhRequests.userId, ctx.userId),
+        eq(wfhRequests.userMembershipId, membership.id),
         eq(wfhRequests.status, "APPROVED"),
         gte(wfhRequests.date, startStr),
         lte(wfhRequests.date, endStr),

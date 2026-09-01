@@ -1,3 +1,4 @@
+import { BadRequestException } from "@nestjs/common";
 import type { Db } from "../../../../db/drizzle.module";
 import { SimulatorService } from "./simulator.service";
 
@@ -58,5 +59,16 @@ describe("SimulatorService — cross-tenant isolation", () => {
     const svc = new SimulatorService(db, mockPolicyEval as never);
     await svc.listHistory(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
+  });
+
+  it("rejects malformed cursors with a semantic 400", async () => {
+    const { db } = makeDb([]);
+    const svc = new SimulatorService(
+      db,
+      { evaluatePolicy: jest.fn() } as never,
+    );
+    await expect(
+      svc.listHistory(OWNER, { limit: 10, cursor: "malformed" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 });

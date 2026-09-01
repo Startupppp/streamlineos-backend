@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -36,7 +36,8 @@ export class HrBenefitsEnrollmentService {
     return { eligible, planId, planName: plan.name, policy: policy?.rules ?? null };
   }
 
-  async enroll(orgId: string, userId: string, data: EnrollInput) {
+  async enroll(orgId: string, userId: string, membershipId: number | null, data: EnrollInput) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const [plan] = await this.db
       .select()
       .from(hrBenefitPlans)
@@ -59,6 +60,7 @@ export class HrBenefitsEnrollmentService {
           orgId,
           planId: data.planId,
           userId,
+          userMembershipId: membershipId,
           status: "active",
           effectiveFrom: data.effectiveFrom ?? null,
           dependentsCovered: data.dependentsCovered ?? 0,
@@ -73,14 +75,15 @@ export class HrBenefitsEnrollmentService {
     }
   }
 
-  async waive(orgId: string, userId: string, data: WaiveInput) {
+  async waive(orgId: string, userId: string, membershipId: number | null, data: WaiveInput) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const [existing] = await this.db
       .select()
       .from(hrBenefitEnrollments)
       .where(
         and(
           eq(hrBenefitEnrollments.orgId, orgId),
-          eq(hrBenefitEnrollments.userId, userId),
+          eq(hrBenefitEnrollments.userMembershipId, membershipId),
           eq(hrBenefitEnrollments.planId, data.planId),
         ),
       )
@@ -97,12 +100,13 @@ export class HrBenefitsEnrollmentService {
 
     const [enrollment] = await this.db
       .insert(hrBenefitEnrollments)
-      .values({ orgId, planId: data.planId, userId, status: "waived" })
+      .values({ orgId, planId: data.planId, userId, userMembershipId: membershipId, status: "waived" })
       .returning();
     return enrollment;
   }
 
-  async getMyBenefits(orgId: string, userId: string) {
+  async getMyBenefits(orgId: string, userId: string, membershipId: number | null) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const [enrollmentRows, dependents] = await Promise.all([
       this.db
         .select({
@@ -114,7 +118,7 @@ export class HrBenefitsEnrollmentService {
         .where(
           and(
             eq(hrBenefitEnrollments.orgId, orgId),
-            eq(hrBenefitEnrollments.userId, userId),
+            eq(hrBenefitEnrollments.userMembershipId, membershipId),
           ),
         )
         .orderBy(desc(hrBenefitEnrollments.enrolledAt))
@@ -131,7 +135,7 @@ export class HrBenefitsEnrollmentService {
           createdAt: hrDependents.createdAt,
         })
         .from(hrDependents)
-        .where(and(eq(hrDependents.orgId, orgId), eq(hrDependents.userId, userId)))
+        .where(and(eq(hrDependents.orgId, orgId), eq(hrDependents.userMembershipId, membershipId)))
         .orderBy(hrDependents.name),
     ]);
 
@@ -139,7 +143,8 @@ export class HrBenefitsEnrollmentService {
     return { enrollments, dependents };
   }
 
-  async listDependents(orgId: string, userId: string) {
+  async listDependents(orgId: string, userId: string, membershipId: number | null) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     return this.db
       .select({
         id: hrDependents.id,
@@ -152,20 +157,22 @@ export class HrBenefitsEnrollmentService {
         createdAt: hrDependents.createdAt,
       })
       .from(hrDependents)
-      .where(and(eq(hrDependents.orgId, orgId), eq(hrDependents.userId, userId)))
+      .where(and(eq(hrDependents.orgId, orgId), eq(hrDependents.userMembershipId, membershipId)))
       .orderBy(hrDependents.name)
       .limit(200);
   }
 
-  async addDependent(orgId: string, userId: string, data: CreateDependentInput) {
+  async addDependent(orgId: string, userId: string, membershipId: number | null, data: CreateDependentInput) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const [dep] = await this.db
       .insert(hrDependents)
-      .values({ ...data, orgId, userId })
+      .values({ ...data, orgId, userId, userMembershipId: membershipId })
       .returning();
     return dep;
   }
 
-  async updateDependent(orgId: string, userId: string, depId: number, data: PatchDependentInput) {
+  async updateDependent(orgId: string, userId: string, membershipId: number | null, depId: number, data: PatchDependentInput) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const [existing] = await this.db
       .select({ id: hrDependents.id })
       .from(hrDependents)
@@ -173,7 +180,7 @@ export class HrBenefitsEnrollmentService {
         and(
           eq(hrDependents.id, depId),
           eq(hrDependents.orgId, orgId),
-          eq(hrDependents.userId, userId),
+          eq(hrDependents.userMembershipId, membershipId),
         ),
       )
       .limit(1);
@@ -183,12 +190,13 @@ export class HrBenefitsEnrollmentService {
     const [updated] = await this.db
       .update(hrDependents)
       .set({ ...data, updatedAt: new Date() })
-      .where(and(eq(hrDependents.id, depId), eq(hrDependents.orgId, orgId), eq(hrDependents.userId, userId)))
+      .where(and(eq(hrDependents.id, depId), eq(hrDependents.orgId, orgId), eq(hrDependents.userMembershipId, membershipId)))
       .returning();
     return updated;
   }
 
-  async deleteDependent(orgId: string, userId: string, depId: number) {
+  async deleteDependent(orgId: string, userId: string, membershipId: number | null, depId: number) {
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
     const [existing] = await this.db
       .select({ id: hrDependents.id })
       .from(hrDependents)
@@ -196,7 +204,7 @@ export class HrBenefitsEnrollmentService {
         and(
           eq(hrDependents.id, depId),
           eq(hrDependents.orgId, orgId),
-          eq(hrDependents.userId, userId),
+          eq(hrDependents.userMembershipId, membershipId),
         ),
       )
       .limit(1);
@@ -205,7 +213,7 @@ export class HrBenefitsEnrollmentService {
 
     await this.db
       .delete(hrDependents)
-      .where(and(eq(hrDependents.id, depId), eq(hrDependents.orgId, orgId), eq(hrDependents.userId, userId)));
+      .where(and(eq(hrDependents.id, depId), eq(hrDependents.orgId, orgId), eq(hrDependents.userMembershipId, membershipId)));
     return { ok: true };
   }
 }

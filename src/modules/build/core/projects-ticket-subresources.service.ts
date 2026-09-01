@@ -7,6 +7,7 @@ import { and, desc, eq, isNull, lt } from "drizzle-orm";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import {
   organizationPeople,
+  organizationMembers,
   ticketActivityLog,
   ticketAttachments,
   ticketLabelMappings,
@@ -203,14 +204,7 @@ export class ProjectsTicketSubresourcesService {
       },
       with: {
         assignee: {
-          columns: {
-            id: true,
-            name: true,
-            firstName: true,
-            lastName: true,
-            image: true,
-            email: true,
-          },
+          with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true } } },
         },
       },
       limit: 200,
@@ -231,14 +225,7 @@ export class ProjectsTicketSubresourcesService {
       where: eq(ticketWatchers.ticketId, ticketId),
       with: {
         user: {
-          columns: {
-            id: true,
-            name: true,
-            firstName: true,
-            lastName: true,
-            image: true,
-            email: true,
-          },
+          with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true } } },
         },
       },
       limit: 100,
@@ -252,20 +239,32 @@ export class ProjectsTicketSubresourcesService {
   ) {
     await this.requireTicket(u.orgId, ticketId);
     const userId = body.userId ?? u.userId;
+    const [member] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, userId), eq(organizationMembers.status, "ACTIVE")))
+      .limit(1);
+    if (!member) throw new NotFoundException("Watcher is not an organization member");
     await this.db
       .insert(ticketWatchers)
-      .values({ orgId: u.orgId, ticketId, userId })
+      .values({ orgId: u.orgId, ticketId, membershipId: member.id })
       .onConflictDoNothing();
     return { success: true };
   }
 
   async removeWatcher(u: CurrentUserContext, ticketId: number) {
+    const [member] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
+      .limit(1);
+    if (!member) return { success: true };
     await this.db
       .delete(ticketWatchers)
       .where(
         and(
           eq(ticketWatchers.ticketId, ticketId),
-          eq(ticketWatchers.userId, u.userId),
+          eq(ticketWatchers.membershipId, member.id),
         ),
       );
     return { success: true };

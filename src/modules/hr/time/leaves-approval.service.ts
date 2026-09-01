@@ -137,7 +137,7 @@ export class LeavesApprovalService {
             .from(leaveBalances)
             .where(
               and(
-                eq(leaveBalances.userId, current.userId),
+                eq(leaveBalances.userMembershipId, current.userMembershipId),
                 eq(leaveBalances.leaveTypeId, current.leaveTypeId),
                 eq(leaveBalances.orgId, currentUser.orgId),
                 eq(leaveBalances.year, this.leaveYear(current.startDate)),
@@ -294,7 +294,7 @@ export class LeavesApprovalService {
           .from(leaveBalances)
           .where(
             and(
-              eq(leaveBalances.userId, current.userId),
+              eq(leaveBalances.userMembershipId, current.userMembershipId),
               eq(leaveBalances.leaveTypeId, current.leaveTypeId),
               eq(leaveBalances.orgId, currentUser.orgId),
               eq(leaveBalances.year, this.leaveYear(current.startDate)),
