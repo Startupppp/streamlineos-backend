@@ -4,7 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, gt, lte, or } from "drizzle-orm";
+import { and, desc, eq, gt, lte, or } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { hrProxyAccess } from "../../../../db/schema/hr/governance";
@@ -19,8 +21,8 @@ export class DelegationsService {
   ) {}
 
   async listMy(orgId: string, userId: string, input: ListProxiesInput) {
-    const { page, limit, scope } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, scope } = input;
+    const pos = decodeCursor(cursor);
     const now = new Date();
 
     const conditions = [
@@ -29,47 +31,43 @@ export class DelegationsService {
       gt(hrProxyAccess.endsAt, now),
     ];
     if (scope) conditions.push(eq(hrProxyAccess.scope, scope));
+    if (pos) conditions.push(keysetBeforeId(hrProxyAccess.createdAt, hrProxyAccess.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrProxyAccess)
+      .where(and(...conditions))
+      .orderBy(desc(hrProxyAccess.createdAt), desc(hrProxyAccess.id))
+      .limit(limit + 1);
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrProxyAccess)
-        .where(where)
-        .orderBy(desc(hrProxyAccess.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrProxyAccess).where(where),
-    ]);
-
-    return { data, total: totalResult[0]?.total ?? 0, page, limit };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async listOrg(orgId: string, input: ListProxiesInput) {
-    const { page, limit, scope, active } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, scope, active } = input;
+    const pos = decodeCursor(cursor);
     const now = new Date();
 
     const conditions = [eq(hrProxyAccess.orgId, orgId)];
     if (scope) conditions.push(eq(hrProxyAccess.scope, scope));
     if (active) conditions.push(gt(hrProxyAccess.endsAt, now));
     if (active === false) conditions.push(lte(hrProxyAccess.endsAt, now));
+    if (pos) conditions.push(keysetBeforeId(hrProxyAccess.createdAt, hrProxyAccess.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrProxyAccess)
+      .where(and(...conditions))
+      .orderBy(desc(hrProxyAccess.createdAt), desc(hrProxyAccess.id))
+      .limit(limit + 1);
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrProxyAccess)
-        .where(where)
-        .orderBy(desc(hrProxyAccess.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrProxyAccess).where(where),
-    ]);
-
-    return { data, total: totalResult[0]?.total ?? 0, page, limit };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async create(orgId: string, userId: string, input: CreateProxyInput, ipAddress?: string) {

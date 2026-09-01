@@ -89,7 +89,7 @@ describe("HrSafetyService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn() };
     const svc = new HrSafetyService(db, mockAudit as never);
-    await svc.listIncidents(ATTACKER, { page: 1, limit: 10 });
+    await svc.listIncidents(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -97,7 +97,7 @@ describe("HrSafetyService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockAudit = { log: jest.fn() };
     const svc = new HrSafetyService(db, mockAudit as never);
-    await svc.listIncidents(OWNER, { page: 1, limit: 10 });
+    await svc.listIncidents(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });

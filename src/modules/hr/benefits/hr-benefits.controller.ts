@@ -77,7 +77,7 @@ export class HrBenefitsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:benefits:view")
   listActivePlans(@CurrentUser() u: CurrentUserContext) {
-    return this.plans.listPlans(u.orgId, { status: "active", page: 1, limit: 100 });
+    return this.plans.listPlans(u.orgId, { status: "active", limit: 100 });
   }
 
   @Get("plans")

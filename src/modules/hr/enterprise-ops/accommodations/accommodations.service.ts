@@ -1,5 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import {
@@ -34,32 +36,30 @@ export class AccommodationsService {
   ) {}
 
   async list(orgId: string, input: ListAccommodationsInput, hasSensitive: boolean) {
-    const { page, limit, userId, status, type } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, userId, status, type } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [eq(hrAccommodationRequests.orgId, orgId), isNull(hrAccommodationRequests.deletedAt)];
     if (userId) conditions.push(eq(hrAccommodationRequests.userId, userId));
     if (status) conditions.push(eq(hrAccommodationRequests.status, status));
     if (type) conditions.push(eq(hrAccommodationRequests.type, type));
+    if (pos) conditions.push(keysetBeforeId(hrAccommodationRequests.createdAt, hrAccommodationRequests.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrAccommodationRequests)
+      .where(and(...conditions))
+      .orderBy(desc(hrAccommodationRequests.createdAt), desc(hrAccommodationRequests.id))
+      .limit(limit + 1);
 
-    const [rows, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrAccommodationRequests)
-        .where(where)
-        .orderBy(desc(hrAccommodationRequests.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrAccommodationRequests).where(where),
-    ]);
-
-    const total = totalResult[0]?.total ?? 0;
+    const page = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
 
     return {
-      data: rows.map((r) => maskSensitive(r, hasSensitive)),
-      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      data: page.data.map((r) => maskSensitive(r, hasSensitive)),
+      pagination: page.pagination,
     };
   }
 

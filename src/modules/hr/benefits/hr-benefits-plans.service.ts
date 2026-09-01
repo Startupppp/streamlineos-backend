@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, count, or, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, or, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -18,28 +18,20 @@ export class HrBenefitsPlansService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listPlans(orgId: string, query: BenefitPlansQuery) {
-    const { status, category, page, limit } = query;
-    const offset = (page - 1) * limit;
+    const { status, category, limit } = query;
 
     const conditions = [eq(hrBenefitPlans.orgId, orgId)];
     if (status) conditions.push(eq(hrBenefitPlans.status, status));
     if (category) conditions.push(eq(hrBenefitPlans.category, category));
 
-    const [rows, [{ total }]] = await Promise.all([
-      this.db
-        .select()
-        .from(hrBenefitPlans)
-        .where(and(...conditions))
-        .orderBy(asc(hrBenefitPlans.name))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(hrBenefitPlans)
-        .where(and(...conditions)),
-    ]);
+    const rows = await this.db
+      .select()
+      .from(hrBenefitPlans)
+      .where(and(...conditions))
+      .orderBy(asc(hrBenefitPlans.name))
+      .limit(limit);
 
-    return { data: rows, total, page, limit };
+    return { data: rows };
   }
 
   async getPlan(orgId: string, planId: number) {

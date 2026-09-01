@@ -65,7 +65,8 @@ export class UserProfileService {
       .where(
         and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)),
       )
-      .orderBy(desc(userSessions.createdAt));
+      .orderBy(desc(userSessions.createdAt))
+      .limit(50);
     return rows.map(withClientInfo);
   }
 

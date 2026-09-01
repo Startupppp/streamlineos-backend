@@ -1,10 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
-
-export const paginationSchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
-});
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createLegalHoldSchema = z.object({
   subjectUserId: z.string().min(1),
@@ -17,7 +12,9 @@ export const updateLegalHoldSchema = z.object({
   restrictedExport: z.boolean().optional(),
 });
 
-export const listLegalHoldsSchema = paginationSchema.extend({
+export const listLegalHoldsSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   status: z.enum(["active", "released"]).optional(),
   subjectUserId: z.string().optional(),
 });

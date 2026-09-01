@@ -1,10 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
-
-const paginationSchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
-});
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createProvisioningSchema = z.object({
   userId: z.string().uuid(),
@@ -21,7 +16,9 @@ export const updateProvisioningSchema = z.object({
   verifiedBy: z.string().uuid().nullable().optional(),
 });
 
-export const listProvisioningSchema = paginationSchema.extend({
+export const listProvisioningSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   userId: z.string().uuid().optional(),
   triggeredBy: z.enum(["joiner", "mover", "leaver", "manual"]).optional(),
   status: z.enum(["pending", "completed", "verified", "failed"]).optional(),

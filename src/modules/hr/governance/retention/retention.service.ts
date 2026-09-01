@@ -7,6 +7,8 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, count, desc, eq, isNull } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { hrRetentionPolicies, hrDataRequests } from "../../../../db/schema/hr/governance";
@@ -32,27 +34,25 @@ export class RetentionService {
   ) {}
 
   async listPolicies(orgId: string, input: ListRetentionPoliciesInput) {
-    const { page, limit, recordType, active } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, recordType, active } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [eq(hrRetentionPolicies.orgId, orgId)];
     if (recordType) conditions.push(eq(hrRetentionPolicies.recordType, recordType));
     if (active !== undefined) conditions.push(eq(hrRetentionPolicies.active, active));
+    if (pos) conditions.push(keysetBeforeId(hrRetentionPolicies.createdAt, hrRetentionPolicies.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrRetentionPolicies)
+      .where(and(...conditions))
+      .orderBy(desc(hrRetentionPolicies.createdAt), desc(hrRetentionPolicies.id))
+      .limit(limit + 1);
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrRetentionPolicies)
-        .where(where)
-        .orderBy(desc(hrRetentionPolicies.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrRetentionPolicies).where(where),
-    ]);
-
-    return { data, total: totalResult[0]?.total ?? 0, page, limit };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async createPolicy(orgId: string, userId: string, input: CreateRetentionPolicyInput, ipAddress?: string) {
@@ -148,28 +148,26 @@ export class RetentionService {
   }
 
   async listRequests(orgId: string, input: ListDataRequestsInput) {
-    const { page, limit, status, type, subjectUserId } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, status, type, subjectUserId } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [eq(hrDataRequests.orgId, orgId), isNull(hrDataRequests.deletedAt)];
     if (status) conditions.push(eq(hrDataRequests.status, status));
     if (type) conditions.push(eq(hrDataRequests.type, type));
     if (subjectUserId) conditions.push(eq(hrDataRequests.subjectUserId, subjectUserId));
+    if (pos) conditions.push(keysetBeforeId(hrDataRequests.createdAt, hrDataRequests.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrDataRequests)
+      .where(and(...conditions))
+      .orderBy(desc(hrDataRequests.createdAt), desc(hrDataRequests.id))
+      .limit(limit + 1);
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrDataRequests)
-        .where(where)
-        .orderBy(desc(hrDataRequests.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrDataRequests).where(where),
-    ]);
-
-    return { data, total: totalResult[0]?.total ?? 0, page, limit };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async createRequest(orgId: string, userId: string, input: CreateDataRequestInput, ipAddress?: string) {

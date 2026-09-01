@@ -2565,6 +2565,13 @@
       "breakpoints": true
     },
     {
+      "idx": 677,
+      "version": "7",
+      "when": 1798000157000,
+      "tag": "0649b_inv_carton_shipment_chain_repair",
+      "breakpoints": true
+    },
+    {
       "idx": 367,
       "version": "7",
       "when": 1787940728254,
@@ -2737,6 +2744,13 @@
       "version": "7",
       "when": 1788091263000,
       "tag": "0676_fix_kb_acl_revision_notnull_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 678,
+      "version": "7",
+      "when": 1798000158000,
+      "tag": "0676b_inv_compliance_documents_chain_repair",
       "breakpoints": true
     },
     {

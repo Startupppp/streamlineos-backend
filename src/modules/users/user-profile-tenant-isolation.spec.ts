@@ -20,7 +20,9 @@ describe("UserProfileService — cross-tenant isolation", () => {
       },
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
-          where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockResolvedValue([]) }),
+          where: jest.fn().mockReturnValue({
+            orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+          }),
         }),
       }),
     } as unknown as Db;

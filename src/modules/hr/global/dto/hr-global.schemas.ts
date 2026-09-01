@@ -1,11 +1,6 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
-
-export const paginationSchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
-});
 
 export const createWorkAuthSchema = z.object({
   employmentId: z.number().int().positive(),
@@ -20,7 +15,9 @@ export const createWorkAuthSchema = z.object({
 
 export const updateWorkAuthSchema = createWorkAuthSchema.partial().omit({ employmentId: true });
 
-export const listWorkAuthSchema = paginationSchema.extend({
+export const listWorkAuthSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   employmentId: z.coerce.number().int().positive().optional(),
   status: z.enum(["active", "expiring", "expired", "pending_renewal"]).optional(),
   days: z.coerce.number().int().positive().optional(),
@@ -43,13 +40,17 @@ export const createComplianceRequirementSchema = z.object({
 
 export const updateComplianceRequirementSchema = createComplianceRequirementSchema.partial();
 
-export const listComplianceRequirementSchema = paginationSchema.extend({
+export const listComplianceRequirementSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   countryCode: z.string().optional(),
   category: z.enum(["statutory_filing", "registration", "posting", "training", "audit", "other"]).optional(),
   active: queryBoolean.optional(),
 });
 
-export const listComplianceEventsSchema = paginationSchema.extend({
+export const listComplianceEventsSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   requirementId: z.coerce.number().int().positive().optional(),
   status: z.enum(["pending", "done", "overdue"]).optional(),
   from: z.string().optional(),
@@ -80,7 +81,9 @@ export const createContractSchema = z.object({
 
 export const updateContractSchema = createContractSchema.partial().omit({ employmentId: true });
 
-export const listContractsSchema = paginationSchema.extend({
+export const listContractsSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   contractType: z.enum(["contractor", "consultant", "intern", "temporary", "agency", "freelancer"]).optional(),
   status: z.enum(["active", "expiring", "ended", "renewed", "converted"]).optional(),
   days: z.coerce.number().int().positive().optional(),

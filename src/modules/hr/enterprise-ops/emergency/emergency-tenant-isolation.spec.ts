@@ -48,7 +48,7 @@ describe("EmergencyService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockDispatch = { emit: jest.fn() };
     const svc = new EmergencyService(db, mockDispatch as never);
-    await svc.listEvents(ATTACKER, { page: 1, limit: 10 });
+    await svc.listEvents(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -56,7 +56,7 @@ describe("EmergencyService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockDispatch = { emit: jest.fn() };
     const svc = new EmergencyService(db, mockDispatch as never);
-    await svc.listEvents(OWNER, { page: 1, limit: 10 });
+    await svc.listEvents(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });

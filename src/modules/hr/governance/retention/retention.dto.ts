@@ -1,11 +1,6 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
-
-export const paginationSchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
-});
 
 export const createRetentionPolicySchema = z.object({
   recordType: z.enum(["employee", "document", "case", "attendance", "payroll"]),
@@ -17,7 +12,9 @@ export const createRetentionPolicySchema = z.object({
 
 export const updateRetentionPolicySchema = createRetentionPolicySchema.partial();
 
-export const listRetentionPoliciesSchema = paginationSchema.extend({
+export const listRetentionPoliciesSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   recordType: z.enum(["employee", "document", "case", "attendance", "payroll"]).optional(),
   active: queryBoolean.optional(),
 });
@@ -32,7 +29,9 @@ export const updateDataRequestSchema = z.object({
   reason: z.string().max(2000).optional(),
 });
 
-export const listDataRequestsSchema = paginationSchema.extend({
+export const listDataRequestsSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   status: z.enum(["pending", "approved", "processing", "completed", "rejected"]).optional(),
   type: z.enum(["export", "delete", "anonymize"]).optional(),
   subjectUserId: z.string().optional(),

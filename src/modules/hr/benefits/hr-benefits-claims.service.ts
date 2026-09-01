@@ -1,5 +1,7 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -15,8 +17,8 @@ export class HrBenefitsClaimsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async listClaims(orgId: string, query: ClaimsQuery, requesterId: string, isAdmin: boolean) {
-    const { status, userId, page, limit } = query;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, status, userId } = query;
+    const pos = decodeCursor(cursor);
 
     const conditions = [eq(hrInsuranceClaims.orgId, orgId)];
     if (status) conditions.push(eq(hrInsuranceClaims.status, status));
@@ -25,33 +27,34 @@ export class HrBenefitsClaimsService {
     } else if (userId) {
       conditions.push(eq(hrInsuranceClaims.userId, userId));
     }
+    if (pos) conditions.push(keysetBeforeId(hrInsuranceClaims.submittedAt, hrInsuranceClaims.id, pos));
 
-    const [rows, [{ total }]] = await Promise.all([
-      this.db
-        .select({
-          claim: hrInsuranceClaims,
-          user: {
-            id: users.id,
-            name: users.name,
-            email: users.email,
-          },
-          plan: hrBenefitPlans,
-        })
-        .from(hrInsuranceClaims)
-        .leftJoin(users, eq(users.id, hrInsuranceClaims.userId))
-        .leftJoin(hrBenefitPlans, eq(hrBenefitPlans.id, hrInsuranceClaims.planId))
-        .where(and(...conditions))
-        .orderBy(desc(hrInsuranceClaims.submittedAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: count() })
-        .from(hrInsuranceClaims)
-        .where(and(...conditions)),
-    ]);
+    const rows = await this.db
+      .select({
+        claim: hrInsuranceClaims,
+        user: {
+          id: users.id,
+          name: users.name,
+          email: users.email,
+        },
+        plan: hrBenefitPlans,
+      })
+      .from(hrInsuranceClaims)
+      .leftJoin(users, eq(users.id, hrInsuranceClaims.userId))
+      .leftJoin(hrBenefitPlans, eq(hrBenefitPlans.id, hrInsuranceClaims.planId))
+      .where(and(...conditions))
+      .orderBy(desc(hrInsuranceClaims.submittedAt), desc(hrInsuranceClaims.id))
+      .limit(limit + 1);
 
-    const data = rows.map((r) => ({ ...r.claim, user: r.user, plan: r.plan }));
-    return { data, total, page, limit };
+    const page = buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.claim.submittedAt.toISOString(),
+      id: String(row.claim.id),
+    }));
+
+    return {
+      data: page.data.map((r) => ({ ...r.claim, user: r.user, plan: r.plan })),
+      pagination: page.pagination,
+    };
   }
 
   async submitClaim(orgId: string, userId: string, data: SubmitClaimInput) {

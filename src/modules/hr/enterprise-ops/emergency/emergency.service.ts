@@ -1,5 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, desc, eq, sql } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import {
@@ -24,27 +26,24 @@ export class EmergencyService {
   ) {}
 
   async listEvents(orgId: string, input: ListEmergencyEventsInput) {
-    const { page, limit, status } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, status } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [eq(hrEmergencyEvents.orgId, orgId)];
     if (status) conditions.push(eq(hrEmergencyEvents.status, status));
+    if (pos) conditions.push(keysetBeforeId(hrEmergencyEvents.createdAt, hrEmergencyEvents.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrEmergencyEvents)
+      .where(and(...conditions))
+      .orderBy(desc(hrEmergencyEvents.createdAt), desc(hrEmergencyEvents.id))
+      .limit(limit + 1);
 
-    const [rows, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrEmergencyEvents)
-        .where(where)
-        .orderBy(desc(hrEmergencyEvents.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrEmergencyEvents).where(where),
-    ]);
-
-    const total = totalResult[0]?.total ?? 0;
-    return { data: rows, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async getEvent(orgId: string, eventId: string) {

@@ -4,7 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { hrPositions, hrReorgScenarios } from "../../../../db/schema/hr/governance";
@@ -29,27 +31,25 @@ export class PositionsService {
   ) {}
 
   async list(orgId: string, input: ListPositionsInput) {
-    const { page, limit, status, departmentId } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, status, departmentId } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [eq(hrPositions.orgId, orgId), isNull(hrPositions.deletedAt)];
     if (status) conditions.push(eq(hrPositions.status, status));
     if (departmentId) conditions.push(eq(hrPositions.departmentId, departmentId));
+    if (pos) conditions.push(keysetBeforeId(hrPositions.createdAt, hrPositions.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrPositions)
+      .where(and(...conditions))
+      .orderBy(desc(hrPositions.createdAt), desc(hrPositions.id))
+      .limit(limit + 1);
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrPositions)
-        .where(where)
-        .orderBy(desc(hrPositions.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrPositions).where(where),
-    ]);
-
-    return { data, total: totalResult[0]?.total ?? 0, page, limit };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async listVacant(orgId: string, input: ListPositionsInput) {
@@ -251,29 +251,27 @@ export class PositionsService {
   }
 
   async listScenarios(orgId: string, input: ListScenariosInput) {
-    const { page, limit, status } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, status } = input;
+    const pos = decodeCursor(cursor);
 
     const conditions = [
       eq(hrReorgScenarios.orgId, orgId),
       isNull(hrReorgScenarios.deletedAt),
     ];
     if (status) conditions.push(eq(hrReorgScenarios.status, status));
+    if (pos) conditions.push(keysetBeforeId(hrReorgScenarios.createdAt, hrReorgScenarios.id, pos));
 
-    const where = and(...conditions);
+    const rows = await this.db
+      .select()
+      .from(hrReorgScenarios)
+      .where(and(...conditions))
+      .orderBy(desc(hrReorgScenarios.createdAt), desc(hrReorgScenarios.id))
+      .limit(limit + 1);
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrReorgScenarios)
-        .where(where)
-        .orderBy(desc(hrReorgScenarios.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrReorgScenarios).where(where),
-    ]);
-
-    return { data, total: totalResult[0]?.total ?? 0, page, limit };
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   async createScenario(

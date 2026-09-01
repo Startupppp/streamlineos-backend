@@ -62,7 +62,7 @@ export class ContractsController {
     @Query() { days }: z.infer<typeof daysQuerySchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.list(u.orgId, { page: 1, limit: 100, days, status: "active" });
+    return this.service.list(u.orgId, { limit: 100, days, status: "active" });
   }
 
   @Get(":contractId")

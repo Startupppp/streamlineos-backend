@@ -138,14 +138,14 @@ export const createEffectiveDateChangeSchema = z
   });
 
 export const listEffectiveDateChangesSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   employmentId: z.coerce.number().int().positive().optional(),
   changeType: z.enum([
     "department", "manager", "location", "designation", "job_level",
     "employment_type", "compensation", "work_schedule", "policy_assignment",
   ]).optional(),
   status: z.enum(["draft", "approved", "applied"]).optional(),
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
 });
 
 export const applyDueChangesSchema = z

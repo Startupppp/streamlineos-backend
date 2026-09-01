@@ -4,7 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, desc, eq, gt, isNull, lte } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lte } from "drizzle-orm";
+import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
+import { keysetBeforeValue } from "../../../common/pagination/keyset";
 import {
   hrEffectiveDatedChanges,
   hrEmployments,
@@ -182,26 +184,25 @@ export class HrEffectiveChangesService {
   }
 
   async list(orgId: string, input: ListEffectiveDateChangesInput) {
-    const { page, limit, employmentId, changeType, status } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, employmentId, changeType, status } = input;
+    const pos = decodeCursor(cursor);
     const conditions = [eq(hrEffectiveDatedChanges.orgId, orgId)];
     if (employmentId) conditions.push(eq(hrEffectiveDatedChanges.employmentId, employmentId));
     if (changeType) conditions.push(eq(hrEffectiveDatedChanges.changeType, changeType));
     if (status) conditions.push(eq(hrEffectiveDatedChanges.status, status));
-    const where = and(...conditions);
+    if (pos) conditions.push(keysetBeforeValue(hrEffectiveDatedChanges.effectiveFrom, hrEffectiveDatedChanges.id, pos));
 
-    const [data, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrEffectiveDatedChanges)
-        .where(where)
-        .orderBy(desc(hrEffectiveDatedChanges.effectiveFrom), desc(hrEffectiveDatedChanges.id))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrEffectiveDatedChanges).where(where),
-    ]);
-    const total = totalResult[0]?.total ?? 0;
-    return { data, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    const rows = await this.db
+      .select()
+      .from(hrEffectiveDatedChanges)
+      .where(and(...conditions))
+      .orderBy(desc(hrEffectiveDatedChanges.effectiveFrom), desc(hrEffectiveDatedChanges.id))
+      .limit(limit + 1);
+
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: String(row.effectiveFrom),
+      id: String(row.id),
+    }));
   }
 
   async approve(orgId: string, changeId: number, actorId: string) {
