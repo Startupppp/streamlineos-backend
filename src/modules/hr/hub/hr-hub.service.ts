@@ -135,7 +135,6 @@ export class HrHubService {
       this.capture(capabilities.canOffers, () =>
         this.offers.listAllOffers(user.orgId, {
           status: "PENDING_APPROVAL",
-          page: 1,
           pageSize: 1,
         }),
       ),
