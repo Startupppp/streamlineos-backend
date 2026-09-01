@@ -125,7 +125,6 @@ export class KbSpacesService {
       await tx.insert(kbSpaceMembers).values({
         orgId,
         spaceId: space.id,
-        userId,
         membershipId: membershipId ?? null,
         spaceRole: "admin",
       });

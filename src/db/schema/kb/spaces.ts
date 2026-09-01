@@ -54,7 +54,6 @@ export const kbSpaceMembers = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     spaceId: integer("space_id").references(() => kbSpaces.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
     membershipId: integer("membership_id"),
     role: text("role"),
     team: text("team"),
@@ -63,13 +62,12 @@ export const kbSpaceMembers = pgTable(
   },
   (table) => [
     index("idx_kb_space_members_space").on(table.spaceId),
-    index("idx_kb_space_members_user").on(table.userId),
     index("idx_kb_space_members_org_membership").on(table.orgId, table.membershipId),
     index("idx_kb_space_members_org_role").on(table.orgId, table.role),
     index("idx_kb_space_members_org_space").on(table.orgId, table.spaceId),
     unique("uniq_kb_space_members_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.spaceId], foreignColumns: [kbSpaces.orgId, kbSpaces.id], name: "fk_kb_space_members_org_space" }),
-    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_space_members_org_membership" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.membershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_kb_space_members_org_membership" }).onDelete("cascade"),
   ],
 );
 
@@ -82,6 +80,5 @@ export const kbSpacesRelations = relations(kbSpaces, ({ one, many }) => ({
 
 export const kbSpaceMembersRelations = relations(kbSpaceMembers, ({ one }) => ({
   space: one(kbSpaces, { fields: [kbSpaceMembers.spaceId], references: [kbSpaces.id] }),
-  user: one(users, { fields: [kbSpaceMembers.userId], references: [users.id] }),
   membership: one(organizationMembers, { fields: [kbSpaceMembers.membershipId], references: [organizationMembers.id] }),
 }));

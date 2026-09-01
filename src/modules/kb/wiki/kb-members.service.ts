@@ -17,6 +17,7 @@ import type { AddMemberInput } from "./dto/kb-members.schemas";
 type MemberRow = typeof kbSpaceMembers.$inferSelect;
 
 type MemberListItem = MemberRow & {
+  userId: string | null;
   userName: string | null;
   userEmail: string | null;
   userImage: string | null;
@@ -49,7 +50,7 @@ export class KbMembersService {
         id: kbSpaceMembers.id,
         orgId: kbSpaceMembers.orgId,
         spaceId: kbSpaceMembers.spaceId,
-        userId: kbSpaceMembers.userId,
+        userId: organizationMembers.userId,
         membershipId: kbSpaceMembers.membershipId,
         role: kbSpaceMembers.role,
         team: kbSpaceMembers.team,
@@ -60,27 +61,21 @@ export class KbMembersService {
         userImage: users.image,
       })
       .from(kbSpaceMembers)
-      .leftJoin(users, eq(kbSpaceMembers.userId, users.id))
+      .leftJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, kbSpaceMembers.orgId),
+          eq(organizationMembers.id, kbSpaceMembers.membershipId),
+        ),
+      )
+      .leftJoin(users, eq(organizationMembers.userId, users.id))
       .where(and(eq(kbSpaceMembers.orgId, orgId), eq(kbSpaceMembers.spaceId, spaceId)))
-      .orderBy(asc(kbSpaceMembers.spaceRole), asc(kbSpaceMembers.createdAt));
+      .orderBy(asc(kbSpaceMembers.spaceRole), asc(kbSpaceMembers.createdAt))
+      .limit(500);
   }
 
-  async add(orgId: string, spaceId: number, input: AddMemberInput): Promise<MemberRow> {
+  async add(orgId: string, spaceId: number, input: AddMemberInput): Promise<MemberRow & { userId: string | null }> {
     await this.assertSpaceExists(orgId, spaceId);
-    if (input.userId) {
-      const existing = await this.db.query.kbSpaceMembers.findFirst({
-        where: and(eq(kbSpaceMembers.spaceId, spaceId), eq(kbSpaceMembers.userId, input.userId)),
-        columns: { id: true },
-      });
-      if (existing) throw new ConflictException("User already has access");
-    }
-    if (input.role) {
-      const existing = await this.db.query.kbSpaceMembers.findFirst({
-        where: and(eq(kbSpaceMembers.spaceId, spaceId), eq(kbSpaceMembers.role, input.role)),
-        columns: { id: true },
-      });
-      if (existing) throw new ConflictException("Role already granted");
-    }
     let membershipId: number | null = null;
     if (input.userId) {
       const membership = await this.db.query.organizationMembers.findFirst({
@@ -93,13 +88,28 @@ export class KbMembersService {
       });
       if (!membership) throw new NotFoundException("Active organization member not found");
       membershipId = membership.id;
+      const existing = await this.db.query.kbSpaceMembers.findFirst({
+        where: and(
+          eq(kbSpaceMembers.orgId, orgId),
+          eq(kbSpaceMembers.spaceId, spaceId),
+          eq(kbSpaceMembers.membershipId, membershipId),
+        ),
+        columns: { id: true },
+      });
+      if (existing) throw new ConflictException("User already has access");
+    }
+    if (input.role) {
+      const existing = await this.db.query.kbSpaceMembers.findFirst({
+        where: and(eq(kbSpaceMembers.spaceId, spaceId), eq(kbSpaceMembers.role, input.role)),
+        columns: { id: true },
+      });
+      if (existing) throw new ConflictException("Role already granted");
     }
     const [member] = await this.db
       .insert(kbSpaceMembers)
       .values({
         orgId,
         spaceId,
-        userId: input.userId ?? null,
         membershipId,
         role: input.role ?? null,
         spaceRole: input.spaceRole,
@@ -108,7 +118,7 @@ export class KbMembersService {
     await this.bumpSpaceAclRevision(orgId, spaceId);
     await this.access.invalidateAccessibleSpaceIds(orgId);
     await this.scheduleAclReindex(orgId, spaceId);
-    return member;
+    return { ...member, userId: input.userId ?? null };
   }
 
   private async scheduleAclReindex(orgId: string, spaceId: number): Promise<void> {
