@@ -87,7 +87,7 @@ describe("EquityService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockAudit = { log: jest.fn() };
     const svc = new EquityService(db, mockAudit as never);
-    await svc.listGrants(ATTACKER, { page: 1, limit: 10 });
+    await svc.listGrants(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -95,7 +95,7 @@ describe("EquityService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockAudit = { log: jest.fn() };
     const svc = new EquityService(db, mockAudit as never);
-    await svc.listGrants(OWNER, { page: 1, limit: 10 });
+    await svc.listGrants(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });
