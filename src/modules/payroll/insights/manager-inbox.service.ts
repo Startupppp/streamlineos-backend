@@ -5,7 +5,7 @@ import {
   NotFoundException,
   BadRequestException,
 } from "@nestjs/common";
-import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -114,7 +114,8 @@ export class ManagerInboxService {
               eq(organizationMembers.orgId, orgId),
               eq(organizationMembers.status, "ACTIVE"),
             ),
-          );
+          )
+          .limit(directReportIds.length);
 
     const honestyNote =
       "Team payroll inbox is limited to your direct reports. Approving claims requires hr:expenses:approve; loans require hr:expenses:approve or hr:loans:manage. You cannot approve your own requests.";
@@ -143,7 +144,7 @@ export class ManagerInboxService {
     const [reimbRows, loanRows, pubs, taxRows, pendingReimbList, pendingLoanList] =
       await Promise.all([
         this.db
-          .select({
+          .selectDistinctOn([payslipPublications.userId], {
             userId: reimbursements.userId,
             total: count(),
           })
@@ -191,9 +192,9 @@ export class ManagerInboxService {
               eq(payslipPublications.status, "PUBLISHED"),
             ),
           )
-          .orderBy(desc(payslipPublications.publishedAt)),
+          .orderBy(asc(payslipPublications.userId), desc(payslipPublications.publishedAt)),
         this.db
-          .select({
+          .selectDistinctOn([taxDeclarations.userId], {
             userId: taxDeclarations.userId,
             status: taxDeclarations.status,
             createdAt: taxDeclarations.createdAt,
@@ -202,7 +203,7 @@ export class ManagerInboxService {
           .where(
             and(eq(taxDeclarations.orgId, orgId), inArray(taxDeclarations.userId, reportIds)),
           )
-          .orderBy(desc(taxDeclarations.createdAt)),
+          .orderBy(asc(taxDeclarations.userId), desc(taxDeclarations.createdAt)),
         this.db
           .select({
             id: reimbursements.id,

@@ -2469,12 +2469,12 @@
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/accounting-mappings.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane â€” paired service+frontend migration required"
+      "verdict": "BOUNDED",
+      "note": "Explicit projection reads at most 501 rows and fails visibly above the supported 500-row configuration bound"
     },
     "/payroll/insights/calendar.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane â€” paired service+frontend migration required"
+      "verdict": "BOUNDED",
+      "note": "List is capped at 500; unique mutations use LIMIT 1; month generation reads only distinct scheduled event types"
     },
     "/payroll/insights/ess.service.ts": {
       "verdict": "ACTIONABLE",
@@ -2497,8 +2497,8 @@
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/manager-inbox.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane â€” paired service+frontend migration required"
+      "verdict": "BOUNDED",
+      "note": "Report lookup is input-bounded and latest payslip/declaration reads return one row per report via DISTINCT ON"
     },
     "/payroll/insights/payroll-ai-explain.service.ts": {
       "verdict": "BOUNDED",
@@ -2517,8 +2517,8 @@
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
     "/payroll/insights/tax-windows.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "export-cancellation lane â€” paired service+frontend migration required"
+      "verdict": "BOUNDED",
+      "note": "History fails visibly above 100 rows; unique create, update, and active-window lookups use LIMIT 1"
     },
     "/payroll/insights/team-rewards.service.ts": {
       "verdict": "ACTIONABLE",

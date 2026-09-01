@@ -29,12 +29,16 @@ export class TaxWindowsService {
     private readonly notifications: PayrollNotificationsService,
   ) {}
 
-  list(orgId: string) {
-    return this.db
+  async list(orgId: string) {
+    const rows = await this.db
       .select()
       .from(payrollTaxWindows)
       .where(eq(payrollTaxWindows.orgId, orgId))
-      .orderBy(desc(payrollTaxWindows.financialYear));
+      .orderBy(desc(payrollTaxWindows.financialYear))
+      .limit(101);
+    if (rows.length > 100)
+      throw new ConflictException("Tax windows exceed the supported 100-year history bound");
+    return rows;
   }
 
   async create(
@@ -55,7 +59,8 @@ export class TaxWindowsService {
           eq(payrollTaxWindows.orgId, orgId),
           eq(payrollTaxWindows.financialYear, data.financialYear),
         ),
-      );
+      )
+      .limit(1);
 
     if (existing) {
       throw new ConflictException(`Tax window for ${data.financialYear} already exists`);
@@ -92,7 +97,8 @@ export class TaxWindowsService {
     const [existing] = await this.db
       .select()
       .from(payrollTaxWindows)
-      .where(and(eq(payrollTaxWindows.id, id), eq(payrollTaxWindows.orgId, orgId)));
+      .where(and(eq(payrollTaxWindows.id, id), eq(payrollTaxWindows.orgId, orgId)))
+      .limit(1);
 
     if (!existing) throw new NotFoundException("Tax window not found");
 

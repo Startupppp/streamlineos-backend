@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -124,7 +124,8 @@ export class CalendarService {
       const [existing] = await tx
         .select({ id: payrollCalendarEvents.id, type: payrollCalendarEvents.type, date: payrollCalendarEvents.date, title: payrollCalendarEvents.title })
         .from(payrollCalendarEvents)
-        .where(and(eq(payrollCalendarEvents.id, eventId), eq(payrollCalendarEvents.orgId, orgId)));
+        .where(and(eq(payrollCalendarEvents.id, eventId), eq(payrollCalendarEvents.orgId, orgId)))
+        .limit(1);
 
       if (!existing) throw new NotFoundException("Calendar event not found");
 
@@ -166,7 +167,8 @@ export class CalendarService {
       const [existing] = await tx
         .select({ id: payrollCalendarEvents.id, type: payrollCalendarEvents.type, date: payrollCalendarEvents.date })
         .from(payrollCalendarEvents)
-        .where(and(eq(payrollCalendarEvents.id, eventId), eq(payrollCalendarEvents.orgId, orgId)));
+        .where(and(eq(payrollCalendarEvents.id, eventId), eq(payrollCalendarEvents.orgId, orgId)))
+        .limit(1);
 
       if (!existing) throw new NotFoundException("Calendar event not found");
 
@@ -232,12 +234,13 @@ export class CalendarService {
 
     return this.db.transaction(async (tx) => {
       const existing = await tx
-        .select({ type: payrollCalendarEvents.type })
+        .selectDistinct({ type: payrollCalendarEvents.type })
         .from(payrollCalendarEvents)
         .where(
           and(
             eq(payrollCalendarEvents.orgId, orgId),
             eq(payrollCalendarEvents.month, month),
+            inArray(payrollCalendarEvents.type, events.map((event) => event.type)),
           ),
         );
 

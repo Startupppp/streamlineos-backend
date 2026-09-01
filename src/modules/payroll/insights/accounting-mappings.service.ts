@@ -18,11 +18,25 @@ export class AccountingMappingsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async list(orgId: string) {
-    return this.db
-      .select()
+    const rows = await this.db
+      .select({
+        id: payrollAccountingMappings.id,
+        orgId: payrollAccountingMappings.orgId,
+        componentId: payrollAccountingMappings.componentId,
+        category: payrollAccountingMappings.category,
+        ledgerName: payrollAccountingMappings.ledgerName,
+        costCenterSource: payrollAccountingMappings.costCenterSource,
+        notes: payrollAccountingMappings.notes,
+        createdAt: payrollAccountingMappings.createdAt,
+        updatedAt: payrollAccountingMappings.updatedAt,
+      })
       .from(payrollAccountingMappings)
       .where(eq(payrollAccountingMappings.orgId, orgId))
-      .orderBy(asc(payrollAccountingMappings.id));
+      .orderBy(asc(payrollAccountingMappings.id))
+      .limit(501);
+    if (rows.length > 500)
+      throw new ConflictException("Accounting mappings exceed the supported 500-row configuration bound");
+    return rows;
   }
 
   async create(
