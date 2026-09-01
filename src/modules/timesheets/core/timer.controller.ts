@@ -28,7 +28,7 @@ import { z } from "zod";
 
 const timerIdParams = z.object({ timerId: z.coerce.number().int().positive() }).strict();
 
-@RequireModule("build")
+@RequireModule("timesheets")
 @Controller("timesheets/timer")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class TimerController {

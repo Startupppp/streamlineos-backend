@@ -27,7 +27,7 @@ import {
 } from "./dto/billing.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 
-@RequireModule("build")
+@RequireModule("timesheets")
 @Controller("timesheets/billing")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class TimesheetBillingController {

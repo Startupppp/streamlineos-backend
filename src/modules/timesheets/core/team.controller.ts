@@ -10,7 +10,7 @@ import { TeamService } from "./team.service";
 import { teamWeekSummaryQuerySchema, type TeamWeekSummaryQuery } from "./dto/team.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 
-@RequireModule("build")
+@RequireModule("timesheets")
 @Controller("timesheets/team")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class TeamController {

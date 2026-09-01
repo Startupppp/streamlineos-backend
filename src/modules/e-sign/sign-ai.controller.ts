@@ -1,6 +1,8 @@
 import { Controller, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../common/rbac/module.guard";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
@@ -13,8 +15,9 @@ import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
 
+@RequireModule("sign")
 @Controller("sign/envelopes/:envelopeId/ai")
-@UseGuards(JwtAuthGuard, PermissionGuard, RateLimitGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard, RateLimitGuard)
 @RequirePermission("sign:envelope:view")
 @UseRateLimit("ai:invoke")
 export class SignAiController {

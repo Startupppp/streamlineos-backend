@@ -1,0 +1,19 @@
+{
+  "modules/surveys/survey-public.controller.ts": "all handlers carry @Public(); respondent has no session, module gate is inapplicable",
+  "modules/hr/forms/hr-forms-public.controller.ts": "all handlers carry @Public(); public form endpoints require no session",
+  "modules/hr/cases/hr-disciplinary.controller.ts": "uses only self:cases permissions; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
+  "modules/hr/time/employee-attendance.controller.ts": "uses only self:attendance; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
+  "modules/hr/time/employee-time-off.controller.ts": "uses only self:time-off; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
+  "modules/hr/time/leave-policies.controller.ts": "HANDOFF: mixes self:* and hr:* routes without module gate; needs review by HR lane",
+  "modules/hr/time/leave-policy-summary.controller.ts": "HANDOFF: mixes self:* and hr:* routes without module gate; needs review by HR lane",
+  "modules/hr/core/hr-org-structure-compat.controller.ts": "HANDOFF: no module gate; needs review by HR lane",
+  "modules/hr/interviews/employee-recruitment.controller.ts": "HANDOFF: no module gate; needs review by HR lane",
+  "modules/hr/lifecycle/onboarding-views.controller.ts": "HANDOFF: mixes self:* and hr:* routes without module gate; needs review by HR lane",
+  "modules/hr/config/hr-document-types.controller.ts": "HANDOFF: no module gate; needs review by HR lane",
+  "modules/crm/import/crm-import.controller.ts": "HANDOFF: uses crm:imports:manage but no @RequireModule; needs review by CRM lane",
+  "modules/crm/consent/crm-consent.controller.ts": "HANDOFF: CrmConsentController uses crm:contacts:* but no @RequireModule; needs review by CRM lane",
+  "modules/payroll/insights/ess.controller.ts": "uses only self:payroll self:payslips; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
+  "modules/payroll/insights/payroll-ai-explain.controller.ts": "uses only self:payslips; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
+  "modules/payroll/payout/publishing.controller.ts": "uses per-method @RequireModule('payroll') with class-level ModuleGuard; gating is correct, just method-scoped not class-scoped",
+  "modules/hr/onboarding/core/onboarding.controller.ts": "HANDOFF: class-level @UseGuards(JwtAuthGuard) only; some handlers add PermissionGuard but none have @RequireModule or ModuleGuard; needs review by HR lane"
+}

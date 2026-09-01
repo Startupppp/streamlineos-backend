@@ -16,7 +16,7 @@ import {
 } from "./dto/reports.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 
-@RequireModule("build")
+@RequireModule("timesheets")
 @Controller("timesheets/reports")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class TimesheetReportsController {

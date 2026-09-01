@@ -1,5 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../common/rbac/module.guard";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -17,8 +19,9 @@ import { z } from "zod";
 const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 const surveyAndCollectorIdParams = z.object({ surveyId: z.coerce.number().int().positive(), collectorId: z.coerce.number().int().positive() }).strict();
 
+@RequireModule("surveys")
 @Controller("surveys/:surveyId/collectors")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SurveyCollectorsController {
   constructor(private readonly collectors: SurveyCollectorService) {}
 

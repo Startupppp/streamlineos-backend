@@ -10,7 +10,7 @@ import { SettingsService } from "./settings.service";
 import { updateCoreSettingsSchema, type UpdateCoreSettingsInput } from "./dto/settings.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 
-@RequireModule("build")
+@RequireModule("timesheets")
 @Controller("timesheets/settings")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class TimesheetSettingsController {

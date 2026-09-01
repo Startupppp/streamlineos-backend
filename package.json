@@ -224,6 +224,8 @@
     "drill:legal-hold": "node --env-file-if-exists=.env src/scripts/drill-legal-hold.mjs",
     "check:migration-ledger": "node --env-file-if-exists=.env src/scripts/check-migration-ledger.mjs",
     "check:migration-ledger:self-test": "node src/scripts/check-migration-ledger.mjs --self-test",
+    "check:module-gate": "node src/scripts/check-module-gate.mjs",
+    "check:module-gate:self-test": "node src/scripts/check-module-gate.mjs --self-test",
     "check:ai-charge": "node src/scripts/check-ai-charge-declared.mjs",
     "check:ai-charge:self-test": "node src/scripts/check-ai-charge-declared.mjs --self-test",
     "check:migration-rollback": "node src/scripts/check-migration-rollback.mjs",

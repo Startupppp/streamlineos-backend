@@ -160,6 +160,14 @@ jobs:
       - name: RBAC referential integrity
         run: pnpm verify:rbac-integrity:self-test
 
+      # A controller must gate on its OWN module. Thirteen timesheets controllers gated on
+      # "build" and eight surveys controllers gated on nothing at all — a paying Timesheets
+      # subscriber was 403'd out of their module while a Build subscriber got it free, and any
+      # authenticated user could reach Surveys without the subscription. check:module-entitlement
+      # only ever validated one module's key round-trip, which is why neither was caught.
+      - name: Controllers gate on their own module
+        run: pnpm check:module-gate:self-test && pnpm check:module-gate
+
       # Every AI gateway call must declare `charge` explicitly. Absent meant the credit
       # reservation block was skipped entirely, so the paid provider call went out unmetered and
       # the feature's AI_FEATURE_COSTS entry was dead. `charge: false` is a valid, auditable

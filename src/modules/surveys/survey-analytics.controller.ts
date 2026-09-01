@@ -2,6 +2,8 @@ import { Body, Controller, Get, Header, Param, ParseIntPipe, Post, Query, Res, U
 import type { Response } from "express";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { ModuleGuard } from "../../common/rbac/module.guard";
+import { RequireModule } from "../../common/rbac/require-module.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -22,8 +24,9 @@ import {
 const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
 const surveyAndSessionIdParams = z.object({ surveyId: z.coerce.number().int().positive(), sessionId: z.coerce.number().int().positive() }).strict();
 
+@RequireModule("surveys")
 @Controller("surveys/:surveyId")
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class SurveyAnalyticsController {
   constructor(
     private readonly analytics: SurveyAnalyticsService,
