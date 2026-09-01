@@ -17,6 +17,7 @@ import { resolveAttendanceScope } from "./attendance-scope";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { AuditService } from "../../../common/audit/audit.service";
+import { requireOrganizationMembershipId } from "./organization-membership";
 
 export interface CreateRegularizationInput {
   attendanceDate: string;
@@ -76,7 +77,7 @@ export class AttendanceRegularizationService {
       const attendanceRow = await tx.query.attendance.findFirst({
         where: and(
           eq(attendance.orgId, u.orgId),
-          eq(attendance.userId, u.userId),
+          eq(attendance.userMembershipId, membershipId),
           eq(attendance.date, input.attendanceDate),
         ),
       });
@@ -140,14 +141,11 @@ export class AttendanceRegularizationService {
 
     const conditions = [eq(hrAttendanceRegularizations.orgId, u.orgId)];
     if (targetUserId) {
-      const membershipId = actingMembershipId(u.principal);
-      if (targetUserId === u.userId && membershipId == null) {
-        throw new ForbiddenException("Organization membership required.");
-      }
-      const userPredicate = targetUserId === u.userId
-        ? eq(hrAttendanceRegularizations.userMembershipId, membershipId!)
-        : eq(hrAttendanceRegularizations.userId, targetUserId);
-      conditions.push(userPredicate);
+      const targetMembershipId = targetUserId === u.userId
+        ? actingMembershipId(u.principal)
+        : await requireOrganizationMembershipId(this.db, u.orgId, targetUserId);
+      if (targetMembershipId == null) throw new ForbiddenException("Organization membership required.");
+      conditions.push(eq(hrAttendanceRegularizations.userMembershipId, targetMembershipId));
     }
     if (query.status) conditions.push(eq(hrAttendanceRegularizations.status, query.status));
     if (query.startDate) conditions.push(gte(hrAttendanceRegularizations.attendanceDate, query.startDate));
@@ -166,6 +164,8 @@ export class AttendanceRegularizationService {
   async apply(u: CurrentUserContext, regularizationId: number) {
     const scope = await resolveAttendanceScope(this.access, u);
     if (scope !== "all") throw new ForbiddenException("Only managers can apply regularizations.");
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
 
     const applied = await this.db.transaction(async (tx) => {
       const [reg] = await tx
@@ -215,6 +215,7 @@ export class AttendanceRegularizationService {
         await tx.insert(attendance).values({
           orgId: u.orgId,
           userId: reg.userId,
+          userMembershipId: reg.userMembershipId,
           date: reg.attendanceDate,
           checkIn: reg.requestedCheckIn,
           checkOut: reg.requestedCheckOut ?? null,
@@ -229,7 +230,7 @@ export class AttendanceRegularizationService {
         .update(hrAttendanceRegularizations)
         .set({
           status: "APPROVED",
-          approvedBy: u.userId,
+          approvedByMembershipId: membershipId,
           approvedAt: new Date(),
         })
         .where(
@@ -280,6 +281,8 @@ export class AttendanceRegularizationService {
   async reject(u: CurrentUserContext, regularizationId: number, rejectionReason: string) {
     const scope = await resolveAttendanceScope(this.access, u);
     if (scope !== "all") throw new ForbiddenException("Only managers can reject regularizations.");
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
 
     await this.db.transaction(async (tx) => {
       const [reg] = await tx
@@ -302,7 +305,7 @@ export class AttendanceRegularizationService {
         .update(hrAttendanceRegularizations)
         .set({
           status: "REJECTED",
-          rejectedBy: u.userId,
+          rejectedByMembershipId: membershipId,
           rejectedAt: new Date(),
           rejectionReason,
         })

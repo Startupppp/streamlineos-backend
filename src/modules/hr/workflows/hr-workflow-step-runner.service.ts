@@ -90,6 +90,7 @@ export class HrWorkflowStepRunnerService {
     comment?: string,
     attachments?: { url: string; name: string }[],
     actorMembershipId?: number | null,
+    approverMembershipId?: number | null,
   ) {
     await this.db.transaction(async (tx) => {
       const [inserted] = await tx.insert(hrWorkflowStepActions).values({
@@ -97,6 +98,7 @@ export class HrWorkflowStepRunnerService {
         instanceId,
         stepOrder,
         approverUserId,
+        approverMembershipId: approverMembershipId ?? null,
         actedByUserId,
         actedByMembershipId: actorMembershipId ?? null,
         action,
