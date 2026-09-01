@@ -7,7 +7,7 @@ describe("UserModuleAccessService — cross-tenant isolation", () => {
   const USER_ID = "user-abc";
 
   function makeDb(rows: unknown[]): Db {
-    const where = jest.fn().mockResolvedValue(rows);
+    const where = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) });
     const innerJoin = jest.fn().mockReturnValue({ where });
     const from = jest.fn().mockReturnValue({ innerJoin });
     const select = jest.fn().mockReturnValue({ from });

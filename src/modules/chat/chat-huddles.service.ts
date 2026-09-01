@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, gt, isNull, lt } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import {
   calendarEvents,
   chatChannelMembers,
@@ -12,10 +12,10 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AblyService } from "../realtime/ably.service";
-import { WebPushService } from "../realtime/web-push.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import {
   PLAN_FEATURE_FLAGS,
   FREE_HUDDLE_MAX_PARTICIPANTS,
@@ -31,10 +31,10 @@ export class ChatHuddlesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ably: AblyService,
-    private readonly webPush: WebPushService,
     private readonly audit: AuditService,
     private readonly orgSettings: ChatOrgSettingsService,
     private readonly planLimits: PlanLimitsService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   private async assertMember(channelId: number, userId: string, orgId: string): Promise<number> {
@@ -131,51 +131,41 @@ export class ChatHuddlesService {
   }
 
   async startHuddle(channelId: number, userId: string, orgId: string) {
-    await this.assertMember(channelId, userId, orgId);
-
-    const existing = await this.db.query.chatHuddles.findFirst({
-      where: and(eq(chatHuddles.channelId, channelId), eq(chatHuddles.status, "active")),
-    });
-    if (existing) {
-      await this.joinHuddle(existing.id, userId, orgId);
-      return existing;
-    }
+    const starterMembershipId = await this.assertMember(channelId, userId, orgId);
 
     const channel = await this.db.query.chatChannels.findFirst({
-      where: eq(chatChannels.id, channelId),
+      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
       columns: { name: true },
     });
-
-    // A channel can outlive the original small-team assumption. Walk the
-    // membership keyset so huddle creation never drops attendees at a hard cap.
-    const channelMembers: Array<{ userId: string; membershipId: number }> = [];
-    let afterMembershipId: number | null = null;
-    const batchSize = 500;
-    for (;;) {
-      const batch = await this.db
-        .select({ userId: organizationMembers.userId, membershipId: chatChannelMembers.membershipId })
-        .from(chatChannelMembers)
-        .innerJoin(organizationMembers, eq(organizationMembers.id, chatChannelMembers.membershipId))
-        .where(and(
-          eq(chatChannelMembers.orgId, orgId),
-          eq(chatChannelMembers.channelId, channelId),
-          afterMembershipId === null ? undefined : gt(chatChannelMembers.membershipId, afterMembershipId),
-        ))
-        .orderBy(asc(chatChannelMembers.membershipId))
-        .limit(batchSize);
-      channelMembers.push(...batch);
-      if (batch.length < batchSize) break;
-      afterMembershipId = batch[batch.length - 1]?.membershipId ?? afterMembershipId;
-      if (afterMembershipId === null) break;
-    }
-
-    const starterMembershipId = channelMembers.find((m) => m.userId === userId)?.membershipId ?? null;
-    if (!starterMembershipId) throw new BadRequestException("Active membership required to start a huddle");
 
     const now = new Date();
     const estimatedEnd = new Date(now.getTime() + 2 * 60 * 60 * 1000);
 
+    let isNewHuddle = false;
     const huddle = await this.db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${orgId} || ':huddle:' || ${channelId}::text)::bigint)`,
+      );
+
+      const existing = await tx.query.chatHuddles.findFirst({
+        where: and(
+          eq(chatHuddles.orgId, orgId),
+          eq(chatHuddles.channelId, channelId),
+          eq(chatHuddles.status, "active"),
+        ),
+      });
+      if (existing) {
+        await tx
+          .insert(chatHuddleParticipants)
+          .values({ orgId, huddleId: existing.id, membershipId: starterMembershipId })
+          .onConflictDoUpdate({
+            target: [chatHuddleParticipants.huddleId, chatHuddleParticipants.membershipId],
+            set: { leftAt: null, joinedAt: new Date(), isMuted: false, handRaised: false, lastSeenAt: new Date() },
+          });
+        return existing;
+      }
+      isNewHuddle = true;
+
       const [calEvent] = await tx
         .insert(calendarEvents)
         .values({
@@ -190,65 +180,107 @@ export class ChatHuddlesService {
           createdByMembershipId: starterMembershipId,
         })
         .returning({ id: calendarEvents.id });
-      if (calEvent && channelMembers.length > 0) {
-        await tx.insert(eventAttendees).values(channelMembers.map((member) => ({
-          orgId,
-          eventId: calEvent.id,
-          membershipId: member.membershipId,
-        })));
+
+      if (calEvent) {
+        const ATTENDEE_BATCH = 500;
+        let afterMembershipId: number | null = null;
+        for (;;) {
+          const batch = await tx
+            .select({ membershipId: chatChannelMembers.membershipId })
+            .from(chatChannelMembers)
+            .where(
+              and(
+                eq(chatChannelMembers.orgId, orgId),
+                eq(chatChannelMembers.channelId, channelId),
+                afterMembershipId !== null ? gt(chatChannelMembers.membershipId, afterMembershipId) : undefined,
+              ),
+            )
+            .orderBy(asc(chatChannelMembers.membershipId))
+            .limit(ATTENDEE_BATCH);
+          if (batch.length === 0) break;
+          await tx
+            .insert(eventAttendees)
+            .values(batch.map((b) => ({ orgId, eventId: calEvent.id, membershipId: b.membershipId })))
+            .onConflictDoNothing();
+          if (batch.length < ATTENDEE_BATCH) break;
+          afterMembershipId = batch[batch.length - 1]?.membershipId ?? afterMembershipId;
+          if (afterMembershipId === null) break;
+        }
       }
 
       const [created] = await tx
         .insert(chatHuddles)
-        .values({ orgId, channelId, startedByMembershipId: starterMembershipId, status: "active", calendarEventId: calEvent?.id, hasVideo: false })
+        .values({
+          orgId,
+          channelId,
+          startedByMembershipId: starterMembershipId,
+          status: "active",
+          calendarEventId: calEvent?.id,
+          hasVideo: false,
+        })
         .returning();
 
-      await tx.insert(chatHuddleParticipants).values({ orgId, huddleId: created.id, membershipId: starterMembershipId });
+      await tx.insert(chatHuddleParticipants).values({
+        orgId,
+        huddleId: created.id,
+        membershipId: starterMembershipId,
+      });
 
       return created;
     });
 
-    await this.ably.publishHuddleEvent(orgId, channelId, "huddle:started", {
-      huddleId: huddle.id,
-      channelId,
-      startedBy: userId,
-    });
+    if (isNewHuddle) {
+      await this.ably.publishHuddleEvent(orgId, channelId, "huddle:started", {
+        huddleId: huddle.id,
+        channelId,
+        startedBy: userId,
+      });
 
-    for (const member of channelMembers) {
-      if (member.userId !== userId) {
-        void this.ably.publishToUser(orgId, member.userId, "huddle:started", {
-          huddleId: huddle.id,
-          channelId,
-          startedBy: userId,
-        }).catch((error: unknown) => {
-          this.logger.warn("ably: failed to notify user of huddle start", {
-            orgId,
-            channelId,
-            huddleId: huddle.id,
-            targetUserId: member.userId,
-            error: error instanceof Error ? error.message : String(error),
-            cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
-          });
-        });
+      this.audit.log({
+        action: "huddle.started",
+        userId,
+        orgId,
+        targetId: String(huddle.id),
+        targetType: "huddle",
+        metadata: { channelId },
+      });
+
+      const NOTIFY_BATCH = 500;
+      const targetUserIds: string[] = [];
+      let afterMembershipId: number | null = null;
+      for (;;) {
+        const batch = await this.db
+          .select({ userId: organizationMembers.userId, membershipId: chatChannelMembers.membershipId })
+          .from(chatChannelMembers)
+          .innerJoin(organizationMembers, eq(organizationMembers.id, chatChannelMembers.membershipId))
+          .where(
+            and(
+              eq(chatChannelMembers.orgId, orgId),
+              eq(chatChannelMembers.channelId, channelId),
+              afterMembershipId !== null ? gt(chatChannelMembers.membershipId, afterMembershipId) : undefined,
+            ),
+          )
+          .orderBy(asc(chatChannelMembers.membershipId))
+          .limit(NOTIFY_BATCH);
+        for (const row of batch)
+          if (row.userId !== userId) targetUserIds.push(row.userId);
+        if (batch.length < NOTIFY_BATCH) break;
+        afterMembershipId = batch[batch.length - 1]?.membershipId ?? afterMembershipId;
+        if (afterMembershipId === null) break;
       }
-    }
 
-    this.audit.log({ action: "huddle.started", userId, orgId, targetId: String(huddle.id), targetType: "huddle", metadata: { channelId } });
-
-    for (const member of channelMembers) {
-      if (member.userId !== userId) {
-        void this.webPush.sendToUser(member.userId, {
-          category: "CHAT",
-          url: `/chat?channel=${channelId}&joinHuddle=1`,
-        }).catch((error: unknown) => {
-          this.logger.warn("web-push: failed to send huddle start notification", {
-            orgId,
-            channelId,
-            huddleId: huddle.id,
-            targetUserId: member.userId,
-            error: error instanceof Error ? error.message : String(error),
-            cause: error instanceof Error && error.cause instanceof Error ? error.cause.message : undefined,
-          });
+      if (targetUserIds.length > 0) {
+        await this.dispatch.emit({
+          eventKey: "chat.huddle.invite",
+          orgId,
+          actorUserId: userId,
+          targetUserIds,
+          entityType: "channel",
+          entityId: String(channelId),
+          title: `Huddle started in #${channel?.name ?? "channel"}`,
+          message: "A huddle has started — tap to join.",
+          link: `/chat?channel=${channelId}&joinHuddle=1`,
+          variables: { channelId, huddleId: huddle.id },
         });
       }
     }

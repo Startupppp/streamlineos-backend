@@ -5,10 +5,12 @@ import { OrgStructureService } from "./org-structure.service";
 
 describe("OrgStructureService headcount aggregation", () => {
   it("groups department headcount in one query behind the versioned tenant namespace", async () => {
-    const groupByDepartment = jest.fn().mockResolvedValue([
-      { label: "Engineering", count: 12 },
-      { label: "Unassigned", count: 2 },
-    ]);
+    const groupByDepartment = jest.fn().mockReturnValue({
+      limit: jest.fn().mockResolvedValue([
+        { label: "Engineering", count: 12 },
+        { label: "Unassigned", count: 2 },
+      ]),
+    });
     const joinChain: Record<string, jest.Mock> = {
       leftJoin: jest.fn(),
       where: jest.fn().mockReturnValue({ groupBy: groupByDepartment }),

@@ -1,14 +1,24 @@
-import { BadRequestException, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, PayloadTooLargeException, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { StorageController } from "./storage.controller";
 import type { StorageService } from "./storage.service";
 import type { AuditService } from "../../common/audit/audit.service";
 import type { AccessService } from "../access/access.service";
 import type { AvScanner } from "../../common/security/av-scan";
+import type { MediaCompressionService } from "../../common/media/media-compression.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 
 const JPEG_MAGIC = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0]);
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+const PRE_GEN_RESULT = {
+  key: "org-1/uploads/uuid-file.jpg",
+  url: "https://cdn.example.com/org-1/uploads/uuid-file.jpg",
+  compressedBuffer: Buffer.from([0xff, 0xd8, 0xff]),
+  compressedMimeType: "image/webp",
+  size: 100,
+  sha256: "aabbccdd",
+};
 
 function makeUser(orgId = "org-1"): CurrentUserContext {
   return {
@@ -45,11 +55,22 @@ describe("StorageController — malware scan gate", () => {
   let controller: StorageController;
   let mockStorage: {
     isConfigured: jest.Mock;
-    uploadCompressed: jest.Mock;
+    compressAndPreGenerateKey: jest.Mock;
+    uploadToKey: jest.Mock;
   };
   let mockAudit: { log: jest.Mock };
   let mockAccess: { resolveUserPermissions: jest.Mock };
   let mockScanner: { scan: jest.Mock };
+  let mockQuarantine: {
+    isKeyBlocked: jest.Mock;
+    getTotalUsageBytes: jest.Mock;
+    getTotalUsageBytesForUser: jest.Mock;
+    begin: jest.Mock;
+    markClean: jest.Mock;
+    markInfected: jest.Mock;
+    markError: jest.Mock;
+  };
+  let mockCompression: { generateThumbnail: jest.Mock };
   let mockDb: { query: Record<string, unknown> };
 
   beforeEach(() => {
@@ -57,16 +78,22 @@ describe("StorageController — malware scan gate", () => {
 
     mockStorage = {
       isConfigured: jest.fn().mockReturnValue(true),
-      uploadCompressed: jest.fn().mockResolvedValue({
-        url: "https://cdn.example.com/uploads/file.jpg",
-        key: "uploads/file.jpg",
-        size: 100,
-        mimeType: "image/jpeg",
-      }),
+      compressAndPreGenerateKey: jest.fn().mockResolvedValue(PRE_GEN_RESULT),
+      uploadToKey: jest.fn().mockResolvedValue(undefined),
     };
     mockAudit = { log: jest.fn() };
     mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) };
     mockScanner = { scan: jest.fn().mockResolvedValue({ status: "clean" }) };
+    mockQuarantine = {
+      isKeyBlocked: jest.fn().mockResolvedValue(false),
+      getTotalUsageBytes: jest.fn().mockResolvedValue(0),
+      getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0),
+      begin: jest.fn().mockResolvedValue("qr-1"),
+      markClean: jest.fn(),
+      markInfected: jest.fn(),
+      markError: jest.fn(),
+    };
+    mockCompression = { generateThumbnail: jest.fn().mockResolvedValue(null) };
     mockDb = { query: {} };
 
     controller = new StorageController(
@@ -75,10 +102,12 @@ describe("StorageController — malware scan gate", () => {
       mockAudit as unknown as AuditService,
       mockAccess as unknown as AccessService,
       mockScanner as unknown as AvScanner,
+      mockQuarantine as never,
+      mockCompression as unknown as MediaCompressionService,
     );
   });
 
-  it("rejects infected files with 422 and never calls uploadCompressed", async () => {
+  it("rejects infected files with 422 and never calls compressAndPreGenerateKey", async () => {
     mockScanner.scan.mockResolvedValue({ status: "infected", threat: "Eicar-Test-Signature" });
     const file = makeFile("image/jpeg", JPEG_MAGIC);
 
@@ -86,10 +115,10 @@ describe("StorageController — malware scan gate", () => {
       controller.upload(file, "uploads", makeUser()),
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
 
-    expect(mockStorage.uploadCompressed).not.toHaveBeenCalled();
+    expect(mockStorage.compressAndPreGenerateKey).not.toHaveBeenCalled();
   });
 
-  it("rejects scanner errors with 503 and never calls uploadCompressed", async () => {
+  it("rejects scanner errors with 503 and never calls compressAndPreGenerateKey", async () => {
     mockScanner.scan.mockResolvedValue({ status: "error", reason: "clamd-unreachable" });
     const file = makeFile("image/jpeg", JPEG_MAGIC);
 
@@ -97,7 +126,7 @@ describe("StorageController — malware scan gate", () => {
       controller.upload(file, "uploads", makeUser()),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
 
-    expect(mockStorage.uploadCompressed).not.toHaveBeenCalled();
+    expect(mockStorage.compressAndPreGenerateKey).not.toHaveBeenCalled();
   });
 
   it("proceeds with upload when scanner returns clean", async () => {
@@ -106,8 +135,8 @@ describe("StorageController — malware scan gate", () => {
 
     const result = await controller.upload(file, "uploads", makeUser());
 
-    expect(mockStorage.uploadCompressed).toHaveBeenCalled();
-    expect(result).toMatchObject({ mimeType: "image/jpeg" });
+    expect(mockStorage.uploadToKey).toHaveBeenCalled();
+    expect(result).toMatchObject({ status: "pending_scan", mimeType: "image/webp" });
   });
 
   it("scans the uploaded buffer and passes filename and mime type", async () => {
@@ -125,13 +154,24 @@ describe("StorageController — malware scan gate", () => {
     expect(mockScanner.scan).not.toHaveBeenCalled();
   });
 
+  it("rejects when user quota is exceeded", async () => {
+    mockQuarantine.getTotalUsageBytesForUser.mockResolvedValue(500 * 1024 * 1024);
+    const file = makeFile("image/jpeg", JPEG_MAGIC);
+    file.size = 1024;
+
+    await expect(
+      controller.upload(file, "uploads", makeUser()),
+    ).rejects.toBeInstanceOf(PayloadTooLargeException);
+    expect(mockScanner.scan).not.toHaveBeenCalled();
+  });
+
   it("cross-tenant: org-A upload does not leak org-B key", async () => {
     mockScanner.scan.mockResolvedValue({ status: "clean" });
     const fileA = makeFile("image/jpeg", JPEG_MAGIC, "a.jpg");
     const fileB = makeFile("image/jpeg", JPEG_MAGIC, "b.jpg");
-    mockStorage.uploadCompressed
-      .mockResolvedValueOnce({ url: "https://cdn/org-a/a.jpg", key: "uploads/org-a/a.jpg", size: 12, mimeType: "image/jpeg" })
-      .mockResolvedValueOnce({ url: "https://cdn/org-b/b.jpg", key: "uploads/org-b/b.jpg", size: 12, mimeType: "image/jpeg" });
+    mockStorage.compressAndPreGenerateKey
+      .mockResolvedValueOnce({ ...PRE_GEN_RESULT, key: "org-a/uploads/a.jpg", url: "https://cdn/org-a/a.jpg" })
+      .mockResolvedValueOnce({ ...PRE_GEN_RESULT, key: "org-b/uploads/b.jpg", url: "https://cdn/org-b/b.jpg" });
 
     const resultA = await controller.upload(fileA, "uploads", makeUser("org-a"));
     const resultB = await controller.upload(fileB, "uploads", makeUser("org-b"));

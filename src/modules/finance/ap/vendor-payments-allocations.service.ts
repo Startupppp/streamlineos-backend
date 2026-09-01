@@ -52,11 +52,13 @@ export class VendorPaymentsAllocationsService {
     }
 
     const billIds = input.allocations.map((a) => a.billId);
-    const billRows = await this.db
-      .select()
-      .from(purchaseBills)
-      .where(and(inArray(purchaseBills.id, billIds), eq(purchaseBills.orgId, orgId)))
-      .limit(billIds.length);
+    const billRows = billIds.length > 0
+      ? await this.db
+          .select()
+          .from(purchaseBills)
+          .where(and(inArray(purchaseBills.id, billIds), eq(purchaseBills.orgId, orgId)))
+          .limit(billIds.length)
+      : [];
     const billMap = new Map(billRows.map((b) => [b.id, b]));
 
     for (const alloc of input.allocations) {

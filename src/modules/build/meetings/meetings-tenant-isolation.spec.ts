@@ -9,7 +9,7 @@ describe("MeetingsService — cross-tenant isolation", () => {
   const audit = { log: jest.fn() } as never;
 
   function makeDb(meetingRow: unknown | null) {
-    const where = jest.fn().mockResolvedValue([]);
+    const where = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) });
     const from = jest.fn().mockReturnValue({ where });
     const select = jest.fn().mockReturnValue({ from });
     return {

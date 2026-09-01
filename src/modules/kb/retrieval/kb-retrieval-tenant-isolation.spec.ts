@@ -104,9 +104,15 @@ describe("KbIndexingService — cross-tenant isolation", () => {
   it("indexArticle: removes chunks for an article not found in the attacker org (deny)", async () => {
     const findFirst = jest.fn().mockResolvedValue(null);
     const deletedWhere = jest.fn().mockResolvedValue([]);
+    const makeTx = () => ({
+      execute: jest.fn().mockResolvedValue(undefined),
+      query: { kbArticles: { findFirst } },
+      delete: jest.fn().mockReturnValue({ where: deletedWhere }),
+    });
     const db = {
       query: { kbArticles: { findFirst } },
       delete: jest.fn().mockReturnValue({ where: deletedWhere }),
+      transaction: jest.fn().mockImplementation(async (fn: (tx: ReturnType<typeof makeTx>) => unknown) => fn(makeTx())),
     } as unknown as Db;
     const embeddings = { isConfigured: jest.fn().mockReturnValue(false) } as never;
     const checkpoint = {} as never;
@@ -126,9 +132,15 @@ describe("KbIndexingService — cross-tenant isolation", () => {
       aclRevision: 1,
     });
     const deleteWhere = jest.fn().mockResolvedValue([]);
+    const makeTx = () => ({
+      execute: jest.fn().mockResolvedValue(undefined),
+      query: { kbArticles: { findFirst } },
+      delete: jest.fn().mockReturnValue({ where: deleteWhere }),
+    });
     const db = {
       query: { kbArticles: { findFirst } },
       delete: jest.fn().mockReturnValue({ where: deleteWhere }),
+      transaction: jest.fn().mockImplementation(async (fn: (tx: ReturnType<typeof makeTx>) => unknown) => fn(makeTx())),
     } as unknown as Db;
     const embeddings = { isConfigured: jest.fn().mockReturnValue(false) } as never;
     const checkpoint = {} as never;

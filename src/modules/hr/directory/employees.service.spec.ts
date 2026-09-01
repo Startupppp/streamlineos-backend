@@ -18,7 +18,7 @@ describe("EmployeeAnalyticsService.getStats — SQL aggregates, no row fetch", (
     function whereResult(rows: unknown) {
       return {
         then: (resolve: (value: unknown) => void) => resolve(rows),
-        groupBy: () => Promise.resolve(rows),
+        groupBy: () => ({ limit: () => Promise.resolve(rows) }),
       };
     }
     function selectChain(rows: unknown) {

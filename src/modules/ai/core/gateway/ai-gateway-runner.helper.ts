@@ -15,6 +15,12 @@ import type {
   InvokeTextOpts,
 } from "./ai-gateway.types";
 
+const MAX_CONTEXT_CHARS_DEFAULT = 200_000;
+
+function contextExceedsLimit(prompt: { system: string; user: string }, max: number): boolean {
+  return prompt.system.length + prompt.user.length > max;
+}
+
 export class AiGatewayRunnerHelper {
   constructor(
     private readonly llm: LlmService,
@@ -25,13 +31,22 @@ export class AiGatewayRunnerHelper {
     opts: InvokeStructuredOpts<T>,
     correlationId: string,
   ): Promise<AiInvokeResult<T>> {
-    const { actor, feature, tier, maxTokens, charge, redact = true } = opts;
+    const { actor, feature, tier, maxTokens, maxContextChars, charge, redact = true } = opts;
     const prompt = redact
       ? {
           system: redactSensitiveData(opts.prompt.system),
           user: redactSensitiveData(opts.prompt.user),
         }
       : opts.prompt;
+
+    if (contextExceedsLimit(prompt, maxContextChars ?? MAX_CONTEXT_CHARS_DEFAULT)) {
+      return {
+        ok: false,
+        kind: "context_too_large",
+        message: `Prompt context exceeds the ${maxContextChars ?? MAX_CONTEXT_CHARS_DEFAULT}-character limit`,
+        correlationId,
+      };
+    }
 
     const reserveMilli = charge ? getCatalogEstimateMilli(feature) : 0;
     let reservationId = 0;
@@ -146,13 +161,22 @@ export class AiGatewayRunnerHelper {
     opts: InvokeStructuredWithImageOpts<T>,
     correlationId: string,
   ): Promise<AiInvokeResult<T>> {
-    const { actor, feature, tier, maxTokens, charge, redact = true } = opts;
+    const { actor, feature, tier, maxTokens, maxContextChars, charge, redact = true } = opts;
     const prompt = redact
       ? {
           system: redactSensitiveData(opts.prompt.system),
           user: redactSensitiveData(opts.prompt.user),
         }
       : opts.prompt;
+
+    if (contextExceedsLimit(prompt, maxContextChars ?? MAX_CONTEXT_CHARS_DEFAULT)) {
+      return {
+        ok: false,
+        kind: "context_too_large",
+        message: `Prompt context exceeds the ${maxContextChars ?? MAX_CONTEXT_CHARS_DEFAULT}-character limit`,
+        correlationId,
+      };
+    }
 
     const reserveMilli = charge ? getCatalogEstimateMilli(feature) : 0;
     let reservationId = 0;
@@ -243,13 +267,22 @@ export class AiGatewayRunnerHelper {
     opts: InvokeTextOpts,
     correlationId: string,
   ): Promise<AiInvokeResult<string>> {
-    const { actor, feature, tier, maxTokens, charge, redact = true } = opts;
+    const { actor, feature, tier, maxTokens, maxContextChars, charge, redact = true } = opts;
     const prompt = redact
       ? {
           system: redactSensitiveData(opts.prompt.system),
           user: redactSensitiveData(opts.prompt.user),
         }
       : opts.prompt;
+
+    if (contextExceedsLimit(prompt, maxContextChars ?? MAX_CONTEXT_CHARS_DEFAULT)) {
+      return {
+        ok: false,
+        kind: "context_too_large",
+        message: `Prompt context exceeds the ${maxContextChars ?? MAX_CONTEXT_CHARS_DEFAULT}-character limit`,
+        correlationId,
+      };
+    }
 
     const reserveMilli = charge ? getCatalogEstimateMilli(feature) : 0;
     let reservationId = 0;

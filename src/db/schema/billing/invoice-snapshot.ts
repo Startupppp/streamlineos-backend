@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
   bigint,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -37,7 +38,7 @@ export const billingInvoiceSnapshots = pgTable(
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-    subscriptionId: integer("subscription_id").references(() => subscriptions.id, { onDelete: "set null" }),
+    subscriptionId: integer("subscription_id"),
     invoiceNumber: varchar("invoice_number", { length: 50 }).notNull(),
     status: varchar("status", { length: 20 }).notNull().default("DRAFT"),
     sellerName: varchar("seller_name", { length: 255 }),
@@ -71,6 +72,7 @@ export const billingInvoiceSnapshots = pgTable(
     index("idx_billing_inv_snap_org_sub").on(t.orgId, t.subscriptionId),
     index("idx_billing_inv_snap_org_issued").on(t.orgId, t.issuedAt.desc()),
     unique("uniq_billing_invoice_snapshots_org_id").on(t.orgId, t.id),
+    foreignKey({ columns: [t.orgId, t.subscriptionId], foreignColumns: [subscriptions.orgId, subscriptions.id], name: "fk_billing_inv_snap_org_sub" }),
   ],
 );
 
@@ -78,7 +80,7 @@ export const billingInvoiceLineSnapshots = pgTable(
   "billing_invoice_line_snapshots",
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-    snapshotId: bigint("snapshot_id", { mode: "number" }).notNull().references(() => billingInvoiceSnapshots.id, { onDelete: "cascade" }),
+    snapshotId: bigint("snapshot_id", { mode: "number" }).notNull(),
     orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
     lineType: varchar("line_type", { length: 20 }).notNull(),
     description: text("description").notNull(),
@@ -89,8 +91,8 @@ export const billingInvoiceLineSnapshots = pgTable(
     taxRateBps: integer("tax_rate_bps").notNull().default(0),
     taxAmountMinor: integer("tax_amount_minor").notNull(),
     totalMinor: integer("total_minor").notNull(),
-    prorationLineId: bigint("proration_line_id", { mode: "number" }).references(() => billingProrationLines.id, { onDelete: "set null" }),
-    usageRollupId: bigint("usage_rollup_id", { mode: "number" }).references(() => billingUsageRollups.id, { onDelete: "set null" }),
+    prorationLineId: bigint("proration_line_id", { mode: "number" }),
+    usageRollupId: bigint("usage_rollup_id", { mode: "number" }),
     sortOrder: integer("sort_order").notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -98,6 +100,9 @@ export const billingInvoiceLineSnapshots = pgTable(
     index("idx_billing_inv_lines_snapshot").on(t.snapshotId),
     index("idx_billing_inv_lines_org").on(t.orgId, t.snapshotId),
     unique("uniq_billing_invoice_line_snapshots_org_id").on(t.orgId, t.id),
+    foreignKey({ columns: [t.orgId, t.snapshotId], foreignColumns: [billingInvoiceSnapshots.orgId, billingInvoiceSnapshots.id], name: "fk_billing_inv_lines_org_snap" }).onDelete("cascade"),
+    foreignKey({ columns: [t.orgId, t.prorationLineId], foreignColumns: [billingProrationLines.orgId, billingProrationLines.id], name: "fk_billing_inv_lines_org_proration" }),
+    foreignKey({ columns: [t.orgId, t.usageRollupId], foreignColumns: [billingUsageRollups.orgId, billingUsageRollups.id], name: "fk_billing_inv_lines_org_rollup" }),
   ],
 );
 
@@ -106,7 +111,7 @@ export const billingCreditNotes = pgTable(
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-    originalSnapshotId: bigint("original_snapshot_id", { mode: "number" }).notNull().references(() => billingInvoiceSnapshots.id, { onDelete: "restrict" }),
+    originalSnapshotId: bigint("original_snapshot_id", { mode: "number" }).notNull(),
     noteNumber: varchar("note_number", { length: 50 }).notNull(),
     noteType: varchar("note_type", { length: 10 }).notNull(),
     reason: text("reason").notNull(),
@@ -123,6 +128,7 @@ export const billingCreditNotes = pgTable(
     index("idx_billing_credit_notes_org_snap").on(t.orgId, t.originalSnapshotId),
     index("idx_billing_credit_notes_org_status").on(t.orgId, t.status),
     unique("uniq_billing_credit_notes_org_id").on(t.orgId, t.id),
+    foreignKey({ columns: [t.orgId, t.originalSnapshotId], foreignColumns: [billingInvoiceSnapshots.orgId, billingInvoiceSnapshots.id], name: "fk_billing_credit_notes_org_snap" }).onDelete("restrict"),
   ],
 );
 
@@ -130,7 +136,7 @@ export const billingCreditNoteLines = pgTable(
   "billing_credit_note_lines",
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-    creditNoteId: bigint("credit_note_id", { mode: "number" }).notNull().references(() => billingCreditNotes.id, { onDelete: "cascade" }),
+    creditNoteId: bigint("credit_note_id", { mode: "number" }).notNull(),
     orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
     description: text("description").notNull(),
     quantity: integer("quantity").notNull(),
@@ -147,6 +153,7 @@ export const billingCreditNoteLines = pgTable(
     index("idx_billing_credit_note_lines_note").on(t.creditNoteId),
     index("idx_billing_credit_note_lines_org").on(t.orgId, t.creditNoteId),
     unique("uniq_billing_credit_note_lines_org_id").on(t.orgId, t.id),
+    foreignKey({ columns: [t.orgId, t.creditNoteId], foreignColumns: [billingCreditNotes.orgId, billingCreditNotes.id], name: "fk_billing_credit_note_lines_org_note" }).onDelete("cascade"),
   ],
 );
 

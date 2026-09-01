@@ -8,6 +8,7 @@ import type { AiCreditLedger } from "./credit-ledger.interface";
 import { LlmService } from "../providers/llm.service";
 import { AiUsageService } from "../services/ai-usage.service";
 import { AuditService } from "../../../../common/audit/audit.service";
+import { AiResponseCacheService } from "./ai-response-cache.service";
 
 const GreetingSchema = z.object({ message: z.string() });
 
@@ -48,6 +49,11 @@ async function buildModule(llmOverride?: ReturnType<typeof makeLlm>, ledgerOverr
   const llm = llmOverride ?? makeLlm();
   const ledger = ledgerOverride ?? makeLedger();
 
+  const mockResponseCache = {
+    cachedInvoke: jest.fn().mockImplementation((_orgId: string, _params: unknown, fetcher: () => unknown) => fetcher()),
+    invalidate: jest.fn().mockResolvedValue(undefined),
+  };
+
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       AiGatewayService,
@@ -55,6 +61,7 @@ async function buildModule(llmOverride?: ReturnType<typeof makeLlm>, ledgerOverr
       { provide: AiUsageService, useValue: mockUsage },
       { provide: AuditService, useValue: mockAudit },
       { provide: AI_CREDIT_LEDGER, useValue: ledger },
+      { provide: AiResponseCacheService, useValue: mockResponseCache },
     ],
   }).compile();
 

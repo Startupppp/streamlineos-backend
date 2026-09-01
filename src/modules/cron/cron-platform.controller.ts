@@ -23,6 +23,8 @@ import { CalendarReminderSweepService } from "../calendar/calendar-reminder-swee
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { CronOperatorAccessService } from "./cron-operator-access.service";
 import { CronAiUsageRetentionService } from "./cron-ai-usage-retention.service";
+import { CronMailRetentionService } from "./cron-mail-retention.service";
+import { CronAnnouncementsRetentionService } from "./cron-announcements-retention.service";
 
 @Public()
 @Controller("cron")
@@ -41,6 +43,8 @@ export class CronPlatformController {
     private readonly cronLease: CronLeaseService,
     private readonly operatorAccess: CronOperatorAccessService,
     private readonly aiUsageRetention: CronAiUsageRetentionService,
+    private readonly mailRetention: CronMailRetentionService,
+    private readonly announcementsRetention: CronAnnouncementsRetentionService,
   ) {}
 
   @Get("workflow-tick")
@@ -406,6 +410,60 @@ export class CronPlatformController {
       return { success: true, ...outcome.result };
     } catch (error) {
       logger.error("AI usage retention sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("mail-metadata-retention-sweep")
+  getMailMetadataRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runMailMetadataRetentionSweep(authorization);
+  }
+
+  @Post("mail-metadata-retention-sweep")
+  @BodylessAction()
+  @HttpCode(200)
+  postMailMetadataRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runMailMetadataRetentionSweep(authorization);
+  }
+
+  @Get("announcements-retention-sweep")
+  getAnnouncementsRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runAnnouncementsRetentionSweep(authorization);
+  }
+
+  @Post("announcements-retention-sweep")
+  @BodylessAction()
+  @HttpCode(200)
+  postAnnouncementsRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runAnnouncementsRetentionSweep(authorization);
+  }
+
+  private async runMailMetadataRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("mail-metadata-retention-sweep", 1800, () =>
+        this.mailRetention.sweep(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "mail-metadata-retention-sweep already running" };
+      return { success: true, ...outcome.result };
+    } catch (error) {
+      logger.error("Mail metadata retention sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runAnnouncementsRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("announcements-retention-sweep", 1800, () =>
+        this.announcementsRetention.sweep(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "announcements-retention-sweep already running" };
+      return { success: true, ...outcome.result };
+    } catch (error) {
+      logger.error("Announcements retention sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

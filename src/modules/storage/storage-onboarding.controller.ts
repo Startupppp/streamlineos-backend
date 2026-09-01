@@ -24,6 +24,7 @@ import { type Db } from "../../db/drizzle.module";
 import { documents, onboardingSteps } from "../../db/schema";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { StorageService } from "./storage.service";
+import { validateMagicBytes } from "./file-signatures";
 import { onboardingDocTypeSchema } from "./dto/storage.schemas";
 
 const uploadBodySchema = z.object({ type: onboardingDocTypeSchema });
@@ -74,11 +75,15 @@ export class OnboardingDocumentsController {
         "File type not allowed. Use PDF, JPEG, PNG, or WebP.",
       );
     }
+    if (!validateMagicBytes(file.buffer, file.mimetype)) {
+      throw new BadRequestException("File content does not match declared type");
+    }
     if (file.size > MAX_SIZE)
       throw new BadRequestException("File size must be under 5MB");
 
     const { key, url, compressedBuffer, compressedMimeType, size } =
       await this.storage.compressAndPreGenerateKey(
+        u.orgId,
         file.buffer,
         "onboarding",
         file.originalname,

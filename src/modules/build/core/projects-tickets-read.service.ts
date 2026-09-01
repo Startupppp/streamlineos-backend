@@ -133,10 +133,7 @@ export class ProjectsTicketsReadService {
     ]);
     if (!project) return { hasAccess: false, role: null };
     if (perms.has("build:manage")) return { hasAccess: true, role: "OWNER" };
-    if (
-      (membershipId !== null && project.managerMembershipId === membershipId) ||
-      sql`${projects.managerMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${userId} AND status = 'ACTIVE')`
-    )
+    if (membershipId !== null && project.managerMembershipId === membershipId)
       return { hasAccess: true, role: "MANAGER" };
     const membership = await this.db
       .select({ id: projectMembers.id, role: projectMembers.role })

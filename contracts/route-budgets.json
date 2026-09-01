@@ -1,0 +1,154 @@
+{
+  "version": "1",
+  "schemaVersion": "1.0",
+  "description": "Route performance budgets. Each entry defines the maximum allowed resource consumption for a specific API operation, keyed on METHOD /path (exact OpenAPI path template). Measurement values are filled by the orchestrator after profiling. The gate (check-route-budgets.mjs) validates that each declared budget entry is well-formed and that no measured value exceeds its declared ceiling.",
+  "defaults": {
+    "maxDbCalls": 10,
+    "maxDownstreamCalls": 3,
+    "maxResponseBytes": 524288,
+    "maxLatencyP95Ms": 2000,
+    "maxMemoryMb": 128
+  },
+  "budgets": {
+    "GET /build/{projectId}/tickets": {
+      "maxDbCalls": 5,
+      "maxDownstreamCalls": 0,
+      "maxResponseBytes": 131072,
+      "maxLatencyP95Ms": 500,
+      "maxMemoryMb": 64,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Primary ticket list — high traffic, must be cheap"
+    },
+    "GET /me/access": {
+      "maxDbCalls": 3,
+      "maxDownstreamCalls": 0,
+      "maxResponseBytes": 65536,
+      "maxLatencyP95Ms": 200,
+      "maxMemoryMb": 32,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Permission resolution — called on every authenticated page load. Redis-cached but DB path must be cheap."
+    },
+    "GET /hr/employees": {
+      "maxDbCalls": 4,
+      "maxDownstreamCalls": 0,
+      "maxResponseBytes": 262144,
+      "maxLatencyP95Ms": 600,
+      "maxMemoryMb": 64,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "HR employee list — org-scoped, paginated"
+    },
+    "GET /notifications": {
+      "maxDbCalls": 3,
+      "maxDownstreamCalls": 0,
+      "maxResponseBytes": 65536,
+      "maxLatencyP95Ms": 300,
+      "maxMemoryMb": 32,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Notification list — called frequently from shell; must be very fast"
+    },
+    "GET /contacts": {
+      "maxDbCalls": 5,
+      "maxDownstreamCalls": 0,
+      "maxResponseBytes": 131072,
+      "maxLatencyP95Ms": 500,
+      "maxMemoryMb": 64,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Contact list — sales primary list view"
+    },
+    "GET /build/{projectId}/sprints": {
+      "maxDbCalls": 4,
+      "maxDownstreamCalls": 0,
+      "maxResponseBytes": 65536,
+      "maxLatencyP95Ms": 400,
+      "maxMemoryMb": 32,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Sprint list — called on board load"
+    },
+    "GET /mail/accounts": {
+      "maxDbCalls": 2,
+      "maxDownstreamCalls": 0,
+      "maxResponseBytes": 16384,
+      "maxLatencyP95Ms": 200,
+      "maxMemoryMb": 32,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Mail account list — called on every /mail page load; DB-only, no provider calls"
+    },
+    "GET /mail/messages": {
+      "maxDbCalls": 3,
+      "maxDownstreamCalls": 2,
+      "maxResponseBytes": 262144,
+      "maxLatencyP95Ms": 3000,
+      "maxMemoryMb": 64,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Mail message list — calls up to 2 providers (Gmail + Outlook) in parallel; provider latency dominates; first-page cache hit is <200ms"
+    },
+    "GET /mail/messages/{messageId}": {
+      "maxDbCalls": 2,
+      "maxDownstreamCalls": 1,
+      "maxResponseBytes": 1048576,
+      "maxLatencyP95Ms": 2500,
+      "maxMemoryMb": 64,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Single message detail including HTML body — provider call required; 1 MB ceiling covers rich HTML emails with inline base64"
+    },
+    "GET /mail/threads/{threadId}": {
+      "maxDbCalls": 2,
+      "maxDownstreamCalls": 1,
+      "maxResponseBytes": 2097152,
+      "maxLatencyP95Ms": 3500,
+      "maxMemoryMb": 128,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Thread hydration — returns all messages in thread; Gmail threads can be large; 2 MB ceiling"
+    },
+    "POST /mail/send": {
+      "maxDbCalls": 2,
+      "maxDownstreamCalls": 1,
+      "maxResponseBytes": 1024,
+      "maxLatencyP95Ms": 5000,
+      "maxMemoryMb": 32,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Send mail — single provider call; latency ceiling is generous to cover provider delivery queue"
+    },
+    "POST /mail/reply": {
+      "maxDbCalls": 2,
+      "maxDownstreamCalls": 1,
+      "maxResponseBytes": 1024,
+      "maxLatencyP95Ms": 5000,
+      "maxMemoryMb": 32,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Reply to thread — single provider call; same ceiling as send"
+    },
+    "POST /mail/messages/{messageId}/actions": {
+      "maxDbCalls": 3,
+      "maxDownstreamCalls": 1,
+      "maxResponseBytes": 1024,
+      "maxLatencyP95Ms": 2000,
+      "maxMemoryMb": 32,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Label/archive/trash/star action — single provider call + cache invalidation + metadata deferred write"
+    },
+    "GET /mail/messages/{messageId}/attachments/{attachmentId}": {
+      "maxDbCalls": 2,
+      "maxDownstreamCalls": 1,
+      "maxResponseBytes": 4096,
+      "maxLatencyP95Ms": 3000,
+      "maxMemoryMb": 32,
+      "measuredDbCalls": null,
+      "measuredLatencyP95Ms": null,
+      "note": "Attachment download URL — returns a signed/temporary download URL, not the binary; small response"
+    }
+  }
+}

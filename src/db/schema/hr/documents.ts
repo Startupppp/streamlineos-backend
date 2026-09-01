@@ -49,7 +49,7 @@ export const documents = pgTable("documents", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_documents_org_id").on(table.orgId, table.id),
-  foreignKey({ columns: [table.parentDocumentId], foreignColumns: [table.id] }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.parentDocumentId], foreignColumns: [table.orgId, table.id], name: "fk_documents_org_parent" }).onDelete("cascade"),
   index("idx_documents_org_type").on(table.orgId, table.type),
   index("idx_documents_user").on(table.userId),
   index("idx_documents_expiry").on(table.expiryDate),

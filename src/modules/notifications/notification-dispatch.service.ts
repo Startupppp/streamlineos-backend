@@ -23,12 +23,20 @@ import { type DbOrTx } from "../../common/rbac/access-invalidate";
 
 type ProviderName = "INTERNAL" | "SMTP" | "WEB_PUSH" | "TWILIO" | "WEBHOOK";
 
-
 /**
  * PIPE-006. How many recipients are persisted at once. Sized against the Postgres
  * pool rather than the recipient count — higher only queues work inside the driver.
  */
 const FANOUT_CONCURRENCY = 10;
+
+/**
+ * PIPE-015. Max recipients per outbox row. A large fanout (org-wide announcement)
+ * is split into independent outbox rows at write time, so:
+ *   – each row is claimed and processed independently (cursor-resumable per chunk)
+ *   – the `inArray` filter stays small
+ *   – a crash mid-fanout retries only the failing chunk, not the whole send
+ */
+const OUTBOX_CHUNK = 500;
 
 const CHANNEL_TO_PROVIDER: Record<NotificationChannel, ProviderName> = {
   IN_APP: "INTERNAL",
@@ -79,11 +87,15 @@ export class NotificationDispatchService {
     const ambient = getTenantContext();
     if (!ambient || ambient.orgId !== input.orgId) return this.emitNow(input);
 
-    const dedupeKey = await this.writeIntent(ambient.tx, input);
-    registerAfterCommit(async () => {
-      await this.emitNow({ ...input, dedupeKey });
-      await this.markIntentProcessed(input.orgId, dedupeKey);
-    });
+    const chunks = this.chunkRecipients(input.targetUserIds);
+    for (const [i, chunkIds] of chunks.entries()) {
+      const chunkInput: DispatchEventInput = { ...input, targetUserIds: chunkIds };
+      const dedupeKey = await this.writeIntent(ambient.tx, chunkInput, i > 0 ? i : undefined);
+      registerAfterCommit(async () => {
+        await this.emitNow({ ...chunkInput, dedupeKey });
+        await this.markIntentProcessed(input.orgId, dedupeKey);
+      });
+    }
 
     return {
       eventKey: input.eventKey,
@@ -95,8 +107,17 @@ export class NotificationDispatchService {
     };
   }
 
-  private async writeIntent(tx: DbOrTx, input: DispatchEventInput): Promise<string> {
-    const dedupeKey = buildNotifOutboxDedupeKey(input);
+  private chunkRecipients(ids: string[]): string[][] {
+    if (ids.length <= OUTBOX_CHUNK) return [ids];
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += OUTBOX_CHUNK)
+      chunks.push(ids.slice(i, i + OUTBOX_CHUNK));
+    return chunks;
+  }
+
+  private async writeIntent(tx: DbOrTx, input: DispatchEventInput, chunkIndex?: number): Promise<string> {
+    const baseKey = buildNotifOutboxDedupeKey(input);
+    const dedupeKey = chunkIndex !== undefined ? `${baseKey}:c${chunkIndex}` : baseKey;
     await tx
       .insert(notificationOutbox)
       .values({

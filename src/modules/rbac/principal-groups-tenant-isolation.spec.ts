@@ -17,7 +17,7 @@ describe("PrincipalGroupsService — cross-tenant isolation", () => {
   const GROUP_ID = "grp-abc";
 
   function makeDb(groupRow: unknown, listRows: unknown[] = []): { db: Db; where: jest.Mock } {
-    const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue({ offset: jest.fn().mockResolvedValue(listRows) }) }) });
+    const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(listRows) }) });
     const from = jest.fn().mockReturnValue({ where });
     const select = jest.fn().mockReturnValue({ from });
     const findFirst = jest.fn().mockResolvedValue(groupRow);

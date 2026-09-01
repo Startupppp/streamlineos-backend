@@ -62,16 +62,18 @@ export class ChatChannelsController {
   @ApiResponse({ status: 200, description: "OK" })
   @Get()
   @RequirePermission("chat:channels:read")
-  list(@CurrentUser() u: CurrentUserContext) {
-    return this.channels.getMyChannels(actorOf(u));
+  @Validate({ query: z.object({ cursor: z.string().optional() }).strict() })
+  list(@CurrentUser() u: CurrentUserContext, @Query("cursor") cursor?: string) {
+    return this.channels.getMyChannels(actorOf(u), cursor);
   }
 
   @ApiOperation({ summary: "List archived channels for the current user" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("archived")
   @RequirePermission("chat:channels:read")
-  listArchived(@CurrentUser() u: CurrentUserContext) {
-    return this.channels.getArchivedChannels(actorOf(u));
+  @Validate({ query: z.object({ cursor: z.string().optional() }).strict() })
+  listArchived(@CurrentUser() u: CurrentUserContext, @Query("cursor") cursor?: string) {
+    return this.channels.getArchivedChannels(actorOf(u), cursor);
   }
 
   @ApiOperation({ summary: "List public channels available to join" })

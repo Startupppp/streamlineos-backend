@@ -8,8 +8,9 @@ import {
   index,
   unique,
   foreignKey,
+  jsonb,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { organizations, organizationMembers } from "./auth";
 
 export const calendarEvents = pgTable(
@@ -133,3 +134,28 @@ export const eventAttendeesRelations = relations(eventAttendees, ({ one }) => ({
     references: [organizationMembers.id],
   }),
 }));
+
+export const calendarProviderSyncQueue = pgTable(
+  "calendar_provider_sync_queue",
+  {
+    id: serial("id").primaryKey(),
+    orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+    eventId: integer("event_id"),
+    connectionId: integer("connection_id").notNull(),
+    operation: text("operation").$type<"create" | "update" | "delete">().notNull(),
+    externalEventId: text("external_event_id"),
+    payload: jsonb("payload").$type<Record<string, unknown>>().default({}).notNull(),
+    state: text("state").$type<"PENDING" | "IN_FLIGHT" | "PROCESSED" | "FAILED">().default("PENDING").notNull(),
+    attemptCount: integer("attempt_count").default(0).notNull(),
+    lastError: text("last_error"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("idx_cal_provider_sync_queue_pending")
+      .on(table.state, table.id)
+      .where(sql`state IN ('PENDING','IN_FLIGHT')`),
+    index("idx_cal_provider_sync_queue_org").on(table.orgId, table.state),
+  ],
+);

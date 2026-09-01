@@ -1,4 +1,4 @@
-import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { z } from "zod";
 import {
   KbContentAdapterRegistry,
@@ -12,6 +12,11 @@ import {
   type OutboxEventConsumer,
   type OutboxEventRow,
 } from "../../../common/outbox/outbox-consumer.registry";
+import { KbIngestionLeaseService } from "./kb-ingestion-lease.service";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import { type Db } from "../../../db/drizzle.module";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { shouldDeadLetter } from "../../../common/outbox/outbox-envelope";
 
 const KB_MAX_CONCURRENT_PER_ORG = 20;
 
@@ -36,6 +41,8 @@ export class KbIngestionConsumer implements OutboxEventConsumer, OnModuleInit {
     private readonly articleAdapter: KbArticleAdapter,
     private readonly sourceAdapter: KbSourceAdapter,
     private readonly attachmentAdapter: KbAttachmentAdapter,
+    private readonly leaseService: KbIngestionLeaseService,
+    @Inject(DRIZZLE) private readonly db: Db,
   ) {}
 
   onModuleInit(): void {
@@ -68,6 +75,20 @@ export class KbIngestionConsumer implements OutboxEventConsumer, OnModuleInit {
       throw new Error(`Unhandled KB content type: ${payload.contentType}`);
     }
 
+    if (shouldDeadLetter(event.retryCount)) {
+      this.logger.error("KB ingestion dead-lettered after max retries", {
+        orgId,
+        contentType: payload.contentType,
+        contentId: payload.contentId,
+        retryCount: event.retryCount,
+      });
+      throw new Error("KB_INGESTION_DEAD_LETTER");
+    }
+
+    const lease = await this.leaseService.acquire(orgId, payload.contentType, payload.contentId);
+    if (!lease.acquired)
+      throw new Error("KB_INGESTION_LEASE_CONTENTION");
+
     this.orgConcurrency.set(orgId, current + 1);
     const startMs = Date.now();
     this.logger.log("KB ingestion started", {
@@ -77,7 +98,9 @@ export class KbIngestionConsumer implements OutboxEventConsumer, OnModuleInit {
     });
 
     try {
-      await adapter.handle(orgId, payload.contentId);
+      await runInNewTenantTransaction(this.db, orgId, async () => {
+        await adapter.handle(orgId, payload.contentId);
+      });
       this.logger.log("KB ingestion completed", {
         orgId,
         contentType: payload.contentType,
@@ -97,6 +120,7 @@ export class KbIngestionConsumer implements OutboxEventConsumer, OnModuleInit {
       const after = (this.orgConcurrency.get(orgId) ?? 1) - 1;
       if (after <= 0) this.orgConcurrency.delete(orgId);
       else this.orgConcurrency.set(orgId, after);
+      await this.leaseService.release(orgId, payload.contentType, payload.contentId, lease.token);
     }
   }
 }

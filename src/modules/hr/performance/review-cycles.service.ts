@@ -79,11 +79,12 @@ export class ReviewCyclesService {
     });
     if (!cycle) throw new NotFoundException("Review cycle not found.");
 
-      const reviews = await this.db.query.performanceReviews.findMany({
+    const reviews = await this.db.query.performanceReviews.findMany({
       where: and(
         eq(performanceReviews.orgId, orgId),
         eq(performanceReviews.cycleId, cycleId),
       ),
+      limit: 100,
       columns: {
         id: true,
         userId: true,
@@ -99,7 +100,6 @@ export class ReviewCyclesService {
         reviewer: { columns: { id: true, name: true } },
       },
       orderBy: [desc(performanceReviews.createdAt)],
-      limit: 100,
     });
 
     return { ...cycle, reviews };

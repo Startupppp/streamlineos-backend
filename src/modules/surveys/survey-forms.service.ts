@@ -62,20 +62,25 @@ export class SurveyFormsService {
     const template = input.templateKey ? this.templates.get(input.templateKey) : undefined;
     const sections = template?.sections?.length ? template.sections : [{ title: "Section 1", questions: [] }];
 
-    for (const [sectionIndex, section] of sections.entries()) {
-      const [sectionRow] = await this.db
-        .insert(surveySections)
-        .values({ orgId, surveyId: survey.id, versionId: draftVersion.id, title: section.title, sortOrder: sectionIndex })
-        .returning();
+    const sectionRows = await this.db
+      .insert(surveySections)
+      .values(sections.map((section, sectionIndex) => ({ orgId, surveyId: survey.id, versionId: draftVersion.id, title: section.title, sortOrder: sectionIndex })))
+      .returning();
 
-      for (const [questionIndex, question] of section.questions.entries()) {
-        const [questionRow] = await this.db
-          .insert(surveyQuestions)
-          .values({
+    const questionsWithMeta = sections.flatMap((section, sectionIndex) => {
+      const sectionId = sectionRows[sectionIndex]?.id ?? 0;
+      return section.questions.map((question, questionIndex) => ({ question, sectionId, sectionIndex, questionIndex }));
+    });
+
+    if (questionsWithMeta.length > 0) {
+      const questionRows = await this.db
+        .insert(surveyQuestions)
+        .values(
+          questionsWithMeta.map(({ question, sectionId, sectionIndex, questionIndex }) => ({
             orgId,
             surveyId: survey.id,
             versionId: draftVersion.id,
-            sectionId: sectionRow.id,
+            sectionId,
             questionKey: `q_${survey.id}_${sectionIndex}_${questionIndex}`,
             type: question.type as (typeof surveyQuestions.$inferInsert)["type"],
             title: question.title,
@@ -83,21 +88,26 @@ export class SurveyFormsService {
             variableName: question.variableName ?? null,
             settings: question.settings ?? {},
             sortOrder: questionIndex,
-          })
-          .returning();
+          })),
+        )
+        .returning();
 
-        for (const [choiceIndex, choice] of (question.choices ?? []).entries()) {
-          await this.db.insert(surveyQuestionChoices).values({
-            orgId,
-            questionId: questionRow.id,
-            choiceKey: choice.choiceKey,
-            label: choice.label,
-            value: choice.value ?? null,
-            score: choice.score ?? 0,
-            sortOrder: choiceIndex,
-            isCorrect: choice.isCorrect ?? false,
-          });
-        }
+      const choiceInserts = questionRows.flatMap((questionRow, qi) => {
+        const choices = questionsWithMeta[qi]?.question.choices ?? [];
+        return choices.map((choice, choiceIndex) => ({
+          orgId,
+          questionId: questionRow.id,
+          choiceKey: choice.choiceKey,
+          label: choice.label,
+          value: choice.value ?? null,
+          score: choice.score ?? 0,
+          sortOrder: choiceIndex,
+          isCorrect: choice.isCorrect ?? false,
+        }));
+      });
+
+      if (choiceInserts.length > 0) {
+        await this.db.insert(surveyQuestionChoices).values(choiceInserts);
       }
     }
 

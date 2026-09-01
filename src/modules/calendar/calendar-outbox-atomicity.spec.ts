@@ -29,7 +29,6 @@ function makeServiceWith(db: unknown, conflictOverride?: unknown): CalendarServi
   return new CalendarService(
     db as Db,
     {} as never,
-    {} as never,
     conflict as never,
     {} as never,
     recurrence,

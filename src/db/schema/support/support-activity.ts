@@ -64,11 +64,7 @@ export const kbArticleComments = pgTable(
   (table) => [
     index("idx_kb_article_comments_article").on(table.articleId),
     index("idx_kb_comments_org_article").on(table.orgId, table.articleId),
-    foreignKey({
-      columns: [table.parentId],
-      foreignColumns: [table.id],
-      name: "fk_kb_article_comments_parent",
-    }).onDelete("cascade"),
+    foreignKey({ columns: [table.orgId, table.parentId], foreignColumns: [table.orgId, table.id], name: "fk_kb_article_comments_org_parent" }).onDelete("cascade"),
     unique("uniq_kb_article_comments_org_id").on(table.orgId, table.id),
   ],
 );

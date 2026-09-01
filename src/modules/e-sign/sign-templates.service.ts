@@ -327,75 +327,93 @@ export class SignTemplatesService {
       .returning();
 
     const documentIdByIndex = new Map<number, number>();
-    for (let i = 0; i < snapshot.documents.length; i++) {
-      const doc = snapshot.documents[i];
-      const [inserted] = await this.db
+    if (snapshot.documents.length > 0) {
+      const insertedDocs = await this.db
         .insert(signDocuments)
-        .values({
-          orgId,
-          envelopeId: envelope.id,
-          originalFileKey: doc.fileKey,
-          currentFileKey: doc.fileKey,
-          fileName: doc.fileName,
-          mimeType: doc.mimeType,
-          pageCount: doc.pageCount,
-          fileSize: doc.fileSize,
-          sha256Hash: doc.sha256Hash,
-          conversionStatus: "not_needed",
-          orderIndex: doc.orderIndex,
-          createdByMembershipId: senderMembershipId,
-        })
+        .values(
+          snapshot.documents.map((doc) => ({
+            orgId,
+            envelopeId: envelope.id,
+            originalFileKey: doc.fileKey,
+            currentFileKey: doc.fileKey,
+            fileName: doc.fileName,
+            mimeType: doc.mimeType,
+            pageCount: doc.pageCount,
+            fileSize: doc.fileSize,
+            sha256Hash: doc.sha256Hash,
+            conversionStatus: "not_needed" as const,
+            orderIndex: doc.orderIndex,
+            createdByMembershipId: senderMembershipId,
+          })),
+        )
         .returning();
-      documentIdByIndex.set(i, inserted.id);
+      for (let i = 0; i < insertedDocs.length; i++) {
+        const doc = insertedDocs[i];
+        if (doc) documentIdByIndex.set(i, doc.id);
+      }
     }
 
     const recipientIdByRole = new Map<string, number>();
-    for (const role of snapshot.roles) {
+    const recipientInserts = snapshot.roles.flatMap((role) => {
       const provided = input.recipients.find((r) => r.roleName === role.roleName);
-      if (!provided) continue;
-      const [inserted] = await this.db
+      if (!provided) return [];
+      return [{ role, provided }];
+    });
+    if (recipientInserts.length > 0) {
+      const insertedRecipients = await this.db
         .insert(signRecipients)
-        .values({
-          orgId,
-          envelopeId: envelope.id,
-          roleName: role.roleName,
-          recipientType: role.recipientType as "signer" | "approver" | "cc" | "viewer" | "in_person_host" | "internal_reviewer",
-          name: provided.name,
-          email: provided.email,
-          phone: provided.phone,
-          routingOrder: role.routingOrder,
-          authMethod: role.authMethod as "email_link" | "access_code" | "otp_email" | "otp_sms" | "sso" | "passkey" | "kba" | "id_verification",
-        })
+        .values(
+          recipientInserts.map(({ role, provided }) => ({
+            orgId,
+            envelopeId: envelope.id,
+            roleName: role.roleName,
+            recipientType: role.recipientType as "signer" | "approver" | "cc" | "viewer" | "in_person_host" | "internal_reviewer",
+            name: provided.name,
+            email: provided.email,
+            phone: provided.phone,
+            routingOrder: role.routingOrder,
+            authMethod: role.authMethod as "email_link" | "access_code" | "otp_email" | "otp_sms" | "sso" | "passkey" | "kba" | "id_verification",
+          })),
+        )
         .returning();
-      recipientIdByRole.set(role.roleName, inserted.id);
+      for (let i = 0; i < recipientInserts.length; i++) {
+        const insert = recipientInserts[i];
+        const row = insertedRecipients[i];
+        if (insert && row) recipientIdByRole.set(insert.role.roleName, row.id);
+      }
     }
 
-    for (const field of snapshot.fields) {
+    const fieldValues = snapshot.fields.flatMap((field) => {
       const recipientId = recipientIdByRole.get(field.roleName);
       const documentId = documentIdByIndex.get(field.documentIndex);
-      if (!recipientId || !documentId) continue;
-      await this.db.insert(signFields).values({
-        orgId,
-        envelopeId: envelope.id,
-        documentId,
-        recipientId,
-        fieldType: field.fieldType as typeof signFields.$inferInsert.fieldType,
-        label: field.label,
-        pageNumber: field.pageNumber,
-        x: field.x,
-        y: field.y,
-        width: field.width,
-        height: field.height,
-        required: field.required,
-        readonly: field.readonly,
-        orderIndex: field.orderIndex,
-        groupId: field.groupId,
-        defaultValue: field.defaultValue,
-        optionsJson: field.optionsJson,
-        validationType: field.validationType,
-        validationRulesJson: field.validationRulesJson,
-        conditionalRulesJson: field.conditionalRulesJson,
-      });
+      if (!recipientId || !documentId) return [];
+      return [
+        {
+          orgId,
+          envelopeId: envelope.id,
+          documentId,
+          recipientId,
+          fieldType: field.fieldType as typeof signFields.$inferInsert.fieldType,
+          label: field.label,
+          pageNumber: field.pageNumber,
+          x: field.x,
+          y: field.y,
+          width: field.width,
+          height: field.height,
+          required: field.required,
+          readonly: field.readonly,
+          orderIndex: field.orderIndex,
+          groupId: field.groupId,
+          defaultValue: field.defaultValue,
+          optionsJson: field.optionsJson,
+          validationType: field.validationType,
+          validationRulesJson: field.validationRulesJson,
+          conditionalRulesJson: field.conditionalRulesJson,
+        },
+      ];
+    });
+    if (fieldValues.length > 0) {
+      await this.db.insert(signFields).values(fieldValues);
     }
 
     await this.audit.record({

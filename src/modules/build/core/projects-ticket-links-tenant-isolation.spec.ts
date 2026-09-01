@@ -59,12 +59,14 @@ describe("ProjectsTicketLinksService — cross-tenant isolation", () => {
 
 describe("ProjectsTicketRelationsService — cross-tenant isolation", () => {
   it("requireProjectTicket throws NotFoundException when ticket not found for attacker org (cross-tenant isolation — returns 404 not 403)", async () => {
+    const memberSelect = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ id: 1 }]) }) }) }) });
     const db = {
       query: {
         projectMembers: { findFirst: jest.fn().mockResolvedValue({ userId: "u1", projectId: 1 }) },
         tickets: { findFirst: jest.fn().mockResolvedValue(undefined) },
         workItemRelations: { findMany: jest.fn().mockResolvedValue([]) },
       },
+      select: memberSelect,
     } as unknown as Db;
     const svc = new ProjectsTicketRelationsService(db);
 
@@ -73,12 +75,14 @@ describe("ProjectsTicketRelationsService — cross-tenant isolation", () => {
   });
 
   it("listRelations works within the owning org (control — same-tenant access works)", async () => {
+    const memberSelect = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ id: 1 }]) }) }) }) });
     const db = {
       query: {
         projectMembers: { findFirst: jest.fn().mockResolvedValue({ userId: "u1", projectId: 1 }) },
         tickets: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: OWNER_ORG }) },
         workItemRelations: { findMany: jest.fn().mockResolvedValue([]) },
       },
+      select: memberSelect,
     } as unknown as Db;
     const svc = new ProjectsTicketRelationsService(db);
 

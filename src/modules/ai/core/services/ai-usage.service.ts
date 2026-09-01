@@ -15,6 +15,8 @@ export interface TrackAiUsageParams {
   completionTokens?: number;
   metadata?: Record<string, unknown>;
   latencyMs?: number;
+  ttftMs?: number;
+  appOverheadMs?: number;
   correlationId?: string;
   outcome?: string;
   creditsMilli?: number;
@@ -25,7 +27,10 @@ export class AiUsageService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async track(params: TrackAiUsageParams): Promise<void> {
-    const { orgId, userId, feature, model, metadata, latencyMs, correlationId, outcome } = params;
+    const { orgId, userId, feature, model, latencyMs, correlationId, outcome } = params;
+    const metadata: Record<string, unknown> = { ...(params.metadata ?? {}) };
+    if (params.ttftMs !== undefined) metadata["ttftMs"] = params.ttftMs;
+    if (params.appOverheadMs !== undefined) metadata["appOverheadMs"] = params.appOverheadMs;
     const promptTokens = params.promptTokens ?? 0;
     const completionTokens = params.completionTokens ?? 0;
     const totalTokens = promptTokens + completionTokens;

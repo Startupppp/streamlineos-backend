@@ -39,11 +39,13 @@ function expectActiveMemberBaseline(
 function makeSelectChain(result: unknown[]): Record<string, jest.Mock> {
   const chain: Record<string, jest.Mock> = {
     from: jest.fn(),
-    where: jest.fn().mockResolvedValue(result),
+    where: jest.fn(),
     innerJoin: jest.fn(),
+    limit: jest.fn().mockResolvedValue(result),
   };
   chain.from.mockReturnValue(chain);
   chain.innerJoin.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
   return chain;
 }
 

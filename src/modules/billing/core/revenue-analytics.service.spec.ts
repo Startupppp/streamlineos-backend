@@ -66,7 +66,7 @@ function makeDb(seed: DbSeed = {}) {
         groupBy: (...columns: unknown[]) => Promise.resolve(columns.length === 1 ? active : scoped),
         where: () => query,
         orderBy: () => resolved,
-        then: (resolve: (value: typeof all) => unknown) => resolved.then(resolve),
+        then: (resolve: (value: typeof scoped) => unknown) => resolved.then(resolve),
       };
       return query;
     },

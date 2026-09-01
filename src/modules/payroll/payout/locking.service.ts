@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import {
   assertOrganizationActor,
   OrganizationActorError,
@@ -17,11 +18,11 @@ import { canTransitionRun } from "../payroll.types";
 import type { CalculationSnapshot } from "../payroll.types";
 import { AuditService } from "../../../common/audit/audit.service";
 import { GenerateService } from "../runs/generate.service";
-import { PayrollPostingService } from "../payroll-posting.service";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { toPaise } from "../runs/lib/money";
 import { payrollSubjectKeyFromRunEmployee } from "../lib/payroll-subject";
-import { systemActor } from "../../../common/auth/system-actor";
 import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
+import { PAYROLL_RUN_POSTING_INTENT_EVENT } from "./payroll-posting-intent.consumer";
 
 function fiscalYearFromMonth(month: string): string {
   const [y, m] = month.split("-").map(Number);
@@ -38,7 +39,6 @@ export class LockingService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly generate: GenerateService,
-    private readonly payrollPosting: PayrollPostingService,
   ) {}
 
   async lock(orgId: string, userId: string, runId: number) {
@@ -79,7 +79,7 @@ export class LockingService {
 
       await tx
         .update(payrollRuns)
-        .set({ status: "LOCKED", lockedAt: now, lockedBy: userId, lockedByMembershipId: lockActor.membershipId })
+        .set({ status: "LOCKED", lockedAt: now, lockedBy: userId, lockedByMembershipId: lockActor.membershipId, postingState: "pending" })
         .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
 
       await tx.insert(payrollRunEvents).values({
@@ -91,15 +91,25 @@ export class LockingService {
 
       await this.generate.postPayrollLock(orgId, runId, tx);
       await this.writeTdsYtdLedger(tx, orgId, runId, run.month);
-      await this.payrollPosting.postFinalized(
-        systemActor("payroll.run.finalize-posting", orgId, userId),
-        runId,
-        run.month,
-        run.grossTotal ?? "0",
-        run.deductionTotal ?? "0",
-        run.netTotal ?? "0",
-        run.employerCostTotal ?? "0",
-      );
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "payroll_run",
+        aggregateId: String(runId),
+        aggregateVersion: 1,
+        eventType: PAYROLL_RUN_POSTING_INTENT_EVENT,
+        payload: {
+          runId,
+          month: run.month,
+          gross: run.grossTotal ?? "0",
+          deductions: run.deductionTotal ?? "0",
+          net: run.netTotal ?? "0",
+          employerCost: run.employerCostTotal ?? "0",
+          actorUserId: userId,
+          orgId,
+        },
+        occurredAt: now,
+      });
     });
 
     this.audit.log({

@@ -3,15 +3,9 @@ import { RolesQueryService } from "./roles-query.service";
 
 describe("RolesQueryService.getRoleAnalytics", () => {
   it("uses unbounded aggregates and counts distinct assigned memberships", async () => {
-    const roleWhere = jest.fn().mockResolvedValue([
-      {
-        totalRoles: 205,
-        systemRoles: 5,
-        customRoles: 200,
-      },
-    ]);
-    const assignmentWhere = jest.fn().mockResolvedValue([{ value: 73 }]);
-    const changesWhere = jest.fn().mockResolvedValue([{ value: 9 }]);
+    const roleWhere = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ totalRoles: 205, systemRoles: 5, customRoles: 200 }]) });
+    const assignmentWhere = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ value: 73 }]) });
+    const changesWhere = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ value: 9 }]) });
     const from = jest.fn((table: unknown) => {
       if (table === roles) return { where: roleWhere };
       if (table === roleAssignments) return { where: assignmentWhere };
@@ -39,7 +33,7 @@ describe("RolesQueryService.getRoleAnalytics", () => {
   it("returns zeroes when aggregate rows are unavailable", async () => {
     const select = jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue([]),
+        where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
       }),
     });
     const service: RolesQueryService = Object.create(RolesQueryService.prototype);

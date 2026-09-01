@@ -68,11 +68,6 @@ export const kbPages = pgTable(
     projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   },
   (table) => [
-    foreignKey({
-      columns: [table.parentPageId],
-      foreignColumns: [table.id],
-      name: "fk_kb_pages_parent",
-    }).onDelete("set null"),
     index("idx_kb_pages_org_parent_sort").on(table.orgId, table.parentPageId, table.sortOrder),
     index("idx_kb_pages_project_id").on(table.projectId),
     index("idx_kb_pages_org_deleted").on(table.orgId, table.deletedAt),

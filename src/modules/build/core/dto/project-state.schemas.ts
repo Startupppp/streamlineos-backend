@@ -45,7 +45,25 @@ export const updateLabelSchema = z.object({
     .optional(),
 });
 
+export const bulkReorderStatesSchema = z
+  .object({
+    items: z
+      .array(
+        z
+          .object({
+            stateId: z.number().int().positive(),
+            order: z.number().int().min(0),
+            expectedOrder: z.number().int().min(0).optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(50),
+  })
+  .strict();
+
 export type UpdateLabelInput = z.infer<typeof updateLabelSchema>;
 export type UpdateCustomStateInput = z.infer<typeof updateCustomStateSchema>;
 export type CreateStateInput = z.infer<typeof createStateSchema>;
 export type CreateLabelInput = z.infer<typeof createLabelSchema>;
+export type BulkReorderStatesInput = z.infer<typeof bulkReorderStatesSchema>;

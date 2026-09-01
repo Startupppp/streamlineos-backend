@@ -42,7 +42,7 @@ describe("CommentDraftsService — cross-tenant isolation (BOLA)", () => {
 
     const svc = new CommentDraftsService(db);
 
-    await expect(svc.deleteOne("org-attacker", null, "user-1", 999)).rejects.toThrow(NotFoundException);
+    await expect(svc.deleteOne("org-attacker", 42, "user-1", 999)).rejects.toThrow(NotFoundException);
   });
 
   it("listMine returns empty for an org that has no drafts (cross-tenant isolation by predicate)", async () => {
@@ -52,9 +52,11 @@ describe("CommentDraftsService — cross-tenant isolation (BOLA)", () => {
           innerJoin: jest.fn().mockReturnValue({
             leftJoin: jest.fn().mockReturnValue({
               leftJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({
-                  orderBy: jest.fn().mockReturnValue({
-                    limit: jest.fn().mockResolvedValue([]),
+                leftJoin: jest.fn().mockReturnValue({
+                  where: jest.fn().mockReturnValue({
+                    orderBy: jest.fn().mockReturnValue({
+                      limit: jest.fn().mockResolvedValue([]),
+                    }),
                   }),
                 }),
               }),
@@ -66,7 +68,7 @@ describe("CommentDraftsService — cross-tenant isolation (BOLA)", () => {
     } as unknown as Db;
 
     const svc = new CommentDraftsService(db);
-    const result = await svc.listMine("org-other", null, "user-1");
+    const result = await svc.listMine("org-other", 42, "user-1");
     expect(result).toEqual([]);
   });
 });

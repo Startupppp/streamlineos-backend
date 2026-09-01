@@ -24,6 +24,38 @@ const COMPRESSIBLE_IMAGE_TYPES = new Set([
   "image/heif",
 ]);
 
+function isAlreadyCompressedByMagicBytes(buffer: Buffer): boolean {
+  if (buffer.length < 8) return false;
+  const b0 = buffer[0] ?? 0;
+  const b1 = buffer[1] ?? 0;
+  const b2 = buffer[2] ?? 0;
+  const b3 = buffer[3] ?? 0;
+  const b4 = buffer[4] ?? 0;
+  const b5 = buffer[5] ?? 0;
+  const b6 = buffer[6] ?? 0;
+  if (b0 === 0x50 && b1 === 0x4b && (b2 === 0x03 || b2 === 0x05 || b2 === 0x07)) return true;
+  if (b0 === 0x1f && b1 === 0x8b) return true;
+  if (b0 === 0x42 && b1 === 0x5a && b2 === 0x68) return true;
+  if (b0 === 0x37 && b1 === 0x7a && b2 === 0xbc && b3 === 0xaf && b4 === 0x27 && b5 === 0x1c) return true;
+  if (b0 === 0xfd && b1 === 0x37 && b2 === 0x7a && b3 === 0x58 && b4 === 0x5a && b5 === 0x00) return true;
+  if (b0 === 0x04 && b1 === 0x22 && b2 === 0x4d && b3 === 0x18) return true;
+  if (b0 === 0x52 && b1 === 0x61 && b2 === 0x72 && b3 === 0x21 && b4 === 0x1a && b5 === 0x07) return true;
+  if (b0 === 0x25 && b1 === 0x50 && b2 === 0x44 && b3 === 0x46) return true;
+  if (b0 === 0x00 && b1 === 0x01 && b2 === 0x00 && b3 === 0x00) return false;
+  if (b0 === 0x53 && b1 === 0x51 && b2 === 0x4c && b3 === 0x69 && b4 === 0x74 && b5 === 0x65) return true;
+  if (b0 === 0x00 && b3 === 0x00 && (b4 === 0x6a || b4 === 0x66 || b4 === 0x4a || b4 === 0x46) &&
+      (b5 === 0x50 || b5 === 0x46 || b5 === 0x4c || b5 === 0x58) &&
+      (b6 === 0x32 || b6 === 0x4c || b6 === 0x46)) return false;
+  return false;
+}
+
+const ALREADY_COMPRESSED_VIDEO_TYPES = new Set([
+  "video/mp4",
+  "video/webm",
+  "video/x-matroska",
+  "video/ogg",
+]);
+
 const MAX_IMAGE_DIMENSION = 1920;
 const WEBP_QUALITY = 82;
 
@@ -67,15 +99,36 @@ export class MediaCompressionService {
     mimeType: string,
     fileName: string,
   ): Promise<CompressionResult> {
+    if (isAlreadyCompressedByMagicBytes(buffer))
+      return { buffer, mimeType, fileName };
+
     if (COMPRESSIBLE_IMAGE_TYPES.has(mimeType)) {
       return this.compressImage(buffer, mimeType, fileName);
     }
 
     if (mimeType.startsWith("video/")) {
+      if (ALREADY_COMPRESSED_VIDEO_TYPES.has(mimeType))
+        return { buffer, mimeType, fileName };
       return this.transcodeVideo(buffer, mimeType, fileName);
     }
 
     return { buffer, mimeType, fileName };
+  }
+
+  async generateThumbnail(
+    buffer: Buffer,
+    mimeType: string,
+  ): Promise<Buffer | null> {
+    if (!COMPRESSIBLE_IMAGE_TYPES.has(mimeType)) return null;
+    try {
+      return await sharp(buffer)
+        .rotate()
+        .resize({ width: 256, height: 256, fit: "inside", withoutEnlargement: true })
+        .webp({ quality: 70 })
+        .toBuffer();
+    } catch {
+      return null;
+    }
   }
 
   private async compressImage(

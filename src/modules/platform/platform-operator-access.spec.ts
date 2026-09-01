@@ -389,7 +389,7 @@ describe("PlatformOperatorAccessService.revokeGrant", () => {
     const selectChain = makeSelectChain([]);
     const db = { select: jest.fn().mockReturnValue(selectChain) };
     const svc = await buildService(db);
-    await expect(svc.revokeGrant("no-such", "too noisy")).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.revokeGrant("no-such", "too noisy", "op-system")).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("sets revokedAt on an existing grant", async () => {
@@ -414,14 +414,14 @@ describe("PlatformOperatorAccessService.rejectGrant", () => {
     const selectChain = makeSelectChain([]);
     const db = { select: jest.fn().mockReturnValue(selectChain) };
     const svc = await buildService(db);
-    await expect(svc.rejectGrant("no-such", "not justified")).rejects.toBeInstanceOf(NotFoundException);
+    await expect(svc.rejectGrant("no-such", "not justified", "op-system")).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("throws ConflictException when grant is already active", async () => {
     const selectChain = makeSelectChain([{ grantId: "grant-1", status: "active" }]);
     const db = { select: jest.fn().mockReturnValue(selectChain) };
     const svc = await buildService(db);
-    await expect(svc.rejectGrant("grant-1", "too late")).rejects.toBeInstanceOf(ConflictException);
+    await expect(svc.rejectGrant("grant-1", "too late", "op-system")).rejects.toBeInstanceOf(ConflictException);
   });
 
   it("(idempotent) returns without error and skips the update when already rejected", async () => {
@@ -432,7 +432,7 @@ describe("PlatformOperatorAccessService.rejectGrant", () => {
       update: jest.fn().mockReturnValue(updateChain),
     };
     const svc = await buildService(db);
-    await svc.rejectGrant("grant-1", "second rejection attempt");
+    await svc.rejectGrant("grant-1", "second rejection attempt", "op-system");
     expect(db.update).not.toHaveBeenCalled();
   });
 

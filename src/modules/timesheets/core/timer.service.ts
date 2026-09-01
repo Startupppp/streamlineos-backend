@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, inArray, isNull } from "drizzle-orm";
@@ -174,8 +175,10 @@ export class TimerService {
       })
       .returning();
 
-    const row = await this.fetchTimerWithRelations(u.orgId, session!.id);
-    return buildTimerShape(row!);
+    if (!session) throw new InternalServerErrorException("Failed to create timer session");
+    const row = await this.fetchTimerWithRelations(u.orgId, session.id);
+    if (!row) throw new InternalServerErrorException("Timer not found after creation");
+    return buildTimerShape(row);
   }
 
   async pauseTimer(u: CurrentUserContext, timerId: number) {
@@ -198,7 +201,8 @@ export class TimerService {
       .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
 
     const row = await this.fetchTimerWithRelations(u.orgId, timerId);
-    return buildTimerShape(row!);
+    if (!row) throw new InternalServerErrorException("Timer not found after update");
+    return buildTimerShape(row);
   }
 
   async resumeTimer(u: CurrentUserContext, timerId: number) {
@@ -216,7 +220,8 @@ export class TimerService {
       .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
 
     const row = await this.fetchTimerWithRelations(u.orgId, timerId);
-    return buildTimerShape(row!);
+    if (!row) throw new InternalServerErrorException("Timer not found after update");
+    return buildTimerShape(row);
   }
 
   async stopTimer(u: CurrentUserContext, timerId: number) {
@@ -241,7 +246,8 @@ export class TimerService {
       .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
 
     const row = await this.fetchTimerWithRelations(u.orgId, timerId);
-    return buildTimerShape(row!);
+    if (!row) throw new InternalServerErrorException("Timer not found after update");
+    return buildTimerShape(row);
   }
 
   async discardTimer(u: CurrentUserContext, timerId: number) {

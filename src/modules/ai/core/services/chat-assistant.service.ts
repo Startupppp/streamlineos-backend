@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { filterToolsByPersona, getPersona } from "../persona-registry";
 import { ModuleRef } from "@nestjs/core";
 import { stepCountIs, streamText, type ModelMessage } from "ai";
@@ -39,8 +39,18 @@ import { buildContextPrompt } from "./chat-assistant-prompt";
 import { fetchChatContext } from "./chat-assistant-context";
 import { buildInlineTools } from "./chat-assistant-inline-tools";
 
+const CB_FAILURE_THRESHOLD = 5;
+const CB_OPEN_DURATION_MS = 30_000;
+
+interface CircuitBreakerState {
+  failures: number;
+  openedAt: number;
+}
+
 @Injectable()
 export class ChatAssistantService {
+  private readonly cb: CircuitBreakerState = { failures: 0, openedAt: 0 };
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly projectsAi: ProjectsAiService,
@@ -59,6 +69,19 @@ export class ChatAssistantService {
     @Inject(AI_CREDIT_LEDGER) private readonly ledger: AiCreditLedger,
   ) {}
 
+  private isCbOpen(): boolean {
+    return this.cb.failures >= CB_FAILURE_THRESHOLD && Date.now() - this.cb.openedAt < CB_OPEN_DURATION_MS;
+  }
+
+  private recordCbSuccess(): void {
+    this.cb.failures = 0;
+  }
+
+  private recordCbFailure(): void {
+    this.cb.failures += 1;
+    if (this.cb.failures === CB_FAILURE_THRESHOLD) this.cb.openedAt = Date.now();
+  }
+
   private async fetchContext(
     userId: string,
     orgId: string,
@@ -71,9 +94,15 @@ export class ChatAssistantService {
     actor: CurrentUserContext,
     conversationId?: number,
     persona?: string,
+    signal?: AbortSignal,
   ) {
+    const appOverheadStart = Date.now();
     const { userId, orgId } = actor;
     const membershipId = actingMembershipId(actor.principal) ?? 0;
+
+    if (this.isCbOpen()) {
+      throw new ServiceUnavailableException("AI chat provider is temporarily unavailable");
+    }
 
     const reserveMilli = getReserveEstimateMilli(CHAT_FEATURE);
     const reserved = await this.ledger.reserve({
@@ -143,17 +172,37 @@ export class ChatAssistantService {
       orgId,
     );
 
-    const buildStream = () =>
-      streamText({
+    const appOverheadMs = Date.now() - appOverheadStart;
+    let ttftMs: number | undefined;
+    let streamTextCallTime: number;
+
+    let resolved = false;
+
+    const releaseReservation = (reason: string) => {
+      if (resolved) return;
+      resolved = true;
+      void this.ledger.release(reservationId, reason, orgId).catch(() => undefined);
+    };
+
+    const buildStream = () => {
+      streamTextCallTime = Date.now();
+      return streamText({
         model: resolveChatModel(),
         messages: modelMessages,
         system: contextPrompt,
         temperature: 0.7,
         maxRetries: resolveLlmRetryPolicy().maxRetriesPerModel,
         stopWhen: stepCountIs(10),
+        ...(signal !== undefined ? { abortSignal: signal } : {}),
+        onChunk: () => {
+          if (ttftMs === undefined) ttftMs = Date.now() - streamTextCallTime;
+        },
         onFinish: async ({ text, usage }) => {
+          if (resolved) return;
+          resolved = true;
           const promptTokens = usage?.inputTokens ?? 0;
           const completionTokens = usage?.outputTokens ?? 0;
+          this.recordCbSuccess();
           try {
             await runInNewTenantTransaction(this.db, orgId, async () => {
               await settleStream(this.ledger, this.usageSvc, {
@@ -164,6 +213,8 @@ export class ChatAssistantService {
                 orgId,
                 userId,
                 feature: CHAT_FEATURE,
+                ttftMs,
+                appOverheadMs,
               });
               if (conversationId !== undefined) {
                 await this.history.appendToConversation(
@@ -191,13 +242,17 @@ export class ChatAssistantService {
         },
         tools: effectiveTools,
       });
+    };
 
     try {
-      return buildStream();
+      const stream = buildStream();
+      void (stream.finishReason as Promise<string> | undefined)
+        ?.then(() => releaseReservation("stream_terminated_no_settle"))
+        .catch(() => releaseReservation("stream_aborted_no_settle"));
+      return stream;
     } catch (error) {
-      void this.ledger
-        .release(reservationId, "stream_setup_error", orgId)
-        .catch(() => undefined);
+      this.recordCbFailure();
+      releaseReservation("stream_setup_error");
       throw error;
     }
   }

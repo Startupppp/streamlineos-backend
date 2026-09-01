@@ -2,6 +2,7 @@ import { relations, sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  foreignKey,
   index,
   integer,
   pgTable,
@@ -117,7 +118,7 @@ export const subscriptionItems = pgTable(
   "subscription_items",
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
-    subscriptionId: integer("subscription_id").notNull().references(() => subscriptions.id, { onDelete: "cascade" }),
+    subscriptionId: integer("subscription_id").notNull(),
     orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
     priceVersionId: bigint("price_version_id", { mode: "number" }).notNull().references(() => billingPriceVersions.id, { onDelete: "restrict" }),
     quantity: integer("quantity").notNull().default(1),
@@ -129,6 +130,7 @@ export const subscriptionItems = pgTable(
     index("idx_sub_items_org_sub").on(t.orgId, t.subscriptionId),
     index("idx_sub_items_org_active").on(t.orgId, t.effectiveFrom),
     unique("uniq_subscription_items_org_id").on(t.orgId, t.id),
+    foreignKey({ columns: [t.orgId, t.subscriptionId], foreignColumns: [subscriptions.orgId, subscriptions.id], name: "fk_sub_items_org_sub" }).onDelete("cascade"),
   ],
 );
 

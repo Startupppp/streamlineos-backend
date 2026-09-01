@@ -16,6 +16,20 @@ import {
   signRecipients,
   timesheets,
 } from "../../db/schema";
+import {
+  fetchSubjectScopedRows,
+  fetchMembershipScopedRows,
+  fetchEmploymentScopedRows,
+} from "./gdpr-export-fetchers-generic";
+import {
+  fetchAiChatConversations,
+  fetchAiChatMessages,
+  fetchAiFeedback,
+  fetchAiActionProposals,
+  fetchAiJobs,
+  fetchAiUsageLogs,
+} from "./gdpr-export-fetchers-ai";
+import { fetchAttendanceRegularizations } from "./gdpr-export-fetchers-hr";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -335,19 +349,8 @@ describe("generic subject-scoped adapter", () => {
         from: jest.fn().mockReturnValue({ where }),
       }),
     } as unknown as Db;
-    const service = Object.create(GdprExportWorkerService.prototype) as {
-      db: Db;
-      fetchSubjectScopedRows: (
-        table: unknown,
-        userColumn: unknown,
-        orgId: string,
-        userId: string,
-        afterId: number,
-      ) => Promise<unknown[]>;
-    };
-    service.db = db;
 
-    await service.fetchSubjectScopedRows(agentTokens, agentTokens.userId, "org-owner", "user-subj", 10);
+    await fetchSubjectScopedRows(db, agentTokens, agentTokens.userId, "org-owner", "user-subj", 10);
 
     const values = whereArgs.flatMap((condition) => sqlValues(condition));
     expect(values).toEqual(expect.arrayContaining(["org-owner", "user-subj", 10]));
@@ -364,19 +367,8 @@ describe("generic subject-scoped adapter", () => {
         from: jest.fn().mockReturnValue({ where }),
       }),
     } as unknown as Db;
-    const service = Object.create(GdprExportWorkerService.prototype) as {
-      db: Db;
-      fetchSubjectScopedRows: (
-        table: unknown,
-        userColumn: unknown,
-        orgId: string,
-        userId: string,
-        afterId: number,
-      ) => Promise<unknown[]>;
-    };
-    service.db = db;
 
-    await service.fetchSubjectScopedRows(feedbackRequests, feedbackRequests.subjectUserId, "org-owner", "user-subj", 10);
+    await fetchSubjectScopedRows(db, feedbackRequests, feedbackRequests.subjectUserId, "org-owner", "user-subj", 10);
 
     const selected = (db.select as jest.Mock).mock.calls[0]![0] as Record<string, unknown>;
     expect(selected).not.toHaveProperty("reviewerUserId");
@@ -399,19 +391,9 @@ describe("membership and employment subject adapters", () => {
         from: jest.fn().mockReturnValue({ innerJoin }),
       }),
     } as unknown as Db;
-    const service = Object.create(GdprExportWorkerService.prototype) as {
-      db: Db;
-      fetchMembershipScopedRows: (
-        table: unknown,
-        membershipColumn: unknown,
-        orgId: string,
-        userId: string,
-        afterId: number,
-      ) => Promise<unknown[]>;
-    };
-    service.db = db;
 
-    await service.fetchMembershipScopedRows(
+    await fetchMembershipScopedRows(
+      db,
       signRecipients,
       signRecipients.userMembershipId,
       "org-owner",
@@ -444,19 +426,9 @@ describe("membership and employment subject adapters", () => {
         from: jest.fn().mockReturnValue({ innerJoin: firstInnerJoin }),
       }),
     } as unknown as Db;
-    const service = Object.create(GdprExportWorkerService.prototype) as {
-      db: Db;
-      fetchEmploymentScopedRows: (
-        table: unknown,
-        employmentColumn: unknown,
-        orgId: string,
-        userId: string,
-        afterId: number,
-      ) => Promise<unknown[]>;
-    };
-    service.db = db;
 
-    await service.fetchEmploymentScopedRows(
+    await fetchEmploymentScopedRows(
+      db,
       hrWorkAuthorizations,
       hrWorkAuthorizations.employmentId,
       "org-owner",
@@ -482,19 +454,9 @@ describe("membership and employment subject adapters", () => {
         }),
       }),
     } as unknown as Db;
-    const service = Object.create(GdprExportWorkerService.prototype) as {
-      db: Db;
-      fetchMembershipScopedRows: (
-        table: unknown,
-        membershipColumn: unknown,
-        orgId: string,
-        userId: string,
-        afterId: number,
-      ) => Promise<unknown[]>;
-    };
-    service.db = db;
 
-    await service.fetchMembershipScopedRows(
+    await fetchMembershipScopedRows(
+      db,
       timesheets,
       timesheets.userMembershipId,
       "org-owner",
@@ -524,13 +486,8 @@ describe("GDPR AI subject adapters", () => {
 
   it("fetches conversations with tenant, subject, and resumable cursor predicates", async () => {
     const { db, whereArgs, limit } = makeAdapterDb([{ id: 8, title: "HR chat" }]);
-    const service = Object.create(GdprExportWorkerService.prototype) as {
-      db: Db;
-      fetchAiChatConversations: (orgId: string, userId: string, afterId: number) => Promise<unknown[]>;
-    };
-    service.db = db;
 
-    const rows = await service.fetchAiChatConversations("org-owner", "user-subj", 7);
+    const rows = await fetchAiChatConversations(db, "org-owner", "user-subj", 7);
 
     expect(rows).toEqual([{ id: 8, title: "HR chat" }]);
     expect(limit).toHaveBeenCalledWith(200);
@@ -544,13 +501,8 @@ describe("GDPR AI subject adapters", () => {
 
   it("fetches messages with tenant, subject, and resumable cursor predicates", async () => {
     const { db, whereArgs, limit } = makeAdapterDb([{ id: 11, content: "private prompt" }]);
-    const service = Object.create(GdprExportWorkerService.prototype) as {
-      db: Db;
-      fetchAiChatMessages: (orgId: string, userId: string, afterId: number) => Promise<unknown[]>;
-    };
-    service.db = db;
 
-    const rows = await service.fetchAiChatMessages("org-owner", "user-subj", 10);
+    const rows = await fetchAiChatMessages(db, "org-owner", "user-subj", 10);
 
     expect(rows).toEqual([{ id: 11, content: "private prompt" }]);
     expect(limit).toHaveBeenCalledWith(200);
@@ -563,17 +515,14 @@ describe("GDPR AI subject adapters", () => {
   });
 
   it.each([
-    ["feedback", "fetchAiFeedback"],
-    ["action proposals", "fetchAiActionProposals"],
-    ["jobs", "fetchAiJobs"],
-    ["usage logs", "fetchAiUsageLogs"],
-  ])("fetches AI %s with tenant, subject, and resumable cursor predicates", async (_label, methodName) => {
-    type Adapter = (orgId: string, userId: string, afterId: number) => Promise<unknown[]>;
+    ["feedback", fetchAiFeedback] as const,
+    ["action proposals", fetchAiActionProposals] as const,
+    ["jobs", fetchAiJobs] as const,
+    ["usage logs", fetchAiUsageLogs] as const,
+  ])("fetches AI %s with tenant, subject, and resumable cursor predicates", async (_label, fetchFn) => {
     const { db, whereArgs, limit } = makeAdapterDb([{ id: 12 }]);
-    const service = Object.create(GdprExportWorkerService.prototype) as { db: Db } & Record<string, Adapter>;
-    service.db = db;
 
-    const rows = await service[methodName]("org-owner", "user-subj", 11);
+    const rows = await fetchFn(db, "org-owner", "user-subj", 11);
 
     expect(rows).toEqual([{ id: 12 }]);
     expect(limit).toHaveBeenCalledWith(200);
@@ -599,13 +548,8 @@ describe("GDPR attendance regularization adapter", () => {
         from: jest.fn().mockReturnValue({ where }),
       }),
     } as unknown as Db;
-    const service = Object.create(GdprExportWorkerService.prototype) as {
-      db: Db;
-      fetchAttendanceRegularizations: (orgId: string, userId: string, afterId: number) => Promise<unknown[]>;
-    };
-    service.db = db;
 
-    const rows = await service.fetchAttendanceRegularizations("org-owner", "user-subj", 7);
+    const rows = await fetchAttendanceRegularizations(db, "org-owner", "user-subj", 7);
 
     expect(rows).toEqual([{ id: 8, userId: "user-subj", status: "PENDING" }]);
     expect(limit).toHaveBeenCalledWith(200);

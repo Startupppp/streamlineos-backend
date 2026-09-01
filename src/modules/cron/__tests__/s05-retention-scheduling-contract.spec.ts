@@ -17,6 +17,9 @@ describe("S05 retention scheduling contracts", () => {
     expect(module).toMatch(/CronNotificationRetentionService/);
     expect(module).toMatch(/NotificationRetentionService/);
     expect(module).toMatch(/CronAiUsageRetentionService/);
+    expect(module).toMatch(/CronHelpdeskRetentionService/);
+    expect(module).toMatch(/CronMailRetentionService/);
+    expect(module).toMatch(/CronAnnouncementsRetentionService/);
   });
 
   it("exposes the HR policy sweep through authenticated GET/POST routes and a lease", () => {
@@ -48,6 +51,27 @@ describe("S05 retention scheduling contracts", () => {
     expect(controller).toMatch(/assertCronSecret\(authorization\)/);
     expect(controller).toMatch(/withLease\("ai-usage-retention-sweep",\s*1800/);
     expect(controller).toMatch(/this\.aiUsageRetention\.sweep\(\{ dryRun: false \}\)/);
+  });
+
+  it("exposes helpdesk retention through an authenticated leased route", () => {
+    const controller = source("cron-hr.controller.ts");
+    expect(controller).toMatch(/@Get\("helpdesk-retention-sweep"\)/);
+    expect(controller).toMatch(/@Post\("helpdesk-retention-sweep"\)/);
+    expect(controller).toMatch(/assertCronSecret\(authorization\)/);
+    expect(controller).toMatch(/withLease\("helpdesk-retention-sweep",\s*1800/);
+    expect(controller).toMatch(/this\.helpdeskRetention\.sweep\(\)/);
+  });
+
+  it("exposes mail metadata and announcements retention through authenticated leased routes", () => {
+    const controller = source("cron-platform.controller.ts");
+    expect(controller).toMatch(/@Get\("mail-metadata-retention-sweep"\)/);
+    expect(controller).toMatch(/@Post\("mail-metadata-retention-sweep"\)/);
+    expect(controller).toMatch(/withLease\("mail-metadata-retention-sweep",\s*1800/);
+    expect(controller).toMatch(/this\.mailRetention\.sweep\(\)/);
+    expect(controller).toMatch(/@Get\("announcements-retention-sweep"\)/);
+    expect(controller).toMatch(/@Post\("announcements-retention-sweep"\)/);
+    expect(controller).toMatch(/withLease\("announcements-retention-sweep",\s*1800/);
+    expect(controller).toMatch(/this\.announcementsRetention\.sweep\(\)/);
   });
 
   it("exposes KB chat, KB chunk, and build retention through authenticated leased routes", () => {

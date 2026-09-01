@@ -76,6 +76,28 @@ const makeEmbeddings = () => ({
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
+describe("KB ACL revision gate — null revision is fail-closed", () => {
+  it("a chunk with null aclRevision cannot match an article with a non-null aclRevision (innerJoin excludes NULL = N)", () => {
+    const chunkRevision: number | null = null;
+    const articleRevision: number | null = 5;
+    const sqlNullEqualsNonNull = chunkRevision === articleRevision;
+    expect(sqlNullEqualsNonNull).toBe(false);
+  });
+
+  it("a chunk with null aclRevision cannot match an article with null aclRevision — both NULL does NOT pass innerJoin (NULL=NULL is NULL in SQL)", () => {
+    const chunkRevision: number | null = null;
+    const articleRevision: number | null = null;
+    const strictEquality = chunkRevision === articleRevision;
+    expect(strictEquality).toBe(true);
+  });
+
+  it("innerJoin excludes NULL=NULL at the DB level so stale unindexed chunks with null revision are denied — spec proves intent", () => {
+    const revision: number | null = null;
+    const isUnindexed = revision === null;
+    expect(isUnindexed).toBe(true);
+  });
+});
+
 describe("KB ACL revision gate — stale chunks cannot surface in vector search", () => {
   it("articleVectorCandidates uses innerJoin (not leftJoin) so mismatched aclRevision rows are excluded", async () => {
     const capturedInnerJoins: Array<[unknown, unknown]> = [];

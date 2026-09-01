@@ -48,7 +48,7 @@ function buildRegistry(topology: RegionTopology, primaryDb: Db): RegionRegistry 
     secondaryClients.push({ key: definition.key, end: (options) => client.end(options) });
     bindings.set(definition.key, {
       definition,
-      db: drizzle(client, { schema }) as unknown as Db,
+      db: drizzle(client, { schema }),
     });
   }
 

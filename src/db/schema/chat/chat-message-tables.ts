@@ -42,10 +42,6 @@ export const chatMessages = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    foreignKey({
-      columns: [table.replyToId],
-      foreignColumns: [table.id],
-    }).onDelete("set null"),
     index("idx_chat_messages_channel").on(table.channelId, table.createdAt),
     index("idx_chat_messages_unread")
       .on(table.orgId, table.channelId, table.isDeleted, table.createdAt)

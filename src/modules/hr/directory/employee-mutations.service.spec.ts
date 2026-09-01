@@ -208,7 +208,9 @@ describe("EmployeeMutationsService base response boundary", () => {
     });
     const skillsQuery = {
       from: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue([]),
+        where: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue([]),
+        }),
       }),
     };
     const employmentQuery = {

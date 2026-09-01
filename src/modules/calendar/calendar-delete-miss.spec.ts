@@ -23,7 +23,6 @@ function makeDb(memberRow: { id: number } | undefined, deletedRows: unknown[]) {
 function serviceWith(db: Db) {
   return new CalendarService(
     db,
-    { pushDelete: jest.fn() } as never,
     {} as never,
     {} as never,
     {} as never,

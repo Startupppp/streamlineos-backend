@@ -101,11 +101,6 @@ export class DashboardPersonalService {
         ? settle(
             "timesheet",
             async () => {
-              const [selfMember] = await this.db
-                .select({ id: organizationMembers.id })
-                .from(organizationMembers)
-                .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
-                .limit(1);
               if (!selfMember) return [];
               return this.db
                 .select({ hours: sum(timesheets.hours) })

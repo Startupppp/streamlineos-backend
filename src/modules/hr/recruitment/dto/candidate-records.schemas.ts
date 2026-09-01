@@ -4,7 +4,7 @@ import { pageNumberField, pageSizeField } from "../../../../common/pagination/li
 export const createCalibrationSchema = z.object({
   jobPostingId: z.number().int().positive().optional(),
   scheduledAt: z.string().datetime().optional(),
-  participantIds: z.array(z.string()).default([]),
+  participantIds: z.array(z.string()).max(30).default([]),
   notes: z.string().max(5000).optional(),
 });
 export type CreateCalibrationInput = z.infer<typeof createCalibrationSchema>;
@@ -15,7 +15,7 @@ export const updateCalibrationSchema = z.object({
   status: z.enum(["pending", "scheduled", "completed", "cancelled"]).optional(),
   notes: z.string().max(5000).optional().nullable(),
   decision: z.enum(["STRONG_HIRE", "HIRE", "NO_HIRE", "HOLD"]).optional().nullable(),
-  participantIds: z.array(z.string()).optional(),
+  participantIds: z.array(z.string()).max(30).optional(),
 });
 export type UpdateCalibrationInput = z.infer<typeof updateCalibrationSchema>;
 
@@ -67,7 +67,7 @@ export const generateDocumentSchema = z.object({
 export type GenerateDocumentInput = z.infer<typeof generateDocumentSchema>;
 
 export const rolloutDocumentsSchema = z.object({
-  templateIds: z.array(z.number().int().positive()).min(1, "Select at least one template"),
+  templateIds: z.array(z.number().int().positive()).min(1, "Select at least one template").max(20),
   variables: z.record(z.string(), z.string()).default({}),
   sendEmail: z.boolean().default(true),
   acceptanceDeadline: z.string().datetime({ offset: true }).optional(),

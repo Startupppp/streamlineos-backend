@@ -48,7 +48,7 @@ const slotSchema = z.object({
 export const selfScheduleSchema = z.object({
   candidateId: z.number().int().positive(),
   jobPostingId: z.number().int().positive().optional(),
-  interviewerIds: z.array(z.string()).min(1),
+  interviewerIds: z.array(z.string()).min(1).max(20),
   durationMinutes: z.number().int().min(15).max(180).default(60),
   interviewType: z.enum(["VIDEO", "PHONE", "IN_PERSON"]).default("VIDEO"),
   availableSlots: z.array(slotSchema).min(1, "At least one available slot is required"),

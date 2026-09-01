@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Inject,
   Injectable,
   NotFoundException,
@@ -19,6 +20,7 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type {
+  BulkReorderStatesInput,
   CreateStateInput,
   UpdateCustomStateInput,
 } from "./dto/projects.schemas";
@@ -198,6 +200,62 @@ export class ProjectsCustomStatesService {
 
     if (!updated) throw new NotFoundException("Status not found");
     return updated;
+  }
+
+  async bulkReorderCustomStates(
+    u: CurrentUserContext,
+    projectId: number,
+    body: BulkReorderStatesInput,
+  ) {
+    await this.assertCanManageProject(u, projectId);
+
+    const current = await this.db
+      .select({ id: projectStatuses.id, order: projectStatuses.order })
+      .from(projectStatuses)
+      .where(
+        and(
+          eq(projectStatuses.projectId, projectId),
+          eq(projectStatuses.orgId, u.orgId),
+        ),
+      )
+      .limit(200);
+
+    const currentById = new Map(current.map((s) => [s.id, s.order]));
+
+    for (const item of body.items) {
+      if (!currentById.has(item.stateId))
+        throw new NotFoundException(`Status ${item.stateId} not found in this project`);
+    }
+
+    const conflicts: { stateId: number; currentOrder: number; expectedOrder: number }[] = [];
+    for (const item of body.items) {
+      if (item.expectedOrder === undefined) continue;
+      const actual = currentById.get(item.stateId) ?? -1;
+      if (actual !== item.expectedOrder)
+        conflicts.push({ stateId: item.stateId, currentOrder: actual, expectedOrder: item.expectedOrder });
+    }
+    if (conflicts.length > 0)
+      throw new HttpException({ error: "conflict", conflicts }, 409);
+
+    const updated = await this.db.transaction(async (tx) => {
+      const results: { id: number; order: number }[] = [];
+      for (const item of body.items) {
+        const [row] = await tx
+          .update(projectStatuses)
+          .set({ order: item.order })
+          .where(
+            and(
+              eq(projectStatuses.id, item.stateId),
+              eq(projectStatuses.orgId, u.orgId),
+            ),
+          )
+          .returning({ id: projectStatuses.id, order: projectStatuses.order });
+        if (row) results.push(row);
+      }
+      return results;
+    });
+
+    return { items: updated };
   }
 
   async deleteCustomState(u: CurrentUserContext, stateId: number) {

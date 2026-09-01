@@ -1,0 +1,259 @@
+{
+  "version": 1,
+  "classifiedAt": "2026-09-01",
+  "note": "Verdicts: N+1-FIXED|BATCHED|FALSE-POSITIVE|EXCLUDED-MODULE|ACTIONABLE",
+  "files": {
+    "/ai/core/ops-copilot-tools.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/blog/blog.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "ensureUniqueSlug: replaced per-iteration findFirst with single findMany on slug = root OR slug LIKE root-%; compute next suffix in memory"
+    },
+    "/build/core/projects-tickets-transfer.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "3 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/build/core/projects-tickets-update.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/build/core/projects-webhooks-dispatch.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "2 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/build/qa/test-runs.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "2 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/crm/import/crm-import-commit.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/crm/import/crm-import-revert.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/cron/cron-build-retention.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "for(;;) chunked batch delete — SELECT batch IDs + DELETE WHERE id IN batch; same pattern as kb-page-tree.service.ts; not per-row N+1"
+    },
+    "/cron/cron-hr-retention.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Loop:262 — onboardingRows.map(r => sql`${r.id}`) builds a sql fragment list for a single IN clause WHERE; the sql` on line 269 is that same single batch query's WHERE, not a per-row call"
+    },
+    "/cron/cron-idempotency.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "3 while(true) chunked batch-delete loops: SELECT batch → DELETE batch; same pattern as kb-page-tree.service.ts; not per-row N+1"
+    },
+    "/cron/cron-kb-chat-retention.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/cron/cron-kb-chunk-retention.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "2 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/cron/cron-leave.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "expireUnusedMonthlyLeaves: collect toExpire[] with no DB calls, then single db.transaction with VALUES-list UPDATE + bulk hrLeaveLedger INSERT"
+    },
+    "/data-quality/data-quality-producers.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/e-sign/sign-documents.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Loop:164 keysToDelete has ≤2 items (current key + optional original); sql` is an arithmetic expression in a SET clause (attemptCount + 1), not a separate query"
+    },
+    "/e-sign/sign-envelope-dispatch.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Loop:251 scanner crosses map closure boundary — map body has bdelta=0 so enteredBody stays false, then a subsequent if block's { sets enteredBody; db.transaction at line 265 is inside that if, not the map"
+    },
+    "/e-sign/sign-templates.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "instantiate: bulk insert documents (single VALUES), bulk insert recipients (filtered flatMap), bulk insert fields (filtered flatMap)"
+    },
+    "/expenses/expenses-import.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/finance/ap/payment-run-executor.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/finance/planning/scenarios.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "2 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/hr/global/compliance-requirements.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "3 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/hr/import/hr-import.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/hr/onboarding/core/onboarding-admin.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/hr/onboarding/flow/module-checklist.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "3 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/hr/recruitment/recruitment-candidate-ops.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/hr/recruitment/recruitment-jobs.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/inventory/channels/channels.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "2 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/inventory/products/inv-product-crud.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/inventory/purchase-orders/grn-receive.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "2 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/inventory/purchase-orders/grn.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/inventory/quality/quality-inspections.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "2 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/inventory/returns/customer-returns.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/inventory/sales-orders/so-fulfillment.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "2 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/inventory/stock/inv-stock-transfers.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "4 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/inventory/stock/inv-stock.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/inventory/stock-engine/stock-engine.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/inventory/stock-engine/valuation.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/invoices/invoices-payment.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/kb/article-conversion/kb-article-migration.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/kb/help-centre/kb-articles.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "3 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/kb/help-centre/kb-categories.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "2 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/kb/wiki/kb-import-export.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/kb/wiki/kb-page-duplicate.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "3 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/kb/wiki/kb-page-tree.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "purgeExpired uses for(;;) chunked batch delete — SELECT batch IDs + DELETE batch; not per-row N+1"
+    },
+    "/notifications/notification-dispatch.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/organization/onboarding/workspace-onboarding.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/payroll/payout/batch-creator.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "2 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/payroll/runs/inputs.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/payroll/runs/loan-recovery.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/payroll/runs/run-result-persister.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/payroll/setup/templates.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/platform/platform-operator-access.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/rbac/roles.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "2 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/rbac/seed-system-roles.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "seedSystemRolesForOrg: per-role-template insert is intentional seed behavior, not request-path N+1"
+    },
+    "/sessions/sessions.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Loop:234 batches 200 Redis keys per redis.del(...batch.map(...)) call; not per-row; already correctly batched"
+    },
+    "/storage/storage-key-catalog.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "5 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/support/core/support-custom-fields.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "2 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/support/core/support-kb.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "4 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/support/core/support-macros.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "1 DB call(s) detected inside loop body — batch with inArray or Promise.all"
+    },
+    "/surveys/survey-builder.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "duplicateQuestion: bulk insert choices with .values(array.map()); replaceChoices: bulk insert with .values(choiceList.map())"
+    },
+    "/surveys/survey-forms.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "create: bulk insert sections, then flatMap questions, bulk insert, then flatMap choices, bulk insert — 3 queries instead of N+M+K"
+    },
+    "/surveys/survey-version.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "cloneVersionStructure: bulk insert sections (id-map from pairs), bulk insert questions (id-map), bulk insert all choices (flatMap), bulk insert logic rules"
+    }
+  }
+}

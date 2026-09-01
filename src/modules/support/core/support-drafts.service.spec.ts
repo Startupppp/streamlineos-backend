@@ -39,7 +39,7 @@ describe("SupportDraftsService", () => {
     it("returns null when the user has no draft for this ticket", async () => {
       mockDb.query.supportTicketDrafts.findFirst.mockResolvedValueOnce(undefined);
 
-      await expect(service.getDraft("org1", 1, "user1", null)).resolves.toBeNull();
+      await expect(service.getDraft("org1", 1, "user1", 7)).resolves.toBeNull();
     });
 
     it("returns the user's existing draft", async () => {
@@ -51,7 +51,7 @@ describe("SupportDraftsService", () => {
         isInternal: false,
       });
 
-      await expect(service.getDraft("org1", 1, "user1", null)).resolves.toMatchObject({ body: "unsent reply" });
+      await expect(service.getDraft("org1", 1, "user1", 7)).resolves.toMatchObject({ body: "unsent reply" });
     });
   });
 
@@ -67,7 +67,7 @@ describe("SupportDraftsService", () => {
     it("upserts the draft via onConflictDoUpdate targeting (ticketId, membershipId)", async () => {
       mockDb.returning.mockResolvedValueOnce([{ id: 1, ticketId: 1, userMembershipId: 7, body: "draft text" }]);
 
-      const result = await service.upsertDraft("org1", 1, "user1", null, { body: "draft text", isInternal: false } as never);
+      const result = await service.upsertDraft("org1", 1, "user1", 7, { body: "draft text", isInternal: false } as never);
 
       expect(result).toMatchObject({ body: "draft text" });
       expect(mockDb.insert).toHaveBeenCalled();
@@ -83,7 +83,7 @@ describe("SupportDraftsService", () => {
     });
 
     it("deletes the user's draft for this ticket", async () => {
-      await expect(service.deleteDraft("org1", 1, "user1", null)).resolves.toEqual({ success: true });
+      await expect(service.deleteDraft("org1", 1, "user1", 7)).resolves.toEqual({ success: true });
       expect(mockDb.delete).toHaveBeenCalled();
     });
   });

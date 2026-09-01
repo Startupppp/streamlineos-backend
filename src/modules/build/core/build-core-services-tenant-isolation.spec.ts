@@ -103,7 +103,8 @@ describe("ProjectsTicketsTransferService — cross-tenant isolation", () => {
           limit: jest.fn().mockResolvedValue([ticketRow]),
         }),
       });
-      const leftJoin = jest.fn().mockReturnValue({ where });
+      const leftJoin2 = jest.fn().mockReturnValue({ where });
+      const leftJoin = jest.fn().mockReturnValue({ leftJoin: leftJoin2 });
       const from = jest.fn().mockReturnValue({ leftJoin });
       const db = {
         select: jest.fn().mockReturnValue({ from }),

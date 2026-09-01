@@ -1,4 +1,4 @@
-import { ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
 import type {
   AiInvokeFailure,
@@ -18,6 +18,8 @@ export function throwOnAiFailure(result: AiInvokeFailure): never {
       throw new ServiceUnavailableException(result.message);
     case "invalid_output":
       throw new ServiceUnavailableException("AI returned an invalid response");
+    case "context_too_large":
+      throw new BadRequestException(result.message);
     default:
       assertNever(result.kind);
   }

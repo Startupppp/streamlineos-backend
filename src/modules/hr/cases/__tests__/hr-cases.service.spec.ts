@@ -169,10 +169,10 @@ describe("HrCasesService — confidential-tier gating", () => {
   });
 
   it("getById: allows access to confidential case when actor is the assignee", async () => {
-    const confidentialCase = makeCase({ confidential: true, assignedTo: "assigned-user" });
+    const confidentialCase = makeCase({ confidential: true, assignedTo: "assigned-user", assignedToMembershipId: 2 });
     mockLimitFn.mockResolvedValueOnce([confidentialCase]);
 
-    const result = await service.getById("org1", 1, "assigned-user", false);
+    const result = await service.getById("org1", 1, "assigned-user", false, 2);
     expect(result.id).toBe(1);
   });
 
@@ -244,6 +244,7 @@ describe("HrCasesService — create", () => {
       "org1",
       "actor1",
       { category: "harassment", severity: "medium", summary: "Test", details: "Detailed description of the harassment incident at least ten chars" },
+      1,
     );
 
     expect(insertedValues!.confidential).toBe(true);
@@ -259,7 +260,7 @@ describe("HrCasesService — create", () => {
     });
     mockReturningFn.mockResolvedValueOnce([makeCase({ id: 5 })]);
 
-    await service.create("org1", "actor1", { category: "ethics", severity: "low", summary: "Concern", details: "Detailed description of the ethics concern at least ten chars" });
+    await service.create("org1", "actor1", { category: "ethics", severity: "low", summary: "Concern", details: "Detailed description of the ethics concern at least ten chars" }, 1);
     expect(String(insertedValues!.caseNumber)).toMatch(/^CASE-/);
   });
 });

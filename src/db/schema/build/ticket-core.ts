@@ -90,17 +90,9 @@ export const tickets = build.table(
       .$onUpdate(() => new Date()),
   },
   (t) => [
-    foreignKey({ columns: [t.epicId], foreignColumns: [t.id] }).onDelete(
-      "set null",
-    ),
-    foreignKey({
-      columns: [t.parentTicketId],
-      foreignColumns: [t.id],
-    }).onDelete("set null"),
-    foreignKey({
-      columns: [t.recurrenceParentId],
-      foreignColumns: [t.id],
-    }).onDelete("set null"),
+    foreignKey({ columns: [t.orgId, t.epicId], foreignColumns: [t.orgId, t.id], name: "fk_tickets_org_epic" }),
+    foreignKey({ columns: [t.orgId, t.parentTicketId], foreignColumns: [t.orgId, t.id], name: "fk_tickets_org_parent" }),
+    foreignKey({ columns: [t.orgId, t.recurrenceParentId], foreignColumns: [t.orgId, t.id], name: "fk_tickets_org_recurrence_parent" }),
     foreignKey({
       columns: [t.customerId],
       foreignColumns: [clients.id],

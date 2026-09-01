@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, ilike, sql } from "drizzle-orm";
 import {
   workflows,
@@ -182,6 +182,11 @@ export class WorkflowsCrudService {
       columns: { id: true, version: true },
     });
     if (!workflow) throw new NotFoundException("Workflow not found");
+
+    if (dto.expectedVersion !== undefined && dto.expectedVersion !== workflow.version)
+      throw new ConflictException(
+        "Workflow was modified by another user — refresh to see the latest version before publishing",
+      );
 
     const nextVersion = workflow.version + 1;
 

@@ -4,7 +4,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { Readable } from "stream";
 import { extname } from "path";
 import {
@@ -37,6 +37,17 @@ export interface UploadResult {
   key: string;
   size: number;
   mimeType: string;
+  sha256: string;
+}
+
+export interface UploadJobResult {
+  quarantineId: string;
+  status: "pending_scan";
+  key: string;
+  url: string;
+  mimeType: string;
+  size: number;
+  sha256: string;
 }
 
 export interface FileStreamResult {
@@ -230,7 +241,7 @@ export class StorageService {
     const bucketName = this.requireBucketFrom(placement, bucketOverride);
 
     const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
-    const rawKey = `${folder}/${randomUUID()}-${sanitizedName}`;
+    const rawKey = `${orgId}/${folder}/${randomUUID()}-${sanitizedName}`;
     const key = placement.keyPrefix
       ? `${placement.keyPrefix}/${rawKey}`
       : rawKey;
@@ -254,6 +265,7 @@ export class StorageService {
       key,
       size: buffer.length,
       mimeType,
+      sha256: createHash("sha256").update(buffer).digest("hex"),
     };
   }
 
@@ -266,11 +278,12 @@ export class StorageService {
     mimeType = "application/octet-stream",
     bucketOverride?: string,
     publicUrlOverride?: string,
+    sha256 = "",
   ): Promise<UploadResult> {
     const placement = await this.placementFor(orgId);
     const bucketName = this.requireBucketFrom(placement, bucketOverride);
     const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
-    const rawKey = `${folder}/${randomUUID()}-${sanitizedName}`;
+    const rawKey = `${orgId}/${folder}/${randomUUID()}-${sanitizedName}`;
     const key = placement.keyPrefix
       ? `${placement.keyPrefix}/${rawKey}`
       : rawKey;
@@ -295,6 +308,7 @@ export class StorageService {
       key,
       size: contentLength,
       mimeType,
+      sha256,
     };
   }
 
@@ -324,6 +338,7 @@ export class StorageService {
   }
 
   async compressAndPreGenerateKey(
+    orgId: string,
     buffer: Buffer,
     folder: string,
     fileName: string,
@@ -335,6 +350,7 @@ export class StorageService {
     compressedBuffer: Buffer;
     compressedMimeType: string;
     size: number;
+    sha256: string;
   }> {
     const compressed = await this.compression.compress(
       buffer,
@@ -342,7 +358,8 @@ export class StorageService {
       fileName,
     );
     const sanitizedName = compressed.fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
-    const key = `${folder}/${randomUUID()}-${sanitizedName}`;
+    const rawKey = `${folder}/${randomUUID()}-${sanitizedName}`;
+    const key = `${orgId}/${rawKey}`;
     const url = this.publicUrlFor(folder, key, publicUrlOverride);
     return {
       key,
@@ -350,6 +367,7 @@ export class StorageService {
       compressedBuffer: compressed.buffer,
       compressedMimeType: compressed.mimeType,
       size: compressed.buffer.length,
+      sha256: createHash("sha256").update(compressed.buffer).digest("hex"),
     };
   }
 

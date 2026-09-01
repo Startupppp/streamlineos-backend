@@ -1,0 +1,455 @@
+#!/usr/bin/env node
+/**
+ * Gate: no service file may issue a database or cache call inside a growing loop (N+1 pattern).
+ *
+ * Detection — a call site is flagged when:
+ *   1. A loop opener (for/while/forEach/map/reduce/flatMap/filter + await body) appears on a line.
+ *   2. Within the next LOOP_BODY_LOOKFORWARD lines, a DB or cache call pattern appears.
+ *
+ * Patterns detected as DB/cache calls:
+ *   - db.<method>( / tx.<method>( / sql`  / db.execute( / db.transaction(
+ *   - this.db.<method>( / this.tx
+ *   - .query.  (Drizzle relational queries)
+ *   - cacheService.get / cacheService.set / redis.get / redis.set / redis.hget
+ *   - Inline repository calls: .findOne( / .findBy( / .save(
+ *
+ * Classification file (baselines/db-call-count-classification.json):
+ *   N+1-FIXED · BATCHED · FALSE-POSITIVE · EXCLUDED-MODULE · ACTIONABLE
+ *
+ * Failure modes:
+ *   1. Unclassified path — detected file has no classification entry   → gate fails.
+ *   2. Stale entry       — classification file points at a missing file → gate fails.
+ *   3. Regression        — file classified N+1-FIXED/BATCHED/FALSE-POSITIVE still detected → gate fails.
+ *
+ * ACTIONABLE entries do not fail; they are counted as the ratchet to drive to zero.
+ *
+ * --self-test          : run proof-of-failure tests and exit.
+ * --emit-classification: write a fresh classification.json from current scan; new entries = ACTIONABLE.
+ */
+
+import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { join, extname } from "node:path";
+
+const LOOP_BODY_LOOKFORWARD = 30;
+const MIN_FILES = 200;
+const MIN_MODULES = 40;
+
+const ROOT = new URL("../modules", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
+const CLASSIFICATION_FILE = new URL(
+  "./baselines/db-call-count-classification.json",
+  import.meta.url,
+).pathname.replace(/^\/([A-Z]:)/, "$1");
+
+const EXCLUDED_MODULE_PREFIXES = ["/crm/", "/inventory/"];
+
+const LOOP_OPENERS = [
+  /\bfor\s*\(/,
+  /\bwhile\s*\(/,
+  /\bdo\s*\{/,
+  /\.forEach\s*\(/,
+  /\.map\s*\(/,
+  /\.flatMap\s*\(/,
+  /\.filter\s*\(/,
+  /\.reduce\s*\(/,
+  /\.for\s*\(/,
+];
+
+const DB_CALL_PATTERNS = [
+  /\b(?:this\.)?db\s*\.\s*(?:select|insert|update|delete|execute|transaction|query|unsafe)\s*\(/,
+  /\b(?:this\.)?tx\s*\.\s*(?:select|insert|update|delete|execute|unsafe)\s*\(/,
+  /\bsql\s*`/,
+  /\.query\s*\.\s*\w+\s*\.\s*(?:findFirst|findMany)\s*\(/,
+  /\bawait\s+\w*[Cc]ache[Ss]ervice\s*\.\s*(?:get|set|del|hget|hset)\s*\(/,
+  /\bredisClient\s*\.\s*(?:get|set|del|hget|hset|lpush|rpush)\s*\(/,
+  /\bredis\s*\.\s*(?:get|set|del|hget|hset|lpush|rpush)\s*\(/,
+  /\bawait\s+\w+Repository\s*\.\s*(?:findOne|findBy|save|update|delete)\s*\(/,
+];
+
+function normalizeRelPath(file) {
+  const normalizedFile = file.replace(/\\/g, "/");
+  const normalizedRoot = ROOT.replace(/\\/g, "/");
+  return normalizedFile.startsWith(normalizedRoot)
+    ? normalizedFile.slice(normalizedRoot.length)
+    : normalizedFile;
+}
+
+function discoverTerritory() {
+  return readdirSync(ROOT)
+    .filter((entry) => {
+      try { return statSync(join(ROOT, entry)).isDirectory(); } catch { return false; }
+    })
+    .sort();
+}
+
+function collectServiceFiles(dir) {
+  const files = [];
+  let entries;
+  try { entries = readdirSync(dir); } catch { return files; }
+  for (const entry of entries) {
+    const full = join(dir, entry);
+    const stat = statSync(full);
+    if (stat.isDirectory()) {
+      files.push(...collectServiceFiles(full));
+    } else if (
+      stat.isFile() &&
+      extname(entry) === ".ts" &&
+      !entry.endsWith(".spec.ts") &&
+      !entry.endsWith(".e2e-spec.ts") &&
+      !entry.endsWith(".module.ts") &&
+      !entry.endsWith(".controller.ts") &&
+      !entry.endsWith(".decorator.ts") &&
+      !entry.endsWith(".guard.ts") &&
+      !entry.endsWith(".interceptor.ts") &&
+      !entry.endsWith(".filter.ts")
+    ) {
+      files.push(full);
+    }
+  }
+  return files;
+}
+
+function parenBalance(line) {
+  let depth = 0;
+  let inStr = false;
+  let strChar = "";
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inStr) {
+      if (ch === strChar && line[i - 1] !== "\\") inStr = false;
+    } else if (ch === '"' || ch === "'" || ch === "`") {
+      inStr = true; strChar = ch;
+    } else if (ch === "(") {
+      depth++;
+    } else if (ch === ")") {
+      depth--;
+    }
+  }
+  return depth;
+}
+
+function braceDepthChange(line) {
+  let depth = 0;
+  let inStr = false;
+  let strChar = "";
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inStr) {
+      if (ch === strChar && line[i - 1] !== "\\") inStr = false;
+    } else if (ch === '"' || ch === "'" || ch === "`") {
+      inStr = true; strChar = ch;
+    } else if (ch === "{") {
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+    }
+  }
+  return depth;
+}
+
+function loopBodyOpenedOnLine(line) {
+  return /{/.test(line);
+}
+
+function loopParensBalanced(line) {
+  return parenBalance(line) >= 0;
+}
+
+export function detectLoopDbCalls(src) {
+  const lines = src.split("\n");
+  const violations = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const isLoopLine = LOOP_OPENERS.some((re) => re.test(line));
+    if (!isLoopLine) continue;
+
+    const opensBodyOnSameLine = loopBodyOpenedOnLine(line);
+    const parensClosedOnSameLine = loopParensBalanced(line);
+
+    if (parensClosedOnSameLine && !opensBodyOnSameLine) continue;
+
+    let depth = 0;
+    let enteredBody = false;
+    const end = Math.min(i + LOOP_BODY_LOOKFORWARD, lines.length);
+    for (let j = i; j < end; j++) {
+      const bodyLine = lines[j];
+      const bdelta = braceDepthChange(bodyLine);
+      if (!enteredBody && bdelta > 0) enteredBody = true;
+      depth += bdelta;
+      if (enteredBody && depth <= 0) break;
+      if (enteredBody && j > i && DB_CALL_PATTERNS.some((re) => re.test(bodyLine))) {
+        violations.push({ loopLine: i + 1, callLine: j + 1, text: bodyLine.trim() });
+        break;
+      }
+    }
+  }
+  return violations;
+}
+
+export function checkForUnclassified(counts, classification) {
+  const unclassified = [];
+  for (const relPath of Object.keys(counts))
+    if (!classification[relPath]) unclassified.push(relPath);
+  return unclassified;
+}
+
+export function checkForStaleEntries(classification, root) {
+  const stale = [];
+  const rootFwd = root.replace(/\\/g, "/");
+  for (const relPath of Object.keys(classification)) {
+    try { statSync(rootFwd + relPath); } catch { stale.push(relPath); }
+  }
+  return stale;
+}
+
+const FIXED_VERDICTS = new Set(["N+1-FIXED", "BATCHED"]);
+
+export function checkForRegressions(counts, classification) {
+  const regressions = [];
+  for (const relPath of Object.keys(counts)) {
+    const verdict = classification[relPath]?.verdict;
+    if (verdict && FIXED_VERDICTS.has(verdict))
+      regressions.push({ file: relPath, verdict });
+  }
+  return regressions;
+}
+
+export function countActionable(counts, classification) {
+  let total = 0;
+  for (const relPath of Object.keys(counts))
+    if (classification[relPath]?.verdict === "ACTIONABLE") total += counts[relPath];
+  return total;
+}
+
+function isExcludedModule(relPath) {
+  return EXCLUDED_MODULE_PREFIXES.some((prefix) => relPath.startsWith(prefix));
+}
+
+function runSelfTests() {
+  const knownBadForLoop = `
+    async processList(items: Item[]) {
+      const result = [];
+      for (const item of items) {
+        const record = await this.db.query.records.findFirst({ where: eq(records.id, item.id) });
+        result.push(record);
+      }
+      return result;
+    }
+  `;
+  const knownBadForEach = `
+    async enrichAll(members: Member[]) {
+      members.forEach(async (m) => {
+        const data = await this.db.select().from(profiles).where(eq(profiles.userId, m.userId)).limit(1);
+        m.profile = data[0];
+      });
+    }
+  `;
+  const knownGoodBatch = `
+    async processList(items: Item[]) {
+      const ids = items.map(i => i.id);
+      const records = await this.db.select().from(table).where(inArray(table.id, ids)).limit(ids.length + 1);
+      const map = new Map(records.map(r => [r.id, r]));
+      return items.map(i => ({ ...i, record: map.get(i.id) }));
+    }
+  `;
+  const knownGoodNoAwaitInLoop = `
+    async process(items: Item[]) {
+      const syncResult = [];
+      for (const item of items) {
+        syncResult.push(transform(item));
+      }
+      return this.db.insert(table).values(syncResult).returning();
+    }
+  `;
+
+  {
+    const v = detectLoopDbCalls(knownBadForLoop);
+    if (v.length === 0) {
+      console.error("SELF-TEST FAIL: N+1 in for-loop (db.query.records.findFirst) was not detected");
+      process.exit(1);
+    }
+  }
+  {
+    const v = detectLoopDbCalls(knownBadForEach);
+    if (v.length === 0) {
+      console.error("SELF-TEST FAIL: N+1 in forEach (db.select inside forEach) was not detected");
+      process.exit(1);
+    }
+  }
+  {
+    const v = detectLoopDbCalls(knownGoodBatch);
+    if (v.length > 0) {
+      console.error(
+        `SELF-TEST FAIL: known-good batch pattern was flagged as N+1 (${v.length} violations)`,
+      );
+      process.exit(1);
+    }
+  }
+  {
+    const v = detectLoopDbCalls(knownGoodNoAwaitInLoop);
+    if (v.length > 0) {
+      console.error(
+        `SELF-TEST FAIL: loop with no DB call inside was incorrectly flagged (${v.length} violations)`,
+      );
+      process.exit(1);
+    }
+  }
+
+  {
+    const territory = discoverTerritory();
+    if (territory.length < MIN_MODULES) {
+      console.error(
+        `SELF-TEST FAIL: discovered only ${territory.length} module folders (expected >= ${MIN_MODULES}) — ROOT is wrong: ${ROOT}`,
+      );
+      process.exit(1);
+    }
+  }
+
+  {
+    const unclassified = checkForUnclassified(
+      { "/fake/new-service.service.ts": 1 },
+      {},
+    );
+    if (unclassified.length === 0) {
+      console.error("SELF-TEST FAIL: unclassified path was not detected");
+      process.exit(1);
+    }
+  }
+
+  {
+    const stale = checkForStaleEntries(
+      { "/definitely/does-not-exist/fake.service.ts": { verdict: "ACTIONABLE" } },
+      ROOT,
+    );
+    if (stale.length === 0) {
+      console.error("SELF-TEST FAIL: stale classification entry was not detected");
+      process.exit(1);
+    }
+  }
+
+  {
+    const regressions = checkForRegressions(
+      { "/some/fixed.service.ts": 1 },
+      { "/some/fixed.service.ts": { verdict: "N+1-FIXED" } },
+    );
+    if (regressions.length === 0) {
+      console.error("SELF-TEST FAIL: regression (N+1-FIXED file still detected) was not reported");
+      process.exit(1);
+    }
+  }
+
+  {
+    const regressions = checkForRegressions(
+      { "/some/actionable.service.ts": 1 },
+      { "/some/actionable.service.ts": { verdict: "ACTIONABLE" } },
+    );
+    if (regressions.length > 0) {
+      console.error("SELF-TEST FAIL: ACTIONABLE file was incorrectly reported as a regression");
+      process.exit(1);
+    }
+  }
+
+  console.log("SELF-TEST PASS: all 8 detection/classification checks passed");
+  process.exitCode = 0;
+}
+
+function loadClassification() {
+  try {
+    return JSON.parse(readFileSync(CLASSIFICATION_FILE, "utf8")).files ?? {};
+  } catch {
+    return {};
+  }
+}
+
+async function main() {
+  const SELF_TEST = process.argv.includes("--self-test");
+  const EMIT = process.argv.includes("--emit-classification");
+
+  if (SELF_TEST) {
+    runSelfTests();
+    return;
+  }
+
+  const allFiles = collectServiceFiles(ROOT);
+  if (allFiles.length < MIN_FILES) {
+    console.error(
+      `ERROR: Only ${allFiles.length} service files found (expected >= ${MIN_FILES}) — ROOT path is wrong: ${ROOT}`,
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  const counts = {};
+  for (const file of allFiles) {
+    let src;
+    try { src = readFileSync(file, "utf8"); } catch { continue; }
+    const violations = detectLoopDbCalls(src);
+    if (violations.length > 0) {
+      const relPath = normalizeRelPath(file);
+      counts[relPath] = violations.length;
+    }
+  }
+
+  if (EMIT) {
+    const classification = loadClassification();
+    const out = { version: 1, classifiedAt: new Date().toISOString().slice(0, 10),
+      note: "Verdicts: N+1-FIXED|BATCHED|FALSE-POSITIVE|EXCLUDED-MODULE|ACTIONABLE", files: {} };
+    for (const [relPath, count] of Object.entries(counts)) {
+      out.files[relPath] = classification[relPath] ?? {
+        verdict: isExcludedModule(relPath) ? "EXCLUDED-MODULE" : "ACTIONABLE",
+        note: `${count} DB call(s) detected inside loop body — batch with inArray or Promise.all`,
+      };
+    }
+    writeFileSync(CLASSIFICATION_FILE, JSON.stringify(out, null, 2) + "\n");
+    console.log(`Wrote ${CLASSIFICATION_FILE} with ${Object.keys(out.files).length} entries.`);
+    return;
+  }
+
+  const classification = loadClassification();
+
+  const unclassified = checkForUnclassified(counts, classification);
+  const stale = checkForStaleEntries(classification, ROOT);
+  const regressions = checkForRegressions(counts, classification);
+  const actionable = countActionable(counts, classification);
+
+  const detectedTotal = Object.keys(counts).length;
+  const actionableFiles = Object.entries(classification)
+    .filter(([, v]) => v.verdict === "ACTIONABLE").length;
+
+  console.log(`Scanned ${allFiles.length} service files across ${discoverTerritory().length} modules.`);
+  console.log(`Detected ${detectedTotal} file(s) with loop-internal DB calls (N+1 candidates).`);
+  console.log(`  ACTIONABLE: ${actionableFiles} file(s) (${actionable} call site(s) to fix)`);
+
+  let failed = false;
+
+  if (unclassified.length > 0) {
+    console.error(`\n${unclassified.length} UNCLASSIFIED file(s) — add to ${CLASSIFICATION_FILE}:`);
+    for (const f of unclassified) {
+      const n = counts[f];
+      console.error(`  NEW  ${f} (${n} call site(s))`);
+    }
+    failed = true;
+  }
+
+  if (stale.length > 0) {
+    console.error(`\n${stale.length} STALE classification entry(ies) — file no longer exists:`);
+    for (const f of stale) console.error(`  STALE  ${f}`);
+    failed = true;
+  }
+
+  if (regressions.length > 0) {
+    console.error(`\n${regressions.length} REGRESSION(s) — marked fixed/batched but still detected:`);
+    for (const r of regressions) console.error(`  REGRESSED  ${r.file} (was ${r.verdict})`);
+    failed = true;
+  }
+
+  if (!failed) {
+    console.log("\nAll N+1 patterns are classified. No regressions or stale entries.");
+  }
+
+  process.exitCode = failed ? 1 : 0;
+}
+
+main().catch((e) => {
+  console.error("RUNNER FAILED:", e instanceof Error ? e.message : e);
+  process.exitCode = 1;
+});

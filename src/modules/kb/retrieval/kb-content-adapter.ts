@@ -11,7 +11,7 @@ import { Readable } from "stream";
 
 export interface KbContentAdapter {
   readonly contentType: string;
-  handle(orgId: string, contentId: number): Promise<void>;
+  handle(orgId: string, contentId: number, signal?: AbortSignal): Promise<void>;
 }
 
 @Injectable()

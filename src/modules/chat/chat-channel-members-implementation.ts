@@ -311,7 +311,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async markRead(channelId: number, userId: string, orgId: string) {
-    const membershipId = await this.resolveMembership(orgId, userId);
+    const { membershipId } = await this.assertMember(channelId, userId, orgId);
     await this.db
       .update(chatChannelMembers)
       .set({ lastReadAt: new Date() })
@@ -329,7 +329,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async markChannelUnread(channelId: number, userId: string, orgId: string) {
-    const membershipId = await this.resolveMembership(orgId, userId);
+    const { membershipId } = await this.assertMember(channelId, userId, orgId);
     const latestMessage = await this.db
       .select({ createdAt: chatMessages.createdAt })
       .from(chatMessages)
@@ -357,7 +357,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async muteChannel(channelId: number, userId: string, duration: string, orgId: string) {
-    const membershipId = await this.resolveMembership(orgId, userId);
+    const { membershipId } = await this.assertMember(channelId, userId, orgId);
     const until =
       duration === "forever"
         ? new Date("2099-12-31")
@@ -382,7 +382,7 @@ export class ChatChannelMembersImplementation {
   }
 
   async unmuteChannel(channelId: number, userId: string, orgId: string) {
-    const membershipId = await this.resolveMembership(orgId, userId);
+    const { membershipId } = await this.assertMember(channelId, userId, orgId);
     await this.db
       .update(chatChannelMembers)
       .set({ mutedUntil: null })

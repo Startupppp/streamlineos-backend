@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, gt, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, count, desc, eq, gt, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import {
   chatChannelMembers,
   chatChannels,
@@ -118,42 +118,96 @@ export class ChatChannelsService {
     return rows.map((row) => row.channelId);
   }
 
-  async getMyChannels(actor: EntityActor) {
-    return this.listMemberChannels(actor, false);
+  async getMyChannels(actor: EntityActor, cursor?: string | null) {
+    return this.listMemberChannels(actor, false, cursor ?? null);
   }
 
-  async getArchivedChannels(actor: EntityActor) {
-    return this.listMemberChannels(actor, true);
+  async getArchivedChannels(actor: EntityActor, cursor?: string | null) {
+    return this.listMemberChannels(actor, true, cursor ?? null);
   }
 
-  private async listMemberChannels(actor: EntityActor, archived: boolean) {
-    const { orgId } = actor;
-    if (!actor.membershipId) return [];
-    const actorMembershipId = actor.membershipId;
+  private decodeChannelCursor(raw: string | null): { lma: Date | null; id: number } | null {
+    if (!raw) return null;
     try {
-      const memberships = await this.db
-        .select({ channelId: chatChannelMembers.channelId })
+      const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as unknown;
+      if (typeof parsed !== "object" || parsed === null) return null;
+      const obj = parsed as Record<string, unknown>;
+      if (typeof obj["id"] !== "number") return null;
+      if (obj["lma"] !== null && typeof obj["lma"] !== "string") return null;
+      return {
+        lma: typeof obj["lma"] === "string" ? new Date(obj["lma"]) : null,
+        id: obj["id"] as number,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private encodeChannelCursor(lma: Date | null, id: number): string {
+    return Buffer.from(JSON.stringify({ lma: lma?.toISOString() ?? null, id }), "utf8").toString("base64url");
+  }
+
+  private channelKeysetWhere(cursor: { lma: Date | null; id: number } | null) {
+    if (!cursor) return undefined;
+    const { lma, id } = cursor;
+    if (lma !== null) {
+      return sql`(
+        ${chatChannels.lastMessageAt} < ${lma}
+        OR (${chatChannels.lastMessageAt} = ${lma} AND ${chatChannels.id} < ${id})
+        OR ${chatChannels.lastMessageAt} IS NULL
+      )`;
+    }
+    return and(isNull(chatChannels.lastMessageAt), lt(chatChannels.id, id));
+  }
+
+  private async listMemberChannels(
+    actor: EntityActor,
+    archived: boolean,
+    rawCursor: string | null,
+  ) {
+    const PAGE_SIZE = 50;
+    const { orgId } = actor;
+    if (!actor.membershipId) return { channels: [], nextCursor: null };
+    const actorMembershipId = actor.membershipId;
+    const cursor = this.decodeChannelCursor(rawCursor);
+
+    try {
+      const pageRows = await this.db
+        .select({ id: chatChannels.id, lastMessageAt: chatChannels.lastMessageAt })
         .from(chatChannelMembers)
+        .innerJoin(
+          chatChannels,
+          and(
+            eq(chatChannels.id, chatChannelMembers.channelId),
+            eq(chatChannels.orgId, orgId),
+            eq(chatChannels.isArchived, false),
+          ),
+        )
         .where(
           and(
             eq(chatChannelMembers.orgId, orgId),
-            eq(chatChannelMembers.membershipId, actor.membershipId),
+            eq(chatChannelMembers.membershipId, actorMembershipId),
             archived ? isNotNull(chatChannelMembers.archivedAt) : isNull(chatChannelMembers.archivedAt),
+            this.channelKeysetWhere(cursor),
           ),
-        );
+        )
+        .orderBy(desc(chatChannels.lastMessageAt), desc(chatChannels.id))
+        .limit(PAGE_SIZE + 1);
 
-      if (memberships.length === 0) return [];
+      const hasMore = pageRows.length > PAGE_SIZE;
+      const pageSlice = hasMore ? pageRows.slice(0, PAGE_SIZE) : pageRows;
 
-      const channelIds = memberships.map((m) => m.channelId);
+      if (pageSlice.length === 0) return { channels: [], nextCursor: null };
+
+      const lastRow = pageSlice[pageSlice.length - 1];
+      const nextCursor = hasMore && lastRow
+        ? this.encodeChannelCursor(lastRow.lastMessageAt, lastRow.id)
+        : null;
+
+      const channelIds = pageSlice.map((r) => r.id);
 
       const channels = await this.db.query.chatChannels.findMany({
-        where: and(
-          eq(chatChannels.orgId, orgId),
-          inArray(chatChannels.id, channelIds),
-          eq(chatChannels.isArchived, false),
-        ),
-        orderBy: [desc(chatChannels.lastMessageAt)],
-        limit: 100,
+        where: and(eq(chatChannels.orgId, orgId), inArray(chatChannels.id, channelIds)),
         with: {
           members: {
             with: { membership: { columns: { id: true, userId: true }, with: { user: { columns: { id: true, name: true, image: true } } } } },
@@ -161,30 +215,24 @@ export class ChatChannelsService {
         },
       });
 
-      const unreadRows = await this.cache.cachedVersioned(
-        `chat:unread:${orgId}`,
-        actor.userId,
-        () =>
-          this.db
-            .select({ channelId: chatMessages.channelId, count: count() })
-            .from(chatMessages)
-            .innerJoin(
-              chatChannelMembers,
-              and(
-                eq(chatChannelMembers.channelId, chatMessages.channelId),
-                eq(chatChannelMembers.membershipId, actorMembershipId),
-              ),
-            )
-            .where(
-              and(
-                inArray(chatMessages.channelId, channelIds),
-                eq(chatMessages.isDeleted, false),
-                gt(chatMessages.createdAt, chatChannelMembers.lastReadAt),
-              ),
-            )
-            .groupBy(chatMessages.channelId),
-        15,
-      );
+      const unreadRows = await this.db
+        .select({ channelId: chatMessages.channelId, count: count() })
+        .from(chatMessages)
+        .innerJoin(
+          chatChannelMembers,
+          and(
+            eq(chatChannelMembers.channelId, chatMessages.channelId),
+            eq(chatChannelMembers.membershipId, actorMembershipId),
+          ),
+        )
+        .where(
+          and(
+            inArray(chatMessages.channelId, channelIds),
+            eq(chatMessages.isDeleted, false),
+            gt(chatMessages.createdAt, chatChannelMembers.lastReadAt),
+          ),
+        )
+        .groupBy(chatMessages.channelId);
 
       const unreadMap = new Map(unreadRows.map((r) => [r.channelId, r.count]));
 
@@ -226,11 +274,16 @@ export class ChatChannelsService {
         return r !== undefined && r.status === "fulfilled" ? r.value : ch;
       });
 
-      return enrichedChannels.map((ch) => ({
-        ...ch,
-        unreadCount: unreadMap.get(ch.id) ?? 0,
-        lastMessage: lastMsgMap.get(ch.id) ?? null,
-      }));
+      const orderedChannels = channelIds
+        .map((id) => enrichedChannels.find((ch) => ch.id === id))
+        .filter((ch): ch is NonNullable<typeof ch> => ch !== undefined)
+        .map((ch) => ({
+          ...ch,
+          unreadCount: unreadMap.get(ch.id) ?? 0,
+          lastMessage: lastMsgMap.get(ch.id) ?? null,
+        }));
+
+      return { channels: orderedChannels, nextCursor };
     } catch (error) {
       logger.error(archived ? "[chat.getArchivedChannels]" : "[chat.getMyChannels]", {
         error: error instanceof Error ? error.message : "Unknown error",

@@ -1,4 +1,4 @@
-﻿import {
+import {
   Body,
   Controller,
   Delete,
@@ -15,7 +15,6 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { AccessService } from "../../access/access.service";
 import { KbPageCommentsService } from "./kb-page-comments.service";
 import {
   createPageCommentSchema,
@@ -33,10 +32,7 @@ const commentIdParams = z.object({ commentId: z.coerce.number().int().positive()
 @Controller("kb")
 @UseGuards(JwtAuthGuard)
 export class KbPageCommentsController {
-  constructor(
-    private readonly comments: KbPageCommentsService,
-    private readonly access: AccessService,
-  ) {}
+  constructor(private readonly comments: KbPageCommentsService) {}
 
   @Get("pages/:pageId/comments")
   @UseGuards(PermissionGuard)
@@ -71,8 +67,7 @@ export class KbPageCommentsController {
     @Body() body: UpdatePageCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const isAdmin = await this.access.holds(u, "kb:pages:manage");
-    return this.comments.update(u.orgId, commentId, u.userId, isAdmin, body);
+    return this.comments.update(u, commentId, body);
   }
 
   @Delete("page-comments/:commentId")
@@ -84,8 +79,7 @@ export class KbPageCommentsController {
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<void> {
-    const isAdmin = await this.access.holds(u, "kb:pages:manage");
-    await this.comments.remove(u.orgId, commentId, u.userId, isAdmin);
+    await this.comments.remove(u, commentId);
   }
 
   @Post("page-comments/:commentId/resolve")
@@ -98,6 +92,6 @@ export class KbPageCommentsController {
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.comments.resolve(u.orgId, commentId);
+    return this.comments.resolve(u, commentId);
   }
 }

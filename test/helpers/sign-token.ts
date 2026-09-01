@@ -1,4 +1,5 @@
-import { SignJWT } from "jose";
+import { importJWK, SignJWT, type JWK } from "jose";
+import { randomUUID } from "node:crypto";
 import {
   INTERNAL_TOKEN_AUDIENCE,
   INTERNAL_TOKEN_ISSUER,
@@ -24,18 +25,40 @@ type IgnoredClaims = {
   isOrgOwner?: boolean;
 };
 
+interface SerializedKeyEntry {
+  kid: string;
+  privateKey: JWK;
+  publicKey: JWK;
+}
+
 export async function signToken(
   claims: Partial<BackendClaims> & IgnoredClaims = {},
-  secret = process.env.BACKEND_JWT_SECRET ?? "x".repeat(44),
 ): Promise<string> {
   const payload: BackendClaims = {
     sub: claims.sub ?? "user_1",
     orgId: claims.orgId ?? "org_1",
     sessionId: claims.sessionId ?? "sess_1",
   };
-  // The guards resolve role, permissions and modules from the database, not the
-  // token — but the e2e harness stubs those services and reads its fixture back
-  // out of these claims, so they have to survive signing.
+
+  const raw = process.env.AUTH_SIGNING_KEYS?.trim();
+  if (!raw) {
+    throw new Error(
+      "AUTH_SIGNING_KEYS must be set for e2e tests — the guard no longer accepts HS256",
+    );
+  }
+
+  let entries: SerializedKeyEntry[];
+  try {
+    entries = JSON.parse(raw) as SerializedKeyEntry[];
+  } catch {
+    throw new Error("AUTH_SIGNING_KEYS must be a valid JSON array");
+  }
+
+  const latest = entries[entries.length - 1];
+  if (!latest) throw new Error("AUTH_SIGNING_KEYS contains no keys");
+
+  const privateKey = await importJWK(latest.privateKey, "EdDSA");
+
   return new SignJWT({
     ...payload,
     ...(claims.role !== undefined ? { role: claims.role } : {}),
@@ -43,10 +66,11 @@ export async function signToken(
     ...(claims.enabledModules !== undefined ? { enabledModules: claims.enabledModules } : {}),
     ...(claims.isOrgOwner !== undefined ? { isOrgOwner: claims.isOrgOwner } : {}),
   })
-    .setProtectedHeader({ alg: "HS256" })
+    .setProtectedHeader({ alg: "EdDSA", kid: latest.kid })
     .setIssuer(INTERNAL_TOKEN_ISSUER)
     .setAudience(INTERNAL_TOKEN_AUDIENCE)
     .setIssuedAt()
     .setExpirationTime("10m")
-    .sign(new TextEncoder().encode(secret));
+    .setJti(randomUUID())
+    .sign(privateKey);
 }

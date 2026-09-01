@@ -42,11 +42,6 @@ export const kbCategories = pgTable(
     index("idx_kb_categories_space").on(table.spaceId),
     index("idx_kb_categories_parent").on(table.parentId),
     foreignKey({
-      columns: [table.parentId],
-      foreignColumns: [table.id],
-      name: "fk_kb_categories_parent",
-    }).onDelete("set null"),
-    foreignKey({
       columns: [table.orgId, table.spaceId],
       foreignColumns: [kbSpaces.orgId, kbSpaces.id],
       name: "fk_kb_categories_org_space",

@@ -142,17 +142,19 @@ export class SurveyBuilderService {
       })
       .returning();
 
-    for (const choice of source.choices) {
-      await this.db.insert(surveyQuestionChoices).values({
-        orgId,
-        questionId: cloned.id,
-        choiceKey: choice.choiceKey,
-        label: choice.label,
-        value: choice.value,
-        score: choice.score,
-        sortOrder: choice.sortOrder,
-        isCorrect: choice.isCorrect,
-      });
+    if (source.choices.length > 0) {
+      await this.db.insert(surveyQuestionChoices).values(
+        source.choices.map((choice) => ({
+          orgId,
+          questionId: cloned.id,
+          choiceKey: choice.choiceKey,
+          label: choice.label,
+          value: choice.value,
+          score: choice.score,
+          sortOrder: choice.sortOrder,
+          isCorrect: choice.isCorrect,
+        })),
+      );
     }
 
     return this.getQuestion(orgId, cloned.id);
@@ -178,17 +180,20 @@ export class SurveyBuilderService {
 
   private async replaceChoices(orgId: string, questionId: number, choices: CreateQuestionInput["choices"]) {
     await this.db.delete(surveyQuestionChoices).where(and(eq(surveyQuestionChoices.questionId, questionId), eq(surveyQuestionChoices.orgId, orgId)));
-    for (const [index, choice] of (choices ?? []).entries()) {
-      await this.db.insert(surveyQuestionChoices).values({
-        orgId,
-        questionId,
-        choiceKey: choice.choiceKey,
-        label: choice.label,
-        value: choice.value ?? null,
-        score: choice.score ?? 0,
-        sortOrder: choice.sortOrder ?? index,
-        isCorrect: choice.isCorrect ?? false,
-      });
+    const choiceList = choices ?? [];
+    if (choiceList.length > 0) {
+      await this.db.insert(surveyQuestionChoices).values(
+        choiceList.map((choice, index) => ({
+          orgId,
+          questionId,
+          choiceKey: choice.choiceKey,
+          label: choice.label,
+          value: choice.value ?? null,
+          score: choice.score ?? 0,
+          sortOrder: choice.sortOrder ?? index,
+          isCorrect: choice.isCorrect ?? false,
+        })),
+      );
     }
   }
 }

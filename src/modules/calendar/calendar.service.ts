@@ -1,15 +1,14 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, like } from "drizzle-orm";
 import {
   calendarEvents,
+  calendarProviderSyncQueue,
   eventAttendees,
   users,
-  userIntegrationConnections,
   organizationMembers,
   notificationOutbox,
 } from "../../db/schema";
 import type { TenantTx } from "../../db/drizzle.types";
-import { ExternalCalendarSyncService } from "./external-calendar-sync.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CreateEventInput, UpdateEventInput } from "./dto/calendar.schemas";
@@ -26,11 +25,8 @@ import type { DataScope } from "../access/access.types";
 
 @Injectable()
 export class CalendarService {
-  private readonly logger = new Logger(CalendarService.name);
-
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly sync: ExternalCalendarSyncService,
     private readonly eventsAggregate: CalendarEventsAggregateService,
     private readonly conflict: CalendarConflictService,
     private readonly attendees: CalendarAttendeesService,
@@ -128,43 +124,33 @@ export class CalendarService {
               description: input.description ?? null,
             },
           }).onConflictDoNothing({ target: [notificationOutbox.orgId, notificationOutbox.dedupeKey] });
+
+        if (event && input.syncConnectionId) {
+          const attendeeEmailList = await this.attendeeEmails(orgId, attendeeIds);
+          await tx.insert(calendarProviderSyncQueue).values({
+            orgId,
+            eventId: event.id,
+            connectionId: input.syncConnectionId,
+            operation: "create",
+            payload: {
+              userId,
+              title: input.title,
+              description: input.description ?? null,
+              startIso: startDate.toISOString(),
+              endIso: endDate.toISOString(),
+              allDay: input.allDay ?? false,
+              attendeeEmails: attendeeEmailList,
+              addConference: input.addConference ?? false,
+            },
+          });
+        }
+
         return { event, eventConflicts: conflicts, attendeeMemberships: memberships };
       }),
       this.conflict.getOooConflicts(orgId, attendeeIds, startDate, endDate),
     ] as const);
 
-    let meetingUrl: string | null = null;
-    let syncError: string | null = null;
-    let syncedEvent = event;
-    if (event && input.syncConnectionId) {
-      try {
-        const conn = await this.ownedActiveConnection(orgId, userId, input.syncConnectionId);
-        const attendeeEmailList = await this.attendeeEmails(orgId, attendeeIds);
-        const pushed = await this.sync.pushCreate(userId, conn, {
-          title: input.title,
-          description: input.description ?? null,
-          startIso: startDate.toISOString(),
-          endIso: endDate.toISOString(),
-          allDay: input.allDay ?? false,
-          attendeeEmails: attendeeEmailList,
-          addConference: input.addConference ?? false,
-        });
-        meetingUrl = pushed.meetingUrl ?? null;
-        const rows = await this.db
-          .update(calendarEvents)
-          .set({
-            integrationConnectionId: conn.id,
-            externalEventId: pushed.externalEventId,
-            meetingUrl,
-          })
-          .where(eq(calendarEvents.id, event.id))
-          .returning();
-        syncedEvent = rows[0] ?? event;
-      } catch (error) {
-        syncError = error instanceof Error ? error.message : "Failed to sync to external calendar";
-      }
-    }
-    return { event: syncedEvent, oooConflicts, eventConflicts, meetingUrl, syncError };
+    return { event, oooConflicts, eventConflicts, meetingUrl: null, syncQueued: !!input.syncConnectionId };
   }
 
   async updateEvent(orgId: string, userId: string, id: number, input: UpdateEventInput) {
@@ -260,26 +246,24 @@ export class CalendarService {
           })
           .onConflictDoNothing({ target: [notificationOutbox.orgId, notificationOutbox.dedupeKey] });
 
+      if (updated.integrationConnectionId && updated.externalEventId)
+        await tx.insert(calendarProviderSyncQueue).values({
+          orgId,
+          eventId: updated.id,
+          connectionId: updated.integrationConnectionId,
+          operation: "update",
+          externalEventId: updated.externalEventId,
+          payload: {
+            userId,
+            title: updated.title,
+            description: updated.description ?? null,
+            startIso: updated.startDate.toISOString(),
+            endIso: updated.endDate.toISOString(),
+          },
+        });
+
       return updated;
     });
-
-    if (event?.integrationConnectionId && event.externalEventId) {
-      try {
-        const conn = await this.ownedActiveConnection(orgId, userId, event.integrationConnectionId);
-        const updateResult = await this.sync.pushUpdate(userId, conn, event.externalEventId, {
-          title: event.title,
-          description: event.description ?? null,
-          startIso: event.startDate.toISOString(),
-          endIso: event.endDate.toISOString(),
-        });
-        if (!updateResult.success)
-          this.logger.warn(`External sync update skipped for ${conn.toolkit}: ${updateResult.reason}`);
-      } catch (error) {
-        this.logger.warn(
-          `External sync update failed for event ${id}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
 
     return event;
   }
@@ -376,7 +360,7 @@ export class CalendarService {
           externalEventId: calendarEvents.externalEventId,
         });
       removed = deleted.length;
-      if (deleted.length > 0)
+      if (deleted.length > 0) {
         await tx
           .update(notificationOutbox)
           .set({ state: "DEAD" })
@@ -387,49 +371,22 @@ export class CalendarService {
               like(notificationOutbox.dedupeKey, `calendar:reminder:${id}:%`),
             ),
           );
+        const d = deleted[0];
+        if (d?.integrationConnectionId && d.externalEventId)
+          await tx.insert(calendarProviderSyncQueue).values({
+            orgId,
+            eventId: null,
+            connectionId: d.integrationConnectionId,
+            operation: "delete",
+            externalEventId: d.externalEventId,
+            payload: { userId },
+          });
+      }
       return deleted;
     });
 
-    if (mapping?.integrationConnectionId && mapping.externalEventId) {
-      try {
-        const conn = await this.ownedActiveConnection(orgId, userId, mapping.integrationConnectionId);
-        const deleteResult = await this.sync.pushDelete(userId, conn, mapping.externalEventId);
-        if (!deleteResult.success)
-          this.logger.warn(`External sync delete skipped for ${conn.toolkit}: ${deleteResult.reason}`);
-      } catch (error) {
-        this.logger.warn(
-          `External sync delete failed for event ${id}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
-
     if (removed === 0) return null;
     return { deleted: true };
-  }
-
-  private async ownedActiveConnection(orgId: string, userId: string, connectionId: number) {
-    const rows = await this.db
-      .select({
-        id: userIntegrationConnections.id,
-        toolkit: userIntegrationConnections.toolkit,
-        composioConnectedAccountId: userIntegrationConnections.composioConnectedAccountId,
-      })
-      .from(userIntegrationConnections)
-      .where(
-        and(
-          eq(userIntegrationConnections.id, connectionId),
-          eq(userIntegrationConnections.orgId, orgId),
-          eq(userIntegrationConnections.userId, userId),
-          eq(userIntegrationConnections.status, "active"),
-          inArray(userIntegrationConnections.toolkit, ["googlecalendar", "outlook"]),
-        ),
-      )
-      .limit(1);
-    const row = rows[0];
-    if (!row || (row.toolkit !== "googlecalendar" && row.toolkit !== "outlook")) {
-      throw new Error("Calendar account connection not found");
-    }
-    return { id: row.id, toolkit: row.toolkit, composioConnectedAccountId: row.composioConnectedAccountId };
   }
 
   private async attendeeEmails(orgId: string, attendeeIds: string[]): Promise<string[]> {

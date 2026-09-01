@@ -29,13 +29,14 @@ describe("Object storage degraded — pre-generated key survives upload failure"
 
     const buffer = Buffer.from("test-data");
     const result = await service.compressAndPreGenerateKey(
+      "org-test",
       buffer,
       "uploads",
       "file.jpg",
       "image/jpeg",
     );
 
-    expect(result.key).toMatch(/^uploads\/.+\.jpg$/);
+    expect(result.key).toMatch(/^org-test\/uploads\/.+\.jpg$/);
     expect(result.url).toBeTruthy();
     expect(result.compressedBuffer).toBeInstanceOf(Buffer);
     expect(result.size).toBeGreaterThan(0);
@@ -46,6 +47,7 @@ describe("Object storage degraded — pre-generated key survives upload failure"
     const buffer = Buffer.from("test-data");
 
     const { key, url } = await service.compressAndPreGenerateKey(
+      "org-test",
       buffer,
       "uploads",
       "report.pdf",
@@ -54,7 +56,7 @@ describe("Object storage degraded — pre-generated key survives upload failure"
 
     expect(key).toBeTruthy();
     expect(url).toBeTruthy();
-    expect(key.startsWith("uploads/")).toBe(true);
+    expect(key.startsWith("org-test/uploads/")).toBe(true);
   });
 });
 

@@ -423,8 +423,8 @@ export class AutomationService {
         name: input.name,
         description: input.description ?? null,
         triggerEvent: input.triggerEvent,
-        conditions: input.conditions as AutomationCondition[],
-        actions: input.actions as AutomationAction[],
+        conditions: input.conditions,
+        actions: input.actions,
         isEnabled: input.isEnabled,
         createdBy: userId,
       })
@@ -439,8 +439,8 @@ export class AutomationService {
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
         ...(input.triggerEvent !== undefined ? { triggerEvent: input.triggerEvent } : {}),
-        ...(input.conditions !== undefined ? { conditions: input.conditions as AutomationCondition[] } : {}),
-        ...(input.actions !== undefined ? { actions: input.actions as AutomationAction[] } : {}),
+        ...(input.conditions !== undefined ? { conditions: input.conditions } : {}),
+        ...(input.actions !== undefined ? { actions: input.actions } : {}),
         ...(input.isEnabled !== undefined ? { isEnabled: input.isEnabled } : {}),
         updatedAt: new Date(),
       })

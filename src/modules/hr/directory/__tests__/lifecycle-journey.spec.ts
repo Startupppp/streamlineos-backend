@@ -119,18 +119,20 @@ describe("Phase 2.1 lifecycle journey (contracts)", () => {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            orderBy: jest.fn().mockResolvedValue([
-              {
-                id: 1,
-                code: "BASIC",
-                type: "EARNING",
-                calcMethod: "FIXED",
-                amount: null,
-                percent: null,
-                sortOrder: 0,
-                includeInCtc: true,
-              },
-            ]),
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([
+                {
+                  id: 1,
+                  code: "BASIC",
+                  type: "EARNING",
+                  calcMethod: "FIXED",
+                  amount: null,
+                  percent: null,
+                  sortOrder: 0,
+                  includeInCtc: true,
+                },
+              ]),
+            }),
           }),
         }),
       }),

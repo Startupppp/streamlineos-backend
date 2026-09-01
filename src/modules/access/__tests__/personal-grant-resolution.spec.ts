@@ -32,7 +32,8 @@ function buildResolver(options: Options) {
     const link: Record<string, unknown> = {};
     link["from"] = () => link;
     link["innerJoin"] = () => link;
-    link["where"] = () => Promise.resolve(queue[cursor++] ?? []);
+    link["where"] = () => link;
+    link["limit"] = () => Promise.resolve(queue[cursor++] ?? []);
     return link;
   };
 

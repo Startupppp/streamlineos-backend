@@ -60,7 +60,7 @@ function makeSyncService(captured: CapturedInsert): PermissionCatalogSyncService
         };
       },
     }),
-    select: () => ({ from: () => Promise.resolve([]) }),
+    select: () => ({ from: () => ({ limit: () => Promise.resolve([]) }) }),
   };
 
   Reflect.set(svc, "db", db);

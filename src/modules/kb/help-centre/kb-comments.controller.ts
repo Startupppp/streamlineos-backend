@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -29,6 +30,10 @@ import { z } from "zod";
 
 const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
 const commentIdParams = z.object({ commentId: z.coerce.number().int().positive() }).strict();
+const cursorQuery = z.object({
+  afterCreatedAt: z.string().optional(),
+  afterId: z.coerce.number().int().positive().optional(),
+}).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -38,12 +43,17 @@ export class KbCommentsController {
 
   @Get("articles/:articleId/comments")
   @RequirePermission("kb:articles:view")
-  @Validate({ params: articleIdParams })
+  @Validate({ params: articleIdParams, query: cursorQuery })
   async list(
     @Param("articleId", ParseIntPipe) articleId: number,
+    @Query("afterCreatedAt") afterCreatedAt: string | undefined,
+    @Query("afterId") afterId: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.comments.list(u.orgId, articleId);
+    const cursor = afterCreatedAt && afterId
+      ? { sortValue: afterCreatedAt, id: afterId }
+      : undefined;
+    return this.comments.list(u, articleId, cursor);
   }
 
   @Post("articles/:articleId/comments")
@@ -55,7 +65,7 @@ export class KbCommentsController {
     @Body() body: CreateCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.comments.create(u.orgId, articleId, u.userId, body);
+    return this.comments.create(u, articleId, body);
   }
 
   @Patch("comments/:commentId")
@@ -66,7 +76,7 @@ export class KbCommentsController {
     @Body() body: UpdateCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.comments.update(u.orgId, commentId, u.userId, body);
+    return this.comments.update(u, commentId, body);
   }
 
   @Delete("comments/:commentId")
@@ -76,8 +86,8 @@ export class KbCommentsController {
   async remove(
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,
-  ): Promise<unknown> {
-    return await this.comments.remove(u.orgId, commentId, u.userId);
+  ): Promise<void> {
+    await this.comments.remove(u, commentId);
   }
 
   @Post("comments/:commentId/resolve")
@@ -89,6 +99,6 @@ export class KbCommentsController {
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return await this.comments.resolve(u.orgId, commentId);
+    return this.comments.resolve(u, commentId);
   }
 }

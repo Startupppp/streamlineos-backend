@@ -26,9 +26,11 @@ import { PayslipBulkPublisherService } from "./payslip-bulk-publisher.service";
 import { PayslipDownloadService } from "./payslip-download.service";
 import { PayrollPostingService } from "../payroll-posting.service";
 import { NotificationsModule } from "../../notifications/notifications.module";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
+import { PayrollPostingIntentConsumer } from "./payroll-posting-intent.consumer";
 
 @Module({
-  imports: [NotificationsModule, PayrollInsightsModule, PayrollRunsModule, AccountingModule, DirectoryModule],
+  imports: [NotificationsModule, PayrollInsightsModule, PayrollRunsModule, AccountingModule, DirectoryModule, OutboxModule],
   controllers: [
     PayrollPayoutApprovalsController,
     LockingController,
@@ -43,6 +45,7 @@ import { NotificationsModule } from "../../notifications/notifications.module";
     ApprovalActionsService,
     PayrollApproverResolverService,
     LockingService,
+    PayrollPostingIntentConsumer,
     PayoutBatchesService,
     BatchCreatorService,
     BatchStatusService,

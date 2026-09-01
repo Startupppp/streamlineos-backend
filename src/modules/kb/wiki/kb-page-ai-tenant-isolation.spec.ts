@@ -27,6 +27,17 @@ describe("KbPageAiService — cross-tenant isolation", () => {
 
   function makeDb(pageRow: unknown) {
     const wheres: unknown[] = [];
+    const makeJoinChain = (): Record<string, unknown> => {
+      const chain: Record<string, unknown> = {
+        where: jest.fn().mockImplementation((w: unknown) => {
+          wheres.push(w);
+          return Promise.resolve([]);
+        }),
+      };
+      chain.innerJoin = jest.fn().mockReturnValue(chain);
+      chain.leftJoin = jest.fn().mockReturnValue(chain);
+      return chain;
+    };
     return {
       db: {
         query: {
@@ -38,14 +49,7 @@ describe("KbPageAiService — cross-tenant isolation", () => {
           },
         },
         select: jest.fn().mockImplementation(() => ({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockImplementation((w: unknown) => {
-                wheres.push(w);
-                return Promise.resolve([]);
-              }),
-            }),
-          }),
+          from: jest.fn().mockReturnValue(makeJoinChain()),
         })),
       } as unknown as Db,
       wheres,

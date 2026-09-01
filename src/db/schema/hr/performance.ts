@@ -111,7 +111,7 @@ export const goals = pgTable("goals", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_goals_org_id").on(table.orgId, table.id),
-  foreignKey({ columns: [table.parentGoalId], foreignColumns: [table.id] }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.parentGoalId], foreignColumns: [table.orgId, table.id], name: "fk_goals_org_parent" }),
   index("idx_goals_user_status").on(table.userId, table.status),
   index("idx_goals_org_status").on(table.orgId, table.status),
 ]);

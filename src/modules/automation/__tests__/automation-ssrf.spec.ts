@@ -131,4 +131,17 @@ describe("AutomationService — deliverWebhook SSRF guard", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
     expect(result).toMatchObject({ type: "webhook", ok: true });
   });
+
+  it("blocks the cloud metadata endpoint (169.254.169.254) via the shared SSRF guard", async () => {
+    mockCheckWebhookUrl.mockResolvedValue({ allowed: false, reason: "blocked-address" });
+    const metadataEndpoint = { ...ACTIVE_ENDPOINT, url: "http://169.254.169.254/metadata" };
+    const { db } = makeDb([metadataEndpoint]);
+    const svc = makeSvc(db);
+
+    const result = await svc.executeAction("org-1", WEBHOOK_ACTION, PAYLOAD);
+
+    expect(result).toMatchObject({ type: "webhook", ok: false });
+    expect(mockCheckWebhookUrl).toHaveBeenCalledWith("http://169.254.169.254/metadata");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
 });

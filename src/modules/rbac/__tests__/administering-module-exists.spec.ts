@@ -40,6 +40,7 @@ const NON_MODULE_NAMESPACES = [
   "reports",
   "sales",
   "self",
+  "storage",
   "tasks",
 ];
 

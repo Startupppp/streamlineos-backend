@@ -13,6 +13,7 @@ describe("workflow run state", () => {
       resumeAt: null,
       variables: {},
       steps: 0,
+      infraAttempt: 0,
     });
   });
 
@@ -22,6 +23,7 @@ describe("workflow run state", () => {
       resumeAt: NOW,
       variables: { score: 3 },
       steps: 4,
+      infraAttempt: 2,
     };
     expect(readRunState(writeRunState(state))).toEqual(state);
   });
@@ -32,6 +34,7 @@ describe("workflow run state", () => {
       resumeAt: null,
       variables: {},
       steps: 0,
+      infraAttempt: 0,
     });
   });
 

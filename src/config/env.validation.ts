@@ -59,6 +59,10 @@ const baseSchema = z
         44,
         "BACKEND_JWT_SECRET must be at least 44 characters (256-bit base64)",
       ),
+    /** Ed25519 keypair(s) for asymmetric JWT signing. JSON array of {kid, privateKey (JWK), publicKey (JWK)}. */
+    AUTH_SIGNING_KEYS: z.preprocess(emptyToUndefined, z.string().optional()),
+    /** Shared with the frontend NextAuth instance; used by the backend to verify session-exchange proofs. Must match NEXTAUTH_SECRET in frontend/.env. */
+    NEXTAUTH_SECRET: z.preprocess(emptyToUndefined, z.string().min(32).optional()),
     /** Optional HMAC key for pseudonymising public-roadmap voter IPs; falls back to BACKEND_JWT_SECRET. */
     VOTE_IP_SALT: z.preprocess(emptyToUndefined, deploymentSecret),
     PORTAL_JWT_SECRET: z

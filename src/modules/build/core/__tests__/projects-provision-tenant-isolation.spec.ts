@@ -32,6 +32,12 @@ function makeMockDb(overrides: Partial<{ queryResult: unknown; transactionRows: 
     return cb(tx);
   });
 
+  const membershipRow = { id: 1, orgId: OWNER_ORG, userId: USER_ID, role: "MEMBER", isOwner: false, status: "ACTIVE" };
+  const makeFromWhere = (rows: unknown[]) => ({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(rows) }) });
+  const selectMock = jest.fn()
+    .mockReturnValueOnce(makeFromWhere([membershipRow]))
+    .mockReturnValue(makeFromWhere([]));
+
   return {
     query: {
       deals: {
@@ -39,6 +45,7 @@ function makeMockDb(overrides: Partial<{ queryResult: unknown; transactionRows: 
       },
     },
     transaction: transactionMock,
+    select: selectMock,
   };
 }
 

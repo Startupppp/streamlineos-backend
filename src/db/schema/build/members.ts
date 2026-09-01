@@ -105,7 +105,7 @@ export const pages = build.table("pages", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  foreignKey({ columns: [table.parentPageId], foreignColumns: [table.id] }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.parentPageId], foreignColumns: [table.orgId, table.id], name: "fk_pages_org_parent" }).onDelete("cascade"),
   index("idx_pages_project").on(table.projectId),
   index("idx_pages_org").on(table.orgId),
   index("idx_pages_parent").on(table.parentPageId),

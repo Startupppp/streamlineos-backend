@@ -56,8 +56,8 @@ describe("S02 HR collection read caps", () => {
     ["directory/employee-analytics.service.ts", "inArray(users.id, directReportIds)"],
     ["directory/employee-bulk-onboarding.service.ts", "orgUnits.kind"],
     ["directory/employee-mutations.service.ts", "targetUserId)))"],
-    ["directory/employee-skills-page-query.ts", ".limit(Math.max(1, employeeUserIds.size"],
-    ["directory/employees.service.ts", "projectMembers.userId"],
+    ["directory/employee-skills-page-query.ts", ".limit(Math.max(1, employeeUserIds.length"],
+    ["directory/employees.service.ts", "projectMembers.orgId"],
     ["directory/org-structure.service.ts", "orgUnits.findMany"],
     ["directory/salary-profile-seed.helper.ts", "salaryComponents.sortOrder"],
   ];
@@ -67,7 +67,7 @@ describe("S02 HR collection read caps", () => {
     const start = source.indexOf(anchor);
     expect(start).toBeGreaterThanOrEqual(0);
     expect(source.slice(Math.max(0, start - 180), start + 1000)).toMatch(
-      /limit\s*:\s*(100|500|1000)|\.limit\((?:100|200|500|1000|Math\.max\(1, employeeUserIds\.size \* MAX_SKILLS_PER_EMPLOYEE\))\)/,
+      /limit\s*:\s*(100|500|1000)|\.limit\((?:100|200|500|1000|Math\.max\(1, employeeUserIds\.(?:size|length) \* MAX_SKILLS_PER_EMPLOYEE\))\)/,
     );
   });
 

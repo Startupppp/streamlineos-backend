@@ -13,11 +13,13 @@ import {
 } from "../billing/ai-model-pricing.constants";
 import { AiGatewayCreditHelper } from "./ai-gateway-credit.helper";
 import { AiGatewayRunnerHelper } from "./ai-gateway-runner.helper";
+import { AiResponseCacheService } from "./ai-response-cache.service";
 import type {
   AiInvokeResult,
   AiInvokeWithUsageResult,
   AiUsageMeta,
   AiInvokeBaseOpts,
+  AiResponseCacheOpts,
   InvokeStructuredOpts,
   InvokeStructuredWithImageOpts,
   InvokeTextOpts,
@@ -28,6 +30,12 @@ export type {
   InvokeStructuredWithImageOpts,
   InvokeTextOpts,
 };
+
+function resolveCacheOpts(cache: boolean | AiResponseCacheOpts | undefined): AiResponseCacheOpts | null {
+  if (!cache) return null;
+  if (cache === true) return {};
+  return cache;
+}
 
 @Injectable()
 export class AiGatewayService {
@@ -42,6 +50,7 @@ export class AiGatewayService {
     private readonly usageSvc: AiUsageService,
     private readonly audit: AuditService,
     @Inject(AI_CREDIT_LEDGER) private readonly ledger: AiCreditLedger,
+    private readonly responseCache: AiResponseCacheService,
   ) {
     const credit = new AiGatewayCreditHelper(ledger, usageSvc, audit);
     this.runner = new AiGatewayRunnerHelper(llm, credit);
@@ -52,25 +61,33 @@ export class AiGatewayService {
   ): Promise<AiInvokeResult<T>> {
     const correlationId = randomUUID();
     const dedupeKey = opts.dedupe ? buildDedupeKey(opts) : null;
+    const cacheOpts = resolveCacheOpts(opts.cache);
 
     if (dedupeKey) {
       const inflight = this.inflightMap.get(dedupeKey);
       if (inflight) return inflight as Promise<AiInvokeResult<T>>;
     }
 
-    const promise = this.runner.runStructured(opts, correlationId);
+    const invoke = () => {
+      const promise = this.runner.runStructured(opts, correlationId);
+      if (dedupeKey) {
+        this.inflightMap.set(dedupeKey, promise as Promise<AiInvokeResult<unknown>>);
+        promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
+      }
+      return promise;
+    };
 
-    if (dedupeKey) {
-      this.inflightMap.set(
-        dedupeKey,
-        promise as Promise<AiInvokeResult<unknown>>,
-      );
-      promise
-        .finally(() => this.inflightMap.delete(dedupeKey))
-        .catch(() => undefined);
+    if (cacheOpts) {
+      return this.responseCache.cachedInvoke<T>(opts.actor.orgId, {
+        feature: opts.feature,
+        tier: opts.tier,
+        promptSystem: opts.prompt.system,
+        promptUser: opts.prompt.user,
+        ...cacheOpts,
+      }, invoke);
     }
 
-    return promise;
+    return invoke();
   }
 
   async invokeStructuredWithUsage<T>(
@@ -118,25 +135,33 @@ export class AiGatewayService {
   async invokeText(opts: InvokeTextOpts): Promise<AiInvokeResult<string>> {
     const correlationId = randomUUID();
     const dedupeKey = opts.dedupe ? buildDedupeKey(opts) : null;
+    const cacheOpts = resolveCacheOpts(opts.cache);
 
     if (dedupeKey) {
       const inflight = this.inflightMap.get(dedupeKey);
       if (inflight) return inflight as Promise<AiInvokeResult<string>>;
     }
 
-    const promise = this.runner.runText(opts, correlationId);
+    const invoke = () => {
+      const promise = this.runner.runText(opts, correlationId);
+      if (dedupeKey) {
+        this.inflightMap.set(dedupeKey, promise as Promise<AiInvokeResult<unknown>>);
+        promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
+      }
+      return promise;
+    };
 
-    if (dedupeKey) {
-      this.inflightMap.set(
-        dedupeKey,
-        promise as Promise<AiInvokeResult<unknown>>,
-      );
-      promise
-        .finally(() => this.inflightMap.delete(dedupeKey))
-        .catch(() => undefined);
+    if (cacheOpts) {
+      return this.responseCache.cachedInvoke<string>(opts.actor.orgId, {
+        feature: opts.feature,
+        tier: opts.tier,
+        promptSystem: opts.prompt.system,
+        promptUser: opts.prompt.user,
+        ...cacheOpts,
+      }, invoke);
     }
 
-    return promise;
+    return invoke();
   }
 
   async invokeTextWithUsage(

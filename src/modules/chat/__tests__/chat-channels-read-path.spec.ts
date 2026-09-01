@@ -16,7 +16,7 @@ function makeDb(channels: unknown[]) {
     set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
   }));
 
-  const results: unknown[][] = [[{ channelId: 1 }]];
+  const results: unknown[][] = [[{ id: 1, lastMessageAt: null }], []];
   const nextResult = (): unknown[] => results.shift() ?? [];
 
   const makeChain = () => {
@@ -114,8 +114,8 @@ describe("ChatChannelsService — the channel list is a read", () => {
       makeEntities("Renamed ticket") as never,
     );
 
-    const channels = await service.getMyChannels(actor);
+    const result = await service.getMyChannels(actor);
 
-    expect(channels[0]?.name).toBe("Renamed ticket");
+    expect(result.channels[0]?.name).toBe("Renamed ticket");
   });
 });

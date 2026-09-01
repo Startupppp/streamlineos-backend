@@ -322,38 +322,55 @@ export class CronLeaveService {
         .limit(ACCRUAL_BATCH_SIZE * POLICY_LIMIT);
       const usedSet = new Set(usedLeaveResults.map((r) => `${r.userId}:${r.leaveTypeId}`));
 
+      const toExpire: Array<{
+        id: number;
+        orgId: string;
+        userId: string;
+        leaveTypeId: number;
+        deducted: number;
+        newBalance: number;
+      }> = [];
+
       for (const bal of positiveBalances) {
         if (usedSet.has(`${bal.userId}:${bal.leaveTypeId}`)) continue;
-
         const policy = policyByTypeId.get(bal.leaveTypeId);
         if (!policy || policy.orgId !== bal.orgId) continue;
-
         const expiryAmount = Number(policy.accrualRate ?? 1);
         const newBalance = Math.max(0, Number(bal.balance) - expiryAmount);
         const deducted = Number(bal.balance) - newBalance;
         if (deducted <= 0) continue;
+        toExpire.push({ id: bal.id, orgId: bal.orgId, userId: bal.userId, leaveTypeId: bal.leaveTypeId, deducted, newBalance });
+      }
 
+      if (toExpire.length > 0) {
         await this.db.transaction(async (tx) => {
-          await tx
-            .update(leaveBalances)
-            .set({ balance: newBalance.toString() })
-            .where(eq(leaveBalances.id, bal.id));
-
-          await tx.insert(hrLeaveLedger).values({
-            orgId: bal.orgId,
-            userId: bal.userId,
-            leaveTypeId: bal.leaveTypeId,
-            txnType: "expiry",
-            days: String(deducted),
-            effectiveDate: monthEndStr,
-            period: periodLabel,
-            source: "cron",
-            note: "Monthly leave expiry",
-            payrollStatus: "pending",
-          });
+          const updateVals = sql.join(
+            toExpire.map((e) => sql`(${e.id}, ${e.newBalance.toString()})`),
+            sql`, `,
+          );
+          await tx.execute(sql`
+            UPDATE leave_balances AS lb
+            SET balance = v.new_bal
+            FROM (VALUES ${updateVals}) AS v(id, new_bal)
+            WHERE lb.id = v.id::integer
+              AND lb.org_id = ${orgId}
+          `);
+          await tx.insert(hrLeaveLedger).values(
+            toExpire.map((e) => ({
+              orgId: e.orgId,
+              userId: e.userId,
+              leaveTypeId: e.leaveTypeId,
+              txnType: "expiry" as const,
+              days: String(e.deducted),
+              effectiveDate: monthEndStr,
+              period: periodLabel,
+              source: "cron" as const,
+              note: "Monthly leave expiry",
+              payrollStatus: "pending" as const,
+            })),
+          );
         });
-
-        expiredCount++;
+        expiredCount += toExpire.length;
       }
 
       balanceCursor = positiveBalances[positiveBalances.length - 1]?.id;

@@ -1,6 +1,14 @@
 import { KbIngestionConsumer } from "./kb-ingestion-consumer";
+import { KbIngestionLeaseService } from "./kb-ingestion-lease.service";
 import { KbContentAdapterRegistry, KbPageAdapter, KbArticleAdapter, KbSourceAdapter, KbAttachmentAdapter } from "./kb-content-adapter";
 import { OutboxConsumerRegistry, type OutboxEventRow } from "../../../common/outbox/outbox-consumer.registry";
+import { OUTBOX_MAX_RETRIES } from "../../../common/outbox/outbox-envelope";
+
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: jest.fn().mockImplementation(
+    async (_db: unknown, _orgId: string, fn: () => Promise<void>) => fn(),
+  ),
+}));
 
 const ORG_ID = "org-kb-1";
 const EVENT_ID = "evt-kb-aaa";
@@ -37,10 +45,20 @@ function makeEvent(overrides: Partial<OutboxEventRow> = {}): OutboxEventRow {
   };
 }
 
+function makeLease(acquired = true): jest.Mocked<KbIngestionLeaseService> {
+  return {
+    acquire: jest.fn().mockResolvedValue({ token: "tok-1", acquired }),
+    release: jest.fn().mockResolvedValue(undefined),
+  } as unknown as jest.Mocked<KbIngestionLeaseService>;
+}
+
+const MOCK_DB = {} as never;
+
 function buildConsumer(options: {
   pageAdapterImpl?: (orgId: string, contentId: number) => Promise<void>;
+  lease?: jest.Mocked<KbIngestionLeaseService>;
 } = {}) {
-  const { pageAdapterImpl = async () => undefined } = options;
+  const { pageAdapterImpl = async () => undefined, lease = makeLease() } = options;
 
   const pageAdapter = {
     contentType: "page",
@@ -72,11 +90,13 @@ function buildConsumer(options: {
     articleAdapter,
     sourceAdapter,
     attachmentAdapter,
+    lease,
+    MOCK_DB,
   );
 
   consumer.onModuleInit();
 
-  return { consumer, adapterRegistry, outboxRegistry, pageAdapter };
+  return { consumer, adapterRegistry, outboxRegistry, pageAdapter, lease };
 }
 
 describe("KbIngestionConsumer", () => {
@@ -146,6 +166,18 @@ describe("KbIngestionConsumer", () => {
       await expect(consumer.handle(makeEvent())).rejects.toThrow("adapter failure");
       await expect(consumer.handle(makeEvent())).rejects.toThrow("adapter failure");
     });
+
+    it("releases the lease when the adapter throws", async () => {
+      const lease = makeLease();
+      const { consumer } = buildConsumer({
+        pageAdapterImpl: async () => { throw new Error("adapter failure"); },
+        lease,
+      });
+
+      await expect(consumer.handle(makeEvent())).rejects.toThrow("adapter failure");
+
+      expect(lease.release).toHaveBeenCalledWith(ORG_ID, "page", CONTENT_ID, "tok-1");
+    });
   });
 
   describe("B4 — duplicate delivery: no inbox fence, adapter is idempotent", () => {
@@ -201,6 +233,51 @@ describe("KbIngestionConsumer", () => {
       const bad = makeEvent({ payload: { contentType: "page", contentId: "not-a-number" } });
 
       await expect(consumer.handle(bad)).rejects.toThrow();
+    });
+  });
+
+  describe("L1 — lease exclusivity under concurrent claim", () => {
+    it("throws KB_INGESTION_LEASE_CONTENTION when the lease is already held by another worker", async () => {
+      const contendedLease = makeLease(false);
+      const { consumer } = buildConsumer({ lease: contendedLease });
+
+      await expect(consumer.handle(makeEvent())).rejects.toThrow("KB_INGESTION_LEASE_CONTENTION");
+    });
+
+    it("does not call the adapter when the lease is not acquired", async () => {
+      const contendedLease = makeLease(false);
+      const { consumer, pageAdapter } = buildConsumer({ lease: contendedLease });
+
+      await expect(consumer.handle(makeEvent())).rejects.toThrow("KB_INGESTION_LEASE_CONTENTION");
+      expect(pageAdapter.handle).not.toHaveBeenCalled();
+    });
+
+    it("releases the lease after successful ingestion", async () => {
+      const lease = makeLease();
+      const { consumer } = buildConsumer({ lease });
+
+      await consumer.handle(makeEvent());
+
+      expect(lease.release).toHaveBeenCalledWith(ORG_ID, "page", CONTENT_ID, "tok-1");
+    });
+  });
+
+  describe("D1 — retry-to-DLQ: dead-lettered after max retries", () => {
+    it("throws KB_INGESTION_DEAD_LETTER at OUTBOX_MAX_RETRIES without calling the adapter", async () => {
+      const { consumer, pageAdapter } = buildConsumer();
+
+      await expect(
+        consumer.handle(makeEvent({ retryCount: OUTBOX_MAX_RETRIES })),
+      ).rejects.toThrow("KB_INGESTION_DEAD_LETTER");
+      expect(pageAdapter.handle).not.toHaveBeenCalled();
+    });
+
+    it("still processes the event below the dead-letter threshold", async () => {
+      const { consumer, pageAdapter } = buildConsumer();
+
+      await consumer.handle(makeEvent({ retryCount: OUTBOX_MAX_RETRIES - 1 }));
+
+      expect(pageAdapter.handle).toHaveBeenCalledTimes(1);
     });
   });
 });

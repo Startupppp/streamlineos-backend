@@ -32,7 +32,7 @@ describe("EmployeeMutationsService canonical employment reads", () => {
       probationEndDate: null,
       confirmationDate: null,
     };
-    const skillsQuery = { from: jest.fn(), where: jest.fn().mockResolvedValue([]) };
+    const skillsQuery = { from: jest.fn(), where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) };
     skillsQuery.from.mockReturnValue(skillsQuery);
     const employmentQuery = {
       from: jest.fn(),

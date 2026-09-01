@@ -30,6 +30,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type {
   AddMemberInput,
+  BulkReorderStatesInput,
   CreateLabelInput,
   CreateStateInput,
   UpdateLabelInput,
@@ -395,6 +396,14 @@ export class ProjectsMembersService {
 
   deleteCustomState(u: CurrentUserContext, stateId: number) {
     return this.statesService.deleteCustomState(u, stateId);
+  }
+
+  bulkReorderCustomStates(
+    u: CurrentUserContext,
+    projectId: number,
+    body: BulkReorderStatesInput,
+  ) {
+    return this.statesService.bulkReorderCustomStates(u, projectId, body);
   }
 
   listLabels(orgId: string) {

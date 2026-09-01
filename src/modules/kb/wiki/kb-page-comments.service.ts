@@ -7,7 +7,9 @@ import type { CreatePageCommentInput, UpdatePageCommentInput } from "./dto/kb-pa
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
+import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { AccessService } from "../../access/access.service";
 
 type CommentRow = typeof kbPageComments.$inferSelect;
 
@@ -16,6 +18,7 @@ export class KbPageCommentsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly dispatch: NotificationDispatchService,
+    private readonly access: AccessService,
   ) {}
 
   async list(user: CurrentUserContext, pageId: number): Promise<Array<CommentRow & { authorName: string | null }>> {
@@ -75,60 +78,70 @@ export class KbPageCommentsService {
     if (page.ownerUserId && page.ownerUserId !== authorId) toNotify.add(page.ownerUserId);
 
     if (toNotify.size > 0) {
-      void this.dispatch
-        .emit({
-          eventKey: "knowledge.page.comment_created",
-          orgId,
-          actorUserId: authorId,
-          targetUserIds: Array.from(toNotify),
-          entityType: "kb_page",
-          entityId: String(pageId),
-          title: "New comment on your page",
-          message: input.content.slice(0, 200),
-        })
-        .catch(function notifError(err: unknown) {
-          console.error("Failed to send comment notification", err);
-        });
+      await this.dispatch.emit({
+        eventKey: "knowledge.page.comment_created",
+        orgId,
+        actorUserId: authorId,
+        targetUserIds: Array.from(toNotify),
+        entityType: "kb_page",
+        entityId: String(pageId),
+        title: "New comment on your page",
+        message: input.content.slice(0, 200),
+      });
     }
 
     return comment;
   }
 
-  async update(orgId: string, commentId: number, callerId: string, isAdmin: boolean, input: UpdatePageCommentInput): Promise<CommentRow> {
+  async update(user: CurrentUserContext, commentId: number, input: UpdatePageCommentInput): Promise<CommentRow> {
+    const orgId = user.orgId;
     const existing = await this.db.query.kbPageComments.findFirst({
       where: and(eq(kbPageComments.id, commentId), eq(kbPageComments.orgId, orgId)),
-      columns: { id: true, authorId: true },
+      columns: { id: true, authorId: true, pageId: true },
     });
     if (!existing) throw new NotFoundException("Comment not found");
-    if (existing.authorId !== callerId && !isAdmin) throw new ForbiddenException("Not your comment");
+
+    await assertPageAccessible(this.db, user, existing.pageId);
+
+    const isAdmin = await this.access.holds(user, "kb:pages:manage");
+    if (existing.authorId !== user.userId && !isAdmin) throw new ForbiddenException("Not your comment");
 
     const [updated] = await this.db
       .update(kbPageComments)
       .set({ content: input.content, updatedAt: new Date() })
       .where(and(eq(kbPageComments.id, commentId), eq(kbPageComments.orgId, orgId)))
       .returning();
+    if (!updated) throw new NotFoundException("Comment not found");
     return updated;
   }
 
-  async remove(orgId: string, commentId: number, callerId: string, isAdmin: boolean): Promise<void> {
+  async remove(user: CurrentUserContext, commentId: number): Promise<void> {
+    const orgId = user.orgId;
     const existing = await this.db.query.kbPageComments.findFirst({
       where: and(eq(kbPageComments.id, commentId), eq(kbPageComments.orgId, orgId)),
-      columns: { id: true, authorId: true },
+      columns: { id: true, authorId: true, pageId: true },
     });
     if (!existing) throw new NotFoundException("Comment not found");
-    if (existing.authorId !== callerId && !isAdmin) throw new ForbiddenException("Not your comment");
+
+    await assertPageAccessible(this.db, user, existing.pageId);
+
+    const isAdmin = await this.access.holds(user, "kb:pages:manage");
+    if (existing.authorId !== user.userId && !isAdmin) throw new ForbiddenException("Not your comment");
 
     await this.db
       .delete(kbPageComments)
       .where(and(eq(kbPageComments.id, commentId), eq(kbPageComments.orgId, orgId)));
   }
 
-  async resolve(orgId: string, commentId: number): Promise<CommentRow> {
+  async resolve(user: CurrentUserContext, commentId: number): Promise<CommentRow> {
+    const orgId = user.orgId;
     const existing = await this.db.query.kbPageComments.findFirst({
       where: and(eq(kbPageComments.id, commentId), eq(kbPageComments.orgId, orgId)),
-      columns: { id: true },
+      columns: { id: true, pageId: true },
     });
     if (!existing) throw new NotFoundException("Comment not found");
+
+    await assertPageAccessible(this.db, user, existing.pageId);
 
     const [updated] = await this.db
       .update(kbPageComments)

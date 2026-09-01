@@ -93,7 +93,7 @@ describe("PURGE_ADAPTER_REGISTRY — object_storage", () => {
       .mockResolvedValueOnce([]);
     (runInNewTenantTransaction as jest.Mock).mockRejectedValueOnce(new Error("RLS denied"));
 
-    const storage = { deleteFile: jest.fn() } as never;
+    const storage = { deleteFile: jest.fn() };
     const result = await PURGE_ADAPTER_REGISTRY.object_storage.confirm(ORG_A, PURGE_JOB, FAKE_DB, storage);
 
     expect(result.state).toBe("FAILED");

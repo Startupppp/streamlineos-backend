@@ -48,7 +48,7 @@ function makeSelectChain(rows: unknown[]) {
 function makeService(db: unknown): CalendarService {
   const recurrence = new CalendarRecurrenceService(db as Db);
   const calendarExport = new CalendarExportService(db as Db);
-  return new CalendarService(db as Db, {} as never, {} as never, {} as never, {} as never, recurrence, calendarExport);
+  return new CalendarService(db as Db, {} as never, {} as never, {} as never, recurrence, calendarExport);
 }
 
 describe("cancelOccurrence — kills PENDING outbox reminder for the specific occurrence", () => {

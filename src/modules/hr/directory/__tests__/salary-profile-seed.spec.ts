@@ -20,28 +20,30 @@ describe("seedEmployeeSalaryProfile", () => {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            orderBy: jest.fn().mockResolvedValue([
-              {
-                id: 1,
-                code: "BASIC",
-                type: "EARNING",
-                calcMethod: "FIXED",
-                amount: null,
-                percent: null,
-                sortOrder: 1,
-                includeInCtc: true,
-              },
-              {
-                id: 2,
-                code: "HRA",
-                type: "EARNING",
-                calcMethod: "FIXED",
-                amount: null,
-                percent: null,
-                sortOrder: 2,
-                includeInCtc: true,
-              },
-            ]),
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([
+                {
+                  id: 1,
+                  code: "BASIC",
+                  type: "EARNING",
+                  calcMethod: "FIXED",
+                  amount: null,
+                  percent: null,
+                  sortOrder: 1,
+                  includeInCtc: true,
+                },
+                {
+                  id: 2,
+                  code: "HRA",
+                  type: "EARNING",
+                  calcMethod: "FIXED",
+                  amount: null,
+                  percent: null,
+                  sortOrder: 2,
+                  includeInCtc: true,
+                },
+              ]),
+            }),
           }),
         }),
       }),

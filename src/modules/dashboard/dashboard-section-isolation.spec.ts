@@ -7,14 +7,18 @@
  *
  * Removal proofs are noted per test; removing the cited mechanism turns the test red.
  *
- * select() call order in getPersonalDashboard with ALL modules disabled:
- *   call 1 → outer calendarEvents query (select({id,title,…}).from(calendarEvents).where(…).orderBy(…).limit(3))
- *   call 2 → creator EXISTS inner       (select({one:sql`1`}).from(organizationMembers).where(…))
- *   call 3 → attendee EXISTS inner      (select({one:sql`1`}).from(eventAttendees).innerJoin(…).where(…))
- *   call 4 → notifications count        (select({cnt:count()}).from(notifications).where(…))
+ * DB call order in getPersonalDashboard with ALL modules disabled:
+ *   findFirst  → organizationMembers lookup (db.query.organizationMembers.findFirst)
+ *   select 1   → outer calendarEvents query (select({id,title,…}).from(calendarEvents).where(…).orderBy(…).limit(3))
+ *   select 2   → creator EXISTS inner       (select({one:sql`1`}).from(organizationMembers).where(…))
+ *   select 3   → attendee EXISTS inner      (select({one:sql`1`}).from(eventAttendees).innerJoin(…).where(…))
+ *   select 4   → notifications count        (select({cnt:count()}).from(notifications).where(…))
  *
- * Calls 2 and 3 are builder calls inside the argument to the outer .where(); they
+ * select 2 and 3 are builder calls inside the argument to the outer .where(); they
  * return a SQL condition object (not a Promise), so they are never directly awaited.
+ *
+ * Maximum DB calls with all modules enabled: 1 findFirst + 1 tickets.findMany + 3 selects
+ * (timesheets-sum, leaveBalances, calendarEvents) + 1 notifications = 6 total (criterion 6).
  */
 
 import type { CacheService } from "../../common/cache/cache.service";
@@ -77,7 +81,10 @@ function makeNeutralPersonalDb(opts: { ticketsFindMany?: jest.Mock } = {}): {
 
   let callIdx = 0;
   const db = {
-    query: { tickets: { findMany: ticketsFindMany } },
+    query: {
+      tickets: { findMany: ticketsFindMany },
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: "member-iso-1" }) },
+    },
     select: jest.fn().mockImplementation(() => {
       callIdx++;
       if (callIdx === 1) return outerEventChain;
@@ -118,7 +125,10 @@ function makeIsolationPersonalDb(): Db {
 
   let callIdx = 0;
   return {
-    query: { tickets: { findMany: jest.fn().mockResolvedValue([]) } },
+    query: {
+      tickets: { findMany: jest.fn().mockResolvedValue([]) },
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: "member-iso-1" }) },
+    },
     select: jest.fn().mockImplementation(() => {
       callIdx++;
       if (callIdx === 1) return failingOuterChain;
@@ -367,5 +377,88 @@ describe("DashboardStatsService — deny-before-query and section isolation", ()
 
     expect(result).toBeDefined();
     expect(findManyMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * CRITERION 6 — membership resolved once, maximum DB call count enforced.
+ * CRITERION 8 — regression tests: membership cannot bypass section gating or escalate failures.
+ */
+describe("DashboardPersonalService — membership once + section bypass prevention (criteria 6 & 8)", () => {
+  it("CRITERION 6: all modules enabled → exactly 1 findFirst + ≤6 select calls (no duplicate membership query)", async () => {
+    const innerChain: Record<string, unknown> = {
+      from: function () { return innerChain; },
+      innerJoin: function () { return innerChain; },
+      where: function (cond: unknown) { return cond; },
+    };
+    const outerEventChain: Record<string, unknown> = {
+      from: function () { return outerEventChain; },
+      where: function () { return { orderBy: () => ({ limit: () => Promise.resolve([]) }) }; },
+    };
+    const timesheetChain: Record<string, unknown> = {
+      from: function () { return timesheetChain; },
+      where: function () { return Promise.resolve([{ hours: "8" }]); },
+    };
+    const leaveChain: Record<string, unknown> = {
+      from: function () { return leaveChain; },
+      innerJoin: function () { return leaveChain; },
+      where: function () { return Promise.resolve([]); },
+    };
+    const notifChain: Record<string, unknown> = {
+      from: function () { return notifChain; },
+      where: function () { return Promise.resolve([{ cnt: 2 }]); },
+    };
+
+    let selectCallCount = 0;
+    const findFirstMock = jest.fn().mockResolvedValue({ id: "member-iso-1" });
+    const ticketsFindMany = jest.fn().mockResolvedValue([]);
+
+    const db = {
+      query: {
+        tickets: { findMany: ticketsFindMany },
+        organizationMembers: { findFirst: findFirstMock },
+      },
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount++;
+        if (selectCallCount === 1) return timesheetChain;
+        if (selectCallCount === 2) return leaveChain;
+        if (selectCallCount <= 4) return innerChain;
+        if (selectCallCount === 5) return outerEventChain;
+        return notifChain;
+      }),
+    } as unknown as Db;
+
+    const access = makeAccessWithModules(true, true, true);
+    const svc = new DashboardPersonalService(db, access);
+    await svc.getPersonalDashboard(makeUser());
+
+    expect(findFirstMock).toHaveBeenCalledTimes(1);
+    expect(selectCallCount).toBeLessThanOrEqual(6);
+    expect(ticketsFindMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("REGRESSION (8a): valid selfMember does not activate a module-disabled section", async () => {
+    const ticketsFindMany = jest.fn().mockResolvedValue([{ id: 99, title: "Leaked" }]);
+    const { db } = makeNeutralPersonalDb({ ticketsFindMany });
+    const access = makeAccessWithModules(false, false, false);
+
+    const svc = new DashboardPersonalService(db, access);
+    const result = await svc.getPersonalDashboard(makeUser());
+
+    expect(result.myTasks).toEqual([]);
+    expect(ticketsFindMany).not.toHaveBeenCalled();
+    expect(result.degraded).not.toContain("myTasks");
+  });
+
+  it("REGRESSION (8b): a section settle() failure leaves all universal sections intact", async () => {
+    const db = makeIsolationPersonalDb();
+    const access = makeAccessAllModulesDisabled();
+    const svc = new DashboardPersonalService(db, access);
+    const result = await svc.getPersonalDashboard(makeUser());
+
+    expect(result).toBeDefined();
+    expect(result.unreadNotifications).toBe(7);
+    expect(result.upcomingEvents).toEqual([]);
+    expect(result.degraded).toContain("upcomingEvents");
   });
 });

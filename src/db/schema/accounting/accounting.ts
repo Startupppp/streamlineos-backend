@@ -29,7 +29,7 @@ export const ledgerAccounts = pgTable("ledger_accounts", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_ledger_accounts_org_id").on(table.orgId, table.id),
-  foreignKey({ columns: [table.parentAccountId], foreignColumns: [table.id] }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.parentAccountId], foreignColumns: [table.orgId, table.id], name: "fk_ledger_accounts_org_parent" }),
   unique("uniq_ledger_accounts_org_code").on(table.orgId, table.code),
   index("idx_ledger_accounts_org_type_active").on(table.orgId, table.accountType, table.isActive),
 ]);
@@ -65,7 +65,7 @@ export const journalEntries = pgTable("journal_entries", {
   index("idx_je_org_status").on(table.orgId, table.status),
   index("idx_je_org_status_date").on(table.orgId, table.status, table.entryDate),
   index("idx_je_org_created_by_mbr").on(table.orgId, table.createdByMembershipId),
-  foreignKey({ columns: [table.reversedEntryId], foreignColumns: [table.id] }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.reversedEntryId], foreignColumns: [table.orgId, table.id], name: "fk_je_org_reversed" }),
   foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_je_org_created_by_mbr" }).onDelete("set null"),
 ]);
 

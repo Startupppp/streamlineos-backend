@@ -221,12 +221,25 @@ export class ChatAssistantController {
       throw new ForbiddenException("AI chat is disabled for this organization.");
     }
 
+    const controller = new AbortController();
+    res.on("close", () => controller.abort());
+    const deadline = AbortSignal.timeout(120_000);
+    const combined = (() => {
+      const ctrl = new AbortController();
+      const abort = () => ctrl.abort();
+      controller.signal.addEventListener("abort", abort, { once: true });
+      deadline.addEventListener("abort", abort, { once: true });
+      if (controller.signal.aborted || deadline.aborted) ctrl.abort();
+      return ctrl.signal;
+    })();
+
     try {
       const result = await this.chat.processChat(
         parsed.data.messages,
         u,
         parsed.data.conversationId,
         parsed.data.persona,
+        combined,
       );
       result.pipeTextStreamToResponse(res);
     } catch (error) {

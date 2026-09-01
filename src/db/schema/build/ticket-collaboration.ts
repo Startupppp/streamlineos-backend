@@ -77,10 +77,7 @@ export const ticketComments = buildEvents.table(
       .$onUpdate(() => new Date()),
   },
   (table) => [
-    foreignKey({
-      columns: [table.parentCommentId],
-      foreignColumns: [table.id],
-    }).onDelete("cascade"),
+    foreignKey({ columns: [table.orgId, table.parentCommentId], foreignColumns: [table.orgId, table.id], name: "fk_ticket_comments_org_parent" }).onDelete("cascade"),
     index("idx_ticket_comments_ticket").on(table.ticketId).where(sql`deleted_at IS NULL`),
     unique("uniq_ticket_comments_org_id").on(table.orgId, table.id),
   ],

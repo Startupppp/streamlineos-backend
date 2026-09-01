@@ -50,3 +50,11 @@ export const verifyEmailOtpSchema = z.object({
 
 export type RequestEmailOtpInput = z.infer<typeof requestEmailOtpSchema>;
 export type VerifyEmailOtpInput = z.infer<typeof verifyEmailOtpSchema>;
+
+export const sessionExchangeSchema = z
+  .object({
+    orgId: z.string().min(1).max(128).nullable().optional(),
+  })
+  .strict();
+
+export type SessionExchangeInput = z.infer<typeof sessionExchangeSchema>;

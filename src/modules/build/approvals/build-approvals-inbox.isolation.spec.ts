@@ -44,18 +44,18 @@ describe("BuildApprovalsInboxService — cross-tenant isolation (BOLA)", () => {
     const whereCalls: unknown[] = [];
     const db = makeDb([], whereCalls);
     const svc = new BuildApprovalsInboxService(db);
-    await svc.getInboxPage(ATTACKER_ORG, APPROVER_USER, null, 20, null);
+    await svc.getInboxPage(ATTACKER_ORG, APPROVER_USER, 42, 20, null);
     expect(whereCalls.length).toBeGreaterThan(0);
     const allValues = whereCalls.flatMap((w) => sqlValues(w));
     expect(allValues).toContain(ATTACKER_ORG);
   });
 
-  it("getInboxPage uses the requestor's userId as approverId — different user sees different inbox", async () => {
+  it("getInboxPage uses the requestor's membershipId as approverId — different member sees different inbox", async () => {
     const whereCalls: unknown[] = [];
     const db = makeDb([], whereCalls);
     const svc = new BuildApprovalsInboxService(db);
-    await svc.getInboxPage(OWNER_ORG, "user-other", null, 20, null);
+    await svc.getInboxPage(OWNER_ORG, "user-other", 99, 20, null);
     const allValues = whereCalls.flatMap((w) => sqlValues(w));
-    expect(allValues).toContain("user-other");
+    expect(allValues).toContain(99);
   });
 });

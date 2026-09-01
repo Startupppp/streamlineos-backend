@@ -19,6 +19,7 @@ import {
   type JsonSchema,
   type OperationContract,
 } from "./zod-operation-contracts";
+import { PAGE_SIZE_CAP } from "../pagination/list-query.schema";
 
 export const OPENAPI_TITLE = "StreamlineOS API";
 export const OPENAPI_DESCRIPTION = "StreamlineOS platform REST API";
@@ -31,6 +32,35 @@ export interface BuiltDocument {
   contractsApplied: number;
   unconvertible: string[];
   errorResponsesApplied: number;
+  pageSizeCapsApplied: number;
+}
+
+const PAGE_SIZE_PARAM_NAMES = new Set(["limit", "pageSize", "take", "perPage"]);
+
+export function applyPageSizeCap(document: OpenAPIObject, cap: number): number {
+  let count = 0;
+  for (const pathItem of Object.values(document.paths)) {
+    if (typeof pathItem !== "object" || pathItem === null) continue;
+    for (const operation of Object.values(pathItem)) {
+      if (!isOperation(operation)) continue;
+      const parameters = Array.isArray(operation.parameters) ? operation.parameters : [];
+      for (const parameter of parameters) {
+        if (!isParameter(parameter)) continue;
+        if (parameter.in !== "query") continue;
+        if (typeof parameter.name !== "string") continue;
+        if (!PAGE_SIZE_PARAM_NAMES.has(parameter.name)) continue;
+        const rawSchema = parameter.schema;
+        if (typeof rawSchema !== "object" || rawSchema === null) continue;
+        const schema = rawSchema as Record<string, unknown>;
+        if (schema["type"] !== "integer" && schema["type"] !== "number") continue;
+        const currentMax = schema["maximum"];
+        if (typeof currentMax === "number" && currentMax <= cap) continue;
+        schema["maximum"] = cap;
+        count++;
+      }
+    }
+  }
+  return count;
 }
 
 interface MutableOperation {
@@ -289,6 +319,8 @@ export function buildOpenApiDocument(app: INestApplication): BuiltDocument {
     }
   }
 
+  const pageSizeCapsApplied = applyPageSizeCap(document, PAGE_SIZE_CAP);
+
   document.paths = sortRecord(document.paths);
 
   return {
@@ -298,5 +330,6 @@ export function buildOpenApiDocument(app: INestApplication): BuiltDocument {
     contractsApplied,
     unconvertible: unconvertible.sort(),
     errorResponsesApplied,
+    pageSizeCapsApplied,
   };
 }

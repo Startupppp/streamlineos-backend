@@ -8,6 +8,8 @@ import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service"
 import { KbAttachmentIndexingService } from "./kb-attachment-indexing.service";
 import { KbArticleReindexService } from "./kb-article-reindex.service";
 import { KbIngestionConsumer } from "./kb-ingestion-consumer";
+import { KbIngestionDeleteConsumer } from "./kb-ingestion-delete-consumer";
+import { KbIngestionLeaseService } from "./kb-ingestion-lease.service";
 import {
   KbContentAdapterRegistry,
   KbPageAdapter,
@@ -40,7 +42,9 @@ import { KbPageIndexingController } from "./kb-page-indexing.controller";
     KbArticleAdapter,
     KbSourceAdapter,
     KbAttachmentAdapter,
+    KbIngestionLeaseService,
     KbIngestionConsumer,
+    KbIngestionDeleteConsumer,
     KbPageBackfillService,
     KbCandidateService,
     KbSearchService,

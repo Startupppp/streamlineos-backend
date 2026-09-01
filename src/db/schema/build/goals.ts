@@ -38,7 +38,7 @@ export const okrGoals = build.table("okr_goals", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
-  foreignKey({ columns: [table.parentGoalId], foreignColumns: [table.id] }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.parentGoalId], foreignColumns: [table.orgId, table.id], name: "fk_okr_goals_org_parent" }),
   index("idx_okr_goals_org").on(table.orgId).where(sql`deleted_at IS NULL`),
   index("idx_okr_goals_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
   index("idx_okr_goals_parent").on(table.parentGoalId),

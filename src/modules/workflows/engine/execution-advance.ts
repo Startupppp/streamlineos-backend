@@ -126,6 +126,7 @@ export async function advanceExecution(
             resumeAt: outcome.resumeAt,
             variables,
             steps,
+            infraAttempt: 0,
           }),
         })
         .where(
@@ -216,6 +217,7 @@ export async function finishExecution(
               resumeAt: null,
               variables: state.variables,
               steps: state.steps,
+              infraAttempt: 0,
             }),
           }
         : {}),

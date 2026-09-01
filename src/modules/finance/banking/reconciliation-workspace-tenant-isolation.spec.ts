@@ -8,7 +8,7 @@ function makeUser(orgId: string): CurrentUserContext {
 }
 
 function makeOrderByChain(rows: unknown[]): Record<string, jest.Mock> {
-  const orderBy = jest.fn().mockResolvedValue(rows);
+  const orderBy = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) });
   const where = jest.fn().mockReturnValue({ orderBy });
   return { from: jest.fn().mockReturnValue({ where }) };
 }

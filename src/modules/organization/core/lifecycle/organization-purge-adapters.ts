@@ -12,7 +12,6 @@ import {
   enumerateFileKeyColumns,
   collectOrgFileKeys,
 } from "../../../storage/storage-key-catalog";
-import type { StorageService } from "../../../storage/storage.service";
 
 const OBJECT_DELETE_ATTEMPTS = 3;
 
@@ -21,12 +20,17 @@ export type PurgeAdapterResult = {
   detail: string;
 };
 
+export interface StoragePort {
+  deleteFile(orgId: string, key: string): Promise<void>;
+  fileExists?(orgId: string, key: string): Promise<boolean>;
+}
+
 export type PurgeAdapterDef = {
   confirm: (
     orgId: string,
     purgeJobId: string,
     db: Db,
-    storage?: StorageService,
+    storage?: StoragePort,
   ) => Promise<PurgeAdapterResult>;
 };
 

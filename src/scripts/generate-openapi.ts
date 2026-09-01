@@ -15,6 +15,7 @@ export async function generateOpenApiJson(): Promise<{
   contractsApplied: number;
   unconvertible: string[];
   operations: number;
+  pageSizeCapsApplied: number;
 }> {
   applyOpenApiEnv();
   const app = await NestFactory.create(AppModule, {
@@ -37,6 +38,7 @@ export async function generateOpenApiJson(): Promise<{
       contractsApplied: built.contractsApplied,
       unconvertible: built.unconvertible,
       operations,
+      pageSizeCapsApplied: built.pageSizeCapsApplied,
     };
   } finally {
     await app.close();
@@ -51,6 +53,7 @@ async function main(): Promise<void> {
       `openapi.json written — ${String(result.operations)} operations`,
       `exposure stamped on ${String(result.stamped)}, ${String(result.undeclared)} undeclared`,
       `zod contracts applied to ${String(result.contractsApplied)} operations`,
+      `page-size caps applied to ${String(result.pageSizeCapsApplied)} parameters`,
       result.unconvertible.length > 0
         ? `unconvertible zod schemas: ${String(result.unconvertible.length)}`
         : "every zod schema converted",

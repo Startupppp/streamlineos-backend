@@ -400,6 +400,10 @@
       "proof": "listUsers uses sort-specific keyset cursors, organization predicate, stable tie-breakers, and limit+1",
       "note": "Offset pagination; needs keyset migration or proven depth bound"
     },
+    "/storage/file-quarantine.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination in quarantine list; storage module (excluded territory) — needs keyset migration"
+    },
     "/users/user-profile.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "Offset pagination; needs keyset migration or proven depth bound"
@@ -410,6 +414,10 @@
     }
   },
   "unbounded": {
+    "/blog/blog.service.ts": {
+      "verdict": "BOUNDED",
+      "note": "ensureUniqueSlug: findMany with limit:200; bounded by slug prefix selectivity (eq root OR LIKE root-%); at most 200 collision candidates fetched"
+    },
     "/access/access-permission-members.resolver.ts": {
       "verdict": "BOUNDED",
       "note": "access lane (excluded territory â€” other lane owns this module)"

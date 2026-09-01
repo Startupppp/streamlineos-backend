@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -22,6 +23,7 @@ import { ProjectsProvisionService } from "./projects-provision.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import {
   addMemberSchema,
+  bulkReorderStatesSchema,
   createLabelSchema,
   createProjectSchema,
   createStateSchema,
@@ -32,6 +34,7 @@ import {
   updateLabelSchema,
   updateProjectMemberRoleSchema,
   type AddMemberInput,
+  type BulkReorderStatesInput,
   type CreateLabelInput,
   type CreateProjectInput,
   type CreateStateInput,
@@ -189,6 +192,17 @@ export class ProjectsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.updateMemberRole(projectId, memberUserId, body, u);
+  }
+
+  @Put(":projectId/custom-states")
+  @RequirePermission("build:manage")
+  @Validate({ params: projectIdParams, body: bulkReorderStatesSchema })
+  bulkReorderCustomStates(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Body() body: BulkReorderStatesInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.members.bulkReorderCustomStates(u, projectId, body);
   }
 
   @Get(":projectId/custom-states")

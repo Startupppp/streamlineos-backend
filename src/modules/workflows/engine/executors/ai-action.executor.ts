@@ -58,6 +58,8 @@ function failureToMessage(
       return `AI provider temporarily unavailable: ${providerMessage}`;
     case "invalid_output":
       return "AI returned an unexpected or malformed response";
+    case "context_too_large":
+      return "The workflow context is too large for the AI provider — reduce prompt size or variable payload";
   }
 }
 

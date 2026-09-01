@@ -1,8 +1,7 @@
 import { CanActivate, ExecutionContext, ForbiddenException, Inject, Injectable, UnauthorizedException, Logger } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
-import { jwtVerify, decodeJwt } from "jose";
-import type { JWTPayload } from "jose";
+import { decodeJwt } from "jose";
 import { PORTAL_AUDIENCE } from "../portal-auth/portal-claims";
 import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import * as bcrypt from "bcryptjs";
@@ -10,12 +9,9 @@ import type { Redis } from "@upstash/redis";
 import { IS_PUBLIC } from "./public.decorator";
 import { ALLOW_NO_ORG_KEY } from "./allow-no-org.decorator";
 import {
-  INTERNAL_TOKEN_AUDIENCE,
-  INTERNAL_TOKEN_ISSUER,
   type BackendClaims,
   type CurrentUserContext,
 } from "./backend-claims";
-import { backendJwtPayloadSchema } from "./backend-claims-schema";
 import {
   ACCOUNT_ONLY_PRINCIPAL,
   humanSessionPrincipal,
@@ -33,6 +29,7 @@ import {
 } from "./api-token-hash";
 import { accountOrganizationIndex, organizationMembers, organizations, userApiTokens, userSessions } from "../../db/schema";
 import { MembershipStateService } from "./membership-state.service";
+import { JwtKeyringService } from "./jwt-keyring.service";
 
 interface OrgContext {
   orgId: string;
@@ -48,32 +45,19 @@ interface OrgContextEntry {
 const ORG_CTX_TTL_MS = 60_000;
 const REVOCATION_CACHE_TTL_MS = 5_000;
 
-function extractClaims(payload: JWTPayload): BackendClaims | null {
-  const parsed = backendJwtPayloadSchema.safeParse(payload);
-  if (!parsed.success) return null;
-  return {
-    sub: parsed.data.sub,
-    orgId: parsed.data.orgId ?? null,
-    sessionId: parsed.data.sessionId,
-  };
-}
-
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
   private readonly logger = new Logger(JwtAuthGuard.name);
   private readonly orgCtxCache = new Map<string, OrgContextEntry>();
   private readonly revocationCache = new Map<string, number>();
-  private readonly jwtSecretKey: Uint8Array | null;
 
   constructor(
     private readonly reflector: Reflector,
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(REDIS) private readonly redis: Redis | null,
     private readonly membership: MembershipStateService,
-  ) {
-    const raw = process.env.BACKEND_JWT_SECRET;
-    this.jwtSecretKey = raw ? new TextEncoder().encode(raw) : null;
-  }
+    private readonly keyring: JwtKeyringService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, [
@@ -90,7 +74,6 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException("Unauthorized");
     }
     const token = header.slice("Bearer ".length).trim();
-    if (!this.jwtSecretKey) throw new UnauthorizedException("Unauthorized");
 
     try {
       const raw = decodeJwt(token);
@@ -106,15 +89,9 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     let claims: BackendClaims | null = null;
-    try {
-      const { payload } = await jwtVerify(token, this.jwtSecretKey, {
-        algorithms: ["HS256"],
-        audience: INTERNAL_TOKEN_AUDIENCE,
-        issuer: INTERNAL_TOKEN_ISSUER,
-      });
-      claims = extractClaims(payload);
-    } catch {
-      // JWT verification failed — fall through to PAT check
+    const verified = await this.keyring.verifyToken(token);
+    if (verified) {
+      claims = { sub: verified.sub, orgId: verified.orgId, sessionId: verified.sessionId };
     }
 
     if (claims !== null) {

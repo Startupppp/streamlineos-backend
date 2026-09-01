@@ -12,6 +12,7 @@ import { NotificationsModule } from "../notifications/notifications.module";
 import { CalendarNativeEventSource } from "./calendar-native-event-source";
 import { CalendarConflictService } from "./calendar-conflict.service";
 import { CalendarReminderSweepService } from "./calendar-reminder-sweep.service";
+import { CalendarProviderSyncSweepService } from "./calendar-provider-sync-sweep.service";
 import { CalendarAttendeesService } from "./calendar-attendees.service";
 import { CalendarRecurrenceService } from "./calendar-recurrence.service";
 import { CalendarExportService } from "./calendar-export.service";
@@ -27,12 +28,13 @@ import { CalendarExportService } from "./calendar-export.service";
     CalendarService,
     CalendarConflictService,
     CalendarReminderSweepService,
+    CalendarProviderSyncSweepService,
     ExternalCalendarEventsService,
     ExternalCalendarSyncService,
     CalendarSourceRegistry,
     CalendarSourcePreferencesService,
     CalendarNativeEventSource,
   ],
-  exports: [CalendarService, CalendarConflictService, CalendarReminderSweepService, CalendarSourceRegistry],
+  exports: [CalendarService, CalendarConflictService, CalendarReminderSweepService, CalendarProviderSyncSweepService, CalendarSourceRegistry],
 })
 export class CalendarModule {}

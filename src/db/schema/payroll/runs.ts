@@ -51,6 +51,7 @@ export const payrollRuns = pgTable("payroll_runs", {
   reopenedBy: text("reopened_by").references(() => users.id, { onDelete: "set null" }),
   reopenedByMembershipId: integer("reopened_by_membership_id"),
   reopenReason: text("reopen_reason"),
+  postingState: text("posting_state").notNull().default("pending").$type<"pending" | "posted" | "failed">(),
   /** Soft processing lock for generate/recalculate concurrency (token + timestamp). */
   generationLockToken: text("generation_lock_token"),
   generationLockedAt: timestamp("generation_locked_at"),

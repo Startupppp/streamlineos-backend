@@ -9,6 +9,18 @@ import {
   UNIVERSAL_MEMBER_PERMISSIONS,
 } from "../../rbac/permissions";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
+import {
+  primeRelocationTrafficTracker,
+  resetRelocationTrafficTracker,
+  REFRESH_INTERVAL_MS,
+} from "../../../common/relocation/relocation-traffic-tracker";
+
+beforeAll(() => {
+  primeRelocationTrafficTracker([], Date.now() + REFRESH_INTERVAL_MS * 100);
+});
+afterAll(() => {
+  resetRelocationTrafficTracker();
+});
 
 const ACTIVE_MEMBER_BASELINE_PERMISSIONS = new Set([
   ...UNIVERSAL_MEMBER_PERMISSIONS,
@@ -73,14 +85,17 @@ function makeSelectChain(result: unknown[]): {
   from: jest.Mock;
   where: jest.Mock;
   innerJoin: jest.Mock;
+  limit: jest.Mock;
 } {
   const chain = {
     from: jest.fn(),
-    where: jest.fn().mockResolvedValue(result),
+    where: jest.fn(),
     innerJoin: jest.fn(),
+    limit: jest.fn().mockResolvedValue(result),
   };
   chain.from.mockReturnValue(chain);
   chain.innerJoin.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
   return chain;
 }
 

@@ -12,7 +12,7 @@ import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
 import { ChatHuddlesService } from "./chat-huddles.service";
 import { ChatHuddleSignalsService } from "./chat-huddle-signals.service";
-import { WebPushService } from "../realtime/web-push.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 
@@ -217,7 +217,7 @@ describe("ChatHuddlesService — cross-tenant isolation on huddle operations", (
         ChatHuddlesService,
         { provide: DRIZZLE, useValue: db },
         { provide: AblyService, useValue: {} },
-        { provide: WebPushService, useValue: {} },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue({}) } },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: ChatOrgSettingsService, useValue: {} },
         { provide: PlanLimitsService, useValue: {} },

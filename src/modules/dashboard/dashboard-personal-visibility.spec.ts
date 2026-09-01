@@ -90,6 +90,7 @@ function makeDb(capturedConditions: unknown[]) {
   return {
     query: {
       tickets: { findMany: jest.fn().mockResolvedValue([]) },
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: "member-p0a-1" }) },
     },
     select: jest.fn().mockImplementation(() => makeMockChain()),
   } as unknown as Db;
@@ -238,7 +239,10 @@ describe("DashboardPersonalService — P0-A: BITING outer-condition serializable
       },
     };
     return {
-      query: { tickets: { findMany: jest.fn().mockResolvedValue([]) } },
+      query: {
+        tickets: { findMany: jest.fn().mockResolvedValue([]) },
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: "member-p0a-1" }) },
+      },
       select: jest.fn().mockImplementation(() => {
         callCount++;
         if (callCount === 1) return outerChain;

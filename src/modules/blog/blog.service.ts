@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, desc, eq, gt, lt, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, like, lt, ne, or, sql } from "drizzle-orm";
 import { blogCategories, blogPosts } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -296,24 +296,19 @@ export class BlogService {
     return { posts, nextCursor, hasMore };
   }
 
-  private async ensureUniqueSlug(
-    base: string,
-    excludeId?: string,
-  ): Promise<string> {
+  private async ensureUniqueSlug(base: string, excludeId?: string): Promise<string> {
     const root = slugify(base) || "post";
-    let candidate = root;
+    const slugCondition = or(eq(blogPosts.slug, root), like(blogPosts.slug, `${root}-%`));
+    const rows = await this.db.query.blogPosts.findMany({
+      where: excludeId ? and(ne(blogPosts.id, excludeId), slugCondition) : slugCondition,
+      columns: { slug: true },
+      limit: 200,
+    });
+    const taken = new Set(rows.map((r) => r.slug));
+    if (!taken.has(root)) return root;
     let n = 2;
-
-    for (;;) {
-      const clash = await this.db.query.blogPosts.findFirst({
-        where: excludeId
-          ? and(eq(blogPosts.slug, candidate), ne(blogPosts.id, excludeId))
-          : eq(blogPosts.slug, candidate),
-        columns: { id: true },
-      });
-      if (!clash) return candidate;
-      candidate = `${root}-${n++}`;
-    }
+    while (taken.has(`${root}-${n}`)) n++;
+    return `${root}-${n}`;
   }
 }
 

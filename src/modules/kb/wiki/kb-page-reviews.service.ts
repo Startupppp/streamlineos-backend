@@ -25,6 +25,10 @@ import type {
 } from "./dto/kb-page-reviews.schemas";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
+import type { KeysetPosition } from "../../../common/pagination/keyset";
+import { keysetAfterId } from "../../../common/pagination/keyset";
+import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
+import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 
 type ReviewRow = typeof kbPageReviews.$inferSelect;
 const REVIEW_STATUSES = ["pending", "approved", "rejected", "expired"] as const;
@@ -146,7 +150,7 @@ export class KbPageReviewsService {
       .limit(100);
   }
 
-  async listDue(orgId: string): Promise<ReviewWithContext[]> {
+  async listDue(user: CurrentUserContext, cursor?: KeysetPosition): Promise<ReviewWithContext[]> {
     const requester = alias(users, "requester");
     const reviewer = alias(users, "reviewer");
     const requesterMembership = alias(
@@ -157,6 +161,29 @@ export class KbPageReviewsService {
       organizationMembers,
       "reviewer_assignee_membership",
     );
+
+    const projectIds = await getAccessibleProjectIds(this.db, user);
+    const canSeeAll = await reviewerCanSeeAllReviews(user, this.access);
+
+    const conditions = [
+      eq(kbPageReviews.orgId, user.orgId),
+      eq(kbPageReviews.status, "pending"),
+      eq(kbPageReviews.type, "freshness"),
+      isNotNull(kbPageReviews.dueAt),
+      lte(kbPageReviews.dueAt, new Date()),
+      pageVisibleTo(user, projectIds),
+    ];
+
+    if (!canSeeAll) {
+      const membershipId = this.actorMembershipId(user);
+      const ownOnly = or(
+        eq(kbPageReviews.reviewerMembershipId, membershipId),
+        eq(kbPageReviews.requestedByMembershipId, membershipId),
+      );
+      if (ownOnly) conditions.push(ownOnly);
+    }
+
+    if (cursor) conditions.push(keysetAfterId(kbPageReviews.dueAt, kbPageReviews.id, cursor));
 
     return this.db
       .select({
@@ -179,7 +206,7 @@ export class KbPageReviewsService {
         reviewerName: reviewer.name,
       })
       .from(kbPageReviews)
-      .leftJoin(kbPages, eq(kbPageReviews.pageId, kbPages.id))
+      .innerJoin(kbPages, and(eq(kbPageReviews.pageId, kbPages.id), isNull(kbPages.deletedAt)))
       .leftJoin(
         requesterMembership,
         eq(kbPageReviews.requestedByMembershipId, requesterMembership.id),
@@ -190,17 +217,9 @@ export class KbPageReviewsService {
       )
       .leftJoin(requester, eq(requesterMembership.userId, requester.id))
       .leftJoin(reviewer, eq(reviewerMembership.userId, reviewer.id))
-      .where(
-        and(
-          eq(kbPageReviews.orgId, orgId),
-          eq(kbPageReviews.status, "pending"),
-          eq(kbPageReviews.type, "freshness"),
-          isNotNull(kbPageReviews.dueAt),
-          lte(kbPageReviews.dueAt, new Date()),
-        ),
-      )
-      .orderBy(asc(kbPageReviews.dueAt))
-      .limit(100);
+      .where(and(...conditions))
+      .orderBy(asc(kbPageReviews.dueAt), asc(kbPageReviews.id))
+      .limit(50);
   }
 
   async create(
@@ -250,20 +269,16 @@ export class KbPageReviewsService {
     });
 
     if (review.reviewerId && review.reviewerId !== user.userId) {
-      void this.dispatch
-        .emit({
-          eventKey: "knowledge.page.review_requested",
-          orgId: user.orgId,
-          actorUserId: user.userId,
-          targetUserIds: [review.reviewerId],
-          entityType: "kb_page",
-          entityId: String(pageId),
-          title: `Review requested: ${page.title}`,
-          message: `You have been assigned a ${input.type} review for "${page.title}".`,
-        })
-        .catch(function notifError(err: unknown) {
-          console.error("Failed to send review request notification", err);
-        });
+      await this.dispatch.emit({
+        eventKey: "knowledge.page.review_requested",
+        orgId: user.orgId,
+        actorUserId: user.userId,
+        targetUserIds: [review.reviewerId],
+        entityType: "kb_page",
+        entityId: String(pageId),
+        title: `Review requested: ${page.title}`,
+        message: `You have been assigned a ${input.type} review for "${page.title}".`,
+      });
     }
 
     return review;
@@ -312,20 +327,16 @@ export class KbPageReviewsService {
     });
 
     if (existing.requestedById) {
-      void this.dispatch
-        .emit({
-          eventKey: "knowledge.page.review_approved",
-          orgId: user.orgId,
-          actorUserId: user.userId,
-          targetUserIds: [existing.requestedById],
-          entityType: "kb_page_review",
-          entityId: String(reviewId),
-          title: "Page review approved",
-          message: `Your review request (ID ${reviewId}) was approved.`,
-        })
-        .catch(function notifError(err: unknown) {
-          console.error("Failed to send review approval notification", err);
-        });
+      await this.dispatch.emit({
+        eventKey: "knowledge.page.review_approved",
+        orgId: user.orgId,
+        actorUserId: user.userId,
+        targetUserIds: [existing.requestedById],
+        entityType: "kb_page_review",
+        entityId: String(reviewId),
+        title: "Page review approved",
+        message: `Your review request (ID ${reviewId}) was approved.`,
+      });
     }
 
     return updated;
@@ -375,20 +386,16 @@ export class KbPageReviewsService {
     });
 
     if (existing.requestedById) {
-      void this.dispatch
-        .emit({
-          eventKey: "knowledge.page.review_rejected",
-          orgId: user.orgId,
-          actorUserId: user.userId,
-          targetUserIds: [existing.requestedById],
-          entityType: "kb_page_review",
-          entityId: String(reviewId),
-          title: "Page review rejected",
-          message: `Your review request (ID ${reviewId}) was rejected. Note: ${input.note}`,
-        })
-        .catch(function notifError(err: unknown) {
-          console.error("Failed to send review rejection notification", err);
-        });
+      await this.dispatch.emit({
+        eventKey: "knowledge.page.review_rejected",
+        orgId: user.orgId,
+        actorUserId: user.userId,
+        targetUserIds: [existing.requestedById],
+        entityType: "kb_page_review",
+        entityId: String(reviewId),
+        title: "Page review rejected",
+        message: `Your review request (ID ${reviewId}) was rejected. Note: ${input.note}`,
+      });
     }
 
     return updated;

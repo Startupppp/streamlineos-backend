@@ -339,7 +339,7 @@ export class ProjectsTicketsUpdateService {
     if (input.status === "IN_REVIEW" || input.status === "CHANGES_REQUESTED") {
       const reviewTarget = input.status === "IN_REVIEW" ? before.reporterId : newAssignee;
       if (reviewTarget) {
-        void this.dispatch.emit({
+        await this.dispatch.emit({
           eventKey: input.status === "IN_REVIEW"
             ? "build.ticket.review_requested"
             : "build.ticket.changes_requested",
@@ -352,7 +352,7 @@ export class ProjectsTicketsUpdateService {
           message: `Ticket "${before.title}" changed to ${input.status}.`,
           link: `/projects/${before.projectId}/tickets/${ticketId}`,
           variables: { ticketId, status: input.status, title: before.title },
-        }).catch(logSideEffectFailure("review notification", { ticketId }));
+        });
       }
     }
 

@@ -22,7 +22,7 @@ function makeChain(result: unknown = []): Record<string, jest.Mock> {
   };
 
   for (const key of Object.keys(chain)) {
-    if (!["limit", "orderBy", "onConflictDoUpdate", "returning"].includes(key)) {
+    if (!["limit", "onConflictDoUpdate", "returning"].includes(key)) {
       chain[key]!.mockReturnValue(chain);
     } else {
       chain[key]!.mockResolvedValue(result);

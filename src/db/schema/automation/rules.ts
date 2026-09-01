@@ -1,6 +1,9 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
+import type { AutomationCondition, AutomationAction } from "../../../modules/automation/dto/automation.schemas";
+
+export type { AutomationCondition, AutomationAction };
 
 export const AUTOMATION_TRIGGERS = [
   "lead.created",
@@ -63,27 +66,6 @@ export const AUTOMATION_TRIGGERS = [
 export type AutomationTriggerEvent = (typeof AUTOMATION_TRIGGERS)[number];
 
 export const AUTOMATION_RUN_STATUSES = ["success", "failed", "skipped"] as const;
-
-export interface AutomationCondition {
-  field: string;
-  op: "eq" | "neq" | "contains" | "gt" | "lt" | "exists";
-  value?: string | number | boolean;
-}
-
-export type AutomationAction =
-  | { type: "notify_roles"; config: { roles: string[]; title: string; message: string; link?: string } }
-  | { type: "notify_all"; config: { title: string; message: string; link?: string } }
-  | { type: "email"; config: { to: string; subject: string; body: string } }
-  | { type: "create_task"; config: { title: string; assigneeId?: string; dueInDays?: number } }
-  | { type: "webhook"; config: { event: string } }
-  | { type: "support_assign_ticket"; config: { assigneeId: string } }
-  | { type: "support_set_priority"; config: { priority: string } }
-  | { type: "support_add_tag"; config: { tagId: number } }
-  | { type: "support_internal_note"; config: { body: string } }
-  | { type: "ai_classify"; config: Record<string, unknown> }
-  | { type: "ai_summarize"; config: Record<string, unknown> }
-  | { type: "ai_extract"; config: Record<string, unknown> }
-  | { type: "ai_routing_suggestion"; config: Record<string, unknown> };
 
 export const automationRules = pgTable("automation_rules", {
   id: serial("id").primaryKey(),

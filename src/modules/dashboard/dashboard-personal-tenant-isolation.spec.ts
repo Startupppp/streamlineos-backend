@@ -33,9 +33,8 @@ describe("DashboardPersonalService — cross-tenant isolation", () => {
   function makeDb(wheres: unknown[]) {
     return {
       query: {
-        tickets: {
-          findMany: jest.fn().mockResolvedValue([]),
-        },
+        tickets: { findMany: jest.fn().mockResolvedValue([]) },
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: "member-iso-1" }) },
       },
       select: jest.fn().mockImplementation(() => ({
         from: jest.fn().mockImplementation(() => makeFrom(wheres)),

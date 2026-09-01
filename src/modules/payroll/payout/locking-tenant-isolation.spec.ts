@@ -10,13 +10,12 @@ describe("LockingService — cross-tenant isolation", () => {
     generateRun: jest.fn().mockResolvedValue(undefined),
     postPayrollLock: jest.fn().mockResolvedValue(undefined),
   } as never;
-  const payrollPosting = { postFinalized: jest.fn().mockResolvedValue(undefined) } as never;
 
   it("throws NotFoundException when run belongs to a different org (cross-tenant isolation)", async () => {
     const db = {
       query: { payrollRuns: { findFirst: jest.fn().mockResolvedValue(null) } },
     } as unknown as Db;
-    const svc = new LockingService(db, audit, generate, payrollPosting);
+    const svc = new LockingService(db, audit, generate);
     await expect(svc.lock(ATTACKER_ORG, "u1", 99)).rejects.toThrow(NotFoundException);
   });
 
@@ -33,7 +32,13 @@ describe("LockingService — cross-tenant isolation", () => {
           returning: jest.fn().mockResolvedValue([]),
         }),
       }),
-      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
     }));
     let outerSelectIdx = 0;
     const db = {
@@ -54,7 +59,7 @@ describe("LockingService — cross-tenant isolation", () => {
         };
       }),
     } as unknown as Db;
-    const svc = new LockingService(db, audit, generate, payrollPosting);
+    const svc = new LockingService(db, audit, generate);
     await expect(svc.lock(OWNER_ORG, "u1", 1)).resolves.not.toThrow();
   });
 });

@@ -10,7 +10,8 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
 
   function makeDb(projectRow: unknown | null, boardRows: unknown[]) {
     const loadSharesWhere = jest.fn().mockResolvedValue([]);
-    const innerJoin = jest.fn().mockReturnValue({ where: loadSharesWhere });
+    const innerJoin2 = jest.fn().mockReturnValue({ where: loadSharesWhere });
+    const innerJoin = jest.fn().mockReturnValue({ innerJoin: innerJoin2 });
     const boardWhere = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(boardRows) });
     const leftJoin = jest.fn().mockReturnValue({ where: boardWhere });
     const from = jest.fn().mockReturnValue({ where: boardWhere, leftJoin, innerJoin });

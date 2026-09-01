@@ -19,9 +19,11 @@ function buildDb(employeeName: string, orgOwnerIds: string[]) {
   return {
     select: jest.fn().mockImplementation(() => ({
       from: jest.fn().mockImplementation(() => ({
-        where: jest.fn().mockResolvedValue(
-          orgOwnerIds.map((userId) => ({ userId })),
-        ),
+        where: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue(
+            orgOwnerIds.map((userId) => ({ userId })),
+          ),
+        }),
       })),
     })),
     query: {

@@ -1,27 +1,16 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { AvScanner, type AvScanResult } from "./av-scan";
+import {
+  vtFileReportSchema,
+  vtUploadResponseSchema,
+  vtAnalysisReportSchema,
+  type VtStats,
+} from "./virustotal-av-scanner.schema";
 
 const VT_BASE = "https://www.virustotal.com/api/v3";
 const POLL_INTERVAL_MS = 15_000;
 const MAX_POLLS = 6;
-
-interface VtStats {
-  malicious?: number;
-  suspicious?: number;
-}
-
-interface VtFileReport {
-  data?: { attributes?: { last_analysis_stats?: VtStats } };
-}
-
-interface VtUploadResponse {
-  data?: { id?: string };
-}
-
-interface VtAnalysisReport {
-  data?: { attributes?: { status?: string; stats?: VtStats } };
-}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -62,8 +51,13 @@ export class VirusTotalScanner extends AvScanner implements OnModuleInit {
     });
     if (res.status === 404) return null;
     if (!res.ok) return null;
-    const body = (await res.json()) as VtFileReport;
-    return this.parseStats(body.data?.attributes?.last_analysis_stats ?? null);
+
+    const parsed = vtFileReportSchema.safeParse(await res.json());
+    if (!parsed.success) {
+      this.logger.error(`Malformed VirusTotal file-report response: ${parsed.error.message}`);
+      return { status: "error", reason: "vt-malformed-file-report" };
+    }
+    return this.parseStats(parsed.data.data?.attributes?.last_analysis_stats ?? null);
   }
 
   private async uploadFile(buffer: Buffer, filename: string, mimeType: string): Promise<string | null> {
@@ -76,8 +70,13 @@ export class VirusTotalScanner extends AvScanner implements OnModuleInit {
       body: form,
     });
     if (!res.ok) return null;
-    const body = (await res.json()) as VtUploadResponse;
-    return body.data?.id ?? null;
+
+    const parsed = vtUploadResponseSchema.safeParse(await res.json());
+    if (!parsed.success) {
+      this.logger.error(`Malformed VirusTotal upload response: ${parsed.error.message}`);
+      return null;
+    }
+    return parsed.data.data?.id ?? null;
   }
 
   private async pollAnalysis(analysisId: string, filename: string): Promise<AvScanResult> {
@@ -87,9 +86,14 @@ export class VirusTotalScanner extends AvScanner implements OnModuleInit {
         headers: { "x-apikey": this.apiKey },
       });
       if (!res.ok) continue;
-      const body = (await res.json()) as VtAnalysisReport;
-      if (body.data?.attributes?.status !== "completed") continue;
-      return this.parseStats(body.data.attributes.stats ?? null);
+
+      const parsed = vtAnalysisReportSchema.safeParse(await res.json());
+      if (!parsed.success) {
+        this.logger.error(`Malformed VirusTotal analysis response: ${parsed.error.message}`);
+        return { status: "error", reason: "vt-malformed-analysis-report" };
+      }
+      if (parsed.data.data?.attributes?.status !== "completed") continue;
+      return this.parseStats(parsed.data.data.attributes.stats ?? null);
     }
     this.logger.warn(`VirusTotal analysis timed out for "${filename}"`);
     return { status: "error", reason: "vt-analysis-timeout" };
@@ -98,7 +102,10 @@ export class VirusTotalScanner extends AvScanner implements OnModuleInit {
   private parseStats(stats: VtStats | null): AvScanResult {
     if (!stats) return { status: "error", reason: "vt-no-stats" };
     if ((stats.malicious ?? 0) > 0 || (stats.suspicious ?? 0) > 0)
-      return { status: "infected", threat: `${stats.malicious ?? 0} malicious, ${stats.suspicious ?? 0} suspicious` };
+      return {
+        status: "infected",
+        threat: `${stats.malicious ?? 0} malicious, ${stats.suspicious ?? 0} suspicious`,
+      };
     return { status: "clean" };
   }
 }

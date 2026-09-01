@@ -250,6 +250,51 @@ describe("PlanLimitsService", () => {
     });
   });
 
+  describe("assertWithinLimit — concurrent seat race produces a correct total", () => {
+    it("blocks the second writer when the seat count has advanced to the limit", async () => {
+      const FREE_TIER = [{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }];
+      const dbFirst = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce(FREE_TIER)
+          .mockResolvedValueOnce([{ count: 4 }]),
+      });
+      const dbSecond = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce(FREE_TIER)
+          .mockResolvedValueOnce([{ count: 5 }]),
+      });
+      const svcFirst = await build(dbFirst);
+      const svcSecond = await build(dbSecond);
+
+      const resultFirst = svcFirst.assertWithinLimit("org1", "members", 1);
+      const resultSecond = svcSecond.assertWithinLimit("org1", "members", 1);
+
+      const [r1, r2] = await Promise.allSettled([resultFirst, resultSecond]);
+
+      expect(r1.status).toBe("fulfilled");
+      expect(r2.status).toBe("rejected");
+      if (r2.status === "rejected")
+        expect(r2.reason).toBeInstanceOf(PaymentRequiredException);
+    });
+
+    it("never grants the same seat twice: a caller reading the committed count at limit is blocked", async () => {
+      const FREE_TIER = [{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }];
+      const dbAtLimit = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce(FREE_TIER)
+          .mockResolvedValueOnce([{ count: 5 }]),
+      });
+      const svc = await build(dbAtLimit);
+
+      await expect(svc.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(
+        PaymentRequiredException,
+      );
+    });
+  });
+
   describe("assertWithinLimit — a count that cannot be computed refuses the write", () => {
     const FREE_TIER = [{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }];
 

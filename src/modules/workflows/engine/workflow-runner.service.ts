@@ -9,10 +9,12 @@ import { workflowExecutions } from "../../../db/schema";
 import {
   NODE_DISPATCH_PORT,
   type NodeDispatchPort,
+  type ResolvedPermissionSet,
 } from "./node-outcome";
 import {
   isDue,
   readRunState,
+  writeRunState,
   type WorkflowRunState,
 } from "./workflow-execution-context";
 import { claimExecution } from "./execution-claim";
@@ -21,12 +23,61 @@ import {
   finishExecution,
   MAX_STEPS_PER_EXECUTION,
 } from "./execution-advance";
+import { backoffMs } from "../../../common/workflow/retry-policy";
+import { OUTBOX_MAX_RETRIES } from "../../../common/outbox/outbox-envelope";
 import { AccessService } from "../../access/access.service";
 
 export { MAX_STEPS_PER_EXECUTION };
 
 export const RUNNING_TIMEOUT_MS = 15 * 60 * 1000;
 const SWEEP_BATCH = 50;
+
+/**
+ * ioredis and postgres-js errors are cross-realm — `instanceof Error` is false.
+ * Classify on string properties (`error.code`, `error.name`) instead.
+ */
+const TRANSIENT_INFRA_CODES = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "ENOTFOUND",
+  "ECONNABORTED",
+  "EPIPE",
+]);
+
+export function isTransientInfraError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const e = error as Record<string, unknown>;
+  if (typeof e["code"] === "string" && TRANSIENT_INFRA_CODES.has(e["code"])) return true;
+  if (e["name"] === "MaxRetriesPerRequestError") return true;
+  return false;
+}
+
+async function releaseToWaiting(
+  db: Db,
+  orgId: string,
+  executionId: string,
+  runAfter: Date,
+  currentState: WorkflowRunState,
+): Promise<void> {
+  const nextState = writeRunState({
+    ...currentState,
+    resumeAt: runAfter,
+    infraAttempt: currentState.infraAttempt + 1,
+  });
+  await runInNewTenantTransaction(db, orgId, async (tx) => {
+    await tx
+      .update(workflowExecutions)
+      .set({ status: "waiting", context: nextState })
+      .where(
+        and(
+          eq(workflowExecutions.id, executionId),
+          eq(workflowExecutions.orgId, orgId),
+          eq(workflowExecutions.status, "running"),
+        ),
+      );
+  });
+}
 
 export interface WorkflowSweepResult {
   claimed: number;
@@ -115,9 +166,42 @@ export class WorkflowRunnerService {
     const execution = await claimExecution(this.db, orgId, executionId);
     if (!execution) return null;
 
-    const resolvedPermissions = execution.triggeredBy
-      ? await this.access.resolveUserPermissions(orgId, execution.triggeredBy)
-      : null;
+    const currentState = readRunState(execution.context);
+    let resolvedPermissions: ResolvedPermissionSet = null;
+
+    if (execution.triggeredBy) {
+      try {
+        resolvedPermissions = await this.access.resolveUserPermissions(orgId, execution.triggeredBy);
+      } catch (error) {
+        if (isTransientInfraError(error) && currentState.infraAttempt < OUTBOX_MAX_RETRIES) {
+          const delay = backoffMs(currentState.infraAttempt + 1);
+          const runAfter = new Date(Date.now() + delay);
+          this.logger.warn(
+            `workflow execution ${executionId} transient infra error ` +
+            `(attempt ${currentState.infraAttempt + 1}/${OUTBOX_MAX_RETRIES}) — ` +
+            `code=${String((error as Record<string, unknown>)["code"] ?? "n/a")} ` +
+            `name=${String((error as Record<string, unknown>)["name"] ?? "n/a")}; ` +
+            `rescheduled in ${delay}ms`,
+          );
+          await releaseToWaiting(this.db, orgId, executionId, runAfter, currentState);
+          return "suspended";
+        }
+        const errProp = error as Record<string, unknown>;
+        const errStr = typeof errProp["message"] === "string"
+          ? errProp["message"]
+          : typeof errProp["code"] === "string"
+          ? errProp["code"]
+          : "unknown";
+        this.logger.error(
+          `workflow execution ${executionId} failed during permission resolve ` +
+          `(infraAttempt=${currentState.infraAttempt}): ${errStr}`,
+        );
+        await runInNewTenantTransaction(this.db, orgId, (tx) =>
+          finishExecution(tx, execution.id, "failed"),
+        );
+        return "failed";
+      }
+    }
 
     try {
       return await runInNewTenantTransaction(this.db, orgId, (tx) =>

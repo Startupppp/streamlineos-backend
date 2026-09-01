@@ -38,8 +38,8 @@ function resolverForMemberWithNoRoles(): AccessPermissionResolver {
     },
     select: () => ({
       from: () => ({
-        innerJoin: () => ({ where: () => Promise.resolve([]) }),
-        where: () => Promise.resolve([]),
+        innerJoin: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
+        where: () => ({ limit: () => Promise.resolve([]) }),
       }),
     }),
   } as unknown as Db;
@@ -139,8 +139,8 @@ describe("owning the Home module does not confer org-wide chat settings", () => 
         from: (table: unknown) => {
           const rows = table === moduleOwnerships ? [{ moduleKey: "home" }] : [];
           return {
-            innerJoin: () => ({ where: () => Promise.resolve([]) }),
-            where: () => Promise.resolve(rows),
+            innerJoin: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
+            where: () => ({ limit: () => Promise.resolve(rows) }),
           };
         },
       }),

@@ -25,7 +25,7 @@ const ATTACKER_ORG = "org-attacker";
 const OWNER_ORG = "org-owner";
 
 function makeCtx(orgId: string): CurrentUserContext {
-  return { userId: "u1", orgId, isOrgOwner: false, sessionId: "s1" } as CurrentUserContext;
+  return { userId: "u1", orgId, isOrgOwner: false, sessionId: "s1", principal: { kind: "human-session", membershipId: 1, isOrgOwner: false } } as unknown as CurrentUserContext;
 }
 
 function makeAnalyticsDb(): { db: Db; capturedWheres: unknown[] } {
@@ -77,7 +77,7 @@ describe("ProjectsWorkspaceMembersService — cross-tenant isolation", () => {
     });
     const db = {
       select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where }) }),
+        from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where }) }) }),
       }),
     } as unknown as Db;
     const audit = {} as unknown as AuditService;
@@ -100,9 +100,9 @@ describe("ProjectsWorkspaceMembersService — cross-tenant isolation", () => {
       select: jest.fn().mockImplementation(() => {
         call++;
         if (call === 1) {
-          return { from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([fakeMember]) }) }) }) }) };
+          return { from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([fakeMember]) }) }) }) }) }) };
         }
-        return { from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }) };
+        return { from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }) }) };
       }),
     } as unknown as Db;
     const audit = {} as unknown as AuditService;

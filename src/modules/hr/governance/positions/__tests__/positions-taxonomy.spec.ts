@@ -291,7 +291,9 @@ describe("tenant isolation (code-level guarantee)", () => {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            orderBy: jest.fn().mockResolvedValue([]),
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([]),
+            }),
           }),
         }),
       }),

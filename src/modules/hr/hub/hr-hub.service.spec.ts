@@ -172,7 +172,6 @@ describe("HrHubService", () => {
     expect(harness.leaves.calendar).toHaveBeenCalledWith("org-1", 8, 2026);
     expect(harness.holidays.listByYear).toHaveBeenCalledWith("org-1", 2026);
     expect(harness.attendance.teamStatus).toHaveBeenCalledWith(USER, {
-      page: 1,
       limit: 1,
     });
     expect(harness.exit.list).toHaveBeenCalledWith(

@@ -49,8 +49,13 @@ export class KbPageReviewsController {
 
   @Get("page-reviews/due")
   @RequirePermission("kb:reviews:view")
-  async listDue(@CurrentUser() u: CurrentUserContext): Promise<unknown> {
-    return this.reviews.listDue(u.orgId);
+  async listDue(
+    @Query("afterDueAt") afterDueAt: string | undefined,
+    @Query("afterId") afterId: string | undefined,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<unknown> {
+    const cursor = afterDueAt && afterId ? { sortValue: afterDueAt, id: afterId } : undefined;
+    return this.reviews.listDue(u, cursor);
   }
 
   @Post("pages/:pageId/reviews")

@@ -29,6 +29,8 @@ export interface StreamSettlement {
   orgId: string;
   userId: string;
   feature: string;
+  ttftMs?: number;
+  appOverheadMs?: number;
 }
 
 export async function settleStream(
@@ -36,7 +38,7 @@ export async function settleStream(
   usageSvc: Pick<AiUsageService, "track">,
   settlement: StreamSettlement,
 ): Promise<void> {
-  const { reservationId, model, promptTokens, completionTokens, orgId, userId, feature } =
+  const { reservationId, model, promptTokens, completionTokens, orgId, userId, feature, ttftMs, appOverheadMs } =
     settlement;
   const { costUsd, milliCredits } = computeTokenCharge(model, promptTokens, completionTokens);
   await ledger.settle(reservationId, {
@@ -56,6 +58,8 @@ export async function settleStream(
     promptTokens,
     completionTokens,
     creditsMilli: milliCredits,
+    ttftMs,
+    appOverheadMs,
   });
 }
 

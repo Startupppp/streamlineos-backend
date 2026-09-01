@@ -5,8 +5,8 @@ import {
   ForbiddenException,
   Get,
   Inject,
-  InternalServerErrorException,
   NotFoundException,
+  PayloadTooLargeException,
   Post,
   Query,
   Res,
@@ -25,6 +25,7 @@ import { AuthorizedInService } from "../../common/auth/authorized-in-service.dec
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AuditService } from "../../common/audit/audit.service";
 import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
+import { registerAfterCommit } from "../../common/tenant";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import {
@@ -36,8 +37,10 @@ import {
   payslipPublications,
   candidateDocumentsVault,
 } from "../../db/schema";
-import { StorageService, type FileStreamResult } from "./storage.service";
+import { StorageService, type FileStreamResult, type UploadJobResult } from "./storage.service";
 import { validateMagicBytes } from "./file-signatures";
+import { FileQuarantineService } from "./file-quarantine.service";
+import { MediaCompressionService } from "../../common/media/media-compression.service";
 import { AccessService } from "../access/access.service";
 import { AvScanner } from "../../common/security/av-scan";
 import { Validate } from "../../common/validation/validate.decorator";
@@ -49,6 +52,8 @@ import {
 } from "./dto/storage.schemas";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+const ORG_QUOTA_BYTES = 5 * 1024 * 1024 * 1024;
+const USER_QUOTA_BYTES = 500 * 1024 * 1024;
 
 const SENSITIVE_KEY_PREFIXES = [
   "payroll/",
@@ -125,6 +130,8 @@ export class StorageController {
     private readonly audit: AuditService,
     private readonly access: AccessService,
     private readonly avScanner: AvScanner,
+    private readonly quarantine: FileQuarantineService,
+    private readonly compression: MediaCompressionService,
   ) {}
 
   @Post("upload")
@@ -135,10 +142,9 @@ export class StorageController {
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body("folder") folderField: string | undefined,
     @CurrentUser() u: CurrentUserContext,
-  ): Promise<{ url: string; key: string; size: number; mimeType: string }> {
-    if (!this.storage.isConfigured()) {
+  ): Promise<UploadJobResult> {
+    if (!this.storage.isConfigured())
       throw new ServiceUnavailableException("File storage is not available");
-    }
     if (!file) throw new BadRequestException("No file provided");
 
     const rawFolder = folderField && folderField.length > 0 ? folderField : "uploads";
@@ -146,12 +152,19 @@ export class StorageController {
     await this.assertUploadAllowed(folder, u);
 
     if (file.size > MAX_UPLOAD_SIZE) throw new BadRequestException("File too large (max 10MB)");
-    if (!ALLOWED_UPLOAD_TYPES.includes(file.mimetype)) {
+    if (!ALLOWED_UPLOAD_TYPES.includes(file.mimetype))
       throw new BadRequestException("File type not allowed");
-    }
-    if (!validateMagicBytes(file.buffer, file.mimetype)) {
+    if (!validateMagicBytes(file.buffer, file.mimetype))
       throw new BadRequestException("File content does not match declared type");
-    }
+
+    const [orgUsed, userUsed] = await Promise.all([
+      this.quarantine.getTotalUsageBytes(u.orgId),
+      this.quarantine.getTotalUsageBytesForUser(u.orgId, u.userId),
+    ]);
+    if (orgUsed + file.size > ORG_QUOTA_BYTES)
+      throw new PayloadTooLargeException("Organization storage quota exceeded");
+    if (userUsed + file.size > USER_QUOTA_BYTES)
+      throw new PayloadTooLargeException("User storage quota exceeded");
 
     const scanResult = await this.avScanner.scan(file.buffer, file.originalname, file.mimetype);
     if (scanResult.status === "infected")
@@ -159,27 +172,65 @@ export class StorageController {
     if (scanResult.status === "error")
       throw new ServiceUnavailableException("Malware scan unavailable — upload rejected");
 
-    try {
-      const result = await this.storage.uploadCompressed(
-        u.orgId,
-        file.buffer,
-        folder,
-        file.originalname,
-        file.mimetype,
-      );
+    const preGen = await this.storage.compressAndPreGenerateKey(
+      u.orgId,
+      file.buffer,
+      folder,
+      file.originalname,
+      file.mimetype,
+    );
+
+    const quarantineId = await this.quarantine.begin({
+      orgId: u.orgId,
+      storageKey: preGen.key,
+      filename: file.originalname,
+      mimeType: preGen.compressedMimeType,
+      fileSizeBytes: preGen.size,
+      sha256: preGen.sha256,
+      uploadedBy: u.userId,
+    });
+
+    const { orgId, userId } = u;
+    const { key, url, compressedBuffer, compressedMimeType, size, sha256 } = preGen;
+    const originalMimeType = file.mimetype;
+
+    const deferred = registerAfterCommit(async () => {
+      await this.storage.uploadToKey(orgId, compressedBuffer, key, compressedMimeType);
+      await this.quarantine.markClean(quarantineId);
+
+      const thumbBuffer = await this.compression.generateThumbnail(compressedBuffer, originalMimeType);
+      if (thumbBuffer) {
+        const thumbKey = `${key}-thumb.webp`;
+        await this.storage.uploadToKey(orgId, thumbBuffer, thumbKey, "image/webp");
+      }
+
       this.audit.log({
         action: "file.upload",
-        userId: u.userId,
-        orgId: u.orgId,
-        metadata: { fileKey: result.key, fileSize: result.size, mimeType: result.mimeType },
+        userId,
+        orgId,
+        metadata: { fileKey: key, fileSize: size, mimeType: compressedMimeType },
       });
-      return result;
-    } catch (error) {
-      if (error instanceof BadRequestException || error instanceof ServiceUnavailableException) {
-        throw error;
+    });
+
+    if (!deferred) {
+      await this.storage.uploadToKey(orgId, compressedBuffer, key, compressedMimeType);
+      await this.quarantine.markClean(quarantineId);
+
+      const thumbBuffer = await this.compression.generateThumbnail(compressedBuffer, originalMimeType);
+      if (thumbBuffer) {
+        const thumbKey = `${key}-thumb.webp`;
+        await this.storage.uploadToKey(orgId, thumbBuffer, thumbKey, "image/webp");
       }
-      throw new InternalServerErrorException("Failed to upload file");
+
+      this.audit.log({
+        action: "file.upload",
+        userId,
+        orgId,
+        metadata: { fileKey: key, fileSize: size, mimeType: compressedMimeType },
+      });
     }
+
+    return { quarantineId, status: "pending_scan", key, url, mimeType: compressedMimeType, size, sha256 };
   }
 
   @Get("download")
@@ -209,6 +260,10 @@ export class StorageController {
       if (fileOwner.orgId !== orgId) throw new NotFoundException("File not found");
       if (requiresDedicatedAccess(fileOwner)) throw new ForbiddenException("Access denied");
     } else if (isSensitiveKey(fileKey)) {
+      throw new NotFoundException("File not found");
+    }
+
+    if (await this.quarantine.isKeyBlocked(orgId, fileKey)) {
       throw new NotFoundException("File not found");
     }
 

@@ -1,6 +1,7 @@
 import { relations, sql } from "drizzle-orm";
 import {
   bigint,
+  foreignKey,
   index,
   integer,
   pgTable,
@@ -19,7 +20,7 @@ export const billingProrationLines = pgTable(
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-    subscriptionId: integer("subscription_id").notNull().references(() => subscriptions.id, { onDelete: "cascade" }),
+    subscriptionId: integer("subscription_id").notNull(),
     idempotencyKey: varchar("idempotency_key", { length: 120 }).notNull(),
     lineType: varchar("line_type", { length: 20 }).notNull(),
     oldPriceVersionId: bigint("old_price_version_id", { mode: "number" }).references(() => billingPriceVersions.id, { onDelete: "restrict" }),
@@ -43,6 +44,7 @@ export const billingProrationLines = pgTable(
     index("idx_billing_proration_unreconciled").on(t.orgId)
       .where(sql`reconciled_at IS NULL AND provider_ref IS NOT NULL`),
     unique("uniq_billing_proration_lines_org_id").on(t.orgId, t.id),
+    foreignKey({ columns: [t.orgId, t.subscriptionId], foreignColumns: [subscriptions.orgId, subscriptions.id], name: "fk_billing_proration_org_sub" }).onDelete("cascade"),
   ],
 );
 

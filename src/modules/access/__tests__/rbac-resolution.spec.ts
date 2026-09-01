@@ -33,16 +33,19 @@ type AccessSelectChain = {
   from: jest.Mock;
   where: jest.Mock;
   innerJoin: jest.Mock;
+  limit: jest.Mock;
 };
 
 function makeSelectChain(result: unknown[]): AccessSelectChain {
   const chain: AccessSelectChain = {
     from: jest.fn(),
-    where: jest.fn().mockResolvedValue(result),
+    where: jest.fn(),
     innerJoin: jest.fn(),
+    limit: jest.fn().mockResolvedValue(result),
   };
   chain.from.mockReturnValue(chain);
   chain.innerJoin.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
   return chain;
 }
 

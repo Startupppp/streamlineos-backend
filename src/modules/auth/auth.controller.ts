@@ -5,12 +5,20 @@ import {
   HttpCode,
   HttpException,
   HttpStatus,
+  Inject,
+  Optional,
   Param,
   Post,
   Request,
   UseGuards,
 } from "@nestjs/common";
+import { jwtVerify } from "jose";
+import type { Redis } from "@upstash/redis";
+import { REDIS } from "../../common/cache/cache.service";
+import { SESSION_PROOF_ISSUER, SESSION_PROOF_AUDIENCE } from "../../common/auth/backend-claims";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
+import { JwtKeyringService } from "../../common/auth/jwt-keyring.service";
+import { MembershipStateService } from "../../common/auth/membership-state.service";
 import { Universal } from "../../common/auth/universal.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -30,6 +38,7 @@ import {
   googleOAuthSchema,
   requestEmailOtpSchema,
   verifyEmailOtpSchema,
+  sessionExchangeSchema,
   type RegisterInput,
   type VerifyEmailInput,
   type MagicLinkRequestInput,
@@ -37,6 +46,7 @@ import {
   type GoogleOAuthInput,
   type RequestEmailOtpInput,
   type VerifyEmailOtpInput,
+  type SessionExchangeInput,
 } from "./dto/auth.schemas";
 import { enrichUserAgent } from "../../common/http/parse-user-agent";
 import { Validate } from "../../common/validation/validate.decorator";
@@ -48,11 +58,29 @@ const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 @Controller("auth")
 @UseGuards(JwtAuthGuard)
 export class AuthController {
+  private readonly nonceCache = new Map<string, number>();
+
   constructor(
     private readonly authService: AuthService,
     private readonly authTokensService: AuthTokensService,
     private readonly rateLimit: RateLimitService,
+    private readonly keyring: JwtKeyringService,
+    private readonly membershipState: MembershipStateService,
+    @Optional() @Inject(REDIS) private readonly redis: Redis | null = null,
   ) {}
+
+  private async isNonceFirstUse(nonce: string, ttlSecs: number): Promise<boolean> {
+    if (this.redis) {
+      const result = await this.redis.set(`exchange-nonce:${nonce}`, 1, { nx: true, ex: ttlSecs });
+      return result !== null;
+    }
+    const now = Date.now();
+    for (const [k, exp] of this.nonceCache)
+      if (exp <= now) this.nonceCache.delete(k);
+    if (this.nonceCache.has(nonce)) return false;
+    this.nonceCache.set(nonce, now + ttlSecs * 1000);
+    return true;
+  }
 
   private getIp(req: { ip?: string; headers: Record<string, string> }): string {
     return req.headers["x-forwarded-for"]?.split(",")?.[0]?.trim() ?? req.ip ?? "unknown";
@@ -216,5 +244,99 @@ export class AuthController {
   ) {
     await this.enforceRateLimit("auth:email-otp-verify", this.getIp(req));
     return this.authTokensService.verifyEmailOtp(body.email, body.code);
+  }
+
+  @Post("session-exchange")
+  @Public()
+  @HttpCode(200)
+  @Validate({ body: sessionExchangeSchema })
+  async sessionExchange(
+    @Body() body: SessionExchangeInput,
+    @Request() req: { headers: Record<string, string> },
+  ): Promise<{ token: string }> {
+    // Transport gate — prevents direct browser access
+    const internalSecret = process.env.INTERNAL_API_SECRET;
+    if (!internalSecret || req.headers["x-internal-secret"] !== internalSecret) {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
+
+    // Session proof required — identity comes from the verified proof, never from the body
+    const proofJwt = req.headers["x-session-proof"];
+    if (!proofJwt || typeof proofJwt !== "string") {
+      throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+    }
+
+    const nextAuthSecret = process.env.NEXTAUTH_SECRET;
+    if (!nextAuthSecret) {
+      throw new HttpException("Service Unavailable", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    let userId: string;
+    let sessionId: string;
+    let nonce: string;
+    try {
+      const { payload } = await jwtVerify(
+        proofJwt,
+        new TextEncoder().encode(nextAuthSecret),
+        {
+          algorithms: ["HS256"],
+          issuer: SESSION_PROOF_ISSUER,
+          audience: SESSION_PROOF_AUDIENCE,
+          clockTolerance: 5,
+        },
+      );
+      const sub = payload.sub;
+      const sid = payload["sessionId"];
+      const jti = payload.jti;
+      if (!sub || typeof sid !== "string" || !sid || !jti) {
+        throw new Error("Missing required claims");
+      }
+      userId = sub;
+      sessionId = sid;
+      nonce = jti;
+    } catch {
+      throw new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED);
+    }
+
+    // Single-use nonce prevents replay; TTL matches the 30s proof window plus margin
+    const nonceAccepted = await this.isNonceFirstUse(nonce, 90);
+    if (!nonceAccepted) {
+      throw new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED);
+    }
+
+    // Revalidate session at exchange time — refuse to mint for a revoked session
+    if (this.redis) {
+      const tombstone = await this.redis.get<boolean>(`revoked:session:${sessionId}`);
+      if (tombstone === true) {
+        throw new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED);
+      }
+    }
+
+    const accountActive = await this.membershipState.isAccountActive(userId);
+    if (!accountActive) {
+      throw new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED);
+    }
+
+    const orgId = body.orgId ?? null;
+    if (orgId) {
+      const state = await this.membershipState.resolve(userId, orgId);
+      if (!state.active || state.membershipId === null) {
+        throw new HttpException("Forbidden", HttpStatus.FORBIDDEN);
+      }
+    }
+
+    if (!this.keyring.isReady()) {
+      throw new HttpException("Service Unavailable", HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    const token = await this.keyring.signToken({ sub: userId, orgId, sessionId });
+    return { token };
+  }
+
+  @Get(".well-known/jwks.json")
+  @Public()
+  @HttpCode(200)
+  getJwks() {
+    return this.keyring.getJwks();
   }
 }

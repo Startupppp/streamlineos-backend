@@ -31,7 +31,7 @@ export const subscriptions = pgTable("subscriptions", {
 export const subscriptionPayments = pgTable("subscription_payments", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  subscriptionId: integer("subscription_id").references(() => subscriptions.id, { onDelete: "cascade" }).notNull(),
+  subscriptionId: integer("subscription_id").notNull(),
   razorpayPaymentId: text("razorpay_payment_id"),
   razorpayOrderId: text("razorpay_order_id"),
   amount: numeric("amount", { precision: 15, scale: 2 }),
@@ -46,6 +46,7 @@ export const subscriptionPayments = pgTable("subscription_payments", {
   index("idx_sub_payments_org").on(table.orgId),
   index("idx_sub_payments_sub").on(table.subscriptionId),
   unique("uniq_subscription_payments_org_id").on(table.orgId, table.id),
+  foreignKey({ columns: [table.orgId, table.subscriptionId], foreignColumns: [subscriptions.orgId, subscriptions.id], name: "fk_sub_payments_org_sub" }).onDelete("cascade"),
 ]);
 
 export const coupons = pgTable("coupons", {

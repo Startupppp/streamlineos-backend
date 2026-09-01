@@ -123,7 +123,7 @@ export class ActivitiesService {
     source = "manual",
   ) {
     return this.db.transaction(async (tx) => {
-      const [row] = await (tx as Db)
+      const [row] = await tx
         .insert(activities)
         .values({
           organizationId,
@@ -145,7 +145,7 @@ export class ActivitiesService {
         .returning();
 
       if (row && input.participants.length > 0)
-        await (tx as Db).insert(activityParticipants).values(
+        await tx.insert(activityParticipants).values(
           input.participants.map((participant) => ({
             organizationId,
             activityId: row.activityId,

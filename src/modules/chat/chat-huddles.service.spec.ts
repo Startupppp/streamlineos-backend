@@ -3,10 +3,10 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ChatHuddlesService, HUDDLE_MESH_MAX_PARTICIPANTS } from "./chat-huddles.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AblyService } from "../realtime/ably.service";
-import { WebPushService } from "../realtime/web-push.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 
 const mockDb = {
   query: {
@@ -30,7 +30,7 @@ const mockDb = {
 };
 
 const mockAbly = { publishHuddleEvent: jest.fn().mockResolvedValue(undefined), publishToUser: jest.fn().mockResolvedValue(undefined) };
-const mockWebPush = { sendToUser: jest.fn().mockResolvedValue(undefined) };
+const mockDispatch = { emit: jest.fn().mockResolvedValue({ eventKey: "chat.huddle.invite", notified: 0, deliveriesQueued: 0, suppressed: 0, deduped: 0, deferred: true }) };
 const mockAudit = { log: jest.fn() };
 const mockOrgSettings = {
   getSettings: jest.fn().mockResolvedValue({ maxHuddleParticipants: 50 }),
@@ -52,7 +52,7 @@ describe("ChatHuddlesService", () => {
         ChatHuddlesService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AblyService, useValue: mockAbly },
-        { provide: WebPushService, useValue: mockWebPush },
+        { provide: NotificationDispatchService, useValue: mockDispatch },
         { provide: AuditService, useValue: mockAudit },
         { provide: ChatOrgSettingsService, useValue: mockOrgSettings },
         { provide: PlanLimitsService, useValue: mockPlanLimits },

@@ -19,30 +19,17 @@ describe("PayrollApproverResolverService — cross-tenant isolation", () => {
 
   function makeDb(rows: unknown[]): { db: Db; whereCaptures: jest.Mock[] } {
     const whereCaptures: jest.Mock[] = [];
-
-    function makeBuilder(result: unknown[]) {
-      const where = jest.fn().mockResolvedValue(result);
-      whereCaptures.push(where);
-      const innerJoin = jest.fn();
-      const from = jest.fn();
-      const builder = { from, innerJoin, where };
-      from.mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where }) }), where });
-      innerJoin.mockReturnValue(builder);
-      return { select: jest.fn().mockReturnValue(builder), where };
-    }
-
     let callIndex = 0;
+
     const select = jest.fn().mockImplementation(() => {
       const result = callIndex < rows.length ? [rows[callIndex]] : [];
       callIndex++;
-      const where = jest.fn().mockResolvedValue(result);
+      const where = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(result) });
       whereCaptures.push(where);
       return {
         from: jest.fn().mockReturnValue({
           innerJoin: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where,
-            }),
+            innerJoin: jest.fn().mockReturnValue({ where }),
             where,
           }),
           where,

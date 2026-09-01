@@ -18,7 +18,7 @@ const mockDb = {
     from: jest.fn().mockReturnValue({
       where: jest.fn().mockReturnValue(
         Object.assign(Promise.resolve([{ total: 0 }]), {
-          limit: jest.fn().mockResolvedValue([{ status: "ACTIVE" }]),
+          limit: jest.fn().mockResolvedValue([{ id: "mbr-42", status: "ACTIVE" }]),
         }),
       ),
     }),
@@ -77,7 +77,7 @@ describe("AutomationService — support_* actions", () => {
     expect(result.matched).toBe(true);
     expect(result.actionResults).toEqual([{ type: "support_assign_ticket", ok: true }]);
     expect(mockDb.update).toHaveBeenCalled();
-    expect(mockDb.set).toHaveBeenCalledWith(expect.objectContaining({ assigneeId: "agent-1" }));
+    expect(mockDb.set).toHaveBeenCalledWith(expect.objectContaining({ assigneeMembershipId: "mbr-42" }));
   });
 
   it("support_set_priority updates the ticket's priority", async () => {

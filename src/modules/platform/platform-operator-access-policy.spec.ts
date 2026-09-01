@@ -154,13 +154,15 @@ describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
         where: jest.fn().mockReturnThis(),
         returning: jest.fn().mockResolvedValue([{ grantId: "grant-1" }]),
       };
+      const updateMock = jest.fn().mockReturnValue(updateChain);
+      const insertMock = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) });
+      const transaction = { execute: jest.fn().mockResolvedValue([]), update: updateMock, insert: insertMock };
       const db = {
         select: jest.fn().mockReturnValue(selectChain),
-        update: jest.fn().mockReturnValue(updateChain),
-        insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
+        update: updateMock,
+        insert: insertMock,
+        transaction: jest.fn(async (callback: (value: typeof transaction) => Promise<unknown>) => callback(transaction)),
       };
-      const transaction = { execute: jest.fn().mockResolvedValue([]), update: db.update, insert: db.insert };
-      db.transaction = jest.fn(async (callback: (value: typeof transaction) => Promise<unknown>) => callback(transaction));
       const svc = await buildService(db);
 
       await svc.revokeGrant("grant-1", "no longer needed", "op-bob");

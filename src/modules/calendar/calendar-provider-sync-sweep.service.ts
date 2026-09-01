@@ -1,0 +1,200 @@
+import { Inject, Injectable, Logger } from "@nestjs/common";
+import { and, eq, inArray, sql } from "drizzle-orm";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import type { Db } from "../../db/drizzle.module";
+import { calendarEvents, calendarProviderSyncQueue, userIntegrationConnections } from "../../db/schema";
+import { forEachOrg } from "../../common/tenant";
+import type { ForEachOrgResult } from "../../common/tenant/for-each-org";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { ExternalCalendarSyncService, type PushConnection, type PushEventInput } from "./external-calendar-sync.service";
+
+const BATCH_LIMIT = 20;
+const LEASE_MS = 90_000;
+const MAX_ATTEMPTS = 5;
+const RETRY_BACKOFF_MS: readonly number[] = [0, 30_000, 120_000, 600_000, 1_800_000];
+
+export interface CalendarProviderSyncSweepResult {
+  organizations: ForEachOrgResult;
+  claimed: number;
+  processed: number;
+  retried: number;
+  failed: number;
+}
+
+@Injectable()
+export class CalendarProviderSyncSweepService {
+  private readonly logger = new Logger(CalendarProviderSyncSweepService.name);
+
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly sync: ExternalCalendarSyncService,
+  ) {}
+
+  async run(now = new Date()): Promise<CalendarProviderSyncSweepResult> {
+    const leaseUntil = new Date(now.getTime() + LEASE_MS);
+    const claimed: Array<typeof calendarProviderSyncQueue.$inferSelect> = [];
+
+    const organizations = await forEachOrg(this.db, "calendar-provider-sync-sweep", async (tx, orgId) => {
+      const remaining = BATCH_LIMIT - claimed.length;
+      if (remaining <= 0) return;
+      const rows = await tx
+        .update(calendarProviderSyncQueue)
+        .set({ state: "IN_FLIGHT", leaseExpiresAt: leaseUntil })
+        .where(
+          sql`${calendarProviderSyncQueue.id} in (
+            select id from ${calendarProviderSyncQueue}
+            where org_id = ${orgId}
+              and (
+                state = 'PENDING'
+                or (state = 'IN_FLIGHT' and lease_expires_at < ${now.toISOString()}::timestamptz)
+              )
+            order by id
+            limit ${remaining}
+            for update skip locked
+          )`,
+        )
+        .returning();
+      claimed.push(...rows);
+    });
+
+    let processed = 0;
+    let retried = 0;
+    let failed = 0;
+
+    for (const row of claimed) {
+      try {
+        await this.processRow(row);
+        await this.mark(row, { state: "PROCESSED", processedAt: now });
+        processed += 1;
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        const attempts = row.attemptCount + 1;
+        const dead = attempts >= MAX_ATTEMPTS;
+        const backoffMs = RETRY_BACKOFF_MS[Math.min(attempts, RETRY_BACKOFF_MS.length - 1)] ?? 1_800_000;
+        const nextAttemptAt = dead ? null : new Date(now.getTime() + backoffMs);
+        this.logger.error(
+          `calendar-provider-sync row ${row.id} (op=${row.operation}, org=${row.orgId}) failed attempt ${attempts}: ${message}`,
+        );
+        await this.mark(row, {
+          state: dead ? "FAILED" : "PENDING",
+          attemptCount: attempts,
+          lastError: message,
+          leaseExpiresAt: nextAttemptAt,
+        });
+        if (dead) failed += 1;
+        else retried += 1;
+      }
+    }
+
+    return { organizations, claimed: claimed.length, processed, retried, failed };
+  }
+
+  private async processRow(row: typeof calendarProviderSyncQueue.$inferSelect): Promise<void> {
+    const payload = row.payload as {
+      userId?: string;
+      title?: string;
+      description?: string | null;
+      startIso?: string;
+      endIso?: string;
+      allDay?: boolean;
+      attendeeEmails?: string[];
+      addConference?: boolean;
+    };
+    const userId = payload.userId;
+    if (!userId) throw new Error("sync-queue row missing payload.userId");
+
+    const conn = await this.resolveConnection(row.orgId, row.connectionId);
+
+    if (row.operation === "delete") {
+      if (!row.externalEventId) return;
+      const result = await this.sync.pushDelete(userId, conn, row.externalEventId);
+      if (!result.success)
+        this.logger.warn(`calendar-provider-sync delete skipped for ${conn.toolkit}: ${result.reason}`);
+      return;
+    }
+
+    if (!row.eventId) return;
+
+    const eventRow = await this.db.query.calendarEvents.findFirst({
+      where: and(eq(calendarEvents.id, row.eventId), eq(calendarEvents.orgId, row.orgId)),
+      columns: {
+        id: true, title: true, description: true, startDate: true, endDate: true,
+        allDay: true, externalEventId: true,
+      },
+    });
+    if (!eventRow) return;
+
+    const pushInput: PushEventInput = {
+      title: payload.title ?? eventRow.title,
+      description: payload.description ?? eventRow.description ?? null,
+      startIso: payload.startIso ?? eventRow.startDate.toISOString(),
+      endIso: payload.endIso ?? eventRow.endDate.toISOString(),
+      allDay: payload.allDay ?? eventRow.allDay,
+      attendeeEmails: payload.attendeeEmails ?? [],
+      addConference: payload.addConference ?? false,
+    };
+
+    if (row.operation === "create") {
+      const pushed = await this.sync.pushCreate(userId, conn, pushInput);
+      await runInNewTenantTransaction(this.db, row.orgId, async (tx) => {
+        await tx
+          .update(calendarEvents)
+          .set({
+            integrationConnectionId: conn.id,
+            externalEventId: pushed.externalEventId,
+            meetingUrl: pushed.meetingUrl ?? null,
+          })
+          .where(and(eq(calendarEvents.id, row.eventId!), eq(calendarEvents.orgId, row.orgId)));
+      });
+      return;
+    }
+
+    if (row.operation === "update") {
+      const extId = row.externalEventId ?? eventRow.externalEventId;
+      if (!extId) return;
+      const result = await this.sync.pushUpdate(userId, conn, extId, {
+        title: pushInput.title,
+        description: pushInput.description,
+        startIso: pushInput.startIso,
+        endIso: pushInput.endIso,
+      });
+      if (!result.success)
+        this.logger.warn(`calendar-provider-sync update skipped for ${conn.toolkit}: ${result.reason}`);
+    }
+  }
+
+  private async resolveConnection(orgId: string, connectionId: number): Promise<PushConnection> {
+    const rows = await this.db
+      .select({
+        id: userIntegrationConnections.id,
+        toolkit: userIntegrationConnections.toolkit,
+        composioConnectedAccountId: userIntegrationConnections.composioConnectedAccountId,
+      })
+      .from(userIntegrationConnections)
+      .where(
+        and(
+          eq(userIntegrationConnections.id, connectionId),
+          eq(userIntegrationConnections.orgId, orgId),
+          eq(userIntegrationConnections.status, "active"),
+          inArray(userIntegrationConnections.toolkit, ["googlecalendar", "outlook"]),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    if (!row || (row.toolkit !== "googlecalendar" && row.toolkit !== "outlook"))
+      throw new Error(`Calendar connection ${connectionId} not found or inactive`);
+    return { id: row.id, toolkit: row.toolkit, composioConnectedAccountId: row.composioConnectedAccountId };
+  }
+
+  private mark(
+    row: typeof calendarProviderSyncQueue.$inferSelect,
+    patch: Partial<typeof calendarProviderSyncQueue.$inferInsert>,
+  ): Promise<void> {
+    return runInNewTenantTransaction(this.db, row.orgId, async (tx) => {
+      await tx
+        .update(calendarProviderSyncQueue)
+        .set(patch)
+        .where(eq(calendarProviderSyncQueue.id, row.id));
+    });
+  }
+}

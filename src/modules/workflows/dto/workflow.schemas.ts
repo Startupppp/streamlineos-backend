@@ -14,6 +14,13 @@ export const UpdateWorkflowSchema = z.object({
 
 export const PublishWorkflowSchema = z.object({
   definitionJson: z.record(z.string(), z.unknown()),
+  /**
+   * Optional optimistic-lock guard. When provided the backend compares this
+   * against the current `workflows.version` and returns 409 if they differ,
+   * surfacing a concurrent-edit conflict to the editor instead of silently
+   * overwriting the other user's publish.
+   */
+  expectedVersion: z.number().int().positive().optional(),
 });
 
 export const WorkflowExecutionQuerySchema = z.object({

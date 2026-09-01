@@ -73,6 +73,9 @@ import { EmploymentFactsModule } from "../directory/employment-facts.module";
 import { CalendarModule } from "../calendar/calendar.module";
 import { PlatformModule } from "../platform/platform.module";
 import { CronOperatorAccessService } from "./cron-operator-access.service";
+import { CronHelpdeskRetentionService } from "./cron-helpdesk-retention.service";
+import { CronMailRetentionService } from "./cron-mail-retention.service";
+import { CronAnnouncementsRetentionService } from "./cron-announcements-retention.service";
 
 @Module({
   imports: [
@@ -154,6 +157,9 @@ import { CronOperatorAccessService } from "./cron-operator-access.service";
     CronLeaseService,
     CronAiUsageRetentionService,
     CronOperatorAccessService,
+    CronHelpdeskRetentionService,
+    CronMailRetentionService,
+    CronAnnouncementsRetentionService,
   ],
 })
 export class CronModule {}

@@ -7,6 +7,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { EmbeddingsService, EMBEDDING_MODEL } from "../../ai/core/providers/embeddings.service";
 import { sha256, chunkText } from "./kb-chunk-utils";
 import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
@@ -46,24 +47,26 @@ export class KbIndexingService {
     pageCreatedByMembershipId: number | null;
     aclRevision: number | null;
   } | null> {
-    const [existing] = await this.db
-      .select({
-        contentHash: kbArticleChunks.contentHash,
-        pageVisibility: kbArticleChunks.pageVisibility,
-        pageProjectId: kbArticleChunks.pageProjectId,
-        pageCreatedById: kbArticleChunks.pageCreatedById,
-        pageCreatedByMembershipId: kbArticleChunks.pageCreatedByMembershipId,
-        aclRevision: kbArticleChunks.aclRevision,
-      })
-      .from(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.orgId, orgId),
-          eq(kbArticleChunks.pageId, pageId),
-          eq(kbArticleChunks.source, "page_body"),
-        ),
-      )
-      .limit(1);
+    const [existing] = await runInTenantTransaction(this.db, async (tx) =>
+      tx
+        .select({
+          contentHash: kbArticleChunks.contentHash,
+          pageVisibility: kbArticleChunks.pageVisibility,
+          pageProjectId: kbArticleChunks.pageProjectId,
+          pageCreatedById: kbArticleChunks.pageCreatedById,
+          pageCreatedByMembershipId: kbArticleChunks.pageCreatedByMembershipId,
+          aclRevision: kbArticleChunks.aclRevision,
+        })
+        .from(kbArticleChunks)
+        .where(
+          and(
+            eq(kbArticleChunks.orgId, orgId),
+            eq(kbArticleChunks.pageId, pageId),
+            eq(kbArticleChunks.source, "page_body"),
+          ),
+        )
+        .limit(1),
+    { orgId });
 
     return existing ?? null;
   }
@@ -124,15 +127,17 @@ export class KbIndexingService {
   }
 
   async indexArticle(orgId: string, articleId: number): Promise<void> {
-    const article = await this.db.query.kbArticles.findFirst({
-      where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
-      columns: {
-        status: true,
-        contentText: true,
-        contentRevision: true,
-        aclRevision: true,
-      },
-    });
+    const article = await runInTenantTransaction(this.db, async (tx) =>
+      tx.query.kbArticles.findFirst({
+        where: and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)),
+        columns: {
+          status: true,
+          contentText: true,
+          contentRevision: true,
+          aclRevision: true,
+        },
+      }),
+    { orgId });
 
     if (
       !article ||
@@ -152,17 +157,19 @@ export class KbIndexingService {
       return;
     }
 
-    const [firstExisting] = await this.db
-      .select({ contentHash: kbArticleChunks.contentHash })
-      .from(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.orgId, orgId),
-          eq(kbArticleChunks.articleId, articleId),
-          eq(kbArticleChunks.source, "article_body"),
-        ),
-      )
-      .limit(1);
+    const [firstExisting] = await runInTenantTransaction(this.db, async (tx) =>
+      tx
+        .select({ contentHash: kbArticleChunks.contentHash })
+        .from(kbArticleChunks)
+        .where(
+          and(
+            eq(kbArticleChunks.orgId, orgId),
+            eq(kbArticleChunks.articleId, articleId),
+            eq(kbArticleChunks.source, "article_body"),
+          ),
+        )
+        .limit(1),
+    { orgId });
 
     if (firstExisting?.contentHash === contentHash) return;
 
@@ -183,7 +190,7 @@ export class KbIndexingService {
     const contentRevision = article.contentRevision;
     const aclRevision = article.aclRevision;
 
-    await this.db.transaction(async (tx) => {
+    await runInTenantTransaction(this.db, async (tx) => {
       await tx
         .delete(kbArticleChunks)
         .where(
@@ -213,7 +220,7 @@ export class KbIndexingService {
       );
 
       await this.checkpoint.clearCheckpoints(tx, orgId, "article", articleId);
-    });
+    }, { orgId });
 
     this.logger.log("KB article indexing committed", {
       orgId,
@@ -223,20 +230,22 @@ export class KbIndexingService {
   }
 
   async indexPage(orgId: string, pageId: number): Promise<number> {
-    const page = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
-      columns: {
-        status: true,
-        visibility: true,
-        deletedAt: true,
-        contentText: true,
-        projectId: true,
-        createdById: true,
-        createdByMembershipId: true,
-        aclRevision: true,
-        contentRevision: true,
-      },
-    });
+    const page = await runInTenantTransaction(this.db, async (tx) =>
+      tx.query.kbPages.findFirst({
+        where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
+        columns: {
+          status: true,
+          visibility: true,
+          deletedAt: true,
+          contentText: true,
+          projectId: true,
+          createdById: true,
+          createdByMembershipId: true,
+          aclRevision: true,
+          contentRevision: true,
+        },
+      }),
+    { orgId });
 
     if (
       !page ||
@@ -264,22 +273,24 @@ export class KbIndexingService {
       if (!aclChanged) return 0;
 
       this.logger.log("KB page ACL updated (content unchanged)", { orgId, pageId });
-      await this.db
-        .update(kbArticleChunks)
-        .set({
-          pageVisibility: page.visibility,
-          pageProjectId: page.projectId,
-          pageCreatedById: page.createdById,
-          pageCreatedByMembershipId: page.createdByMembershipId,
-          aclRevision,
-        })
-        .where(
-          and(
-            eq(kbArticleChunks.pageId, pageId),
-            eq(kbArticleChunks.orgId, orgId),
-            eq(kbArticleChunks.source, "page_body"),
+      await runInTenantTransaction(this.db, async (tx) =>
+        tx
+          .update(kbArticleChunks)
+          .set({
+            pageVisibility: page.visibility,
+            pageProjectId: page.projectId,
+            pageCreatedById: page.createdById,
+            pageCreatedByMembershipId: page.createdByMembershipId,
+            aclRevision,
+          })
+          .where(
+            and(
+              eq(kbArticleChunks.pageId, pageId),
+              eq(kbArticleChunks.orgId, orgId),
+              eq(kbArticleChunks.source, "page_body"),
+            ),
           ),
-        );
+      { orgId });
       return 0;
     }
 
@@ -304,7 +315,7 @@ export class KbIndexingService {
       chunks,
     );
 
-    await this.db.transaction(async (tx) => {
+    await runInTenantTransaction(this.db, async (tx) => {
       await tx
         .delete(kbArticleChunks)
         .where(
@@ -338,7 +349,7 @@ export class KbIndexingService {
       );
 
       await this.checkpoint.clearCheckpoints(tx, orgId, "page", pageId);
-    });
+    }, { orgId });
 
     this.logger.log("KB page indexing committed", {
       orgId,
@@ -350,25 +361,29 @@ export class KbIndexingService {
   }
 
   async removeArticleChunks(orgId: string, articleId: number): Promise<void> {
-    await this.db
-      .delete(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.articleId, articleId),
-          eq(kbArticleChunks.orgId, orgId),
+    await runInTenantTransaction(this.db, async (tx) =>
+      tx
+        .delete(kbArticleChunks)
+        .where(
+          and(
+            eq(kbArticleChunks.articleId, articleId),
+            eq(kbArticleChunks.orgId, orgId),
+          ),
         ),
-      );
+    { orgId });
   }
 
   async removePageChunks(orgId: string, pageId: number): Promise<void> {
-    await this.db
-      .delete(kbArticleChunks)
-      .where(
-        and(
-          eq(kbArticleChunks.pageId, pageId),
-          eq(kbArticleChunks.orgId, orgId),
+    await runInTenantTransaction(this.db, async (tx) =>
+      tx
+        .delete(kbArticleChunks)
+        .where(
+          and(
+            eq(kbArticleChunks.pageId, pageId),
+            eq(kbArticleChunks.orgId, orgId),
+          ),
         ),
-      );
+    { orgId });
   }
 
   async syncAclRevisionForSpace(orgId: string, spaceId: number): Promise<void> {

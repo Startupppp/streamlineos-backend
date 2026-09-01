@@ -22,16 +22,23 @@ describe("KbPageTreeService — cross-tenant isolation", () => {
 
   function makeDb() {
     const wheres: unknown[] = [];
+    const makeJoinChain = (): Record<string, unknown> => {
+      const chain: Record<string, unknown> = {
+        where: jest.fn().mockImplementation((w: unknown) => {
+          wheres.push(w);
+          return Promise.resolve([]);
+        }),
+        orderBy: jest.fn().mockReturnValue(Object.assign(Promise.resolve([]), { limit: jest.fn().mockResolvedValue([]) })),
+      };
+      chain.innerJoin = jest.fn().mockReturnValue(chain);
+      chain.leftJoin = jest.fn().mockReturnValue(chain);
+      return chain;
+    };
     return {
       db: {
         select: jest.fn().mockImplementation(() => ({
           from: jest.fn().mockImplementation(() => ({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockImplementation((w: unknown) => {
-                wheres.push(w);
-                return Promise.resolve([]);
-              }),
-            }),
+            ...makeJoinChain(),
             where: jest.fn().mockImplementation((w: unknown) => {
               wheres.push(w);
               return Object.assign(Promise.resolve([]), {

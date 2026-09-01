@@ -20,6 +20,7 @@ import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronLeaseService } from "./cron-lease.service";
 import { CronHrRetentionService } from "./cron-hr-retention.service";
+import { CronHelpdeskRetentionService } from "./cron-helpdesk-retention.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
@@ -40,6 +41,7 @@ export class CronHrController {
     private readonly weeklyRecap: CronWeeklyRecapService,
     private readonly cronLease: CronLeaseService,
     private readonly hrRetention: CronHrRetentionService,
+    private readonly helpdeskRetention: CronHelpdeskRetentionService,
   ) {}
 
   @Get("auto-checkout")
@@ -453,6 +455,39 @@ export class CronHrController {
       };
     } catch (error) {
       logger.error("HR policy retention sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("helpdesk-retention-sweep")
+  getHelpdeskRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runHelpdeskRetentionSweep(authorization);
+  }
+
+  @Post("helpdesk-retention-sweep")
+  @BodylessAction()
+  @HttpCode(200)
+  postHelpdeskRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runHelpdeskRetentionSweep(authorization);
+  }
+
+  private async runHelpdeskRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("helpdesk-retention-sweep", 1800, () =>
+        this.helpdeskRetention.sweep(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "helpdesk-retention-sweep already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message:
+          `Helpdesk retention: ${result.ticketsDeleted} tickets deleted across ${result.organizations} orgs`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Helpdesk retention sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }
