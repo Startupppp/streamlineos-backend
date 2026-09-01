@@ -47,9 +47,11 @@ const NOT_JOURNALLED: ReadonlyArray<{ tag: string; reason: string }> = [
     reason:
       "Says so in its own header, and is the only one of the fifteen that does. Dropping eleven " +
       "columns rewrites hr_people under ACCESS EXCLUSIVE and cannot be undone if 0486's copy was " +
-      "wrong. Its preconditions include 'confirmed working in production', which is somebody's " +
-      "judgement and not a grep. src/db/schema/hr/ no longer declares the columns, so the code " +
-      "half is done; the decision is not this file's to make.",
+      "wrong. It was: 0486 copied three of the eleven, and 0820 now carries the other eight and " +
+      "refuses to report success on data it could not place. src/db/schema/hr/ no longer declares " +
+      "the columns and no raw SQL reads them, so the code half is done too. What is left is " +
+      "'confirmed working in production', which is somebody's judgement and not a grep, so the " +
+      "decision is still not this file's to make.",
   },
 ];
 
