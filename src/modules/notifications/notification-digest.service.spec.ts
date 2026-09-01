@@ -58,7 +58,7 @@ describe("NotificationDigestService", () => {
 
     const base = {
       orgId: "org-a",
-      userId: "user-1",
+      membershipId: 41,
       channel: "EMAIL" as const,
       eventKey: "build.comment.mention",
       entityType: "ticket",

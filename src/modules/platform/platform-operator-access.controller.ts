@@ -15,6 +15,7 @@ import type { Request } from "express";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { AuthorizedInService } from "../../common/auth/authorized-in-service.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { Validate } from "../../common/validation/validate.decorator";
 import { PlatformOperatorAccessService } from "./platform-operator-access.service";
 import {
@@ -84,6 +85,7 @@ export class PlatformOperatorAccessController {
   )
   @Post("grants/:grantId/approve")
   @HttpCode(200)
+  @BodylessAction()
   async approveGrant(
     @Headers("x-internal-secret") secret: string | undefined,
     @Param("grantId") grantId: string,

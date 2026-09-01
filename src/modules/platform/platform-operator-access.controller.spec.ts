@@ -1,6 +1,7 @@
 import { UnauthorizedException } from "@nestjs/common";
 import type { Request } from "express";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { BODYLESS_ACTION } from "../../common/openapi/zod-operation-contracts";
 import { createGrantSchema } from "./dto/platform.schemas";
 import { PlatformOperatorAccessController } from "./platform-operator-access.controller";
 import type { PlatformOperatorAccessService } from "./platform-operator-access.service";
@@ -25,7 +26,7 @@ function httpRequest(): Request {
   return {
     headers: { "x-forwarded-for": "203.0.113.99" },
     ip: "10.0.0.7",
-  } as Request;
+  } as unknown as Request;
 }
 
 describe("PlatformOperatorAccessController identity integrity", () => {
@@ -49,6 +50,15 @@ describe("PlatformOperatorAccessController identity integrity", () => {
     createGrant.mockReset().mockResolvedValue("grant-1");
     approveGrant.mockReset().mockResolvedValue({ orgId: "customer-org", operatorUserId: "support-op" });
     recordAccess.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("declares grant approval as a bodyless OpenAPI action", () => {
+    expect(
+      Reflect.getMetadata(
+        BODYLESS_ACTION,
+        PlatformOperatorAccessController.prototype.approveGrant,
+      ),
+    ).toBe(true);
   });
 
   it("rejects a client-supplied requester identity at the validation boundary", () => {

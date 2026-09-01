@@ -6,17 +6,31 @@ describe("ProjectsTicketCommentsService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
   const ATTACKER_ORG = "org-attacker";
 
+  interface CommentDbMock {
+    query: {
+      tickets: { findFirst: jest.Mock };
+      ticketComments: { findFirst: jest.Mock };
+    };
+    insert: jest.Mock;
+    execute: jest.Mock;
+    transaction: jest.Mock<
+      Promise<unknown>,
+      [work: (tx: CommentDbMock) => Promise<unknown>]
+    >;
+  }
+
   function makeDb(ticketRow: unknown | null) {
     const fakeComment = { id: 42, orgId: (ticketRow as { orgId?: string } | null)?.orgId ?? "org-owner", ticketId: 1, content: "hello", authorId: "u1", createdAt: new Date() };
-    const db = {
+    const db: CommentDbMock = {
       query: {
         tickets: { findFirst: jest.fn().mockResolvedValue(ticketRow) },
         ticketComments: { findFirst: jest.fn().mockResolvedValue(null) },
       },
       insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([fakeComment]) }) }),
       execute: jest.fn().mockResolvedValue([]),
-      transaction: jest.fn((work: (tx: unknown) => Promise<unknown>) => work(db)),
+      transaction: jest.fn(),
     };
+    db.transaction.mockImplementation((work) => work(db));
     return db as unknown as Db;
   }
 

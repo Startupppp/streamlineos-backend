@@ -3,6 +3,7 @@ import {
   agentTokenPrincipal,
   humanSessionPrincipal,
   personalTokenPrincipal,
+  systemJobPrincipal,
 } from "../../common/auth/principal";
 import type { Principal } from "../../common/auth/principal";
 import { resolvePrincipalScope } from "./access-principal-scope";
@@ -28,17 +29,13 @@ describe("resolvePrincipalScope", () => {
   );
 
   it("grants a system job only the exact permission in its ceiling", async () => {
-    const principal: Principal = {
-      kind: "system-job",
-      jobId: "outbox-dispatch",
-      ceiling: ["notifications:delivery:dispatch"],
-    };
+    const principal = systemJobPrincipal("payroll.run.finalize-posting");
     const resolveMembership = jest.fn().mockResolvedValue("all");
 
     await expect(
       resolvePrincipalScope(
         principal,
-        "notifications:delivery:dispatch",
+        "accounting:journal:create",
         resolveMembership,
       ),
     ).resolves.toBe("all");
