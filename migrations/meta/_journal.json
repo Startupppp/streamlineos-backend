@@ -3697,6 +3697,13 @@
       "when": 1798000153000,
       "tag": "0842_subscription_payments_amount_paise",
       "breakpoints": true
+    },
+    {
+      "idx": 655,
+      "version": "7",
+      "when": 1798000154000,
+      "tag": "0843_blog_posts_search_tsvector",
+      "breakpoints": true
     }
   ]
 }

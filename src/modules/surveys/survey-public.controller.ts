@@ -22,7 +22,7 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 
 const collectorTokenParams = z.object({ collectorToken: z.string().min(1) }).strict();
-const collectorTokensessionIdParams = z.object({ collectorToken: z.string().min(1), sessionId: z.string().min(1) }).strict();
+const collectorTokensessionIdParams = z.object({ collectorToken: z.string().min(1), sessionId: z.coerce.number().int().positive() }).strict();
 const sessionCodeParams = z.object({ sessionCode: z.string().min(1) }).strict();
 
 @Controller("public/surveys")
@@ -76,24 +76,24 @@ export class SurveyPublicController {
   @Patch(":collectorToken/session/:sessionId")
   @Validate({ params: collectorTokensessionIdParams, body: patchSessionSchema })
   async saveAnswers(
-    @Param("sessionId") sessionId: string,
+    @Param("sessionId") sessionId: number,
     @Body() body: PatchSessionInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("survey:public-submit", this.getIp(req));
-    return this.responses.saveAnswers(Number(sessionId), body.answers);
+    return this.responses.saveAnswers(sessionId, body.answers);
   }
 
   @Public()
   @Post(":collectorToken/session/:sessionId/submit")
   @Validate({ params: collectorTokensessionIdParams, body: submitSessionSchema })
   async submit(
-    @Param("sessionId") sessionId: string,
+    @Param("sessionId") sessionId: number,
     @Body() body: SubmitSessionInput,
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("survey:public-submit", this.getIp(req));
-    return this.responses.submit(Number(sessionId), body.answers);
+    return this.responses.submit(sessionId, body.answers);
   }
 
   @Public()

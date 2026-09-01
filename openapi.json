@@ -22975,6 +22975,675 @@
         "description": "Exposure: permission — billing:subscription:view"
       }
     },
+    "/blog/admin/categories": {
+      "post": {
+        "operationId": "BlogAdminController_createCategory",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:categories:manage",
+        "description": "Exposure: permission — blog:categories:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^#([0-9a-fA-F]{6})$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/blog/admin/categories/{categoryId}": {
+      "patch": {
+        "operationId": "BlogAdminController_updateCategory",
+        "parameters": [
+          {
+            "name": "categoryId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:categories:manage",
+        "description": "Exposure: permission — blog:categories:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 2000
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "color": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^#([0-9a-fA-F]{6})$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "BlogAdminController_deleteCategory",
+        "parameters": [
+          {
+            "name": "categoryId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:categories:manage",
+        "description": "Exposure: permission — blog:categories:manage"
+      }
+    },
+    "/blog/admin/posts": {
+      "get": {
+        "operationId": "BlogAdminController_listPosts",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:posts:manage",
+        "description": "Exposure: permission — blog:posts:manage"
+      },
+      "post": {
+        "operationId": "BlogAdminController_createPost",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:posts:manage",
+        "description": "Exposure: permission — blog:posts:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "excerpt": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "contentJson": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "coverImage": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "categoryId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "authorId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "default": "draft",
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "published",
+                      "archived"
+                    ]
+                  },
+                  "isFeatured": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "tags": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "metaTitle": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "metaDescription": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 320
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "slug": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "title",
+                  "excerpt",
+                  "content",
+                  "coverImage"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/blog/admin/posts/{postId}": {
+      "get": {
+        "operationId": "BlogAdminController_getPost",
+        "parameters": [
+          {
+            "name": "postId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:posts:manage",
+        "description": "Exposure: permission — blog:posts:manage"
+      },
+      "patch": {
+        "operationId": "BlogAdminController_updatePost",
+        "parameters": [
+          {
+            "name": "postId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:posts:manage",
+        "description": "Exposure: permission — blog:posts:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  },
+                  "excerpt": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "content": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "contentJson": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {}
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "coverImage": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "categoryId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "authorId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "uuid",
+                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "default": "draft",
+                    "type": "string",
+                    "enum": [
+                      "draft",
+                      "published",
+                      "archived"
+                    ]
+                  },
+                  "isFeatured": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "tags": {
+                    "default": [],
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "metaTitle": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "metaDescription": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 320
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "slug": {
+                    "type": "string",
+                    "maxLength": 256
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "BlogAdminController_deletePost",
+        "parameters": [
+          {
+            "name": "postId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "BlogAdmin"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "blog:posts:manage",
+        "description": "Exposure: permission — blog:posts:manage"
+      }
+    },
     "/blog/by-slug/{slug}": {
       "get": {
         "operationId": "BlogController_getPostBySlug",
@@ -91720,7 +92389,7 @@
         "description": "Exposure: authorized in service — a three-key check in the handler: hr:documents:view scope=all, hr:documents:view or self:onboarding-docs"
       },
       "post": {
-        "operationId": "HrDocumentTypesController_create",
+        "operationId": "HrDocumentTypesAdminController_create",
         "parameters": [],
         "responses": {
           "201": {
@@ -91749,7 +92418,7 @@
           }
         },
         "tags": [
-          "HrDocumentTypes"
+          "HrDocumentTypesAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:documents:manage",
@@ -91839,7 +92508,7 @@
         "description": "Exposure: authorized in service — a three-key check in the handler: hr:documents:view scope=all, hr:documents:view or self:onboarding-docs"
       },
       "patch": {
-        "operationId": "HrDocumentTypesController_update",
+        "operationId": "HrDocumentTypesAdminController_update",
         "parameters": [
           {
             "name": "documentTypeId",
@@ -91882,7 +92551,7 @@
           }
         },
         "tags": [
-          "HrDocumentTypes"
+          "HrDocumentTypesAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:documents:manage",
@@ -91927,7 +92596,7 @@
         }
       },
       "delete": {
-        "operationId": "HrDocumentTypesController_remove",
+        "operationId": "HrDocumentTypesAdminController_remove",
         "parameters": [
           {
             "name": "documentTypeId",
@@ -91970,7 +92639,7 @@
           }
         },
         "tags": [
-          "HrDocumentTypes"
+          "HrDocumentTypesAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:documents:manage",
@@ -117831,7 +118500,7 @@
     },
     "/hr/onboarding-docs": {
       "get": {
-        "operationId": "OnboardingViewsController_list",
+        "operationId": "HrOnboardingDocsAdminController_list",
         "parameters": [
           {
             "name": "userId",
@@ -117900,14 +118569,14 @@
           }
         },
         "tags": [
-          "OnboardingViews"
+          "HrOnboardingDocsAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
         "description": "Exposure: permission — hr:onboarding:manage"
       },
       "post": {
-        "operationId": "OnboardingViewsController_create",
+        "operationId": "HrOnboardingDocsAdminController_create",
         "parameters": [],
         "responses": {
           "201": {
@@ -117936,7 +118605,7 @@
           }
         },
         "tags": [
-          "OnboardingViews"
+          "HrOnboardingDocsAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -117987,7 +118656,7 @@
     },
     "/hr/onboarding-docs/{docId}": {
       "patch": {
-        "operationId": "OnboardingViewsController_review",
+        "operationId": "HrOnboardingDocsAdminController_review",
         "parameters": [
           {
             "name": "docId",
@@ -118030,7 +118699,7 @@
           }
         },
         "tags": [
-          "OnboardingViews"
+          "HrOnboardingDocsAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -118065,7 +118734,7 @@
     },
     "/hr/onboarding-docs/{docId}/file": {
       "get": {
-        "operationId": "OnboardingViewsController_getFile",
+        "operationId": "HrOnboardingDocsAdminController_getFile",
         "parameters": [
           {
             "name": "docId",
@@ -118102,7 +118771,7 @@
           }
         },
         "tags": [
-          "OnboardingViews"
+          "HrOnboardingDocsAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -118310,7 +118979,7 @@
     },
     "/hr/onboarding-docs/summary": {
       "get": {
-        "operationId": "OnboardingViewsController_summary",
+        "operationId": "HrOnboardingDocsAdminController_summary",
         "parameters": [
           {
             "name": "page",
@@ -118379,7 +119048,7 @@
           }
         },
         "tags": [
-          "OnboardingViews"
+          "HrOnboardingDocsAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -178751,7 +179420,7 @@
     },
     "/onboarding": {
       "get": {
-        "operationId": "OnboardingController_getProgress",
+        "operationId": "HrOnboardingAdminController_getProgress",
         "parameters": [],
         "responses": {
           "200": {
@@ -178774,14 +179443,14 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
         "description": "Exposure: permission — hr:onboarding:manage"
       },
       "post": {
-        "operationId": "OnboardingController_initiate",
+        "operationId": "HrOnboardingAdminController_initiate",
         "parameters": [],
         "responses": {
           "201": {
@@ -178810,7 +179479,7 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -178838,7 +179507,7 @@
     },
     "/onboarding/{userId}": {
       "get": {
-        "operationId": "OnboardingController_getUserTasks",
+        "operationId": "HrOnboardingAdminController_getUserTasks",
         "parameters": [
           {
             "name": "userId",
@@ -178874,7 +179543,7 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:tasks:view",
@@ -179551,7 +180220,7 @@
     },
     "/onboarding/reminders": {
       "post": {
-        "operationId": "OnboardingController_sendReminders",
+        "operationId": "HrOnboardingAdminController_sendReminders",
         "parameters": [
           {
             "$ref": "#/components/parameters/IdempotencyKeyHeader"
@@ -179584,7 +180253,7 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -179634,7 +180303,7 @@
     },
     "/onboarding/requirements/documents": {
       "post": {
-        "operationId": "OnboardingController_ensureRequirementDocuments",
+        "operationId": "HrOnboardingAdminController_ensureRequirementDocuments",
         "parameters": [],
         "responses": {
           "200": {
@@ -179663,7 +180332,7 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -179936,7 +180605,7 @@
     },
     "/onboarding/templates": {
       "get": {
-        "operationId": "OnboardingController_listTemplates",
+        "operationId": "HrOnboardingAdminController_listTemplates",
         "parameters": [],
         "responses": {
           "200": {
@@ -179959,14 +180628,14 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
         "description": "Exposure: permission — hr:onboarding:manage"
       },
       "post": {
-        "operationId": "OnboardingController_createTemplate",
+        "operationId": "HrOnboardingAdminController_createTemplate",
         "parameters": [],
         "responses": {
           "201": {
@@ -179995,7 +180664,7 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -180073,7 +180742,7 @@
     },
     "/onboarding/templates/departments": {
       "get": {
-        "operationId": "OnboardingController_listTemplateDepartments",
+        "operationId": "HrOnboardingAdminController_listTemplateDepartments",
         "parameters": [],
         "responses": {
           "200": {
@@ -180096,7 +180765,7 @@
           }
         },
         "tags": [
-          "Onboarding"
+          "HrOnboardingAdmin"
         ],
         "x-exposure": "permissioned",
         "x-permission": "hr:onboarding:manage",
@@ -205486,8 +206155,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string",
-              "minLength": 1
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
@@ -205585,8 +206255,9 @@
             "required": true,
             "in": "path",
             "schema": {
-              "type": "string",
-              "minLength": 1
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {

@@ -4,16 +4,14 @@
   "modules/hr/cases/hr-disciplinary.controller.ts": "uses only self:cases permissions; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
   "modules/hr/time/employee-attendance.controller.ts": "uses only self:attendance; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
   "modules/hr/time/employee-time-off.controller.ts": "uses only self:time-off; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
-  "modules/hr/time/leave-policies.controller.ts": "HANDOFF: mixes self:* and hr:* routes without module gate; needs review by HR lane",
-  "modules/hr/time/leave-policy-summary.controller.ts": "HANDOFF: mixes self:* and hr:* routes without module gate; needs review by HR lane",
-  "modules/hr/core/hr-org-structure-compat.controller.ts": "HANDOFF: no module gate; needs review by HR lane",
-  "modules/hr/interviews/employee-recruitment.controller.ts": "HANDOFF: no module gate; needs review by HR lane",
-  "modules/hr/lifecycle/onboarding-views.controller.ts": "HANDOFF: mixes self:* and hr:* routes without module gate; needs review by HR lane",
-  "modules/hr/config/hr-document-types.controller.ts": "HANDOFF: no module gate; needs review by HR lane",
+  "modules/hr/core/hr-org-structure-compat.controller.ts": "all handlers use settings:* namespace permissions (settings:view, settings:organization:manage); this is a backward-compat shim for org structure (locations, teams) that is global to all modules; @RequireModule('hr') would block org structure management on non-HR subscriptions",
+  "modules/hr/interviews/employee-recruitment.controller.ts": "all handlers use self:recruitment; employees viewing their own assigned interviews and submitting scorecards is self-service per CLAUDE.md §8; never carries @RequireModule",
+  "modules/hr/lifecycle/onboarding-views.controller.ts": "all three handlers use self:onboarding-docs; employee employment documents are platform-core per CLAUDE.md §8; hr:onboarding:manage handlers extracted to hr-onboarding-docs-admin.controller.ts",
+  "modules/hr/config/hr-document-types.controller.ts": "GET handlers use @AuthorizedInService with dual access (hr:documents:view or self:onboarding-docs); employees need document type catalog during onboarding; hr:documents:manage mutation handlers extracted to hr-document-types-admin.controller.ts",
+  "modules/hr/onboarding/core/onboarding.controller.ts": "contains universal employee self-service (session, personal/bank details, submit, status, requirements), cross-module setup admin (onboarding:module-checklists:*, onboarding:tours:*), and self:onboarding-tasks handlers that carry per-method @RequireModule('hr'); hr:onboarding:manage and hr:onboarding:tasks:view handlers extracted to hr-onboarding-admin.controller.ts",
   "modules/crm/import/crm-import.controller.ts": "HANDOFF: uses crm:imports:manage but no @RequireModule; needs review by CRM lane",
   "modules/crm/consent/crm-consent.controller.ts": "HANDOFF: CrmConsentController uses crm:contacts:* but no @RequireModule; needs review by CRM lane",
   "modules/payroll/insights/ess.controller.ts": "uses only self:payroll self:payslips; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
   "modules/payroll/insights/payroll-ai-explain.controller.ts": "uses only self:payslips; employee self-service is platform-core and never carries @RequireModule per CLAUDE.md §8",
-  "modules/payroll/payout/publishing.controller.ts": "uses per-method @RequireModule('payroll') with class-level ModuleGuard; gating is correct, just method-scoped not class-scoped",
-  "modules/hr/onboarding/core/onboarding.controller.ts": "HANDOFF: class-level @UseGuards(JwtAuthGuard) only; some handlers add PermissionGuard but none have @RequireModule or ModuleGuard; needs review by HR lane"
+  "modules/payroll/payout/publishing.controller.ts": "uses per-method @RequireModule('payroll') with class-level ModuleGuard; gating is correct, just method-scoped not class-scoped"
 }

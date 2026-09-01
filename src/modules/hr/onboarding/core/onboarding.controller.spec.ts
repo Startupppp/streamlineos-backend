@@ -71,12 +71,11 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
     // Direct instantiation (not Test.createTestingModule) — this controller's class-level
     // @UseGuards(JwtAuthGuard) pulls in DRIZZLE/Redis-dependent guards that Nest's testing
     // module eagerly tries to resolve on .compile() even when unused by the methods under test.
+    // Constructor order after admin-handler extraction: submission, details, tasks, requirements,
+    // checklists, tours, sessions, access.
     controller = new OnboardingController(
       undefined as never,
-      undefined as never,
-      undefined as never,
       onboarding as never,
-      undefined as never,
       undefined as never,
       undefined as never,
       checklists as unknown as ModuleChecklistService,

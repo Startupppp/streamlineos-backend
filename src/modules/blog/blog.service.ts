@@ -268,9 +268,8 @@ export class BlogService {
     }
 
     if (input.search) {
-      const term = `%${input.search}%`;
       conditions.push(
-        sql`(${blogPosts.title} ILIKE ${term} OR ${blogPosts.excerpt} ILIKE ${term})`,
+        sql`to_tsvector('english', ${blogPosts.title} || ' ' || ${blogPosts.excerpt}) @@ plainto_tsquery('english', ${input.search})`,
       );
     }
 

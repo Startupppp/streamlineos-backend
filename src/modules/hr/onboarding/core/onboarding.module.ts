@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { OnboardingController } from "./onboarding.controller";
+import { HrOnboardingAdminController } from "./hr-onboarding-admin.controller";
 import { AutomationModule } from "../../../automation/automation.module";
 import { NotificationsModule } from "../../../notifications/notifications.module";
 import { HrPoliciesModule } from "../../policies/hr-policies.module";
@@ -38,6 +39,6 @@ import { OnboardingSubmissionService } from "./onboarding-submission.service";
     OnboardingInitiationDispatchService,
     OnboardingSubmissionService,
   ],
-  controllers: [OnboardingController],
+  controllers: [OnboardingController, HrOnboardingAdminController],
 })
 export class OnboardingModule {}
