@@ -47,10 +47,19 @@ export class HrCalendarSource implements CalendarEventSource {
   }
 
   private async loadLeaves(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, ctx.orgId),
+        eq(organizationMembers.userId, ctx.userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    if (!membership) return [];
     const rows = await this.db
       .select({
         id: leaveRequests.id,
-        userId: leaveRequests.userId,
+        userMembershipId: leaveRequests.userMembershipId,
         startDate: leaveRequests.startDate,
         endDate: leaveRequests.endDate,
         reason: leaveRequests.reason,
@@ -77,13 +86,22 @@ export class HrCalendarSource implements CalendarEventSource {
       category: "leave",
       meta: {
         source: "leave",
-        description: leave.userId === ctx.userId ? (leave.reason ?? null) : null,
+        description: leave.userMembershipId === membership.id ? (leave.reason ?? null) : null,
         creatorName: leave.userName ?? null,
       },
     }));
   }
 
   private async loadInterviews(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, ctx.orgId),
+        eq(organizationMembers.userId, ctx.userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    if (!membership) return [];
     const rows = await this.db
       .select({
         id: interviews.id,
@@ -91,6 +109,7 @@ export class HrCalendarSource implements CalendarEventSource {
         duration: interviews.duration,
         type: interviews.type,
         interviewerId: interviews.interviewerId,
+        interviewerMembershipId: interviews.interviewerMembershipId,
         location: interviews.location,
         meetingLink: interviews.meetingLink,
       })
@@ -100,13 +119,13 @@ export class HrCalendarSource implements CalendarEventSource {
         gte(interviews.scheduledAt, ctx.start),
         lte(interviews.scheduledAt, ctx.end),
         or(
-          eq(interviews.interviewerId, ctx.userId),
+          eq(interviews.interviewerMembershipId, membership.id),
           exists(this.db.select({ id: interviewPanelMembers.id })
             .from(interviewPanelMembers)
             .where(and(
               eq(interviewPanelMembers.orgId, ctx.orgId),
               eq(interviewPanelMembers.interviewId, interviews.id),
-              eq(interviewPanelMembers.userId, ctx.userId),
+              eq(interviewPanelMembers.userMembershipId, membership.id),
             )),
           ),
         ),
@@ -132,6 +151,15 @@ export class HrCalendarSource implements CalendarEventSource {
     const { orgId, userId, start, end } = ctx;
     const startStr = dateOnly(start);
     const endStr = dateOnly(end);
+    const membership = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    if (!membership) return [];
     const policyDate = dateOnly(end.getTime() < Date.now() ? end : new Date());
 
     const [
@@ -150,7 +178,7 @@ export class HrCalendarSource implements CalendarEventSource {
       this.db
         .select({
           id: leaveRequests.id,
-          userId: leaveRequests.userId,
+          userMembershipId: leaveRequests.userMembershipId,
           startDate: leaveRequests.startDate,
           endDate: leaveRequests.endDate,
           reason: leaveRequests.reason,
@@ -176,6 +204,7 @@ export class HrCalendarSource implements CalendarEventSource {
           duration: interviews.duration,
           type: interviews.type,
           interviewerId: interviews.interviewerId,
+          interviewerMembershipId: interviews.interviewerMembershipId,
           location: interviews.location,
           meetingLink: interviews.meetingLink,
         })
@@ -186,7 +215,7 @@ export class HrCalendarSource implements CalendarEventSource {
             gte(interviews.scheduledAt, start),
             lte(interviews.scheduledAt, end),
             or(
-              eq(interviews.interviewerId, userId),
+              eq(interviews.interviewerMembershipId, membership.id),
               exists(
                 this.db
                   .select({ id: interviewPanelMembers.id })
@@ -195,7 +224,7 @@ export class HrCalendarSource implements CalendarEventSource {
                     and(
                       eq(interviewPanelMembers.orgId, orgId),
                       eq(interviewPanelMembers.interviewId, interviews.id),
-                      eq(interviewPanelMembers.userId, userId),
+                      eq(interviewPanelMembers.userMembershipId, membership.id),
                     ),
                   ),
               ),
@@ -218,7 +247,7 @@ export class HrCalendarSource implements CalendarEventSource {
         .where(
           and(
             eq(attendance.orgId, orgId),
-            eq(attendance.userId, userId),
+            eq(attendance.userMembershipId, membership.id),
             gte(attendance.date, startStr),
             lte(attendance.date, endStr),
           ),
@@ -231,7 +260,7 @@ export class HrCalendarSource implements CalendarEventSource {
         .where(
           and(
             eq(wfhRequests.orgId, orgId),
-            eq(wfhRequests.userId, userId),
+            eq(wfhRequests.userMembershipId, membership.id),
             eq(wfhRequests.status, "APPROVED"),
             gte(wfhRequests.date, startStr),
             lte(wfhRequests.date, endStr),
@@ -253,7 +282,8 @@ export class HrCalendarSource implements CalendarEventSource {
         )
         .where(
           and(
-            eq(rosterEntries.userId, userId),
+            eq(rosterEntries.orgId, orgId),
+            eq(rosterEntries.userMembershipId, membership.id),
             gte(rosterEntries.date, startStr),
             lte(rosterEntries.date, endStr),
           ),
@@ -297,7 +327,7 @@ export class HrCalendarSource implements CalendarEventSource {
         category: "leave",
         meta: {
           source: "leave",
-          description: leave.userId === userId ? (leave.reason ?? null) : null,
+          description: leave.userMembershipId === membership.id ? (leave.reason ?? null) : null,
           creatorName: leave.userName ?? null,
         },
       });
@@ -323,13 +353,13 @@ export class HrCalendarSource implements CalendarEventSource {
 
     const orgTimezone = organizationData[0]?.timezone ?? "Asia/Kolkata";
     const today = formatInTimeZone(new Date(), orgTimezone, "yyyy-MM-dd");
-    const membership = membershipData[0];
+    const membershipForContext = membershipData[0];
     const employmentStart =
       employmentFacts.joiningDate ??
-      (membership?.activatedAt
-        ? formatInTimeZone(membership.activatedAt, orgTimezone, "yyyy-MM-dd")
-        : membership?.joinedAt
-          ? formatInTimeZone(membership.joinedAt, orgTimezone, "yyyy-MM-dd")
+      (membershipForContext?.activatedAt
+        ? formatInTimeZone(membershipForContext.activatedAt, orgTimezone, "yyyy-MM-dd")
+        : membershipForContext?.joinedAt
+          ? formatInTimeZone(membershipForContext.joinedAt, orgTimezone, "yyyy-MM-dd")
           : startStr);
 
     const holidayDateSet = new Set(holidaysData.map((h) => h.date));

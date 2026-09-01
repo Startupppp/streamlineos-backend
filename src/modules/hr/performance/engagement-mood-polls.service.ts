@@ -44,7 +44,7 @@ export class EngagementMoodPollsService {
         note: input.note ?? null,
       })
       .onConflictDoUpdate({
-        target: [hrMoodCheckins.orgId, hrMoodCheckins.userId, hrMoodCheckins.date],
+        target: [hrMoodCheckins.orgId, hrMoodCheckins.userMembershipId, hrMoodCheckins.date],
         set: {
           mood: input.mood,
           note: input.note ?? null,

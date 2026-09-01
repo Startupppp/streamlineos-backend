@@ -18,6 +18,7 @@ import {
   recognitions,
   skillAssessments,
   surveyResponses,
+  organizationMembers,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -213,19 +214,28 @@ export class EngagementService {
     input: CreateRecognitionInput,
   ) {
     const membershipId = actingMembershipId(u.principal);
-    if (input.toUserId === u.userId) {
+    if (membershipId == null) {
+      throw new ForbiddenException("Organization membership required");
+    }
+    const recipient = await this.db.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, u.orgId),
+        eq(organizationMembers.userId, input.toUserId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+      columns: { id: true },
+    });
+    if (!recipient) throw new BadRequestException("Recipient must be an active organization member.");
+    if (recipient.id === membershipId) {
       throw new BadRequestException("You cannot send kudos to yourself.");
     }
 
     const windowStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const senderPredicate = membershipId != null
-      ? or(eq(recognitions.fromMembershipId, membershipId), eq(recognitions.fromUserId, u.userId))!
-      : eq(recognitions.fromUserId, u.userId);
     const existing = await this.db.query.recognitions.findFirst({
       where: and(
         eq(recognitions.orgId, u.orgId),
-        senderPredicate,
-        eq(recognitions.toUserId, input.toUserId),
+        eq(recognitions.fromMembershipId, membershipId),
+        eq(recognitions.toMembershipId, recipient.id),
         gte(recognitions.createdAt, windowStart),
       ),
       columns: { id: true },
@@ -243,6 +253,7 @@ export class EngagementService {
         fromUserId: u.userId,
         fromMembershipId: membershipId,
         toUserId: input.toUserId,
+        toMembershipId: recipient.id,
         message: input.message,
         category: input.category,
       })
