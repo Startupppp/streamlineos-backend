@@ -20,6 +20,8 @@ import {
   type UpdateTemplateInput,
 } from "./dto/hr-templates.schemas";
 import { TEMPLATE_VARIABLES } from "./hr-template-variables";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 type TemplateRow = typeof hrTemplates.$inferSelect;
 
@@ -38,7 +40,12 @@ export class HrTemplatesService {
     if (query.status) conditions.push(eq(hrTemplates.status, query.status));
     if (query.search) conditions.push(await this.templateSearchCondition(query.search));
 
-    const offset = (query.page - 1) * query.limit;
+    const baseWhere = and(...conditions);
+    const position = decodeCursor(query.cursor);
+    const where = and(
+      baseWhere,
+      position ? keysetBeforeId(hrTemplates.updatedAt, hrTemplates.id, position) : undefined,
+    );
 
     const [rows, [{ total }]] = await Promise.all([
       this.db
@@ -60,17 +67,19 @@ export class HrTemplatesService {
           updatedAt: hrTemplates.updatedAt,
         })
         .from(hrTemplates)
-        .where(and(...conditions))
-        .orderBy(desc(hrTemplates.updatedAt))
-        .limit(query.limit)
-        .offset(offset),
+        .where(where)
+        .orderBy(desc(hrTemplates.updatedAt), desc(hrTemplates.id))
+        .limit(query.limit + 1),
       this.db
         .select({ total: count() })
         .from(hrTemplates)
-        .where(and(...conditions)),
+        .where(baseWhere),
     ]);
-
-    return { data: rows, total, page: query.page, limit: query.limit };
+    const page = buildCursorPage(rows, query.limit, (template) => ({
+      sortValue: template.updatedAt.toISOString(),
+      id: String(template.id),
+    }));
+    return { data: page.data, total, pagination: page.pagination };
   }
 
   private async templateSearchCondition(search: string): Promise<SQL> {

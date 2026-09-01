@@ -22,6 +22,8 @@ import type {
   UpdateSubmissionStatusInput,
 } from "./dto/hr-forms.schemas";
 import type { HrFormField } from "../../../db/schema/hr/forms";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 @Injectable()
 export class HrFormsSubmissionsService {
@@ -182,29 +184,32 @@ export class HrFormsSubmissionsService {
 
   async listSubmissions(orgId: string, formId: number, query: ListSubmissionsQuery, canViewSensitive: boolean) {
     await this.formsService.loadForm(orgId, formId);
-    const page = query.page ?? 1;
-    const limit = query.limit ?? 20;
-    const offset = (page - 1) * limit;
+    const limit = Math.min(query.limit ?? 20, 100);
 
     const conditions = [eq(hrFormSubmissions.orgId, orgId), eq(hrFormSubmissions.formId, formId)];
     if (query.status) conditions.push(eq(hrFormSubmissions.status, query.status));
-    const where = and(...conditions);
+    const baseWhere = and(...conditions);
+    const position = decodeCursor(query.cursor);
+    const where = and(
+      baseWhere,
+      position
+        ? keysetBeforeId(hrFormSubmissions.createdAt, hrFormSubmissions.id, position)
+        : undefined,
+    );
 
     const [rows, [total]] = await Promise.all([
-      this.db.select().from(hrFormSubmissions).where(where).orderBy(desc(hrFormSubmissions.createdAt)).limit(limit).offset(offset),
-      this.db.select({ count: count() }).from(hrFormSubmissions).where(where),
+      this.db.select().from(hrFormSubmissions).where(where).orderBy(desc(hrFormSubmissions.createdAt), desc(hrFormSubmissions.id)).limit(limit + 1),
+      this.db.select({ count: count() }).from(hrFormSubmissions).where(baseWhere),
     ]);
+    const page = buildCursorPage(rows, limit, (submission) => ({
+      sortValue: submission.createdAt.toISOString(),
+      id: String(submission.id),
+    }));
+    const data = canViewSensitive
+      ? page.data
+      : page.data.map((submission) => this.maskSensitiveData(submission));
 
-    if (!canViewSensitive) {
-      return {
-        data: rows.map((r) => this.maskSensitiveData(r)),
-        total: total?.count ?? 0,
-        page,
-        limit,
-      };
-    }
-
-    return { data: rows, total: total?.count ?? 0, page, limit };
+    return { data, total: total?.count ?? 0, pagination: page.pagination };
   }
 
   async getMySubmissions(orgId: string, userId: string) {

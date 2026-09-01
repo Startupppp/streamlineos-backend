@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const HR_TEMPLATE_KINDS = [
   "onboarding_checklist",
@@ -80,7 +80,7 @@ export const templateListQuerySchema = z.object({
   kind: z.enum(HR_TEMPLATE_KINDS).optional(),
   status: z.enum(HR_TEMPLATE_STATUSES).optional(),
   search: z.string().max(100).optional(),
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(50, 100),
 });
 

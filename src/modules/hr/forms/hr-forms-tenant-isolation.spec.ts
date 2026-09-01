@@ -55,14 +55,14 @@ describe("HrFormsService — cross-tenant isolation", () => {
   it("hides HR forms from different org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
     const svc = new HrFormsService(db);
-    await svc.listForms(ATTACKER, { page: 1, limit: 10 });
+    await svc.listForms(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
   it("returns HR forms for owning org (control — same-tenant access works)", async () => {
     const { db, where, findMany } = makeDb([ROW]);
     const svc = new HrFormsService(db);
-    await svc.listForms(OWNER, { page: 1, limit: 10 });
+    await svc.listForms(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });
@@ -78,7 +78,7 @@ describe("HrFormsSubmissionsService — cross-tenant isolation", () => {
     const mockAudit = { log: jest.fn() };
     const mockWorkflow = { startInstance: jest.fn() };
     const svc = new HrFormsSubmissionsService(db, mockForms as never, mockAudit as never, mockWorkflow as never);
-    await svc.listSubmissions(ATTACKER, 1, { page: 1, limit: 10 }, false);
+    await svc.listSubmissions(ATTACKER, 1, { limit: 10 }, false);
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -88,7 +88,7 @@ describe("HrFormsSubmissionsService — cross-tenant isolation", () => {
     const mockAudit = { log: jest.fn() };
     const mockWorkflow = { startInstance: jest.fn() };
     const svc = new HrFormsSubmissionsService(db, mockForms as never, mockAudit as never, mockWorkflow as never);
-    await svc.listSubmissions(OWNER, 1, { page: 1, limit: 10 }, false);
+    await svc.listSubmissions(OWNER, 1, { limit: 10 }, false);
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });
