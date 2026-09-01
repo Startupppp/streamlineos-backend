@@ -1,4 +1,3 @@
-import { tickets } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import type { SQL } from "drizzle-orm";
 
