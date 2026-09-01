@@ -223,7 +223,6 @@ export class ContractsService {
     if (contract.contractType !== "intern") throw new NotFoundException("Contract is not an internship");
 
     const { data: letterTemplates } = await this.templates.list(orgId, {
-      page: 1,
       limit: 10,
       kind: "letter",
       status: "active",
