@@ -7,7 +7,7 @@ const channelBaseSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   avatarUrl: z.string().optional(),
-  memberIds: z.array(z.string()).min(1),
+  memberIds: z.array(z.string()).min(1).max(200),
   entityType: z
     .enum([
       "project",

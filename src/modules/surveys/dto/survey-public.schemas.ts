@@ -10,7 +10,7 @@ export const saveAnswerSchema = z.object({
   questionId: z.number().int().positive(),
   answerValue: z.unknown().optional(),
   answerText: z.string().max(10000).optional(),
-  choiceIds: z.array(z.number().int().positive()).optional(),
+  choiceIds: z.array(z.number().int().positive()).max(50).optional(),
 });
 
 export const patchSessionSchema = z.object({

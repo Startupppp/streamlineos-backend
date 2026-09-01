@@ -45,7 +45,7 @@ export const createTestRunSchema = z.object({
   environment: z.string().optional(),
   browserDevice: z.string().optional(),
   testerId: z.string().optional(),
-  caseIds: z.array(z.number().int().positive()).optional(),
+  caseIds: z.array(z.number().int().positive()).max(500).optional(),
   suiteId: z.number().int().positive().optional(),
 });
 

@@ -88,8 +88,8 @@ export const previewTemplateSchema = z.object({
 export type PreviewTemplateInput = z.infer<typeof previewTemplateSchema>;
 
 export const publishSchema = z.object({
-  userIds: z.array(z.string()).optional(),
-  runEmployeeIds: z.array(z.number().int().positive()).optional(),
+  userIds: z.array(z.string()).max(100).optional(),
+  runEmployeeIds: z.array(z.number().int().positive()).max(100).optional(),
 });
 export type PublishInput = z.infer<typeof publishSchema>;
 

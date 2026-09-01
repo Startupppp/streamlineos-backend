@@ -93,7 +93,7 @@ export const createPaymentRunSchema = z.object({
   scheduledDate: isoDate.optional(),
   filters: z
     .object({
-      vendorIds: z.array(z.number().int().positive()).optional(),
+      vendorIds: z.array(z.number().int().positive()).max(200).optional(),
       dueBefore: isoDate.optional(),
       minAmount: z.number().nonnegative().optional(),
       maxAmount: z.number().positive().optional(),

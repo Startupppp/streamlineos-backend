@@ -71,7 +71,7 @@ export const listRichDocumentsSchema = z.object({
 
 export const sendAckSchema = z.object({
   documentId: z.number().int().positive(),
-  userIds: z.array(z.string().min(1)).min(1, "At least one user required"),
+  userIds: z.array(z.string().min(1)).min(1, "At least one user required").max(100),
 });
 
 export const ackSchema = z.object({

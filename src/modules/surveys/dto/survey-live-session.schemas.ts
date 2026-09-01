@@ -13,7 +13,7 @@ export const submitLiveAnswerSchema = z.object({
   participantToken: z.string(),
   questionId: z.number().int().positive(),
   answerValue: z.unknown().optional(),
-  choiceIds: z.array(z.number().int().positive()).optional(),
+  choiceIds: z.array(z.number().int().positive()).max(50).optional(),
 });
 
 export type CreateLiveSessionInput = z.infer<typeof createLiveSessionSchema>;

@@ -284,7 +284,9 @@
     "check:compression": "node src/scripts/check-compression.mjs",
     "check:compression:self-test": "node src/scripts/check-compression.mjs --self-test",
     "check:route-budgets": "node src/scripts/check-route-budgets.mjs",
-    "check:route-budgets:self-test": "node src/scripts/check-route-budgets.mjs --self-test"
+    "check:route-budgets:self-test": "node src/scripts/check-route-budgets.mjs --self-test",
+    "check:bulk-id-limits": "node src/scripts/check-bulk-id-limits.mjs",
+    "check:bulk-id-limits:self-test": "node src/scripts/check-bulk-id-limits.mjs --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

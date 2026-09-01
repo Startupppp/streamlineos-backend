@@ -10,7 +10,7 @@ export const EXPENSE_EXPORT_AGGREGATE_TYPE = "expense_export_job";
 export const expenseSubmittedRecipientsSchema = z.discriminatedUnion("mode", [
   z.object({
     mode: z.literal("EXPLICIT"),
-    userIds: z.array(z.string().min(1)).min(1),
+    userIds: z.array(z.string().min(1)).min(1).max(50),
   }),
   z.object({ mode: z.literal("EXPENSE_APPROVERS") }),
 ]);

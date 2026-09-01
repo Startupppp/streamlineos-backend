@@ -49,7 +49,7 @@ export const createCampaignSchema = z.object({
   audience: z
     .object({
       type: z.string().min(1),
-      ids: z.array(z.string()).optional(),
+      ids: z.array(z.string()).max(500).optional(),
     })
     .optional(),
 });

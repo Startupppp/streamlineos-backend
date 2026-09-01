@@ -63,7 +63,7 @@ export const topMergeSchema = z.object({
 });
 
 export const bulkUpdateSchema = z.object({
-  leadIds: z.array(z.number()).min(1),
+  leadIds: z.array(z.number()).min(1).max(200),
   update: z.object({
     status: z.string().optional(),
     priority: z.string().optional(),
@@ -72,7 +72,7 @@ export const bulkUpdateSchema = z.object({
 });
 
 export const bulkDeleteSchema = z.object({
-  leadIds: z.array(z.number()).min(1),
+  leadIds: z.array(z.number()).min(1).max(200),
 });
 
 export const importRowSchema = z.object({
@@ -100,7 +100,7 @@ export const importSchema = z.object({
 });
 
 export const distributeSchema = z.object({
-  leadIds: z.array(z.number()).min(1),
+  leadIds: z.array(z.number()).min(1).max(200),
   skipAbsent: z.boolean().default(true),
 });
 
