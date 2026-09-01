@@ -160,6 +160,15 @@ jobs:
       - name: RBAC referential integrity
         run: pnpm verify:rbac-integrity:self-test
 
+      # `pnpm typecheck` runs tsconfig.build.json, which excludes **/*spec.ts, and ts-jest
+      # transpiles without type-checking — so until now no gate had ever type-checked a spec file.
+      # 18 errors had accumulated, mostly TS2554 arity drift where a service grew a parameter and
+      # the spec kept passing the old list, so the test ran with that argument undefined. Two were
+      # load-bearing: a DataScope gate that was never exercised, and a string written into a
+      # numeric column.
+      - name: Specs type-check
+        run: pnpm check:spec-typecheck:self-test && pnpm check:spec-typecheck
+
       # A controller must gate on its OWN module. Thirteen timesheets controllers gated on
       # "build" and eight surveys controllers gated on nothing at all — a paying Timesheets
       # subscriber was 403'd out of their module while a Build subscriber got it free, and any

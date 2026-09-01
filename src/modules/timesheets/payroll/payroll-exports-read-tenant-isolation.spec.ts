@@ -37,7 +37,7 @@ describe("PayrollExportsReadService — cross-tenant isolation", () => {
     const cache = {
       cachedVersioned: jest.fn().mockImplementation((_ns: string, _key: string, fn: () => unknown) => fn()),
     };
-    return new PayrollExportsReadService(db, cache as never);
+    return new PayrollExportsReadService(db, cache as never, {} as never);
   }
 
   it("DENY: listExports queries only the requesting org's exports (cross-tenant isolation)", async () => {

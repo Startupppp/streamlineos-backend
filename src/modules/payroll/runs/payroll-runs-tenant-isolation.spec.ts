@@ -167,7 +167,7 @@ describe("PayrollJobsService — cross-tenant isolation", () => {
   it("scopes listFailed to org (cross-tenant isolation — failed list checks orgId)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const svc = new PayrollJobsService(db);
-    await svc.listFailed(ATTACKER);
+    await svc.listFailed(ATTACKER, undefined);
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 });

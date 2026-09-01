@@ -11,6 +11,7 @@ import {
 import type { EmailDispatcher } from "./email-provider-selection";
 import { EmailSuppressionService, canonicalEmail } from "./email-suppression.service";
 import { getTenantContext } from "../../common/tenant/tenant-context";
+import { filterOrgMemberIds } from "../../common/tenant/org-membership";
 
 const MAX_ATTEMPTS = 8;
 const BATCH_SIZE = 20;
@@ -143,6 +144,7 @@ export class EmailOutboxService {
         attempts: 0,
         nextAttemptAt: now,
         createdAt: now,
+        recipientUserId: options.recipientUserId ?? null,
       })
       .returning({ id: emailOutbox.id });
 
@@ -232,6 +234,24 @@ export class EmailOutboxService {
           .where(eq(emailOutbox.id, row.id));
         dead++;
         continue;
+      }
+
+      if (row.recipientUserId && row.organizationId) {
+        const stillActive = await filterOrgMemberIds(this.db, row.organizationId, [row.recipientUserId]);
+        if (stillActive.length === 0) {
+          await this.db
+            .update(emailOutbox)
+            .set({ status: "SUPPRESSED", attempts: newAttempts, lastError: "Recipient is no longer an active org member" })
+            .where(eq(emailOutbox.id, row.id));
+          this.logger.warn("EMAIL_OUTBOX: retry suppressed — recipient membership revoked", {
+            id: row.id,
+            toEmail: row.toEmail,
+            recipientUserId: row.recipientUserId,
+            organizationId: row.organizationId,
+          });
+          dead++;
+          continue;
+        }
       }
 
       const emailOptions: EmailOptions = {

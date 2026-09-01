@@ -10,8 +10,31 @@ import {
   isEncryptedSecret,
 } from "../../common/security/secret-encryption.util";
 import { WEBHOOK_RESPONSE_BODY_LIMIT } from "./dto/webhook.schemas";
+import {
+  callProvider,
+  type ProviderDescriptor,
+  type ProviderCallResult,
+} from "../../common/outbound/call-provider";
+import { ProviderCircuitBreaker } from "../../common/outbound/provider-circuit-breaker";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
+const WEBHOOK_MAX_ATTEMPTS = 5;
+const WEBHOOK_BASE_DELAY_MS = 1_000;
+const WEBHOOK_MAX_DELAY_MS = 30_000;
+
+export class WebhookTerminalStatusError extends Error {
+  readonly statusCode: number;
+  constructor(status: number, body: string) {
+    super(`Endpoint responded with ${status}: ${body.slice(0, 200)}`);
+    this.statusCode = status;
+    this.name = "WebhookTerminalStatusError";
+  }
+}
+
+export function classifyWebhookError(err: unknown): "terminal" | "retryable" {
+  if (err instanceof WebhookTerminalStatusError) return "terminal";
+  return "retryable";
+}
 
 /**
  * Secrets are encrypted at rest from 2026-08-11. Rows created before that are
@@ -28,8 +51,51 @@ interface DeliveryTarget {
   secret: string;
 }
 
+interface FetchedResponse {
+  status: number;
+  body: string;
+}
+
+function logFromResult(
+  result: ProviderCallResult<FetchedResponse>,
+): { statusCode: number | null; responseBody: string | null; success: boolean } {
+  if (result.ok)
+    return {
+      statusCode: result.value.status,
+      responseBody: result.value.body.slice(0, WEBHOOK_RESPONSE_BODY_LIMIT),
+      success: true,
+    };
+
+  if (result.kind === "terminal") {
+    const err = result.error;
+    return {
+      statusCode: err instanceof WebhookTerminalStatusError ? err.statusCode : null,
+      responseBody: err.message.slice(0, WEBHOOK_RESPONSE_BODY_LIMIT),
+      success: false,
+    };
+  }
+
+  if (result.kind === "dead-lettered")
+    return {
+      statusCode: null,
+      responseBody: `Dead after ${result.attempts} attempts: ${result.error.message}`.slice(
+        0,
+        WEBHOOK_RESPONSE_BODY_LIMIT,
+      ),
+      success: false,
+    };
+
+  return {
+    statusCode: null,
+    responseBody: `Circuit open for endpoint; retry after ${result.retryAfterMs}ms`,
+    success: false,
+  };
+}
+
 @Injectable()
 export class WebhooksDispatchService {
+  private readonly breaker = new ProviderCircuitBreaker();
+
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   dispatch(orgId: string, eventName: string, payload: Record<string, unknown>): void {
@@ -63,10 +129,6 @@ export class WebhooksDispatchService {
       .update(body)
       .digest("hex");
 
-    let statusCode: number | null = null;
-    let responseBody: string | null;
-    let success = false;
-
     const urlCheck = await checkWebhookUrl(endpoint.url);
     if (!urlCheck.allowed) {
       await this.db.insert(webhookLogs).values({
@@ -81,24 +143,39 @@ export class WebhooksDispatchService {
       return;
     }
 
-    try {
-      const response = await fetch(endpoint.url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-StreamlineOS-Signature": `sha256=${signature}`,
-          "X-Webhook-Event": eventName,
-        },
-        body,
-        redirect: "error",
-        signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
-      });
-      statusCode = response.status;
-      responseBody = await response.text().catch(() => null);
-      success = response.ok;
-    } catch (error) {
-      responseBody = error instanceof Error ? error.message : "Request failed";
-    }
+    const descriptor: ProviderDescriptor = {
+      provider: `webhook:${endpoint.id}`,
+      timeoutMs: WEBHOOK_TIMEOUT_MS,
+      maxAttempts: WEBHOOK_MAX_ATTEMPTS,
+      baseDelayMs: WEBHOOK_BASE_DELAY_MS,
+      maxDelayMs: WEBHOOK_MAX_DELAY_MS,
+      classify: classifyWebhookError,
+    };
+
+    const result = await callProvider(
+      descriptor,
+      async () => {
+        const response = await fetch(endpoint.url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-StreamlineOS-Signature": `sha256=${signature}`,
+            "X-Webhook-Event": eventName,
+          },
+          body,
+          redirect: "error",
+          signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
+        });
+        const text = await response.text().catch(() => "");
+        if (response.status >= 400 && response.status < 500)
+          throw new WebhookTerminalStatusError(response.status, text);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return { status: response.status, body: text };
+      },
+      this.breaker,
+    );
+
+    const { statusCode, responseBody, success } = logFromResult(result);
 
     await this.db.insert(webhookLogs).values({
       endpointId: endpoint.id,
@@ -106,7 +183,8 @@ export class WebhooksDispatchService {
       event: eventName,
       payload,
       statusCode,
-      responseBody: responseBody?.slice(0, WEBHOOK_RESPONSE_BODY_LIMIT) ?? null,
+      responseBody,
+      attempt: result.attempts,
       success,
     });
   }

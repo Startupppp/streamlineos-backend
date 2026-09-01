@@ -31,6 +31,7 @@ export const emailOutbox = pgTable(
     lastError: text("last_error"),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    recipientUserId: text("recipient_user_id"),
   },
   (t) => [
     index("email_outbox_status_next_idx").on(t.status, t.nextAttemptAt),

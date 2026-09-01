@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const listJobsQuerySchema = z.object({
   failedOnly: z.enum(["true", "false"]).optional().transform((v) => v === "true"),
   runId: z.coerce.number().int().positive().optional(),
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(50, 100),
 });
 export type ListJobsQuery = z.infer<typeof listJobsQuerySchema>;

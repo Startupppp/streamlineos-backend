@@ -3704,6 +3704,13 @@
       "when": 1798000154000,
       "tag": "0843_blog_posts_search_tsvector",
       "breakpoints": true
+    },
+    {
+      "idx": 656,
+      "version": "7",
+      "when": 1798000155000,
+      "tag": "0844_email_outbox_recipient_user_id",
+      "breakpoints": true
     }
   ]
 }

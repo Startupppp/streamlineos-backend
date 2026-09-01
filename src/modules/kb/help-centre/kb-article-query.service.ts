@@ -8,6 +8,8 @@ import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { ListArticlesInput } from "../core/dto/kb.schemas";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 
 type ArticleRow = typeof kbArticles.$inferSelect;
 
@@ -30,10 +32,9 @@ type ArticleListItem = Pick<
 
 type ArticleListResult = {
   items: ArticleListItem[];
-  total: number;
-  page: number;
-  pageSize: number;
-  totalPages: number;
+  nextCursor: string | null;
+  hasMore: boolean;
+  limit: number;
 };
 
 @Injectable()
@@ -45,11 +46,11 @@ export class KbArticleQueryService {
 
   async list(user: CurrentUserContext, query: ListArticlesInput, scope?: DataScope): Promise<ArticleListResult> {
     if (scope === "none")
-      return { items: [], total: 0, page: query.page, pageSize: query.pageSize, totalPages: 0 };
+      return { items: [], nextCursor: null, hasMore: false, limit: query.limit };
 
     const ids = await this.access.getAccessibleSpaceIds(user);
     if (ids.length === 0)
-      return { items: [], total: 0, page: query.page, pageSize: query.pageSize, totalPages: 0 };
+      return { items: [], nextCursor: null, hasMore: false, limit: query.limit };
 
     const conditions: SQL[] = [eq(kbArticles.orgId, user.orgId), inArray(kbArticles.spaceId, ids)];
     if (scope && scope !== "all")
@@ -63,8 +64,8 @@ export class KbArticleQueryService {
       if (match) conditions.push(match);
     }
 
-    const where = and(...conditions);
-    const offset = (query.page - 1) * query.pageSize;
+    const position = decodeCursor(query.cursor);
+    if (position) conditions.push(keysetBeforeId(kbArticles.updatedAt, kbArticles.id, position));
 
     const rows = await this.db
       .select({
@@ -87,36 +88,22 @@ export class KbArticleQueryService {
         notHelpfulCount: kbArticles.notHelpfulCount,
         lastVerifiedAt: kbArticles.lastVerifiedAt,
         updatedAt: kbArticles.updatedAt,
-        totalCount: sql<string>`count(*) OVER ()`,
       })
       .from(kbArticles)
-      .where(where)
-      .orderBy(desc(kbArticles.updatedAt))
-      .limit(query.pageSize)
-      .offset(offset);
+      .where(and(...conditions))
+      .orderBy(desc(kbArticles.updatedAt), desc(kbArticles.id))
+      .limit(query.limit + 1);
 
-    const first = rows[0];
-    let total: number;
-    if (first) {
-      total = Number(first.totalCount);
-    } else if (offset === 0) {
-      total = 0;
-    } else {
-      const [countRow] = await this.db.select({ count: sql<number>`count(*)::int` }).from(kbArticles).where(where);
-      total = countRow?.count ?? 0;
-    }
-
-    const items: ArticleListItem[] = rows.map((row) => {
-      const { totalCount: _, ...item } = row;
-      return item;
-    });
+    const page = buildCursorPage(rows, query.limit, (row) => ({
+      sortValue: row.updatedAt.toISOString(),
+      id: String(row.id),
+    }));
 
     return {
-      items,
-      total,
-      page: query.page,
-      pageSize: query.pageSize,
-      totalPages: Math.ceil(total / query.pageSize),
+      items: page.data,
+      nextCursor: page.pagination.nextCursor,
+      hasMore: page.pagination.hasMore,
+      limit: page.pagination.limit,
     };
   }
 

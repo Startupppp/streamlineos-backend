@@ -144,7 +144,7 @@ describe("SignOS signing flow integration (e2e)", () => {
     const pdfBuffer = await makeTestPdfBuffer();
 
     return runInTenantTransaction(db, async () => {
-      const envelope = await envelopesSvc.create(orgId, userId, {
+      const envelope = await envelopesSvc.create(orgId, null, {
         title: "Test agreement",
         routingMode: "parallel",
         ccTiming: "on_complete",

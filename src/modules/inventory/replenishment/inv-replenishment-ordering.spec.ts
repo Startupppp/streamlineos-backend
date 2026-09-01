@@ -19,7 +19,8 @@ describe("InvReplenishmentService.getForecasting — deterministic ORDER BY befo
 
     const pagedResult: unknown[] = [];
 
-    const stockChain = {
+    type StockChain = { groupBy: jest.Mock; where: jest.Mock };
+    const stockChain: StockChain = {
       groupBy: jest.fn(() => ({
         orderBy: jest.fn((..._args: unknown[]) => {
           globalOrder.push("orderBy");
@@ -33,7 +34,7 @@ describe("InvReplenishmentService.getForecasting — deterministic ORDER BY befo
           };
         }),
       })),
-      where: jest.fn(function (this: typeof stockChain) { return stockChain; }),
+      where: jest.fn(function (this: StockChain) { return stockChain; }),
     };
 
     const salesChain = {

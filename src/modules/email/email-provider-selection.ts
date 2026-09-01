@@ -51,4 +51,10 @@ export interface EmailOptions {
   organizationId?: string | null;
   /** Set only on non-mandatory mail - a payslip must not advertise an opt-out it will not honour. */
   headers?: Record<string, string>;
+  /**
+   * When set together with organizationId, the retry worker checks that this user is
+   * still an active org member before re-sending. Use for employment-sensitive mail
+   * (payslips, employment letters) that must not reach offboarded recipients.
+   */
+  recipientUserId?: string | null;
 }

@@ -12,10 +12,11 @@ export const BUILD_NOTIFICATION_EVENTS = [
     visibilityResourceKind: BUILD_TICKET_RESOURCE, rateLimitWindowSeconds: 3600, rateLimitMax: 50,
   }),
   notificationEvent("build.ticket.due_soon", "build", "PROJECTS", "Task due soon", {
-    defaultChannels: IN_APP_EMAIL, ttlSeconds: 86400,
+    defaultChannels: IN_APP_EMAIL, ttlSeconds: 86400, visibilityResourceKind: BUILD_TICKET_RESOURCE,
   }),
   notificationEvent("build.ticket.overdue", "build", "PROJECTS", "Task overdue", {
     defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IN_APP_EMAIL,
+    visibilityResourceKind: BUILD_TICKET_RESOURCE,
   }),
   notificationEvent("build.comment.mention", "build", "PROJECTS", "Mentioned in a comment", {
     defaultPriority: "HIGH", defaultChannels: IN_APP_PUSH_EMAIL, dedupeWindowSeconds: 0,
@@ -23,6 +24,7 @@ export const BUILD_NOTIFICATION_EVENTS = [
   }),
   notificationEvent("build.ticket.status_changed", "build", "PROJECTS", "Task status changed", {
     defaultPriority: "LOW", defaultChannels: IN_APP, rateLimitWindowSeconds: 3600, rateLimitMax: 100,
+    visibilityResourceKind: BUILD_TICKET_RESOURCE,
   }),
   notificationEvent("build.sprint.started", "build", "PROJECTS", "Sprint started", { defaultChannels: IN_APP }),
   notificationEvent("build.sprint.ending", "build", "PROJECTS", "Sprint ending soon", {
@@ -36,6 +38,7 @@ export const BUILD_NOTIFICATION_EVENTS = [
   }),
   notificationEvent("build.blocker.created", "build", "PROJECTS", "Blocker reported", {
     defaultPriority: "HIGH", defaultType: "WARNING", defaultChannels: IN_APP_EMAIL,
+    visibilityResourceKind: BUILD_TICKET_RESOURCE,
   }),
   notificationEvent("build.approval.requested", "build", "WORKFLOW", "Approval requested", {
     defaultPriority: "HIGH", defaultChannels: IN_APP_EMAIL,

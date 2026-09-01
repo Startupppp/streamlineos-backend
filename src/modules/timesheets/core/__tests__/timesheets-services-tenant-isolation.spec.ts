@@ -397,7 +397,7 @@ describe("PayrollExportService — cross-tenant isolation", () => {
   it("runExport: WHERE contains attacker orgId in settings query (deny — different org isolation)", async () => {
     const { db, where } = makeDb([]);
     (db as unknown as { transaction: jest.Mock }).transaction.mockImplementation(makeTxImpl(ATTACKER_ORG));
-    const svc = new PayrollExportService(db, mockCache as never, mockAudit as never);
+    const svc = new PayrollExportService(db, mockCache as never, mockAudit as never, {} as never);
     const input = { start: "2025-01-01", end: "2025-01-31", includeExported: false } as never;
     await expect(svc.runExport(ATTACKER_ORG, "user-x", input)).resolves.toBeDefined();
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
@@ -407,7 +407,7 @@ describe("PayrollExportService — cross-tenant isolation", () => {
   it("runExport: runs for own org (control — same-tenant)", async () => {
     const { db } = makeDb([]);
     (db as unknown as { transaction: jest.Mock }).transaction.mockImplementation(makeTxImpl(OWNER_ORG));
-    const svc = new PayrollExportService(db, mockCache as never, mockAudit as never);
+    const svc = new PayrollExportService(db, mockCache as never, mockAudit as never, {} as never);
     const input = { start: "2025-01-01", end: "2025-01-31", includeExported: false } as never;
     await expect(svc.runExport(OWNER_ORG, "user-y", input)).resolves.toBeDefined();
   });

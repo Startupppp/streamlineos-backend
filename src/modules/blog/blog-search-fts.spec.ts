@@ -54,7 +54,7 @@ describe("D7 — blog search uses full-text search, not leading-wildcard ILIKE",
     const findMany = jest.fn().mockResolvedValue([]);
     const svc = makeSvc(findMany);
 
-    await svc.getPublishedPosts({ search: "nestjs" });
+    await svc.getPublishedPosts({ search: "nestjs", featured: undefined });
 
     expect(findMany).toHaveBeenCalledTimes(1);
     const opts = findMany.mock.calls[0]?.[0] as { where?: unknown };
@@ -67,7 +67,7 @@ describe("D7 — blog search uses full-text search, not leading-wildcard ILIKE",
     const findMany = jest.fn().mockResolvedValue([]);
     const svc = makeSvc(findMany);
 
-    await svc.getPublishedPosts({ search: "nestjs" });
+    await svc.getPublishedPosts({ search: "nestjs", featured: undefined });
 
     expect(findMany).toHaveBeenCalledTimes(1);
     const opts = findMany.mock.calls[0]?.[0] as { where?: unknown };
@@ -81,7 +81,7 @@ describe("D7 — blog search uses full-text search, not leading-wildcard ILIKE",
     const findMany = jest.fn().mockResolvedValue([]);
     const svc = makeSvc(findMany);
 
-    await svc.getPublishedPosts({ search: "'; DROP TABLE blog_posts; --" });
+    await svc.getPublishedPosts({ search: "'; DROP TABLE blog_posts; --", featured: undefined });
 
     expect(findMany).toHaveBeenCalledTimes(1);
     const opts = findMany.mock.calls[0]?.[0] as { where?: unknown };
@@ -94,7 +94,7 @@ describe("D7 — blog search uses full-text search, not leading-wildcard ILIKE",
     const findMany = jest.fn().mockResolvedValue([]);
     const svc = makeSvc(findMany);
 
-    await svc.getPublishedPosts({});
+    await svc.getPublishedPosts({ featured: undefined });
 
     expect(findMany).toHaveBeenCalledTimes(1);
     const opts = findMany.mock.calls[0]?.[0] as { where?: unknown };

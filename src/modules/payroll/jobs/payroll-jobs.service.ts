@@ -6,6 +6,8 @@ import type { Db } from "../../../db/drizzle.module";
 import { payrollJobs } from "../../../db/schema";
 import { getPostgresErrorCode } from "../../../common/db/postgres-error";
 import { logger } from "../../../common/logger/logger.service";
+import { buildCursorPage, decodeCursor, type CursorPage } from "../../../common/pagination/cursor";
+import { keysetAfterId, keysetBeforeId } from "../../../common/pagination/keyset";
 
 export type PayrollJobType =
   | "GENERATE"
@@ -165,20 +167,29 @@ export class PayrollJobsService {
     return row;
   }
 
-  async listFailed(orgId: string, page = 1, limit = 50) {
+  async listFailed(
+    orgId: string,
+    cursor: string | undefined,
+    limit = 50,
+  ): Promise<CursorPage<typeof payrollJobs.$inferSelect>> {
     const cap = Math.min(limit, 100);
-    return this.db
+    const position = decodeCursor(cursor);
+    const rows = await this.db
       .select()
       .from(payrollJobs)
       .where(
         and(
           eq(payrollJobs.orgId, orgId),
           inArray(payrollJobs.status, ["FAILED", "DEAD_LETTER"]),
+          position ? keysetBeforeId(payrollJobs.createdAt, payrollJobs.id, position) : undefined,
         ),
       )
-      .orderBy(desc(payrollJobs.createdAt), asc(payrollJobs.id))
-      .limit(cap)
-      .offset((page - 1) * cap);
+      .orderBy(desc(payrollJobs.createdAt), desc(payrollJobs.id))
+      .limit(cap + 1);
+    return buildCursorPage(rows, cap, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 
   /** Claim a batch of PENDING jobs for a worker (cross-process safe-ish via status flip). */
@@ -207,9 +218,16 @@ export class PayrollJobsService {
     return claimed;
   }
 
-  async listForResource(orgId: string, resourceType: string, resourceId: string, page = 1, limit = 20) {
+  async listForResource(
+    orgId: string,
+    resourceType: string,
+    resourceId: string,
+    cursor: string | undefined,
+    limit = 20,
+  ): Promise<CursorPage<typeof payrollJobs.$inferSelect>> {
     const cap = Math.min(limit, 100);
-    return this.db
+    const position = decodeCursor(cursor);
+    const rows = await this.db
       .select()
       .from(payrollJobs)
       .where(
@@ -217,10 +235,14 @@ export class PayrollJobsService {
           eq(payrollJobs.orgId, orgId),
           eq(payrollJobs.resourceType, resourceType),
           eq(payrollJobs.resourceId, resourceId),
+          position ? keysetAfterId(payrollJobs.createdAt, payrollJobs.id, position) : undefined,
         ),
       )
-      .orderBy(asc(payrollJobs.createdAt))
-      .limit(cap)
-      .offset((page - 1) * cap);
+      .orderBy(asc(payrollJobs.createdAt), asc(payrollJobs.id))
+      .limit(cap + 1);
+    return buildCursorPage(rows, cap, (row) => ({
+      sortValue: row.createdAt.toISOString(),
+      id: String(row.id),
+    }));
   }
 }

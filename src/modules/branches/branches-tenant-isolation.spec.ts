@@ -99,7 +99,7 @@ describe("BranchesService — cross-tenant isolation", () => {
     const { db, getPredicate } = makeSelectChain([]);
     const svc = makeSvc(db);
 
-    const result = await svc.update(ATTACKER_ORG, "branch-owned-by-owner", { name: "Injected" });
+    const result = await svc.update(ATTACKER_ORG, "branch-owned-by-owner", { name: "Injected", city: undefined, state: undefined, country: undefined, pincode: undefined, address: undefined, phone: undefined, email: undefined });
 
     expect(result).toBeNull();
     const vals = sqlValues(getPredicate());
@@ -111,7 +111,7 @@ describe("BranchesService — cross-tenant isolation", () => {
     const { db, getPredicate } = makeSelectChain([{ metadata: {}, currentManagerId: null }]);
     const svc = makeSvc(db);
 
-    await svc.update(OWNER_ORG, "branch-own-id", { name: "HQ Updated" });
+    await svc.update(OWNER_ORG, "branch-own-id", { name: "HQ Updated", city: undefined, state: undefined, country: undefined, pincode: undefined, address: undefined, phone: undefined, email: undefined });
 
     expect((db.transaction as jest.Mock)).toHaveBeenCalledTimes(1);
     expect(sqlValues(getPredicate())).toContain(OWNER_ORG);
