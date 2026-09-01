@@ -4152,6 +4152,48 @@
       "when": 1803000010033,
       "tag": "0942_storage_multipart_intents",
       "breakpoints": true
+    },
+    {
+      "idx": 722,
+      "version": "7",
+      "when": 1803000010034,
+      "tag": "0943_ar02_build_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 723,
+      "version": "7",
+      "when": 1803000010035,
+      "tag": "0944_ar02_build_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 724,
+      "version": "7",
+      "when": 1803000010036,
+      "tag": "0945_ar02_build_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 725,
+      "version": "7",
+      "when": 1803000010037,
+      "tag": "0946_ar02_build_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 726,
+      "version": "7",
+      "when": 1803000010038,
+      "tag": "0947_ar02_build_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 727,
+      "version": "7",
+      "when": 1803000010039,
+      "tag": "0948_ar02_drop_build_single_fks",
+      "breakpoints": true
     }
   ]
 }
