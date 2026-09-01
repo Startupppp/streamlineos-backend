@@ -114,10 +114,9 @@ describe("InvAiProposalService - propose", () => {
       replenishment,
       forecasts
     );
-    const result = await service.propose({orgId: "org-1", userId: "user-1"} as any, {variantId: 77});
+    const result = await service.propose({orgId: "org-1", userId: "user-1"} as never, {variantId: 77});
 
     expect(capturedUserPrompt).toContain("42");
-    // @ts-ignore - evidence check
     expect(result.evidence["suggestedQuantity"]).toBe("42");
   });
 });

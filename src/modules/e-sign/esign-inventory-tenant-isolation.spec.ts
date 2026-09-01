@@ -88,8 +88,9 @@ describe("InventoryWebhookEmitter — tenant isolation", () => {
     const { db, getPredicate } = makeSelectChain([
       { id: 42, url: "https://example.com/hook", secret: "s3cr3t" },
     ]);
-    (db as any).insert = jest.fn().mockReturnValue({ values: insertValues });
-    (db as any).update = jest.fn().mockReturnValue({ set: updateSet });
+    const dbMut = db as unknown as { insert: jest.Mock; update: jest.Mock };
+    dbMut.insert = jest.fn().mockReturnValue({ values: insertValues });
+    dbMut.update = jest.fn().mockReturnValue({ set: updateSet });
 
     (checkWebhookUrl as jest.Mock).mockResolvedValue({ allowed: true });
     global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, type: "basic" } as unknown as Response);
