@@ -24,15 +24,15 @@ describe("TimesheetsService — cross-tenant isolation", () => {
   it("throws NotFoundException for updateEntry when entry belongs to a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
     const svc = new TimesheetsService(db, cache, access, periodService);
-    const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false } as never;
+    const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false, principal: { kind: "human-session", membershipId: 1 } } as never;
     await expect(svc.updateEntry(u, 99, { hours: 2 } as never)).rejects.toThrow(NotFoundException);
   });
 
   it("returns entries scoped to the owning org (same-tenant control)", async () => {
-    const entry = { id: 1, orgId: OWNER_ORG, userId: "u1", hours: 2 };
+    const entry = { id: 1, orgId: OWNER_ORG, userMembershipId: 1, hours: 2 };
     const db = makeDb(entry);
     const svc = new TimesheetsService(db, cache, access, periodService);
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
+    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true, principal: { kind: "human-session", membershipId: 1 } } as never;
     const result = await svc.listTimeEntries(u, { page: 1, limit: 20 } as never);
     expect(result).toHaveLength(1);
   });

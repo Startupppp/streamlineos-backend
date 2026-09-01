@@ -55,7 +55,7 @@ export class SignRecipientsService {
         name: input.name,
         email: input.email,
         phone: input.phone,
-        userId: input.userId,
+        userMembershipId: input.userMembershipId,
         routingOrder: input.routingOrder,
         authMethod: input.authMethod,
         accessCodeHash: input.accessCode ? this.tokens.hash(input.accessCode) : null,

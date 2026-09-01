@@ -5,6 +5,7 @@ import { type Db } from "../../../db/drizzle.module";
 import {
   timesheetRates,
   timesheetRateCards,
+  organizationMembers,
   projectMembers,
   projects,
 } from "../../../db/schema";
@@ -68,46 +69,73 @@ export class RateResolverService {
         : null;
     });
 
-    const fallbackPairs: { projectId: number; userId: string }[] = [];
+    const fallbackPairs: { projectId: number; membershipId: number }[] = [];
     queries.forEach((query, i) => {
       if (
         cardResults[i] == null &&
         query.projectId != null &&
-        query.userId != null
+        query.userMembershipId != null
       ) {
         fallbackPairs.push({
           projectId: query.projectId,
-          userId: query.userId,
+          membershipId: query.userMembershipId,
         });
       }
     });
 
     const memberRateByKey = new Map<string, number>();
     if (fallbackPairs.length > 0) {
+      const membershipIds = [...new Set(fallbackPairs.map((p) => p.membershipId))];
       const memberRows = await this.db
         .select({
-          projectId: projectMembers.projectId,
-          userId: projectMembers.userId,
-          hourlyRate: projectMembers.hourlyRate,
+          membershipId: organizationMembers.id,
+          userId: organizationMembers.userId,
         })
-        .from(projectMembers)
-        .innerJoin(projects, eq(projectMembers.projectId, projects.id))
+        .from(organizationMembers)
         .where(
           and(
-            eq(projects.orgId, orgId),
-            inArray(projectMembers.projectId, [
-              ...new Set(fallbackPairs.map((p) => p.projectId)),
-            ]),
-            inArray(projectMembers.userId, [
-              ...new Set(fallbackPairs.map((p) => p.userId)),
-            ]),
+            eq(organizationMembers.orgId, orgId),
+            inArray(organizationMembers.id, membershipIds),
           ),
+        )
+        .limit(membershipIds.length);
+
+      const membershipToUserId = new Map(memberRows.map((m) => [m.membershipId, m.userId]));
+
+      const userIds = memberRows.map((m) => m.userId);
+      const projectIds = [...new Set(fallbackPairs.map((p) => p.projectId))];
+
+      if (userIds.length > 0) {
+        const pmRows = await this.db
+          .select({
+            projectId: projectMembers.projectId,
+            userId: projectMembers.userId,
+            hourlyRate: projectMembers.hourlyRate,
+          })
+          .from(projectMembers)
+          .innerJoin(projects, eq(projectMembers.projectId, projects.id))
+          .where(
+            and(
+              eq(projects.orgId, orgId),
+              inArray(projectMembers.projectId, projectIds),
+              inArray(projectMembers.userId, userIds),
+            ),
+          );
+
+        const pmRateByProjectUser = new Map(
+          pmRows
+            .filter((r) => parseFloat(r.hourlyRate) > 0)
+            .map((r) => [`${r.projectId}|${r.userId}`, parseFloat(r.hourlyRate)]),
         );
 
-      for (const row of memberRows) {
-        const rate = parseFloat(row.hourlyRate);
-        if (rate > 0)
-          memberRateByKey.set(`${row.projectId}|${row.userId}`, rate);
+        for (const pair of fallbackPairs) {
+          const userId = membershipToUserId.get(pair.membershipId);
+          if (!userId) continue;
+          const rate = pmRateByProjectUser.get(`${pair.projectId}|${userId}`);
+          if (rate !== undefined) {
+            memberRateByKey.set(`${pair.projectId}|${pair.membershipId}`, rate);
+          }
+        }
       }
     }
 
@@ -115,8 +143,8 @@ export class RateResolverService {
       const fromCard = cardResults[i];
       if (fromCard) return fromCard;
       const memberRate =
-        query.projectId != null && query.userId != null
-          ? memberRateByKey.get(`${query.projectId}|${query.userId}`)
+        query.projectId != null && query.userMembershipId != null
+          ? memberRateByKey.get(`${query.projectId}|${query.userMembershipId}`)
           : undefined;
       if (memberRate !== undefined) {
         return {
@@ -163,27 +191,40 @@ export class RateResolverService {
     query: RateQuery,
     defaultCurrency: string,
   ): Promise<ResolvedRate> {
-    if (query.projectId && query.userId) {
+    if (query.projectId && query.userMembershipId) {
       const [member] = await this.db
-        .select({ hourlyRate: projectMembers.hourlyRate })
-        .from(projectMembers)
-        .innerJoin(projects, eq(projectMembers.projectId, projects.id))
+        .select({ userId: organizationMembers.userId })
+        .from(organizationMembers)
         .where(
           and(
-            eq(projects.orgId, orgId),
-            eq(projectMembers.projectId, query.projectId),
-            eq(projectMembers.userId, query.userId),
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.id, query.userMembershipId),
           ),
         )
         .limit(1);
 
-      if (member && parseFloat(member.hourlyRate) > 0) {
-        return {
-          billRate: parseFloat(member.hourlyRate),
-          costRate: null,
-          currency: defaultCurrency,
-          source: "PROJECT_MEMBER",
-        };
+      if (member) {
+        const [pm] = await this.db
+          .select({ hourlyRate: projectMembers.hourlyRate })
+          .from(projectMembers)
+          .innerJoin(projects, eq(projectMembers.projectId, projects.id))
+          .where(
+            and(
+              eq(projects.orgId, orgId),
+              eq(projectMembers.projectId, query.projectId),
+              eq(projectMembers.userId, member.userId),
+            ),
+          )
+          .limit(1);
+
+        if (pm && parseFloat(pm.hourlyRate) > 0) {
+          return {
+            billRate: parseFloat(pm.hourlyRate),
+            costRate: null,
+            currency: defaultCurrency,
+            source: "PROJECT_MEMBER",
+          };
+        }
       }
     }
 

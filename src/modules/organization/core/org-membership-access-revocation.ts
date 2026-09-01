@@ -12,6 +12,7 @@ import {
   organizationMembers,
   organizations,
   ownershipTransfers,
+  portalMemberships,
   resourceGrants,
   userApiTokens,
   userDelegations,
@@ -256,6 +257,19 @@ export class OrgMembershipAccessRevocation {
           await tx
             .delete(chatHuddleParticipants)
             .where(and(eq(chatHuddleParticipants.orgId, orgId), huddleFilter));
+        }
+
+        if (membershipId !== undefined) {
+          await tx
+            .update(portalMemberships)
+            .set({ status: "REVOKED" })
+            .where(
+              and(
+                eq(portalMemberships.organizationId, orgId),
+                eq(portalMemberships.userMembershipId, membershipId),
+                ne(portalMemberships.status, "REVOKED"),
+              ),
+            );
         }
 
         const updatedConns = await tx

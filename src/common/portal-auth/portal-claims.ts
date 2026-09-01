@@ -6,5 +6,5 @@ export type PortalUserContext = {
   partyContactId: string;
   audience: typeof PORTAL_AUDIENCE;
   sessionEpoch: number;
-  userId: string | null;
+  userMembershipId: number | null;
 };

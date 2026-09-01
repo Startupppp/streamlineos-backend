@@ -23,12 +23,12 @@ const OWNER = "org-owner";
 const ACTOR_ID = "user-actor";
 
 function makeUser(orgId: string): CurrentUserContext {
-  return { orgId, userId: ACTOR_ID } as CurrentUserContext;
+  return { orgId, userId: ACTOR_ID, principal: { kind: "human-session", membershipId: 1 } } as unknown as CurrentUserContext;
 }
 
 function makeSelectChain(rows: unknown[] = []) {
   const where = jest.fn();
-  const chain = {
+  const chain: Record<string, jest.Mock> & { then: unknown; catch: unknown; finally: unknown } = {
     then: (fn: (v: unknown[]) => unknown) => Promise.resolve(rows).then(fn),
     catch: (fn: (e: unknown) => unknown) => Promise.resolve(rows).catch(fn),
     finally: (fn: () => void) => Promise.resolve(rows).finally(fn),
@@ -36,11 +36,14 @@ function makeSelectChain(rows: unknown[] = []) {
     groupBy: jest.fn(),
     orderBy: jest.fn(),
     leftJoin: jest.fn(),
+    innerJoin: jest.fn(),
+    where,
   };
   chain.limit.mockReturnValue(chain);
   chain.groupBy.mockReturnValue(chain);
   chain.orderBy.mockReturnValue(chain);
   chain.leftJoin.mockReturnValue(chain);
+  chain.innerJoin.mockReturnValue(chain);
   where.mockReturnValue(chain);
   return { where, chain };
 }
@@ -91,8 +94,8 @@ describe("ApprovalsBulkService — cross-tenant isolation", () => {
 
 describe("TimesheetAnalyticsService — cross-tenant isolation", () => {
   it("getCompliance: where clause carries attacker orgId — only attacker data queried (deny)", async () => {
-    const { where } = makeSelectChain([]);
-    const from = jest.fn().mockReturnValue({ where });
+    const { where, chain } = makeSelectChain([]);
+    const from = jest.fn().mockReturnValue(chain);
     const db = {
       select: jest.fn().mockReturnValue({ from }),
     } as unknown as Db;
@@ -107,8 +110,8 @@ describe("TimesheetAnalyticsService — cross-tenant isolation", () => {
   });
 
   it("getCompliance: returns data scoped to the owner org (control)", async () => {
-    const { where } = makeSelectChain([]);
-    const from = jest.fn().mockReturnValue({ where });
+    const { where, chain } = makeSelectChain([]);
+    const from = jest.fn().mockReturnValue(chain);
     const db = {
       select: jest.fn().mockReturnValue({ from }),
     } as unknown as Db;

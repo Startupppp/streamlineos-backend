@@ -1,5 +1,6 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, gte, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { organizationMembers, timesheets, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -56,6 +57,13 @@ export class WorkLogsService {
   ) {
     const targetUserId = filterUserId || userId;
 
+    const [member] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, targetUserId)))
+      .limit(1);
+    if (!member) return [];
+
     const startMonth = (quarter - 1) * 3;
     const quarterStart = formatDateOnly(new Date(year, startMonth, 1));
     const quarterEnd = formatDateOnly(new Date(year, startMonth + 3, 0));
@@ -65,7 +73,7 @@ export class WorkLogsService {
 
     const conditions: SQL[] = [
       eq(timesheets.orgId, orgId),
-      eq(timesheets.userId, targetUserId),
+      eq(timesheets.userMembershipId, member.id),
       isNull(timesheets.ticketId),
       gte(timesheets.date, effectiveFrom),
       lte(timesheets.date, effectiveTo),
@@ -93,6 +101,13 @@ export class WorkLogsService {
   }
 
   async create(orgId: string, userId: string, body: PostWorkLogInput, actor?: CurrentUserContext) {
+    const [member] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+    if (!member) throw new NotFoundException("Member not found");
+
     const dateStr = formatDateOnly(body.date);
     const todayStr = getTodayString();
     if (dateStr !== todayStr) {
@@ -102,7 +117,7 @@ export class WorkLogsService {
     const existing = await this.db.query.timesheets.findFirst({
       where: and(
         eq(timesheets.orgId, orgId),
-        eq(timesheets.userId, userId),
+        eq(timesheets.userMembershipId, member.id),
         eq(timesheets.date, dateStr),
         isNull(timesheets.ticketId),
       ),
@@ -137,7 +152,7 @@ export class WorkLogsService {
       .insert(timesheets)
       .values({
         orgId,
-        userId,
+        userMembershipId: member.id,
         date: dateStr,
         description: normalizedDescription,
         hours: body.hours?.toString() || "0",
@@ -145,7 +160,7 @@ export class WorkLogsService {
         status: "APPROVED",
       })
       .onConflictDoUpdate({
-        target: [timesheets.orgId, timesheets.userId, timesheets.date],
+        target: [timesheets.orgId, timesheets.userMembershipId, timesheets.date],
         targetWhere: sql`ticket_id IS NULL AND project_id IS NULL AND voided_at IS NULL`,
         set: {
           description: normalizedDescription,
@@ -195,8 +210,16 @@ export class WorkLogsService {
     actorId: string,
     rejectionReason?: string,
   ): Promise<void> {
+    const ownerMember = alias(organizationMembers, "owner_member");
     const [ownerRow, actorRow] = await Promise.all([
-      this.db.select({ id: users.id, name: users.name }).from(users).where(eq(users.id, log.userId)).limit(1),
+      log.userMembershipId !== null
+        ? this.db
+            .select({ id: users.id, name: users.name })
+            .from(ownerMember)
+            .innerJoin(users, eq(ownerMember.userId, users.id))
+            .where(and(eq(ownerMember.orgId, log.orgId), eq(ownerMember.id, log.userMembershipId)))
+            .limit(1)
+        : Promise.resolve([] as Array<{ id: string; name: string | null }>),
       this.db.select({ name: users.name }).from(users).where(eq(users.id, actorId)).limit(1),
     ]);
 
@@ -223,14 +246,25 @@ export class WorkLogsService {
     const conditions: SQL[] = [eq(timesheets.orgId, u.orgId)];
 
     if (scope !== "all") {
-      conditions.push(eq(timesheets.userId, u.userId));
+      const [selfMember] = await this.db
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
+        .limit(1);
+      if (selfMember) conditions.push(eq(timesheets.userMembershipId, selfMember.id));
     } else if (query.userId) {
-      conditions.push(eq(timesheets.userId, query.userId));
+      const [qMember] = await this.db
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, query.userId)))
+        .limit(1);
+      if (qMember) conditions.push(eq(timesheets.userMembershipId, qMember.id));
     }
 
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
 
+    const exportMember = alias(organizationMembers, "export_member");
     const data = await this.db
       .select({
         date: timesheets.date,
@@ -241,7 +275,8 @@ export class WorkLogsService {
         userEmail: users.email,
       })
       .from(timesheets)
-      .leftJoin(users, eq(timesheets.userId, users.id))
+      .leftJoin(exportMember, and(eq(timesheets.orgId, exportMember.orgId), eq(timesheets.userMembershipId, exportMember.id)))
+      .leftJoin(users, eq(exportMember.userId, users.id))
       .where(and(...conditions))
       .orderBy(timesheets.date)
       .limit(5000);

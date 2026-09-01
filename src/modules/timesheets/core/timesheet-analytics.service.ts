@@ -5,8 +5,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheets, timesheetPeriods, timesheetSettings, projects, users, organizationMembers } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
-import { applyScope } from "../../access/apply-scope";
-import { resolveReportsScope } from "./timesheets-core-scope";
+import { actingMembershipId } from "../../../common/auth/principal";
+import { resolveReportsScope, applyMembershipScope } from "./timesheets-core-scope";
 import type { ReportRangeQuery } from "./dto/reports.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import {
@@ -33,13 +33,14 @@ export class TimesheetAnalyticsService {
   async getClientProfitability(u: CurrentUserContext, query: ReportRangeQuery) {
     const scope = await resolveReportsScope(this.access, u);
     const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
+    const actorMembId = actingMembershipId(u.principal);
 
     const conditions = [
       eq(timesheets.orgId, u.orgId),
       isNull(timesheets.voidedAt),
       eq(timesheets.status, "APPROVED"),
       eq(timesheets.isBillable, true),
-      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheets.userId }),
+      applyMembershipScope(scope, actorMembId, timesheets.userMembershipId),
       gte(timesheets.date, startDate),
       lte(timesheets.date, endDate),
     ];
@@ -103,18 +104,23 @@ export class TimesheetAnalyticsService {
   async getCompliance(u: CurrentUserContext, query: ReportRangeQuery) {
     const scope = await resolveReportsScope(this.access, u);
     const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
+    const actorMembId = actingMembershipId(u.principal);
+
+    const tsMember = alias(organizationMembers, "ts_member");
+    const periodMember = alias(organizationMembers, "period_member");
+    const tsMember2 = alias(organizationMembers, "ts_member2");
 
     const entryConditions = [
       eq(timesheets.orgId, u.orgId),
       isNull(timesheets.voidedAt),
-      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheets.userId }),
+      applyMembershipScope(scope, actorMembId, timesheets.userMembershipId),
       gte(timesheets.date, startDate),
       lte(timesheets.date, endDate),
     ];
 
     const periodConditions = [
       eq(timesheetPeriods.orgId, u.orgId),
-      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheetPeriods.userId }),
+      applyMembershipScope(scope, actorMembId, timesheetPeriods.userMembershipId),
       lte(timesheetPeriods.periodStart, endDate),
       gte(timesheetPeriods.periodEnd, startDate),
     ];
@@ -122,27 +128,30 @@ export class TimesheetAnalyticsService {
     const [hoursRows, dateRows, periodRows, settingsRows] = await Promise.all([
       this.db
         .select({
-          userId: timesheets.userId,
+          userId: tsMember.userId,
           actualHours: sql<string>`COALESCE(SUM(${timesheets.hours}::numeric), 0)::text`,
         })
         .from(timesheets)
+        .innerJoin(tsMember, and(eq(timesheets.orgId, tsMember.orgId), eq(timesheets.userMembershipId, tsMember.id)))
         .where(and(...entryConditions))
-        .groupBy(timesheets.userId),
+        .groupBy(tsMember.userId),
       this.db
-        .select({ userId: timesheets.userId, date: timesheets.date })
+        .select({ userId: tsMember2.userId, date: timesheets.date })
         .from(timesheets)
+        .innerJoin(tsMember2, and(eq(timesheets.orgId, tsMember2.orgId), eq(timesheets.userMembershipId, tsMember2.id)))
         .where(and(...entryConditions))
-        .groupBy(timesheets.userId, timesheets.date),
+        .groupBy(tsMember2.userId, timesheets.date),
       this.db
         .select({
-          userId: timesheetPeriods.userId,
+          userId: periodMember.userId,
           periodsSubmitted: sql<number>`COUNT(*) FILTER (WHERE ${timesheetPeriods.submittedAt} IS NOT NULL)::int`,
           periodsApproved: sql<number>`COUNT(*) FILTER (WHERE ${timesheetPeriods.status} = 'APPROVED')::int`,
           periodsOverdue: sql<number>`COUNT(*) FILTER (WHERE ${timesheetPeriods.status} IN ('OPEN', 'DRAFT') AND ${timesheetPeriods.periodEnd} < CURRENT_DATE - INTERVAL '3 days')::int`,
         })
         .from(timesheetPeriods)
+        .innerJoin(periodMember, and(eq(timesheetPeriods.orgId, periodMember.orgId), eq(timesheetPeriods.userMembershipId, periodMember.id)))
         .where(and(...periodConditions))
-        .groupBy(timesheetPeriods.userId),
+        .groupBy(periodMember.userId),
       this.db
         .select({ expectedWeeklyHours: timesheetSettings.expectedWeeklyHours })
         .from(timesheetSettings)
@@ -156,13 +165,14 @@ export class TimesheetAnalyticsService {
 
     const workedDates = new Map<string, Set<string>>();
     for (const r of dateRows) {
+      if (!r.userId) continue;
       const set = workedDates.get(r.userId) ?? new Set<string>();
       set.add(r.date);
       workedDates.set(r.userId, set);
     }
 
-    const hoursByUser = new Map(hoursRows.map((r) => [r.userId, Number(r.actualHours)]));
-    const periodsByUser = new Map(periodRows.map((r) => [r.userId, r]));
+    const hoursByUser = new Map(hoursRows.filter((r) => r.userId !== null).map((r) => [r.userId as string, Number(r.actualHours)]));
+    const periodsByUser = new Map(periodRows.filter((r) => r.userId !== null).map((r) => [r.userId as string, r]));
     const userIds = [...new Set([...hoursByUser.keys(), ...periodsByUser.keys()])];
 
     let userInfo = new Map<string, { name: string | null; email: string }>();
@@ -197,26 +207,31 @@ export class TimesheetAnalyticsService {
   async getApprovalSla(u: CurrentUserContext, query: ReportRangeQuery) {
     const scope = await resolveReportsScope(this.access, u);
     const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
+    const actorMembId = actingMembershipId(u.principal);
 
+    const ownerMember = alias(organizationMembers, "owner_member");
     const approverMember = alias(organizationMembers, "approver_member");
+    const currentApproverMember = alias(organizationMembers, "current_approver_member");
 
     const rows = await this.db
       .select({
         id: timesheetPeriods.id,
-        userId: timesheetPeriods.userId,
+        ownerUserId: ownerMember.userId,
         status: timesheetPeriods.status,
         submittedAt: timesheetPeriods.submittedAt,
         approvedAt: timesheetPeriods.approvedAt,
         rejectedAt: timesheetPeriods.rejectedAt,
-        currentApproverId: timesheetPeriods.currentApproverId,
+        currentApproverUserId: currentApproverMember.userId,
         approvedByUserId: approverMember.userId,
       })
       .from(timesheetPeriods)
+      .innerJoin(ownerMember, and(eq(timesheetPeriods.orgId, ownerMember.orgId), eq(timesheetPeriods.userMembershipId, ownerMember.id)))
+      .leftJoin(currentApproverMember, and(eq(timesheetPeriods.orgId, currentApproverMember.orgId), eq(timesheetPeriods.currentApproverMembershipId, currentApproverMember.id)))
       .leftJoin(approverMember, and(eq(timesheetPeriods.orgId, approverMember.orgId), eq(timesheetPeriods.approvedByMembershipId, approverMember.id)))
       .where(
         and(
           eq(timesheetPeriods.orgId, u.orgId),
-          applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheetPeriods.userId }),
+          applyMembershipScope(scope, actorMembId, timesheetPeriods.userMembershipId),
           sql`${timesheetPeriods.submittedAt} IS NOT NULL`,
           sql`${timesheetPeriods.submittedAt} >= ${startDate}::timestamp`,
           sql`${timesheetPeriods.submittedAt} < ${endDate}::date + INTERVAL '1 day'`,
@@ -235,7 +250,7 @@ export class TimesheetAnalyticsService {
       if (!r.submittedAt) continue;
 
       const decidedAt = r.approvedAt ?? r.rejectedAt;
-      const approverId = r.currentApproverId ?? r.approvedByUserId;
+      const approverId = r.currentApproverUserId ?? r.approvedByUserId;
       const approver = approverId
         ? perApprover.get(approverId) ?? { pendingCount: 0, decisionHours: [] }
         : null;
@@ -249,7 +264,7 @@ export class TimesheetAnalyticsService {
         if (!oldestPending || r.submittedAt.getTime() < Date.parse(oldestPending.submittedAt)) {
           oldestPending = {
             periodId: r.id,
-            userId: r.userId,
+            userId: r.ownerUserId ?? "",
             submittedAt: r.submittedAt.toISOString(),
             daysWaiting: round1(daysBetween(r.submittedAt, now)),
           };
@@ -290,8 +305,9 @@ export class TimesheetAnalyticsService {
   async getBillingLeakage(u: CurrentUserContext, query: ReportRangeQuery) {
     const scope = await resolveReportsScope(this.access, u);
     const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
+    const actorMembId = actingMembershipId(u.principal);
 
-    const scopeCondition = applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheets.userId });
+    const scopeCondition = applyMembershipScope(scope, actorMembId, timesheets.userMembershipId);
     const rangeConditions = [
       eq(timesheets.orgId, u.orgId),
       scopeCondition,

@@ -32,6 +32,7 @@ import {
 } from "./org-member-authority-queries";
 
 const PG_FK_VIOLATION = "23503";
+const PG_RESTRICT_VIOLATION = "23001";
 
 @Injectable()
 export class OrgMemberDepartureService {
@@ -153,9 +154,11 @@ export class OrgMemberDepartureService {
         err instanceof NotFoundException
       )
         throw err;
-      if ((err as { code?: string }).code === PG_FK_VIOLATION) {
+      const code = (err as { code?: string }).code;
+      if (code === PG_FK_VIOLATION || code === PG_RESTRICT_VIOLATION) {
+        const constraint = (err as { constraint?: string }).constraint ?? "";
         throw new BadRequestException(
-          "Cannot remove a member who owns a module. Transfer module ownership first.",
+          `Cannot remove this member: a related record still references their membership (constraint: ${constraint || "unknown"}). Resolve the dependency and retry.`,
         );
       }
       throw err;
@@ -327,9 +330,11 @@ export class OrgMemberDepartureService {
       return { success: true, nextOrgId };
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
-      if ((err as { code?: string }).code === PG_FK_VIOLATION) {
+      const code = (err as { code?: string }).code;
+      if (code === PG_FK_VIOLATION || code === PG_RESTRICT_VIOLATION) {
+        const constraint = (err as { constraint?: string }).constraint ?? "";
         throw new BadRequestException(
-          "Cannot leave an organization while owning a module. Transfer module ownership first.",
+          `Cannot leave this organization: a related record still references your membership (constraint: ${constraint || "unknown"}). Resolve the dependency and retry.`,
         );
       }
       throw err;

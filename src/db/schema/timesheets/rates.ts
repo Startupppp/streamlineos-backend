@@ -9,8 +9,9 @@ import {
   integer,
   index,
   uniqueIndex,
+  foreignKey,
 } from "drizzle-orm/pg-core";
-import { organizations, users } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { projects } from "../build/core";
 import { timesheetBillingTypeEnum } from "./enums";
 import { clients } from "../crm/contacts";
@@ -35,7 +36,7 @@ export const timesheetRates = pgTable("timesheet_rates", {
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   rateCardId: integer("rate_card_id").references(() => timesheetRateCards.id, { onDelete: "set null" }),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
-  userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+  userMembershipId: integer("user_membership_id"),
   clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
   taskId: integer("task_id"),
   billingType: timesheetBillingTypeEnum("billing_type").notNull().default("BILLABLE"),
@@ -51,4 +52,10 @@ export const timesheetRates = pgTable("timesheet_rates", {
   index("idx_timesheet_rates_org_priority").on(t.orgId, t.priority),
   index("idx_timesheet_rates_org_project").on(t.orgId, t.projectId),
   index("idx_timesheet_rates_rate_card").on(t.rateCardId),
+  index("idx_timesheet_rates_org_user_membership").on(t.orgId, t.userMembershipId),
+  foreignKey({
+    columns: [t.orgId, t.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_timesheet_rates_user_membership",
+  }).onDelete("set null"),
 ]);

@@ -9,7 +9,7 @@ import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
-import { signEnvelopes, signRecipients, users } from "../../db/schema";
+import { organizationMembers, signEnvelopes, signRecipients } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { appUrl } from "../email/app-url";
@@ -54,11 +54,13 @@ export class SignEnvelopeDispatchService {
     return row;
   }
 
-  private async senderName(userId: string): Promise<string> {
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, userId),
+  private async senderName(orgId: string, membershipId: number | null | undefined): Promise<string> {
+    if (membershipId == null) return "A StreamlineOS user";
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.id, membershipId)),
+      with: { user: { columns: { name: true } } },
     });
-    return user?.name ?? "A StreamlineOS user";
+    return member?.user?.name ?? "A StreamlineOS user";
   }
 
   async send(orgId: string, envelopeId: number, actor: RequestActorContext) {
@@ -90,7 +92,7 @@ export class SignEnvelopeDispatchService {
         })),
       ),
     );
-    const senderNameStr = await this.senderName(actor.userId);
+    const senderNameStr = await this.senderName(orgId, actor.membershipId);
 
     type SendPlan = {
       id: number;
@@ -187,7 +189,7 @@ export class SignEnvelopeDispatchService {
       throw new ForbiddenException("Only sent envelopes can be resent");
     }
 
-    const senderNameStr = await this.senderName(actor.userId);
+    const senderNameStr = await this.senderName(orgId, actor.membershipId);
     const recipientRows = await this.recipients.listForEnvelope(orgId, envelopeId);
     let count = 0;
     for (const r of recipientRows) {
@@ -314,7 +316,7 @@ export class SignEnvelopeDispatchService {
           })),
         ),
       );
-      const senderNameStr = await this.senderName(envelope.senderUserId);
+      const senderNameStr = await this.senderName(orgId, envelope.senderMembershipId);
       for (const r of signingRecipients) {
         if (r.status !== "pending" || !eligibleIds.has(r.id)) continue;
         const rawToken = this.tokens.generateSigningToken();

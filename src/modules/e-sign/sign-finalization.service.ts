@@ -2,6 +2,7 @@ import { ConflictException, Inject, Injectable, NotFoundException } from "@nestj
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import {
+  organizationMembers,
   organizations,
   signCertificates,
   signDocuments,
@@ -10,7 +11,6 @@ import {
   signRecipients,
   signSignatureAssets,
   signWatermarkPolicies,
-  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -41,6 +41,15 @@ export class SignFinalizationService {
       where: and(eq(signCertificates.orgId, orgId), eq(signCertificates.envelopeId, envelopeId)),
       orderBy: [desc(signCertificates.generatedAt)],
     });
+  }
+
+  private async resolveSenderInfo(orgId: string, membershipId: number | null | undefined): Promise<{ name: string | null; email: string | null }> {
+    if (membershipId == null) return { name: null, email: null };
+    const member = await this.db.query.organizationMembers.findFirst({
+      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.id, membershipId)),
+      with: { user: { columns: { name: true, email: true } } },
+    });
+    return { name: member?.user?.name ?? null, email: member?.user?.email ?? null };
   }
 
   /**
@@ -77,9 +86,9 @@ export class SignFinalizationService {
     });
     if (!envelope) throw new NotFoundException("Envelope not found");
 
-    const [org, sender, documents, recipients, fields] = await Promise.all([
+    const [org, senderInfo, documents, recipients, fields] = await Promise.all([
       this.db.query.organizations.findFirst({ where: eq(organizations.id, orgId) }),
-      this.db.query.users.findFirst({ where: eq(users.id, envelope.senderUserId) }),
+      this.resolveSenderInfo(orgId, envelope.senderMembershipId),
       this.db.query.signDocuments.findMany({
         where: and(eq(signDocuments.orgId, orgId), eq(signDocuments.envelopeId, envelopeId)),
         orderBy: (d, { asc }) => [asc(d.orderIndex), asc(d.id)],
@@ -200,8 +209,8 @@ export class SignFinalizationService {
       envelopeId,
       envelopeTitle: envelope.title,
       tenantName: org?.name ?? orgId,
-      senderName: sender?.name ?? "Unknown sender",
-      senderEmail: sender?.email ?? "",
+      senderName: senderInfo.name ?? "Unknown sender",
+      senderEmail: senderInfo.email ?? "",
       finalPdfHash,
       watermarked,
       completedAt,

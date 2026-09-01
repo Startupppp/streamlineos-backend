@@ -1,4 +1,5 @@
 jest.mock("../timesheets-core-scope", () => ({
+  ...jest.requireActual("../timesheets-core-scope"),
   resolveEntriesScope: jest.fn().mockResolvedValue("all"),
 }));
 
@@ -43,6 +44,7 @@ const USER: CurrentUserContext = {
   userId: "user-1",
   orgId: "org-1",
   isOrgOwner: false,
+  principal: { kind: "human-session", membershipId: 1 },
 } as unknown as CurrentUserContext;
 
 const CURSOR = Buffer.from("2024-01-15\x001").toString("base64url");

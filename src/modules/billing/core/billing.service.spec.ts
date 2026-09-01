@@ -248,6 +248,29 @@ describe("BillingService.verifyAndActivate — goes through the registry", () =>
     expect(message).not.toContain("fake-private");
     expect(message).not.toContain("fake-public");
   });
+
+  it("provider network failure on createOrder propagates without writing to the DB", async () => {
+    const networkError = new Error("ECONNRESET");
+    const failingProvider: OrganizationPaymentProvider = {
+      providerKey: "razorpay",
+      environment: "test",
+      isReady: () => true,
+      publicKeyId: () => FAKE_PUBLIC_KEY_ID,
+      createOrder: jest.fn().mockRejectedValue(networkError),
+      verifyPaymentSignature: () => false,
+      verifyWebhookSignature: () => false,
+      normalizeWebhook: () => ({ ok: false, error: "invalid_json" as const }),
+    };
+    const resolver = {
+      resolve: jest.fn().mockResolvedValue(failingProvider),
+      resolveConfigured: jest.fn().mockResolvedValue(failingProvider),
+    } as unknown as PaymentProviderResolver;
+    const db = makeDb();
+    const svc = await buildService(db, resolver);
+
+    await expect(svc.createOrder("org1", "user1", "STARTER")).rejects.toThrow("ECONNRESET");
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
 });
 
 describe("BillingService cross-tenant isolation", () => {

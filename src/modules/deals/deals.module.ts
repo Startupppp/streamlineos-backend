@@ -10,6 +10,7 @@ import { DealsCrudService } from "./deals-crud.service";
 import { DealsActivitiesService } from "./deals-activities.service";
 import { DealsImportExportService } from "./deals-import-export.service";
 import { DealsAnalyticsService } from "./deals-analytics.service";
+import { DealsForecastService } from "./deals-forecast.service";
 import { DealsApprovalsService } from "./deals-approvals.service";
 import { DealsMeetingsService } from "./deals-meetings.service";
 import { DealsCompetitorsService } from "./deals-competitors.service";
@@ -37,6 +38,7 @@ import { ActivitiesModule } from "../activities/activities.module";
     DealsActivitiesService,
     DealsImportExportService,
     DealsService,
+    DealsForecastService,
     DealsAnalyticsService,
     DealsApprovalsService,
     DealsMeetingsService,

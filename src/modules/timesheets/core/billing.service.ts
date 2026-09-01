@@ -7,6 +7,7 @@ import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheets, timesheetExports, projects, organizationMembers } from "../../../db/schema";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { RateResolverService } from "./rate-resolver.service";
 import { FxService } from "./fx.service";
@@ -70,7 +71,7 @@ export class BillingService {
     const unratedEntries = await this.db
       .select({
         id: timesheets.id,
-        userId: timesheets.userId,
+        userMembershipId: timesheets.userMembershipId,
         projectId: timesheets.projectId,
         ticketId: timesheets.ticketId,
         date: timesheets.date,
@@ -84,7 +85,7 @@ export class BillingService {
       u.orgId,
       unratedEntries.map((entry) => ({
         projectId: entry.projectId,
-        userId: entry.userId,
+        userMembershipId: entry.userMembershipId,
         ticketId: entry.ticketId,
         date: entry.date,
       })),
@@ -224,7 +225,6 @@ export class BillingService {
       .select({
         id: timesheets.id,
         orgId: timesheets.orgId,
-        userId: timesheets.userId,
         projectId: timesheets.projectId,
         ticketId: timesheets.ticketId,
         date: timesheets.date,
@@ -252,11 +252,7 @@ export class BillingService {
     });
 
     const exportId = await this.db.transaction(async (tx) => {
-      const [actorMember] = await tx
-        .select({ id: organizationMembers.id })
-        .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
-        .limit(1);
+      const actorMembId = actingMembershipId(u.principal);
 
       const [exported] = await tx
         .insert(timesheetExports)
@@ -271,7 +267,7 @@ export class BillingService {
           snapshot: snapshot,
           entryCount: entries.length,
           totalHours: round2(totalHours).toString(),
-          createdByMembershipId: actorMember?.id ?? null,
+          createdByMembershipId: actorMembId,
         })
         .returning({ id: timesheetExports.id });
 
@@ -282,7 +278,7 @@ export class BillingService {
 
       await this.audit.record(tx, {
         orgId: u.orgId,
-        actorUserId: u.userId,
+        actorMembershipId: actorMembId,
         entityType: "billing",
         entityId: exported.id.toString(),
         action: "billing.exported",
@@ -358,7 +354,6 @@ export class BillingService {
       .select({
         id: timesheets.id,
         orgId: timesheets.orgId,
-        userId: timesheets.userId,
         projectId: timesheets.projectId,
         ticketId: timesheets.ticketId,
         date: timesheets.date,
@@ -385,11 +380,7 @@ export class BillingService {
     const entryIds = entries.map((e) => e.id);
 
     const exportId = await this.db.transaction(async (tx) => {
-      const [draftActorMember] = await tx
-        .select({ id: organizationMembers.id })
-        .from(organizationMembers)
-        .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
-        .limit(1);
+      const actorMembId = actingMembershipId(u.principal);
 
       const [exported] = await tx
         .insert(timesheetExports)
@@ -404,7 +395,7 @@ export class BillingService {
           snapshot: snapshot,
           entryCount: entries.length,
           totalHours: "0",
-          createdByMembershipId: draftActorMember?.id ?? null,
+          createdByMembershipId: actorMembId,
         })
         .returning({ id: timesheetExports.id });
 
@@ -427,7 +418,7 @@ export class BillingService {
 
       await this.audit.record(tx, {
         orgId: u.orgId,
-        actorUserId: u.userId,
+        actorMembershipId: actorMembId,
         entityType: "billing",
         entityId: exported.id.toString(),
         action: "billing.invoice_drafted",
@@ -445,9 +436,23 @@ export class BillingService {
   }
 
   async getRatePreview(u: CurrentUserContext, query: RatePreviewQuery) {
+    let userMembershipId: number | undefined;
+    if (query.userId) {
+      const [member] = await this.db
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, u.orgId),
+            eq(organizationMembers.userId, query.userId),
+          ),
+        )
+        .limit(1);
+      userMembershipId = member?.id;
+    }
     const resolved = await this.rateResolver.resolve(u.orgId, {
       projectId: query.projectId,
-      userId: query.userId,
+      userMembershipId,
       ticketId: query.ticketId,
     });
     return resolved;

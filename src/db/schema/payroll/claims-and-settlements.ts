@@ -113,7 +113,7 @@ export const expenses = pgTable(
       columns: [table.orgId, table.approverMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_expenses_approver_actor",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
   ],
 );
 
@@ -155,7 +155,7 @@ export const reimbursements = pgTable(
       columns: [table.orgId, table.approvedByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_reimbursements_approved_actor",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
   ],
 );
 

@@ -12,7 +12,7 @@ import { SignRecipientsService } from "../sign-recipients.service";
 import { SignIntegrationsService } from "../sign-integrations.service";
 
 const ORG = "org-sign-limits";
-const USER = "user-sign-1";
+const MEMBER_ID = 1;
 
 const makePlanLimits = (deny: boolean): jest.Mocked<Pick<PlanLimitsService, "assertWithinLimit">> => ({
   assertWithinLimit: jest.fn().mockImplementation(() => {
@@ -30,7 +30,7 @@ const makeDb = () => {
     orgId: ORG,
     title: "Test",
     status: "draft",
-    senderUserId: USER,
+    senderMembershipId: MEMBER_ID,
     reminderSentCount: 0,
   }]);
   return chain;
@@ -62,7 +62,7 @@ describe("SignEnvelopesService plan-limit enforcement", () => {
     const svc = await buildModule(db, planLimits);
 
     await expect(
-      svc.create(ORG, USER, { title: "Contract", routingMode: "parallel" } as Parameters<SignEnvelopesService["create"]>[2]),
+      svc.create(ORG, MEMBER_ID, { title: "Contract", routingMode: "parallel" } as Parameters<SignEnvelopesService["create"]>[2]),
     ).rejects.toThrow(ForbiddenException);
 
     expect(planLimits.assertWithinLimit).toHaveBeenCalledWith(ORG, "signEnvelopes");
@@ -74,7 +74,7 @@ describe("SignEnvelopesService plan-limit enforcement", () => {
     const planLimits = makePlanLimits(false);
     const svc = await buildModule(db, planLimits);
 
-    await svc.create(ORG, USER, { title: "Contract", routingMode: "parallel" } as Parameters<SignEnvelopesService["create"]>[2]);
+    await svc.create(ORG, MEMBER_ID, { title: "Contract", routingMode: "parallel" } as Parameters<SignEnvelopesService["create"]>[2]);
 
     expect(planLimits.assertWithinLimit).toHaveBeenCalledWith(ORG, "signEnvelopes");
     expect(db.insert).toHaveBeenCalled();

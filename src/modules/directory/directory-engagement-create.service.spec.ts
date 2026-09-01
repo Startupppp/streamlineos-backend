@@ -65,7 +65,7 @@ describe("DirectoryService engagement creation and listing", () => {
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
 
       await expect(
-        svc.createEngagement(ORG_ID, USER_ID, {
+        svc.createEngagement(ORG_ID, USER_ID, null, {
           workerId: WORKER_ID,
           startsOn: "2024-01-01",
           workerType: "FULL_TIME",
@@ -88,7 +88,7 @@ describe("DirectoryService engagement creation and listing", () => {
       });
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({ values: valuesSpy });
 
-      await svc.createEngagement(ORG_ID, USER_ID, {
+      await svc.createEngagement(ORG_ID, USER_ID, null, {
         workerId: WORKER_ID,
         startsOn: "2024-01-01",
         workerType: "FULL_TIME",
@@ -113,7 +113,7 @@ describe("DirectoryService engagement creation and listing", () => {
       });
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({ values: valuesSpy });
 
-      await svc.createEngagement(ORG_ID, USER_ID, {
+      await svc.createEngagement(ORG_ID, USER_ID, null, {
         workerId: WORKER_ID,
         startsOn: "2024-01-01",
         workerType: "FULL_TIME",
@@ -148,7 +148,7 @@ describe("DirectoryService engagement creation and listing", () => {
       });
 
       await expect(
-        svc.createEngagement(ORG_ID, USER_ID, {
+        svc.createEngagement(ORG_ID, USER_ID, null, {
           workerId: WORKER_ID,
           startsOn: "2024-01-01",
           workerType: "FULL_TIME",
@@ -185,7 +185,7 @@ describe("DirectoryService engagement creation and listing", () => {
       });
 
       await expect(
-        svc.createEngagement(ORG_ID, USER_ID, {
+        svc.createEngagement(ORG_ID, USER_ID, null, {
           workerId: WORKER_ID,
           startsOn: "2024-02-01",
           workerType: "FULL_TIME",
@@ -205,7 +205,7 @@ describe("DirectoryService engagement creation and listing", () => {
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
 
       await expect(
-        svc.createEngagement(ORG_ID, USER_ID, {
+        svc.createEngagement(ORG_ID, USER_ID, null, {
           workerId: WORKER_ID,
           startsOn: "2024-02-02",
           endsOn: "2024-02-01",
@@ -233,7 +233,7 @@ describe("DirectoryService engagement creation and listing", () => {
         }),
       });
 
-      const result = await svc.createEngagement(ORG_ID, USER_ID, {
+      const result = await svc.createEngagement(ORG_ID, USER_ID, null, {
         workerId: WORKER_ID,
         startsOn: "2024-01-01",
         workerType: "FULL_TIME",

@@ -222,6 +222,7 @@ export class WorkerEngagementsService {
   async createEngagement(
     organizationId: string,
     userId: string,
+    membershipId: number | null,
     input: CreateEngagementInput,
   ) {
     await this.loadWorker(organizationId, input.workerId);
@@ -237,7 +238,7 @@ export class WorkerEngagementsService {
         status: input.isPrimary ? "ACTIVE" : "PLANNED",
         isPrimary: input.isPrimary ?? false,
         designation: input.designation ?? null,
-        createdBy: userId,
+        createdByMembershipId: membershipId ?? null,
       })
       .returning()
       .catch(throwEngagementWriteError);

@@ -56,7 +56,7 @@ describe("TimesheetsService — approver cannot action their own entry", () => {
     findFirst.mockResolvedValueOnce({
       id: 1,
       orgId: ORG_ID,
-      userId: "approver-1",
+      userMembershipId: 1,
       status: "PENDING",
       payrollStatus: null,
     });
@@ -68,7 +68,7 @@ describe("TimesheetsService — approver cannot action their own entry", () => {
     findFirst.mockResolvedValueOnce({
       id: 1,
       orgId: ORG_ID,
-      userId: "approver-1",
+      userMembershipId: 1,
       status: "PENDING",
       payrollStatus: null,
     });
@@ -82,7 +82,7 @@ describe("TimesheetsService — approver cannot action their own entry", () => {
     findFirst.mockResolvedValueOnce({
       id: 2,
       orgId: ORG_ID,
-      userId: "someone-else",
+      userMembershipId: 2,
       status: "PENDING",
       payrollStatus: null,
     });

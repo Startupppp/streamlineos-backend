@@ -1,7 +1,7 @@
 export type EntryShapeInput = {
   id: number;
   orgId: string;
-  userId: string;
+  userMembershipId: number | null;
   ticketId: number | null;
   projectId: number | null;
   date: string;
@@ -38,7 +38,7 @@ export function buildEntryShape(r: EntryShapeInput) {
   return {
     id: r.id,
     orgId: r.orgId,
-    userId: r.userId,
+    userMembershipId: r.userMembershipId,
     ticketId: r.ticketId,
     projectId: r.projectId,
     date: r.date,

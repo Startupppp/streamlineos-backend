@@ -8,6 +8,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { readRequestScope } from "../organization/core/read-request-scope";
@@ -35,7 +36,7 @@ function clientIp(req: Request): string | undefined {
 }
 
 function actorFrom(u: CurrentUserContext, req: Request) {
-  return { orgId: u.orgId, userId: u.userId, ipAddress: clientIp(req), userAgent: req.headers["user-agent"] };
+  return { orgId: u.orgId, userId: u.userId, membershipId: actingMembershipId(u.principal), ipAddress: clientIp(req), userAgent: req.headers["user-agent"] };
 }
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
@@ -51,7 +52,7 @@ export class SignEnvelopesController {
   @RequirePermission("sign:envelope:create")
   @Validate({ body: createEnvelopeSchema })
   create(@Body() body: CreateEnvelopeInput, @CurrentUser() u: CurrentUserContext) {
-    return this.envelopes.create(u.orgId, u.userId, body);
+    return this.envelopes.create(u.orgId, actingMembershipId(u.principal), body);
   }
 
   @Get()
@@ -63,14 +64,19 @@ export class SignEnvelopesController {
     @Req() req: Request,
   ) {
     const viewAll = readRequestScope(req) === "all";
-    return this.envelopes.list(u.orgId, query, { userId: u.userId, viewAll });
+    return this.envelopes.list(u.orgId, query, { membershipId: actingMembershipId(u.principal), viewAll });
   }
 
   @Get(":envelopeId")
   @RequirePermission("sign:envelope:view")
   @Validate({ params: envelopeIdParams })
-  get(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.envelopes.getFull(u.orgId, envelopeId);
+  get(
+    @Param("envelopeId", ParseIntPipe) envelopeId: number,
+    @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request,
+  ) {
+    const viewAll = readRequestScope(req) === "all";
+    return this.envelopes.getFull(u.orgId, envelopeId, { membershipId: actingMembershipId(u.principal), viewAll });
   }
 
   @Patch(":envelopeId")

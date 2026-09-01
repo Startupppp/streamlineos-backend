@@ -5,6 +5,7 @@ import { ToolAccessService } from "./tool-access.service";
 import { AiConfirmationService } from "../confirmation/ai-confirmation.service";
 import { MailService } from "../../mail/mail.service";
 import { MailAiService } from "../../mail/mail-ai.service";
+import { actingMembershipId } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 export interface MailCopilotContext {
@@ -21,7 +22,7 @@ export class MailCopilotTools {
   ) {}
 
   buildTools(ctx: MailCopilotContext) {
-    const { orgId, userId } = ctx.actor;
+    const { orgId, userId, principal } = ctx.actor;
 
     return {
       listRecentEmails: tool({
@@ -68,6 +69,7 @@ export class MailCopilotTools {
             const result = await this.mail.listMessages(
               orgId,
               userId,
+              actingMembershipId(principal),
               folder ?? "inbox",
               accountIdParam,
               10,

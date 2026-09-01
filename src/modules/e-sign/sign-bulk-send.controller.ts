@@ -7,6 +7,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { SignBulkSendService } from "./sign-bulk-send.service";
@@ -27,7 +28,7 @@ export class SignBulkSendController {
   @RequirePermission("sign:bulk_send:run")
   @Validate({ body: createBulkSendJobSchema })
   create(@Body() body: CreateBulkSendJobInput, @CurrentUser() u: CurrentUserContext) {
-    return this.bulkSend.createJob(u.orgId, u.userId, body);
+    return this.bulkSend.createJob(u.orgId, actingMembershipId(u.principal), body);
   }
 
   @Get("jobs")

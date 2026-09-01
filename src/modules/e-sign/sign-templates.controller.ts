@@ -7,6 +7,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
 import { SignTemplatesService } from "./sign-templates.service";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
@@ -37,7 +38,7 @@ export class SignTemplatesController {
   @RequirePermission("sign:template:manage")
   @Validate({ body: createTemplateSchema })
   create(@Body() body: CreateTemplateInput, @CurrentUser() u: CurrentUserContext) {
-    return this.templates.create(u.orgId, u.userId, body);
+    return this.templates.create(u.orgId, actingMembershipId(u.principal), body);
   }
 
   @Post("envelopes/:envelopeId/save-as-template")
@@ -49,7 +50,7 @@ export class SignTemplatesController {
     @Body() body: SaveAsTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.templates.createFromEnvelope(u.orgId, u.userId, envelopeId, body.name);
+    return this.templates.createFromEnvelope(u.orgId, actingMembershipId(u.principal), envelopeId, body.name);
   }
 
   @Get("templates")
@@ -81,7 +82,7 @@ export class SignTemplatesController {
   @RequirePermission("sign:template:manage")
   @Validate({ params: templateIdParams })
   duplicate(@Param("templateId", ParseIntPipe) templateId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.templates.duplicate(u.orgId, templateId, { orgId: u.orgId, userId: u.userId });
+    return this.templates.duplicate(u.orgId, templateId, { orgId: u.orgId, userId: u.userId, membershipId: actingMembershipId(u.principal) });
   }
 
   @Post("templates/:templateId/create-envelope")
@@ -93,7 +94,7 @@ export class SignTemplatesController {
     @Body() body: CreateEnvelopeFromTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.templates.instantiate(u.orgId, u.userId, templateId, body);
+    return this.templates.instantiate(u.orgId, actingMembershipId(u.principal), templateId, body);
   }
 
   @Post("templates/:templateId/publish-public-form")
@@ -104,6 +105,6 @@ export class SignTemplatesController {
     @Body() body: PublishPublicFormInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.templates.publishPublicForm(u.orgId, u.userId, templateId, body);
+    return this.templates.publishPublicForm(u.orgId, actingMembershipId(u.principal), templateId, body);
   }
 }

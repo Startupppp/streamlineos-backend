@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
-import { signBulkSendJobs, signBulkSendRows, users } from "../../db/schema";
+import { organizationMembers, signBulkSendJobs, signBulkSendRows } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
@@ -52,7 +52,7 @@ export class SignBulkSendService {
     });
   }
 
-  async createJob(orgId: string, userId: string, input: CreateBulkSendJobInput) {
+  async createJob(orgId: string, senderMembershipId: number | null, input: CreateBulkSendJobInput) {
     const template = await this.templates.get(orgId, input.templateId);
     if (template.status !== "published") throw new BadRequestException("Only published templates can be used for bulk send");
 
@@ -81,7 +81,7 @@ export class SignBulkSendService {
       .values({
         orgId,
         templateId: input.templateId,
-        senderUserId: userId,
+        senderMembershipId,
         status: input.dryRun ? "validating" : "pending",
         columnMappingJson: input.columnMapping,
         totalCount: mapped.length,
@@ -101,7 +101,6 @@ export class SignBulkSendService {
     await this.audit.record({
       orgId,
       actorType: "internal_user",
-      actorUserId: userId,
       eventType: "bulk_job_created",
       eventMessage: `Bulk send job created from template "${template.name}" (${mapped.length} rows${input.dryRun ? ", dry run" : ""})`,
     });
@@ -117,14 +116,23 @@ export class SignBulkSendService {
       return { job: updated, preview, dryRun: true };
     }
 
-    // Synchronous processing: acceptable for an admin-triggered, bounded-size (maxRows) job.
-    await this.process(orgId, userId, job.id, input.templateId, signingRoles[0].roleName, mapped);
+    await this.process(orgId, senderMembershipId, job.id, input.templateId, signingRoles[0].roleName, mapped);
     const finalJob = await this.getJob(orgId, job.id);
     return { job: finalJob.job, dryRun: false };
   }
 
-  private async process(orgId: string, userId: string, jobId: number, templateId: number, roleName: string, rows: MappedRow[]) {
+  private async process(orgId: string, senderMembershipId: number | null, jobId: number, templateId: number, roleName: string, rows: MappedRow[]) {
     await this.db.update(signBulkSendJobs).set({ status: "running" }).where(eq(signBulkSendJobs.id, jobId));
+
+    const senderMember =
+      senderMembershipId != null
+        ? await this.db.query.organizationMembers.findFirst({
+            where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.id, senderMembershipId)),
+            with: { user: { columns: { id: true, name: true, email: true } } },
+          })
+        : null;
+
+    const actor = { orgId, userId: senderMember?.user?.id ?? "", membershipId: senderMembershipId };
 
     let successCount = 0;
     let failedCount = 0;
@@ -135,10 +143,10 @@ export class SignBulkSendService {
         continue;
       }
       try {
-        const envelope = await this.templates.instantiate(orgId, userId, templateId, {
+        const envelope = await this.templates.instantiate(orgId, senderMembershipId, templateId, {
           recipients: [{ roleName, name: row.name!, email: row.email, phone: row.phone }],
         });
-        await this.envelopes.send(orgId, envelope.id, { orgId, userId });
+        await this.envelopes.send(orgId, envelope.id, actor);
         await this.db
           .update(signBulkSendRows)
           .set({ status: "success", envelopeId: envelope.id, updatedAt: new Date() })
@@ -166,12 +174,11 @@ export class SignBulkSendService {
       eventMessage: `Bulk send job completed: ${successCount} sent, ${failedCount} failed`,
     });
 
-    const sender = await this.db.query.users.findFirst({ where: eq(users.id, userId) });
-    if (sender?.email) {
-      await this.notifications.sendBulkJobCompleted(sender.email, sender.name ?? "there", jobId, rows.length, successCount, failedCount);
+    if (senderMember?.user?.email) {
+      await this.notifications.sendBulkJobCompleted(senderMember.user.email, senderMember.user.name ?? "there", jobId, rows.length, successCount, failedCount);
     }
 
-    this.integrations.emitBulkSendCompleted(orgId, userId, jobId, { totalCount: rows.length, successCount, failedCount });
+    this.integrations.emitBulkSendCompleted(orgId, senderMember?.user?.id ?? null, jobId, { totalCount: rows.length, successCount, failedCount });
   }
 
   async listJobs(orgId: string) {

@@ -427,10 +427,15 @@ describe("HR Time services — cross-tenant isolation", () => {
 
   describe("WorkLogsService", () => {
     it("scopes work logs to the requesting org (DENY — cross-tenant isolation)", async () => {
-      const { db, findMany } = makeDb([]);
+      const { db, findMany } = makeDb([{ id: 42 }]);
       const mockAccess = makeAccessMock("all");
       const svc = new WorkLogsService(db, {} as never, mockAccess as never, {} as never);
-      const ctx = { orgId: ATTACKER, userId: "user-1", isOrgOwner: true } as never;
+      const ctx = {
+        orgId: ATTACKER,
+        userId: "user-1",
+        isOrgOwner: false,
+        principal: { kind: "human-session" as const, membershipId: 42, isOrgOwner: false },
+      } as never;
       await svc.list(ctx, { year: 2026, quarter: 1 });
       expect(findMany).toHaveBeenCalled();
       const call = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;

@@ -77,7 +77,7 @@ export class PortalAccessService {
           organizationId: portalMemberships.organizationId,
           audience: portalMemberships.audience,
           partyContactId: portalMemberships.partyContactId,
-          userId: portalMemberships.userId,
+          userMembershipId: portalMemberships.userMembershipId,
           status: portalMemberships.status,
           sessionEpoch: portalMemberships.sessionEpoch,
           deletedAt: portalMemberships.deletedAt,
@@ -139,7 +139,7 @@ export class PortalAccessService {
       .values({
         organizationId,
         partyContactId: input.partyContactId,
-        userId: input.userId ?? null,
+        userMembershipId: input.userMembershipId ?? null,
         status: "PENDING",
       })
       .returning()

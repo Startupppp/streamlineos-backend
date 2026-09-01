@@ -10603,6 +10603,57 @@
         "description": "Exposure: permission — accounting:reports:export"
       }
     },
+    "/accounting/reports/export/jobs/{jobId}/cancel": {
+      "post": {
+        "operationId": "FinanceReportExportController_cancelJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "FinanceReportExport"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "accounting:reports:export",
+        "description": "Exposure: permission — accounting:reports:export"
+      }
+    },
     "/accounting/reports/export/jobs/{jobId}/download": {
       "get": {
         "operationId": "FinanceReportExportController_downloadJob",
@@ -46659,7 +46710,47 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": ""
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sources": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "module": {
+                            "type": "string"
+                          },
+                          "moduleEnabled": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "label",
+                          "module",
+                          "moduleEnabled"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "sources"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
@@ -61571,6 +61662,7 @@
                         "notes",
                         "partyType",
                         "status",
+                        "acquisitionSource",
                         "title",
                         "reference",
                         "stage",
@@ -127996,15 +128088,21 @@
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": {
+            "multipart/form-data": {
               "schema": {
-                "default": {},
                 "type": "object",
                 "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
                   "resumeText": {
                     "type": "string"
                   }
-                }
+                },
+                "required": [
+                  "file"
+                ]
               }
             }
           }
@@ -148170,24 +148268,20 @@
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": {
+            "multipart/form-data": {
               "schema": {
                 "type": "object",
                 "properties": {
-                  "importType": {
+                  "file": {
                     "type": "string",
-                    "enum": [
-                      "products",
-                      "vendors",
-                      "categories",
-                      "uom",
-                      "locations",
-                      "opening-stock",
-                      "reorder-rules"
-                    ]
+                    "format": "binary"
+                  },
+                  "importType": {
+                    "type": "string"
                   }
                 },
                 "required": [
+                  "file",
                   "importType"
                 ]
               }
@@ -178953,25 +179047,20 @@
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": {
+            "multipart/form-data": {
               "schema": {
                 "type": "object",
                 "properties": {
-                  "type": {
+                  "file": {
                     "type": "string",
-                    "enum": [
-                      "CONTRACT",
-                      "CERTIFICATE",
-                      "ID_PROOF",
-                      "PAYSLIP",
-                      "POLICY",
-                      "OFFER_LETTER",
-                      "RESUME",
-                      "OTHER"
-                    ]
+                    "format": "binary"
+                  },
+                  "type": {
+                    "type": "string"
                   }
                 },
                 "required": [
+                  "file",
                   "type"
                 ]
               }
@@ -198956,6 +199045,59 @@
         "description": "Exposure: permission — payroll:reports:export"
       }
     },
+    "/payroll/runs/export/jobs/{jobId}/cancel": {
+      "post": {
+        "operationId": "PayrollExportController_cancelExportJob",
+        "parameters": [
+          {
+            "name": "jobId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "PayrollExport"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "payroll:reports:export",
+        "description": "Exposure: permission — payroll:reports:export",
+        "x-bodyless": true
+      }
+    },
     "/payroll/runs/export/jobs/{jobId}/download": {
       "get": {
         "operationId": "PayrollExportController_downloadExportJob",
@@ -201195,8 +201337,10 @@
                     "type": "string",
                     "minLength": 1
                   },
-                  "userId": {
-                    "type": "string"
+                  "userMembershipId": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
                   }
                 },
                 "required": [
@@ -202883,158 +203027,41 @@
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": {
+            "multipart/form-data": {
               "schema": {
-                "default": {},
                 "type": "object",
                 "properties": {
-                  "type": {
+                  "screenshot": {
                     "type": "string",
-                    "enum": [
-                      "bug",
-                      "idea",
-                      "feature",
-                      "question",
-                      "praise",
-                      "other"
-                    ]
+                    "format": "binary"
+                  },
+                  "recording": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "type": {
+                    "type": "string"
                   },
                   "message": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 5000
+                    "type": "string"
                   },
                   "pageUrl": {
-                    "type": "string",
-                    "maxLength": 2048,
-                    "format": "uri"
+                    "type": "string"
                   },
                   "reporterName": {
-                    "type": "string",
-                    "maxLength": 100
+                    "type": "string"
                   },
                   "reporterEmail": {
-                    "type": "string",
-                    "format": "email",
-                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                    "type": "string"
                   },
                   "metadata": {
-                    "type": "object",
-                    "properties": {
-                      "browser": {
-                        "type": "string"
-                      },
-                      "browserVersion": {
-                        "type": "string"
-                      },
-                      "os": {
-                        "type": "string"
-                      },
-                      "device": {
-                        "type": "string"
-                      },
-                      "screenW": {
-                        "type": "number"
-                      },
-                      "screenH": {
-                        "type": "number"
-                      },
-                      "viewportW": {
-                        "type": "number"
-                      },
-                      "viewportH": {
-                        "type": "number"
-                      },
-                      "userAgent": {
-                        "type": "string"
-                      },
-                      "language": {
-                        "type": "string"
-                      },
-                      "referrer": {
-                        "type": "string"
-                      }
-                    }
+                    "type": "string"
                   },
                   "consoleLogs": {
-                    "maxItems": 50,
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "level": {
-                          "type": "string"
-                        },
-                        "message": {
-                          "type": "string"
-                        },
-                        "ts": {
-                          "type": "number"
-                        }
-                      },
-                      "required": [
-                        "level",
-                        "message"
-                      ]
-                    }
+                    "type": "string"
                   },
                   "networkLogs": {
-                    "maxItems": 50,
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "method": {
-                          "type": "string",
-                          "maxLength": 16
-                        },
-                        "url": {
-                          "type": "string",
-                          "maxLength": 2048
-                        },
-                        "status": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 999
-                        },
-                        "statusText": {
-                          "type": "string",
-                          "maxLength": 200
-                        },
-                        "durationMs": {
-                          "type": "number",
-                          "minimum": 0
-                        },
-                        "startedAt": {
-                          "type": "string",
-                          "maxLength": 64
-                        },
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "xhr",
-                            "fetch"
-                          ]
-                        },
-                        "ok": {
-                          "type": "boolean"
-                        },
-                        "error": {
-                          "type": "string",
-                          "maxLength": 500
-                        }
-                      },
-                      "required": [
-                        "method",
-                        "url",
-                        "status",
-                        "statusText",
-                        "durationMs",
-                        "startedAt",
-                        "type",
-                        "ok"
-                      ]
-                    }
+                    "type": "string"
                   }
                 }
               }
@@ -203088,88 +203115,25 @@
         "requestBody": {
           "required": true,
           "content": {
-            "application/json": {
+            "multipart/form-data": {
               "schema": {
-                "default": {},
                 "type": "object",
                 "properties": {
-                  "type": {
+                  "screenshot": {
                     "type": "string",
-                    "enum": [
-                      "bug",
-                      "idea",
-                      "feature",
-                      "question",
-                      "praise",
-                      "other"
-                    ]
+                    "format": "binary"
+                  },
+                  "type": {
+                    "type": "string"
                   },
                   "message": {
-                    "type": "string",
-                    "maxLength": 5000
+                    "type": "string"
                   },
                   "pageUrl": {
-                    "type": "string",
-                    "maxLength": 2048,
-                    "format": "uri"
+                    "type": "string"
                   },
                   "networkLogs": {
-                    "maxItems": 50,
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "method": {
-                          "type": "string",
-                          "maxLength": 16
-                        },
-                        "url": {
-                          "type": "string",
-                          "maxLength": 2048
-                        },
-                        "status": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 999
-                        },
-                        "statusText": {
-                          "type": "string",
-                          "maxLength": 200
-                        },
-                        "durationMs": {
-                          "type": "number",
-                          "minimum": 0
-                        },
-                        "startedAt": {
-                          "type": "string",
-                          "maxLength": 64
-                        },
-                        "type": {
-                          "type": "string",
-                          "enum": [
-                            "xhr",
-                            "fetch"
-                          ]
-                        },
-                        "ok": {
-                          "type": "boolean"
-                        },
-                        "error": {
-                          "type": "string",
-                          "maxLength": 500
-                        }
-                      },
-                      "required": [
-                        "method",
-                        "url",
-                        "status",
-                        "statusText",
-                        "durationMs",
-                        "startedAt",
-                        "type",
-                        "ok"
-                      ]
-                    }
+                    "type": "string"
                   }
                 }
               }
@@ -213429,7 +213393,25 @@
         "x-exposure": "permissioned",
         "x-permission": "sign:documents:upload",
         "description": "Exposure: permission — sign:documents:upload",
-        "x-bodyless": true
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        }
       }
     },
     "/sign/envelopes": {
@@ -214637,8 +214619,10 @@
                     "type": "string",
                     "maxLength": 30
                   },
-                  "userId": {
-                    "type": "string"
+                  "userMembershipId": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
                   },
                   "routingOrder": {
                     "default": 1,
@@ -215451,8 +215435,10 @@
                     "type": "string",
                     "maxLength": 30
                   },
-                  "userId": {
-                    "type": "string"
+                  "userMembershipId": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
                   },
                   "routingOrder": {
                     "default": 1,

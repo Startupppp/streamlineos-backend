@@ -5,7 +5,7 @@ import { SignEnvelopesController } from "../sign-envelopes.controller";
 import type { SignEnvelopesService } from "../sign-envelopes.service";
 
 const ORG = "org-scope-test";
-const USER = "user-scope-1";
+const MEMBER_ID = 5;
 
 const makeService = (): jest.Mocked<Pick<SignEnvelopesService, "list">> => ({
   list: jest.fn().mockResolvedValue({ data: [], pageInfo: { hasMore: false } }),
@@ -14,9 +14,10 @@ const makeService = (): jest.Mocked<Pick<SignEnvelopesService, "list">> => ({
 const makeUser = (): CurrentUserContext =>
   ({
     orgId: ORG,
-    userId: USER,
+    userId: "user-scope-1",
     isOrgOwner: false,
     permissions: [],
+    principal: { kind: "human-session", membershipId: MEMBER_ID, isOrgOwner: false },
   }) as unknown as CurrentUserContext;
 
 const makeQuery = (): ListEnvelopesInput =>
@@ -63,13 +64,13 @@ describe("SignEnvelopesController list — DataScope → viewAll", () => {
     expect(svc.list).toHaveBeenCalledWith(ORG, expect.anything(), expect.objectContaining({ viewAll: false }));
   });
 
-  it("always passes userId from the authenticated context", () => {
+  it("always passes membershipId from the authenticated context", () => {
     const svc = makeService();
     const ctrl = new SignEnvelopesController(svc as unknown as SignEnvelopesService);
     const req = { rbacScope: "all" } as Request;
 
     ctrl.list(makeQuery(), makeUser(), req);
 
-    expect(svc.list).toHaveBeenCalledWith(ORG, expect.anything(), expect.objectContaining({ userId: USER }));
+    expect(svc.list).toHaveBeenCalledWith(ORG, expect.anything(), expect.objectContaining({ membershipId: MEMBER_ID }));
   });
 });

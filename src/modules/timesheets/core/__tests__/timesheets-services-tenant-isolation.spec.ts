@@ -251,7 +251,7 @@ describe("EntriesReadService — cross-tenant isolation", () => {
   it("listEntries: WHERE contains attacker orgId (deny — different org isolation)", async () => {
     const { db, where } = makeDb([]);
     const svc = new EntriesReadService(db, mockAccess as never);
-    const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: false, permissions: [] } as never;
+    const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: false, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
     const result = await svc.listEntries(u, { page: 1, limit: 25 } as never);
     expect(result.data).toHaveLength(0);
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
@@ -261,7 +261,7 @@ describe("EntriesReadService — cross-tenant isolation", () => {
   it("listEntries: returns empty for own org with no entries (control — same-tenant)", async () => {
     const { db } = makeDb([]);
     const svc = new EntriesReadService(db, mockAccess as never);
-    const u = { orgId: OWNER_ORG, userId: "u", isOrgOwner: false, permissions: [] } as never;
+    const u = { orgId: OWNER_ORG, userId: "u", isOrgOwner: false, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
     const result = await svc.listEntries(u, { page: 1, limit: 25 } as never);
     expect(result.data).toHaveLength(0);
   });
@@ -271,7 +271,7 @@ describe("TeamService — cross-tenant isolation", () => {
   it("getWeekSummary: WHERE contains attacker orgId (deny — different org isolation)", async () => {
     const { db, where } = makeDb([]);
     const svc = new TeamService(db, mockAccess as never);
-    const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: false, permissions: [] } as never;
+    const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: false, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
     await svc.getWeekSummary(u, { startDate: "2025-01-06", endDate: "2025-01-12", userIds: ["user-1"] } as never);
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
     expect(allVals).toContain(ATTACKER_ORG);
@@ -280,7 +280,7 @@ describe("TeamService — cross-tenant isolation", () => {
   it("getWeekSummary: completes for own org (control — same-tenant)", async () => {
     const { db } = makeDb([]);
     const svc = new TeamService(db, mockAccess as never);
-    const u = { orgId: OWNER_ORG, userId: "u", isOrgOwner: false, permissions: [] } as never;
+    const u = { orgId: OWNER_ORG, userId: "u", isOrgOwner: false, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
     await expect(svc.getWeekSummary(u, { startDate: "2025-01-06", endDate: "2025-01-12", userIds: ["user-1"] } as never)).resolves.toBeDefined();
   });
 });
@@ -307,7 +307,7 @@ describe("ExceptionsService — cross-tenant isolation", () => {
   it("listExceptions: WHERE contains attacker orgId (deny — different org isolation)", async () => {
     const { db, where } = makeDb([]);
     const svc = new ExceptionsService(db, mockAccess as never, mockAudit as never);
-    const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: false, permissions: [] } as never;
+    const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: false, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
     const result = await svc.listExceptions(u, {} as never);
     expect(result.data).toHaveLength(0);
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
@@ -317,7 +317,7 @@ describe("ExceptionsService — cross-tenant isolation", () => {
   it("listExceptions: returns empty for own org with no exceptions (control)", async () => {
     const { db } = makeDb([]);
     const svc = new ExceptionsService(db, mockAccess as never, mockAudit as never);
-    const u = { orgId: OWNER_ORG, userId: "u", isOrgOwner: false, permissions: [] } as never;
+    const u = { orgId: OWNER_ORG, userId: "u", isOrgOwner: false, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
     const result = await svc.listExceptions(u, {} as never);
     expect(result.data).toHaveLength(0);
   });
@@ -327,7 +327,7 @@ describe("TimerService — cross-tenant isolation", () => {
   it("getActive: WHERE contains attacker orgId (deny — no timer returned for other org)", async () => {
     const { db, where } = makeDb([]);
     const svc = new TimerService(db, {} as never, mockAudit as never);
-    const u = { orgId: ATTACKER_ORG, userId: "attacker" } as never;
+    const u = { orgId: ATTACKER_ORG, userId: "attacker", principal: { kind: "human-session", membershipId: 1 } } as never;
     const result = await svc.getActive(u);
     expect(result).toBeNull();
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
@@ -337,7 +337,7 @@ describe("TimerService — cross-tenant isolation", () => {
   it("getActive: returns null for own org with no active timer (control)", async () => {
     const { db } = makeDb([]);
     const svc = new TimerService(db, {} as never, mockAudit as never);
-    const u = { orgId: OWNER_ORG, userId: "u" } as never;
+    const u = { orgId: OWNER_ORG, userId: "u", principal: { kind: "human-session", membershipId: 1 } } as never;
     const result = await svc.getActive(u);
     expect(result).toBeNull();
   });

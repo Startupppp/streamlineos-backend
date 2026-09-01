@@ -9,13 +9,13 @@ import {
   index,
   foreignKey,
 } from "drizzle-orm/pg-core";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { timesheetPeriods } from "./periods";
 
 export const timesheetExceptions = pgTable("timesheet_exceptions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  userMembershipId: integer("user_membership_id"),
   periodId: integer("period_id").references(() => timesheetPeriods.id, { onDelete: "cascade" }),
   entryId: integer("entry_id"),
   rule: text("rule").notNull(),
@@ -23,7 +23,6 @@ export const timesheetExceptions = pgTable("timesheet_exceptions", {
   status: text("status").notNull().default("OPEN"),
   message: text("message").notNull(),
   details: jsonb("details"),
-  ownerUserId: text("owner_user_id").references(() => users.id, { onDelete: "set null" }),
   ownerMembershipId: integer("owner_membership_id"),
   dueDate: date("due_date"),
   resolutionReason: text("resolution_reason"),
@@ -33,7 +32,12 @@ export const timesheetExceptions = pgTable("timesheet_exceptions", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
   index("idx_ts_exceptions_org_status").on(t.orgId, t.status, t.severity),
-  index("idx_ts_exceptions_user").on(t.orgId, t.userId),
+  index("idx_ts_exceptions_user_membership").on(t.orgId, t.userMembershipId),
+  foreignKey({
+    columns: [t.orgId, t.userMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_timesheet_exceptions_user_membership",
+  }).onDelete("set null"),
   index("idx_ts_exceptions_period").on(t.periodId),
   index("idx_timesheet_exceptions_org_owner_membership").on(t.orgId, t.ownerMembershipId),
   foreignKey({

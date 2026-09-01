@@ -59,7 +59,7 @@ export class PortalJwtAuthGuard implements CanActivate {
           partyContactId: portalMemberships.partyContactId,
           status: portalMemberships.status,
           sessionEpoch: portalMemberships.sessionEpoch,
-          userId: portalMemberships.userId,
+          userMembershipId: portalMemberships.userMembershipId,
         })
         .from(portalMemberships)
         .where(
@@ -89,7 +89,7 @@ export class PortalJwtAuthGuard implements CanActivate {
         partyContactId: membership.partyContactId,
         audience: PORTAL_AUDIENCE,
         sessionEpoch: parsed.sessionEpoch,
-        userId: membership.userId,
+        userMembershipId: membership.userMembershipId,
       };
 
       return true;

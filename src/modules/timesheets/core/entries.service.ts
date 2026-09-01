@@ -5,12 +5,14 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheets, projects, tickets } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { EntriesReadService } from "./entries-read.service";
 import { EntriesPeriodService } from "./entries-period.service";
@@ -69,6 +71,10 @@ export class EntriesService {
   }
 
   async createEntry(u: CurrentUserContext, input: CreateEntryInput) {
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId === null)
+      throw new UnprocessableEntityException("No active membership for this session");
+
     const settings = await this.periodService.loadSettings(u.orgId);
     const workWeekStart = settings?.workWeekStart ?? 1;
     const maxHoursPerDay = parseFloat(settings?.maxHoursPerDay ?? "24");
@@ -121,7 +127,7 @@ export class EntriesService {
       .where(
         and(
           eq(timesheets.orgId, u.orgId),
-          eq(timesheets.userId, u.userId),
+          eq(timesheets.userMembershipId, membershipId),
           eq(timesheets.date, input.date),
           isNull(timesheets.voidedAt),
         ),
@@ -152,7 +158,7 @@ export class EntriesService {
     const entry = await this.db.transaction(async (tx) => {
       const periodId = await this.periodService.getOrCreatePeriod(
         u.orgId,
-        u.userId,
+        membershipId,
         input.date,
         workWeekStart,
         tx,
@@ -162,7 +168,7 @@ export class EntriesService {
         .insert(timesheets)
         .values({
           orgId: u.orgId,
-          userId: u.userId,
+          userMembershipId: membershipId,
           ticketId: input.ticketId ?? null,
           projectId: input.projectId ?? null,
           date: input.date,
@@ -190,7 +196,7 @@ export class EntriesService {
 
       await this.audit.record(tx, {
         orgId: u.orgId,
-        actorUserId: u.userId,
+        actorMembershipId: membershipId,
         entityType: "entry",
         entityId: inserted.id.toString(),
         action: "entry.created",
@@ -214,6 +220,8 @@ export class EntriesService {
     entryId: number,
     input: UpdateEntryInput,
   ) {
+    const membershipId = actingMembershipId(u.principal);
+
     const entry = await this.db.query.timesheets.findFirst({
       where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, u.orgId)),
     });
@@ -238,7 +246,7 @@ export class EntriesService {
     const canManage =
       perms.has("timesheets:approvals:manage") ||
       u.isOrgOwner;
-    if (!canManage && entry.userId !== u.userId) {
+    if (!canManage && entry.userMembershipId !== membershipId) {
       throw new ForbiddenException(
         "You can only edit your own time entries",
       );
@@ -291,7 +299,7 @@ export class EntriesService {
 
       await this.audit.record(tx, {
         orgId: u.orgId,
-        actorUserId: u.userId,
+        actorMembershipId: membershipId,
         entityType: "entry",
         entityId: entryId.toString(),
         action: "entry.updated",
@@ -308,6 +316,8 @@ export class EntriesService {
     entryId: number,
     input: VoidEntryInput,
   ) {
+    const membershipId = actingMembershipId(u.principal);
+
     const entry = await this.db.query.timesheets.findFirst({
       where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, u.orgId)),
     });
@@ -324,7 +334,7 @@ export class EntriesService {
     const canManage =
       perms.has("timesheets:approvals:manage") ||
       u.isOrgOwner;
-    if (!canManage && entry.userId !== u.userId) {
+    if (!canManage && entry.userMembershipId !== membershipId) {
       throw new ForbiddenException(
         "You can only void your own time entries",
       );
@@ -356,7 +366,7 @@ export class EntriesService {
 
       await this.audit.record(tx, {
         orgId: u.orgId,
-        actorUserId: u.userId,
+        actorMembershipId: membershipId,
         entityType: "entry",
         entityId: entryId.toString(),
         action: "entry.voided",

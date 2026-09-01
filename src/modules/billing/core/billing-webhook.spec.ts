@@ -146,6 +146,97 @@ function makeWebhookDb(seed: { providerEvent?: StoredProviderEvent } = {}) {
 
 type WebhookDb = ReturnType<typeof makeWebhookDb>;
 
+// Multi-event-aware mock used only for the delayed-arrival test.
+// Tracks each providerWebhookEvent entry by its providerEventId so two distinct
+// events for the same underlying payment can each be recorded and acknowledged
+// independently without sharing a single slot in the store.
+function makeMultiEventDb() {
+  type StoredEvent = { processedAt: Date | null };
+  const eventsByKey = new Map<string, StoredEvent>();
+  let lastInsertedEventId = "";
+
+  const store = {
+    recordedEvents: [] as Array<Record<string, unknown>>,
+    payments: [] as Array<Record<string, unknown>>,
+    paymentConflicts: [] as Array<Record<string, unknown>>,
+    outbox: [] as Array<Record<string, unknown>>,
+    order: [] as string[],
+  };
+
+  const surface = {
+    insert(table: unknown) {
+      return {
+        values(values: Record<string, unknown>) {
+          if (table === outboxEvents) {
+            store.order.push("outbox");
+            store.outbox.push(values);
+            return Promise.resolve([]);
+          }
+          return {
+            onConflictDoNothing: () => ({
+              returning: () => {
+                if (table !== providerWebhookEvents) return Promise.resolve([{ id: 1 }]);
+                store.order.push("record-event");
+                const evtId = String(values.providerEventId);
+                lastInsertedEventId = evtId;
+                if (eventsByKey.has(evtId)) return Promise.resolve([]);
+                eventsByKey.set(evtId, { processedAt: null });
+                store.recordedEvents.push(values);
+                return Promise.resolve([{ id: eventsByKey.size }]);
+              },
+            }),
+            onConflictDoUpdate: (config: Record<string, unknown>) => {
+              store.order.push("persist-payment");
+              store.payments.push(values);
+              store.paymentConflicts.push(config);
+              return Promise.resolve([]);
+            },
+          };
+        },
+      };
+    },
+    select() {
+      return {
+        from: (_table: unknown) => ({
+          where: () => ({
+            limit: () => {
+              const row = eventsByKey.get(lastInsertedEventId);
+              return Promise.resolve(row ? [{ processedAt: row.processedAt }] : []);
+            },
+            orderBy: () => ({ limit: () => Promise.resolve([]) }),
+          }),
+          limit: () => Promise.resolve([]),
+        }),
+      };
+    },
+    update(table: unknown) {
+      return {
+        set: (values: Record<string, unknown>) => ({
+          where: () => {
+            if (table === providerWebhookEvents) {
+              store.order.push("acknowledge");
+              const row = eventsByKey.get(lastInsertedEventId);
+              if (row) row.processedAt = (values.processedAt as Date | undefined) ?? new Date();
+            }
+            return Promise.resolve([]);
+          },
+        }),
+      };
+    },
+    execute: jest.fn().mockResolvedValue([]),
+    transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(surface)),
+    query: {
+      organizations: { findFirst: jest.fn().mockResolvedValue(null) },
+      coupons: { findFirst: jest.fn().mockResolvedValue(null) },
+      couponRedemptions: { findFirst: jest.fn().mockResolvedValue(null) },
+    },
+    _store: store,
+    _eventsByKey: eventsByKey,
+  };
+
+  return surface;
+}
+
 function makeAiCredits() {
   return {
     grantPlanCredits: jest.fn().mockResolvedValue(undefined),
@@ -621,5 +712,43 @@ describe("legacy Razorpay webhook compatibility route", () => {
     expect(handlePaymentProviderWebhook).toHaveBeenCalledWith("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
     expect(status).toHaveBeenCalledWith(200);
     expect(json).toHaveBeenCalledWith({ ok: true });
+  });
+});
+
+describe("c17-04 — delayed arrival cannot regress payment state", () => {
+  const DELAYED_CAPTURED_BODY = JSON.stringify({
+    id: "evt_cap_001",
+    event: "payment.captured",
+    payload: {
+      payment: {
+        entity: { id: "pay_shared_001", amount: 99900, currency: "INR", status: "captured", method: "card", notes: {} },
+      },
+    },
+  });
+
+  const DELAYED_AUTHORIZED_BODY = JSON.stringify({
+    id: "evt_auth_001",
+    event: "payment.authorized",
+    payload: {
+      payment: {
+        entity: { id: "pay_shared_001", amount: 99900, currency: "INR", status: "authorized", method: "card", notes: {} },
+      },
+    },
+  });
+
+  it("two events for the same payment each get a distinct ledger entry and both carry the ordering guard", async () => {
+    const db = makeMultiEventDb();
+    const { service } = await buildHarness({ db: db as unknown as WebhookDb });
+
+    const first = await service.handleRazorpayWebhook("org1", DELAYED_CAPTURED_BODY, FAKE_VALID_WEBHOOK_SIG);
+    const second = await service.handleRazorpayWebhook("org1", DELAYED_AUTHORIZED_BODY, FAKE_VALID_WEBHOOK_SIG);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(second.body).not.toMatchObject({ duplicate: true });
+    expect(db._store.recordedEvents).toHaveLength(2);
+    expect(db._store.paymentConflicts).toHaveLength(2);
+    const laterGuard = dialect.sqlToQuery(db._store.paymentConflicts[1]?.setWhere as Parameters<PgDialect["sqlToQuery"]>[0]).sql;
+    expect(laterGuard).toContain('"platform_payments"."status"');
   });
 });

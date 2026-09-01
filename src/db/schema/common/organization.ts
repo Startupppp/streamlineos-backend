@@ -142,7 +142,7 @@ export const orgUnitMembers = pgTable(
       name: "fk_org_unit_members_membership",
       columns: [table.orgId, table.membershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
-    }).onDelete("set null"),
+    }).onDelete("cascade"),
   ],
 );
 

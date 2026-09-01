@@ -300,8 +300,8 @@ export class DirectoryService {
     return this.workerEngagements.listEngagements(organizationId, workerId);
   }
 
-  createEngagement(organizationId: string, userId: string, input: CreateEngagementInput) {
-    return this.workerEngagements.createEngagement(organizationId, userId, input);
+  createEngagement(organizationId: string, userId: string, membershipId: number | null, input: CreateEngagementInput) {
+    return this.workerEngagements.createEngagement(organizationId, userId, membershipId, input);
   }
 
   updateEngagement(

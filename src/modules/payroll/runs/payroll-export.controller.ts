@@ -66,6 +66,18 @@ export class PayrollExportController {
     return this.exportJobs.get(u, jobId);
   }
 
+  @Post("jobs/:jobId/cancel")
+  @BodylessAction()
+  @HttpCode(200)
+  @RequirePermission("payroll:reports:export")
+  @Validate({ params: jobIdParams })
+  cancelExportJob(
+    @Param("jobId") jobId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.exportJobs.cancel(u, jobId);
+  }
+
   @Get("jobs/:jobId/download")
   @RequirePermission("payroll:reports:export")
   @Validate({ params: jobIdParams })

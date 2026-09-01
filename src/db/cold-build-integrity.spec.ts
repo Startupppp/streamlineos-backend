@@ -41,19 +41,7 @@ const read = (tag: string) => readFileSync(join(MIGRATIONS, `${tag}.sql`), "utf8
  * un-journalled migration is invisible: it never runs, nothing reports it, and
  * the failure surfaces somewhere else entirely as a missing column.
  */
-const NOT_JOURNALLED: ReadonlyArray<{ tag: string; reason: string }> = [
-  {
-    tag: "0488_hr_people_drop_identity_cols",
-    reason:
-      "Says so in its own header, and is the only one of the fifteen that does. Dropping eleven " +
-      "columns rewrites hr_people under ACCESS EXCLUSIVE and cannot be undone if 0486's copy was " +
-      "wrong. It was: 0486 copied three of the eleven, and 0820 now carries the other eight and " +
-      "refuses to report success on data it could not place. src/db/schema/hr/ no longer declares " +
-      "the columns and no raw SQL reads them, so the code half is done too. What is left is " +
-      "'confirmed working in production', which is somebody's judgement and not a grep, so the " +
-      "decision is still not this file's to make.",
-  },
-];
+const NOT_JOURNALLED: ReadonlyArray<{ tag: string; reason: string }> = [];
 
 describe("PEND-DB — every migration is journalled, or says why not", () => {
   it("finds the migrations at all, so a broken walk cannot pass silently", () => {
@@ -81,6 +69,39 @@ describe("PEND-DB — every migration is journalled, or says why not", () => {
       // The file has to agree that it is excluded, so the two cannot drift.
       expect(read(tag)).toMatch(/NOT JOURNALL?ED/i);
     }
+  });
+
+  it("backfills hr_people's identity before the migration that drops it", () => {
+    // 0486 phase C copies three columns into organization_people; 0488 drops
+    // eleven. The eight in between had no copy anywhere, so on a database with
+    // rows 0488 was permanent loss of employee personal data. 0487a carries
+    // them and aborts on anything it cannot place — which only protects
+    // anything if it runs FIRST. Ordering is the whole guarantee, so it is
+    // asserted here rather than trusted to whoever next edits the journal.
+    const order = journal.entries.map((e) => e.tag);
+    const backfill = order.indexOf("0487a_hr_people_backfill_identity_to_org_person");
+    const drop = order.indexOf("0488_hr_people_drop_identity_cols");
+    expect(backfill).toBeGreaterThanOrEqual(0);
+    expect(drop).toBeGreaterThanOrEqual(0);
+    expect(backfill).toBeLessThan(drop);
+  });
+
+  it("keeps the backfill able to fail, so a bad copy cannot pass silently", () => {
+    // A backfill that swallows its own shortfall is worse than none: 0488 would
+    // then drop columns nobody proved were copied.
+    const sql = read("0487a_hr_people_backfill_identity_to_org_person");
+    expect(sql).toMatch(/RAISE EXCEPTION/);
+    for (const column of [
+      "personal_email",
+      "phone",
+      "date_of_birth",
+      "gender",
+      "nationality",
+      "address",
+      "emergency_contact",
+      "avatar_url",
+    ])
+      expect(sql).toContain(column);
   });
 
   it("keeps idx contiguous, because idx is the order things run in", () => {

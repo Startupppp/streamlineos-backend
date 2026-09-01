@@ -15,7 +15,7 @@ import {
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { workerEngagementStatusEnum } from "../common/enums";
-import { organizations, organizationMembers, users } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { orgUnits } from "../common/organization";
 import { workers } from "./workers";
 import { hrJobRoles, hrJobLevels } from "../hr/core-org";
@@ -66,9 +66,6 @@ export const workerEngagements = pgTable(
     stateReason: text("state_reason"),
     lastStateEventId: bigint("last_state_event_id", { mode: "bigint" }),
     rowVersion: integer("row_version").default(1).notNull(),
-    createdBy: text("created_by").references(() => users.id, {
-      onDelete: "set null",
-    }),
     createdByMembershipId: integer("created_by_membership_id"),
     updatedByMembershipId: integer("updated_by_membership_id"),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
@@ -198,7 +195,7 @@ export const workerEngagements = pgTable(
       columns: [table.organizationId, table.createdByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_worker_engagements_created_actor",
-    }).onDelete("restrict"),
+    }).onDelete("set null"),
     foreignKey({
       columns: [table.organizationId, table.updatedByMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],

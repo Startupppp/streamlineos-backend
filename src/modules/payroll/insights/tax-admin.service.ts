@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { taxDeclarations, users } from "../../../db/schema";
@@ -42,6 +42,7 @@ export class TaxAdminService {
       .from(taxDeclarations)
       .leftJoin(users, eq(taxDeclarations.userId, users.id))
       .where(this.scopeWhere(orgId, filters))
+      .orderBy(desc(taxDeclarations.createdAt), asc(taxDeclarations.id))
       .limit(cap)
       .offset((page - 1) * cap);
   }

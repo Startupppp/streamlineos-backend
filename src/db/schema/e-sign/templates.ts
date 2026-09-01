@@ -1,6 +1,6 @@
 import { pgTable, serial, text, integer, jsonb, timestamp, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { signTemplateStatusEnum } from "./enums";
 
 export const signTemplates = pgTable(
@@ -12,7 +12,6 @@ export const signTemplates = pgTable(
     description: text("description"),
     category: text("category"),
     status: signTemplateStatusEnum("status").default("draft").notNull(),
-    ownerUserId: text("owner_user_id").references(() => users.id, { onDelete: "set null" }),
     ownerMembershipId: integer("owner_membership_id"),
     version: integer("version").default(1).notNull(),
     templateJson: jsonb("template_json").$type<Record<string, unknown>>().default({}).notNull(),
@@ -35,7 +34,6 @@ export const signTemplates = pgTable(
 
 export const signTemplatesRelations = relations(signTemplates, ({ one }) => ({
   organization: one(organizations, { fields: [signTemplates.orgId], references: [organizations.id] }),
-  owner: one(users, { fields: [signTemplates.ownerUserId], references: [users.id] }),
   ownerMember: one(organizationMembers, {
     fields: [signTemplates.orgId, signTemplates.ownerMembershipId],
     references: [organizationMembers.orgId, organizationMembers.id],

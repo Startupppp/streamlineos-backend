@@ -59,6 +59,22 @@ describe("multipart operation contracts", () => {
     expect(schema.required).toEqual(["file", "spaceId"]);
   });
 
+  it("includes additional file fields alongside the primary file", () => {
+    const schema = multipartSchema({
+      file: "screenshot",
+      fileRequired: false,
+      additionalFiles: ["recording"],
+      fields: { type: "string" },
+    });
+
+    expect(schema.properties).toMatchObject({
+      screenshot: { type: "string", format: "binary" },
+      recording: { type: "string", format: "binary" },
+      type: { type: "string" },
+    });
+    expect((schema.required as string[] | undefined) ?? []).not.toContain("screenshot");
+  });
+
   it("rejects metadata that names no file field", () => {
     expect(isMultipartSpec({ fields: { folder: "string" } })).toBe(false);
     expect(isMultipartSpec({ file: "" })).toBe(false);

@@ -7,8 +7,8 @@ import { timesheets, projects, tickets, organizationMembers } from "../../../db/
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { AccessService } from "../../access/access.service";
-import { applyScope } from "../../access/apply-scope";
-import { resolveEntriesScope } from "./timesheets-core-scope";
+import { actingMembershipId } from "../../../common/auth/principal";
+import { resolveEntriesScope, applyMembershipScope } from "./timesheets-core-scope";
 import { buildEntryShape } from "./lib/entry-shape";
 import type { EntriesQuery } from "./dto/entries.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -25,14 +25,28 @@ export class EntriesReadService {
     const limit = Math.min(query.limit, 100);
     const pos = decodeCursor(query.cursor);
 
+    const membershipId = actingMembershipId(u.principal);
+
     const conditions = [
       eq(timesheets.orgId, u.orgId),
       isNull(timesheets.voidedAt),
-      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheets.userId }),
+      applyMembershipScope(scope, membershipId, timesheets.userMembershipId),
     ];
 
-    if (query.userId && scope === "all")
-      conditions.push(eq(timesheets.userId, query.userId));
+    if (query.userId && scope === "all") {
+      const [qMember] = await this.db
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, u.orgId),
+            eq(organizationMembers.userId, query.userId),
+          ),
+        )
+        .limit(1);
+      if (!qMember) return { data: [], pagination: { hasNextPage: false, cursor: null } };
+      conditions.push(eq(timesheets.userMembershipId, qMember.id));
+    }
     if (query.projectId)
       conditions.push(eq(timesheets.projectId, query.projectId));
     if (query.ticketId)
@@ -56,7 +70,7 @@ export class EntriesReadService {
       .select({
         id: timesheets.id,
         orgId: timesheets.orgId,
-        userId: timesheets.userId,
+        userMembershipId: timesheets.userMembershipId,
         ticketId: timesheets.ticketId,
         projectId: timesheets.projectId,
         date: timesheets.date,
@@ -114,7 +128,7 @@ export class EntriesReadService {
       .select({
         id: timesheets.id,
         orgId: timesheets.orgId,
-        userId: timesheets.userId,
+        userMembershipId: timesheets.userMembershipId,
         ticketId: timesheets.ticketId,
         projectId: timesheets.projectId,
         date: timesheets.date,

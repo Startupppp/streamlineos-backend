@@ -1,5 +1,5 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, gt, gte, lte } from "drizzle-orm";
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, eq, gt, gte, inArray, lte } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { payrollRunExportJobs, payrollRuns } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -181,6 +181,20 @@ export class PayrollRunExportService {
         })
         .where(and(eq(payrollRunExportJobs.id, job.id), eq(payrollRunExportJobs.status, "running")));
     });
+  }
+
+  async cancel(user: CurrentUserContext, id: string): Promise<ReturnType<PayrollRunExportService["view"]>> {
+    const job = await this.find(user, id);
+    const rows = await runInNewTenantTransaction(this.db, user.orgId, async (tx) => {
+      return tx
+        .update(payrollRunExportJobs)
+        .set({ status: "cancelled", lockedAt: null, updatedAt: new Date() })
+        .where(and(eq(payrollRunExportJobs.id, job.id), inArray(payrollRunExportJobs.status, ["pending", "running"])))
+        .returning();
+    });
+    const updated = rows[0];
+    if (!updated) throw new ConflictException("Payroll export job cannot be cancelled in its current state");
+    return this.view(updated);
   }
 
   async reclaim(orgId: string, staleBefore: Date) {

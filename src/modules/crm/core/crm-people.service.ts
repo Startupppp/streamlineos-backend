@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import {
   crmPeople,
@@ -9,6 +9,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import type { DataScope } from "../../access/access.types";
 
 export interface Trend {
   value: number;
@@ -86,7 +87,8 @@ function computePersonStats(
 export class CrmPeopleService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async getAllPeopleSlugs(orgId: string): Promise<Record<string, string>> {
+  async getAllPeopleSlugs(orgId: string, scope: DataScope): Promise<Record<string, string>> {
+    if (scope === "none") throw new ForbiddenException("Not authorized to view contacts");
     const people = await this.db.query.crmPeople.findMany({
       where: eq(crmPeople.orgId, orgId),
       columns: { slug: true, name: true },
@@ -103,7 +105,8 @@ export class CrmPeopleService {
     return slugMap;
   }
 
-  async getPersonBySlug(orgId: string, slug: string) {
+  async getPersonBySlug(orgId: string, slug: string, scope: DataScope) {
+    if (scope === "none") throw new ForbiddenException("Not authorized to view contacts");
     const person = await this.db.query.crmPeople.findFirst({
       where: and(eq(crmPeople.orgId, orgId), eq(crmPeople.slug, slug)),
     });

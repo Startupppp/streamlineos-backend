@@ -1,11 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheets, timesheetPeriods, projects, users } from "../../../db/schema";
+import { timesheets, timesheetPeriods, projects, users, organizationMembers } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
-import { applyScope } from "../../access/apply-scope";
-import { resolveReportsScope } from "./timesheets-core-scope";
+import { actingMembershipId } from "../../../common/auth/principal";
+import { resolveReportsScope, applyMembershipScope } from "./timesheets-core-scope";
 import type { OverviewQuery, ReportRangeQuery } from "./dto/reports.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveDateRange, round2, utilizationRate } from "./lib/report-metrics";
@@ -23,15 +24,21 @@ export class ReportsService {
 
   async getOverview(u: CurrentUserContext, query: OverviewQuery) {
     const scope = await resolveReportsScope(this.access, u);
+    const actorMembId = actingMembershipId(u.principal);
 
     const conditions = [
       eq(timesheets.orgId, u.orgId),
       isNull(timesheets.voidedAt),
-      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheets.userId }),
+      applyMembershipScope(scope, actorMembId, timesheets.userMembershipId),
     ];
 
     if (query.userId && (scope === "all" || u.isOrgOwner)) {
-      conditions.push(eq(timesheets.userId, query.userId));
+      const [qMember] = await this.db
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, query.userId)))
+        .limit(1);
+      if (qMember) conditions.push(eq(timesheets.userMembershipId, qMember.id));
     }
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
@@ -39,7 +46,7 @@ export class ReportsService {
     const periodConditions = [
       eq(timesheetPeriods.orgId, u.orgId),
       eq(timesheetPeriods.status, "SUBMITTED"),
-      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheetPeriods.userId }),
+      applyMembershipScope(scope, actorMembId, timesheetPeriods.userMembershipId),
     ];
     if (query.startDate) periodConditions.push(gte(timesheetPeriods.periodStart, query.startDate));
     if (query.endDate) periodConditions.push(lte(timesheetPeriods.periodEnd, query.endDate));
@@ -61,7 +68,7 @@ export class ReportsService {
           nonBillableHours: sql<string>`COALESCE(SUM(CASE WHEN NOT ${timesheets.isBillable} THEN ${timesheets.hours}::numeric ELSE 0 END), 0)::text`,
           approvedHours: sql<string>`COALESCE(SUM(CASE WHEN ${timesheets.status} = 'APPROVED' THEN ${timesheets.hours}::numeric ELSE 0 END), 0)::text`,
           pendingApprovalHours: sql<string>`COALESCE(SUM(CASE WHEN ${timesheets.status} = 'PENDING' THEN ${timesheets.hours}::numeric ELSE 0 END), 0)::text`,
-          activeUsers: sql<number>`COUNT(DISTINCT ${timesheets.userId})::int`,
+          activeUsers: sql<number>`COUNT(DISTINCT ${timesheets.userMembershipId})::int`,
         })
         .from(timesheets)
         .where(and(...conditions)),
@@ -120,18 +127,21 @@ export class ReportsService {
   async getUtilization(u: CurrentUserContext, query: ReportRangeQuery) {
     const scope = await resolveReportsScope(this.access, u);
     const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
+    const actorMembId = actingMembershipId(u.principal);
+
+    const ownerMember = alias(organizationMembers, "owner_member");
 
     const conditions = [
       eq(timesheets.orgId, u.orgId),
       isNull(timesheets.voidedAt),
-      applyScope(scope, u.orgId, u.userId, { ownerColumn: timesheets.userId }),
+      applyMembershipScope(scope, actorMembId, timesheets.userMembershipId),
       gte(timesheets.date, startDate),
       lte(timesheets.date, endDate),
     ];
 
     const rows = await this.db
       .select({
-        userId: timesheets.userId,
+        userId: ownerMember.userId,
         name: users.name,
         email: users.email,
         totalHours: sql<string>`COALESCE(SUM(${timesheets.hours}::numeric), 0)::text`,
@@ -139,9 +149,10 @@ export class ReportsService {
         nonBillableHours: sql<string>`COALESCE(SUM(CASE WHEN NOT ${timesheets.isBillable} THEN ${timesheets.hours}::numeric ELSE 0 END), 0)::text`,
       })
       .from(timesheets)
-      .leftJoin(users, eq(timesheets.userId, users.id))
+      .leftJoin(ownerMember, and(eq(timesheets.orgId, ownerMember.orgId), eq(timesheets.userMembershipId, ownerMember.id)))
+      .leftJoin(users, eq(ownerMember.userId, users.id))
       .where(and(...conditions))
-      .groupBy(timesheets.userId, users.name, users.email)
+      .groupBy(ownerMember.userId, users.name, users.email)
       .orderBy(sql`SUM(${timesheets.hours}::numeric) DESC`);
 
     const perUser = rows.map((r) => {

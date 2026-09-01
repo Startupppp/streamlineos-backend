@@ -1,6 +1,6 @@
 import { pgTable, serial, text, integer, boolean, jsonb, timestamp, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { signEnvelopeStatusEnum, signRoutingModeEnum, signCcTimingEnum } from "./enums";
 import { signTemplates } from "./templates";
 import { signWatermarkPolicies } from "./watermark";
@@ -23,7 +23,6 @@ export const signEnvelopes = pgTable(
     sourceEntityId: text("source_entity_id"),
     templateId: integer("template_id").references(() => signTemplates.id, { onDelete: "set null" }),
     watermarkPolicyId: integer("watermark_policy_id").references(() => signWatermarkPolicies.id, { onDelete: "set null" }),
-    senderUserId: text("sender_user_id").references(() => users.id, { onDelete: "set null" }).notNull(),
     senderMembershipId: integer("sender_membership_id"),
 
     reminderEnabled: boolean("reminder_enabled").default(true).notNull(),
@@ -37,7 +36,6 @@ export const signEnvelopes = pgTable(
     sentAt: timestamp("sent_at"),
     completedAt: timestamp("completed_at"),
     voidedAt: timestamp("voided_at"),
-    voidedBy: text("voided_by").references(() => users.id, { onDelete: "set null" }),
     voidedByMembershipId: integer("voided_by_membership_id"),
     voidReason: text("void_reason"),
     declinedAt: timestamp("declined_at"),
@@ -57,7 +55,7 @@ export const signEnvelopes = pgTable(
   },
   (table) => [
     index("idx_sign_envelopes_org_status").on(table.orgId, table.status),
-    index("idx_sign_envelopes_org_sender").on(table.orgId, table.senderUserId),
+    index("idx_sign_envelopes_org_sender").on(table.orgId, table.senderMembershipId),
     index("idx_sign_envelopes_source").on(table.sourceModule, table.sourceEntityType, table.sourceEntityId),
     index("idx_sign_envelopes_expires").on(table.expiresAt),
     uniqueIndex("uniq_sign_envelopes_finalization_key").on(table.finalizationKey),
@@ -77,7 +75,6 @@ export const signEnvelopes = pgTable(
 
 export const signEnvelopesRelations = relations(signEnvelopes, ({ one }) => ({
   organization: one(organizations, { fields: [signEnvelopes.orgId], references: [organizations.id] }),
-  sender: one(users, { fields: [signEnvelopes.senderUserId], references: [users.id] }),
   senderMember: one(organizationMembers, {
     fields: [signEnvelopes.orgId, signEnvelopes.senderMembershipId],
     references: [organizationMembers.orgId, organizationMembers.id],

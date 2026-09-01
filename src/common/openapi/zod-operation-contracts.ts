@@ -24,6 +24,7 @@ export const BodylessAction = (): MethodDecorator =>
 export interface MultipartSpec {
   file: string;
   fileRequired?: boolean;
+  additionalFiles?: string[];
   fields?: Record<string, "string" | "integer" | "number" | "boolean">;
   requiredFields?: string[];
 }
@@ -41,6 +42,8 @@ export function multipartSchema(spec: MultipartSpec): JsonSchema {
   const properties: Record<string, JsonSchema> = {
     [spec.file]: { type: "string", format: "binary" },
   };
+  for (const name of spec.additionalFiles ?? [])
+    properties[name] = { type: "string", format: "binary" };
   for (const [name, type] of Object.entries(spec.fields ?? {}))
     properties[name] = { type };
   const required = [

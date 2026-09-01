@@ -8,16 +8,12 @@ import {
   Req,
 } from "@nestjs/common";
 import type { Request } from "express";
-import { z } from "zod";
 import { Public } from "../../../common/auth/public.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { logger } from "../../../common/logger/logger.service";
 import { IntegrationsGitService } from "./integrations-git.service";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
-
-const gitWebhookQuerySchema = z.object({
-  connectionId: z.string().min(1).optional(),
-}).strict();
+import { webhookQuerySchema } from "./dto/integrations-git.schemas";
 
 @Public()
 @Controller("integrations/git")
@@ -27,7 +23,7 @@ export class IntegrationsGitController {
   @Post("webhook")
   @BodylessAction()
   @HttpCode(200)
-  @Validate({ query: gitWebhookQuerySchema })
+  @Validate({ query: webhookQuerySchema })
   async webhook(
     @Req() req: RawBodyRequest<Request>,
     @Query("connectionId") connectionId: string | undefined,

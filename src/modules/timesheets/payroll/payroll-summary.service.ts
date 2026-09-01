@@ -1,11 +1,13 @@
 import { Inject, Injectable, ForbiddenException } from "@nestjs/common";
 import { and, eq, gte, lte } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheets, timesheetSettings, holidays, leaveRequests, users } from "../../../db/schema";
+import { timesheets, timesheetSettings, holidays, leaveRequests, users, organizationMembers } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { applyScope } from "../../access/apply-scope";
+import { applyMembershipScope } from "../core/timesheets-core-scope";
 import type { DataScope } from "../../access/access.types";
 import { computeLeaveDays, computeOvertime, isWeekend, round2 } from "./lib/payroll-calc";
 import type { PeriodSummaryQuery, PayrollSummaryRow } from "./dto/payroll.schemas";
@@ -145,17 +147,33 @@ export class PayrollSummaryService {
     const weeklyThreshold = parseFloat(settings?.overtimeWeeklyHours ?? "40");
     const includeNonBillable = settings?.includeNonBillable ?? true;
 
+    const [actorMember] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, actorUserId)))
+      .limit(1);
+    const actorMembId = actorMember?.id ?? null;
+
+    const ownerMember = alias(organizationMembers, "owner_member");
+
     const entryConditions = [
       eq(timesheets.orgId, orgId),
       gte(timesheets.date, query.start),
       lte(timesheets.date, query.end),
-      applyScope(scope, orgId, actorUserId, { ownerColumn: timesheets.userId }),
+      applyMembershipScope(scope, actorMembId, timesheets.userMembershipId),
     ];
-    if (query.userId && scope === "all") entryConditions.push(eq(timesheets.userId, query.userId));
+    if (query.userId && scope === "all") {
+      const [qm] = await this.db
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, query.userId)))
+        .limit(1);
+      if (qm) entryConditions.push(eq(timesheets.userMembershipId, qm.id));
+    }
 
     const entries = await this.db
       .select({
-        userId: timesheets.userId,
+        userId: ownerMember.userId,
         date: timesheets.date,
         hours: timesheets.hours,
         isBillable: timesheets.isBillable,
@@ -165,7 +183,8 @@ export class PayrollSummaryService {
         userEmail: users.email,
       })
       .from(timesheets)
-      .innerJoin(users, eq(timesheets.userId, users.id))
+      .innerJoin(ownerMember, and(eq(timesheets.orgId, ownerMember.orgId), eq(timesheets.userMembershipId, ownerMember.id)))
+      .innerJoin(users, eq(ownerMember.userId, users.id))
       .where(and(...entryConditions));
 
     const holidayRows = await this.db

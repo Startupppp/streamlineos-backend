@@ -10,6 +10,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timerSessions, timesheetSettings, projects, tickets } from "../../../db/schema";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { EntriesService } from "./entries.service";
 import { formatDateOnly } from "./lib/period.helpers";
@@ -36,7 +37,7 @@ function buildTimerShape(
 ) {
   return {
     id: session.id,
-    userId: session.userId,
+    userMembershipId: session.userMembershipId,
     projectId: session.projectId,
     ticketId: session.ticketId,
     description: session.description,
@@ -72,7 +73,7 @@ export class TimerService {
       .select({
         id: timerSessions.id,
         orgId: timerSessions.orgId,
-        userId: timerSessions.userId,
+        userMembershipId: timerSessions.userMembershipId,
         projectId: timerSessions.projectId,
         ticketId: timerSessions.ticketId,
         description: timerSessions.description,
@@ -96,13 +97,16 @@ export class TimerService {
   }
 
   async getActive(u: CurrentUserContext) {
+    const membershipId = actingMembershipId(u.principal);
+    if (membershipId === null) return null;
+
     const timerProj = alias(projects, "tp");
 
     const rows = await this.db
       .select({
         id: timerSessions.id,
         orgId: timerSessions.orgId,
-        userId: timerSessions.userId,
+        userMembershipId: timerSessions.userMembershipId,
         projectId: timerSessions.projectId,
         ticketId: timerSessions.ticketId,
         description: timerSessions.description,
@@ -123,7 +127,7 @@ export class TimerService {
       .where(
         and(
           eq(timerSessions.orgId, u.orgId),
-          eq(timerSessions.userId, u.userId),
+          eq(timerSessions.userMembershipId, membershipId),
           inArray(timerSessions.status, ["RUNNING", "PAUSED"]),
         ),
       )
@@ -135,6 +139,8 @@ export class TimerService {
   }
 
   async startTimer(u: CurrentUserContext, input: StartTimerInput) {
+    const membershipId = actingMembershipId(u.principal);
+
     const active = await this.getActive(u);
 
     if (active) {
@@ -155,7 +161,7 @@ export class TimerService {
       .insert(timerSessions)
       .values({
         orgId: u.orgId,
-        userId: u.userId,
+        userMembershipId: membershipId,
         projectId: input.projectId ?? null,
         ticketId: input.ticketId ?? null,
         description: input.description ?? null,
@@ -173,11 +179,12 @@ export class TimerService {
   }
 
   async pauseTimer(u: CurrentUserContext, timerId: number) {
+    const membershipId = actingMembershipId(u.principal);
     const session = await this.db.query.timerSessions.findFirst({
       where: and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)),
     });
     if (!session) throw new NotFoundException("Timer not found");
-    if (session.userId !== u.userId) throw new ForbiddenException("Not your timer");
+    if (session.userMembershipId !== membershipId) throw new ForbiddenException("Not your timer");
     if (session.status !== "RUNNING") throw new ConflictException("Timer is not running");
 
     const sinceResume = session.lastResumedAt
@@ -195,11 +202,12 @@ export class TimerService {
   }
 
   async resumeTimer(u: CurrentUserContext, timerId: number) {
+    const membershipId = actingMembershipId(u.principal);
     const session = await this.db.query.timerSessions.findFirst({
       where: and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)),
     });
     if (!session) throw new NotFoundException("Timer not found");
-    if (session.userId !== u.userId) throw new ForbiddenException("Not your timer");
+    if (session.userMembershipId !== membershipId) throw new ForbiddenException("Not your timer");
     if (session.status !== "PAUSED") throw new ConflictException("Timer is not paused");
 
     await this.db
@@ -212,11 +220,12 @@ export class TimerService {
   }
 
   async stopTimer(u: CurrentUserContext, timerId: number) {
+    const membershipId = actingMembershipId(u.principal);
     const session = await this.db.query.timerSessions.findFirst({
       where: and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)),
     });
     if (!session) throw new NotFoundException("Timer not found");
-    if (session.userId !== u.userId) throw new ForbiddenException("Not your timer");
+    if (session.userMembershipId !== membershipId) throw new ForbiddenException("Not your timer");
     if (!["RUNNING", "PAUSED"].includes(session.status)) {
       throw new ConflictException("Timer is not active");
     }
@@ -236,11 +245,12 @@ export class TimerService {
   }
 
   async discardTimer(u: CurrentUserContext, timerId: number) {
+    const membershipId = actingMembershipId(u.principal);
     const session = await this.db.query.timerSessions.findFirst({
       where: and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)),
     });
     if (!session) throw new NotFoundException("Timer not found");
-    if (session.userId !== u.userId) throw new ForbiddenException("Not your timer");
+    if (session.userMembershipId !== membershipId) throw new ForbiddenException("Not your timer");
 
     await this.db
       .update(timerSessions)
@@ -251,11 +261,12 @@ export class TimerService {
   }
 
   async convertTimer(u: CurrentUserContext, timerId: number, input: ConvertTimerInput) {
+    const membershipId = actingMembershipId(u.principal);
     const session = await this.db.query.timerSessions.findFirst({
       where: and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)),
     });
     if (!session) throw new NotFoundException("Timer not found");
-    if (session.userId !== u.userId) throw new ForbiddenException("Not your timer");
+    if (session.userMembershipId !== membershipId) throw new ForbiddenException("Not your timer");
     if (!["STOPPED", "PAUSED"].includes(session.status)) {
       throw new ConflictException("Stop or pause the timer before converting");
     }
@@ -288,7 +299,7 @@ export class TimerService {
 
     await this.audit.recordWithDb({
       orgId: u.orgId,
-      actorUserId: u.userId,
+      actorMembershipId: membershipId,
       entityType: "timer",
       entityId: timerId.toString(),
       action: "timer.converted",

@@ -174,7 +174,8 @@ export class DealsService {
     const membershipRows = await this.db
       .select({ userId: organizationMembers.userId, id: organizationMembers.id })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, memberUserIds)));
+      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, memberUserIds)))
+      .limit(memberUserIds.length);
 
     const membershipByUserId = new Map(membershipRows.map((m) => [m.userId, m.id]));
 

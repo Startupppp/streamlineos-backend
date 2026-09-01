@@ -25,7 +25,7 @@ export class EntriesPeriodService {
 
   async getOrCreatePeriod(
     orgId: string,
-    userId: string,
+    userMembershipId: number,
     date: string,
     workWeekStart: number,
     dbOrTx: Pick<Db, "select" | "insert"> = this.db,
@@ -33,7 +33,7 @@ export class EntriesPeriodService {
     const range = weekRange(new Date(date + "T12:00:00"), workWeekStart);
     const matchesRange = and(
       eq(timesheetPeriods.orgId, orgId),
-      eq(timesheetPeriods.userId, userId),
+      eq(timesheetPeriods.userMembershipId, userMembershipId),
       eq(timesheetPeriods.periodStart, range.start),
       eq(timesheetPeriods.periodEnd, range.end),
     );
@@ -50,7 +50,7 @@ export class EntriesPeriodService {
       .insert(timesheetPeriods)
       .values({
         orgId,
-        userId,
+        userMembershipId,
         periodStart: range.start,
         periodEnd: range.end,
         status: "OPEN",

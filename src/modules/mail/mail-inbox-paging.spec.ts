@@ -151,7 +151,7 @@ async function pageThrough(harness: Harness, limit: number): Promise<string[]> {
   let pages = 0;
 
   for (;;) {
-    const page = await harness.service.listMessages(ORG_ID, USER_ID, FOLDER, "all", limit, cursor);
+    const page = await harness.service.listMessages(ORG_ID, USER_ID, null, FOLDER, "all", limit, cursor);
     pages++;
     seen.push(...page.messages.map((m) => `${m.accountId}:${m.id}`));
     if (!page.nextCursor) break;
@@ -195,13 +195,14 @@ describe("multi-account inbox paging", () => {
     const { gmail, outlook } = buildMailboxes(12);
     const harness = buildHarness(gmail, outlook, 10);
 
-    const first = await harness.service.listMessages(ORG_ID, USER_ID, FOLDER, "all", 8, undefined);
+    const first = await harness.service.listMessages(ORG_ID, USER_ID, null, FOLDER, "all", 8, undefined);
     expect(first.messages).toHaveLength(8);
     expect(first.nextCursor).not.toBeNull();
 
     const second = await harness.service.listMessages(
       ORG_ID,
       USER_ID,
+      null,
       FOLDER,
       "all",
       8,
@@ -220,8 +221,8 @@ describe("multi-account inbox paging", () => {
     const { gmail, outlook } = buildMailboxes(12);
     const harness = buildHarness(gmail, outlook, 10);
 
-    const first = await harness.service.listMessages(ORG_ID, USER_ID, FOLDER, "all", 8, undefined);
-    await harness.service.listMessages(ORG_ID, USER_ID, FOLDER, "all", 8, first.nextCursor ?? undefined);
+    const first = await harness.service.listMessages(ORG_ID, USER_ID, null, FOLDER, "all", 8, undefined);
+    await harness.service.listMessages(ORG_ID, USER_ID, null, FOLDER, "all", 8, first.nextCursor ?? undefined);
 
     const [firstAsk, secondAsk] = harness.gmailPageSizes;
     expect(firstAsk).toBe(8);
@@ -246,7 +247,7 @@ describe("multi-account inbox paging", () => {
     const { gmail, outlook } = buildMailboxes(3);
     const harness = buildHarness(gmail, outlook, 10);
 
-    const page = await harness.service.listMessages(ORG_ID, USER_ID, FOLDER, "all", 20, undefined);
+    const page = await harness.service.listMessages(ORG_ID, USER_ID, null, FOLDER, "all", 20, undefined);
 
     expect(page.messages).toHaveLength(6);
     expect(page.nextCursor).toBeNull();
@@ -256,8 +257,8 @@ describe("multi-account inbox paging", () => {
     const { gmail, outlook } = buildMailboxes(12);
     const harness = buildHarness(gmail, outlook, 10);
 
-    const first = await harness.service.listMessages(ORG_ID, USER_ID, FOLDER, "all", 8, undefined);
-    const junk = await harness.service.listMessages(ORG_ID, USER_ID, FOLDER, "all", 8, "m1.garbage.signature");
+    const first = await harness.service.listMessages(ORG_ID, USER_ID, null, FOLDER, "all", 8, undefined);
+    const junk = await harness.service.listMessages(ORG_ID, USER_ID, null, FOLDER, "all", 8, "m1.garbage.signature");
 
     expect(junk.messages.map((m) => m.id)).toEqual(first.messages.map((m) => m.id));
   });
@@ -266,10 +267,11 @@ describe("multi-account inbox paging", () => {
     const { gmail, outlook } = buildMailboxes(12);
     const harness = buildHarness(gmail, outlook, 10);
 
-    const first = await harness.service.listMessages(ORG_ID, USER_ID, FOLDER, "all", 8, undefined);
+    const first = await harness.service.listMessages(ORG_ID, USER_ID, null, FOLDER, "all", 8, undefined);
     const replayed = await harness.service.listMessages(
       ORG_ID,
       "someone-else",
+      null,
       FOLDER,
       "all",
       8,

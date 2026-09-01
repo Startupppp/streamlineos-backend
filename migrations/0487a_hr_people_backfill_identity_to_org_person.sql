@@ -1,4 +1,4 @@
--- 0820_hr_people_backfill_identity_to_org_person
+-- 0487a_hr_people_backfill_identity_to_org_person
 -- Ticket: c16-01 — one table owns a person's identity
 --
 -- 0486 links hr_people to organization_people and 0487 validates the FK, but
@@ -41,7 +41,7 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'hr_people' AND column_name = 'first_name'
   ) THEN
-    RAISE NOTICE '0820: hr_people identity columns already dropped, nothing to backfill';
+    RAISE NOTICE '0487a: hr_people identity columns already dropped, nothing to backfill';
     RETURN;
   END IF;
 
@@ -67,7 +67,7 @@ BEGIN
 
   IF ambiguous > 0 THEN
     RAISE EXCEPTION
-      '0820: % canonical people have hr_people rows disagreeing on an identity column. Reconcile them before 0488 drops the columns.',
+      '0487a: % canonical people have hr_people rows disagreeing on an identity column. Reconcile them before 0488 drops the columns.',
       ambiguous;
   END IF;
 
@@ -131,9 +131,9 @@ BEGIN
 
   IF orphaned > 0 OR uncopied > 0 THEN
     RAISE EXCEPTION
-      '0820: identity backfill incomplete (% unlinked live rows, % uncopied values). 0488 would destroy this data; resolve before dropping the columns.',
+      '0487a: identity backfill incomplete (% unlinked live rows, % uncopied values). 0488 would destroy this data; resolve before dropping the columns.',
       orphaned, uncopied;
   END IF;
 
-  RAISE NOTICE '0820: hr_people identity fully mirrored into organization_people';
+  RAISE NOTICE '0487a: hr_people identity fully mirrored into organization_people';
 END $$;

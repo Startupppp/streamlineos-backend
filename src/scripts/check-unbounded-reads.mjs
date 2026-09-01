@@ -25,7 +25,11 @@ import { join, extname } from "node:path";
 const MIN_FILES = 500;
 const MIN_MODULES = 40;
 const ORDER_BY_LOOKBACK = 25;
-const STATEMENT_MAX_LINES = 40;
+// statementFrom stops at the first line ending in ';', so this is only a runaway
+// guard, not the real boundary. At 40 it truncated a 43-line select three lines
+// short of its own .limit(1) and reported a bounded query as unbounded — tenant-scoped
+// alias joins push a statement past 40 lines easily.
+const STATEMENT_MAX_LINES = 120;
 
 const ROOT = new URL("../modules", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
 const BASELINE_FILE = new URL("./baselines/unbounded-reads-baseline.json", import.meta.url).pathname.replace(

@@ -2,6 +2,9 @@
 -- Reverses: +idx_tickets_org_project_order, +idx_tickets_org_assignee_status,
 --           +partial idx_tickets_org_assignee_due_open, -idx_tickets_assignee
 --
+-- Migration 0432 moved tickets from public to the build schema.
+-- All table references and index qualifiers use build. accordingly.
+--
 -- NOTE: CREATE/DROP INDEX CONCURRENTLY cannot run inside a transaction.
 -- The non-concurrent form is used here so the script can be verified in a
 -- transaction (BEGIN … ROLLBACK). In production, run outside a transaction
@@ -11,9 +14,9 @@ SET lock_timeout = '5s';
 
 -- 1. Restore the index that 0126 dropped.
 CREATE INDEX IF NOT EXISTS "idx_tickets_assignee"
-  ON "tickets" ("assignee_id");
+  ON "build"."tickets" ("assignee_id");
 
 -- 2. Drop the three indexes that 0126 added.
-DROP INDEX IF EXISTS "idx_tickets_org_project_order";
-DROP INDEX IF EXISTS "idx_tickets_org_assignee_status";
-DROP INDEX IF EXISTS "idx_tickets_org_assignee_due_open";
+DROP INDEX IF EXISTS "build"."idx_tickets_org_project_order";
+DROP INDEX IF EXISTS "build"."idx_tickets_org_assignee_status";
+DROP INDEX IF EXISTS "build"."idx_tickets_org_assignee_due_open";

@@ -42,59 +42,65 @@ function readDown(name) {
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
+//
+// Migration 0432 moved Build-module tables (tickets, roadmap_items,
+// roadmap_votes, feedback_votes, project_milestones, project_releases,
+// project_templates, project_whiteboards, project_statuses, projects, ...)
+// from the public schema to the build schema. All helpers therefore accept an
+// optional schema parameter so verifiers can query the correct schema.
 
-async function indexExists(tx, indexName) {
+async function indexExists(tx, indexName, schema = 'public') {
   const rows = await tx`
     SELECT 1 FROM pg_indexes
-    WHERE schemaname = 'public' AND indexname = ${indexName}
+    WHERE schemaname = ${schema} AND indexname = ${indexName}
   `;
   return rows.length > 0;
 }
 
-async function columnExists(tx, table, column) {
+async function columnExists(tx, table, column, schema = 'public') {
   const rows = await tx`
     SELECT 1 FROM information_schema.columns
-    WHERE table_schema = 'public'
+    WHERE table_schema = ${schema}
       AND table_name   = ${table}
       AND column_name  = ${column}
   `;
   return rows.length > 0;
 }
 
-async function columnDefault(tx, table, column) {
+async function columnDefault(tx, table, column, schema = 'public') {
   const rows = await tx`
     SELECT column_default
     FROM information_schema.columns
-    WHERE table_schema = 'public'
+    WHERE table_schema = ${schema}
       AND table_name   = ${table}
       AND column_name  = ${column}
   `;
   return rows[0]?.column_default ?? null;
 }
 
-async function columnDataType(tx, table, column) {
+async function columnDataType(tx, table, column, schema = 'public') {
   const rows = await tx`
     SELECT udt_name, data_type
     FROM information_schema.columns
-    WHERE table_schema = 'public'
+    WHERE table_schema = ${schema}
       AND table_name   = ${table}
       AND column_name  = ${column}
   `;
   return rows[0] ?? null;
 }
 
-async function tableExists(tx, table) {
+async function tableExists(tx, table, schema = 'public') {
   const rows = await tx`
     SELECT 1 FROM information_schema.tables
-    WHERE table_schema = 'public' AND table_name = ${table}
+    WHERE table_schema = ${schema} AND table_name = ${table}
   `;
   return rows.length > 0;
 }
 
-async function constraintExists(tx, table, constraintName) {
+async function constraintExists(tx, table, constraintName, schema = 'public') {
   const rows = await tx`
     SELECT 1 FROM information_schema.table_constraints
-    WHERE table_schema     = 'public'
+    WHERE table_schema     = ${schema}
       AND table_name       = ${table}
       AND constraint_name  = ${constraintName}
   `;
@@ -114,14 +120,15 @@ async function typeExists(tx, typeName) {
 async function verify0126(tx) {
   const observations = [];
 
+  // Tickets live in the build schema after migration 0432.
   // idx_tickets_assignee should be RESTORED (it was dropped by 0126)
-  const assigneeExists = await indexExists(tx, 'idx_tickets_assignee');
+  const assigneeExists = await indexExists(tx, 'idx_tickets_assignee', 'build');
   observations.push(`idx_tickets_assignee recreated: ${assigneeExists}`);
 
   // The three indexes added by 0126 should be GONE
-  const orgProjectOrder  = await indexExists(tx, 'idx_tickets_org_project_order');
-  const orgAssigneeStatus = await indexExists(tx, 'idx_tickets_org_assignee_status');
-  const orgAssigneeDue   = await indexExists(tx, 'idx_tickets_org_assignee_due_open');
+  const orgProjectOrder   = await indexExists(tx, 'idx_tickets_org_project_order',   'build');
+  const orgAssigneeStatus = await indexExists(tx, 'idx_tickets_org_assignee_status', 'build');
+  const orgAssigneeDue    = await indexExists(tx, 'idx_tickets_org_assignee_due_open', 'build');
   observations.push(`idx_tickets_org_project_order dropped: ${!orgProjectOrder}`);
   observations.push(`idx_tickets_org_assignee_status dropped: ${!orgAssigneeStatus}`);
   observations.push(`idx_tickets_org_assignee_due_open dropped: ${!orgAssigneeDue}`);
@@ -133,7 +140,8 @@ async function verify0126(tx) {
 async function verify0127(tx) {
   const observations = [];
 
-  const def = await columnDefault(tx, 'roadmap_items', 'is_public');
+  // roadmap_items lives in the build schema after migration 0432.
+  const def = await columnDefault(tx, 'roadmap_items', 'is_public', 'build');
   observations.push(`roadmap_items.is_public DEFAULT: ${def}`);
 
   // Default should be 'true' (Postgres stores it as "true")
@@ -144,10 +152,11 @@ async function verify0127(tx) {
 async function verify0137(tx) {
   const observations = [];
 
-  const roadmapCol  = await columnExists(tx, 'roadmap_votes',  'voter_ip_hash');
-  const feedbackCol = await columnExists(tx, 'feedback_votes', 'voter_ip_hash');
-  const roadmapIdx  = await indexExists(tx, 'uniq_roadmap_votes_item_ip');
-  const feedbackIdx = await indexExists(tx, 'uniq_feedback_votes_post_ip');
+  // roadmap_votes and feedback_votes live in the build schema after migration 0432.
+  const roadmapCol  = await columnExists(tx, 'roadmap_votes',  'voter_ip_hash', 'build');
+  const feedbackCol = await columnExists(tx, 'feedback_votes', 'voter_ip_hash', 'build');
+  const roadmapIdx  = await indexExists(tx, 'uniq_roadmap_votes_item_ip',  'build');
+  const feedbackIdx = await indexExists(tx, 'uniq_feedback_votes_post_ip', 'build');
 
   observations.push(`roadmap_votes.voter_ip_hash dropped: ${!roadmapCol}`);
   observations.push(`feedback_votes.voter_ip_hash dropped: ${!feedbackCol}`);
@@ -161,20 +170,21 @@ async function verify0137(tx) {
 async function verify0142(tx) {
   const observations = [];
 
-  const orderExists = await columnExists(tx, 'tickets', 'order');
-  const rankExists  = await columnExists(tx, 'tickets', 'rank');
-  const newIdx      = await indexExists(tx, 'idx_tickets_org_project_rank');
-  const oldIdx      = await indexExists(tx, 'idx_tickets_org_project_order');
+  // tickets lives in the build schema after migration 0432.
+  const orderExists = await columnExists(tx, 'tickets', 'order', 'build');
+  const rankExists  = await columnExists(tx, 'tickets', 'rank',  'build');
+  const newIdx      = await indexExists(tx, 'idx_tickets_org_project_rank',  'build');
+  const oldIdx      = await indexExists(tx, 'idx_tickets_org_project_order', 'build');
 
   observations.push(`tickets."order" recreated: ${orderExists}`);
   observations.push(`tickets.rank dropped: ${!rankExists}`);
   observations.push(`idx_tickets_org_project_rank dropped: ${!newIdx}`);
   observations.push(`idx_tickets_org_project_order recreated: ${oldIdx}`);
 
-  // Spot-check a few derived values (sample up to 5 rows)
+  // Spot-check a few derived values (sample up to 5 rows) — qualify the table.
   const sample = await tx`
     SELECT "order", ROUND(("order" + 1) * 1000) AS expected_rank
-    FROM tickets LIMIT 5
+    FROM build.tickets LIMIT 5
   `;
   observations.push(`Sample order values (first 5 rows): ${JSON.stringify(sample.map(r => r.order))}`);
 
@@ -238,28 +248,31 @@ async function verify0143(tx) {
 async function verify0146(tx) {
   const observations = [];
 
+  // tickets and project_statuses live in the build schema after migration 0432.
+  // custom_states is recreated by the rollback in the public schema (it was never moved).
+
   // FK on tickets should be gone
-  const fkExists = await constraintExists(tx, 'tickets', 'fk_tickets_status');
+  const fkExists = await constraintExists(tx, 'tickets', 'fk_tickets_status', 'build');
   observations.push(`fk_tickets_status dropped: ${!fkExists}`);
 
   // Unique constraint on project_statuses should be gone
-  const uqExists = await constraintExists(tx, 'project_statuses', 'uniq_project_statuses_org_project_name');
+  const uqExists = await constraintExists(tx, 'project_statuses', 'uniq_project_statuses_org_project_name', 'build');
   observations.push(`uniq_project_statuses_org_project_name dropped: ${!uqExists}`);
 
   // project_statuses.type should be text again
-  const typeInfo = await columnDataType(tx, 'project_statuses', 'type');
+  const typeInfo = await columnDataType(tx, 'project_statuses', 'type', 'build');
   observations.push(`project_statuses.type data_type: ${typeInfo?.data_type} (want text)`);
 
-  // custom_states should exist again
-  const csExists = await tableExists(tx, 'custom_states');
+  // custom_states should exist again (recreated in public schema by rollback)
+  const csExists = await tableExists(tx, 'custom_states', 'public');
   observations.push(`custom_states recreated: ${csExists}`);
 
-  // tickets.state_id should exist
-  const stateIdExists = await columnExists(tx, 'tickets', 'state_id');
+  // tickets.state_id should exist (in build schema)
+  const stateIdExists = await columnExists(tx, 'tickets', 'state_id', 'build');
   observations.push(`tickets.state_id recreated: ${stateIdExists}`);
 
-  // tickets.state_id FK constraint should exist
-  const stateIdFk = await constraintExists(tx, 'tickets', 'tickets_state_id_custom_states_id_fk');
+  // tickets.state_id FK constraint should exist (on build.tickets)
+  const stateIdFk = await constraintExists(tx, 'tickets', 'tickets_state_id_custom_states_id_fk', 'build');
   observations.push(`tickets_state_id_custom_states_id_fk recreated: ${stateIdFk}`);
 
   const ok = !fkExists && !uqExists
@@ -271,6 +284,7 @@ async function verify0146(tx) {
 async function verify0160(tx) {
   const observations = [];
 
+  // All four tables live in the build schema after migration 0432.
   // All four deleted_at columns must be GONE after rollback
   const tables = [
     'project_milestones',
@@ -279,7 +293,7 @@ async function verify0160(tx) {
     'project_whiteboards',
   ];
   for (const table of tables) {
-    const exists = await columnExists(tx, table, 'deleted_at');
+    const exists = await columnExists(tx, table, 'deleted_at', 'build');
     observations.push(`${table}.deleted_at dropped: ${!exists}`);
   }
 
@@ -293,7 +307,7 @@ async function verify0160(tx) {
     ['idx_project_whiteboards_org_project', 'project_whiteboards'],
   ];
   for (const [idxName] of restoredIndexes) {
-    const exists = await indexExists(tx, idxName);
+    const exists = await indexExists(tx, idxName, 'build');
     observations.push(`${idxName} recreated (non-partial): ${exists}`);
   }
 

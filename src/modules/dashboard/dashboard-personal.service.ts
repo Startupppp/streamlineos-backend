@@ -99,18 +99,25 @@ export class DashboardPersonalService {
       modules.timesheets
         ? settle(
             "timesheet",
-            () =>
-              this.db
+            async () => {
+              const [selfMember] = await this.db
+                .select({ id: organizationMembers.id })
+                .from(organizationMembers)
+                .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+                .limit(1);
+              if (!selfMember) return [];
+              return this.db
                 .select({ hours: sum(timesheets.hours) })
                 .from(timesheets)
                 .where(
                   and(
                     eq(timesheets.orgId, orgId),
-                    eq(timesheets.userId, userId),
+                    eq(timesheets.userMembershipId, selfMember.id),
                     gte(timesheets.date, weekStart.toISOString().slice(0, 10)),
                     lt(timesheets.date, weekEnd.toISOString().slice(0, 10)),
                   ),
-                ),
+                );
+            },
             [],
           )
         : [],

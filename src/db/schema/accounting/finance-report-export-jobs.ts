@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { bigint, boolean, check, foreignKey, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { organizationMembers, organizations } from "../common/auth";
 
-export type FinanceReportExportJobStatus = "pending" | "running" | "completed" | "failed" | "expired";
+export type FinanceReportExportJobStatus = "pending" | "running" | "completed" | "failed" | "expired" | "cancelled";
 
 export type FinanceReportType =
   | "vendor_statement"
@@ -27,7 +27,7 @@ export interface FinanceReportExportFilters {
 export const financeReportExportJobs = pgTable("finance_report_export_jobs", {
   id: uuid("id").defaultRandom().primaryKey(),
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  requestedByMembershipId: integer("requested_by_membership_id").notNull(),
+  requestedByMembershipId: integer("requested_by_membership_id"),
   reportType: text("report_type").$type<FinanceReportType>().notNull(),
   status: text("status").$type<FinanceReportExportJobStatus>().notNull().default("pending"),
   filters: jsonb("filters").$type<FinanceReportExportFilters>().notNull(),
@@ -57,8 +57,8 @@ export const financeReportExportJobs = pgTable("finance_report_export_jobs", {
     columns: [table.orgId, table.requestedByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fin_report_export_jobs_org_requester_membership_fk",
-  }).onDelete("restrict"),
-  check("chk_fin_report_export_jobs_status", sql`${table.status} IN ('pending','running','completed','failed','expired')`),
+  }).onDelete("set null"),
+  check("chk_fin_report_export_jobs_status", sql`${table.status} IN ('pending','running','completed','failed','expired','cancelled')`),
   check("chk_fin_report_export_jobs_report_type", sql`${table.reportType} IN ('vendor_statement','customer_statement','sales_by_customer','sales_by_item','expense_by_category','tax_summary','project_profitability','department_profitability','budget_vs_actual')`),
   check("chk_fin_report_export_jobs_counts", sql`${table.processedRows} >= 0 AND (${table.rowCount} IS NULL OR ${table.rowCount} >= 0)`),
   check("chk_fin_report_export_jobs_attempts", sql`${table.attempt} >= 0 AND ${table.maxAttempts} BETWEEN 1 AND 10`),

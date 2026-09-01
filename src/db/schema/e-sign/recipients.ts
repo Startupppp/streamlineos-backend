@@ -1,6 +1,6 @@
 import { pgTable, serial, text, integer, timestamp, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 import { signRecipientStatusEnum, signRecipientTypeEnum, signAuthMethodEnum } from "./enums";
 import { signEnvelopes } from "./envelopes";
 
@@ -15,7 +15,6 @@ export const signRecipients = pgTable(
     name: text("name").notNull(),
     email: text("email"),
     phone: text("phone"),
-    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
     userMembershipId: integer("user_membership_id"),
     routingOrder: integer("routing_order").default(1).notNull(),
     status: signRecipientStatusEnum("status").default("pending").notNull(),
@@ -64,7 +63,6 @@ export const signRecipients = pgTable(
 export const signRecipientsRelations = relations(signRecipients, ({ one }) => ({
   organization: one(organizations, { fields: [signRecipients.orgId], references: [organizations.id] }),
   envelope: one(signEnvelopes, { fields: [signRecipients.envelopeId], references: [signEnvelopes.id] }),
-  user: one(users, { fields: [signRecipients.userId], references: [users.id] }),
   delegatedTo: one(signRecipients, {
     fields: [signRecipients.delegatedToRecipientId],
     references: [signRecipients.id],

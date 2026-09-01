@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, avg, count, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import {
+  organizationMembers,
   signAuditEvents,
   signBulkSendJobs,
   signCertificates,
@@ -23,7 +24,10 @@ export class SignReportsService {
     private readonly settings: SignSettingsService,
   ) {}
 
-  async getDashboard(orgId: string, userId: string) {
+  async getDashboard(orgId: string, membershipId: number | null) {
+    if (membershipId == null) {
+      return { awaitingMe: 0, sentPending: 0, completedThisMonth: 0, expiringSoon: 0, failedOrBounced: 0, recentActivity: [] };
+    }
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const orgSettings = await this.settings.getOrCreate(orgId);
@@ -41,22 +45,22 @@ export class SignReportsService {
       this.db
         .select({ value: count() })
         .from(signRecipients)
-        .where(and(eq(signRecipients.orgId, orgId), eq(signRecipients.userId, userId), inArray(signRecipients.status, [...RECIPIENT_ACTIONABLE_STATUSES]))),
+        .where(and(eq(signRecipients.orgId, orgId), eq(signRecipients.userMembershipId, membershipId), inArray(signRecipients.status, [...RECIPIENT_ACTIONABLE_STATUSES]))),
       this.db
         .select({ value: count() })
         .from(signEnvelopes)
-        .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderUserId, userId), inArray(signEnvelopes.status, [...OPEN_STATUSES]))),
+        .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderMembershipId, membershipId), inArray(signEnvelopes.status, [...OPEN_STATUSES]))),
       this.db
         .select({ value: count() })
         .from(signEnvelopes)
-        .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderUserId, userId), eq(signEnvelopes.status, "completed"), gte(signEnvelopes.completedAt, monthStart))),
+        .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderMembershipId, membershipId), eq(signEnvelopes.status, "completed"), gte(signEnvelopes.completedAt, monthStart))),
       this.db
         .select({ value: count() })
         .from(signEnvelopes)
         .where(
           and(
             eq(signEnvelopes.orgId, orgId),
-            eq(signEnvelopes.senderUserId, userId),
+            eq(signEnvelopes.senderMembershipId, membershipId),
             inArray(signEnvelopes.status, [...OPEN_STATUSES]),
             isNotNull(signEnvelopes.expiresAt),
             lte(signEnvelopes.expiresAt, expiringBefore),
@@ -65,12 +69,12 @@ export class SignReportsService {
       this.db
         .select({ value: count() })
         .from(signEnvelopes)
-        .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderUserId, userId), eq(signEnvelopes.status, "failed"))),
+        .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderMembershipId, membershipId), eq(signEnvelopes.status, "failed"))),
       this.db
         .select({ value: count() })
         .from(signRecipients)
         .innerJoin(signEnvelopes, eq(signRecipients.envelopeId, signEnvelopes.id))
-        .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderUserId, userId), eq(signRecipients.status, "bounced"))),
+        .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.senderMembershipId, membershipId), eq(signRecipients.status, "bounced"))),
       this.db.query.signAuditEvents.findMany({
         where: eq(signAuditEvents.orgId, orgId),
         orderBy: (e, { desc }) => [desc(e.createdAt)],
@@ -122,14 +126,18 @@ export class SignReportsService {
 
     const senderRows = await this.db
       .select({
-        senderUserId: signEnvelopes.senderUserId,
+        senderMembershipId: signEnvelopes.senderMembershipId,
         senderName: users.name,
         sentCount: count(signEnvelopes.id),
       })
       .from(signEnvelopes)
-      .innerJoin(users, eq(signEnvelopes.senderUserId, users.id))
+      .innerJoin(
+        organizationMembers,
+        and(eq(organizationMembers.orgId, signEnvelopes.orgId), eq(organizationMembers.id, signEnvelopes.senderMembershipId)),
+      )
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(eq(signEnvelopes.orgId, orgId))
-      .groupBy(signEnvelopes.senderUserId, users.name)
+      .groupBy(signEnvelopes.senderMembershipId, users.name)
       .orderBy(sql`COUNT(${signEnvelopes.id}) DESC`)
       .limit(10);
 

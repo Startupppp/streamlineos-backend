@@ -23,7 +23,7 @@ export interface ExpenseExportFilters {
 export const expenseExportJobs = pgTable("expense_export_jobs", {
   id: uuid("id").defaultRandom().primaryKey(),
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  requestedByMembershipId: integer("requested_by_membership_id").notNull(),
+  requestedByMembershipId: integer("requested_by_membership_id"),
   status: text("status").$type<ExpenseExportJobStatus>().notNull().default("pending"),
   filters: jsonb("filters").$type<ExpenseExportFilters>().notNull(),
   idempotencyKey: text("idempotency_key").notNull(),
@@ -52,7 +52,7 @@ export const expenseExportJobs = pgTable("expense_export_jobs", {
     columns: [table.orgId, table.requestedByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "expense_export_jobs_org_requester_membership_fk",
-  }).onDelete("restrict"),
+  }).onDelete("set null"),
   check("chk_expense_export_jobs_status", sql`${table.status} IN ('pending','running','completed','failed','expired')`),
   check("chk_expense_export_jobs_counts", sql`${table.processedRows} >= 0 AND (${table.rowCount} IS NULL OR ${table.rowCount} >= 0)`),
   check("chk_expense_export_jobs_attempts", sql`${table.attempt} >= 0 AND ${table.maxAttempts} BETWEEN 1 AND 10`),

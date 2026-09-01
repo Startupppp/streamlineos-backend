@@ -352,6 +352,7 @@ describe("ReportsService.getCostCenter — costCenter filter is in SQL, not JS p
         return aggChain;
       }),
       groupBy: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
       offset: jest.fn().mockResolvedValue([]),
     };

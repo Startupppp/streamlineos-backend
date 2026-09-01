@@ -41,6 +41,7 @@ const HRMS_PHASE1_BARREL = "hrms-phase1-sql-managed.ts";
 const EXCLUDED_GLOBAL_FKS = new Set([
   "organizations.purge_scheduled_by",
   "subprocessors.updated_by",
+  "hrms_migration_profiles.changed_by_platform_user_id",
 ]);
 
 /**
@@ -227,10 +228,14 @@ function parseFile(filePath) {
 function scan() {
   const entries = [];
   for (const filePath of walkSchemaFiles(SCHEMA_DIR)) {
-    entries.push(...parseFile(filePath));
+    for (const entry of parseFile(filePath)) {
+      if (!EXCLUDED_GLOBAL_FKS.has(`${entry.table}.${entry.column}`))
+        entries.push(entry);
+    }
   }
   for (const { table, column, module } of KNOWN_RAW_SQL_ACTOR_FKS) {
-    entries.push({ table, column, jsName: column, class: "organizational", module, file: "raw-sql-migration" });
+    if (!EXCLUDED_GLOBAL_FKS.has(`${table}.${column}`))
+      entries.push({ table, column, jsName: column, class: "organizational", module, file: "raw-sql-migration" });
   }
   return entries;
 }

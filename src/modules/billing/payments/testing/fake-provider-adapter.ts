@@ -43,17 +43,18 @@ export class FakeProviderAdapter implements PaymentProviderAdapter {
 
       normalizeWebhook: (rawBody): PaymentWebhookNormalization => {
     try {
-      const raw = JSON.parse(rawBody) as { event?: unknown; payload?: unknown };
+      const raw = JSON.parse(rawBody) as { id?: unknown; event?: unknown; payload?: unknown };
       if (typeof raw.event !== "string" || !raw.payload || typeof raw.payload !== "object") {
         return { ok: false, error: "invalid_payload" };
       }
+      const providerEventId = typeof raw.id === "string" ? raw.id : undefined;
       const payload = raw.payload as Record<string, unknown>;
       const payment = payload.payment;
       const entity = payment && typeof payment === "object" && "entity" in payment
         ? (payment as { entity?: unknown }).entity
         : undefined;
       if (!entity || typeof entity !== "object") {
-        return { ok: true, eventType: raw.event, payload };
+        return { ok: true, eventType: raw.event, payload, providerEventId };
       }
       const value = entity as Record<string, unknown>;
       const normalizedEntity = Object.fromEntries(
@@ -72,7 +73,7 @@ export class FakeProviderAdapter implements PaymentProviderAdapter {
           createdAt: value.created_at,
         }).filter(([, entry]) => entry !== undefined),
       );
-      return { ok: true, eventType: raw.event, payload: { ...payload, payment: { entity: normalizedEntity } } };
+      return { ok: true, eventType: raw.event, payload: { ...payload, payment: { entity: normalizedEntity } }, providerEventId };
     } catch {
       return { ok: false, error: "invalid_json" };
     }

@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import { and, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import {
+  organizationMembers,
   projectMembers,
   projects,
   tickets,
@@ -19,7 +20,9 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { applyScope } from "../../access/apply-scope";
+import { applyMembershipScope } from "../../timesheets/core/timesheets-core-scope";
+import { canActOnPeriod } from "../../timesheets/core/lib/approval-guard";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 import { resolveTimesheetsScope } from "./timesheets-scope";
 import { formatDateOnly } from "../../../common/date";
 import { EntriesPeriodService } from "../../timesheets/core/entries-period.service";
@@ -70,17 +73,21 @@ export class TimesheetsService {
     const offset = (page - 1) * limit;
 
     const scope = await resolveTimesheetsScope(this.access, user);
+    const membershipId = actingMembershipId(user.principal);
 
     const conditions = [eq(timesheets.orgId, user.orgId)];
     if (query.ticketId)
       conditions.push(eq(timesheets.ticketId, query.ticketId));
-    conditions.push(
-      applyScope(scope, user.orgId, user.userId, {
-        ownerColumn: timesheets.userId,
-      }),
-    );
-    if (query.userId && scope === "all")
-      conditions.push(eq(timesheets.userId, query.userId));
+    conditions.push(applyMembershipScope(scope, membershipId, timesheets.userMembershipId));
+
+    if (query.userId && scope === "all") {
+      const [qMember] = await this.db
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, user.orgId), eq(organizationMembers.userId, query.userId)))
+        .limit(1);
+      if (qMember) conditions.push(eq(timesheets.userMembershipId, qMember.id));
+    }
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
     if (query.projectId)
@@ -125,7 +132,7 @@ export class TimesheetsService {
       user,
       "build:timesheets:manage",
     );
-    if (!isOwnerOrAdmin && entry.userId !== user.userId) {
+    if (!isOwnerOrAdmin && entry.userMembershipId !== actingMembershipId(user.principal)) {
       throw new ForbiddenException("You can only edit your own time entries");
     }
 
@@ -173,7 +180,7 @@ export class TimesheetsService {
       user,
       "build:timesheets:manage",
     );
-    if (!isOwnerOrAdmin && entry.userId !== user.userId) {
+    if (!isOwnerOrAdmin && entry.userMembershipId !== actingMembershipId(user.principal)) {
       throw new ForbiddenException("You can only delete your own time entries");
     }
 
@@ -197,9 +204,10 @@ export class TimesheetsService {
     });
     if (!entry) throw new NotFoundException("Time entry not found");
 
+    const actorMembId = actingMembershipId(user.principal);
     const decision = canActOnPeriod(
-      { userId: user.userId, isOrgOwner: !!user.isOrgOwner },
-      { userId: entry.userId, currentApproverId: null },
+      { membershipId: actorMembId, isOrgOwner: !!user.isOrgOwner },
+      { userMembershipId: entry.userMembershipId, currentApproverMembershipId: null },
     );
     if (!decision.allowed) throw new ForbiddenException(decision.reason);
 
@@ -222,7 +230,7 @@ export class TimesheetsService {
       .update(timesheets)
       .set({
         status: "APPROVED",
-        approvedByMembershipId: actingMembershipId(user.principal),
+        approvedByMembershipId: actorMembId,
         approvedAt: new Date(),
         updatedAt: new Date(),
       })
@@ -245,9 +253,10 @@ export class TimesheetsService {
     });
     if (!entry) throw new NotFoundException("Time entry not found");
 
+    const actorMembId = actingMembershipId(user.principal);
     const decision = canActOnPeriod(
-      { userId: user.userId, isOrgOwner: !!user.isOrgOwner },
-      { userId: entry.userId, currentApproverId: null },
+      { membershipId: actorMembId, isOrgOwner: !!user.isOrgOwner },
+      { userMembershipId: entry.userMembershipId, currentApproverMembershipId: null },
     );
     if (!decision.allowed) throw new ForbiddenException(decision.reason);
     if (entry.payrollStatus === "EXPORTED") {
@@ -279,14 +288,19 @@ export class TimesheetsService {
       );
     }
 
+    const membershipId = actingMembershipId(user.principal);
     const conditions = [
       eq(timesheets.orgId, user.orgId),
-      applyScope(scope, user.orgId, user.userId, {
-        ownerColumn: timesheets.userId,
-      }),
+      applyMembershipScope(scope, membershipId, timesheets.userMembershipId),
     ];
-    if (query.userId && scope === "all")
-      conditions.push(eq(timesheets.userId, query.userId));
+    if (query.userId && scope === "all") {
+      const [qMember] = await this.db
+        .select({ id: organizationMembers.id })
+        .from(organizationMembers)
+        .where(and(eq(organizationMembers.orgId, user.orgId), eq(organizationMembers.userId, query.userId)))
+        .limit(1);
+      if (qMember) conditions.push(eq(timesheets.userMembershipId, qMember.id));
+    }
     if (query.startDate) conditions.push(gte(timesheets.date, query.startDate));
     if (query.endDate) conditions.push(lte(timesheets.date, query.endDate));
     if (query.status) conditions.push(eq(timesheets.status, query.status));
@@ -297,14 +311,8 @@ export class TimesheetsService {
       limit: query.limit,
       offset: (query.page - 1) * query.limit,
       with: {
-        user: {
-          columns: {
-            id: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            image: true,
-          },
+        userMember: {
+          columns: { id: true, userId: true },
         },
         ticket: {
           columns: { id: true, title: true, projectId: true },
@@ -324,12 +332,19 @@ export class TimesheetsService {
 
     return this.cache.cached(
       key,
-      () => {
+      async () => {
         const conditions = [
           eq(timesheets.orgId, orgId),
           eq(timesheets.isBillable, true),
         ];
-        if (!isAdmin) conditions.push(eq(timesheets.userId, userId));
+        if (!isAdmin) {
+          const [selfMember] = await this.db
+            .select({ id: organizationMembers.id })
+            .from(organizationMembers)
+            .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+            .limit(1);
+          if (selfMember) conditions.push(eq(timesheets.userMembershipId, selfMember.id));
+        }
         if (startDate) conditions.push(gte(timesheets.date, startDate));
         if (endDate) conditions.push(lte(timesheets.date, endDate));
 
@@ -371,6 +386,8 @@ export class TimesheetsService {
     ticketId: number,
     input: LogTimeInput,
   ) {
+    const membershipId = actingMembershipId(user.principal);
+
     const ticket = await this.db.query.tickets.findFirst({
       where: and(
         eq(tickets.id, ticketId),
@@ -404,19 +421,21 @@ export class TimesheetsService {
     const workWeekStart = settings?.workWeekStart ?? 1;
 
     const entry = await this.db.transaction(async (tx) => {
-      const periodId = await this.periodService.getOrCreatePeriod(
-        user.orgId,
-        user.userId,
-        entryDate,
-        workWeekStart,
-        tx,
-      );
+      const periodId = membershipId !== null
+        ? await this.periodService.getOrCreatePeriod(
+            user.orgId,
+            membershipId,
+            entryDate,
+            workWeekStart,
+            tx,
+          )
+        : null;
 
       const [inserted] = await tx
         .insert(timesheets)
         .values({
           orgId: user.orgId,
-          userId: user.userId,
+          userMembershipId: membershipId,
           projectId: ticket.projectId,
           ticketId,
           date: entryDate,
@@ -439,5 +458,3 @@ export class TimesheetsService {
     return entry;
   }
 }
-import { canActOnPeriod } from "../../timesheets/core/lib/approval-guard";
-import { assertOrganizationActor } from "../../../common/organization/organization-actor";

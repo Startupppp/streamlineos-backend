@@ -1,5 +1,5 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import { PayrollExportService } from "../payroll-export.service";
+import { PayrollExportsReadService } from "../payroll-exports-read.service";
 import type { Db } from "../../../../db/drizzle.module";
 
 const dialect = new PgDialect();
@@ -41,7 +41,7 @@ const CURSOR = Buffer.from("2024-01-15T10:00:00.000Z\x001").toString("base64url"
 
 async function capture(cursor: string | undefined): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
-  const svc = new PayrollExportService(
+  const svc = new PayrollExportsReadService(
     buildDb(captured),
     mockCache as never,
     {} as never,

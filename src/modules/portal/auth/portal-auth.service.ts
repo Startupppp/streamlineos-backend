@@ -85,7 +85,6 @@ export class PortalAuthService {
                 organizationId: invitation.organizationId,
                 audience: invitation.audience,
                 partyContactId: invitation.partyContactId,
-                userId: null,
                 status: "ACTIVE",
                 sessionEpoch: 0,
               })

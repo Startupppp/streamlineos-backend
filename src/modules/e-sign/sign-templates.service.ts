@@ -150,7 +150,7 @@ export class SignTemplatesService {
     private readonly planLimits: PlanLimitsService,
   ) {}
 
-  async create(orgId: string, userId: string, input: CreateTemplateInput) {
+  async create(orgId: string, ownerMembershipId: number | null, input: CreateTemplateInput) {
     const [template] = await this.db
       .insert(signTemplates)
       .values({
@@ -158,7 +158,7 @@ export class SignTemplatesService {
         name: input.name,
         description: input.description,
         category: input.category,
-        ownerUserId: userId,
+        ownerMembershipId,
         templateJson: input.templateJson,
         restrictedToRoles: input.restrictedToRoles,
         restrictedToTeams: input.restrictedToTeams,
@@ -169,7 +169,6 @@ export class SignTemplatesService {
       orgId,
       envelopeId: null,
       actorType: "internal_user",
-      actorUserId: userId,
       eventType: "template_created",
       eventMessage: `Created template "${template.name}"`,
     });
@@ -177,7 +176,7 @@ export class SignTemplatesService {
   }
 
   /** Snapshots a draft envelope's documents/recipients-as-roles/fields into a reusable template. */
-  async createFromEnvelope(orgId: string, userId: string, envelopeId: number, name: string) {
+  async createFromEnvelope(orgId: string, ownerMembershipId: number | null, envelopeId: number, name: string) {
     const envelope = await this.db.query.signEnvelopes.findFirst({ where: and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)) });
     if (!envelope) throw new NotFoundException("Envelope not found");
 
@@ -240,7 +239,7 @@ export class SignTemplatesService {
     };
 
     const templateJson: Record<string, unknown> = { ...snapshot };
-    return this.create(orgId, userId, { name, templateJson, restrictedToRoles: [], restrictedToTeams: [] });
+    return this.create(orgId, ownerMembershipId, { name, templateJson, restrictedToRoles: [], restrictedToTeams: [] });
   }
 
   async update(orgId: string, templateId: number, input: UpdateTemplateInput, actor: RequestActorContext) {
@@ -269,7 +268,7 @@ export class SignTemplatesService {
         name: `${template.name} (copy)`,
         description: template.description,
         category: template.category,
-        ownerUserId: actor.userId,
+        ownerMembershipId: actor.membershipId,
         templateJson: template.templateJson,
         restrictedToRoles: template.restrictedToRoles,
         restrictedToTeams: template.restrictedToTeams,
@@ -289,7 +288,7 @@ export class SignTemplatesService {
   }
 
   /** Instantiates a draft envelope (documents + recipients + fields) from a template snapshot. */
-  async instantiate(orgId: string, userId: string, templateId: number, input: CreateEnvelopeFromTemplateInput) {
+  async instantiate(orgId: string, senderMembershipId: number | null, templateId: number, input: CreateEnvelopeFromTemplateInput) {
     const template = await this.get(orgId, templateId);
     const snapshot = parseTemplateSnapshot(template.templateJson);
     if (!snapshot.roles || snapshot.roles.length === 0) {
@@ -316,7 +315,7 @@ export class SignTemplatesService {
         allowDecline: snapshot.allowDecline,
         templateId: template.id,
         watermarkPolicyId: snapshot.watermarkPolicyId ?? undefined,
-        senderUserId: userId,
+        senderMembershipId,
         sourceModule: input.sourceModule,
         sourceEntityType: input.sourceEntityType,
         sourceEntityId: input.sourceEntityId,
@@ -344,7 +343,7 @@ export class SignTemplatesService {
           sha256Hash: doc.sha256Hash,
           conversionStatus: "not_needed",
           orderIndex: doc.orderIndex,
-          createdBy: userId,
+          createdByMembershipId: senderMembershipId,
         })
         .returning();
       documentIdByIndex.set(i, inserted.id);
@@ -403,7 +402,6 @@ export class SignTemplatesService {
       orgId,
       envelopeId: envelope.id,
       actorType: "internal_user",
-      actorUserId: userId,
       eventType: "envelope_created",
       eventMessage: `Created from template "${template.name}"`,
     });
@@ -411,7 +409,7 @@ export class SignTemplatesService {
     return envelope;
   }
 
-  async publishPublicForm(orgId: string, userId: string, templateId: number, input: PublishPublicFormInput) {
+  async publishPublicForm(orgId: string, createdByMembershipId: number | null, templateId: number, input: PublishPublicFormInput) {
     const template = await this.get(orgId, templateId);
     if (template.status !== "published") throw new ForbiddenException("Only published templates can be turned into a public form");
 
@@ -431,7 +429,7 @@ export class SignTemplatesService {
         completionRedirectUrl: input.completionRedirectUrl,
         webhookUrl: input.webhookUrl,
         embedAllowed: input.embedAllowed,
-        createdBy: userId,
+        createdByMembershipId,
       })
       .returning();
 
@@ -439,7 +437,6 @@ export class SignTemplatesService {
       orgId,
       envelopeId: null,
       actorType: "internal_user",
-      actorUserId: userId,
       eventType: "public_form_published",
       eventMessage: `Published public form at /${input.slug}`,
     });

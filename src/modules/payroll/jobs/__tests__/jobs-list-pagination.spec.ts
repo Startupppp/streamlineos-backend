@@ -3,7 +3,8 @@ import { PayrollJobsService } from "../payroll-jobs.service";
 function makeDbForList(rows: unknown[] = []) {
   const offset = jest.fn().mockResolvedValue(rows);
   const limit = jest.fn().mockReturnValue({ offset });
-  const where = jest.fn().mockReturnValue({ limit });
+  const orderBy = jest.fn().mockReturnValue({ limit });
+  const where = jest.fn().mockReturnValue({ orderBy });
   const from = jest.fn().mockReturnValue({ where });
   const select = jest.fn().mockReturnValue({ from });
   return { db: { select } as never, limit };

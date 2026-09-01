@@ -2,7 +2,7 @@ import { BadRequestException, Inject, Injectable, NotFoundException } from "@nes
 import { and, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheetBudgets, timesheets, projects } from "../../../db/schema";
+import { organizationMembers, timesheetBudgets, timesheets, projects } from "../../../db/schema";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { computeBurn } from "./lib/budget-burn";
 import type { CreateBudgetInput, UpdateBudgetInput } from "./dto/budgets.schemas";
@@ -123,6 +123,13 @@ export class BudgetsService {
   }
 
   async create(orgId: string, userId: string, input: CreateBudgetInput) {
+    const [actorMember] = await this.db
+      .select({ id: organizationMembers.id })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+    const actorMembId = actorMember?.id ?? null;
+
     if (!input.projectId && !input.clientId) {
       throw new BadRequestException("A budget must target a project or client");
     }
@@ -145,7 +152,7 @@ export class BudgetsService {
 
     await this.audit.recordWithDb({
       orgId,
-      actorUserId: userId,
+      actorMembershipId: actorMembId,
       entityType: "budget",
       entityId: row!.id.toString(),
       action: "budget.created",
@@ -156,11 +163,12 @@ export class BudgetsService {
   }
 
   async update(orgId: string, userId: string, budgetId: number, input: UpdateBudgetInput) {
-    const [existing] = await this.db
-      .select()
-      .from(timesheetBudgets)
-      .where(and(eq(timesheetBudgets.id, budgetId), eq(timesheetBudgets.orgId, orgId)));
+    const [[existing], [actorMember]] = await Promise.all([
+      this.db.select().from(timesheetBudgets).where(and(eq(timesheetBudgets.id, budgetId), eq(timesheetBudgets.orgId, orgId))),
+      this.db.select({ id: organizationMembers.id }).from(organizationMembers).where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId))).limit(1),
+    ]);
     if (!existing) throw new NotFoundException("Budget not found");
+    const actorMembId = actorMember?.id ?? null;
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (input.projectId !== undefined) updateData.projectId = input.projectId;
@@ -178,7 +186,7 @@ export class BudgetsService {
 
     await this.audit.recordWithDb({
       orgId,
-      actorUserId: userId,
+      actorMembershipId: actorMembId,
       entityType: "budget",
       entityId: budgetId.toString(),
       action: "budget.updated",
@@ -189,17 +197,18 @@ export class BudgetsService {
   }
 
   async remove(orgId: string, userId: string, budgetId: number) {
-    const [existing] = await this.db
-      .select({ id: timesheetBudgets.id })
-      .from(timesheetBudgets)
-      .where(and(eq(timesheetBudgets.id, budgetId), eq(timesheetBudgets.orgId, orgId)));
+    const [[existing], [actorMember]] = await Promise.all([
+      this.db.select({ id: timesheetBudgets.id }).from(timesheetBudgets).where(and(eq(timesheetBudgets.id, budgetId), eq(timesheetBudgets.orgId, orgId))),
+      this.db.select({ id: organizationMembers.id }).from(organizationMembers).where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId))).limit(1),
+    ]);
     if (!existing) throw new NotFoundException("Budget not found");
+    const actorMembId = actorMember?.id ?? null;
 
     await this.db.delete(timesheetBudgets).where(and(eq(timesheetBudgets.id, budgetId), eq(timesheetBudgets.orgId, orgId)));
 
     await this.audit.recordWithDb({
       orgId,
-      actorUserId: userId,
+      actorMembershipId: actorMembId,
       entityType: "budget",
       entityId: budgetId.toString(),
       action: "budget.deleted",

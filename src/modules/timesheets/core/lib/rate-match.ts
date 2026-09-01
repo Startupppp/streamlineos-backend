@@ -1,6 +1,6 @@
 export interface RateCandidate {
   projectId: number | null;
-  userId: string | null;
+  userMembershipId: number | null;
   taskId: number | null;
   clientId: number | null;
   priority: number;
@@ -11,7 +11,7 @@ export interface RateCandidate {
 
 export interface RateMatchQuery {
   projectId?: number | null;
-  userId?: string | null;
+  userMembershipId?: number | null;
   ticketId?: number | null;
   taskId?: number | null;
   clientId?: number | null;
@@ -22,7 +22,7 @@ export interface RateMatchQuery {
 export function pickBestRate<T extends RateCandidate>(rates: T[], query: RateMatchQuery): T | null {
   const candidates = rates.filter((r) => {
     if (r.projectId !== null && r.projectId !== query.projectId) return false;
-    if (r.userId !== null && r.userId !== query.userId) return false;
+    if (r.userMembershipId !== null && r.userMembershipId !== query.userMembershipId) return false;
     if (r.taskId !== null && r.taskId !== (query.taskId ?? query.ticketId)) return false;
     if (r.clientId !== null && r.clientId !== query.clientId) return false;
     if (query.date) {
@@ -37,7 +37,7 @@ export function pickBestRate<T extends RateCandidate>(rates: T[], query: RateMat
   const scored = candidates.map((r) => {
     let score = 0;
     if (r.projectId !== null) score++;
-    if (r.userId !== null) score++;
+    if (r.userMembershipId !== null) score++;
     if (r.taskId !== null) score++;
     if (r.clientId !== null) score++;
     return { r, score };

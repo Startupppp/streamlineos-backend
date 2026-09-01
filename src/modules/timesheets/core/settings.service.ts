@@ -104,7 +104,6 @@ export class SettingsService {
 
       await this.audit.record(tx, {
         orgId: u.orgId,
-        actorUserId: u.userId,
         actorMembershipId: changedByMembershipId,
         entityType: "settings",
         entityId: u.orgId,
