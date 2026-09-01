@@ -4194,6 +4194,55 @@
       "when": 1803000010039,
       "tag": "0948_ar02_drop_build_single_fks",
       "breakpoints": true
+    },
+    {
+      "idx": 728,
+      "version": "7",
+      "when": 1803000010040,
+      "tag": "0949_ar02_hr_payroll_unique_prereqs",
+      "breakpoints": true
+    },
+    {
+      "idx": 729,
+      "version": "7",
+      "when": 1803000010041,
+      "tag": "0950_ar02_hr_recruitment_composite_fks_1",
+      "breakpoints": true
+    },
+    {
+      "idx": 730,
+      "version": "7",
+      "when": 1803000010042,
+      "tag": "0951_ar02_hr_recruitment_composite_fks_2",
+      "breakpoints": true
+    },
+    {
+      "idx": 731,
+      "version": "7",
+      "when": 1803000010043,
+      "tag": "0952_ar02_hr_core_composite_fks_1",
+      "breakpoints": true
+    },
+    {
+      "idx": 732,
+      "version": "7",
+      "when": 1803000010044,
+      "tag": "0953_ar02_hr_core_composite_fks_2",
+      "breakpoints": true
+    },
+    {
+      "idx": 733,
+      "version": "7",
+      "when": 1803000010045,
+      "tag": "0954_ar02_hr_payroll_timesheet_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 734,
+      "version": "7",
+      "when": 1803000010046,
+      "tag": "0955_ar02_drop_hr_payroll_single_fks",
+      "breakpoints": true
     }
   ]
 }
