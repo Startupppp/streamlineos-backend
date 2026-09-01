@@ -100,7 +100,7 @@ const OFFER_STATUSES = [
 
 export const offerListSchema = z.object({
   status: z.enum(OFFER_STATUSES).optional(),
-  page: pageNumberField,
+  cursor: z.string().optional(),
   pageSize: pageSizeField(20, 100),
 });
 export type OfferListInput = z.infer<typeof offerListSchema>;

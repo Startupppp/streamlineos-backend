@@ -6,7 +6,9 @@ const paginationSchema = z.object({
   limit: pageSizeField(20, 100),
 });
 
-export const listEventsSchema = paginationSchema.extend({
+export const listEventsSchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(20, 100),
   eventType: z.string().optional(),
   entityType: z.string().optional(),
   entityId: z.string().optional(),

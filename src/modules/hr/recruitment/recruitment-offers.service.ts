@@ -12,7 +12,8 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { buildListResponse } from "../../../common/pagination/pagination";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { AutomationService } from "../../automation/automation.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { RecruitmentHandoffService } from "./recruitment-handoff.service";
@@ -46,9 +47,13 @@ export class RecruitmentOffersService {
   async listAllOffers(orgId: string, query: OfferListInput) {
     const conditions = [eq(candidateOffers.orgId, orgId)];
     if (query.status) conditions.push(eq(candidateOffers.offerStatus, query.status));
+    const baseWhere = and(...conditions);
+    const position = decodeCursor(query.cursor);
+    if (position)
+      conditions.push(keysetBeforeId(candidateOffers.createdAt, candidateOffers.id, position));
     const where = and(...conditions);
 
-    const [items, totalRow] = await Promise.all([
+    const [rows, totalRow] = await Promise.all([
       this.db
         .select({
           id: candidateOffers.id,
@@ -71,20 +76,23 @@ export class RecruitmentOffersService {
         .innerJoin(candidates, eq(candidateOffers.candidateId, candidates.id))
         .leftJoin(jobPostings, eq(candidateOffers.jobPostingId, jobPostings.id))
         .where(where)
-        .orderBy(desc(candidateOffers.createdAt))
-        .limit(query.pageSize)
-        .offset((query.page - 1) * query.pageSize),
+        .orderBy(desc(candidateOffers.createdAt), desc(candidateOffers.id))
+        .limit(query.pageSize + 1),
       this.db
         .select({ total: sql<number>`count(*)::int` })
         .from(candidateOffers)
-        .where(where)
+        .where(baseWhere)
         .then((rows) => rows[0] ?? { total: 0 }),
     ]);
-
-    return buildListResponse(items, Number(totalRow.total), {
-      page: query.page,
-      pageSize: query.pageSize,
-    });
+    const page = buildCursorPage(rows, query.pageSize, (offer) => ({
+      sortValue: offer.createdAt.toISOString(),
+      id: String(offer.id),
+    }));
+    return {
+      items: page.data,
+      total: Number(totalRow.total),
+      pagination: page.pagination,
+    };
   }
 
   async createOffer(orgId: string, userId: string, candidateId: number, input: CreateOfferInput) {

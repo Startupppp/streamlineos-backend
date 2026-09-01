@@ -331,7 +331,7 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
     it("scopes offers to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
       const svc = new RecruitmentOffersService(db, {} as never, {} as never, {} as never);
-      const result = await svc.listAllOffers(ATTACKER, { page: 1, pageSize: 10 });
+      const result = await svc.listAllOffers(ATTACKER, { pageSize: 10 });
       expect(result.items).toHaveLength(0);
       expect(where).toHaveBeenCalled();
       expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -340,8 +340,22 @@ describe("HR Recruitment services — cross-tenant isolation", () => {
     it("returns offers for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
       const svc = new RecruitmentOffersService(db, {} as never, {} as never, {} as never);
-      const result = await svc.listAllOffers(OWNER, { page: 1, pageSize: 10 });
+      const result = await svc.listAllOffers(OWNER, { pageSize: 10 });
       expect(result.items).toHaveLength(1);
+    });
+
+    it("trims the keyset sentinel and exposes an opaque next cursor", async () => {
+      const rows = [
+        { id: 2, orgId: OWNER, createdAt: new Date("2026-08-20T09:00:00.000Z") },
+        { id: 1, orgId: OWNER, createdAt: new Date("2026-08-20T08:00:00.000Z") },
+      ];
+      const { db } = makeDb(rows);
+      const svc = new RecruitmentOffersService(db, {} as never, {} as never, {} as never);
+      const result = await svc.listAllOffers(OWNER, { pageSize: 1 });
+
+      expect(result.items).toEqual([rows[0]]);
+      expect(result.pagination).toMatchObject({ limit: 1, hasMore: true });
+      expect(result.pagination.nextCursor).toEqual(expect.any(String));
     });
   });
 

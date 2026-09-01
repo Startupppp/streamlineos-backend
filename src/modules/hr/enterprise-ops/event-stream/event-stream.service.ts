@@ -4,6 +4,8 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { hrEventStream } from "../../../../db/schema/hr/enterprise-ops";
 import type { ListEventsInput, ExportEventsInput } from "../dto/event-stream.schemas";
+import { buildCursorPage, decodeCursor } from "../../../../common/pagination/cursor";
+import { keysetBeforeUuid } from "../../../../common/pagination/keyset";
 
 const SENSITIVE_KEYS = new Set(["salary", "gross", "net", "medical_note", "confidential"]);
 
@@ -61,8 +63,7 @@ export class EventStreamService {
   }
 
   async listEvents(orgId: string, input: ListEventsInput) {
-    const { page, limit, eventType, entityType, entityId, fromDate, toDate } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, eventType, entityType, entityId, fromDate, toDate } = input;
 
     const conditions = [eq(hrEventStream.orgId, orgId)];
     if (eventType) conditions.push(eq(hrEventStream.eventType, eventType));
@@ -70,22 +71,23 @@ export class EventStreamService {
     if (entityId) conditions.push(eq(hrEventStream.entityId, entityId));
     if (fromDate) conditions.push(gte(hrEventStream.occurredAt, new Date(fromDate)));
     if (toDate) conditions.push(lte(hrEventStream.occurredAt, new Date(toDate)));
+    const position = decodeCursor(cursor);
+    if (position)
+      conditions.push(keysetBeforeUuid(hrEventStream.occurredAt, hrEventStream.id, position));
 
     const where = and(...conditions);
 
-    const [rows, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrEventStream)
-        .where(where)
-        .orderBy(desc(hrEventStream.occurredAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrEventStream).where(where),
-    ]);
-
-    const total = totalResult[0]?.total ?? 0;
-    return { data: rows, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    const rows = await this.db
+      .select()
+      .from(hrEventStream)
+      .where(where)
+      .orderBy(desc(hrEventStream.occurredAt), desc(hrEventStream.id))
+      .limit(limit + 1);
+    const page = buildCursorPage(rows, limit, (event) => ({
+      sortValue: event.occurredAt.toISOString(),
+      id: event.id,
+    }));
+    return { data: page.data, pagination: page.pagination };
   }
 
   getDataDictionary() {
