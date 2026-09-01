@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger } from "@nestjs/common";
 import { CacheService } from "../../common/cache/cache.service";
 import { ComposioToolError } from "../integrations/core/composio.gateway";
 import { GmailMailProvider } from "./providers/gmail-mail.provider";
@@ -27,6 +27,8 @@ const CACHE_TTL_SECONDS = 45;
 
 @Injectable()
 export class MailService {
+  private readonly logger = new Logger(MailService.name);
+
   constructor(
     private readonly accounts: MailAccountsService,
     private readonly gmail: GmailMailProvider,
@@ -205,7 +207,9 @@ export class MailService {
 
       if (!query && result.messages.length > 0 && membershipId !== null) {
         this.metadata.deferUpsertBatch(acc.id, membershipId, orgId, folder, result.messages);
-        void this.checkpoints.savePosition(orgId, acc.id, folder, result.nextPageToken ?? null);
+        await this.checkpoints.savePosition(orgId, acc.id, folder, result.nextPageToken ?? null).catch((err: unknown) => {
+          this.logger.error(`checkpoint save failed orgId=${orgId} accountId=${acc.id} folder=${folder}`, err instanceof Error ? err.stack : String(err));
+        });
       }
 
       return result;

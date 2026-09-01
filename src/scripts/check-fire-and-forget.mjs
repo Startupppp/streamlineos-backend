@@ -35,6 +35,8 @@ const ROOT = new URL("../modules", import.meta.url).pathname.replace(/^\/([A-Z]:
 
 const VOID_EMIT_RE = /\bvoid\s+(?:this\.\w+\s*\.\s*emit|[\w.]+\s*\.\s*emit)\s*\(/;
 
+const VOID_SAVE_POSITION_RE = /\bvoid\s+(?:this\.\w+\s*\.\s*savePosition|[\w.]+\s*\.\s*savePosition)\s*\(/;
+
 const DISPATCH_SIGNAL_RE =
   /\b(?:eventKey|targetUserIds|NotificationDispatchService)\b/;
 
@@ -89,9 +91,13 @@ function scanFile(filePath) {
   const violations = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
-    if (!VOID_EMIT_RE.test(line)) continue;
-    const window = lines.slice(i, Math.min(i + 20, lines.length)).join("\n");
-    if (DISPATCH_SIGNAL_RE.test(window)) {
+    if (VOID_EMIT_RE.test(line)) {
+      const window = lines.slice(i, Math.min(i + 20, lines.length)).join("\n");
+      if (DISPATCH_SIGNAL_RE.test(window)) {
+        violations.push({ line: i + 1, text: line.trim() });
+      }
+    }
+    if (VOID_SAVE_POSITION_RE.test(line)) {
       violations.push({ line: i + 1, text: line.trim() });
     }
   }
@@ -160,8 +166,56 @@ if (SELF_TEST) {
     process.exit(1);
   }
 
+  const badCheckpointFile = join(dir, "bad-checkpoint.service.ts");
+  writeFileSync(
+    badCheckpointFile,
+    [
+      "import { Injectable } from '@nestjs/common';",
+      "import { MailSyncCheckpointService } from './mail-sync-checkpoint.service';",
+      "",
+      "@Injectable()",
+      "export class BadCheckpointService {",
+      "  constructor(private readonly checkpoints: MailSyncCheckpointService) {}",
+      "",
+      "  async doWork(orgId: string, accountId: number, folder: string) {",
+      "    void this.checkpoints.savePosition(orgId, accountId, folder, null);",
+      "  }",
+      "}",
+    ].join("\n"),
+  );
+
+  const goodCheckpointFile = join(dir, "good-checkpoint.service.ts");
+  writeFileSync(
+    goodCheckpointFile,
+    [
+      "import { Injectable } from '@nestjs/common';",
+      "import { MailSyncCheckpointService } from './mail-sync-checkpoint.service';",
+      "",
+      "@Injectable()",
+      "export class GoodCheckpointService {",
+      "  constructor(private readonly checkpoints: MailSyncCheckpointService) {}",
+      "",
+      "  async doWork(orgId: string, accountId: number, folder: string) {",
+      "    await this.checkpoints.savePosition(orgId, accountId, folder, null);",
+      "  }",
+      "}",
+    ].join("\n"),
+  );
+
+  const badCheckpointViolations = scanFile(badCheckpointFile);
+  if (badCheckpointViolations.length === 0) {
+    console.error("SELF-TEST FAILED: gate did not detect the bad checkpoint fixture");
+    process.exit(1);
+  }
+
+  const goodCheckpointViolations = scanFile(goodCheckpointFile);
+  if (goodCheckpointViolations.length !== 0) {
+    console.error("SELF-TEST FAILED: gate produced false-positive on the good checkpoint fixture");
+    process.exit(1);
+  }
+
   console.log(
-    `SELF-TEST PASSED: detected ${badViolations.length} violation(s) in bad fixture, 0 in good fixture`,
+    `SELF-TEST PASSED: detected ${badViolations.length} violation(s) in bad emit fixture, 0 in good emit fixture; detected ${badCheckpointViolations.length} violation(s) in bad checkpoint fixture, 0 in good checkpoint fixture`,
   );
   process.exit(0);
 }
