@@ -24,7 +24,7 @@ function makeChain(rows: unknown[] = []): ChainMethods {
 
 function makeCountChain(value: number): ChainMethods {
   const chain: ChainMethods = {};
-  for (const method of ["from", "where"]) {
+  for (const method of ["from", "innerJoin", "where"]) {
     chain[method] = jest.fn().mockImplementation(
       () => (method === "where" ? Promise.resolve([{ cnt: value }]) : chain),
     );

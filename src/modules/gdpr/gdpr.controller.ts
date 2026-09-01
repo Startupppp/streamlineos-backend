@@ -95,6 +95,8 @@ export class GdprController {
     if (!user.orgId) throw new ForbiddenException("An active organization is required");
     const scope: DataScope = req.rbacScope ?? "none";
     if (scope === "none") throw new ForbiddenException("Export scope denies access");
+    if (personId !== user.userId && scope !== "all")
+      throw new ForbiddenException("Exporting another person's data requires organisation-wide scope");
     return this.gdprExport.create(user.userId, user.orgId, personId, body.idempotencyKey);
   }
 

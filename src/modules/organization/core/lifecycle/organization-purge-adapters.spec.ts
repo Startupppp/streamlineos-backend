@@ -1,9 +1,14 @@
 jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: jest.fn(),
 }));
+jest.mock("../../../storage/storage-key-catalog", () => ({
+  enumerateFileKeyColumns: jest.fn(),
+  collectOrgFileKeys: jest.fn(),
+}));
 
 import { PURGE_ADAPTER_REGISTRY } from "./organization-purge-adapters";
 import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+import { collectOrgFileKeys, enumerateFileKeyColumns } from "../../../storage/storage-key-catalog";
 
 const ORG_A = "org-aaaaaaaa-0000-0000-0000-000000000001";
 const ORG_B = "org-bbbbbbbb-0000-0000-0000-000000000002";
@@ -73,6 +78,27 @@ describe("PURGE_ADAPTER_REGISTRY — static adapters", () => {
   it("backups → FAILED", async () => {
     const result = await PURGE_ADAPTER_REGISTRY.backups.confirm(ORG_A, PURGE_JOB, FAKE_DB);
     expect(result.state).toBe("FAILED");
+  });
+});
+
+describe("PURGE_ADAPTER_REGISTRY — object_storage", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("fails when purge bookkeeping cannot be recorded even if no keys remain", async () => {
+    (enumerateFileKeyColumns as jest.Mock).mockResolvedValue([]);
+    (collectOrgFileKeys as jest.Mock)
+      .mockResolvedValueOnce(["documents/example.pdf"])
+      .mockResolvedValueOnce([]);
+    (runInNewTenantTransaction as jest.Mock).mockRejectedValueOnce(new Error("RLS denied"));
+
+    const storage = { deleteFile: jest.fn() } as never;
+    const result = await PURGE_ADAPTER_REGISTRY.object_storage.confirm(ORG_A, PURGE_JOB, FAKE_DB, storage);
+
+    expect(result.state).toBe("FAILED");
+    expect(result.detail).toMatch(/failed keys/i);
+    expect(storage.deleteFile).not.toHaveBeenCalled();
   });
 });
 

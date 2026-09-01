@@ -19,18 +19,25 @@ describe("NotificationsReadService — unread counter watermark", () => {
 
   function makeDb(watermarkId: number): { db: Db; capturedCountWhere: unknown[] } {
     const capturedCountWhere: unknown[] = [];
-    let callIndex = 0;
     const db = {
-      select: jest.fn().mockImplementation(() => ({
-        from: jest.fn().mockImplementation(() => ({
+      select: jest.fn().mockImplementation((fields: Record<string, unknown>) => {
+        const fieldNames = Object.keys(fields ?? {});
+        const isWatermark = fieldNames.includes("lastReadId");
+        const isCount = fieldNames.includes("count");
+        const rows = isWatermark
+          ? (watermarkId > 0 ? [{ lastReadId: watermarkId }] : [])
+          : isCount
+            ? [{ count: 3 }]
+            : [{ id: 7 }];
+        return {
+          from: jest.fn().mockImplementation(() => ({
           where: jest.fn().mockImplementation((arg: unknown) => {
-            callIndex++;
-            if (callIndex === 1) return Promise.resolve(watermarkId > 0 ? [{ lastReadId: watermarkId }] : []);
-            capturedCountWhere.push(arg);
-            return Promise.resolve([{ count: 3 }]);
+            if (isCount) capturedCountWhere.push(arg);
+            return Promise.resolve(rows);
           }),
-        })),
-      })),
+          })),
+        };
+      }),
     } as unknown as Db;
     return { db, capturedCountWhere };
   }

@@ -12,9 +12,13 @@ export const createGrantSchema = z.object({
   operatorUserId: z.string().min(1).max(256),
   orgId: z.string().min(1).max(256),
   incidentRef: z.string().min(1).max(500),
+  reason: z.string().trim().min(3).max(1000),
   scope: operatorScopeSchema,
   expiresAt: z.string().datetime(),
-}).strict();
+}).strict().refine(
+  (value) => value.reason.trim().toLowerCase() !== value.incidentRef.trim().toLowerCase(),
+  { message: "Reason must be distinct from incident reference", path: ["reason"] },
+);
 
 export type CreateGrantInput = z.infer<typeof createGrantSchema>;
 

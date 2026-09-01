@@ -78,12 +78,13 @@ export class PlatformOperatorAccessController {
         operatorUserId: body.operatorUserId,
         orgId: body.orgId,
         incidentRef: body.incidentRef,
+        reason: body.reason,
         grantedBy: requesterId,
         scope: body.scope,
         expiresAt: new Date(body.expiresAt),
       },
       ipOf(req),
-      { incidentRef: body.incidentRef, scope: body.scope, requestedBy: requesterId },
+      { incidentRef: body.incidentRef, reason: body.reason, scope: body.scope, requestedBy: requesterId },
     );
     return { grantId };
   }
@@ -102,17 +103,10 @@ export class PlatformOperatorAccessController {
   ): Promise<{ ok: true }> {
     assertInternalSecret(secret, this.config?.INTERNAL_API_SECRET);
     const approverId = humanOperatorId(user);
-    const { orgId, operatorUserId } = await this.operatorAccess.approveGrant(
+    await this.operatorAccess.approveGrant(
       grantId,
       approverId,
-    );
-    await this.operatorAccess.recordAccess(
-      grantId,
-      approverId,
-      orgId,
-      "grant.approved",
       ipOf(req),
-      { operatorUserId },
     );
     return { ok: true };
   }
@@ -131,7 +125,7 @@ export class PlatformOperatorAccessController {
   ): Promise<{ ok: true }> {
     assertInternalSecret(secret, this.config?.INTERNAL_API_SECRET);
     humanOperatorId(user);
-    await this.operatorAccess.rejectGrant(grantId, body.reason);
+    await this.operatorAccess.rejectGrant(grantId, body.reason, humanOperatorId(user), undefined);
     return { ok: true };
   }
 
@@ -164,7 +158,7 @@ export class PlatformOperatorAccessController {
   ): Promise<{ ok: true }> {
     assertInternalSecret(secret, this.config?.INTERNAL_API_SECRET);
     humanOperatorId(user);
-    await this.operatorAccess.revokeGrant(grantId, body.reason);
+    await this.operatorAccess.revokeGrant(grantId, body.reason, humanOperatorId(user), undefined);
     return { ok: true };
   }
 

@@ -89,6 +89,11 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
       "credential-bearing welcome and magic-link workflow",
     ),
     EXEMPT(
+      "modules/hr/time/attendance-email-report.service.ts",
+      DeliveryClass.OPERATOR_ALERT,
+      "authorized attendance report delivery to active organization members",
+    ),
+    EXEMPT(
       "modules/hr/interviews/hr-interview-booking.service.ts",
       DeliveryClass.WORKFLOW_EXTERNAL,
       "candidate/interviewer scheduling workflow with external recipients",

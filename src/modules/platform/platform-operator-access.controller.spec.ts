@@ -79,6 +79,7 @@ describe("PlatformOperatorAccessController identity integrity", () => {
         operatorUserId: "support-op",
         orgId: "customer-org",
         incidentRef: "INC-1",
+        reason: "Investigate customer incident",
         scope: "read_customer_data",
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
       },
@@ -101,15 +102,8 @@ describe("PlatformOperatorAccessController identity integrity", () => {
       httpRequest(),
     );
 
-    expect(approveGrant).toHaveBeenCalledWith("grant-1", "approver-admin");
-    expect(recordAccess).toHaveBeenCalledWith(
-      "grant-1",
-      "approver-admin",
-      "customer-org",
-      "grant.approved",
-      "10.0.0.7",
-      { operatorUserId: "support-op" },
-    );
+    expect(approveGrant).toHaveBeenCalledWith("grant-1", "approver-admin", "10.0.0.7");
+    expect(recordAccess).not.toHaveBeenCalled();
   });
 
   it.each(["create", "approve"] as const)("rejects a service principal on %s", async (operation) => {
@@ -121,6 +115,7 @@ describe("PlatformOperatorAccessController identity integrity", () => {
             operatorUserId: "support-op",
             orgId: "customer-org",
             incidentRef: "INC-1",
+            reason: "Investigate customer incident",
             scope: "read_customer_data",
             expiresAt: new Date(Date.now() + 60_000).toISOString(),
           },
@@ -142,6 +137,7 @@ describe("PlatformOperatorAccessController identity integrity", () => {
           operatorUserId: "support-op",
           orgId: "customer-org",
           incidentRef: "INC-1",
+          reason: "Investigate customer incident",
           scope: "read_customer_data",
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
         },

@@ -55,6 +55,21 @@ const CHECKS = [
     args: ["src/scripts/drill-storage-purge.mjs", "--self-test"],
   },
   {
+    id: "export-drill-contract",
+    command: "drill-export --self-test",
+    args: ["src/scripts/drill-export.mjs", "--self-test"],
+  },
+  {
+    id: "legal-hold-drill-contract",
+    command: "drill-legal-hold --self-test",
+    args: ["src/scripts/drill-legal-hold.mjs", "--self-test"],
+  },
+  {
+    id: "pitr-drill-contract",
+    command: "drill-pitr-restore --self-test",
+    args: ["src/scripts/drill-pitr-restore.mjs", "--self-test"],
+  },
+  {
     id: "retention",
     command: "check-retention-coverage --self-test",
     args: ["src/scripts/check-retention-coverage.mjs", "--self-test"],

@@ -3,6 +3,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { PlatformOperatorAccessService } from "./platform-operator-access.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -26,6 +27,7 @@ async function buildService(db: unknown): Promise<PlatformOperatorAccessService>
     providers: [
       PlatformOperatorAccessService,
       { provide: DRIZZLE, useValue: db },
+      { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
     ],
   }).compile();
   return module.get(PlatformOperatorAccessService);
@@ -42,6 +44,7 @@ describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
           operatorUserId: "op-alice",
           orgId: "org-1",
           incidentRef: "INC-100",
+          reason: "Investigate customer incident",
           grantedBy: "op-bob",
           scope: "read_customer_data",
           expiresAt: new Date(Date.now() - 1),
@@ -61,6 +64,7 @@ describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
           operatorUserId: "op-alice",
           orgId: "org-1",
           incidentRef: "INC-100",
+          reason: "Investigate customer incident",
           grantedBy: "op-alice",
           scope: "read_customer_data",
           expiresAt: tooFar,
@@ -73,7 +77,8 @@ describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
     it("accepts a grant expiring within 4 hours", async () => {
       const grantInsert = { values: jest.fn().mockReturnThis(), returning: jest.fn().mockResolvedValue([{ grantId: "g1" }]) };
       const auditInsert = { values: jest.fn().mockResolvedValue(undefined) };
-      const tx = { execute: jest.fn().mockResolvedValue([]), insert: jest.fn().mockReturnValueOnce(grantInsert).mockReturnValueOnce(auditInsert) };
+      const membership = { from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(), limit: jest.fn().mockResolvedValue([{ userId: "op-alice" }]) };
+      const tx = { execute: jest.fn().mockResolvedValue([]), select: jest.fn().mockReturnValue(membership), insert: jest.fn().mockReturnValueOnce(grantInsert).mockReturnValueOnce(auditInsert) };
       const db = { transaction: jest.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx)) };
       const svc = await buildService(db);
 
@@ -82,6 +87,7 @@ describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
         operatorUserId: "op-alice",
         orgId: "org-1",
         incidentRef: "INC-100",
+        reason: "Investigate customer incident",
         grantedBy: "op-alice",
         scope: "read_customer_data",
         expiresAt: within4h,
@@ -141,7 +147,7 @@ describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
       const selectChain = {
         from: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue([{ grantId: "grant-1" }]),
+        limit: jest.fn().mockResolvedValue([{ grantId: "grant-1", orgId: "org-1", operatorUserId: "op-alice" }]),
       };
       const updateChain = {
         set: jest.fn().mockReturnThis(),
@@ -151,10 +157,13 @@ describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
       const db = {
         select: jest.fn().mockReturnValue(selectChain),
         update: jest.fn().mockReturnValue(updateChain),
+        insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
       };
+      const transaction = { execute: jest.fn().mockResolvedValue([]), update: db.update, insert: db.insert };
+      db.transaction = jest.fn(async (callback: (value: typeof transaction) => Promise<unknown>) => callback(transaction));
       const svc = await buildService(db);
 
-      await svc.revokeGrant("grant-1", "no longer needed");
+      await svc.revokeGrant("grant-1", "no longer needed", "op-bob");
 
       const setCall = updateChain.set.mock.calls[0]?.[0] as Record<string, unknown>;
       expect(setCall.status).toBe("revoked");

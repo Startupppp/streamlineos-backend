@@ -1,13 +1,12 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq, lt, lte } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
-import { gdprExportJobs } from "../../db/schema";
+import { gdprExportJobs, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { StorageService, type FileStreamResult } from "../storage/storage.service";
@@ -67,6 +66,19 @@ export class GdprExportService {
         throw new BadRequestException("Idempotency-Key was used for a different export request");
 
       if (isNew) {
+        const [membership] = await tx
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.userId, subjectUserId),
+            ),
+          )
+          .limit(1);
+        if (!membership)
+          throw new NotFoundException("GDPR export subject not found in organization");
+
         await OutboxWriter.emit(tx, {
           eventId: randomUUID(),
           organizationId: orgId,

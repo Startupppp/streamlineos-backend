@@ -193,7 +193,7 @@ export const PURGE_ADAPTER_REGISTRY: Record<PurgeAdapter, PurgeAdapterDef> = {
         };
       }
 
-      if (remaining.length === 0)
+      if (failedKeys.length === 0 && remaining.length === 0)
         return {
           state: "CONFIRMED",
           detail: `All ${keys.length} object-storage key(s) deleted and verified absent`,

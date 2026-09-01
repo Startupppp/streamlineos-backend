@@ -174,6 +174,7 @@ export class RetentionService {
     if (input.type === "correction" && !input.reason?.trim()) {
       throw new BadRequestException("A correction request must describe the field and corrected value");
     }
+    await this.assertSubjectInOrg(orgId, input.subjectUserId);
     const [req] = await this.db
       .insert(hrDataRequests)
       .values({
@@ -258,6 +259,8 @@ export class RetentionService {
     if (existing.status !== "approved") {
       throw new BadRequestException("Request must be approved before processing");
     }
+
+    await this.assertSubjectInOrg(orgId, existing.subjectUserId);
 
     // A correction request is only a validated intake record today. Never mark
     // it processing/completed without an implementation that applies and

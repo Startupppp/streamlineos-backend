@@ -21,7 +21,9 @@ describe("NotificationPreferenceRulesService — cross-tenant isolation", () => 
     const allWhereArgs: unknown[] = [];
     const where = jest.fn().mockImplementation((arg: unknown) => {
       allWhereArgs.push(arg);
-      return Promise.resolve(rows);
+      return Object.assign(Promise.resolve(rows), {
+        limit: jest.fn().mockResolvedValue(rows),
+      });
     });
     const db = { select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }) } as unknown as Db;
     return { db, allWhereArgs };
@@ -31,7 +33,7 @@ describe("NotificationPreferenceRulesService — cross-tenant isolation", () => 
     const { db, allWhereArgs } = makeDb([]);
     const svc = new NotificationPreferenceRulesService(db);
 
-    await svc.list(ATTACKER_ORG, "user-1");
+    await svc.list(ATTACKER_ORG, "user-1", 7);
 
     expect(allWhereArgs.length).toBeGreaterThan(0);
     const allVals = allWhereArgs.flatMap(w => sqlValues(w));
@@ -42,7 +44,7 @@ describe("NotificationPreferenceRulesService — cross-tenant isolation", () => 
     const { db } = makeDb([{ id: 1, orgId: OWNER_ORG }]);
     const svc = new NotificationPreferenceRulesService(db);
 
-    const result = await svc.list(OWNER_ORG, "user-1");
+    const result = await svc.list(OWNER_ORG, "user-1", 7);
 
     expect(result).toHaveLength(1);
   });

@@ -22,6 +22,13 @@ describe("NotificationsLifecycleService — cross-tenant isolation", () => {
     const capturedWhereArgs: unknown[] = [];
     const returning = jest.fn().mockResolvedValue(returnRows);
     const db = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([{ id: 7 }]),
+          }),
+        }),
+      }),
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockImplementation((arg: unknown) => {

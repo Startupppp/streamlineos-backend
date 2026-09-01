@@ -8,8 +8,10 @@ import { PlatformOperatorAccessController } from "./platform-operator-access.con
 import { OperatorSessionGuard } from "./operator-session.guard";
 import { PlatformOperatorCustomerController } from "./platform-operator-customer.controller";
 import { PlatformOperatorCustomerService } from "./platform-operator-customer.service";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
+  imports: [NotificationsModule],
   controllers: [
     PlatformController,
     PlatformOperatorAccessController,

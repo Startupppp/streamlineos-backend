@@ -30,12 +30,14 @@ const capturedSelect: CapturedSelect = { whereArgs: [] };
 const mockTx = {
   select: jest.fn().mockImplementation(() => ({
     from: jest.fn().mockImplementation(() => ({
+      innerJoin: jest.fn().mockImplementation(() => ({
       where: jest.fn().mockImplementation((arg: unknown) => {
         capturedSelect.whereArgs.push(arg);
         return {
           limit: jest.fn().mockResolvedValue([]),
         };
       }),
+      })),
     })),
   })),
   insert: jest.fn().mockReturnValue({

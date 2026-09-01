@@ -90,7 +90,7 @@ async function buildService(db: unknown, storage: Partial<StorageService> = {}) 
 describe("GdprExportService.create — Item A: async job creation", () => {
   it("inserts a pending job and fires an outbox event in one transaction", async () => {
     const insertedJob = { ...BASE_JOB, status: "pending" };
-    const txMock = makeTx({ insertRows: [insertedJob] });
+    const txMock = makeTx({ insertRows: [insertedJob], selectRows: [{ id: 1 }] });
     const db = {
       transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(txMock)),
     };
@@ -126,6 +126,25 @@ describe("GdprExportService.create — Item A: async job creation", () => {
 
     expect(txMock.insert).toHaveBeenCalledTimes(1);
     expect(result.id).toBe(existingJob.id);
+  });
+
+  it("rejects a new export when the subject is not a member of the requested organization", async () => {
+    const insertedJob = {
+      ...BASE_JOB,
+      status: "pending",
+      subjectUserId: "user-outside-org",
+      requestHash: computeHash("org-1", "user-outside-org"),
+    };
+    const txMock = makeTx({ insertRows: [insertedJob], selectRows: [] });
+    const db = {
+      transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(txMock)),
+    };
+    const svc = await buildService(db);
+
+    await expect(
+      svc.create("user-requester", "org-1", "user-outside-org", "idempotency-key-1"),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(txMock.insert).toHaveBeenCalledTimes(1);
   });
 
   it("rejects if idempotency key was used with a different requester", async () => {

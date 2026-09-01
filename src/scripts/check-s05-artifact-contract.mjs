@@ -18,6 +18,22 @@ const backendDir = resolve(scriptDir, "../..");
 const repoDir = resolve(backendDir, "..");
 const templatePath = resolve(repoDir, "architecture-refactor/decisions/README.md");
 const bundlePath = resolve(backendDir, "src/scripts/evidence/s05-evidence-bundle.json");
+const REQUIRED_CHECKS = [
+  "compliance",
+  "purge-erasure",
+  "purge-storage",
+  "export-drill-contract",
+  "legal-hold-drill-contract",
+  "pitr-drill-contract",
+  "retention",
+  "immutability",
+  "audit-log-privileges-contract",
+  "migration-chain",
+  "migration-discipline",
+  "migration-ledger",
+  "migration-rollback",
+  "artifact-contract",
+];
 
 function assert(condition, message) {
   if (!condition) throw new Error(`SELF-TEST FAIL: ${message}`);
@@ -68,12 +84,26 @@ function validateBundle(bundle) {
   assert(typeof bundle.claimRefusal === "string" && bundle.claimRefusal.length > 20, "claim refusal is present");
   assert(bundle.deployment && typeof bundle.deployment === "object", "deployment metadata is present");
   assert(bundle.checks && Array.isArray(bundle.checks), "check results are present");
+  const checkIds = bundle.checks.map((check) => check?.id);
+  assert(checkIds.length === REQUIRED_CHECKS.length, "check set has no missing or unexpected records");
+  assert(new Set(checkIds).size === checkIds.length, "check IDs are unique");
+  for (const checkId of REQUIRED_CHECKS) assert(checkIds.includes(checkId), `required check is present: ${checkId}`);
+  for (const check of bundle.checks) {
+    assert(typeof check.id === "string" && check.id.length > 0, "check ID is present");
+    assert(typeof check.command === "string" && check.command.length > 0, `check command is present: ${check.id}`);
+    assert(typeof check.startedAt === "string" && typeof check.endedAt === "string", `check timestamps are present: ${check.id}`);
+    assert(Number.isInteger(check.exitCode), `check exit code is numeric: ${check.id}`);
+    assert(check.exitCode >= 0, `check exit code is non-negative: ${check.id}`);
+    assert(typeof check.output === "string", `check output is present: ${check.id}`);
+  }
   assert(bundle.summary && typeof bundle.summary === "object", "check summary is present");
   assert(Number.isInteger(bundle.summary.total), "summary total is numeric");
   assert(Number.isInteger(bundle.summary.passed), "summary passed is numeric");
   assert(Number.isInteger(bundle.summary.failed), "summary failed is numeric");
   assert(bundle.summary.total === bundle.checks.length, "summary total matches checks");
   assert(bundle.summary.passed + bundle.summary.failed === bundle.summary.total, "summary counts reconcile");
+  assert(bundle.summary.passed === bundle.checks.filter((check) => check.exitCode === 0).length, "passed count matches exit codes");
+  assert(bundle.summary.failed === bundle.checks.filter((check) => check.exitCode !== 0).length, "failed count matches exit codes");
   assert(Array.isArray(bundle.artifactHashes), "artifact hashes are present");
   for (const artifact of bundle.artifactHashes) {
     assert(typeof artifact.path === "string" && artifact.path.length > 0, "artifact path is present");
@@ -83,7 +113,8 @@ function validateBundle(bundle) {
 
 function main() {
   validateApprovalTemplate();
-  if (existsSync(bundlePath)) validateBundle(JSON.parse(readFileSync(bundlePath, "utf8")));
+  assert(existsSync(bundlePath), "evidence bundle exists");
+  validateBundle(JSON.parse(readFileSync(bundlePath, "utf8")));
   process.stdout.write("S05 approval/evidence artifact contract passed.\n");
 }
 
@@ -93,4 +124,3 @@ try {
   process.stderr.write(`${error?.stack ?? error}\n`);
   process.exitCode = 1;
 }
-

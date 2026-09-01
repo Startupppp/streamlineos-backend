@@ -1,6 +1,9 @@
 import { ForbiddenException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { PlatformOperatorAccessService } from "./platform-operator-access.service";
+
+const notifications = { emit: jest.fn() } as unknown as NotificationDispatchService;
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -34,7 +37,7 @@ describe("PlatformOperatorAccessService — cross-org isolation", () => {
 
   it("assertGrant throws ForbiddenException when operator has no grant for the requested org — cross-org isolation", async () => {
     const { db, where } = makeDb(null);
-    const svc = new PlatformOperatorAccessService(db);
+    const svc = new PlatformOperatorAccessService(db, notifications);
 
     await expect(svc.assertGrant(OPERATOR, ORG_B, SCOPE)).rejects.toThrow(ForbiddenException);
 
@@ -47,7 +50,7 @@ describe("PlatformOperatorAccessService — cross-org isolation", () => {
   it("assertGrant scopes to org and operator — grant for org A does not satisfy org B check", async () => {
     const grantForOrgA = { grantId: "grant-1" };
     const { db, where } = makeDb(null);
-    const svc = new PlatformOperatorAccessService(db);
+    const svc = new PlatformOperatorAccessService(db, notifications);
 
     await expect(svc.assertGrant(OPERATOR, ORG_B, SCOPE)).rejects.toThrow(ForbiddenException);
 
@@ -58,7 +61,7 @@ describe("PlatformOperatorAccessService — cross-org isolation", () => {
 
   it("listGrants scopes to the requested org — cross-org isolation", async () => {
     const { db, where } = makeDb([]);
-    const svc = new PlatformOperatorAccessService(db);
+    const svc = new PlatformOperatorAccessService(db, notifications);
 
     await svc.listGrants(ORG_A);
 
@@ -79,7 +82,7 @@ describe("PlatformOperatorAccessService — cross-org isolation", () => {
     orderBy.mockReturnValue({ limit });
 
     const db = { select: jest.fn().mockReturnValue(builder) } as unknown as Db;
-    const svc = new PlatformOperatorAccessService(db);
+    const svc = new PlatformOperatorAccessService(db, notifications);
 
     await svc.listLogs(ORG_A);
 

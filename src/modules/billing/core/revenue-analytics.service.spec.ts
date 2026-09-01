@@ -9,8 +9,9 @@ import { PLAN_PRICES_PAISE } from "./plan-entitlements.constants";
 
 interface DbSeed {
   claimable?: boolean;
-  subscriptionRows?: Array<{ status: string; plan: string; count: number }>;
-  movementRows?: Array<{ type: string; mrr: number; count: number; recentMrr: number }>;
+  allowedOrgId?: string;
+  subscriptionRows?: Array<{ orgId?: string; status: string; plan: string; count: number }>;
+  movementRows?: Array<{ orgId?: string; type: string; mrr: number; count: number; recentMrr: number }>;
   revenueInsertRejects?: Error;
 }
 
@@ -55,14 +56,19 @@ function makeDb(seed: DbSeed = {}) {
   const select = () => ({
     from: (table: unknown) => {
       const all = table === subscriptions ? (seed.subscriptionRows ?? []) : (seed.movementRows ?? []);
-      const active = all.filter((row) => !("status" in row) || row.status === "ACTIVE");
-      const resolved = Promise.resolve(all);
-      return {
-        groupBy: () => resolved,
-        where: () => ({ groupBy: () => Promise.resolve(active) }),
+      const scoped = all.filter(
+        (row) =>
+          !("orgId" in row) || row.orgId === seed.allowedOrgId,
+      );
+      const active = scoped.filter((row) => !("status" in row) || row.status === "ACTIVE");
+      const resolved = Promise.resolve(scoped);
+      const query = {
+        groupBy: (...columns: unknown[]) => Promise.resolve(columns.length === 1 ? active : scoped),
+        where: () => query,
         orderBy: () => resolved,
         then: (resolve: (value: typeof all) => unknown) => resolved.then(resolve),
       };
+      return query;
     },
   });
 
@@ -239,7 +245,7 @@ describe("reported figures reconcile with subscription state", () => {
     });
     const { service } = await build(db);
 
-    const metrics = await service.getMetrics();
+    const metrics = await service.getMetrics("org1");
 
     expect(metrics.mrr).toBe(PLAN_PRICES_PAISE.STARTER * 2 + PLAN_PRICES_PAISE.PROFESSIONAL);
     expect(metrics.activeSubscriptions).toBe(3);
@@ -250,7 +256,7 @@ describe("reported figures reconcile with subscription state", () => {
     const db = makeDb({ subscriptionRows });
     const { service } = await build(db);
 
-    const metrics = await service.getMetrics();
+    const metrics = await service.getMetrics("org1");
 
     expect(metrics.mrr).toBe(PLAN_PRICES_PAISE.STARTER * 2 + PLAN_PRICES_PAISE.PROFESSIONAL);
     expect(metrics.mrr).toBeLessThan(PLAN_PRICES_PAISE.ENTERPRISE * 3);
@@ -260,7 +266,7 @@ describe("reported figures reconcile with subscription state", () => {
     const db = makeDb({ subscriptionRows });
     const { service } = await build(db);
 
-    await expect(service.reconcile()).resolves.toEqual({
+    await expect(service.reconcile("org1")).resolves.toEqual({
       reportedMrr: PLAN_PRICES_PAISE.STARTER * 2 + PLAN_PRICES_PAISE.PROFESSIONAL,
       subscriptionMrr: PLAN_PRICES_PAISE.STARTER * 2 + PLAN_PRICES_PAISE.PROFESSIONAL,
       reconciles: true,
@@ -270,6 +276,26 @@ describe("reported figures reconcile with subscription state", () => {
   it("reports zero rather than dividing by nothing when there are no subscriptions", async () => {
     const { service } = await build(makeDb({ subscriptionRows: [], movementRows: [] }));
 
-    await expect(service.getMetrics()).resolves.toMatchObject({ mrr: 0, arpu: 0, churnRate: 0 });
+    await expect(service.getMetrics("org1")).resolves.toMatchObject({ mrr: 0, arpu: 0, churnRate: 0 });
+  });
+
+  it("keeps subscription and movement aggregates inside the requested organization", async () => {
+    const db = makeDb({
+      allowedOrgId: "org-a",
+      subscriptionRows: [
+        { orgId: "org-a", status: "ACTIVE", plan: "STARTER", count: 1 },
+        { orgId: "org-b", status: "ACTIVE", plan: "ENTERPRISE", count: 9 },
+      ],
+      movementRows: [
+        { orgId: "org-a", type: "new_subscription", mrr: 100, count: 1, recentMrr: 100 },
+        { orgId: "org-b", type: "new_subscription", mrr: 900, count: 9, recentMrr: 900 },
+      ],
+    });
+    const { service } = await build(db);
+
+    await expect(service.getMetrics("org-a")).resolves.toMatchObject({
+      mrr: PLAN_PRICES_PAISE.STARTER,
+      activeSubscriptions: 1,
+    });
   });
 });

@@ -22,10 +22,10 @@ function makeChain(rows: unknown[] = []): object {
   });
 }
 
-function makeFrom(allWhereArgs: unknown[]): object {
+function makeFrom(allWhereArgs: unknown[], rows: unknown[] = []): object {
   const where = jest.fn().mockImplementation((arg: unknown) => {
     allWhereArgs.push(arg);
-    return makeChain();
+    return makeChain(rows);
   });
   const self: Record<string, jest.Mock> = { where };
   self["innerJoin"] = jest.fn().mockImplementation(() => makeFrom(allWhereArgs));
@@ -37,12 +37,17 @@ describe("NotificationsReadService — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker";
   const OWNER_ORG = "org-owner";
 
-  function makeDb(): { db: Db; allWhereArgs: unknown[] } {
+function makeDb(): { db: Db; allWhereArgs: unknown[] } {
     const allWhereArgs: unknown[] = [];
+    let selectCalls = 0;
     const db = {
-      select: jest.fn().mockImplementation(() => ({
-        from: jest.fn().mockImplementation(() => makeFrom(allWhereArgs)),
-      })),
+      select: jest.fn().mockImplementation(() => {
+        selectCalls += 1;
+        const rows = selectCalls <= 4 ? [{ id: 7, lastReadId: 0 }] : [];
+        return {
+          from: jest.fn().mockImplementation(() => makeFrom(allWhereArgs, rows)),
+        };
+      }),
     } as unknown as Db;
     return { db, allWhereArgs };
   }

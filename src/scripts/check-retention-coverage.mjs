@@ -84,10 +84,40 @@ const RETENTION_MATRIX = {
     worker: "CronNotificationRetentionService",
     notes: "90-day body purge, 13-month record delete.",
   },
+  documents: {
+    decision: "RETAIN-BOUNDED",
+    worker: "CronHrRetentionService (via hr_retention_policies, recordType=document)",
+    notes: "Policy-driven deletion or anonymization with legal-hold exclusion and bounded batches.",
+  },
+  helpdesk_tickets: {
+    decision: "PENDING-DECISION",
+    worker: null,
+    notes: "No safe automated retention worker exists; ticket and comment retention requires an approved policy and dependency review.",
+  },
+  performance_reviews: {
+    decision: "PENDING-DECISION",
+    worker: null,
+    notes: "No safe automated retention worker exists; review and cycle dependencies require an approved policy before deletion.",
+  },
+  mail_message_metadata: {
+    decision: "PENDING-DECISION",
+    worker: null,
+    notes: "Synced mailbox metadata has no approved retention worker; account, thread, and provider synchronization dependencies require review.",
+  },
+  announcements: {
+    decision: "PENDING-DECISION",
+    worker: null,
+    notes: "Expiry metadata exists but no retention worker is wired; announcement targets and reads require an approved lifecycle policy.",
+  },
+  notification_outbox: {
+    decision: "PENDING-DECISION",
+    worker: null,
+    notes: "No safe worker exists; pending and in-flight notification intents must not be deleted without an approved processed/dead-state policy.",
+  },
   outbox_events: {
-    decision: "PARTITION+ARCHIVE",
-    worker: "NotificationRetentionService (detach+drop via notification_outbox partition key)",
-    notes: "90-day retention. 18 rows now — small but write path is every mutation.",
+    decision: "PENDING-DECISION",
+    worker: null,
+    notes: "No safe worker exists; pending, in-flight, delivered, and dead domain events require an approved lifecycle and replay policy.",
   },
   audit_logs: {
     decision: "KEEP-FOREVER",
@@ -140,7 +170,12 @@ function classify(tableName) {
   const entry = RETENTION_MATRIX[tableName];
   if (!entry) return { status: "UNCOVERED", decision: null, worker: null };
   return {
-    status: entry.decision === "KEEP-FOREVER" ? "KEEP-FOREVER" : "COVERED",
+    status:
+      entry.decision === "KEEP-FOREVER"
+        ? "KEEP-FOREVER"
+        : entry.decision === "PENDING-DECISION"
+          ? "UNCOVERED"
+          : "COVERED",
     decision: entry.decision,
     worker: entry.worker,
     notes: entry.notes,
@@ -165,6 +200,15 @@ if (args.includes("--self-test")) {
       classify(policyTableName("notifications_y2026_m08", "notifications")).status === "COVERED" &&
       classify(policyTableName("chat_messages_y2026_m08", "chat_messages")).status === "COVERED",
     reportingLinesHaveDecision: RETENTION_MATRIX["hr_reporting_lines"].decision === "KEEP-FOREVER",
+    documentsHaveExistingWorker: RETENTION_MATRIX["documents"].worker === "CronHrRetentionService (via hr_retention_policies, recordType=document)",
+    unsupportedTablesRemainPending: [
+      "helpdesk_tickets",
+      "performance_reviews",
+      "mail_message_metadata",
+      "announcements",
+      "notification_outbox",
+      "outbox_events",
+    ].every((table) => RETENTION_MATRIX[table].decision === "PENDING-DECISION" && classify(table).status === "UNCOVERED"),
     invalidThresholdsFailClosed: ["", "0", "-1", "NaN", "Infinity"].every((value) => {
       try {
         parseThreshold(value);
@@ -175,7 +219,7 @@ if (args.includes("--self-test")) {
     }),
     decimalThresholdIsAccepted: parseThreshold("1.5") === 1.5,
     everyMatrixEntryHasDecision: Object.values(RETENTION_MATRIX).every((entry) =>
-      ["RETAIN-BOUNDED", "PARTITION+ARCHIVE", "KEEP-FOREVER"].includes(entry.decision),
+      ["RETAIN-BOUNDED", "PARTITION+ARCHIVE", "KEEP-FOREVER", "PENDING-DECISION"].includes(entry.decision),
     ),
     everyMatrixEntryHasNotes: Object.values(RETENTION_MATRIX).every(
       (entry) => typeof entry.notes === "string" && entry.notes.trim().length > 0,
@@ -184,7 +228,7 @@ if (args.includes("--self-test")) {
       .filter((entry) => entry.decision === "KEEP-FOREVER")
       .every((entry) => entry.worker === null),
     boundedEntriesHaveWorker: Object.values(RETENTION_MATRIX)
-      .filter((entry) => entry.decision !== "KEEP-FOREVER")
+      .filter((entry) => ["RETAIN-BOUNDED", "PARTITION+ARCHIVE"].includes(entry.decision))
       .every((entry) => typeof entry.worker === "string" && entry.worker.length > 0),
   };
   const pass = Object.values(checks).every(Boolean);

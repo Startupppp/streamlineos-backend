@@ -98,7 +98,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
   }
 
   // MRR is read from subscription state: summing new_subscription rows double-counted every re-subscribe.
-  async getMetrics() {
+  async getMetrics(orgId: string) {
     const [statusRows, movementRows] = await Promise.all([
       this.db
         .select({
@@ -107,6 +107,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
           count: sql<number>`count(*)::int`,
         })
         .from(subscriptions)
+        .where(eq(subscriptions.orgId, orgId))
         .groupBy(subscriptions.status, subscriptions.plan),
       this.db
         .select({
@@ -116,6 +117,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
           recentMrr: sql<number>`coalesce(sum(${revenueEvents.mrr}) filter (where ${revenueEvents.createdAt} >= now() - interval '30 days'), 0)::int`,
         })
         .from(revenueEvents)
+        .where(eq(revenueEvents.orgId, orgId))
         .groupBy(revenueEvents.type),
     ]);
 
@@ -141,7 +143,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
     return summariseMovements({ mrr, totalActive, totalTrial, movements });
   }
 
-  async getTimeSeriesData(period: string) {
+  async getTimeSeriesData(period: string, orgId: string) {
     const months = period === "3m" ? 3 : period === "12m" ? 12 : 6;
     const since = new Date();
     since.setMonth(since.getMonth() - months);
@@ -153,7 +155,7 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
         createdAt: revenueEvents.createdAt,
       })
       .from(revenueEvents)
-      .where(gte(revenueEvents.createdAt, since))
+      .where(and(eq(revenueEvents.orgId, orgId), gte(revenueEvents.createdAt, since)))
       .orderBy(revenueEvents.createdAt);
 
     const byMonth: Record<
@@ -181,26 +183,26 @@ export class RevenueAnalyticsService implements OutboxEventConsumer, OnModuleIni
     return Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month));
   }
 
-  async reconcile(): Promise<{ reportedMrr: number; subscriptionMrr: number; reconciles: boolean }> {
+  async reconcile(orgId: string): Promise<{ reportedMrr: number; subscriptionMrr: number; reconciles: boolean }> {
     const rows = await this.db
       .select({ plan: subscriptions.plan, count: sql<number>`count(*)::int` })
       .from(subscriptions)
-      .where(eq(subscriptions.status, "ACTIVE"))
+      .where(and(eq(subscriptions.orgId, orgId), eq(subscriptions.status, "ACTIVE")))
       .groupBy(subscriptions.plan);
 
     const subscriptionMrr = rows.reduce(
       (total, row) => total + (PLAN_PRICES_PAISE[row.plan as Plan] ?? 0) * Number(row.count ?? 0),
       0,
     );
-    const { mrr } = await this.getMetrics();
+    const { mrr } = await this.getMetrics(orgId);
     return { reportedMrr: mrr, subscriptionMrr, reconciles: mrr === subscriptionMrr };
   }
 
-  async countEventsSince(type: RevenueEventInput["type"], since: Date): Promise<number> {
+  async countEventsSince(type: RevenueEventInput["type"], since: Date, orgId: string): Promise<number> {
     const rows = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(revenueEvents)
-      .where(and(eq(revenueEvents.type, type), gte(revenueEvents.createdAt, since)));
+      .where(and(eq(revenueEvents.orgId, orgId), eq(revenueEvents.type, type), gte(revenueEvents.createdAt, since)));
     return Number(rows[0]?.count ?? 0);
   }
 }

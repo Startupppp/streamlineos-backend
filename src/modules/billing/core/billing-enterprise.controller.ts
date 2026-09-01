@@ -90,10 +90,13 @@ export class BillingEnterpriseController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:analytics:view")
   @Validate({ query: analyticsQuerySchema })
-  async getAnalytics(@Query() query: ReturnType<typeof analyticsQuerySchema.parse>) {
+  async getAnalytics(
+    @Query() query: ReturnType<typeof analyticsQuerySchema.parse>,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
     const [metrics, timeSeries] = await Promise.all([
-      this.analytics.getMetrics(),
-      this.analytics.getTimeSeriesData(query.period),
+      this.analytics.getMetrics(u.orgId),
+      this.analytics.getTimeSeriesData(query.period, u.orgId),
     ]);
     return { metrics, timeSeries };
   }
