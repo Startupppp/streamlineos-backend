@@ -11,7 +11,7 @@ interface ModuleOwnership {
   readonly writeSurface: string;
 }
 
-export const MODULE_SLO_OWNERSHIP: readonly ModuleOwnership[] = [
+const MODULE_SLO_OWNERSHIP: readonly ModuleOwnership[] = [
   {
     module: "hr",
     owner: "people-team",
@@ -164,11 +164,3 @@ function writeObjective(entry: ModuleOwnership): ServiceLevelObjective {
 
 export const MODULE_SLOS: readonly ServiceLevelObjective[] =
   MODULE_SLO_OWNERSHIP.flatMap((entry) => [readObjective(entry), writeObjective(entry)]);
-
-const OWNER_BY_MODULE = new Map<string, SloOwner>(
-  MODULE_SLO_OWNERSHIP.map((entry) => [entry.module, entry.owner]),
-);
-
-export function ownerForModule(moduleId: string): SloOwner | undefined {
-  return OWNER_BY_MODULE.get(moduleId);
-}

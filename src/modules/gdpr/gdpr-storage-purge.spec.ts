@@ -16,6 +16,7 @@ const SAMPLE_KEY: SubjectFileKey = {
   table: "public.hr_documents",
   column: "file_key",
   source: "user-fk",
+  orgId: ORG_A,
 };
 
 const FAIL_KEY: SubjectFileKey = {
@@ -23,6 +24,7 @@ const FAIL_KEY: SubjectFileKey = {
   table: "public.hr_documents",
   column: "file_key",
   source: "user-fk",
+  orgId: ORG_A,
 };
 
 function makeDb(legalHoldRows: unknown[], auditInsertRows: unknown[] = []) {
@@ -168,8 +170,68 @@ describe("GdprStoragePurgeService — Item C: physical storage purge", () => {
     });
   });
 
+  describe("multi-org per-key placement — the correctness fix", () => {
+    it("(bite proof) keys from org-A and org-B are each deleted against their own org's bucket", async () => {
+      const db = makeDb([]);
+      const deleteFile = jest.fn().mockResolvedValue(undefined);
+
+      const keyA: SubjectFileKey = {
+        key: "a/file.pdf",
+        table: "public.hr_documents",
+        column: "file_key",
+        source: "user-fk",
+        orgId: ORG_A,
+      };
+      const keyB: SubjectFileKey = {
+        key: "b/file.pdf",
+        table: "public.hr_documents",
+        column: "file_key",
+        source: "user-fk",
+        orgId: ORG_B,
+      };
+
+      jest.spyOn(storageKeyCatalog, "enumerateFileKeyColumns").mockResolvedValue([]);
+      jest.spyOn(storageKeyCatalog, "collectSubjectFileKeysWithLegalHold").mockResolvedValue([keyA, keyB]);
+
+      const svc = await buildService(db, { deleteFile });
+      const result = await svc.purgeSubjectStorage(USER_FREE, [ORG_A, ORG_B], ACTOR, ORG_A, { dryRun: false });
+
+      expect(deleteFile).toHaveBeenCalledWith(ORG_A, keyA.key);
+      expect(deleteFile).toHaveBeenCalledWith(ORG_B, keyB.key);
+      expect(deleteFile).not.toHaveBeenCalledWith(ORG_A, keyB.key);
+      expect(deleteFile).not.toHaveBeenCalledWith(ORG_B, keyA.key);
+      expect(result.deleted).toContain(keyA.key);
+      expect(result.deleted).toContain(keyB.key);
+      expect(result.failed).toHaveLength(0);
+    });
+
+    it("(bite proof) key with orgId=null goes to failed[], never to deleted[], deleteFile never called", async () => {
+      const db = makeDb([]);
+      const deleteFile = jest.fn();
+
+      const unplaceableKey: SubjectFileKey = {
+        key: "uploads/unknown-org-file.pdf",
+        table: "public.some_global_table",
+        column: "file_key",
+        source: "user-fk",
+        orgId: null,
+      };
+
+      jest.spyOn(storageKeyCatalog, "enumerateFileKeyColumns").mockResolvedValue([]);
+      jest.spyOn(storageKeyCatalog, "collectSubjectFileKeysWithLegalHold").mockResolvedValue([unplaceableKey]);
+
+      const svc = await buildService(db, { deleteFile });
+      const result = await svc.purgeSubjectStorage(USER_FREE, [ORG_A], ACTOR, ORG_A, { dryRun: false });
+
+      expect(result.deleted).not.toContain(unplaceableKey.key);
+      expect(result.failed.map((f) => f.key)).toContain(unplaceableKey.key);
+      expect(result.failed.find((f) => f.key === unplaceableKey.key)?.reason).toBe("table-has-no-org-id");
+      expect(deleteFile).not.toHaveBeenCalled();
+    });
+  });
+
   describe("placement isolation — Item C org-id fix", () => {
-    it("(bite proof) purge calls deleteFile with primaryOrgId, not the first element of orgIds", async () => {
+    it("(bite proof) each key is deleted using its own orgId, not a shared primary", async () => {
       const db = makeDb([]);
       const deleteFile = jest.fn().mockResolvedValue(undefined);
 

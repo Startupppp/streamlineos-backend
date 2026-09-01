@@ -9,6 +9,7 @@ import {
 import type { Db } from "../../db/drizzle.types";
 import type { MediaCompressionService } from "../../common/media/media-compression.service";
 import { StorageService, type StorageConfig } from "./storage.service";
+import { StoragePurgeService } from "./storage-purge.service";
 
 const topology = resolveRegionTopology({
   PRIMARY_REGION: "eu",
@@ -39,7 +40,7 @@ function install(placement: Record<string, string | null>): void {
   );
 }
 
-function service(): StorageService {
+function service(): StoragePurgeService {
   const config: StorageConfig = {
     R2_REGION: "auto",
     R2_BUCKET_NAME: "default-files",
@@ -48,7 +49,8 @@ function service(): StorageService {
     R2_ENDPOINT: "https://default.r2.example",
     NEXT_PUBLIC_R2_PUBLIC_URL: "https://files.example",
   };
-  return new StorageService({} as MediaCompressionService, config);
+  const storageSvc = new StorageService({} as MediaCompressionService, config);
+  return new StoragePurgeService(storageSvc);
 }
 
 type SentCall = {
@@ -104,7 +106,7 @@ function mockS3(
   return { calls, spy };
 }
 
-describe("StorageService.purgeOrgPrefix — pagination", () => {
+describe("StoragePurgeService.purgeOrgPrefix — pagination", () => {
   afterEach(() => {
     jest.restoreAllMocks();
     clearRegionRegistry();
@@ -143,7 +145,7 @@ describe("StorageService.purgeOrgPrefix — pagination", () => {
   });
 });
 
-describe("StorageService.purgeOrgPrefix — partial failure", () => {
+describe("StoragePurgeService.purgeOrgPrefix — partial failure", () => {
   afterEach(() => {
     jest.restoreAllMocks();
     clearRegionRegistry();
@@ -181,7 +183,7 @@ describe("StorageService.purgeOrgPrefix — partial failure", () => {
   });
 });
 
-describe("StorageService.purgeOrgPrefix — idempotency", () => {
+describe("StoragePurgeService.purgeOrgPrefix — idempotency", () => {
   afterEach(() => {
     jest.restoreAllMocks();
     clearRegionRegistry();
@@ -233,7 +235,7 @@ describe("StorageService.purgeOrgPrefix — idempotency", () => {
   });
 });
 
-describe("StorageService.purgeOrgPrefix — placement isolation", () => {
+describe("StoragePurgeService.purgeOrgPrefix — placement isolation", () => {
   afterEach(() => {
     jest.restoreAllMocks();
     clearRegionRegistry();

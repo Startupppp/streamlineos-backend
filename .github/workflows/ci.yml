@@ -186,13 +186,14 @@ jobs:
         run: pnpm check:feature-flag-governance:self-test && pnpm check:feature-flag-governance
         continue-on-error: true
 
-      # Cross-tenant negative-test coverage. Reported, not enforced: coverage is 18% (136/773
-      # tenant-owned services) and failing the build on a number nobody can move in one commit
-      # would train people to ignore it. Flip continue-on-error off once the baseline is raised
-      # and the check compares against a recorded floor rather than demanding completeness.
-      - name: Cross-tenant isolation coverage (reported)
+      # Cross-tenant negative-test coverage. ENFORCED as of 2026-09-01: measured 895/895
+      # tenant-owned services declare at least one isolation spec. The previous comment here
+      # said 18% (136/773) and set continue-on-error on that basis; both numbers were stale by
+      # a wide margin, so the gate had been passing silently while advertising itself as broken.
+      # Note this gate is STATIC — it proves the spec exists, not that it passes. Execution
+      # proof is the isolation job below, and both are required.
+      - name: Cross-tenant isolation coverage
         run: pnpm check:tenant-isolation:self-test && pnpm check:tenant-isolation
-        continue-on-error: true
 
   # Tenant isolation, against a real database as the real application role.
   #

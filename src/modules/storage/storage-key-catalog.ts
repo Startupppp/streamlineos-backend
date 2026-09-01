@@ -9,16 +9,6 @@ export interface FileKeyColumn {
   column: string;
 }
 
-/**
- * Every column in the application schemas whose name ends with `_key` and
- * whose type is text/varchar — these are object-storage keys.  Derived from
- * pg_catalog so the list stays correct as new tables are added without a code
- * change.
- *
- * The caller must run this outside an RLS transaction (as the owner role or
- * with BYPASSRLS) because pg_catalog is not subject to tenant RLS and this
- * query never reads tenant data.
- */
 export async function enumerateFileKeyColumns(db: Db): Promise<FileKeyColumn[]> {
   const rows = await db.execute(sql`
     SELECT
@@ -43,14 +33,6 @@ export async function enumerateFileKeyColumns(db: Db): Promise<FileKeyColumn[]> 
   }));
 }
 
-/**
- * Returns every non-null storage key stored for `orgId` across all file-key
- * columns.  Runs each table query individually — a join across 20+ tables
- * is impractical — and deduplicates.
- *
- * MUST be called as a DB role with direct table access (no RLS or BYPASSRLS).
- * Never call this inside a tenant transaction; the GUC is irrelevant here.
- */
 export async function collectOrgFileKeys(
   db: Db,
   orgId: string,
@@ -69,16 +51,11 @@ export async function collectOrgFileKeys(
         if (typeof k === "string" && k.length > 0) keys.add(k);
       }
     } catch {
-      // Table has no org_id column or was dropped — skip silently.
     }
   }
   return [...keys];
 }
 
-/**
- * Returns every non-null storage key for rows referencing `userId` across
- * all user-scoped file-key columns.  Used by the purge-user script.
- */
 export async function collectUserFileKeys(
   db: Db,
   userId: string,
@@ -98,7 +75,6 @@ export async function collectUserFileKeys(
           if (typeof k === "string" && k.length > 0) keys.add(k);
         }
       } catch {
-        // Column absent on this table — skip.
       }
     }
   }
@@ -112,13 +88,9 @@ export interface SubjectFileKey {
   table: string;
   column: string;
   source: "user-fk" | "org-id";
+  orgId: string | null;
 }
 
-/**
- * Discovers all single-column FK columns pointing to public.users across the
- * given schemas. Catalog-driven — survives schema evolution without code
- * changes: a new table with a user FK is picked up automatically.
- */
 export async function discoverUserFkColumns(
   db: Db,
   schemas: string[],
@@ -143,16 +115,26 @@ export async function discoverUserFkColumns(
   for (const row of rows) {
     const tbl = String(row["table"]);
     const col = String(row["col"]);
-    if (!map.has(tbl)) map.set(tbl, []);
-    map.get(tbl)!.push(col);
+    const existing = map.get(tbl);
+    if (existing) existing.push(col);
+    else map.set(tbl, [col]);
   }
   return map;
 }
 
-/**
- * Builds the per-table enumeration SQL as a Drizzle SQL object. Kept
- * separate so tests can capture and inspect the rendered SQL.
- */
+async function discoverOrgIdTables(db: Db, schemas: string[]): Promise<Set<string>> {
+  const rows = await db.execute(sql`
+    SELECT n.nspname || '.' || c.relname AS "table"
+    FROM   pg_class c
+    JOIN   pg_namespace n ON n.oid = c.relnamespace
+    JOIN   pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+    WHERE  n.nspname = ANY(${schemas})
+      AND  c.relkind = 'r'
+      ${sql.raw("AND  a.attname = 'org_id'")}
+  `);
+  return new Set(rows.map((r) => String(r["table"])));
+}
+
 export function buildSubjectKeyQuery(
   table: string,
   column: string,
@@ -160,12 +142,14 @@ export function buildSubjectKeyQuery(
   filterValue: string | string[],
   userId: string,
   filterKind: "user-col" | "org-id",
+  hasOrgId: boolean,
   afterKey?: string,
 ): SQL {
   const colId = sql.raw(`"${column}"`);
   const tableId = sql.raw(table);
   const filterColId = sql.raw(`"${filterCol}"`);
   const afterClause = afterKey === undefined ? sql`` : sql` AND ${colId} > ${afterKey}`;
+  const orgIdSelect = hasOrgId ? sql.raw(", org_id AS key_org_id") : sql``;
   const orderClause = sql.raw(`ORDER BY "${column}" ASC`);
   const legalHoldBlock = sql`
     AND NOT EXISTS (
@@ -174,12 +158,11 @@ export function buildSubjectKeyQuery(
         AND  status = 'active'
         AND  deleted_at IS NULL
     )`;
-
   const limitClause = sql.raw(`LIMIT ${SUBJECT_KEY_PAGE_LIMIT}`);
 
   if (filterKind === "user-col") {
     return sql`
-      SELECT ${colId} AS k
+      SELECT ${colId} AS k${orgIdSelect}
       FROM   ${tableId}
       WHERE  ${filterColId} = ${filterValue as string}
         AND  ${colId} IS NOT NULL
@@ -190,7 +173,7 @@ export function buildSubjectKeyQuery(
     `;
   }
   return sql`
-    SELECT ${colId} AS k
+    SELECT ${colId} AS k${orgIdSelect}
     FROM   ${tableId}
     WHERE  ${filterColId} = ANY(${filterValue as string[]})
       AND  ${colId} IS NOT NULL
@@ -201,21 +184,6 @@ export function buildSubjectKeyQuery(
   `;
 }
 
-/**
- * Returns every non-null storage key for a data subject that is NOT under an
- * active legal hold. The hold exclusion is applied IN the SQL predicate of
- * every per-table query (NOT as a post-filter), so concurrent hold placement
- * cannot race with enumeration.
- *
- * Discovery is fully catalog-driven:
- *   - File-key columns via pg_attribute (attname LIKE '%\_key')
- *   - User-FK columns via pg_constraint → public.users (single-column FKs)
- * A new table carrying both is included automatically without code changes.
- *
- * Org-scoped fallback: tables with no direct FK to users are queried by
- * org_id using the caller's org membership list so files belonging to an org
- * the subject owned are also captured.
- */
 async function drainPages(
   db: Db,
   table: string,
@@ -224,6 +192,7 @@ async function drainPages(
   filterValue: string | string[],
   userId: string,
   source: "user-fk" | "org-id",
+  hasOrgId: boolean,
   seen: Set<string>,
   result: SubjectFileKey[],
 ): Promise<void> {
@@ -231,7 +200,9 @@ async function drainPages(
   let afterKey: string | undefined;
 
   for (;;) {
-    const q = buildSubjectKeyQuery(table, column, filterCol, filterValue, userId, filterKind, afterKey);
+    const q = buildSubjectKeyQuery(
+      table, column, filterCol, filterValue, userId, filterKind, hasOrgId, afterKey,
+    );
     const rows = await db.execute(q);
     let lastKey: string | undefined;
 
@@ -241,7 +212,12 @@ async function drainPages(
       lastKey = k;
       if (seen.has(k)) continue;
       seen.add(k);
-      result.push({ key: k, table, column, source });
+      const rawOrgId = row["key_org_id"];
+      const orgId =
+        hasOrgId && typeof rawOrgId === "string" && rawOrgId.length > 0
+          ? rawOrgId
+          : null;
+      result.push({ key: k, table, column, source, orgId });
     }
 
     if (rows.length < SUBJECT_KEY_PAGE_LIMIT || lastKey === undefined) return;
@@ -257,6 +233,7 @@ export async function collectSubjectFileKeysWithLegalHold(
   schemas: string[] = APP_SCHEMAS,
 ): Promise<SubjectFileKey[]> {
   const userFkMap = await discoverUserFkColumns(db, schemas);
+  const orgIdTables = await discoverOrgIdTables(db, schemas);
   const seen = new Set<string>();
   const result: SubjectFileKey[] = [];
 
@@ -264,11 +241,16 @@ export async function collectSubjectFileKeysWithLegalHold(
     const userCols = userFkMap.get(table) ?? [];
 
     if (userCols.length > 0) {
+      const hasOrgId = orgIdTables.has(table);
       for (const userCol of userCols) {
-        await drainPages(db, table, column, userCol, userId, userId, "user-fk", seen, result);
+        await drainPages(
+          db, table, column, userCol, userId, userId, "user-fk", hasOrgId, seen, result,
+        );
       }
     } else if (orgIds.length > 0) {
-      await drainPages(db, table, column, "org_id", orgIds, userId, "org-id", seen, result);
+      await drainPages(
+        db, table, column, "org_id", orgIds, userId, "org-id", true, seen, result,
+      );
     }
   }
 

@@ -1,5 +1,6 @@
 import { Global, Module } from "@nestjs/common";
 import { StorageService } from "./storage.service";
+import { StoragePurgeService } from "./storage-purge.service";
 import { StorageController } from "./storage.controller";
 import { OnboardingDocumentsController } from "./storage-onboarding.controller";
 import { StorageKbController } from "./storage-kb.controller";
@@ -16,7 +17,7 @@ import { AvScannerModule } from "../../common/security/av-scanner.module";
     StorageKbController,
     StorageVaultController,
   ],
-  providers: [MediaCompressionService, StorageService],
-  exports: [StorageService, AvScannerModule],
+  providers: [MediaCompressionService, StorageService, StoragePurgeService],
+  exports: [StorageService, StoragePurgeService, AvScannerModule],
 })
 export class StorageModule {}

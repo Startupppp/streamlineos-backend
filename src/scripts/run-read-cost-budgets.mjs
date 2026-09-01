@@ -279,6 +279,12 @@ async function main() {
     const [announcementRow] = (await tryFixture((tx) => tx`
         SELECT 1 FROM announcements WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
 
+    const [businessPartyRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM business_parties WHERE organization_id = ${ORG} AND deleted_at IS NULL LIMIT 1`)) ?? [null];
+
+    const [moduleRoleRow] = (await tryFixture((tx) => tx`
+        SELECT 1 FROM roles WHERE org_id = ${ORG} AND module_key IS NOT NULL LIMIT 1`)) ?? [null];
+
     const fixtures = {
         orgId: ORG,
         projectId: project?.project_id ?? null,
@@ -299,6 +305,8 @@ async function main() {
         hasMailMessages: mailMessageRow !== null && mailMessageRow !== undefined,
         hasCalendarEvents: calEventRow !== null && calEventRow !== undefined,
         hasAnnouncements: announcementRow !== null && announcementRow !== undefined,
+        hasBusinessParties: businessPartyRow !== null && businessPartyRow !== undefined,
+        hasModuleRoles: moduleRoleRow !== null && moduleRoleRow !== undefined,
         period,
       };
 

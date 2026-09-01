@@ -93,8 +93,12 @@ export class GdprStoragePurgeService {
     const failed: Array<{ key: string; reason: string }> = [];
 
     for (const entry of manifest.keys) {
+      if (entry.orgId === null) {
+        failed.push({ key: entry.key, reason: "table-has-no-org-id" });
+        continue;
+      }
       try {
-        await this.storage.deleteFile(primaryOrgId, entry.key);
+        await this.storage.deleteFile(entry.orgId, entry.key);
         deleted.push(entry.key);
       } catch (err) {
         failed.push({

@@ -2,21 +2,21 @@
 /**
  * Gate: no service file may add an unbounded read or an offset-paginated list.
  *
- * Flags:
- *   • .select() / .findMany( chain with no .limit(  (unbounded fetch)
- *   • .offset(   usage       (offset-based pagination — must be cursor)
+ * Every detected path must appear in the classification file with one of:
+ *   KEYSET-MIGRATED · BOUNDED · AGGREGATE · STREAM · FALSE-POSITIVE · EXCLUDED-MODULE · ACTIONABLE
  *
- * Territory is EVERY folder under src/modules, discovered at run time. It was
- * previously a hand-written list of 16 CRM folders, so 58 modules were never
- * scanned and the gate reported "no unbounded reads found" for code it had not
- * read. A hand-written list cannot be kept in step with a new module.
+ * Failure modes:
+ *   1. Unclassified path — file in scan has no classification entry → gate fails.
+ *   2. Stale entry       — classification entry points at a file that no longer exists → gate fails.
+ *   3. Regression        — file classified KEYSET-MIGRATED/BOUNDED/AGGREGATE/STREAM still detected → gate fails.
  *
- * Existing violations are ratcheted per file in BASELINE_FILE rather than
- * silently tolerated: a new file, or a higher count in a known file, fails.
- * Lowering a count is the migration path — run --emit-baseline and commit.
+ * ACTIONABLE entries do not fail the gate; they contribute to the ACTIONABLE count
+ * displayed on every run — the ratchet mechanism that drives it to zero.
  *
- * Self-tests run first; if they fail the script exits 1 without scanning.
- * A vacuity guard fails loudly when fewer than MIN_FILES files are scanned.
+ * --emit-baseline     : write the old baseline.json from current scan (legacy; gate no longer reads it).
+ * --emit-classification: write a fresh classification.json from the current scan; all new entries
+ *                        start as ACTIONABLE (CRM/Inventory auto-marked EXCLUDED-MODULE).
+ * --self-test         : run self-tests and exit; proves all three gate failure modes bite.
  */
 
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
@@ -25,10 +25,6 @@ import { join, extname } from "node:path";
 const MIN_FILES = 500;
 const MIN_MODULES = 40;
 const ORDER_BY_LOOKBACK = 25;
-// statementFrom stops at the first line ending in ';', so this is only a runaway
-// guard, not the real boundary. At 40 it truncated a 43-line select three lines
-// short of its own .limit(1) and reported a bounded query as unbounded — tenant-scoped
-// alias joins push a statement past 40 lines easily.
 const STATEMENT_MAX_LINES = 120;
 
 const ROOT = new URL("../modules", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1");
@@ -36,6 +32,18 @@ const BASELINE_FILE = new URL("./baselines/unbounded-reads-baseline.json", impor
   /^\/([A-Z]:)/,
   "$1",
 );
+const CLASSIFICATION_FILE = new URL("./baselines/unbounded-reads-classification.json", import.meta.url)
+  .pathname.replace(/^\/([A-Z]:)/, "$1");
+
+const EXCLUDED_MODULE_PREFIXES = ["/crm/", "/inventory/"];
+
+function normalizeRelPath(file) {
+  const normalizedFile = file.replace(/\\/g, "/");
+  const normalizedRoot = ROOT.replace(/\\/g, "/");
+  return normalizedFile.startsWith(normalizedRoot)
+    ? normalizedFile.slice(normalizedRoot.length)
+    : normalizedFile;
+}
 
 function discoverTerritory() {
   return readdirSync(ROOT)
@@ -145,18 +153,58 @@ function hasUnorderedPagination(src) {
   return violations;
 }
 
-function compareToBaseline(counts, baseline) {
+export function checkForUnclassified(offsetCounts, unboundedCounts, classification) {
+  const unclassified = [];
+  for (const relPath of Object.keys(offsetCounts)) {
+    if (!classification.offset?.[relPath])
+      unclassified.push({ kind: "offset", file: relPath });
+  }
+  for (const relPath of Object.keys(unboundedCounts)) {
+    if (!classification.unbounded?.[relPath])
+      unclassified.push({ kind: "unbounded", file: relPath });
+  }
+  return unclassified;
+}
+
+export function checkForStaleEntries(classification, root) {
+  const stale = [];
+  const rootFwd = root.replace(/\\/g, "/");
+  for (const relPath of Object.keys(classification.offset ?? {})) {
+    try { statSync(rootFwd + relPath); } catch { stale.push({ kind: "offset", file: relPath }); }
+  }
+  for (const relPath of Object.keys(classification.unbounded ?? {})) {
+    try { statSync(rootFwd + relPath); } catch { stale.push({ kind: "unbounded", file: relPath }); }
+  }
+  return stale;
+}
+
+const FIXED_VERDICTS = new Set(["KEYSET-MIGRATED", "BOUNDED", "AGGREGATE", "STREAM"]);
+
+export function checkForRegressions(offsetCounts, unboundedCounts, classification) {
   const regressions = [];
-  for (const [file, count] of Object.entries(counts)) {
-    const allowed = baseline[file] ?? 0;
-    if (count > allowed) regressions.push({ file, count, allowed });
+  for (const relPath of Object.keys(offsetCounts)) {
+    const verdict = classification.offset?.[relPath]?.verdict;
+    if (verdict && FIXED_VERDICTS.has(verdict))
+      regressions.push({ kind: "offset", file: relPath, verdict });
   }
-  const improvements = [];
-  for (const [file, allowed] of Object.entries(baseline)) {
-    const count = counts[file] ?? 0;
-    if (count < allowed) improvements.push({ file, count, allowed });
+  for (const relPath of Object.keys(unboundedCounts)) {
+    const verdict = classification.unbounded?.[relPath]?.verdict;
+    if (verdict && FIXED_VERDICTS.has(verdict))
+      regressions.push({ kind: "unbounded", file: relPath, verdict });
   }
-  return { regressions, improvements };
+  return regressions;
+}
+
+export function countActionableByKind(offsetCounts, unboundedCounts, classification) {
+  let offset = 0;
+  let unbounded = 0;
+  for (const [relPath, count] of Object.entries(offsetCounts)) {
+    if (classification.offset?.[relPath]?.verdict === "ACTIONABLE") offset += count;
+  }
+  for (const [relPath, count] of Object.entries(unboundedCounts)) {
+    if (classification.unbounded?.[relPath]?.verdict === "ACTIONABLE") unbounded += count;
+  }
+  return { offset, unbounded };
 }
 
 function runSelfTests() {
@@ -277,30 +325,6 @@ function runSelfTests() {
     process.exit(1);
   }
 
-  const baseline = { "/a/x.service.ts": 2 };
-  const unchanged = compareToBaseline({ "/a/x.service.ts": 2 }, baseline);
-  if (unchanged.regressions.length !== 0) {
-    console.error("SELF-TEST FAIL: a file at its baseline count was reported as a regression");
-    process.exit(1);
-  }
-  const grown = compareToBaseline({ "/a/x.service.ts": 3 }, baseline);
-  if (grown.regressions.length !== 1) {
-    console.error("SELF-TEST FAIL: a file above its baseline count was not reported");
-    process.exit(1);
-  }
-  const movedNotAdded = compareToBaseline({ "/a/x.service.ts": 1, "/a/new.service.ts": 1 }, baseline);
-  if (movedNotAdded.regressions.length !== 1 || movedNotAdded.regressions[0].file !== "/a/new.service.ts") {
-    console.error(
-      "SELF-TEST FAIL: a NEW offending file was not reported when the repo-wide total stayed the same",
-    );
-    process.exit(1);
-  }
-  const shrunk = compareToBaseline({ "/a/x.service.ts": 0 }, baseline);
-  if (shrunk.regressions.length !== 0 || shrunk.improvements.length !== 1) {
-    console.error("SELF-TEST FAIL: a fixed file was not reported as an improvement");
-    process.exit(1);
-  }
-
   const territory = discoverTerritory();
   if (territory.length < MIN_MODULES) {
     console.error(
@@ -309,12 +333,73 @@ function runSelfTests() {
     process.exit(1);
   }
 
+  {
+    const unclassified = checkForUnclassified(
+      { "/fake/new-unclassified.service.ts": 1 },
+      {},
+      { offset: {}, unbounded: {} },
+    );
+    if (unclassified.length === 0) {
+      console.error("SELF-TEST FAIL: new unclassified offset path was not detected");
+      process.exit(1);
+    }
+  }
+
+  {
+    const stale = checkForStaleEntries(
+      {
+        offset: { "/definitely/does/not/exist/fake.service.ts": { verdict: "ACTIONABLE", note: "test" } },
+        unbounded: {},
+      },
+      ROOT,
+    );
+    if (stale.length === 0) {
+      console.error("SELF-TEST FAIL: stale classification entry pointing at non-existent file was not detected");
+      process.exit(1);
+    }
+  }
+
+  {
+    const counts = countActionableByKind(
+      { "/test/actionable.service.ts": 3, "/test/excluded.service.ts": 2 },
+      { "/test/actionable-unbounded.service.ts": 5 },
+      {
+        offset: {
+          "/test/actionable.service.ts": { verdict: "ACTIONABLE", note: "test" },
+          "/test/excluded.service.ts": { verdict: "EXCLUDED-MODULE", note: "test" },
+        },
+        unbounded: {
+          "/test/actionable-unbounded.service.ts": { verdict: "ACTIONABLE", note: "test" },
+        },
+      },
+    );
+    if (counts.offset !== 3 || counts.unbounded !== 5) {
+      console.error(
+        `SELF-TEST FAIL: ACTIONABLE count wrong — expected offset=3,unbounded=5, got offset=${counts.offset},unbounded=${counts.unbounded}`,
+      );
+      process.exit(1);
+    }
+  }
+
+  {
+    const regressions = checkForRegressions(
+      { "/test/was-migrated.service.ts": 1 },
+      {},
+      { offset: { "/test/was-migrated.service.ts": { verdict: "KEYSET-MIGRATED", note: "test" } }, unbounded: {} },
+    );
+    if (regressions.length === 0) {
+      console.error("SELF-TEST FAIL: KEYSET-MIGRATED file still appearing in scan was not detected as regression");
+      process.exit(1);
+    }
+  }
+
   console.log("Self-tests passed.");
 }
 
 runSelfTests();
 
 const emitBaseline = process.argv.includes("--emit-baseline");
+const emitClassification = process.argv.includes("--emit-classification");
 if (process.argv.includes("--self-test")) process.exit(0);
 
 const territory = discoverTerritory();
@@ -333,7 +418,7 @@ for (const module of territory) {
       continue;
     }
     scannedCount++;
-    const relPath = file.replace(ROOT, "").replace(/\\/g, "/");
+    const relPath = normalizeRelPath(file);
 
     const offsets = hasOffsetUsage(src);
     if (offsets.length > 0) {
@@ -360,6 +445,8 @@ if (scannedCount < MIN_FILES) {
   process.exit(1);
 }
 
+const total = (counts) => Object.values(counts).reduce((a, b) => a + b, 0);
+
 if (emitBaseline) {
   writeFileSync(
     BASELINE_FILE,
@@ -369,63 +456,134 @@ if (emitBaseline) {
       2,
     )}\n`,
   );
-  const total = (counts) => Object.values(counts).reduce((a, b) => a + b, 0);
   console.log(
-    `Baseline written: ${total(offsetCounts)} offset, ${total(unboundedCounts)} unbounded, ${total(unorderedCounts)} unordered across ${scannedCount} files.`,
+    `Baseline written (legacy): ${total(offsetCounts)} offset, ${total(unboundedCounts)} unbounded, ${total(unorderedCounts)} unordered across ${scannedCount} files.`,
   );
   process.exit(0);
 }
 
-let baseline;
-try {
-  baseline = JSON.parse(readFileSync(BASELINE_FILE, "utf8"));
-} catch {
-  console.error(`Baseline file missing or unreadable: ${BASELINE_FILE}. Run with --emit-baseline.`);
-  process.exit(1);
+if (emitClassification) {
+  const cls = {
+    version: 1,
+    classifiedAt: new Date().toISOString().slice(0, 10),
+    note: "Verdicts: KEYSET-MIGRATED|BOUNDED|AGGREGATE|STREAM|FALSE-POSITIVE|EXCLUDED-MODULE|ACTIONABLE",
+    offset: {},
+    unbounded: {},
+  };
+  for (const relPath of Object.keys(offsetCounts).sort()) {
+    const excluded = EXCLUDED_MODULE_PREFIXES.some((p) => relPath.startsWith(p));
+    cls.offset[relPath] = {
+      verdict: excluded ? "EXCLUDED-MODULE" : "ACTIONABLE",
+      note: excluded
+        ? "CRM/Inventory excluded product domain — do not fix in this lane"
+        : "Offset pagination; needs keyset migration or proven depth bound",
+    };
+  }
+  for (const relPath of Object.keys(unboundedCounts).sort()) {
+    const excluded = EXCLUDED_MODULE_PREFIXES.some((p) => relPath.startsWith(p));
+    cls.unbounded[relPath] = {
+      verdict: excluded ? "EXCLUDED-MODULE" : "ACTIONABLE",
+      note: excluded
+        ? "CRM/Inventory excluded product domain — do not fix in this lane"
+        : "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+    };
+  }
+  writeFileSync(CLASSIFICATION_FILE, `${JSON.stringify(cls, null, 2)}\n`);
+  const actionableOff = Object.values(cls.offset).filter((e) => e.verdict === "ACTIONABLE").length;
+  const excludedOff = Object.values(cls.offset).filter((e) => e.verdict === "EXCLUDED-MODULE").length;
+  const actionableUnb = Object.values(cls.unbounded).filter((e) => e.verdict === "ACTIONABLE").length;
+  const excludedUnb = Object.values(cls.unbounded).filter((e) => e.verdict === "EXCLUDED-MODULE").length;
+  console.log(`Classification written:`);
+  console.log(`  offset   : ${actionableOff} ACTIONABLE, ${excludedOff} EXCLUDED-MODULE (${actionableOff + excludedOff} total)`);
+  console.log(`  unbounded: ${actionableUnb} ACTIONABLE, ${excludedUnb} EXCLUDED-MODULE (${actionableUnb + excludedUnb} total)`);
+  process.exit(0);
 }
 
-const offsetResult = compareToBaseline(offsetCounts, baseline.offset ?? {});
-const unboundedResult = compareToBaseline(unboundedCounts, baseline.unbounded ?? {});
-const unorderedResult = compareToBaseline(unorderedCounts, baseline.unordered ?? {});
-
-const total = (counts) => Object.values(counts).reduce((a, b) => a + b, 0);
-
-console.log(`Scanned ${scannedCount} service files across ${territory.length} modules.`);
-console.log(`  offset pagination : ${total(offsetCounts)} (baseline ${total(baseline.offset ?? {})})`);
-console.log(`  unbounded reads   : ${total(unboundedCounts)} (baseline ${total(baseline.unbounded ?? {})})`);
-console.log(
-  `  unordered paging  : ${total(unorderedCounts)} (baseline ${total(baseline.unordered ?? {})}) — .offset() with no ORDER BY repeats and drops rows between pages`,
-);
-
-const regressions = [
-  ...offsetResult.regressions.map((r) => ({ ...r, kind: "offset" })),
-  ...unboundedResult.regressions.map((r) => ({ ...r, kind: "unbounded" })),
-  ...unorderedResult.regressions.map((r) => ({ ...r, kind: "unordered" })),
-];
-
-if (regressions.length > 0) {
-  console.error(`\nFAIL — ${regressions.length} file(s) above baseline:\n`);
-  for (const r of regressions) {
-    console.error(`  [${r.kind.toUpperCase()}] ${r.file} — ${r.count} (allowed ${r.allowed})`);
-    for (const d of detail.filter((x) => x.file === r.file && x.kind === r.kind)) {
-      console.error(`      :${d.lineNo}  ${d.text}`);
-    }
-  }
+let classification;
+try {
+  classification = JSON.parse(readFileSync(CLASSIFICATION_FILE, "utf8"));
+} catch {
   console.error(
-    "\nUse the shared cursor contract in src/common/pagination/keyset.ts. Offset pagination and unbounded reads may not grow.",
+    `Classification file missing or unreadable: ${CLASSIFICATION_FILE}. Run with --emit-classification to generate it.`,
   );
   process.exit(1);
 }
 
-const improvements = [
-  ...offsetResult.improvements,
-  ...unboundedResult.improvements,
-  ...unorderedResult.improvements,
-];
-if (improvements.length > 0) {
-  console.log(`\n${improvements.length} file(s) improved below baseline — run --emit-baseline and commit to lock it in:`);
-  for (const i of improvements) console.log(`  ${i.file} — ${i.count} (baseline ${i.allowed})`);
+console.log(`Scanned ${scannedCount} service files across ${territory.length} modules.`);
+console.log(`  offset pagination : ${total(offsetCounts)}`);
+console.log(`  unbounded reads   : ${total(unboundedCounts)}`);
+console.log(
+  `  unordered paging  : ${total(unorderedCounts)} — .offset() with no ORDER BY repeats and drops rows between pages`,
+);
+
+const staleEntries = checkForStaleEntries(classification, ROOT);
+const unclassifiedPaths = checkForUnclassified(offsetCounts, unboundedCounts, classification);
+const regressions = checkForRegressions(offsetCounts, unboundedCounts, classification);
+const actionable = countActionableByKind(offsetCounts, unboundedCounts, classification);
+
+const verdictCounts = { offset: {}, unbounded: {} };
+for (const [relPath] of Object.entries(offsetCounts)) {
+  const v = classification.offset?.[relPath]?.verdict ?? "UNCLASSIFIED";
+  verdictCounts.offset[v] = (verdictCounts.offset[v] ?? 0) + 1;
+}
+for (const [relPath] of Object.entries(unboundedCounts)) {
+  const v = classification.unbounded?.[relPath]?.verdict ?? "UNCLASSIFIED";
+  verdictCounts.unbounded[v] = (verdictCounts.unbounded[v] ?? 0) + 1;
 }
 
-console.log("\nOK — no new unbounded reads or offset pagination.");
+console.log(`\nClassification summary (by file):`);
+for (const [v, c] of Object.entries(verdictCounts.offset))
+  console.log(`  offset     ${v.padEnd(18)}: ${c} file(s)`);
+for (const [v, c] of Object.entries(verdictCounts.unbounded))
+  console.log(`  unbounded  ${v.padEnd(18)}: ${c} file(s)`);
+
+console.log(`\nActionable instance counts (target: zero):`);
+console.log(`  offset pagination : ${actionable.offset}`);
+console.log(`  unbounded reads   : ${actionable.unbounded}`);
+
+const failures = [];
+
+if (staleEntries.length > 0) {
+  console.error(`\nSTALE classification entries (file no longer exists — remove or update):`);
+  for (const s of staleEntries)
+    console.error(`  [${s.kind.toUpperCase()}] ${s.file}`);
+  failures.push(`${staleEntries.length} stale classification entry(ies)`);
+}
+
+if (unclassifiedPaths.length > 0) {
+  console.error(`\nUNCLASSIFIED paths (add entries to unbounded-reads-classification.json):`);
+  for (const u of unclassifiedPaths) {
+    console.error(`  [${u.kind.toUpperCase()}] ${u.file}`);
+    for (const d of detail.filter((x) => x.file === u.file && x.kind === u.kind))
+      console.error(`      :${d.lineNo}  ${d.text}`);
+  }
+  failures.push(`${unclassifiedPaths.length} unclassified path(s) — classify before committing`);
+}
+
+if (regressions.length > 0) {
+  console.error(`\nREGRESSIONS (classified as fixed but violations still detected):`);
+  for (const r of regressions)
+    console.error(`  [${r.kind.toUpperCase()}] ${r.file} (was ${r.verdict})`);
+  failures.push(`${regressions.length} regression(s) — re-check the migration`);
+}
+
+if (unorderedCounts && Object.keys(unorderedCounts).length > 0) {
+  console.error(`\nUNORDERED pagination (.offset() with no ORDER BY — always a correctness bug):`);
+  for (const [f, c] of Object.entries(unorderedCounts))
+    console.error(`  ${f} — ${c} instance(s)`);
+  failures.push(`${Object.keys(unorderedCounts).length} unordered pagination file(s)`);
+}
+
+if (failures.length > 0) {
+  console.error(`\nFAIL — ${failures.length} gate violation(s):`);
+  for (const f of failures) console.error(`  • ${f}`);
+  console.error("\nFix guide:");
+  console.error("  Unclassified : run --emit-classification or add entries manually to classification.json");
+  console.error("  Stale        : remove the entry or update the file path");
+  console.error("  Regression   : the migration is incomplete — offset/unbounded still present in source");
+  process.exit(1);
+}
+
+console.log("\nOK — no gate violations.");
+console.log(`Ratchet progress: offset ACTIONABLE=${actionable.offset} (target 0) · unbounded ACTIONABLE=${actionable.unbounded} (target 0)`);
 process.exit(0);

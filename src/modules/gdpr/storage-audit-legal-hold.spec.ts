@@ -25,6 +25,7 @@ describe("buildSubjectKeyQuery — legal-hold predicate", () => {
       USER_ID,
       USER_ID,
       "user-col",
+      true,
     );
     const rendered = renderSql(q);
     expect(rendered).toContain("hr_legal_holds");
@@ -41,6 +42,7 @@ describe("buildSubjectKeyQuery — legal-hold predicate", () => {
       [ORG_A, ORG_B],
       USER_ID,
       "org-id",
+      true,
     );
     const rendered = renderSql(q);
     expect(rendered).toContain("hr_legal_holds");
@@ -57,10 +59,39 @@ describe("buildSubjectKeyQuery — legal-hold predicate", () => {
       USER_ID,
       USER_ID,
       "user-col",
+      true,
     );
     const { sql: rendered, params } = new PgDialect().sqlToQuery(q);
     expect(rendered).toContain("subject_user_id");
     expect(params).toContain(USER_ID);
+  });
+
+  it("includes org_id in the SELECT when hasOrgId is true", () => {
+    const q = buildSubjectKeyQuery(
+      "public.kb_article_attachments",
+      "file_key",
+      "uploaded_by",
+      USER_ID,
+      USER_ID,
+      "user-col",
+      true,
+    );
+    const rendered = renderSql(q);
+    expect(rendered).toContain("key_org_id");
+  });
+
+  it("omits org_id from the SELECT when hasOrgId is false", () => {
+    const q = buildSubjectKeyQuery(
+      "public.kb_article_attachments",
+      "file_key",
+      "uploaded_by",
+      USER_ID,
+      USER_ID,
+      "user-col",
+      false,
+    );
+    const rendered = renderSql(q);
+    expect(rendered).not.toContain("key_org_id");
   });
 });
 
@@ -72,7 +103,8 @@ describe("collectSubjectFileKeysWithLegalHold — integration with mocked db", (
 
   function makeMockDb(options: {
     userFkRows: Array<{ table: string; col: string }>;
-    keyRows: Array<{ k: string }>;
+    orgIdTables?: string[];
+    keyRows: Array<{ k: string; key_org_id?: string }>;
     capturedSql?: string[];
   }): Db {
     return {
@@ -80,6 +112,11 @@ describe("collectSubjectFileKeysWithLegalHold — integration with mocked db", (
         const rendered = renderSql(q);
         if (options.capturedSql) options.capturedSql.push(rendered);
         if (rendered.includes("pg_constraint")) return options.userFkRows;
+        if (rendered.includes("a.attname = 'org_id'"))
+          return (options.orgIdTables ?? [
+            "public.kb_article_attachments",
+            "public.chat_attachments",
+          ]).map((t) => ({ table: t }));
         return options.keyRows;
       }),
     } as unknown as Db;
@@ -97,7 +134,9 @@ describe("collectSubjectFileKeysWithLegalHold — integration with mocked db", (
 
     await collectSubjectFileKeysWithLegalHold(db, USER_ID, [ORG_A], SAMPLE_COLUMNS);
 
-    const enumerationQueries = capturedSql.filter((q) => !q.includes("pg_constraint"));
+    const enumerationQueries = capturedSql.filter(
+      (q) => !q.includes("pg_constraint") && !q.includes("a.attname = 'org_id'"),
+    );
     expect(enumerationQueries.length).toBeGreaterThan(0);
     for (const q of enumerationQueries) {
       expect(q).toContain("hr_legal_holds");
@@ -117,7 +156,7 @@ describe("collectSubjectFileKeysWithLegalHold — integration with mocked db", (
   it("returns keys when no legal hold is active (db returns rows for all queries)", async () => {
     const db = makeMockDb({
       userFkRows: [{ table: "public.kb_article_attachments", col: "uploaded_by" }],
-      keyRows: [{ k: "documents/user-subject-111-resume.pdf" }],
+      keyRows: [{ k: "documents/user-subject-111-resume.pdf", key_org_id: ORG_A }],
     });
 
     const keys = await collectSubjectFileKeysWithLegalHold(
@@ -133,6 +172,7 @@ describe("collectSubjectFileKeysWithLegalHold — integration with mocked db", (
     const capturedSql: string[] = [];
     const db = makeMockDb({
       userFkRows: [],
+      orgIdTables: ["public.chat_attachments"],
       keyRows: [],
       capturedSql,
     });
@@ -144,7 +184,9 @@ describe("collectSubjectFileKeysWithLegalHold — integration with mocked db", (
       [{ table: "public.chat_attachments", column: "file_key" }],
     );
 
-    const enumerationQueries = capturedSql.filter((q) => !q.includes("pg_constraint"));
+    const enumerationQueries = capturedSql.filter(
+      (q) => !q.includes("pg_constraint") && !q.includes("a.attname = 'org_id'"),
+    );
     expect(enumerationQueries.length).toBeGreaterThan(0);
     for (const q of enumerationQueries) {
       expect(q).toContain("hr_legal_holds");
@@ -159,7 +201,8 @@ describe("collectSubjectFileKeysWithLegalHold — integration with mocked db", (
         { table: "public.kb_article_attachments", col: "uploaded_by" },
         { table: "public.sign_documents", col: "created_by" },
       ],
-      keyRows: [{ k: SHARED_KEY }],
+      orgIdTables: ["public.kb_article_attachments", "public.sign_documents"],
+      keyRows: [{ k: SHARED_KEY, key_org_id: ORG_A }],
     });
 
     const keys = await collectSubjectFileKeysWithLegalHold(db, USER_ID, [], [
@@ -169,6 +212,38 @@ describe("collectSubjectFileKeysWithLegalHold — integration with mocked db", (
 
     const allKeys = keys.map((k) => k.key);
     expect(allKeys.filter((k) => k === SHARED_KEY)).toHaveLength(1);
+  });
+
+  it("sets orgId on keys from tables that have org_id", async () => {
+    const db = makeMockDb({
+      userFkRows: [{ table: "public.kb_article_attachments", col: "uploaded_by" }],
+      orgIdTables: ["public.kb_article_attachments"],
+      keyRows: [{ k: "uploads/file.pdf", key_org_id: ORG_A }],
+    });
+
+    const keys = await collectSubjectFileKeysWithLegalHold(
+      db,
+      USER_ID,
+      [ORG_A],
+      [{ table: "public.kb_article_attachments", column: "file_key" }],
+    );
+    expect(keys[0]?.orgId).toBe(ORG_A);
+  });
+
+  it("sets orgId to null for tables that have no org_id column", async () => {
+    const db = makeMockDb({
+      userFkRows: [{ table: "public.global_table", col: "uploaded_by" }],
+      orgIdTables: [],
+      keyRows: [{ k: "uploads/file.pdf" }],
+    });
+
+    const keys = await collectSubjectFileKeysWithLegalHold(
+      db,
+      USER_ID,
+      [ORG_A],
+      [{ table: "public.global_table", column: "file_key" }],
+    );
+    expect(keys[0]?.orgId).toBeNull();
   });
 });
 
@@ -181,6 +256,7 @@ describe("buildSubjectKeyQuery — Item A: per-table LIMIT bounds each call (no 
       USER_ID,
       USER_ID,
       "user-col",
+      true,
     );
     const rendered = renderSql(q);
     expect(rendered.toUpperCase()).toContain("LIMIT");
@@ -195,6 +271,7 @@ describe("buildSubjectKeyQuery — Item A: per-table LIMIT bounds each call (no 
       [ORG_A, ORG_B],
       USER_ID,
       "org-id",
+      true,
     );
     const rendered = renderSql(q);
     expect(rendered.toUpperCase()).toContain("LIMIT");
@@ -215,6 +292,7 @@ describe("buildSubjectKeyQuery — Item A: per-table LIMIT bounds each call (no 
       USER_ID,
       USER_ID,
       "user-col",
+      true,
     );
     const rendered = renderSql(q);
     expect(rendered).not.toContain("ListObjectsV2");

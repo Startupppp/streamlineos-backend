@@ -5,10 +5,9 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
 import {
   accountOrganizationIndex,
-  auditLogs,
   candidateOffers,
   leaveBlackoutDates,
   onboardingTasks,
@@ -235,10 +234,7 @@ export class OrgPurgeService {
                   .delete(leaveBlackoutDates)
                   .where(eq(leaveBlackoutDates.orgId, orgId));
                 await tx.delete(onboardingTasks).where(eq(onboardingTasks.orgId, orgId));
-                await tx
-                  .update(auditLogs)
-                  .set({ orgId: null })
-                  .where(eq(auditLogs.orgId, orgId));
+                await tx.execute(sql`SELECT app.nullify_audit_logs_org_id(${orgId})`);
                 await tx.delete(organizations).where(eq(organizations.id, orgId));
               },
               { orgId },

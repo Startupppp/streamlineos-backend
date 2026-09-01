@@ -12,9 +12,7 @@ import {
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
-  DeleteObjectsCommand,
   HeadObjectCommand,
-  ListObjectsV2Command,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { MediaCompressionService } from "../../common/media/media-compression.service";
@@ -61,14 +59,6 @@ const MIME_MAP: Record<string, string> = {
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
-export const DELETE_BATCH_LIMIT = 1_000;
-
-export interface PurgeOrgPrefixResult {
-  deleted: string[];
-  skipped: string[];
-  failed: Array<{ key: string; reason: string }>;
-}
-
 const PRIVATE_HR_FOLDERS = new Set([
   "documents",
   "hr-documents",
@@ -78,12 +68,6 @@ const PRIVATE_HR_FOLDERS = new Set([
   "hr-exports",
 ]);
 
-/**
- * Only the object-storage settings this service reads. The full `AppConfig` is
- * still what gets injected — it satisfies this structurally — but stating the
- * six fields keeps the constructor honest and lets a test supply them without
- * standing up every unrelated environment variable.
- */
 export type StorageConfig = Pick<
   AppConfig,
   | "R2_REGION"
@@ -94,8 +78,7 @@ export type StorageConfig = Pick<
   | "NEXT_PUBLIC_R2_PUBLIC_URL"
 >;
 
-/** A resolved region: where the bytes go, and the client that can reach them. */
-interface StoragePlacement {
+export interface StoragePlacement {
   readonly client: S3Client;
   readonly bucketName?: string;
   readonly publicUrl?: string;
@@ -104,17 +87,6 @@ interface StoragePlacement {
 
 @Injectable()
 export class StorageService {
-  /**
-   * One client per region, not one client per service.
-   *
-   * The constructor used to build a single `S3Client` from the primary region's
-   * endpoint and credentials. That made the region seam decorative: a call for a
-   * US organisation resolved the US bucket name and then sent it to the EU
-   * endpoint, because the client had been decided before anyone asked whose file
-   * it was. Cached by endpoint and key rather than rebuilt per call — an
-   * S3Client holds a connection pool, and one per upload would be a socket leak
-   * wearing a region's name.
-   */
   private readonly clients = new Map<string, S3Client>();
 
   constructor(
@@ -147,20 +119,6 @@ export class StorageService {
     return client;
   }
 
-  /**
-   * Where this organisation's files live.
-   *
-   * With a registry installed this resolves through the *same* placement lookup
-   * the database uses, so a tenant's rows and its documents cannot end up in
-   * different regions. Without one — a single-region deployment — it is the
-   * injected configuration, unchanged, so the existing behaviour and the
-   * existing pool are exactly what they were.
-   *
-   * It does not fall back. An organisation nobody placed, or one placed in a
-   * region this deployment does not serve, raises from `storageForOrg` and the
-   * operation never runs. A silent fallback to the primary bucket is how one
-   * tenant's documents are written into another region, and there is no undo.
-   */
   private async placementFor(orgId: string): Promise<StoragePlacement> {
     if (!hasRegionRegistry()) {
       const cfg = this.getConfig();
@@ -179,6 +137,10 @@ export class StorageService {
       publicUrl: storage.publicUrl ?? this.config.NEXT_PUBLIC_R2_PUBLIC_URL,
       keyPrefix: storage.keyPrefix,
     };
+  }
+
+  async placementForOrg(orgId: string): Promise<StoragePlacement> {
+    return this.placementFor(orgId);
   }
 
   private static toR2Config(storage: RegionStorageConfig): R2Config {
@@ -224,13 +186,6 @@ export class StorageService {
     );
   }
 
-  /**
-   * The bucket for a resolved placement.
-   *
-   * Replaces `requireBucket`/`resolveBucket`, which both read the *primary*
-   * region's configuration regardless of whose file it was — the same mistake
-   * as the shared client, one layer down.
-   */
   private requireBucketFrom(
     placement: StoragePlacement,
     override?: string,
@@ -411,13 +366,6 @@ export class StorageService {
     );
   }
 
-  /**
-   * A signed URL is signed against one region's endpoint.
-   *
-   * Minted from the primary while the object sits in the tenant's own bucket,
-   * it is a link that 404s for every organisation not placed there — so the
-   * organisation is a parameter here exactly as it is for the write.
-   */
   async getFileUrl(
     orgId: string,
     key: string,
@@ -509,71 +457,5 @@ export class StorageService {
     )
       return false;
     return /^[a-zA-Z0-9][a-zA-Z0-9/_.-]*$/.test(key);
-  }
-
-  async purgeOrgPrefix(orgId: string): Promise<PurgeOrgPrefixResult> {
-    const placement = await this.placementFor(orgId);
-    const bucketName = this.requireBucketFrom(placement);
-    const rawPrefix = placement.keyPrefix?.replace(/\/$/, "");
-    const prefix = rawPrefix ? `${rawPrefix}/` : undefined;
-
-    const allKeys: string[] = [];
-    let continuationToken: string | undefined;
-
-    do {
-      const res = await placement.client.send(
-        new ListObjectsV2Command({
-          Bucket: bucketName,
-          Prefix: prefix,
-          MaxKeys: DELETE_BATCH_LIMIT,
-          ContinuationToken: continuationToken,
-        }),
-      );
-      for (const obj of res.Contents ?? []) {
-        if (typeof obj.Key === "string" && obj.Key.length > 0)
-          allKeys.push(obj.Key);
-      }
-      continuationToken = res.IsTruncated
-        ? res.NextContinuationToken
-        : undefined;
-    } while (continuationToken !== undefined);
-
-    const deleted: string[] = [];
-    const failed: Array<{ key: string; reason: string }> = [];
-
-    for (let i = 0; i < allKeys.length; i += DELETE_BATCH_LIMIT) {
-      const batch = allKeys.slice(i, i + DELETE_BATCH_LIMIT);
-      try {
-        const res = await placement.client.send(
-          new DeleteObjectsCommand({
-            Bucket: bucketName,
-            Delete: {
-              Objects: batch.map((k) => ({ Key: k })),
-              Quiet: false,
-            },
-          }),
-        );
-        for (const del of res.Deleted ?? []) {
-          if (typeof del.Key === "string") deleted.push(del.Key);
-        }
-        for (const err of res.Errors ?? []) {
-          if (typeof err.Key === "string") {
-            failed.push({
-              key: err.Key,
-              reason: err.Message ?? err.Code ?? "unknown",
-            });
-          }
-        }
-      } catch (err) {
-        for (const key of batch) {
-          failed.push({
-            key,
-            reason: err instanceof Error ? err.message : "unknown",
-          });
-        }
-      }
-    }
-
-    return { deleted, skipped: [], failed };
   }
 }
