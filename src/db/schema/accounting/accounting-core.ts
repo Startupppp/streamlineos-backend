@@ -136,7 +136,7 @@ export const finApprovalPolicies = pgTable("fin_approval_policies", {
   recordType: finApprovalRecordTypeEnum("record_type").notNull(),
   minAmount: decimal("min_amount", { precision: 18, scale: 4 }),
   approverRole: text("approver_role"),
-  approverUserId: text("approver_user_id").references(() => users.id),
+  approverUserId: text("approver_user_id"),
   approverMembershipId: integer("approver_membership_id"),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),

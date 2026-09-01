@@ -193,7 +193,7 @@ export const affiliates = pgTable(
   "affiliates",
   {
     id: serial("id").primaryKey(),
-    userId: text("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull().unique(),
     userMembershipId: integer("user_membership_id"),
     orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
     referralCode: varchar("referral_code", { length: 20 }).notNull().unique(),

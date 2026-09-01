@@ -10,7 +10,7 @@ export const payrollInputs = pgTable("payroll_inputs", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   runId: integer("run_id").references(() => payrollRuns.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "restrict" }).notNull(),
+  userId: text("user_id").notNull(),
   source: payrollInputSourceEnum("source").notNull(),
   scheduledDays: decimal("scheduled_days", { precision: 6, scale: 2 }).notNull().default("0"),
   paidDays: decimal("paid_days", { precision: 6, scale: 2 }).notNull().default("0"),

@@ -120,7 +120,7 @@ export const payrollRunEmployees = pgTable("payroll_run_employees", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   runId: integer("run_id").references(() => payrollRuns.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "restrict" }),
+  userId: text("user_id"),
   userMembershipId: integer("user_membership_id"),
   workerId: text("worker_id"),
   profileId: integer("profile_id"),

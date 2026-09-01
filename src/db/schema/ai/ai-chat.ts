@@ -12,16 +12,14 @@ export const aiChatConversations = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    userId: text("user_id").notNull(),
     userMembershipId: integer("user_membership_id"),
     title: text("title"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
-    index("idx_ai_chat_conversations_org_user_updated").on(table.orgId, table.userId, table.updatedAt),
+    index("idx_ai_chat_conversations_org_user_updated").on(table.orgId, table.userMembershipId, table.updatedAt),
     unique("uniq_ai_chat_conversations_org_id").on(table.orgId, table.id),
     foreignKey({
       columns: [table.orgId, table.userMembershipId],
@@ -38,9 +36,7 @@ export const aiChatMessages = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    userId: text("user_id").notNull(),
     userMembershipId: integer("user_membership_id"),
     role: text("role").$type<AiChatRole>().notNull(),
     content: text("content").notNull(),
@@ -48,7 +44,7 @@ export const aiChatMessages = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    index("idx_ai_chat_messages_org_user_id").on(table.orgId, table.userId, table.id),
+    index("idx_ai_chat_messages_org_user_id").on(table.orgId, table.userMembershipId, table.id),
     index("idx_ai_chat_messages_conversation_id").on(table.conversationId),
     unique("uniq_ai_chat_messages_org_id").on(table.orgId, table.id),
     foreignKey({

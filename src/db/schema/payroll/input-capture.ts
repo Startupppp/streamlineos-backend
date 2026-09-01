@@ -85,9 +85,7 @@ export const hrPayrollInputSnapshots = pgTable(
     periodId: integer("period_id")
       .notNull()
       .references(() => hrPayrollInputPeriods.id, { onDelete: "cascade" }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
     userMembershipId: integer("user_membership_id"),
     section: hrPayrollInputSectionEnum("section").notNull(),
     payload: jsonb("payload").notNull(),
@@ -125,9 +123,7 @@ export const hrPayrollAdjustments = pgTable(
     periodId: integer("period_id").references(() => hrPayrollInputPeriods.id, {
       onDelete: "set null",
     }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
     userMembershipId: integer("user_membership_id"),
     adjustmentType: hrPayrollAdjustmentTypeEnum("adjustment_type").notNull(),
     section: hrPayrollInputSectionEnum("section").notNull(),

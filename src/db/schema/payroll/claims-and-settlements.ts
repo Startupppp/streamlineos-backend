@@ -57,9 +57,7 @@ export const expenses = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(),
     categoryId: integer("category_id").references(() => expenseCategories.id, {
       onDelete: "set null",
     }),
@@ -131,9 +129,7 @@ export const reimbursements = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    userId: text("user_id").notNull(),
     category: text("category").notNull(),
     amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
     description: text("description"),
@@ -180,9 +176,7 @@ export const salaryLoans = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    userId: text("user_id").notNull(),
     amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
     reason: text("reason"),
     emiAmount: decimal("emi_amount", { precision: 15, scale: 2 }),
@@ -223,9 +217,7 @@ export const bonuses = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    userId: text("user_id").notNull(),
     type: bonusTypeEnum("type").notNull(),
     amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
     amountCents: bigint("amount_cents", { mode: "number" }),
@@ -260,9 +252,7 @@ export const fnfSettlements = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id, { onDelete: "cascade" })
-      .notNull(),
+    userId: text("user_id").notNull(),
     resignationId: integer("resignation_id").references(() => resignations.id, {
       onDelete: "set null",
     }),
@@ -332,9 +322,7 @@ export const assetReturns = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: text("user_id")
-      .references(() => users.id)
-      .notNull(),
+    userId: text("user_id").notNull(),
     assetId: integer("asset_id").references(() => assets.id),
     assetName: text("asset_name").notNull(),
     status: text("status").default("PENDING").notNull(),

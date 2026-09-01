@@ -47,7 +47,7 @@ export const journalEntries = pgTable("journal_entries", {
   sourceId: text("source_id"),
   sourceEvent: text("source_event"),
   status: journalEntryStatusEnum("status").default("POSTED").notNull(),
-  createdBy: text("created_by").references(() => users.id).notNull(),
+  createdBy: text("created_by").notNull(),
   createdByMembershipId: integer("created_by_membership_id"),
   approvedBy: text("approved_by").references(() => users.id),
   approvedAt: timestamp("approved_at"),

@@ -41,7 +41,7 @@ export const salaryComponents = pgTable("salary_components", {
 export const employeeSalaryProfiles = pgTable("employee_salary_profiles", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "restrict" }),
+  userId: text("user_id"),
   workerId: text("worker_id"),
   workerType: payrollWorkerTypeEnum("worker_type").default("EMPLOYEE").notNull(),
   payFrequency: payFrequencyEnum("pay_frequency").default("MONTHLY").notNull(),

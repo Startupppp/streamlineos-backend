@@ -12,7 +12,7 @@ export const payslipPublications = pgTable("payslip_publications", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   runId: integer("run_id").references(() => payrollRuns.id, { onDelete: "restrict" }).notNull(),
   runEmployeeId: integer("run_employee_id").references(() => payrollRunEmployees.id, { onDelete: "restrict" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "restrict" }),
+  userId: text("user_id"),
   userMembershipId: integer("user_membership_id"),
   workerId: text("worker_id"),
   payslipTemplateId: integer("payslip_template_id").references(() => payslipTemplates.id, { onDelete: "set null" }),
