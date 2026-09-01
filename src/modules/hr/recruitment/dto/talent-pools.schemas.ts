@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const createTalentPoolSchema = z.object({
   name: z.string().min(1).max(200),
@@ -17,7 +17,7 @@ export const addPoolMemberSchema = z.object({
 export type AddPoolMemberInput = z.infer<typeof addPoolMemberSchema>;
 
 export const listPoolMembersQuerySchema = z.object({
-  page: pageNumberField,
+  cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
 });
 export type ListPoolMembersQueryInput = z.infer<typeof listPoolMembersQuerySchema>;

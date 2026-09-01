@@ -48,7 +48,7 @@ describe("SimulatorService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([]);
     const mockPolicyEval = { evaluatePolicy: jest.fn().mockResolvedValue({ result: {} }) };
     const svc = new SimulatorService(db, mockPolicyEval as never);
-    await svc.listHistory(ATTACKER, { page: 1, limit: 10 });
+    await svc.listHistory(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
@@ -56,7 +56,7 @@ describe("SimulatorService — cross-tenant isolation", () => {
     const { db, where, findMany } = makeDb([ROW]);
     const mockPolicyEval = { evaluatePolicy: jest.fn().mockResolvedValue({ result: {} }) };
     const svc = new SimulatorService(db, mockPolicyEval as never);
-    await svc.listHistory(OWNER, { page: 1, limit: 10 });
+    await svc.listHistory(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });
 });

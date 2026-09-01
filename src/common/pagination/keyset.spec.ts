@@ -9,6 +9,7 @@ import {
   keysetAfterValue,
   keysetBefore,
   keysetBeforeId,
+  keysetBeforeUuid,
   keysetBeforeValue,
 } from "./keyset";
 
@@ -96,6 +97,29 @@ describe("numeric keyset cursor validation", () => {
       ).toThrow(BadRequestException);
     },
   );
+});
+
+describe("UUID keyset cursor validation", () => {
+  it.each(["not-a-uuid", "00000000-0000-0000-0000-000000000000", ""]) (
+    "rejects invalid UUID id %s before building SQL",
+    (id) => {
+      expect(() =>
+        keysetBeforeUuid(activities.occurredAt, activities.activityId, {
+          sortValue: "2026-08-20T09:00:00.000Z",
+          id,
+        }),
+      ).toThrow(BadRequestException);
+    },
+  );
+
+  it("accepts a valid UUID tie-breaker", () => {
+    expect(() =>
+      keysetBeforeUuid(activities.occurredAt, activities.activityId, {
+        sortValue: "2026-08-20T09:00:00.000Z",
+        id: "0198d510-9d64-7f53-8bd6-aef1c1b695d2",
+      }),
+    ).not.toThrow();
+  });
 });
 
 /**

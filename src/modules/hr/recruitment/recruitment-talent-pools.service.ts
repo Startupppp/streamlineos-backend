@@ -3,6 +3,8 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { candidates, talentPoolMembers, talentPools } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type { AddPoolMemberInput, CreateTalentPoolInput, ListPoolMembersQueryInput, UpdateTalentPoolInput } from "./dto/talent-pools.schemas";
 
 @Injectable()
@@ -56,40 +58,41 @@ export class RecruitmentTalentPoolsService {
   async listMembers(orgId: string, poolId: number, params: ListPoolMembersQueryInput) {
     await this.ensurePool(orgId, poolId);
     const limit = Math.min(params.limit, 100);
-    const offset = (params.page - 1) * limit;
-    const where = eq(talentPoolMembers.poolId, poolId);
+    const position = decodeCursor(params.cursor);
+    const where = and(
+      eq(talentPoolMembers.orgId, orgId),
+      eq(talentPoolMembers.poolId, poolId),
+      position
+        ? keysetBeforeId(talentPoolMembers.addedAt, talentPoolMembers.id, position)
+        : undefined,
+    );
 
-    const [data, countRows] = await Promise.all([
-      this.db
-        .select({
-          membershipId: talentPoolMembers.id,
-          notes: talentPoolMembers.notes,
-          addedAt: talentPoolMembers.addedAt,
-          candidateId: candidates.id,
-          firstName: candidates.firstName,
-          lastName: candidates.lastName,
-          email: candidates.email,
-          currentCompany: candidates.currentCompany,
-          currentRole: candidates.currentRole,
-          status: candidates.status,
-        })
-        .from(talentPoolMembers)
-        .innerJoin(candidates, eq(candidates.id, talentPoolMembers.candidateId))
-        .where(where)
-        .orderBy(desc(talentPoolMembers.addedAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ total: sql<number>`count(*)::int` })
-        .from(talentPoolMembers)
-        .where(where),
-    ]);
-
-    const total = countRows[0]?.total ?? 0;
+    const rows = await this.db
+      .select({
+        membershipId: talentPoolMembers.id,
+        notes: talentPoolMembers.notes,
+        addedAt: talentPoolMembers.addedAt,
+        candidateId: candidates.id,
+        firstName: candidates.firstName,
+        lastName: candidates.lastName,
+        email: candidates.email,
+        currentCompany: candidates.currentCompany,
+        currentRole: candidates.currentRole,
+        status: candidates.status,
+      })
+      .from(talentPoolMembers)
+      .innerJoin(candidates, eq(candidates.id, talentPoolMembers.candidateId))
+      .where(where)
+      .orderBy(desc(talentPoolMembers.addedAt), desc(talentPoolMembers.id))
+      .limit(limit + 1);
+    const page = buildCursorPage(rows, limit, (member) => ({
+      sortValue: member.addedAt.toISOString(),
+      id: String(member.membershipId),
+    }));
 
     return {
-      data,
-      pagination: { page: params.page, limit, total, totalPages: Math.ceil(total / limit) },
+      data: page.data,
+      pagination: page.pagination,
     };
   }
 

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { hrSimulations } from "../../../../db/schema/hr/enterprise-ops";
@@ -12,6 +12,8 @@ import type {
   CompareInput,
   ListSimulationsInput,
 } from "../dto/simulator.schemas";
+import { buildCursorPage, decodeCursor } from "../../../../common/pagination/cursor";
+import { keysetBeforeUuid } from "../../../../common/pagination/keyset";
 
 const SIM_LABEL = "Simulation — no records changed";
 
@@ -195,26 +197,26 @@ export class SimulatorService {
   }
 
   async listHistory(orgId: string, input: ListSimulationsInput) {
-    const { page, limit, type } = input;
-    const offset = (page - 1) * limit;
+    const { cursor, limit, type } = input;
 
     const conditions = [eq(hrSimulations.orgId, orgId)];
     if (type) conditions.push(eq(hrSimulations.type, type));
+    const position = decodeCursor(cursor);
+    if (position)
+      conditions.push(keysetBeforeUuid(hrSimulations.createdAt, hrSimulations.id, position));
 
     const where = and(...conditions);
 
-    const [rows, totalResult] = await Promise.all([
-      this.db
-        .select()
-        .from(hrSimulations)
-        .where(where)
-        .orderBy(desc(hrSimulations.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(hrSimulations).where(where),
-    ]);
-
-    const total = totalResult[0]?.total ?? 0;
-    return { data: rows, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } };
+    const rows = await this.db
+      .select()
+      .from(hrSimulations)
+      .where(where)
+      .orderBy(desc(hrSimulations.createdAt), desc(hrSimulations.id))
+      .limit(limit + 1);
+    const page = buildCursorPage(rows, limit, (simulation) => ({
+      sortValue: simulation.createdAt.toISOString(),
+      id: simulation.id,
+    }));
+    return { data: page.data, pagination: page.pagination };
   }
 }

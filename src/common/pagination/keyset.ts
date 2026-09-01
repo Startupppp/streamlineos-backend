@@ -43,6 +43,14 @@ function numericId(position: KeysetPosition): number {
   return Number.isSafeInteger(id) && id > 0 ? id : invalidCursor();
 }
 
+function uuidId(position: KeysetPosition): string {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    position.id,
+  )
+    ? position.id
+    : invalidCursor();
+}
+
 // For a sort column that is already text and totally ordered with its id — a lexorank, a code — where `at()` must not coerce.
 export function keysetAfterValue(
   sortColumn: PgColumn,
@@ -92,6 +100,15 @@ export function keysetBefore(
   position: KeysetPosition,
 ): SQL {
   return sql`(${sortColumn}, ${idColumn}) < (${sql.param(at(position), sortColumn)}, ${sql.param(position.id, idColumn)})`;
+}
+
+/** Newest-first timestamp keyset whose tie-breaker is a PostgreSQL UUID. */
+export function keysetBeforeUuid(
+  sortColumn: PgColumn,
+  idColumn: PgColumn,
+  position: KeysetPosition,
+): SQL {
+  return sql`(${sortColumn}, ${idColumn}) < (${sql.param(at(position), sortColumn)}, ${sql.param(uuidId(position), idColumn)})`;
 }
 
 /**
