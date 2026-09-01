@@ -6,6 +6,7 @@
  *
  * Usage:
  *   node --env-file=.env src/scripts/migration-proof.mjs
+ *   node src/scripts/migration-proof.mjs --self-test
  *
  * IMPORTANT: drops both probe databases on exit (success or failure).
  * Never touches neondb, cell2 or postgres.
@@ -18,6 +19,7 @@ import postgres from "postgres";
 
 const SCRIPT_START = Date.now();
 const elapsed = () => `[${((Date.now() - SCRIPT_START) / 1000).toFixed(1)}s]`;
+const SELF_TEST = process.argv.includes("--self-test");
 
 // ─── connection helpers ────────────────────────────────────────────────────────
 
@@ -131,11 +133,13 @@ async function applyEntries(url, entries, migrationsDir, label) {
       }
 
       const statements = splitStatements(content);
-      let presentHere = 0;
-
+      // Keep each migration in one transaction so ON COMMIT DROP temporary helper
+      // tables remain available across statement-breakpoint sections. A clean
+      // disposable database must not need duplicate or missing-object recovery.
+      await sql.begin(async (tx) => {
       for (let i = 0; i < statements.length; i++) {
         try {
-          await sql.unsafe(statements[i]);
+          await tx.unsafe(statements[i]);
         } catch (err) {
           const code = typeof err?.code === "string" ? err.code : "";
           if (
@@ -143,13 +147,14 @@ async function applyEntries(url, entries, migrationsDir, label) {
             isPgClassDuplicate(err) ||
             (code === "42P16" && err.message.includes("multiple primary keys"))
           ) {
-            presentHere++;
-            continue;
+            throw new Error(`${label} duplicate object at ${entry.tag} stmt ${i + 1}: ${err.message}`);
           }
           const MISSING_CODES = new Set(["42704", "42P01", "42703"]);
+          // Missing objects are chain failures, never a successful migration. The
+          // real migrator aborts here; recording the entry would create a false
+          // watermark and hide an incomplete schema.
           if (MISSING_CODES.has(code)) {
             chainGaps.push(`${entry.tag} stmt ${i + 1}: ${code} ${err.message}`);
-            continue;
           }
           // Hard failure — propagate with context
           const rich = new Error(
@@ -163,9 +168,10 @@ async function applyEntries(url, entries, migrationsDir, label) {
         }
       }
 
-      await sql`
+      await tx`
         INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
         VALUES (${hash}, ${entry.when})`;
+      });
 
       executed++;
       process.stdout.write(
@@ -316,6 +322,84 @@ function reconcileJournal(entries, rows) {
   const pending = entries.filter((e) => e.when > watermark);
 
   return { orphans, duplicates, skipped, pending, watermark };
+}
+
+/**
+ * A catalog match is only meaningful when each disposable probe also has an
+ * exact migration ledger. Keep this separate from the live-ledger report:
+ * production may legitimately be behind while CI probes must reach head.
+ */
+function verifyProbeLedger(label, entries, rows, journalHashes) {
+  const reconciliation = reconcileJournal(entries, rows);
+  const failures = [];
+  const expectedHashes = new Set(journalHashes.map((entry) => entry.hash));
+  const actualHashes = new Set(rows.map((row) => row.hash));
+  const missingHashes = journalHashes.filter((entry) => !actualHashes.has(entry.hash));
+  const extraHashes = rows.filter((row) => !expectedHashes.has(row.hash));
+
+  for (const [kind, values] of Object.entries({
+    orphan: reconciliation.orphans,
+    duplicate: reconciliation.duplicates,
+    skipped: reconciliation.skipped,
+    pending: reconciliation.pending,
+  })) {
+    if (values.length > 0) failures.push(`${label}: ${values.length} ${kind} ledger entr${values.length === 1 ? "y" : "ies"}`);
+  }
+  if (missingHashes.length > 0)
+    failures.push(`${label}: ${missingHashes.length} journal hash(es) missing from the probe ledger`);
+  if (extraHashes.length > 0)
+    failures.push(`${label}: ${extraHashes.length} probe ledger hash(es) absent from the journal`);
+
+  return failures;
+}
+
+function runSelfTest() {
+  const entries = [
+    { tag: "0001_a", when: 100 },
+    { tag: "0002_b", when: 200 },
+  ];
+  const hashes = [
+    { tag: "0001_a", hash: "hash-a" },
+    { tag: "0002_b", hash: "hash-b" },
+  ];
+  const cleanRows = [
+    { id: 1, created_at: 100, hash: "hash-a" },
+    { id: 2, created_at: 200, hash: "hash-b" },
+  ];
+  const cleanFailures = verifyProbeLedger("clean", entries, cleanRows, hashes);
+  const incompleteFailures = verifyProbeLedger(
+    "incomplete",
+    entries,
+    [{ id: 1, created_at: 100, hash: "hash-a" }],
+    hashes,
+  );
+  const corruptFailures = verifyProbeLedger(
+    "corrupt",
+    entries,
+    [
+      { id: 1, created_at: 100, hash: "hash-a" },
+      { id: 2, created_at: 100, hash: "hash-a" },
+      { id: 3, created_at: 999, hash: "hash-x" },
+    ],
+    hashes,
+  );
+
+  if (
+    cleanFailures.length === 0 &&
+    incompleteFailures.some((failure) => failure.includes("pending")) &&
+    corruptFailures.some((failure) => failure.includes("orphan")) &&
+    corruptFailures.some((failure) => failure.includes("duplicate")) &&
+    corruptFailures.some((failure) => failure.includes("absent from the journal"))
+  ) {
+    console.log("SELF-TEST PASS: exact, incomplete, and corrupt probe ledgers are distinguished");
+    return;
+  }
+
+  console.error(
+    `SELF-TEST FAIL: clean=${JSON.stringify(cleanFailures)} ` +
+      `incomplete=${JSON.stringify(incompleteFailures)} corrupt=${JSON.stringify(corruptFailures)}`,
+  );
+  process.exitCode = 1;
 }
 
 // ─── main ─────────────────────────────────────────────────────────────────────
@@ -542,6 +626,16 @@ async function main() {
       console.log(`    MISSING  ${j.tag} (when=${j.when})`);
   }
 
+  const coldLedgerFailures = verifyProbeLedger("cold probe", entries, coldRows, journalHashes);
+  const upgradeLedgerFailures = verifyProbeLedger("upgrade probe", entries, upgradeRows, journalHashes);
+  const probeLedgerFailures = [...coldLedgerFailures, ...upgradeLedgerFailures];
+  if (probeLedgerFailures.length === 0) {
+    console.log("PASS  probe ledgers exactly match the migration journal");
+  } else {
+    console.error("FAIL  probe ledger reconciliation:");
+    for (const failure of probeLedgerFailures) console.error(`  ${failure}`);
+  }
+
   // ── Phase 5: Rollback coverage ───────────────────────────────────────────────
   console.log("\n── PHASE 5: ROLLBACK COVERAGE ──────────────────────────────────────────────");
   const rollbackDir = resolve(process.cwd(), "migrations/rollback");
@@ -678,7 +772,12 @@ async function main() {
   // ── Drop probe databases ──────────────────────────────────────────────────────
   await cleanup(ownerDirect);
 
-  const exitCode = coldVsUpgradeDiffs === 0 && coldResult.chainGaps.length === 0 ? 0 : 1;
+  const exitCode =
+    coldVsUpgradeDiffs === 0 &&
+    coldResult.chainGaps.length === 0 &&
+    probeLedgerFailures.length === 0
+      ? 0
+      : 1;
   console.log(
     `\n${"=".repeat(78)}\nPROOF COMPLETE. Exit code: ${exitCode}`,
   );
@@ -707,11 +806,15 @@ async function cleanup(ownerDirect) {
   }
 }
 
-main().catch(async (e) => {
-  console.error("PROOF FAILED:", e instanceof Error ? e.message : e);
-  try {
-    const ownerDirect = directUrl(process.env.DATABASE_URL ?? "");
-    if (ownerDirect) await cleanup(ownerDirect);
-  } catch (_) {}
-  process.exit(1);
-});
+if (SELF_TEST) {
+  runSelfTest();
+} else {
+  main().catch(async (e) => {
+    console.error("PROOF FAILED:", e instanceof Error ? e.message : e);
+    try {
+      const ownerDirect = directUrl(process.env.DATABASE_URL ?? "");
+      if (ownerDirect) await cleanup(ownerDirect);
+    } catch (_) {}
+    process.exit(1);
+  });
+}

@@ -4066,6 +4066,13 @@
       "idx": 709,
       "version": "7",
       "when": 1803000010021,
+      "tag": "0928_organization_purge_audit_hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 710,
+      "version": "7",
+      "when": 1803000010022,
       "tag": "0929_gdpr_correction_request",
       "breakpoints": true
     }
