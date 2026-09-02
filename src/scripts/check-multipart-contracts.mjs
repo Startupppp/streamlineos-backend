@@ -288,6 +288,16 @@ class Ctrl {
     fail("multiline-multipart-declared", `expected 0 for multi-line @MultipartAction, got ${JSON.stringify(r8)}`);
   else pass("no-finding: multi-line @MultipartAction is collapsed and detected correctly");
 
+  for (const [line, expected] of [
+    ["async upload(@UploadedFile() f: File) {}", "upload"],
+    ["upload(@UploadedFile() f: File) {}", "upload"],
+    ["async list<T>(): Promise<T[]> {}", "list"],
+  ]) {
+    if (extractHandlerName(line) !== expected)
+      fail("extractHandlerName", `${JSON.stringify(line)} → ${JSON.stringify(extractHandlerName(line))}, expected ${expected}`);
+  }
+  if (!failed) pass("extractHandlerName reads the method name from async, plain and generic declarations");
+
   if (failed) {
     process.stderr.write("\nSELF-TEST FAILED\n");
     process.exit(1);

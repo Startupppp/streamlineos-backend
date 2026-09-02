@@ -335,6 +335,18 @@ if (tiers.size < 10) {
 
 const files = walkTs(SRC_DIR);
 
+// A walk that reaches nothing produces zero findings, which reads exactly like a
+// clean tree. This gate guards secrets reaching the logs; it must never report OK
+// without having looked.
+const MIN_SOURCE_FILES = 500;
+if (files.length < MIN_SOURCE_FILES) {
+  console.error(
+    `INCONCLUSIVE — the scan reached only ${files.length} source file(s) under ${SRC_DIR} ` +
+      `(floor ${MIN_SOURCE_FILES}). This run proves nothing about secrets in logs.`,
+  );
+  process.exit(2);
+}
+
 const logFindings = [];
 const tierFindings = [];
 

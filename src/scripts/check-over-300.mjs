@@ -11,7 +11,7 @@
  *   --self-test   Run internal assertions and exit (no file scan).
  */
 
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, extname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -105,6 +105,14 @@ function runSelfTests() {
     rmSync(fixture, { recursive: true, force: true });
   }
 
+  assert(
+    "the gate resolves a real source tree — a broken resolvePath must fail loudly, not scan nothing",
+    existsSync(SRC) && existsSync(join(SRC, "modules")),
+  );
+  assert(
+    "BACKEND_ROOT resolves to the repository root, not somewhere outside it",
+    existsSync(join(BACKEND_ROOT, "package.json")),
+  );
   if (failed > 0) {
     console.error(`check-over-300 self-tests: ${failed} failed, ${passed} passed`);
     process.exit(1);

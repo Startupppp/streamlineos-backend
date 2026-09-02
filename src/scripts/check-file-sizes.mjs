@@ -148,6 +148,14 @@ function runSelfTests() {
     EXCEPTIONS_DOC !== null && existsSync(EXCEPTIONS_DOC) && countLines(EXCEPTIONS_DOC) > 0,
   );
 
+  assert(
+    "the gate resolves a real source tree — a broken resolvePath must fail loudly, not scan nothing",
+    existsSync(SRC) && existsSync(join(SRC, "modules")),
+  );
+  assert(
+    "BACKEND_ROOT resolves to the repository root, not somewhere outside it",
+    existsSync(join(BACKEND_ROOT, "package.json")),
+  );
   if (failed > 0) {
     console.error(`check-file-sizes self-tests: ${failed} failed, ${passed} passed`);
     process.exit(1);

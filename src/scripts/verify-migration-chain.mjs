@@ -279,6 +279,34 @@ function selfTest() {
     writeJournal([{ idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false }]);
   }
 
+  console.log("Self-test: (b) NEGATIVE — distinct prefixes are not duplicates");
+  {
+    writeJournal([
+      { idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false },
+      { idx: 1, version: "7", when: 2000, tag: "0002_beta", breakpoints: false },
+    ]);
+    writeSql("0001_alpha");
+    writeSql("0002_beta");
+    const failures = check(tmp);
+    if (failures.some((f) => f.includes("(b)"))) {
+      console.error("  FAIL  distinct numeric prefixes must not be reported as duplicates");
+      console.error(`         got: ${JSON.stringify(failures)}`);
+      failed++;
+    } else {
+      console.log("  PASS  distinct numeric prefixes are not reported as duplicates");
+      passed++;
+    }
+    if (numericPrefix("0002_beta") === "0002" && numericPrefix("0001_alpha") === "0001") {
+      console.log("  PASS  numericPrefix reads the numeric segment, not the whole tag");
+      passed++;
+    } else {
+      console.error("  FAIL  numericPrefix must return the leading numeric segment");
+      failed++;
+    }
+    rmSync(join(tmp, "0002_beta.sql"));
+    writeJournal([{ idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false }]);
+  }
+
   console.log("Self-test: (c) timestamp regression");
   {
     writeJournal([
@@ -300,6 +328,43 @@ function selfTest() {
     ]);
     const failures = check(tmp);
     assert("orphan entry caught", failures, "(d)");
+    writeJournal([{ idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false }]);
+  }
+
+  console.log("Self-test: (d) NEGATIVE — a pending-root entry is not an orphan");
+  {
+    // A pending migration lives under migrations/pending/ and is journalled either by a
+    // slashed tag or by a bare tag whose file sits in pending/. Reporting either as an
+    // orphan would flood the gate with false findings and get the real (d) allowlisted.
+    mkdirSync(join(tmp, "pending"), { recursive: true });
+    writeFileSync(join(tmp, "pending", "0004_delta.sql"), "SELECT 1;");
+    writeJournal([
+      { idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false },
+      { idx: 1, version: "7", when: 2000, tag: "pending/0005_epsilon", breakpoints: false },
+      { idx: 2, version: "7", when: 3000, tag: "0004_delta", breakpoints: false },
+    ]);
+    const failures = check(tmp);
+    const orphans = failures.filter((f) => f.includes("(d)"));
+    if (orphans.length > 0) {
+      console.error("  FAIL  a pending-root journal entry must not be reported as an orphan");
+      console.error(`         got: ${JSON.stringify(orphans)}`);
+      failed++;
+    } else {
+      console.log("  PASS  a slashed tag and a bare tag resolved under pending/ are both accepted");
+      passed++;
+    }
+    if (
+      isPendingPath("pending/0005_epsilon", tmp) === true &&
+      isPendingPath("0004_delta", tmp) === true &&
+      isPendingPath("0003_missing", tmp) === false
+    ) {
+      console.log("  PASS  isPendingPath tells a pending tag from an absent one");
+      passed++;
+    } else {
+      console.error("  FAIL  isPendingPath must accept both pending shapes and reject an absent tag");
+      failed++;
+    }
+    rmSync(join(tmp, "pending"), { recursive: true, force: true });
     writeJournal([{ idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false }]);
   }
 

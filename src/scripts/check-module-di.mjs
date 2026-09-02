@@ -1095,7 +1095,31 @@ export class M {}`,
     }
   }
 
-  const totalCases = exportCases.length + 8;
+  {
+    // Union splitting decides whether an injected type is a single token or an arm
+    // of a union. hasTopLevelBar must ignore a `|` nested inside generics, tuples,
+    // objects or parentheses — otherwise a Map<A|B, C> parameter is split apart.
+    const barCases = [
+      ["A | B", true],
+      ["A", false],
+      ["Map<string | number, X>", false],
+      ["Array<A | B>", false],
+      ["{ a: A | B }", false],
+      ["(A | B)", false],
+      ["Map<string, A> | null", true],
+      ["[A | B]", false],
+    ];
+    for (const [type, expected] of barCases) {
+      if (hasTopLevelBar(type) !== expected) {
+        console.error(
+          `SELF-TEST FAIL [bar]: hasTopLevelBar(${JSON.stringify(type)}) = ${String(hasTopLevelBar(type))}, expected ${String(expected)}`,
+        );
+        failures++;
+      }
+    }
+  }
+
+  const totalCases = exportCases.length + 8 + 8;
   if (failures > 0) {
     console.error(`\n${String(failures)} of ${String(totalCases)} self-test assertions failed`);
     process.exit(1);

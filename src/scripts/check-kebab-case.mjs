@@ -12,7 +12,7 @@
  *   --self-test   Feed known-bad fixtures through the classifier and exit.
  */
 
-import { readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -98,6 +98,10 @@ function runSelfTests() {
     Object.values(ALLOWED_FILES).every((v) => typeof v === "string" && v.length > 20),
   );
 
+  assert(
+    "the gate resolves a real source tree — a broken resolvePath must fail loudly, not scan nothing",
+    existsSync(SRC) && existsSync(join(SRC, "modules")),
+  );
   if (failed > 0) {
     console.error(`check-kebab-case self-tests: ${failed} failed, ${passed} passed`);
     process.exit(1);

@@ -289,7 +289,32 @@ if (SELF_TEST) {
       .from(projectMembers)
       .where(sql\`EXISTS (SELECT 1 FROM organization_members om WHERE om.id = \${projectMembers.membershipId})\`);`;
 
+  // A chain bound to a name, or handed to a correlating combinator, is a FRAGMENT:
+  // it may legitimately name a table the enclosing query joins. Without a fixture on
+  // this branch the fragment rule could be deleted and every check above still pass.
+  const boundToConst = `${header}
+    const sub = db.select({ id: organizationMembers.id }).from(organizationMembers);
+    const r = await db.select({ id: projectMembers.id })
+      .from(projectMembers)
+      .innerJoin(organizationMembers, eq(organizationMembers.id, projectMembers.membershipId))
+      .where(inArray(projectMembers.membershipId, sub));`;
+  const boundSrc = stripSqlTemplates(stripComments(boundToConst));
+  const EXISTS_SUBQUERY =
+    "await db.select({ id: t.id }).from(t).where(exists(db.select({ id: c.id }).from(c)))";
+  const STANDALONE_AWAIT = "const rows = await db.select({ id: t.id }).from(t);";
+  const EQUALITY_COMPARE = "if (x === db.select({ id: t.id }).from(t)) {}";
+
   const checks = {
+    treatsAssignedChainAsFragment: isBoundToName(
+      boundSrc,
+      boundSrc.indexOf(".select", boundSrc.indexOf("const sub")),
+    ),
+    treatsCombinatorArgumentAsFragment: isBoundToName(EXISTS_SUBQUERY, EXISTS_SUBQUERY.lastIndexOf(".select")),
+    doesNotTreatAStandaloneAwaitAsFragment:
+      isBoundToName(STANDALONE_AWAIT, STANDALONE_AWAIT.indexOf(".select")) === false,
+    doesNotTreatAnEqualityComparisonAsAnAssignment:
+      isBoundToName(EQUALITY_COMPARE, EQUALITY_COMPARE.indexOf(".select")) === false,
+    passesFragmentBoundToConst: scanSource(boundToConst, known).violations.length === 0,
     flagsBrokenTeamJoin: scanSource(brokenTeamJoin, known).violations.length === 1,
     flagsBrokenBareSelect: scanSource(brokenBareSelect, known).violations.length > 0,
     flagsBrokenRelational: scanSource(brokenRelational, known).violations.length > 0,
@@ -297,6 +322,8 @@ if (SELF_TEST) {
     passesFixedRelational: scanSource(fixedRelational, known).violations.length === 0,
     ignoresRawSqlTemplate: scanSource(rawSqlIsIgnored, known).violations.length === 0,
     importParserFindsSchemaNames: schemaImports(header).has("projectMembers"),
+    lineOfCountsNewlinesNotBytes:
+      lineOf("a\nb\nc", 4) === 3 && lineOf("a\nb\nc", 0) === 1,
     importParserIgnoresNonSchema:
       !schemaImports(`import { foo } from "@nestjs/common";\n`).has("foo"),
   };

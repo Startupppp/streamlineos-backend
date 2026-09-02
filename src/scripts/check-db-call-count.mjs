@@ -63,6 +63,11 @@ const DB_CALL_PATTERNS = [
   /\bredisClient\s*\.\s*(?:get|set|del|hget|hset|lpush|rpush)\s*\(/,
   /\bredis\s*\.\s*(?:get|set|del|hget|hset|lpush|rpush)\s*\(/,
   /\bawait\s+\w+Repository\s*\.\s*(?:findOne|findBy|save|update|delete)\s*\(/,
+  // A helper that RECEIVES the handle issues the query just as surely as one that
+  // owns it. Matching only `db.select(` saw the handle as a receiver and never as
+  // an argument, so `await pullAttendanceInputs(this.db, ...)` inside a loop —
+  // payroll/runs/inputs.service.ts, ~4,000 serial round-trips — read as clean.
+  /\bawait\s+(?:this\.)?[\w.]+\s*\(\s*(?:this\.)?(?:db|tx)\s*[,)]/,
 ];
 
 function normalizeRelPath(file) {
@@ -179,15 +184,25 @@ export function detectLoopDbCalls(src) {
     let depth = 0;
     let enteredBody = false;
     const end = Math.min(i + LOOP_BODY_LOOKFORWARD, lines.length);
+    // Testing one line at a time could not see a chain broken across lines:
+    // `await this.db` on one line and `.select(` on the next never matched, so
+    // every formatted Drizzle query inside a loop was invisible. The patterns
+    // already separate their tokens with `\s*`, so running them over the body
+    // text accumulated so far spans a newline and nothing else — two statements
+    // on adjacent lines still cannot bridge, because `;` is not whitespace.
+    let bodySoFar = "";
     for (let j = i; j < end; j++) {
       const bodyLine = lines[j];
       const bdelta = braceDepthChange(bodyLine);
       if (!enteredBody && bdelta > 0) enteredBody = true;
       depth += bdelta;
       if (enteredBody && depth <= 0) break;
-      if (enteredBody && j > i && DB_CALL_PATTERNS.some((re) => re.test(bodyLine))) {
-        violations.push({ loopLine: i + 1, callLine: j + 1, text: bodyLine.trim() });
-        break;
+      if (enteredBody && j > i) {
+        bodySoFar += (bodySoFar ? "\n" : "") + bodyLine;
+        if (DB_CALL_PATTERNS.some((re) => re.test(bodySoFar))) {
+          violations.push({ loopLine: i + 1, callLine: j + 1, text: bodyLine.trim() });
+          break;
+        }
       }
     }
   }
@@ -393,7 +408,83 @@ function runSelfTests() {
     }
   }
 
-  console.log("SELF-TEST PASS: all 8 detection/classification checks passed");
+  {
+    // Regression fixtures taken from the two shapes this detector was blind to.
+    // Both are the REAL code from payroll/runs/inputs.service.ts, not a synthetic
+    // paraphrase: the gate reported ACTIONABLE 0 while sitting directly over them.
+    const indirectHandle = [
+      "    for (const row of toReset) {",
+      "      const pulled = await pullAttendanceInputs(this.db, orgId, row.userId, month);",
+      "      if (pulled) pulledInputs.push({ userId: row.userId, pulled });",
+      "    }",
+    ].join("\n");
+    const multiLineChain = [
+      "    for (const row of rows) {",
+      "      const existing = await this.db",
+      "        .select({ id: payrollInputs.id })",
+      "        .from(payrollInputs);",
+      "    }",
+    ].join("\n");
+    const noDbCall = [
+      "    for (const row of rows) {",
+      "      logger.log(row.id);",
+      "      totals.push(compute(row));",
+      "    }",
+    ].join("\n");
+    const adjacentStatements = [
+      "    for (const row of rows) {",
+      "      const handle = memoDb;",
+      "      results.select(row);",
+      "    }",
+    ].join("\n");
+
+    const cases = [
+      ["a helper receiving the db handle as an ARGUMENT is a loop DB call", indirectHandle, 1],
+      ["a Drizzle chain broken across lines is a loop DB call", multiLineChain, 1],
+      ["a loop with no DB access is not a finding", noDbCall, 0],
+      ["two adjacent statements do not bridge into a false match", adjacentStatements, 0],
+    ];
+    for (const [label, fixture, expected] of cases) {
+      const got = detectLoopDbCalls(fixture).length;
+      if (got !== expected) {
+        console.error(`SELF-TEST FAIL: ${label} — expected ${expected} violation(s), got ${got}`);
+        process.exit(1);
+      }
+    }
+  }
+
+  {
+    // parenBalance is what stops the scanner walking past the end of a one-line
+    // loop into an unrelated construct. Nothing above asserts its arithmetic, so
+    // it could return a constant and every detection case would still pass.
+    const cases = [
+      ["for (const x of xs) {", 0],
+      ["}", 0],
+      ["const a = f(g(1));", 0],
+      ["ids.map((id) => `(${id})`);", 0],
+      ['const s = "((( unclosed in a string";', 0],
+      ["foo(bar,", 1],
+      [")", -1],
+    ];
+    for (const [line, expected] of cases) {
+      if (parenBalance(line) !== expected) {
+        console.error(
+          `SELF-TEST FAIL: parenBalance(${JSON.stringify(line)}) = ${parenBalance(line)}, expected ${expected}`,
+        );
+        process.exit(1);
+      }
+    }
+    if (!loopParensBalanced("for (const x of xs) {")) {
+      console.error("SELF-TEST FAIL: an opened loop header must count as balanced-or-open");
+      process.exit(1);
+    }
+    if (loopParensBalanced("));")) {
+      console.error("SELF-TEST FAIL: a line that closes more parens than it opens is not balanced");
+      process.exit(1);
+    }
+  }
+
+  console.log("SELF-TEST PASS: all 12 detection/classification checks passed");
   process.exitCode = 0;
 }
 

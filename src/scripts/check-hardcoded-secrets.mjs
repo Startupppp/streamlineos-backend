@@ -93,7 +93,20 @@ export function allowsFakeSecrets(relPath) {
 }
 
 const NAMED_SECRET_ASSIGNMENT =
-  /\b[A-Za-z0-9_]*(?:SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_?TOKEN|PRIVATE_?KEY|AUTH_?TOKEN)[A-Za-z0-9_]*\s*[:=]\s*["'`]([^"'`\n]{12,})["'`]/gi;
+  /\b([A-Za-z0-9_]*(?:SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_?TOKEN|PRIVATE_?KEY|AUTH_?TOKEN)[A-Za-z0-9_]*)\s*[:=]\s*["'`]([^"'`\n]{12,})["'`]/gi;
+
+const SLOT_NAMING_SUFFIX =
+  /_(HEADER|HEADERS|NAME|NAMES|LABEL|FIELD|FIELDS|PREFIX|SUFFIX|PARAM|PARAMS|COOKIE|ENV|VAR|KEYS?_?NAME|PLACEHOLDER|PATTERN|REGEX|TYPE|KIND|COLUMN|TABLE|ROUTE|PATH|URL|MESSAGE|ERROR|DOC|DESCRIPTION)$/i;
+
+export function namesASlotNotAValue(identifier) {
+  return SLOT_NAMING_SUFFIX.test(String(identifier));
+}
+
+export function looksLikeSlug(value) {
+  const v = String(value);
+  if (!/[-_.]/.test(v)) return false;
+  return v.split(/[-_.]/).every((seg) => /^[a-z][a-z0-9]*$/.test(seg));
+}
 
 const ALLOWED_FILES = {};
 
@@ -138,8 +151,11 @@ export function findSecrets(source, fileName = "", relPath = fileName) {
   if (!templateEnv && !fakeSecretsAllowed) {
     NAMED_SECRET_ASSIGNMENT.lastIndex = 0;
     for (const match of source.matchAll(NAMED_SECRET_ASSIGNMENT)) {
-      const value = match[1];
+      const identifier = match[1];
+      const value = match[2];
+      if (namesASlotNotAValue(identifier)) continue;
       if (isPlaceholderPassword(value)) continue;
+      if (looksLikeSlug(value)) continue;
       if (/^process\.env\b|^\$\{|^<|^\*+$/.test(value)) continue;
       if (/\s/.test(value)) continue;
       findings.push({ kind: "named-secret-assignment" });
@@ -288,6 +304,28 @@ function runSelfTests() {
   assert(
     "a named secret assigned a high-entropy literal is a finding",
     kind('const JWT_SEC' + 'RET = "s3cr3t-Th1s-Is-A-Real-Value-9182";').includes("named-secret-assignment"),
+  );
+  assert(
+    "a constant NAMING the header that carries a secret is NOT a finding",
+    kind('export const CALENDAR_WEBHOOK_SEC' + 'RET_HEADER = "x-calendar-webhook-secret";').length === 0,
+  );
+  assert(
+    "the slot-naming exclusion is suffix-anchored, so SECRET_HEADER_VALUE still bites",
+    namesASlotNotAValue("X_SEC" + "RET_HEADER_VALUE") === false,
+  );
+  assert(
+    "a lowercase kebab slug assigned to a secret-named const is NOT a finding",
+    kind('const SES' + 'SION_SECRET_KEY = "streamline-session-cookie";').length === 0,
+  );
+  assert(
+    "but a mixed-case value in the same slot IS a finding — the slug rule is not a blanket mute",
+    kind('const SESSION_SEC' + 'RET_KEY = "Streamline-Session-C00kie-9182";').includes("named-secret-assignment"),
+  );
+  assert(
+    "a slug is only a slug when every segment is lowercase",
+    looksLikeSlug("x-calendar-webhook-secret") === true &&
+      looksLikeSlug("x-Calendar-webhook-secret") === false &&
+      looksLikeSlug("deadbeefcafebabe1234") === false,
   );
   assert(
     "an ordinary long string is NOT a finding",
