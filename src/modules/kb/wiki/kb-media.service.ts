@@ -45,6 +45,12 @@ const DOC_CAP = 25 * 1024 * 1024;
 
 const COMPRESSIBLE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
+/**
+ * A 10MB PNG can decode to tens of gigabytes. The byte cap above bounds what
+ * arrives; this bounds what the decoder is allowed to allocate from it.
+ */
+const MAX_IMAGE_PIXELS = 50_000_000;
+
 function sizeCap(mimeType: string): number {
   if (IMAGE_TYPES.has(mimeType)) return IMAGE_CAP;
   if (VIDEO_TYPES.has(mimeType)) return VIDEO_CAP;
@@ -100,7 +106,7 @@ export class KbMediaService {
 
     if (COMPRESSIBLE_TYPES.has(mimetype)) {
       try {
-        uploadBuffer = await sharp(uploadBuffer)
+        uploadBuffer = await sharp(uploadBuffer, { limitInputPixels: MAX_IMAGE_PIXELS })
           .rotate()
           .resize({ width: 1920, withoutEnlargement: true })
           .webp({ quality: 82 })

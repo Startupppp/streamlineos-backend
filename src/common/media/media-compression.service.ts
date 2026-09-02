@@ -63,6 +63,39 @@ const VIDEO_MAX_DIMENSION = 1080;
 const VIDEO_CRF = 28;
 const VIDEO_AUDIO_BITRATE = "128k";
 
+/**
+ * Every transform in this file is bounded three ways, because "asynchronous" on
+ * its own is not a bound — it only moves an unbounded cost somewhere harder to
+ * see.
+ *
+ *   INPUT   a decompression bomb is refused before any decoder allocates
+ *   TIME    the work is killed, not merely abandoned; an abandoned ffmpeg keeps
+ *           its CPU
+ *   THREADS one transform may not take every core from every other request
+ */
+const MAX_IMAGE_PIXELS = 50_000_000;
+const MAX_TRANSCODE_INPUT_BYTES = 64 * 1024 * 1024;
+const TRANSCODE_TIMEOUT_MS = 60_000;
+const FFMPEG_THREADS = 2;
+
+/**
+ * The thread bound is NOT set here. `sharp.concurrency()` is a call into the
+ * native libvips binding, and calling it at module load makes every importer of
+ * this file — every spec that reaches it through StorageService — depend on
+ * that binding being real. A spec that stubs `jest.mock("sharp", …)` then dies
+ * at import rather than at use, which is exactly what happened to
+ * kb-media.service.spec.ts. How many transforms may decode at once is
+ * MediaTransformRunner's ceiling instead, which is where the answer belongs:
+ * it bounds ffmpeg and sharp together, and it is testable without a native
+ * binding.
+ */
+const SHARP_INPUT_LIMITS = { limitInputPixels: MAX_IMAGE_PIXELS } as const;
+
+export interface PlannedOutput {
+  mimeType: string;
+  fileName: string;
+}
+
 function stripExtension(name: string): string {
   return name.replace(/\.[^.]+$/, "");
 }
@@ -71,28 +104,85 @@ function uniqueTmpPath(ext: string): string {
   return join(tmpdir(), `sc-media-${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
 }
 
+/**
+ * Racing a transcode against a timer does not bound it: the promise settles and
+ * the ffmpeg process keeps encoding at full tilt with nobody left to notice.
+ * The timer here holds the command handle and SIGKILLs it, which is the only
+ * thing that actually returns the CPU.
+ */
 function transcodeToMp4(inputPath: string, outputPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
+    let timer: NodeJS.Timeout | undefined;
+    let settled = false;
+
+    const settle = (err?: Error): void => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (err) reject(err);
+      else resolve();
+    };
+
+    const command = ffmpeg(inputPath)
       .outputOptions([
         "-c:v libx264",
         `-crf ${VIDEO_CRF}`,
         "-preset fast",
         "-movflags +faststart",
+        `-threads ${FFMPEG_THREADS}`,
         `-vf scale='if(gt(iw,${VIDEO_MAX_DIMENSION}),${VIDEO_MAX_DIMENSION},-2)':'if(gt(ih,${VIDEO_MAX_DIMENSION}),${VIDEO_MAX_DIMENSION},-2)':flags=lanczos`,
         "-c:a aac",
         `-b:a ${VIDEO_AUDIO_BITRATE}`,
       ])
       .output(outputPath)
-      .on("end", () => resolve())
-      .on("error", (err: Error) => reject(err))
-      .run();
+      .on("end", () => settle())
+      .on("error", (err: Error) => settle(err));
+
+    timer = setTimeout(() => {
+      try {
+        command.kill("SIGKILL");
+      } catch {
+        /* the process may already have exited between the timer and the kill */
+      }
+      settle(new Error(`transcode exceeded ${TRANSCODE_TIMEOUT_MS}ms and was killed`));
+    }, TRANSCODE_TIMEOUT_MS);
+
+    command.run();
   });
 }
 
 @Injectable()
 export class MediaCompressionService {
   private readonly logger = new Logger(MediaCompressionService.name);
+
+  /**
+   * The output name and type this compressor WILL produce, decided without
+   * doing the work.
+   *
+   * The object key has to be chosen on the request thread — the caller is given
+   * it in the response — while the compression that decides the stored format
+   * runs later, off that thread. Those two facts are only compatible if the
+   * format decision is separable from the encoding, so it lives here and
+   * `compress` is required to agree with it whenever it succeeds. When a
+   * transform fails or declines, `compress` returns the original bytes and the
+   * caller records the MEASURED type on the quarantine row; the key's extension
+   * is decorative in that case, because every read serves the type the object
+   * store holds, not the one the key spells.
+   */
+  planOutput(buffer: Buffer, mimeType: string, fileName: string): PlannedOutput {
+    if (isAlreadyCompressedByMagicBytes(buffer)) return { mimeType, fileName };
+
+    if (COMPRESSIBLE_IMAGE_TYPES.has(mimeType))
+      return { mimeType: "image/webp", fileName: `${stripExtension(fileName)}.webp` };
+
+    if (mimeType.startsWith("video/")) {
+      if (ALREADY_COMPRESSED_VIDEO_TYPES.has(mimeType)) return { mimeType, fileName };
+      if (buffer.length > MAX_TRANSCODE_INPUT_BYTES) return { mimeType, fileName };
+      return { mimeType: "video/mp4", fileName: `${stripExtension(fileName)}.mp4` };
+    }
+
+    return { mimeType, fileName };
+  }
 
   async compress(
     buffer: Buffer,
@@ -109,26 +199,23 @@ export class MediaCompressionService {
     if (mimeType.startsWith("video/")) {
       if (ALREADY_COMPRESSED_VIDEO_TYPES.has(mimeType))
         return { buffer, mimeType, fileName };
+      /**
+       * Refused rather than queued. A transcode is the one transform whose cost
+       * grows without a ceiling in the input size, and this endpoint's callers
+       * include an unauthenticated widget.
+       */
+      if (buffer.length > MAX_TRANSCODE_INPUT_BYTES) {
+        this.logger.warn("Video too large to transcode, storing original", {
+          fileName,
+          bytes: buffer.length,
+          limit: MAX_TRANSCODE_INPUT_BYTES,
+        });
+        return { buffer, mimeType, fileName };
+      }
       return this.transcodeVideo(buffer, mimeType, fileName);
     }
 
     return { buffer, mimeType, fileName };
-  }
-
-  async generateThumbnail(
-    buffer: Buffer,
-    mimeType: string,
-  ): Promise<Buffer | null> {
-    if (!COMPRESSIBLE_IMAGE_TYPES.has(mimeType)) return null;
-    try {
-      return await sharp(buffer)
-        .rotate()
-        .resize({ width: 256, height: 256, fit: "inside", withoutEnlargement: true })
-        .webp({ quality: 70 })
-        .toBuffer();
-    } catch {
-      return null;
-    }
   }
 
   private async compressImage(
@@ -137,7 +224,7 @@ export class MediaCompressionService {
     fileName: string,
   ): Promise<CompressionResult> {
     try {
-      const compressed = await sharp(buffer)
+      const compressed = await sharp(buffer, SHARP_INPUT_LIMITS)
         .rotate()
         .resize({ width: MAX_IMAGE_DIMENSION, withoutEnlargement: true })
         .webp({ quality: WEBP_QUALITY })
@@ -168,9 +255,11 @@ export class MediaCompressionService {
       const transcoded = await readFile(outputPath);
 
       if (transcoded.length >= buffer.length) {
-        this.logger.warn(
-          `Video transcode for "${fileName}" produced no size saving (${transcoded.length} >= ${buffer.length}), storing original`,
-        );
+        this.logger.warn("Video transcode produced no size saving, storing original", {
+          fileName,
+          transcodedBytes: transcoded.length,
+          originalBytes: buffer.length,
+        });
         return { buffer, mimeType, fileName };
       }
 

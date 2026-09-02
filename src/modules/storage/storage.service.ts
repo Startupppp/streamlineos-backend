@@ -274,68 +274,57 @@ export class StorageService {
     };
   }
 
-  async uploadCompressed(
-    orgId: string,
-    buffer: Buffer,
-    folder = "uploads",
-    fileName = "file",
-    mimeType = "application/octet-stream",
-    bucketOverride?: string,
-  ): Promise<UploadResult> {
-    const compressed = await this.compression.compress(
-      buffer,
-      mimeType,
-      fileName,
-    );
-    return this.uploadFile(
-      orgId,
-      compressed.buffer,
-      folder,
-      compressed.fileName,
-      compressed.mimeType,
-      bucketOverride,
-    );
-  }
-
-  async compressAndPreGenerateKey(
+  /**
+   * Chooses the object key without doing any transform work.
+   *
+   * Compression decides the stored format, and the format decides the key's
+   * extension — but the key has to be in the response while the compression
+   * runs off the request thread. `planOutput` separates the format decision
+   * (cheap, header-only) from the encoding (expensive), so the key can be
+   * settled now and the bytes written later.
+   */
+  async planUpload(
     orgId: string,
     buffer: Buffer,
     folder: string,
     fileName: string,
     mimeType: string,
-  ): Promise<{
-    key: string;
-    compressedBuffer: Buffer;
-    compressedMimeType: string;
-    size: number;
-    sha256: string;
-  }> {
-    const compressed = await this.compression.compress(
-      buffer,
-      mimeType,
-      fileName,
-    );
+  ): Promise<{ key: string; plannedMimeType: string }> {
+    const planned = this.compression.planOutput(buffer, mimeType, fileName);
     const placement = await this.placementFor(orgId);
-    const key = StorageService.objectKey(
-      placement,
-      orgId,
-      folder,
-      compressed.fileName,
-    );
     return {
-      key,
-      compressedBuffer: compressed.buffer,
-      compressedMimeType: compressed.mimeType,
+      key: StorageService.objectKey(placement, orgId, folder, planned.fileName),
+      plannedMimeType: planned.mimeType,
+    };
+  }
+
+  /**
+   * The deferred half of an upload: compress, then write to the key the request
+   * already handed out. Returns what the object actually holds, which may
+   * differ from the plan when a transform declines or fails — the caller
+   * records the measured values, and every read serves the type the store
+   * reports rather than the one the key spells.
+   */
+  async compressToKey(
+    orgId: string,
+    buffer: Buffer,
+    key: string,
+    fileName: string,
+    mimeType: string,
+  ): Promise<{ size: number; mimeType: string; sha256: string }> {
+    const compressed = await this.compression.compress(buffer, mimeType, fileName);
+    await this.uploadToKey(orgId, compressed.buffer, key, compressed.mimeType);
+    return {
       size: compressed.buffer.length,
+      mimeType: compressed.mimeType,
       sha256: createHash("sha256").update(compressed.buffer).digest("hex"),
     };
   }
 
   /**
    * Writes to a key the caller already holds. The key is used verbatim: it came
-   * from `compressAndPreGenerateKey`, which has already applied the region key
-   * prefix, and prefixing again here would store the object somewhere no read
-   * path looks.
+   * from `planUpload`, which has already applied the region key prefix, and
+   * prefixing again here would store the object somewhere no read path looks.
    */
   async uploadToKey(
     orgId: string,

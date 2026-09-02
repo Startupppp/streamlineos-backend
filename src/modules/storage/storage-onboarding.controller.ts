@@ -25,6 +25,7 @@ import { type Db } from "../../db/drizzle.module";
 import { documents, onboardingSteps } from "../../db/schema";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { StorageService } from "./storage.service";
+import { MediaTransformRunner } from "./media-transform.runner";
 import { AvScanner } from "../../common/security/av-scan";
 import { validateMagicBytes } from "./file-signatures";
 import { onboardingDocTypeSchema } from "./dto/storage.schemas";
@@ -46,6 +47,7 @@ export class OnboardingDocumentsController {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly storage: StorageService,
     private readonly avScanner: AvScanner,
+    private readonly transforms: MediaTransformRunner,
   ) {}
 
   @Post("documents")
@@ -90,14 +92,16 @@ export class OnboardingDocumentsController {
     if (scanResult.status === "error")
       throw new ServiceUnavailableException("Malware scan unavailable — upload rejected");
 
-    const { key, compressedBuffer, compressedMimeType, size } =
-      await this.storage.compressAndPreGenerateKey(
-        u.orgId,
-        file.buffer,
-        "onboarding",
-        file.originalname,
-        file.mimetype,
-      );
+    if (!this.transforms.hasCapacity())
+      throw new ServiceUnavailableException("Upload processing is saturated — retry shortly");
+
+    const { key, plannedMimeType } = await this.storage.planUpload(
+      u.orgId,
+      file.buffer,
+      "onboarding",
+      file.originalname,
+      file.mimetype,
+    );
 
     const stepName = `Upload ${type}`;
 
@@ -108,8 +112,8 @@ export class OnboardingDocumentsController {
         name: file.originalname,
         type,
         fileUrl: key,
-        fileSize: size,
-        mimeType: compressedMimeType,
+        fileSize: file.size,
+        mimeType: plannedMimeType,
         uploadedBy: u.userId,
       });
       const existing = await tx.query.onboardingSteps.findFirst({
@@ -134,13 +138,32 @@ export class OnboardingDocumentsController {
       }
     });
 
-    const uploadDeferred = registerAfterCommit(async () => {
-      await this.storage.uploadToKey(u.orgId, compressedBuffer, key, compressedMimeType);
-    });
+    /**
+     * The row already carries the key, so the blob write is re-drivable and
+     * nothing on the request thread compresses or uploads. A refusal by the
+     * bounded runner is not silent: the row is left pointing at a key with no
+     * object, which is the state `cron-storage-sweep` already reconciles, and
+     * the runner has logged the refusal at error level.
+     */
+    const orgId = u.orgId;
+    const originalname = file.originalname;
+    const mimetype = file.mimetype;
+    const buffer = file.buffer;
 
-    if (!uploadDeferred) {
-      await this.storage.uploadToKey(u.orgId, compressedBuffer, key, compressedMimeType);
-    }
+    const enqueue = async (): Promise<void> => {
+      this.transforms.submit({
+        name: "onboarding.document.compress",
+        orgId,
+        run: async () => {
+          await this.storage.compressToKey(orgId, buffer, key, originalname, mimetype);
+        },
+        compensate: async () => {
+          await this.storage.deleteFileIfPresent(orgId, key);
+        },
+      });
+    };
+
+    if (!registerAfterCommit(enqueue)) await enqueue();
 
     return { url: key };
   }

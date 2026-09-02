@@ -6,6 +6,7 @@ import {
 import { OnboardingDocumentsController } from "./storage-onboarding.controller";
 import type { StorageService } from "./storage.service";
 import type { AvScanner } from "../../common/security/av-scan";
+import { MediaTransformRunner } from "./media-transform.runner";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import * as tenantContext from "../../common/tenant/tenant-context";
@@ -62,9 +63,10 @@ function buildTxMock(onboardingStepResult: object | null = null) {
 describe("OnboardingDocumentsController.upload — connection decoupling", () => {
   const callOrder: string[] = [];
 
-  let mockStorage: jest.Mocked<Pick<StorageService, "isConfigured" | "compressAndPreGenerateKey" | "uploadToKey">>;
+  let mockStorage: jest.Mocked<Pick<StorageService, "isConfigured" | "planUpload" | "compressToKey" | "deleteFileIfPresent">>;
   let mockAvScanner: jest.Mocked<Pick<AvScanner, "scan">>;
   let mockDb: { transaction: jest.Mock };
+  let transforms: MediaTransformRunner;
   let controller: OnboardingDocumentsController;
 
   beforeEach(() => {
@@ -74,21 +76,22 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
 
     mockStorage = {
       isConfigured: jest.fn().mockReturnValue(true),
-      compressAndPreGenerateKey: jest.fn().mockResolvedValue({
+      planUpload: jest.fn().mockResolvedValue({
         key: "onboarding/uuid-id-doc.pdf",
-        compressedBuffer: Buffer.from("compressed"),
-        compressedMimeType: "application/pdf",
-        size: 10,
+        plannedMimeType: "application/pdf",
       }),
-      uploadToKey: jest.fn().mockImplementation(async () => {
+      compressToKey: jest.fn().mockImplementation(async () => {
         callOrder.push("upload");
+        return { size: 10, mimeType: "application/pdf", sha256: "aa" };
       }),
+      deleteFileIfPresent: jest.fn().mockResolvedValue(true),
     };
 
     mockAvScanner = {
       scan: jest.fn().mockResolvedValue({ status: "clean" }),
     };
 
+    transforms = new MediaTransformRunner();
     const tx = buildTxMock();
     mockDb = {
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
@@ -102,6 +105,7 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
       mockDb as never,
       mockStorage as never,
       mockAvScanner as never,
+      transforms,
     );
   });
 
@@ -109,6 +113,7 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
     mockRegisterAfterCommit.mockReturnValue(false);
 
     await controller.upload(makeFile(), "ID_PROOF", makeUser());
+    await transforms.drain();
 
     expect(callOrder).toEqual(["db-committed", "upload"]);
   });
@@ -124,9 +129,10 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
 
     expect(callOrder).toEqual(["db-committed"]);
     expect(capturedHook).not.toBeNull();
-    expect(mockStorage.uploadToKey).not.toHaveBeenCalled();
+    expect(mockStorage.compressToKey).not.toHaveBeenCalled();
 
     await capturedHook!();
+    await transforms.drain();
 
     expect(callOrder).toEqual(["db-committed", "upload"]);
     expect(result.url).toBe("onboarding/uuid-id-doc.pdf");
@@ -138,7 +144,7 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
     const result = await controller.upload(makeFile(), "ID_PROOF", makeUser());
 
     expect(result).toEqual({ url: "onboarding/uuid-id-doc.pdf" });
-    expect(mockStorage.uploadToKey).not.toHaveBeenCalled();
+    expect(mockStorage.compressToKey).not.toHaveBeenCalled();
   });
 
   it("rejects when storage is not configured", async () => {
@@ -172,9 +178,10 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
 });
 
 describe("OnboardingDocumentsController.upload — AV scan gate", () => {
-  let mockStorage: jest.Mocked<Pick<StorageService, "isConfigured" | "compressAndPreGenerateKey" | "uploadToKey">>;
+  let mockStorage: jest.Mocked<Pick<StorageService, "isConfigured" | "planUpload" | "compressToKey" | "deleteFileIfPresent">>;
   let mockAvScanner: jest.Mocked<Pick<AvScanner, "scan">>;
   let mockDb: { transaction: jest.Mock };
+  let transforms: MediaTransformRunner;
   let controller: OnboardingDocumentsController;
 
   beforeEach(() => {
@@ -183,17 +190,17 @@ describe("OnboardingDocumentsController.upload — AV scan gate", () => {
 
     mockStorage = {
       isConfigured: jest.fn().mockReturnValue(true),
-      compressAndPreGenerateKey: jest.fn().mockResolvedValue({
+      planUpload: jest.fn().mockResolvedValue({
         key: "onboarding/uuid-id-doc.pdf",
-        compressedBuffer: Buffer.from("compressed"),
-        compressedMimeType: "application/pdf",
-        size: 10,
+        plannedMimeType: "application/pdf",
       }),
-      uploadToKey: jest.fn().mockResolvedValue(undefined),
+      compressToKey: jest.fn().mockResolvedValue({ size: 10, mimeType: "application/pdf", sha256: "aa" }),
+      deleteFileIfPresent: jest.fn().mockResolvedValue(true),
     };
 
     mockAvScanner = { scan: jest.fn().mockResolvedValue({ status: "clean" }) };
 
+    transforms = new MediaTransformRunner();
     const tx = buildTxMock();
     mockDb = {
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
@@ -203,6 +210,7 @@ describe("OnboardingDocumentsController.upload — AV scan gate", () => {
       mockDb as never,
       mockStorage as never,
       mockAvScanner as never,
+      transforms,
     );
   });
 
@@ -216,7 +224,7 @@ describe("OnboardingDocumentsController.upload — AV scan gate", () => {
       "id-doc.pdf",
       "application/pdf",
     );
-    expect(mockStorage.compressAndPreGenerateKey).toHaveBeenCalled();
+    expect(mockStorage.planUpload).toHaveBeenCalled();
   });
 
   it("rejects infected files with 422 and never writes to S3", async () => {
@@ -226,8 +234,8 @@ describe("OnboardingDocumentsController.upload — AV scan gate", () => {
       UnprocessableEntityException,
     );
 
-    expect(mockStorage.compressAndPreGenerateKey).not.toHaveBeenCalled();
-    expect(mockStorage.uploadToKey).not.toHaveBeenCalled();
+    expect(mockStorage.planUpload).not.toHaveBeenCalled();
+    expect(mockStorage.compressToKey).not.toHaveBeenCalled();
   });
 
   it("rejects scanner errors with 503 and never writes to S3", async () => {
@@ -237,8 +245,8 @@ describe("OnboardingDocumentsController.upload — AV scan gate", () => {
       ServiceUnavailableException,
     );
 
-    expect(mockStorage.compressAndPreGenerateKey).not.toHaveBeenCalled();
-    expect(mockStorage.uploadToKey).not.toHaveBeenCalled();
+    expect(mockStorage.planUpload).not.toHaveBeenCalled();
+    expect(mockStorage.compressToKey).not.toHaveBeenCalled();
   });
 
   it("scan happens before the DB transaction — no orphaned rows on infected files", async () => {

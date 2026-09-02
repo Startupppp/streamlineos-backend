@@ -29,6 +29,14 @@ import { InsufficientAiCreditsException } from "../../common/http/api-exceptions
 import { FeedbucketPublicService } from "./feedbucket-public.service";
 import { FeedbucketAiService } from "./feedbucket-ai.service";
 import { StorageService } from "../storage/storage.service";
+import { MediaTransformRunner } from "../storage/media-transform.runner";
+import {
+  assertUploadableScreenshot,
+  planMedia,
+  queueMediaTransforms,
+  type PendingMediaTransform,
+  type PlannedMedia,
+} from "./feedbucket-media-transforms";
 import { NotificationsService } from "../notifications/notifications.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
@@ -47,6 +55,7 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 
 const publicKeyParams = z.object({ publicKey: z.string().min(1) }).strict();
+
 
 const ALLOWED_IMAGE_MIMES = new Set([
   "image/jpeg",
@@ -124,6 +133,7 @@ export class FeedbucketPublicController {
     private readonly rateLimitService: RateLimitService,
     private readonly ticketsService: ProjectsTicketsService,
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly transforms: MediaTransformRunner,
   ) {}
 
   @Get(":publicKey/config")
@@ -211,47 +221,39 @@ export class FeedbucketPublicController {
     const screenshot = files?.screenshot?.[0];
     const recording = files?.recording?.[0];
 
-    let screenshotUpload:
-      | { key: string; size: number; mimeType: string }
-      | undefined;
+    if ((screenshot || recording) && !this.transforms.hasCapacity())
+      throw new HttpException({ message: "Media processing is saturated — retry shortly" }, 503);
+
+    const pendingTransforms: PendingMediaTransform[] = [];
+
+    let screenshotUpload: PlannedMedia | undefined;
     if (screenshot) {
-      if (screenshot.size > MAX_SCREENSHOT_BYTES)
-        throw new BadRequestException("Screenshot must be under 5MB");
-
-      if (!ALLOWED_IMAGE_MIMES.has(screenshot.mimetype))
-        throw new BadRequestException(
-          "Screenshot must be an image (JPEG, PNG, GIF, or WebP)",
-        );
-
-      if (!validateMagicBytes(screenshot.buffer, screenshot.mimetype))
-        throw new BadRequestException(
-          "Screenshot file content does not match its type",
-        );
-
-      screenshotUpload = await this.storage.uploadCompressed(
+      assertUploadableScreenshot(screenshot, MAX_SCREENSHOT_BYTES);
+      screenshotUpload = await planMedia(
+        this.storage,
         widget.orgId,
-        screenshot.buffer,
         `feedbucket/${folder}/screenshots`,
-        screenshot.originalname,
-        screenshot.mimetype,
+        { buffer: screenshot.buffer, fileName: screenshot.originalname, mimeType: screenshot.mimetype },
+        pendingTransforms,
       );
     }
 
-    let recordingUpload:
-      | { key: string; size: number; mimeType: string }
-      | undefined;
+    let recordingUpload: PlannedMedia | undefined;
     if (recording) {
-      if (recording.size > MAX_RECORDING_BYTES) {
+      if (recording.size > MAX_RECORDING_BYTES)
         throw new BadRequestException("Recording must be under 100MB");
-      }
+
       const rawMime = recording.mimetype.split(";")[0]?.trim() ?? "";
-      const storeMime = rawMime.startsWith("video/") ? rawMime : "video/webm";
-      recordingUpload = await this.storage.uploadCompressed(
+      recordingUpload = await planMedia(
+        this.storage,
         widget.orgId,
-        recording.buffer,
         `feedbucket/${folder}/recordings`,
-        recording.originalname || "recording.webm",
-        storeMime,
+        {
+          buffer: recording.buffer,
+          fileName: recording.originalname || "recording.webm",
+          mimeType: rawMime.startsWith("video/") ? rawMime : "video/webm",
+        },
+        pendingTransforms,
       );
     }
 
@@ -286,6 +288,8 @@ export class FeedbucketPublicController {
             fileName: recording.originalname,
             fileSize: recordingUpload.size,
           });
+
+        await queueMediaTransforms(this.storage, this.transforms, widget.orgId, pendingTransforms);
 
         if (widget.autoCreateTicket && widget.projectId) {
           const deferred = () =>

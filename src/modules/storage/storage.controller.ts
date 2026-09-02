@@ -15,10 +15,10 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
-  Logger,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
+import { createHash } from "crypto";
 import { ilike } from "drizzle-orm";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
@@ -48,7 +48,7 @@ import {
   sanitizeFolder,
 } from "./storage-key";
 import { FileQuarantineService } from "./file-quarantine.service";
-import { MediaCompressionService } from "../../common/media/media-compression.service";
+import { MediaTransformRunner } from "./media-transform.runner";
 import { AccessService } from "../access/access.service";
 import { AvScanner } from "../../common/security/av-scan";
 import { Validate } from "../../common/validation/validate.decorator";
@@ -60,7 +60,6 @@ import {
 } from "./dto/storage.schemas";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
-const TRANSFORM_TIMEOUT_MS = 30_000;
 const ORG_QUOTA_BYTES = 5 * 1024 * 1024 * 1024;
 const USER_QUOTA_BYTES = 500 * 1024 * 1024;
 
@@ -71,20 +70,6 @@ type FileOwner = {
 
 function requiresDedicatedAccess(owner: FileOwner): boolean {
   return owner.access !== "GENERIC";
-}
-
-async function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`transform exceeded ${ms}ms`)), ms);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
 }
 
 const ALLOWED_UPLOAD_TYPES = [
@@ -112,8 +97,6 @@ const GENERIC_SENSITIVE_UPLOAD_PERMISSIONS: Readonly<
 @Controller("storage")
 @UseGuards(JwtAuthGuard)
 export class StorageController {
-  private readonly logger = new Logger(StorageController.name);
-
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly storage: StorageService,
@@ -121,7 +104,7 @@ export class StorageController {
     private readonly access: AccessService,
     private readonly avScanner: AvScanner,
     private readonly quarantine: FileQuarantineService,
-    private readonly compression: MediaCompressionService,
+    private readonly transforms: MediaTransformRunner,
   ) {}
 
   @Post("upload")
@@ -148,6 +131,14 @@ export class StorageController {
     if (!validateMagicBytes(file.buffer, file.mimetype))
       throw new BadRequestException("File content does not match declared type");
 
+    /**
+     * Asked before the scan and the quota read, not after: refusing here costs
+     * the caller nothing, while refusing at submission time would mean a
+     * malware scan and a quarantine row thrown away.
+     */
+    if (!this.transforms.hasCapacity())
+      throw new ServiceUnavailableException("Upload processing is saturated — retry shortly");
+
     const [orgUsed, userUsed] = await Promise.all([
       this.quarantine.getTotalUsageBytes(u.orgId),
       this.quarantine.getTotalUsageBytesForUser(u.orgId, u.userId),
@@ -163,62 +154,66 @@ export class StorageController {
     if (scanResult.status === "error")
       throw new ServiceUnavailableException("Malware scan unavailable — upload rejected");
 
-    const preGen = await withDeadline(
-      this.storage.compressAndPreGenerateKey(
-        u.orgId,
-        file.buffer,
-        folder,
-        file.originalname,
-        file.mimetype,
-      ),
-      TRANSFORM_TIMEOUT_MS,
-    ).catch(() => {
-      throw new UnprocessableEntityException("File could not be processed");
-    });
+    /**
+     * The key is settled here and the transform runs later. Nothing on this
+     * request thread compresses, transcodes or writes bytes: the response is
+     * already `pending_scan`, so a caller that reads the contract cannot tell
+     * the difference, and the object stays unreachable until the quarantine row
+     * says clean either way.
+     */
+    const { key, plannedMimeType } = await this.storage.planUpload(
+      u.orgId,
+      file.buffer,
+      folder,
+      file.originalname,
+      file.mimetype,
+    );
+    const declaredSha256 = createHash("sha256").update(file.buffer).digest("hex");
 
     const quarantineId = await this.quarantine.begin({
       orgId: u.orgId,
-      storageKey: preGen.key,
+      storageKey: key,
       filename: file.originalname,
-      mimeType: preGen.compressedMimeType,
-      fileSizeBytes: preGen.size,
-      sha256: preGen.sha256,
+      mimeType: plannedMimeType,
+      fileSizeBytes: file.size,
+      sha256: declaredSha256,
       uploadedBy: u.userId,
     });
 
     const { orgId, userId } = u;
-    const { key, compressedBuffer, compressedMimeType, size, sha256 } = preGen;
+    const body = file.buffer;
+    const originalName = file.originalname;
     const originalMimeType = file.mimetype;
 
-    const publish = () =>
-      this.publishUpload({
+    const enqueue = async (): Promise<void> => {
+      const accepted = this.transforms.submit({
+        name: "storage.upload.compress",
         orgId,
-        userId,
-        quarantineId,
-        key,
-        body: compressedBuffer,
-        mimeType: compressedMimeType,
-        originalMimeType,
-        size,
+        run: () =>
+          this.publishUpload({ orgId, userId, quarantineId, key, body, originalName, originalMimeType }),
+        compensate: () => this.retractUpload(orgId, quarantineId, key),
       });
+      if (!accepted) void this.retractUpload(orgId, quarantineId, key);
+    };
 
-    if (!registerAfterCommit(publish)) await publish();
+    if (!registerAfterCommit(enqueue)) await enqueue();
 
     return {
       quarantineId,
       status: "pending_scan",
       key,
-      mimeType: compressedMimeType,
-      size,
-      sha256,
+      mimeType: plannedMimeType,
+      size: file.size,
+      sha256: declaredSha256,
     };
   }
 
   /**
-   * Puts the object down, releases it from quarantine, then derives the
-   * preview. The order is the point: nothing is reachable until the row that
-   * gates it says clean, and a failure at any step removes both the row and the
-   * object rather than leaving one without the other.
+   * Compresses, puts the object down, records what the object actually holds,
+   * then releases it from quarantine. The order is the point: nothing is
+   * reachable until the row that gates it says clean, and the measured size and
+   * type replace the planned ones so the quota is accounted on the bytes that
+   * were stored rather than the bytes that arrived.
    */
   private async publishUpload(job: {
     orgId: string;
@@ -226,62 +221,44 @@ export class StorageController {
     quarantineId: string;
     key: string;
     body: Buffer;
-    mimeType: string;
+    originalName: string;
     originalMimeType: string;
-    size: number;
   }): Promise<void> {
-    try {
-      await this.storage.uploadToKey(job.orgId, job.body, job.key, job.mimeType);
-    } catch (error) {
-      await this.quarantine.markError(job.quarantineId);
-      /**
-       * The object goes first. `isKeyBlocked` ignores a soft-deleted row, so
-       * dropping the row before the bytes are gone would publish exactly the
-       * half-written file this path exists to retract.
-       */
-      await this.storage.deleteFileIfPresent(job.orgId, job.key).catch(() => false);
-      await this.quarantine.softDelete(job.quarantineId);
-      throw error;
-    }
+    const stored = await this.storage.compressToKey(
+      job.orgId,
+      job.body,
+      job.key,
+      job.originalName,
+      job.originalMimeType,
+    );
 
+    await this.quarantine.recordMeasuredObject(job.quarantineId, {
+      fileSizeBytes: stored.size,
+      mimeType: stored.mimeType,
+    });
     await this.quarantine.markClean(job.quarantineId);
 
     this.audit.log({
       action: "file.upload",
       userId: job.userId,
       orgId: job.orgId,
-      metadata: { fileKey: job.key, fileSize: job.size, mimeType: job.mimeType },
+      metadata: { fileKey: job.key, fileSize: stored.size, mimeType: stored.mimeType },
     });
-
-    await this.deriveThumbnail(job.orgId, job.key, job.body, job.originalMimeType);
   }
 
   /**
-   * A derived preview is best-effort by construction: the original is already
-   * published, so a failed transform must clean up its own half-written object
-   * and leave the upload standing rather than failing the whole job.
+   * The object goes first. `isKeyBlocked` ignores a soft-deleted row, so
+   * dropping the row before the bytes are gone would publish exactly the
+   * half-written file this path exists to retract.
    */
-  private async deriveThumbnail(
+  private async retractUpload(
     orgId: string,
+    quarantineId: string,
     key: string,
-    body: Buffer,
-    originalMimeType: string,
   ): Promise<void> {
-    const thumbKey = `${key}-thumb.webp`;
-    try {
-      const thumbBuffer = await withDeadline(
-        this.compression.generateThumbnail(body, originalMimeType),
-        TRANSFORM_TIMEOUT_MS,
-      );
-      if (!thumbBuffer) return;
-      await this.storage.uploadToKey(orgId, thumbBuffer, thumbKey, "image/webp");
-    } catch (error) {
-      await this.storage.deleteFileIfPresent(orgId, thumbKey).catch(() => false);
-      this.logger.warn(
-        `thumbnail transform failed: ${error instanceof Error ? error.message : String(error)}`,
-        { key },
-      );
-    }
+    await this.quarantine.markError(quarantineId);
+    await this.storage.deleteFileIfPresent(orgId, key).catch(() => false);
+    await this.quarantine.softDelete(quarantineId);
   }
 
   @Get("download")

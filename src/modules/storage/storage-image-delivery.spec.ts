@@ -1,5 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import { StorageController } from "./storage.controller";
+import { MediaTransformRunner } from "./media-transform.runner";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 
@@ -61,7 +62,7 @@ function build() {
     { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as never,
     { scan: jest.fn() } as never,
     quarantine as never,
-    { generateThumbnail: jest.fn() } as never,
+    new MediaTransformRunner(),
   );
   return { controller, storage, findFirst, quarantine, body };
 }

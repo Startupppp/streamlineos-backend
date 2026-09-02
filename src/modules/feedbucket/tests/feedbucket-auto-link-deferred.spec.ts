@@ -11,6 +11,7 @@ jest.mock("../../../common/tenant/tenant-context", () => ({
 }));
 
 import { FeedbucketPublicController } from "../feedbucket-public.controller";
+import { MediaTransformRunner } from "../../storage/media-transform.runner";
 import type { Db } from "../../../db/drizzle.module";
 
 const VALID_BODY = {
@@ -69,6 +70,7 @@ function makeController() {
     rateLimitService as never,
     ticketsService as never,
     db,
+    new MediaTransformRunner(),
   );
   return { ctrl, publicService, ticketsService, rateLimitService };
 }

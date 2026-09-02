@@ -191,6 +191,8 @@
     "check:restrict-fks:self-test": "node src/scripts/check-restrict-fks.mjs --self-test",
     "check:multipart-contracts": "node src/scripts/check-multipart-contracts.mjs",
     "check:multipart-contracts:self-test": "node src/scripts/check-multipart-contracts.mjs --self-test",
+    "check:public-object-urls": "node src/scripts/check-public-object-urls.mjs",
+    "check:public-object-urls:self-test": "node src/scripts/check-public-object-urls.mjs --self-test",
     "check:hr-table-freeze": "node src/scripts/check-hr-table-freeze.mjs",
     "check:hr-table-freeze:self-test": "node src/scripts/check-hr-table-freeze.mjs --self-test",
     "compliance:drill": "node --env-file-if-exists=.env src/scripts/compliance-drill.mjs",

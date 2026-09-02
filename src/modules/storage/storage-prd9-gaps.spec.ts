@@ -9,7 +9,7 @@ import {
 import { StorageController } from "./storage.controller";
 import type { StorageService } from "./storage.service";
 import type { FileQuarantineService } from "./file-quarantine.service";
-import type { MediaCompressionService } from "../../common/media/media-compression.service";
+import { MediaTransformRunner } from "./media-transform.runner";
 import type { AuditService } from "../../common/audit/audit.service";
 import type { AccessService } from "../access/access.service";
 import type { AvScanner } from "../../common/security/av-scan";
@@ -57,14 +57,10 @@ function mockRes() {
   } as unknown as import("express").Response;
 }
 
-function buildPreGenResult(overrides: Partial<{ key: string; url: string; sha256: string }> = {}) {
+function buildPlanResult(overrides: Partial<{ key: string }> = {}) {
   return {
-    key: overrides.key ?? "org-1/uploads/uuid-file.jpg",
-    url: overrides.url ?? "https://cdn.example.com/org-1/uploads/uuid-file.jpg",
-    compressedBuffer: JPEG_MAGIC,
-    compressedMimeType: "image/webp",
-    size: 12,
-    sha256: overrides.sha256 ?? "deadbeef",
+    key: overrides.key ?? "org-1/uploads/uuid-file.webp",
+    plannedMimeType: "image/webp",
   };
 }
 
@@ -92,24 +88,26 @@ function buildDb(records: {
 
 function buildController(overrides: {
   scanResult?: Awaited<ReturnType<AvScanner["scan"]>>;
-  uploadResult?: { key: string; url: string; sha256: string };
+  uploadResult?: { key: string };
   quotaUsedBytes?: number;
   quarantineBlocked?: boolean;
   uploadConfigured?: boolean;
 } = {}): {
   controller: StorageController;
   quarantine: jest.Mocked<Pick<FileQuarantineService, "begin" | "markClean" | "markInfected" | "markError" | "isKeyBlocked" | "getTotalUsageBytes" | "getTotalUsageBytesForUser">>;
-  storage: jest.Mocked<Pick<StorageService, "isConfigured" | "compressAndPreGenerateKey" | "uploadToKey" | "isValidFileKey" | "getFileKeyFromUrl" | "getFileUrl">>;
+  storage: jest.Mocked<Pick<StorageService, "isConfigured" | "planUpload" | "compressToKey" | "isValidFileKey" | "getFileKeyFromUrl" | "getFileUrl">>;
+  transforms: MediaTransformRunner;
 } {
-  const preGen = buildPreGenResult(overrides.uploadResult);
+  const plan = buildPlanResult(overrides.uploadResult);
   const storage = {
     isConfigured: jest.fn().mockReturnValue(overrides.uploadConfigured ?? true),
-    compressAndPreGenerateKey: jest.fn().mockResolvedValue(preGen),
-    uploadToKey: jest.fn().mockResolvedValue(undefined),
+    planUpload: jest.fn().mockResolvedValue(plan),
+    compressToKey: jest.fn().mockResolvedValue({ size: 12, mimeType: "image/webp", sha256: "stored" }),
+    deleteFileIfPresent: jest.fn().mockResolvedValue(true),
     isValidFileKey: jest.fn().mockReturnValue(true),
     getFileKeyFromUrl: jest.fn((v: string) => v),
     getFileUrl: jest.fn().mockResolvedValue("https://signed.example.com/file"),
-  } as unknown as jest.Mocked<Pick<StorageService, "isConfigured" | "compressAndPreGenerateKey" | "uploadToKey" | "isValidFileKey" | "getFileKeyFromUrl" | "getFileUrl">>;
+  } as unknown as jest.Mocked<Pick<StorageService, "isConfigured" | "planUpload" | "compressToKey" | "isValidFileKey" | "getFileKeyFromUrl" | "getFileUrl">>;
 
   const quarantine = {
     begin: jest.fn().mockResolvedValue("qr-id-1"),
@@ -119,12 +117,14 @@ function buildController(overrides: {
     isKeyBlocked: jest.fn().mockResolvedValue(overrides.quarantineBlocked ?? false),
     getTotalUsageBytes: jest.fn().mockResolvedValue(overrides.quotaUsedBytes ?? 0),
     getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0),
+    recordMeasuredObject: jest.fn().mockResolvedValue(undefined),
+    softDelete: jest.fn().mockResolvedValue(undefined),
   } as unknown as jest.Mocked<Pick<FileQuarantineService, "begin" | "markClean" | "markInfected" | "markError" | "isKeyBlocked" | "getTotalUsageBytes" | "getTotalUsageBytesForUser">>;
 
   const audit = { log: jest.fn() } as unknown as AuditService;
   const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
   const avScanner = { scan: jest.fn().mockResolvedValue(overrides.scanResult ?? { status: "clean" }) } as unknown as AvScanner;
-  const compression = { generateThumbnail: jest.fn().mockResolvedValue(null) } as unknown as MediaCompressionService;
+  const transforms = new MediaTransformRunner();
 
   const controller = new StorageController(
     buildDb() as never,
@@ -133,10 +133,10 @@ function buildController(overrides: {
     access,
     avScanner,
     quarantine as unknown as FileQuarantineService,
-    compression,
+    transforms,
   );
 
-  return { controller, quarantine, storage };
+  return { controller, quarantine, storage, transforms };
 }
 
 describe("AC1: content-type vs extension mismatch (polyglot/renamed file) rejected", () => {
@@ -216,7 +216,7 @@ describe("AC4: unscanned file in quarantine is not downloadable (fail closed)", 
       { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService,
       { scan: jest.fn() } as unknown as AvScanner,
       quarantine as unknown as FileQuarantineService,
-      { generateThumbnail: jest.fn() } as unknown as MediaCompressionService,
+      new MediaTransformRunner(),
     );
 
     await expect(
@@ -247,7 +247,7 @@ describe("AC4: unscanned file in quarantine is not downloadable (fail closed)", 
       { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService,
       { scan: jest.fn() } as unknown as AvScanner,
       quarantine as unknown as FileQuarantineService,
-      { generateThumbnail: jest.fn() } as unknown as MediaCompressionService,
+      new MediaTransformRunner(),
     );
     const res = mockRes();
 
@@ -259,10 +259,11 @@ describe("AC4: unscanned file in quarantine is not downloadable (fail closed)", 
 
 describe("AC4: upload sets quarantine record to clean after scan passes", () => {
   it("records quarantine begin and markClean on a successful upload", async () => {
-    const { controller, quarantine } = buildController();
+    const { controller, quarantine, transforms } = buildController();
     const file = makeFile("image/jpeg", JPEG_MAGIC, "photo.jpg");
 
     await controller.upload(file, "uploads", makeUser());
+    await transforms.drain();
 
     expect(quarantine.begin).toHaveBeenCalledTimes(1);
     expect(quarantine.markClean).toHaveBeenCalledTimes(1);
@@ -320,7 +321,7 @@ describe("AC7: cross-tenant object key denied", () => {
       { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService,
       { scan: jest.fn() } as unknown as AvScanner,
       quarantine as unknown as FileQuarantineService,
-      { generateThumbnail: jest.fn() } as unknown as MediaCompressionService,
+      new MediaTransformRunner(),
     );
 
     await expect(
@@ -376,7 +377,7 @@ describe("AC7: re-authorized download after permission revocation denied", () =>
       { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService,
       { scan: jest.fn() } as unknown as AvScanner,
       quarantine as unknown as FileQuarantineService,
-      { generateThumbnail: jest.fn() } as unknown as MediaCompressionService,
+      new MediaTransformRunner(),
     );
 
     await expect(
@@ -409,7 +410,7 @@ describe("AC7: re-authorized download after permission revocation denied", () =>
       { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService,
       { scan: jest.fn() } as unknown as AvScanner,
       quarantine as unknown as FileQuarantineService,
-      { generateThumbnail: jest.fn() } as unknown as MediaCompressionService,
+      new MediaTransformRunner(),
     );
 
     await expect(
@@ -422,25 +423,26 @@ describe("AC7: re-authorized download after permission revocation denied", () =>
 
 describe("AC3: idempotent retry of finalize produces exactly one quarantine record", () => {
   it("a successful upload calls quarantine.begin exactly once even if called repeatedly", async () => {
-    const { controller, quarantine } = buildController();
+    const { controller, quarantine, transforms } = buildController();
     const file = makeFile("image/jpeg", JPEG_MAGIC, "photo.jpg");
 
     await controller.upload(file, "uploads", makeUser());
+    await transforms.drain();
 
     expect(quarantine.begin).toHaveBeenCalledTimes(1);
     expect(quarantine.markClean).toHaveBeenCalledTimes(1);
   });
 
-  it("the quarantine record is keyed to the result of uploadCompressed (one record per upload)", async () => {
-    const uploadResult = { key: "org-1/uploads/specific-uuid-photo.jpg", url: "https://cdn.example.com/org-1/uploads/specific-uuid-photo.jpg", sha256: "deadbeef" };
+  it("the quarantine record is keyed to the planned object key (one record per upload)", async () => {
+    const uploadResult = { key: "org-1/uploads/specific-uuid-photo.webp" };
     const { controller, quarantine } = buildController({ uploadResult });
     const file = makeFile("image/jpeg", JPEG_MAGIC, "photo.jpg");
 
-    await controller.upload(file, "uploads", makeUser());
+    const result = await controller.upload(file, "uploads", makeUser());
 
     const beginCall = (quarantine.begin as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(beginCall?.storageKey).toBe("org-1/uploads/specific-uuid-photo.jpg");
-    expect(beginCall?.sha256).toBe("deadbeef");
+    expect(beginCall?.storageKey).toBe("org-1/uploads/specific-uuid-photo.webp");
+    expect(beginCall?.sha256).toBe(result.sha256);
   });
 });
 

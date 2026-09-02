@@ -14,6 +14,10 @@ function makeStorageService(endpoint: string): StorageService {
     NEXT_PUBLIC_R2_PUBLIC_URL: "https://cdn.example.com",
   };
   const compression = {
+    planOutput: jest.fn().mockImplementation((_buf: Buffer, mime: string, name: string) => ({
+      fileName: name,
+      mimeType: mime,
+    })),
     compress: jest.fn().mockImplementation(async (buf: Buffer, _mime: string, name: string) => ({
       buffer: buf,
       fileName: name,
@@ -24,11 +28,11 @@ function makeStorageService(endpoint: string): StorageService {
 }
 
 describe("Object storage degraded — pre-generated key survives upload failure", () => {
-  it("compressAndPreGenerateKey generates the key before any network call", async () => {
+  it("planUpload generates the key before any network call and before any transform", async () => {
     const service = makeStorageService("http://unreachable:1");
 
     const buffer = Buffer.from("test-data");
-    const result = await service.compressAndPreGenerateKey(
+    const result = await service.planUpload(
       "org-test",
       buffer,
       "uploads",
@@ -37,15 +41,14 @@ describe("Object storage degraded — pre-generated key survives upload failure"
     );
 
     expect(result.key).toMatch(/^org-test\/uploads\/.+\.jpg$/);
-    expect(result.compressedBuffer).toBeInstanceOf(Buffer);
-    expect(result.size).toBeGreaterThan(0);
+    expect(result.plannedMimeType).toBe("image/jpeg");
   });
 
   it("the pre-generated key is stable and never a public URL — metadata can be stored before the upload attempt", async () => {
     const service = makeStorageService("http://unreachable:1");
     const buffer = Buffer.from("test-data");
 
-    const { key } = await service.compressAndPreGenerateKey(
+    const { key } = await service.planUpload(
       "org-test",
       buffer,
       "uploads",

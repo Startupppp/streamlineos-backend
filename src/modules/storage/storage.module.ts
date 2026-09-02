@@ -10,6 +10,7 @@ import { StorageVaultController } from "./storage-vault.controller";
 import { StorageQuarantineController } from "./storage-quarantine.controller";
 import { StorageMultipartController } from "./storage-multipart.controller";
 import { MediaCompressionService } from "../../common/media/media-compression.service";
+import { MediaTransformRunner } from "./media-transform.runner";
 import { AvScannerModule } from "../../common/security/av-scanner.module";
 
 @Global()
@@ -25,11 +26,19 @@ import { AvScannerModule } from "../../common/security/av-scanner.module";
   ],
   providers: [
     MediaCompressionService,
+    MediaTransformRunner,
     StorageService,
     StoragePurgeService,
     FileQuarantineService,
     StorageMultipartService,
   ],
-  exports: [StorageService, StoragePurgeService, FileQuarantineService, StorageMultipartService, AvScannerModule],
+  exports: [
+    StorageService,
+    StoragePurgeService,
+    FileQuarantineService,
+    StorageMultipartService,
+    MediaTransformRunner,
+    AvScannerModule,
+  ],
 })
 export class StorageModule {}

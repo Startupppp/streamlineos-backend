@@ -184,7 +184,7 @@ describe("KbMediaService", () => {
   describe("image compression (JPEG)", () => {
     it("calls sharp and uploads with image/webp mime", async () => {
       const result = await service.upload(makeFile("image/jpeg", JPEG_BUF, "photo.jpg"), makeUser());
-      expect(mockSharp).toHaveBeenCalledWith(JPEG_BUF);
+      expect(mockSharp).toHaveBeenCalledWith(JPEG_BUF, { limitInputPixels: 50_000_000 });
       expect(mockChain.rotate).toHaveBeenCalled();
       expect(mockChain.resize).toHaveBeenCalledWith({ width: 1920, withoutEnlargement: true });
       expect(mockChain.webp).toHaveBeenCalledWith({ quality: 82 });
@@ -210,7 +210,7 @@ describe("KbMediaService", () => {
   describe("image compression (PNG)", () => {
     it("compresses PNG to webp and renames extension", async () => {
       await service.upload(makeFile("image/png", PNG_BUF, "banner.png"), makeUser());
-      expect(mockSharp).toHaveBeenCalledWith(PNG_BUF);
+      expect(mockSharp).toHaveBeenCalledWith(PNG_BUF, { limitInputPixels: 50_000_000 });
       expect(mockStorage.uploadFile).toHaveBeenCalledWith(
         "org-42",
         COMPRESSED,
@@ -308,7 +308,7 @@ describe("KbMediaService", () => {
   describe("WEBP passthrough (already webp)", () => {
     it("compresses webp input through sharp pipeline", async () => {
       await service.upload(makeFile("image/webp", WEBP_BUF, "img.webp"), makeUser());
-      expect(mockSharp).toHaveBeenCalledWith(WEBP_BUF);
+      expect(mockSharp).toHaveBeenCalledWith(WEBP_BUF, { limitInputPixels: 50_000_000 });
       expect(mockStorage.uploadFile).toHaveBeenCalledWith(
         "org-42",
         COMPRESSED,

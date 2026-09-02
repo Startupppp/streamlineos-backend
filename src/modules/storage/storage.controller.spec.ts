@@ -1,5 +1,6 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { StorageController } from "./storage.controller";
+import { MediaTransformRunner } from "./media-transform.runner";
 import { StorageService } from "./storage.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
@@ -86,7 +87,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       access as never,
       { scan: jest.fn() } as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
-      { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
+      new MediaTransformRunner(),
     );
 
     await expect(
@@ -103,7 +104,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       access as never,
       { scan: jest.fn() } as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
-      { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
+      new MediaTransformRunner(),
     );
 
     await expect(
@@ -120,7 +121,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       access as never,
       { scan: jest.fn() } as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
-      { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
+      new MediaTransformRunner(),
     );
 
     await expect(
@@ -137,7 +138,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       access as never,
       { scan: jest.fn() } as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
-      { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
+      new MediaTransformRunner(),
     );
     const res = mockRes();
 
@@ -155,7 +156,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       access as never,
       { scan: jest.fn() } as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
-      { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
+      new MediaTransformRunner(),
     );
 
     await expect(
@@ -172,7 +173,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       access as never,
       { scan: jest.fn() } as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
-      { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
+      new MediaTransformRunner(),
     );
 
     await expect(
@@ -189,7 +190,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       access as never,
       { scan: jest.fn() } as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
-      { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
+      new MediaTransformRunner(),
     );
 
     await expect(
@@ -206,7 +207,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       access as never,
       { scan: jest.fn() } as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
-      { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
+      new MediaTransformRunner(),
     );
 
     await expect(
@@ -234,7 +235,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       access as never,
       { scan: jest.fn() } as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
-      { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
+      new MediaTransformRunner(),
     );
 
     await expect(
@@ -252,7 +253,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       access as never,
       { scan: jest.fn() } as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
-      { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
+      new MediaTransformRunner(),
     );
     const res = mockRes();
 
@@ -271,7 +272,7 @@ describe("StorageController.download — cross-org file isolation", () => {
       access as never,
       { scan: jest.fn() } as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
-      { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
+      new MediaTransformRunner(),
     );
     const file = {
       size: 4,
@@ -317,7 +318,7 @@ describe("StorageController.upload — interceptor fileSize limit matches MAX_UP
       access as never,
       avScanner as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
-      { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
+      new MediaTransformRunner(),
     );
 
     const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
@@ -354,8 +355,9 @@ describe("StorageController.upload — interceptor fileSize limit matches MAX_UP
       isConfigured: jest.fn().mockReturnValue(true),
       isValidFileKey: jest.fn().mockReturnValue(true),
       getFileKeyFromUrl: jest.fn((v: string) => v),
-      compressAndPreGenerateKey: jest.fn().mockResolvedValue({ key: "org-A/uploads/f.pdf", url: "https://cdn.example.com/org-A/uploads/f.pdf", compressedBuffer: Buffer.from("%PDF"), compressedMimeType: "application/pdf", size: 10 * 1024 * 1024, sha256: "aa" }),
-      uploadToKey: jest.fn().mockResolvedValue(undefined),
+      planUpload: jest.fn().mockResolvedValue({ key: "org-A/uploads/f.pdf", plannedMimeType: "application/pdf" }),
+      compressToKey: jest.fn().mockResolvedValue({ size: 10 * 1024 * 1024, mimeType: "application/pdf", sha256: "aa" }),
+      deleteFileIfPresent: jest.fn().mockResolvedValue(true),
     };
     const audit = { log: jest.fn() };
     const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) };
@@ -368,7 +370,7 @@ describe("StorageController.upload — interceptor fileSize limit matches MAX_UP
       access as never,
       avScanner as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
-      { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
+      new MediaTransformRunner(),
     );
 
     const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
@@ -451,7 +453,7 @@ describe("StorageController — org-namespaced keys prove their own owner", () =
       access as never,
       { scan: jest.fn() } as never,
       { isKeyBlocked: jest.fn().mockResolvedValue(false), getTotalUsageBytes: jest.fn().mockResolvedValue(0), getTotalUsageBytesForUser: jest.fn().mockResolvedValue(0), begin: jest.fn().mockResolvedValue("qr-1"), markClean: jest.fn(), markInfected: jest.fn(), markError: jest.fn() } as never,
-      { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
+      new MediaTransformRunner(),
     );
     return { controller, storage };
   }

@@ -1,5 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import { StorageController } from "./storage.controller";
+import { MediaTransformRunner } from "./media-transform.runner";
 import { StorageService } from "./storage.service";
 import type { AppConfig } from "../../config/env.validation";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -62,6 +63,7 @@ function mockRes() {
  */
 describe("StorageService — no upload path mints a permanent public URL", () => {
   const compression = {
+    planOutput: jest.fn().mockReturnValue({ fileName: "a.pdf", mimeType: "application/pdf" }),
     compress: jest.fn().mockResolvedValue({
       buffer: Buffer.from("x"),
       fileName: "a.pdf",
@@ -69,10 +71,10 @@ describe("StorageService — no upload path mints a permanent public URL", () =>
     }),
   };
 
-  it("returns an object key, never the configured public base, from the pre-generated path", async () => {
+  it("returns an object key, never the configured public base, from the planned path", async () => {
     const service = new StorageService(compression as never, storageConfig());
 
-    const result = await service.compressAndPreGenerateKey(
+    const result = await service.planUpload(
       ORG_A,
       Buffer.from("x"),
       "uploads",
@@ -88,14 +90,14 @@ describe("StorageService — no upload path mints a permanent public URL", () =>
   it("scopes every generated key to the organisation that owns it", async () => {
     const service = new StorageService(compression as never, storageConfig());
 
-    const a = await service.compressAndPreGenerateKey(
+    const a = await service.planUpload(
       ORG_A,
       Buffer.from("x"),
       "uploads",
       "a.pdf",
       "application/pdf",
     );
-    const b = await service.compressAndPreGenerateKey(
+    const b = await service.planUpload(
       ORG_B,
       Buffer.from("x"),
       "uploads",
@@ -197,7 +199,7 @@ describe("StorageController — a client-supplied key is an input, not a fact", 
       { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as never,
       { scan: jest.fn() } as never,
       quarantine as never,
-      { generateThumbnail: jest.fn().mockResolvedValue(null) } as never,
+      new MediaTransformRunner(),
     );
     return { controller, storage, quarantine };
   }
