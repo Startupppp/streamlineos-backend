@@ -16,6 +16,7 @@ import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structur
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
 import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { SessionsService } from "../../sessions/sessions.service";
@@ -212,6 +213,7 @@ export class OrgMembershipService {
       this.invalidateMemberListCaches(orgId),
       this.cache.invalidateNamespaceForOrg(orgId, "org:profile"),
       bustMembershipStatusCache(this.cache, memberUserId, orgId),
+      this.cache.invalidate(CACHE_KEYS.userSession(memberUserId)),
     ]);
 
     this.audit.log({

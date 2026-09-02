@@ -44,6 +44,27 @@
  * evidence of the removal disappears along with the finding. The registry is a
  * ledger of what was ever exposed, not a mirror of what is exposed now.
  *
+ * PUBLISHED-ONLY FIELDS (ticket 34)
+ * A published entry additionally carries:
+ *   version         — the `/v<N>/` segment of its path when it has one, else the
+ *                     value declared in contracts/published-contract-terms.json
+ *   deprecation     — {sunsetAt, replacedBy} read off `deprecated` / `x-sunset` /
+ *                     `x-deprecation-link` in the OpenAPI document, so the date
+ *                     advertised to consumers and the date recorded here cannot
+ *                     drift. Separate from sunsetAt/sunsetEvidence: announcing a
+ *                     sunset is not the same act as authorising a removal.
+ *   knownParameters — the frozen baseline check-contract-breaking-change compares
+ *                     against, recorded on first classification and preserved
+ *                     thereafter
+ *   idempotency     — {mode, key, replay, source} derived from the HTTP method,
+ *                     `x-idempotent`, or the authored terms file
+ *   contractEvidence— the authored note recording who was consulted
+ *
+ * contracts/published-contract-terms.json is hand-authored INPUT to this
+ * generator. contracts/api-contract-registry.json is the generator's OUTPUT and
+ * is never hand-edited: a human declaration goes in the terms file and reaches
+ * the registry by re-running this command.
+ *
  * Usage:
  *   node src/scripts/generate-api-contract-registry.mjs
  *   pnpm registry:generate
@@ -61,9 +82,21 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_ROOT = resolve(__dirname, "../..");
 const OPENAPI_PATH = join(BACKEND_ROOT, "openapi.json");
 const REGISTRY_PATH = join(BACKEND_ROOT, "contracts", "api-contract-registry.json");
-const SRC_ROOT = resolve(__dirname, "..");
+const TERMS_PATH = join(BACKEND_ROOT, "contracts", "published-contract-terms.json");
+export const SRC_ROOT = resolve(__dirname, "..");
 
 const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete"]);
+const SAFE_METHODS = new Set(["GET"]);
+
+/**
+ * This module exports the classifier and the webhook scanner, which
+ * check-api-contract-registry.mjs and check-contract-breaking-change.mjs import
+ * so the gates and the generator cannot drift apart. Importing it must therefore
+ * neither rewrite the committed registry nor hijack `--self-test` from the
+ * importing script — both are gated on being run directly.
+ */
+const IS_DIRECT_RUN =
+  process.argv[1] !== undefined && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
 
 /**
  * Paths whose consumer is somebody other than our own frontend. Each entry names
@@ -114,7 +147,109 @@ function makeOperationKey(method, path) {
   return `${method.toUpperCase()} ${path}`;
 }
 
-function collectTsFiles(dir) {
+/**
+ * The version a published operation actually ships under.
+ *
+ * A `/v<N>/` segment in the path is the contract's own statement of its version
+ * and outranks anything recorded in the registry, so bumping `/agent/v1/` to
+ * `/agent/v2/` cannot leave a stale `"version": "1"` behind. Paths without such a
+ * segment take the version declared in published-contract-terms.json, then the
+ * value already in the registry, then "1".
+ */
+export function versionFromPath(pathTemplate) {
+  for (const segment of String(pathTemplate).split("/")) {
+    if (/^v[0-9]+$/.test(segment)) return segment.slice(1);
+  }
+  return null;
+}
+
+/**
+ * The frozen parameter baseline check-contract-breaking-change compares against.
+ * Recorded as {name, in, required} so a query parameter and a path parameter of
+ * the same name stay distinguishable in the diff.
+ */
+export function parameterBaseline(operation) {
+  const params = Array.isArray(operation?.parameters) ? operation.parameters : [];
+  return params
+    .filter((p) => typeof p === "object" && p !== null && typeof p.name === "string")
+    .map((p) => ({ name: p.name, in: typeof p.in === "string" ? p.in : "unknown", required: p.required === true }))
+    .sort((a, b) => (a.name === b.name ? a.in.localeCompare(b.in) : a.name.localeCompare(b.name)));
+}
+
+/**
+ * The idempotency and replay rule for one published operation.
+ *
+ * Derived, in order of authority:
+ *   1. a safe method is safe by definition
+ *   2. `x-idempotent` on the operation — the @Idempotent(command) interceptor is
+ *      wired, so the caller's Idempotency-Key header is the replay boundary
+ *   3. the rule authored in published-contract-terms.json for this operation or
+ *      its path family
+ * A mutating published operation matching none of these gets null, and
+ * check-api-contract-registry fails it. Inventing a plausible-sounding rule for
+ * an operation nobody has read would be worse than the gap it papers over.
+ */
+export function idempotencyFor(key, method, operation, terms) {
+  if (SAFE_METHODS.has(method)) {
+    return {
+      mode: "safe",
+      key: null,
+      replay: "Safe method — repeating the request produces no additional side effect.",
+      source: "http-method",
+    };
+  }
+
+  if (operation?.["x-idempotent"] === true) {
+    const command = operation["x-idempotency-command"];
+    return {
+      mode: "idempotency-key",
+      key: "Idempotency-Key",
+      replay:
+        `Guarded by @Idempotent(${typeof command === "string" ? command : "?"}). A repeat carrying the same ` +
+        "Idempotency-Key replays the stored response instead of re-executing the command.",
+      source: "x-idempotent",
+    };
+  }
+
+  const authored = termsFor(key, terms);
+  if (authored?.idempotency) return { ...authored.idempotency, source: "published-contract-terms" };
+  return null;
+}
+
+export function termsFor(key, terms) {
+  if (!terms) return null;
+  const exact = terms.operations?.[key];
+  if (exact) return exact;
+  const path = key.slice(key.indexOf(" ") + 1);
+  let match = null;
+  for (const family of terms.families ?? []) {
+    if (typeof family.prefix === "string" && path.startsWith(family.prefix)) {
+      if (match === null || family.prefix.length > match.prefix.length) match = family;
+    } else if (family.exact === path) {
+      return family;
+    }
+  }
+  return match;
+}
+
+/**
+ * A declared deprecation window, read straight off the OpenAPI document so the
+ * date the contract advertises to consumers and the date the registry records
+ * cannot drift apart. `sunsetAt`/`sunsetEvidence` stay separate and manual:
+ * announcing a sunset is not the same act as authorising a removal.
+ */
+export function deprecationFor(operation) {
+  const sunset = operation?.["x-sunset"];
+  const deprecated = operation?.deprecated === true;
+  if (!deprecated && typeof sunset !== "string") return null;
+  return {
+    declaredIn: "openapi",
+    sunsetAt: typeof sunset === "string" ? sunset : null,
+    replacedBy: typeof operation?.["x-deprecation-link"] === "string" ? operation["x-deprecation-link"] : null,
+  };
+}
+
+export function collectTsFiles(dir) {
   const results = [];
   for (const entry of readdirSync(dir)) {
     if (entry === "node_modules" || entry === "dist") continue;
@@ -179,7 +314,52 @@ function scanOutboxEvents() {
   return { emitted: [...emitted].sort(), consumed: [...consumed].sort() };
 }
 
-if (process.argv.includes("--self-test")) {
+/**
+ * Outbound customer webhook events — the names a customer subscribes to when
+ * they register an endpoint through the webhooks API, and the strings we then
+ * ship in the delivered body's `event` field.
+ *
+ * These are a published contract by every test the registry applies: the
+ * consumer is somebody else's HTTP endpoint, and renaming one breaks it
+ * silently. They were nonetheless invisible to every gate in the repository.
+ * `registry.events` holds OutboxWriter events, which are internal by
+ * construction — they are consumed by our own outbox relay — and
+ * `registry.webhooks` was an empty object the generator never wrote to. So
+ * renaming `deal.won` changed a customer-facing contract and no gate noticed.
+ *
+ * Two dispatchers emit them:
+ *   WebhooksDispatchService.dispatch(orgId, name, payload)                   — org scope
+ *   ProjectsWebhooksDispatchService.enqueue(tx, orgId, projectId, name, ...)  — project scope
+ */
+export function scanWebhookEvents(files, readFile) {
+  const found = new Map();
+  const record = (name, scope, dispatcher, file) => {
+    const existing = found.get(name);
+    if (existing) {
+      if (!existing.sites.includes(file)) existing.sites.push(file);
+      return;
+    }
+    found.set(name, { name, scope, dispatcher, sites: [file] });
+  };
+
+  const ORG_RE = /\.dispatch\s*\(\s*[A-Za-z0-9_.$]+\s*,\s*"([a-z][\w.-]*)"/g;
+  const PROJECT_RE = /\.enqueue\s*\(\s*[A-Za-z0-9_.$]+\s*,\s*[A-Za-z0-9_.$]+\s*,\s*[A-Za-z0-9_.$]+\s*,\s*"([a-z][\w.-]*)"/g;
+
+  for (const filePath of files) {
+    if (filePath.endsWith(".spec.ts") || filePath.endsWith(".e2e-spec.ts")) continue;
+    const src = readFile(filePath);
+    if (!src.includes("WebhooksDispatchService")) continue;
+    const projectScoped = src.includes("ProjectsWebhooksDispatchService");
+    for (const m of src.matchAll(ORG_RE)) record(m[1], "organization", "WebhooksDispatchService", filePath);
+    if (projectScoped) {
+      for (const m of src.matchAll(PROJECT_RE)) record(m[1], "project", "ProjectsWebhooksDispatchService", filePath);
+    }
+  }
+
+  return [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+if (IS_DIRECT_RUN && process.argv.includes("--self-test")) {
   let failed = false;
   const pass = (label) => process.stdout.write(`  [pass] ${label}\n`);
   const fail = (label, detail) => {
@@ -239,6 +419,82 @@ if (process.argv.includes("--self-test")) {
     "published",
   );
 
+  expect("version-from-path-agent", versionFromPath("/agent/v1/projects"), "1");
+  expect("version-from-path-portal", versionFromPath("/portal/v1/projects/{projectId}"), "1");
+  expect("version-from-path-v2", versionFromPath("/agent/v2/projects"), "2");
+  expect("version-from-path-absent", versionFromPath("/public/kb/{slug}"), null);
+  expect("version-from-path-not-a-version", versionFromPath("/public/vendor-portal/{token}"), null);
+
+  const baseline = parameterBaseline({
+    parameters: [
+      { name: "orgId", in: "path", required: true },
+      { name: "cursor", in: "query", required: false },
+      { name: "cursor", in: "header" },
+    ],
+  });
+  expect("parameter-baseline-length", baseline.length, 3);
+  expect("parameter-baseline-sorted", baseline[0].name, "cursor");
+  expect("parameter-baseline-required-flag", baseline[2].required, true);
+  expect("parameter-baseline-missing-required-is-false", baseline[0].required, false);
+  expect("parameter-baseline-no-params", parameterBaseline({}).length, 0);
+
+  expect("idempotency-get-is-safe", idempotencyFor("GET /public/kb", "GET", {}, null)?.mode, "safe");
+  expect(
+    "idempotency-x-idempotent-wins",
+    idempotencyFor("POST /x", "POST", { "x-idempotent": true, "x-idempotency-command": "build.ticket.create" }, null)?.mode,
+    "idempotency-key",
+  );
+  expect(
+    "idempotency-x-idempotent-names-the-header",
+    idempotencyFor("POST /x", "POST", { "x-idempotent": true, "x-idempotency-command": "c" }, null)?.key,
+    "Idempotency-Key",
+  );
+  expect("idempotency-undeclared-mutation-is-null", idempotencyFor("POST /x", "POST", {}, null), null);
+
+  const fakeTerms = {
+    families: [
+      { prefix: "/public/", idempotency: { mode: "at-least-once", key: null, replay: "family rule" } },
+      { prefix: "/public/sign/", idempotency: { mode: "single-use-token", key: null, replay: "longer prefix wins" } },
+    ],
+    operations: { "POST /public/sign/{token}/auth": { idempotency: { mode: "exact", key: null, replay: "exact wins" } } },
+  };
+  expect("terms-longest-prefix-wins", idempotencyFor("POST /public/sign/{token}/complete", "POST", {}, fakeTerms)?.replay, "longer prefix wins");
+  expect("terms-exact-beats-family", idempotencyFor("POST /public/sign/{token}/auth", "POST", {}, fakeTerms)?.replay, "exact wins");
+  expect("terms-records-its-source", idempotencyFor("POST /public/waitlist", "POST", {}, fakeTerms)?.source, "published-contract-terms");
+
+  expect("deprecation-absent", deprecationFor({ operationId: "x" }), null);
+  expect(
+    "deprecation-reads-x-sunset",
+    deprecationFor({ deprecated: true, "x-sunset": "2026-10-25", "x-deprecation-link": "/crm/organizations" })?.sunsetAt,
+    "2026-10-25",
+  );
+  expect(
+    "deprecation-reads-replacement",
+    deprecationFor({ deprecated: true, "x-sunset": "2026-10-25", "x-deprecation-link": "/crm/organizations" })?.replacedBy,
+    "/crm/organizations",
+  );
+  expect("deprecation-without-date-still-recorded", deprecationFor({ deprecated: true })?.sunsetAt, null);
+
+  const fakeFiles = {
+    "/src/modules/deals/deals.service.ts":
+      'import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";\n' +
+      'this.webhooksDispatch.dispatch(orgId, "deal.won", { id });\n' +
+      'this.webhooksDispatch.dispatch(orgId, "deal.lost", { id });\n',
+    "/src/modules/build/core/projects-tickets-create.service.ts":
+      'import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";\n' +
+      'await this.webhooksDispatch.enqueue(tx, u.orgId, projectId, "ticket.created", { id });\n',
+    "/src/modules/deals/deals.spec.ts":
+      'WebhooksDispatchService\nthis.webhooksDispatch.dispatch(orgId, "deal.fake", {});\n',
+    "/src/modules/other/unrelated.service.ts": 'this.queue.dispatch(orgId, "not.a.webhook", {});\n',
+  };
+  const scannedEvents = scanWebhookEvents(Object.keys(fakeFiles), (p) => fakeFiles[p]);
+  const scannedNames = scannedEvents.map((e) => e.name).join(",");
+  expect("webhook-scan-finds-literals", scannedNames, "deal.lost,deal.won,ticket.created");
+  expect("webhook-scan-records-scope", scannedEvents.find((e) => e.name === "ticket.created")?.scope, "project");
+  expect("webhook-scan-records-org-scope", scannedEvents.find((e) => e.name === "deal.won")?.scope, "organization");
+  expect("webhook-scan-skips-specs", scannedNames.includes("deal.fake"), false);
+  expect("webhook-scan-ignores-unrelated-dispatch", scannedNames.includes("not.a.webhook"), false);
+
   if (failed) {
     process.stderr.write("\nSELF-TEST FAILED\n");
     process.exit(1);
@@ -247,121 +503,213 @@ if (process.argv.includes("--self-test")) {
   process.exit(0);
 }
 
-if (!existsSync(OPENAPI_PATH)) {
-  process.stderr.write(`generate-api-contract-registry: openapi.json not found at ${OPENAPI_PATH}\nRun: pnpm openapi:generate\n`);
-  process.exit(1);
-}
-
-let document;
-try {
-  document = JSON.parse(readFileSync(OPENAPI_PATH, "utf8"));
-} catch (err) {
-  process.stderr.write(`generate-api-contract-registry: failed to parse openapi.json: ${err.message}\n`);
-  process.exit(1);
-}
-
-let existing = null;
-if (existsSync(REGISTRY_PATH)) {
-  try {
-    existing = JSON.parse(readFileSync(REGISTRY_PATH, "utf8"));
-  } catch {
-    process.stderr.write("generate-api-contract-registry: existing registry unreadable — regenerating from scratch\n");
+if (IS_DIRECT_RUN) {
+  if (!existsSync(OPENAPI_PATH)) {
+    process.stderr.write(`generate-api-contract-registry: openapi.json not found at ${OPENAPI_PATH}\nRun: pnpm openapi:generate\n`);
+    process.exit(1);
   }
-}
 
-const existingOps = existing?.operations ?? {};
-const existingEvents = existing?.events ?? {};
+  let document;
+  try {
+    document = JSON.parse(readFileSync(OPENAPI_PATH, "utf8"));
+  } catch (err) {
+    process.stderr.write(`generate-api-contract-registry: failed to parse openapi.json: ${err.message}\n`);
+    process.exit(1);
+  }
 
-const operations = {};
-const paths = document.paths ?? {};
+  let terms = null;
+  if (existsSync(TERMS_PATH)) {
+    try {
+      terms = JSON.parse(readFileSync(TERMS_PATH, "utf8"));
+    } catch (err) {
+      process.stderr.write(`generate-api-contract-registry: failed to parse published-contract-terms.json: ${err.message}\n`);
+      process.exit(1);
+    }
+  }
 
-for (const [pathTemplate, pathItem] of Object.entries(paths)) {
-  if (typeof pathItem !== "object" || pathItem === null) continue;
-  for (const [method, operation] of Object.entries(pathItem)) {
-    if (!HTTP_METHODS.has(method)) continue;
-    if (typeof operation !== "object" || operation === null) continue;
+  let existing = null;
+  if (existsSync(REGISTRY_PATH)) {
+    try {
+      existing = JSON.parse(readFileSync(REGISTRY_PATH, "utf8"));
+    } catch {
+      process.stderr.write("generate-api-contract-registry: existing registry unreadable — regenerating from scratch\n");
+    }
+  }
 
-    const key = makeOperationKey(method, pathTemplate);
-    const xExposure = String(operation["x-exposure"] ?? "");
-    const derived = classifyOperation(xExposure, pathTemplate);
-    const prev = existingOps[key];
-    const override = prev?.classificationOverride ?? null;
-    const publishedConsumer = publishedConsumerFor(pathTemplate);
+  const existingOps = existing?.operations ?? {};
+  const existingEvents = existing?.events ?? {};
 
+  const operations = {};
+  const paths = document.paths ?? {};
+
+  for (const [pathTemplate, pathItem] of Object.entries(paths)) {
+    if (typeof pathItem !== "object" || pathItem === null) continue;
+    for (const [method, operation] of Object.entries(pathItem)) {
+      if (!HTTP_METHODS.has(method)) continue;
+      if (typeof operation !== "object" || operation === null) continue;
+
+      const key = makeOperationKey(method, pathTemplate);
+      const xExposure = String(operation["x-exposure"] ?? "");
+      const derived = classifyOperation(xExposure, pathTemplate);
+      const prev = existingOps[key];
+      const override = prev?.classificationOverride ?? null;
+      const publishedConsumer = publishedConsumerFor(pathTemplate);
+
+      const classification = override ?? derived;
+      const authored = termsFor(key, terms);
+
+      const entry = {
+        classification,
+        classificationOverride: override,
+        xExposure,
+        operationId: operation.operationId ?? null,
+        owner: authored?.owner ?? prev?.owner ?? null,
+        version: versionFromPath(pathTemplate) ?? authored?.version ?? prev?.version ?? "1",
+        consumers:
+          prev?.consumers !== undefined && prev.consumers.length > 0
+            ? prev.consumers
+            : publishedConsumer !== null
+              ? [publishedConsumer]
+              : [],
+        sunsetAt: prev?.sunsetAt ?? null,
+        sunsetEvidence: prev?.sunsetEvidence ?? null,
+      };
+
+      // The versioning, replay and baseline fields exist to serve the published
+      // set. Stamping them on all 3,524 internal entries would quadruple a 1.2 MB
+      // generated file for operations no gate reads them on, and would bury the
+      // 101 entries that matter in the diff.
+      if (classification === "published") {
+        entry.deprecation = deprecationFor(operation);
+        // Frozen on first classification, exactly like a retained tombstone.
+        // Re-deriving it every run would let `registry:generate` — the command the
+        // gate's own failure message tells you to run — erase the evidence of a
+        // narrowing. A deliberate reset is declared in published-contract-terms.json.
+        const resetApproved = typeof terms?.parameterBaselineResets?.[key] === "string";
+        entry.knownParameters =
+          !resetApproved && Array.isArray(prev?.knownParameters)
+            ? prev.knownParameters
+            : parameterBaseline(operation);
+        entry.idempotency = idempotencyFor(key, method.toUpperCase(), operation, terms);
+        entry.contractEvidence = authored?.evidence ?? prev?.contractEvidence ?? null;
+      }
+
+      operations[key] = entry;
+    }
+  }
+
+  // A retained entry has no live operation, but it still records the path and the
+  // `xExposure` it had, so the same rule applies to it. Two earlier versions were
+  // wrong in opposite directions: copying `prev` verbatim ignored
+  // `classificationOverride` on exactly the entries check-contract-breaking-change
+  // reads, so re-publishing a tombstone to prove the gate bites did nothing; and
+  // trusting `prev.classification` carried the old blanket "permissioned means
+  // published" verdict forward, so deleting an ordinary internal route reported a
+  // breaking published removal. Re-derive, and let an explicit override win.
+  for (const [key, prev] of Object.entries(existingOps)) {
+    if (operations[key] !== undefined) continue;
+    const override = prev.classificationOverride ?? null;
+    const pathTemplate = key.slice(key.indexOf(" ") + 1);
     operations[key] = {
-      classification: override ?? derived,
+      ...prev,
       classificationOverride: override,
-      xExposure,
-      operationId: operation.operationId ?? null,
+      classification: override ?? classifyOperation(prev.xExposure, pathTemplate),
+    };
+  }
+
+  const eventScan = scanOutboxEvents();
+  const events = {};
+
+  for (const eventType of eventScan.emitted) {
+    const prev = existingEvents[eventType];
+    events[eventType] = {
+      classification: prev?.classification ?? "internal",
       owner: prev?.owner ?? null,
-      version: prev?.version ?? "1",
-      consumers:
-        prev?.consumers !== undefined && prev.consumers.length > 0
-          ? prev.consumers
-          : publishedConsumer !== null
-            ? [publishedConsumer]
-            : [],
+      consumers: eventScan.consumed.filter((c) => c === eventType).length > 0 ? ["outbox-relay"] : [],
       sunsetAt: prev?.sunsetAt ?? null,
       sunsetEvidence: prev?.sunsetEvidence ?? null,
     };
   }
-}
 
-// A retained entry has no live operation, but it still records the path and the
-// `xExposure` it had, so the same rule applies to it. Two earlier versions were
-// wrong in opposite directions: copying `prev` verbatim ignored
-// `classificationOverride` on exactly the entries check-contract-breaking-change
-// reads, so re-publishing a tombstone to prove the gate bites did nothing; and
-// trusting `prev.classification` carried the old blanket "permissioned means
-// published" verdict forward, so deleting an ordinary internal route reported a
-// breaking published removal. Re-derive, and let an explicit override win.
-for (const [key, prev] of Object.entries(existingOps)) {
-  if (operations[key] !== undefined) continue;
-  const override = prev.classificationOverride ?? null;
-  const pathTemplate = key.slice(key.indexOf(" ") + 1);
-  operations[key] = {
-    ...prev,
-    classificationOverride: override,
-    classification: override ?? classifyOperation(prev.xExposure, pathTemplate),
+  const webhookFiles = collectTsFiles(SRC_ROOT);
+  const webhookSource = new Map();
+  const scanned = scanWebhookEvents(webhookFiles, (p) => {
+    if (!webhookSource.has(p)) webhookSource.set(p, readFileSync(p, "utf8"));
+    return webhookSource.get(p);
+  });
+
+  const existingWebhooks = existing?.webhooks ?? {};
+  const webhooks = {};
+
+  for (const { name, scope, dispatcher, sites } of scanned) {
+    const prev = existingWebhooks[name];
+    const authored = terms?.webhookEvents?.[name];
+    webhooks[name] = {
+      classification: prev?.classification ?? "published",
+      scope,
+      dispatcher,
+      version: authored?.version ?? prev?.version ?? "1",
+      consumers: prev?.consumers?.length ? prev.consumers : ["customer-registered webhook endpoints (webhooks API subscriptions)"],
+      emittedFrom: sites.map((p) => p.slice(p.indexOf("src/"))).sort(),
+      declaredIn: null,
+      subscribable: true,
+      sunsetAt: prev?.sunsetAt ?? null,
+      sunsetEvidence: prev?.sunsetEvidence ?? null,
+    };
+  }
+
+  // Names a customer can subscribe to that no literal dispatch site names — a
+  // dispatcher called with a variable, or an enum of subscribable triggers. They
+  // are declared in the authored terms file with the file that proves them.
+  for (const [name, authored] of Object.entries(terms?.webhookEvents ?? {})) {
+    if (webhooks[name] !== undefined) continue;
+    const prev = existingWebhooks[name];
+    webhooks[name] = {
+      classification: prev?.classification ?? authored.classification ?? "published",
+      scope: authored.scope ?? "organization",
+      dispatcher: authored.dispatcher ?? "WebhooksDispatchService",
+      version: authored.version ?? prev?.version ?? "1",
+      consumers: prev?.consumers?.length ? prev.consumers : ["customer-registered webhook endpoints (webhooks API subscriptions)"],
+      emittedFrom: [],
+      declaredIn: typeof authored.declaredIn === "string" ? authored.declaredIn : null,
+      subscribable: true,
+      sunsetAt: prev?.sunsetAt ?? null,
+      sunsetEvidence: prev?.sunsetEvidence ?? null,
+    };
+  }
+
+  // Retention, for the same reason operations are retained: a renamed or deleted
+  // webhook event must leave a tombstone, or check-contract-breaking-change has
+  // nothing to find and a rename ships silently.
+  for (const [name, prev] of Object.entries(existingWebhooks)) {
+    if (webhooks[name] !== undefined) continue;
+    webhooks[name] = { ...prev, emittedFrom: [], declaredIn: null };
+  }
+
+  const registry = {
+    version: "1",
+    schemaVersion: "1.1",
+    generatedAt: new Date().toISOString(),
+    description:
+      "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
+    operations,
+    events,
+    webhooks: Object.fromEntries(Object.keys(webhooks).sort().map((k) => [k, webhooks[k]])),
   };
+
+  const operationCount = Object.keys(operations).length;
+  const internalCount = Object.values(operations).filter((o) => o.classification === "internal").length;
+  const publishedCount = operationCount - internalCount;
+  const eventCount = Object.keys(events).length;
+
+  writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2) + "\n", "utf8");
+
+  process.stdout.write(
+    `generate-api-contract-registry: registry written to contracts/api-contract-registry.json\n` +
+    `  operations: ${String(operationCount)} total (${String(publishedCount)} published, ${String(internalCount)} internal)\n` +
+    `  events: ${String(eventCount)}\n` +
+    `  webhooks: ${String(Object.keys(registry.webhooks).length)}\n`,
+  );
+  process.exit(0);
 }
 
-const eventScan = scanOutboxEvents();
-const events = {};
-
-for (const eventType of eventScan.emitted) {
-  const prev = existingEvents[eventType];
-  events[eventType] = {
-    classification: prev?.classification ?? "internal",
-    owner: prev?.owner ?? null,
-    consumers: eventScan.consumed.filter((c) => c === eventType).length > 0 ? ["outbox-relay"] : [],
-    sunsetAt: prev?.sunsetAt ?? null,
-    sunsetEvidence: prev?.sunsetEvidence ?? null,
-  };
-}
-
-const registry = {
-  version: "1",
-  schemaVersion: "1.0",
-  generatedAt: new Date().toISOString(),
-  description:
-    "Fail-closed API contract registry. Every HTTP operation, outbox event, and webhook is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
-  operations,
-  events,
-  webhooks: existing?.webhooks ?? {},
-};
-
-const operationCount = Object.keys(operations).length;
-const internalCount = Object.values(operations).filter((o) => o.classification === "internal").length;
-const publishedCount = operationCount - internalCount;
-const eventCount = Object.keys(events).length;
-
-writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2) + "\n", "utf8");
-
-process.stdout.write(
-  `generate-api-contract-registry: registry written to contracts/api-contract-registry.json\n` +
-  `  operations: ${String(operationCount)} total (${String(publishedCount)} published, ${String(internalCount)} internal)\n` +
-  `  events: ${String(eventCount)}\n` +
-  `  webhooks: ${String(Object.keys(registry.webhooks).length)}\n`,
-);
-process.exit(0);

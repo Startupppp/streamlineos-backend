@@ -6,10 +6,20 @@ import { type Db } from "../../../db/drizzle.module";
 import { decodeCursor, buildCursorPage } from "../../../common/pagination/cursor";
 import { keysetAfterValue } from "../../../common/pagination/keyset";
 import type { GlQuery, GlAccountsQuery } from "./dto/general-ledger.schemas";
+import {
+  addDecimals,
+  roundDecimal,
+  subtractDecimals,
+  toDecimal,
+} from "../core/money.util";
 
-function parseDecimal(v: unknown): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
+/**
+ * The general-ledger response has always carried money as JSON numbers. Every sum
+ * above is exact bigint arithmetic; this is the single conversion at the edge, so
+ * no error can accumulate across rows.
+ */
+function emitAmount(decimal: string): number {
+  return Number(decimal);
 }
 
 @Injectable()
@@ -40,9 +50,9 @@ export class GeneralLedgerService {
       .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
       .where(and(...openingConds));
 
-    const openingDebit = parseDecimal(openingRows[0]?.totalDebit);
-    const openingCredit = parseDecimal(openingRows[0]?.totalCredit);
-    const openingBalance = openingDebit - openingCredit;
+    const openingDebit = toDecimal(openingRows[0]?.totalDebit);
+    const openingCredit = toDecimal(openingRows[0]?.totalCredit);
+    const openingBalance = subtractDecimals(openingDebit, openingCredit);
 
     const rangeConds = [
       eq(journalLines.orgId, orgId),
@@ -74,7 +84,10 @@ export class GeneralLedgerService {
         .innerJoin(journalEntries, eq(journalLines.entryId, journalEntries.id))
         .where(and(...balanceConds));
       const bRow = balanceRows[0];
-      priorPageBalance = openingBalance + parseDecimal(bRow?.totalDebit) - parseDecimal(bRow?.totalCredit);
+      priorPageBalance = addDecimals(
+        openingBalance,
+        subtractDecimals(toDecimal(bRow?.totalDebit), toDecimal(bRow?.totalCredit)),
+      );
     }
 
     const pageConds = pos ? [...rangeConds, keysetAfterValue(journalEntries.entryDate, journalLines.id, pos)] : rangeConds;
@@ -116,21 +129,34 @@ export class GeneralLedgerService {
         .where(and(...rangeConds)),
     ]);
 
-    const closingBalance =
-      openingBalance +
-      parseDecimal(allRangeRows[0]?.totalDebit) -
-      parseDecimal(allRangeRows[0]?.totalCredit);
+    const closingBalance = addDecimals(
+      openingBalance,
+      subtractDecimals(
+        toDecimal(allRangeRows[0]?.totalDebit),
+        toDecimal(allRangeRows[0]?.totalCredit),
+      ),
+    );
 
     const cursorPage = buildCursorPage(rows, limit, (row) => ({ sortValue: String(row.entryDate ?? ""), id: String(row.lineId) }));
     let runningBalance = priorPageBalance;
     const items = cursorPage.data.map((row) => {
-      const debit = parseDecimal(row.debit);
-      const credit = parseDecimal(row.credit);
-      runningBalance = runningBalance + debit - credit;
-      return { ...row, debit, credit, runningBalance };
+      const debit = toDecimal(row.debit);
+      const credit = toDecimal(row.credit);
+      runningBalance = addDecimals(runningBalance, subtractDecimals(debit, credit));
+      return {
+        ...row,
+        debit: emitAmount(debit),
+        credit: emitAmount(credit),
+        runningBalance: emitAmount(runningBalance),
+      };
     });
 
-    return { openingBalance, closingBalance, items, nextCursor: cursorPage.pagination.nextCursor };
+    return {
+      openingBalance: emitAmount(openingBalance),
+      closingBalance: emitAmount(closingBalance),
+      items,
+      nextCursor: cursorPage.pagination.nextCursor,
+    };
   }
 
   async getGeneralLedgerCsv(orgId: string, query: Omit<GlQuery, "cursor" | "limit" | "format">): Promise<string> {
@@ -173,8 +199,8 @@ export class GeneralLedgerService {
         `"${(r.description ?? "").replace(/"/g, '""')}"`,
         r.accountCode,
         `"${r.accountName.replace(/"/g, '""')}"`,
-        parseDecimal(r.debit).toFixed(2),
-        parseDecimal(r.credit).toFixed(2),
+        roundDecimal(toDecimal(r.debit), 2),
+        roundDecimal(toDecimal(r.credit), 2),
       ].join(","),
     );
     return [header, ...lines].join("\n");
@@ -207,11 +233,15 @@ export class GeneralLedgerService {
       .groupBy(ledgerAccounts.id, ledgerAccounts.code, ledgerAccounts.name, ledgerAccounts.accountType)
       .orderBy(ledgerAccounts.code);
 
-    return rows.map((r) => ({
-      ...r,
-      periodDebit: parseDecimal(r.periodDebit),
-      periodCredit: parseDecimal(r.periodCredit),
-      netActivity: parseDecimal(r.periodDebit) - parseDecimal(r.periodCredit),
-    }));
+    return rows.map((r) => {
+      const periodDebit = toDecimal(r.periodDebit);
+      const periodCredit = toDecimal(r.periodCredit);
+      return {
+        ...r,
+        periodDebit: emitAmount(periodDebit),
+        periodCredit: emitAmount(periodCredit),
+        netActivity: emitAmount(subtractDecimals(periodDebit, periodCredit)),
+      };
+    });
   }
 }

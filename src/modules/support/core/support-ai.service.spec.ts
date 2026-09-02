@@ -12,7 +12,6 @@ import { SupportAiEmbeddingsHelper } from "./support-ai-embeddings.helper";
 import { SupportAiSettingsService } from "./support-ai-settings.service";
 import { SupportAiReportHelper } from "./support-ai-report.helper";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
-import { EmbeddingsService } from "../../ai/core/providers/embeddings.service";
 import { OrgFeaturesService } from "../../ai/core/services/org-features.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { KbAccessService } from "../../kb/core/kb-access.service";
@@ -72,13 +71,15 @@ const makeGatewayFail = (kind: "quota_exceeded" | "provider_unavailable" | "not_
 const mockGateway = {
   invokeStructured: jest.fn(),
   invokeText: jest.fn(),
+  isEmbeddingConfigured: jest.fn().mockReturnValue(true),
+  embedQueryWithCredit: jest.fn().mockResolvedValue({
+    ok: true,
+    vector: new Array(1536).fill(0.01) as number[],
+    vectorLiteral: `[${new Array(1536).fill(0.01).join(",")}]`,
+  }),
 };
 
-const mockEmbeddings = {
-  isConfigured: jest.fn().mockReturnValue(true),
-  embedQuery: jest.fn().mockResolvedValue(new Array(1536).fill(0.01)),
-  toVectorLiteral: jest.fn((vec: number[]) => `[${vec.join(",")}]`),
-};
+
 
 const mockOrgFeatures = { getFlags: jest.fn().mockResolvedValue({ supportAi: true }) };
 
@@ -104,7 +105,7 @@ describe("SupportAiService", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    mockEmbeddings.isConfigured.mockReturnValue(true);
+    mockGateway.isEmbeddingConfigured.mockReturnValue(true);
     mockOrgFeatures.getFlags.mockResolvedValue({ supportAi: true });
     mockDb.query.supportTickets.findFirst.mockResolvedValue(baseTicket);
     mockDb.query.supportTicketMessages.findMany.mockResolvedValue([]);
@@ -126,7 +127,6 @@ describe("SupportAiService", () => {
         SupportAiEmbeddingsHelper,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AiGatewayService, useValue: mockGateway },
-        { provide: EmbeddingsService, useValue: mockEmbeddings },
         { provide: OrgFeaturesService, useValue: mockOrgFeatures },
         { provide: SupportAiSettingsService, useValue: mockAiSettings },
         { provide: SupportAiReportHelper, useValue: mockReportHelper },
@@ -299,7 +299,7 @@ describe("SupportAiService", () => {
 
   describe("suggestKbArticles", () => {
     it("returns null when embeddings aren't configured", async () => {
-      mockEmbeddings.isConfigured.mockReturnValueOnce(false);
+      mockGateway.isEmbeddingConfigured.mockReturnValueOnce(false);
       const result = await service.suggestKbArticles(currentUser, 42);
       expect(result).toBeNull();
     });
@@ -414,7 +414,7 @@ describe("SupportAiService", () => {
 
   describe("findRootCauseCluster", () => {
     it("returns null when embeddings aren't configured", async () => {
-      mockEmbeddings.isConfigured.mockReturnValueOnce(false);
+      mockGateway.isEmbeddingConfigured.mockReturnValueOnce(false);
       const result = await service.findRootCauseCluster("org1", 42);
       expect(result).toBeNull();
     });

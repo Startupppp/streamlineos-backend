@@ -46,8 +46,11 @@ function buildService(
 ) {
   const db = dbOverride ?? buildMockDb();
   const mockData = dataOverride ?? buildMockData();
-  const mockGateway = { invokeStructured: jest.fn().mockResolvedValue(gatewayResult), invokeText: jest.fn() };
-  const mockEmbeddings = { isConfigured: jest.fn().mockReturnValue(false) };
+  const mockGateway = {
+    invokeStructured: jest.fn().mockResolvedValue(gatewayResult),
+    invokeText: jest.fn(),
+    isEmbeddingConfigured: jest.fn().mockReturnValue(false),
+  };
   const mockOrgFeatures = { getFlags: jest.fn().mockResolvedValue({ supportAi: true }) };
   const mockEmbHelper = { upsertAndSearchSimilar: jest.fn(), getDuplicateThreshold: jest.fn().mockReturnValue(0.85), getRootCauseThreshold: jest.fn().mockReturnValue(0.8) };
 
@@ -56,7 +59,6 @@ function buildService(
     mockData as never,
     mockGateway as never,
     mockOrgFeatures as never,
-    mockEmbeddings as never,
     mockEmbHelper as never,
   );
   return { svc, mockGateway };
@@ -100,8 +102,11 @@ describe("SupportAiTriageAnalysisService.analyzeTicket — credit charging", () 
 
   it("returns null when supportAi feature flag is off", async () => {
     const db = buildMockDb();
-    const mockGateway = { invokeStructured: jest.fn(), invokeText: jest.fn() };
-    const mockEmbeddings = { isConfigured: jest.fn().mockReturnValue(false) };
+    const mockGateway = {
+      invokeStructured: jest.fn(),
+      invokeText: jest.fn(),
+      isEmbeddingConfigured: jest.fn().mockReturnValue(false),
+    };
     const mockOrgFeatures = { getFlags: jest.fn().mockResolvedValue({ supportAi: false }) };
     const mockEmbHelper = { upsertAndSearchSimilar: jest.fn(), getDuplicateThreshold: jest.fn(), getRootCauseThreshold: jest.fn() };
     const mockData = {
@@ -113,7 +118,7 @@ describe("SupportAiTriageAnalysisService.analyzeTicket — credit charging", () 
 
     const svc = new SupportAiTriageAnalysisService(
       db as never, mockData as never, mockGateway as never,
-      mockOrgFeatures as never, mockEmbeddings as never, mockEmbHelper as never,
+      mockOrgFeatures as never, mockEmbHelper as never,
     );
 
     const result = await svc.analyzeTicket("org1", 42);

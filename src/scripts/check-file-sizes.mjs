@@ -10,8 +10,9 @@
  *   --self-test   Run internal assertions and exit (no file scan).
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, extname } from "node:path";
+import { WORKSPACE_ROOT, workspaceAvailable, workspaceUnreachableReason } from "./check-repo-paths.mjs";
 
 const LIMIT = 500;
 const MIN_FILES = 50;
@@ -22,17 +23,27 @@ function resolvePath(relativeUrl) {
 
 const SRC = resolvePath("../");
 const BACKEND_ROOT = resolvePath("../../");
-const EXCEPTIONS_DOC = resolvePath(
-  "../../../architecture-refactor/final-refactor/issues/file-size-exceptions.md",
-);
+// The registry lives in the workspace docs tree, which is a sibling repository on
+// a split checkout. Guessing "../../.." resolved outside both repos and the gate
+// died on ENOENT rather than measuring anything.
+const EXCEPTIONS_DOC = workspaceAvailable
+  ? join(WORKSPACE_ROOT, "architecture-refactor", "final-refactor", "issues", "file-size-exceptions.md")
+  : null;
 
 function loadExceptions() {
+  if (EXCEPTIONS_DOC === null) {
+    console.error(
+      `INCONCLUSIVE — check-file-sizes: the §7 exception registry could not be located, so every exempt file would be reported as a violation.`,
+    );
+    console.error(`  ${workspaceUnreachableReason()}`);
+    process.exit(2);
+  }
   let doc;
   try {
     doc = readFileSync(EXCEPTIONS_DOC, "utf8");
   } catch {
     console.error(`check-file-sizes: cannot read exceptions doc at ${EXCEPTIONS_DOC}`);
-    process.exit(1);
+    process.exit(2);
   }
   return parseExceptions(doc);
 }
@@ -127,7 +138,15 @@ function runSelfTests() {
     "rejects a table row missing the owner/interface/reason columns",
     parseExceptions("| `src/modules/x.ts` | 600 |").size === 0,
   );
-  assert("counts a trailing-newline file without an off-by-one", countLines(EXCEPTIONS_DOC) > 0);
+  assert("the §7 exception registry is reachable in this checkout", EXCEPTIONS_DOC !== null && existsSync(EXCEPTIONS_DOC));
+  assert(
+    "the real registry parses to at least one exception",
+    EXCEPTIONS_DOC !== null && existsSync(EXCEPTIONS_DOC) && parseExceptions(readFileSync(EXCEPTIONS_DOC, "utf8")).size > 0,
+  );
+  assert(
+    "counts a trailing-newline file without an off-by-one",
+    EXCEPTIONS_DOC !== null && existsSync(EXCEPTIONS_DOC) && countLines(EXCEPTIONS_DOC) > 0,
+  );
 
   if (failed > 0) {
     console.error(`check-file-sizes self-tests: ${failed} failed, ${passed} passed`);
@@ -170,6 +189,6 @@ for (const v of violations) {
   console.error(`  ${v.lines} lines  ${v.path}`);
 }
 console.error(
-  `\nTo exempt a file, add it to architecture-refactor/final-refactor/issues/file-size-exceptions.md with justification.`,
+  `\nTo exempt a file, add it to ${String(EXCEPTIONS_DOC)} with justification.`,
 );
 process.exit(1);

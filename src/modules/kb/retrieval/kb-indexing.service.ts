@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { and, asc, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import {
   kbArticleChunks,
@@ -8,7 +8,9 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { EmbeddingsService, EMBEDDING_MODEL } from "../../ai/core/providers/embeddings.service";
+import { EMBEDDING_MODEL } from "../../ai/core/providers/embeddings.service";
+import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { sha256, chunkText } from "./kb-chunk-utils";
 import { KbIngestionCheckpointService } from "./kb-ingestion-checkpoint.service";
 
@@ -20,6 +22,7 @@ export function isPageIndexable(page: {
 }
 
 const REINDEX_ALL_BATCH_SIZE = 100;
+const KB_INDEXING_FEATURE = "kb.indexing";
 
 export interface ReindexAllPagesResult {
   reindexed: number;
@@ -32,7 +35,7 @@ export class KbIndexingService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly embeddings: EmbeddingsService,
+    private readonly aiGateway: AiGatewayService,
     private readonly checkpoint: KbIngestionCheckpointService,
   ) {}
 
@@ -97,35 +100,57 @@ export class KbIndexingService {
         resumedFrom,
       });
 
-    const embeddings: number[][] = [];
+    const vectors = new Array<number[]>(chunks.length);
+    const pending: number[] = [];
     for (let i = 0; i < chunks.length; i++) {
       const hit = cached.get(i);
-      if (hit !== undefined) {
-        embeddings.push(hit);
-        continue;
-      }
-      const emb = await this.embeddings.embedQuery(chunks[i], orgId, "kb.indexing");
-      if (signal?.aborted) throw new DOMException("KB ingestion cancelled", "AbortError");
-      await this.checkpoint.saveCheckpoint(
-        orgId,
-        contentType,
-        contentId,
-        contentHash,
-        i,
-        chunks[i],
-        emb,
-      );
-      embeddings.push(emb);
-      if ((i + 1) % 10 === 0 || i === chunks.length - 1)
-        this.logger.log("KB ingestion chunk progress", {
-          orgId,
-          contentType,
-          contentId,
-          embedded: i + 1,
-          total: chunks.length,
-        });
+      if (hit === undefined) pending.push(i);
+      else vectors[i] = hit;
     }
-    return embeddings;
+
+    if (pending.length === 0) return vectors;
+
+    const embedResult = await this.aiGateway.embedBatchWithCredit({
+      texts: pending.map((i) => chunks[i]),
+      orgId,
+      feature: KB_INDEXING_FEATURE,
+      charge: true,
+    });
+
+    if (!embedResult.ok) {
+      if (embedResult.kind === "quota_exceeded")
+        throw new InsufficientAiCreditsException({ message: embedResult.message });
+      throw new ServiceUnavailableException(embedResult.message);
+    }
+
+    if (signal?.aborted) throw new DOMException("KB ingestion cancelled", "AbortError");
+
+    pending.forEach((chunkIndex, n) => {
+      vectors[chunkIndex] = embedResult.vectors[n];
+    });
+
+    await this.checkpoint.saveCheckpoints(
+      orgId,
+      contentType,
+      contentId,
+      contentHash,
+      pending.map((chunkIndex) => ({
+        chunkIndex,
+        content: chunks[chunkIndex],
+        embedding: vectors[chunkIndex],
+      })),
+    );
+
+    this.logger.log("KB ingestion chunks embedded", {
+      orgId,
+      contentType,
+      contentId,
+      embedded: pending.length,
+      reused: cached.size,
+      total: chunks.length,
+    });
+
+    return vectors;
   }
 
   async indexArticle(orgId: string, articleId: number, signal?: AbortSignal): Promise<void> {
@@ -145,7 +170,7 @@ export class KbIndexingService {
       !article ||
       article.status !== "published" ||
       !article.contentText?.trim() ||
-      !this.embeddings.isConfigured()
+      !this.aiGateway.isEmbeddingConfigured()
     ) {
       await this.removeArticleChunks(orgId, articleId);
       return;
@@ -254,7 +279,7 @@ export class KbIndexingService {
       !page ||
       !isPageIndexable(page) ||
       !page.contentText?.trim() ||
-      !this.embeddings.isConfigured()
+      !this.aiGateway.isEmbeddingConfigured()
     ) {
       await this.removePageChunks(orgId, pageId);
       return 0;

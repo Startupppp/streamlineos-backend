@@ -24,7 +24,13 @@ import { JournalPostingService, type DraftLine } from "../posting/journal-postin
 import { FinancePostingService } from "../posting/finance-posting.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { ACCT_STATEMENTS_NS } from "../settings/accounting-settings.constants";
-import { addDecimals, compareDecimals } from "./money.util";
+import {
+  compareDecimals,
+  decimalFromNumber,
+  roundDecimal,
+  sumDecimals,
+  toDecimal,
+} from "./money.util";
 import { type CreateJournalEntryInput } from "./dto/accounting.schemas";
 
 function todayIsoDate(): string {
@@ -33,11 +39,6 @@ function todayIsoDate(): string {
   const mm = String(now.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(now.getUTCDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
-}
-
-function parseDecimal(value: string): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
 }
 
 @Injectable()
@@ -52,11 +53,11 @@ export class AccountingJournalEntryService {
   ) {}
 
   async createJournalEntry(orgId: string, userId: string, membershipId: number, input: CreateJournalEntryInput) {
-    const totalDebit = input.lines.reduce((acc, line) => acc + line.debit, 0);
-    const totalCredit = input.lines.reduce((acc, line) => acc + line.credit, 0);
-    if (Math.round(totalDebit * 100) !== Math.round(totalCredit * 100)) {
+    const totalDebit = sumDecimals(input.lines.map((line) => decimalFromNumber(line.debit)));
+    const totalCredit = sumDecimals(input.lines.map((line) => decimalFromNumber(line.credit)));
+    if (compareDecimals(totalDebit, totalCredit) !== 0) {
       throw new BadRequestException(
-        `Unbalanced entry: debit ${totalDebit.toFixed(2)} != credit ${totalCredit.toFixed(2)}`,
+        `Unbalanced entry: debit ${roundDecimal(totalDebit, 2)} != credit ${roundDecimal(totalCredit, 2)}`,
       );
     }
     for (const line of input.lines) {
@@ -68,7 +69,7 @@ export class AccountingJournalEntryService {
     await this.finPosting.assertPeriodOpen(orgId, input.entryDate);
     await this.posting.seedChartOfAccountsForOrg(orgId);
 
-    const entryTotalStr = input.lines.reduce((acc, l) => addDecimals(acc, l.debit.toFixed(4)), "0");
+    const entryTotalStr = totalDebit;
 
     const allPolicies = await this.db
       .select({
@@ -201,8 +202,8 @@ export class AccountingJournalEntryService {
 
     const reversingLines: DraftLine[] = lineRows.map((line) => ({
       accountCode: line.accountCode,
-      debit: parseDecimal(line.credit),
-      credit: parseDecimal(line.debit),
+      debit: Number(toDecimal(line.credit)),
+      credit: Number(toDecimal(line.debit)),
       description: `Reverses ${original.entryNumber}: ${line.description ?? ""}`,
     }));
 

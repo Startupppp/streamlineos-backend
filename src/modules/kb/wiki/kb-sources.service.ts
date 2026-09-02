@@ -124,16 +124,13 @@ export class KbSourcesService {
     }
 
     const kbBucket = this.config.R2_KB_BUCKET_NAME;
-    const kbPublicUrl = this.config.R2_KB_PUBLIC_URL;
-    const useKbBucket = Boolean(kbBucket && kbPublicUrl);
     const result = await this.storage.uploadFile(
       user.orgId,
       buffer,
       `kb-sources/${user.orgId}`,
       originalname,
       mimetype,
-      useKbBucket ? kbBucket : undefined,
-      useKbBucket ? kbPublicUrl : undefined,
+      kbBucket,
     );
 
     const rows = await this.db
@@ -144,7 +141,7 @@ export class KbSourcesService {
         kind: "file",
         title: originalname,
         fileKey: result.key,
-        fileUrl: result.url,
+        fileUrl: result.key,
         mimeType: mimetype,
         fileSize: file.size,
         status: "processing",

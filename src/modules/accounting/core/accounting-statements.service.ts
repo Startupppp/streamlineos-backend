@@ -13,6 +13,14 @@ import {
   type TrialBalanceQuery,
 } from "./dto/accounting.schemas";
 import { AccountingCashFlowService } from "./accounting-cash-flow.service";
+import {
+  compareDecimals,
+  isZero,
+  roundDecimal,
+  subtractDecimals,
+  sumDecimals,
+  toDecimal,
+} from "./money.util";
 
 const NORMAL_DEBIT: ReadonlyArray<string> = ["ASSET", "EXPENSE"];
 
@@ -25,21 +33,37 @@ interface AccountAggRow {
   credit: string | null;
 }
 
-function rowsForType(rows: AccountAggRow[], type: AccountType, normalDebit: boolean): BalanceSheetRow[] {
+interface TypedBalance {
+  row: BalanceSheetRow;
+  balance: string;
+}
+
+function rowsForType(rows: AccountAggRow[], type: AccountType, normalDebit: boolean): TypedBalance[] {
   return rows
     .filter((row) => row.accountType === type)
     .map((row) => {
-      const debit = Number(row.debit ?? 0);
-      const credit = Number(row.credit ?? 0);
-      const balance = normalDebit ? debit - credit : credit - debit;
-      return { accountId: row.accountId, code: row.code, name: row.name, accountType: type, balance: balance.toFixed(2) };
+      const debit = toDecimal(row.debit);
+      const credit = toDecimal(row.credit);
+      const balance = normalDebit
+        ? subtractDecimals(debit, credit)
+        : subtractDecimals(credit, debit);
+      return {
+        balance,
+        row: {
+          accountId: row.accountId,
+          code: row.code,
+          name: row.name,
+          accountType: type,
+          balance: roundDecimal(balance, 2),
+        },
+      };
     })
-    .filter((row) => Math.abs(Number(row.balance)) >= 0.005)
-    .sort((a, b) => a.code.localeCompare(b.code));
+    .filter((entry) => !isZero(entry.balance))
+    .sort((a, b) => a.row.code.localeCompare(b.row.code));
 }
 
-function sumRows(rows: BalanceSheetRow[]): number {
-  return rows.reduce((acc, row) => acc + Number(row.balance), 0);
+function sumBalances(entries: TypedBalance[]): string {
+  return sumDecimals(entries.map((entry) => entry.balance));
 }
 
 @Injectable()
@@ -77,31 +101,37 @@ export class AccountingStatementsService {
       )
       .groupBy(ledgerAccounts.id, ledgerAccounts.code, ledgerAccounts.name, ledgerAccounts.accountType);
 
-    const tb = rows.map((r) => {
-      const debit = Number(r.debit ?? 0);
-      const credit = Number(r.credit ?? 0);
+    const exact = rows.map((r) => {
+      const debit = toDecimal(r.debit);
+      const credit = toDecimal(r.credit);
       const normalDebit = NORMAL_DEBIT.includes(r.accountType);
-      const balance = normalDebit ? debit - credit : credit - debit;
       return {
-        accountId: r.accountId,
-        code: r.code,
-        name: r.name,
-        accountType: r.accountType,
-        debit: debit.toFixed(2),
-        credit: credit.toFixed(2),
-        balance: balance.toFixed(2),
+        debit,
+        credit,
+        row: {
+          accountId: r.accountId,
+          code: r.code,
+          name: r.name,
+          accountType: r.accountType,
+          debit: roundDecimal(debit, 2),
+          credit: roundDecimal(credit, 2),
+          balance: roundDecimal(
+            normalDebit ? subtractDecimals(debit, credit) : subtractDecimals(credit, debit),
+            2,
+          ),
+        },
       };
     });
 
-    const totalDebit = tb.reduce((acc, r) => acc + Number(r.debit), 0);
-    const totalCredit = tb.reduce((acc, r) => acc + Number(r.credit), 0);
+    const totalDebit = sumDecimals(exact.map((r) => r.debit));
+    const totalCredit = sumDecimals(exact.map((r) => r.credit));
 
     return {
       asOf,
-      rows: tb.sort((a, b) => a.code.localeCompare(b.code)),
-      totalDebit: totalDebit.toFixed(2),
-      totalCredit: totalCredit.toFixed(2),
-      balanced: Math.abs(totalDebit - totalCredit) < 0.01,
+      rows: exact.map((r) => r.row).sort((a, b) => a.code.localeCompare(b.code)),
+      totalDebit: roundDecimal(totalDebit, 2),
+      totalCredit: roundDecimal(totalCredit, 2),
+      balanced: compareDecimals(totalDebit, totalCredit) === 0,
     };
   }
 
@@ -140,38 +170,32 @@ export class AccountingStatementsService {
       )
       .groupBy(ledgerAccounts.id, ledgerAccounts.code, ledgerAccounts.name, ledgerAccounts.accountType);
 
-    const income = rows
+    const incomeExact = rows
       .filter((r) => r.accountType === "INCOME")
       .map((r) => ({
-        accountId: r.accountId,
-        code: r.code,
-        name: r.name,
-        accountType: "INCOME" as const,
-        amount: (Number(r.credit ?? 0) - Number(r.debit ?? 0)).toFixed(2),
+        amount: subtractDecimals(toDecimal(r.credit), toDecimal(r.debit)),
+        row: { accountId: r.accountId, code: r.code, name: r.name, accountType: "INCOME" as const },
       }))
-      .sort((a, b) => a.code.localeCompare(b.code));
-    const expense = rows
+      .sort((a, b) => a.row.code.localeCompare(b.row.code));
+    const expenseExact = rows
       .filter((r) => r.accountType === "EXPENSE")
       .map((r) => ({
-        accountId: r.accountId,
-        code: r.code,
-        name: r.name,
-        accountType: "EXPENSE" as const,
-        amount: (Number(r.debit ?? 0) - Number(r.credit ?? 0)).toFixed(2),
+        amount: subtractDecimals(toDecimal(r.debit), toDecimal(r.credit)),
+        row: { accountId: r.accountId, code: r.code, name: r.name, accountType: "EXPENSE" as const },
       }))
-      .sort((a, b) => a.code.localeCompare(b.code));
+      .sort((a, b) => a.row.code.localeCompare(b.row.code));
 
-    const totalIncome = income.reduce((acc, r) => acc + Number(r.amount), 0);
-    const totalExpense = expense.reduce((acc, r) => acc + Number(r.amount), 0);
+    const totalIncome = sumDecimals(incomeExact.map((r) => r.amount));
+    const totalExpense = sumDecimals(expenseExact.map((r) => r.amount));
 
     return {
       from: fromStr,
       to: toStr,
-      income,
-      expense,
-      totalIncome: totalIncome.toFixed(2),
-      totalExpense: totalExpense.toFixed(2),
-      netIncome: (totalIncome - totalExpense).toFixed(2),
+      income: incomeExact.map((r) => ({ ...r.row, amount: roundDecimal(r.amount, 2) })),
+      expense: expenseExact.map((r) => ({ ...r.row, amount: roundDecimal(r.amount, 2) })),
+      totalIncome: roundDecimal(totalIncome, 2),
+      totalExpense: roundDecimal(totalExpense, 2),
+      netIncome: roundDecimal(subtractDecimals(totalIncome, totalExpense), 2),
     };
   }
 
@@ -209,22 +233,23 @@ export class AccountingStatementsService {
 
     const incomeRows = rowsForType(rows, "INCOME", false);
     const expenseRows = rowsForType(rows, "EXPENSE", true);
-    const retainedEarnings = sumRows(incomeRows) - sumRows(expenseRows);
+    const retainedEarnings = subtractDecimals(sumBalances(incomeRows), sumBalances(expenseRows));
 
-    const totalAssets = sumRows(assets);
-    const totalLiabilities = sumRows(liabilities);
-    const totalEquity = sumRows(equity) + retainedEarnings;
+    const totalAssets = sumBalances(assets);
+    const totalLiabilities = sumBalances(liabilities);
+    const totalEquity = sumDecimals([sumBalances(equity), retainedEarnings]);
 
     return {
       asOf,
-      assets,
-      liabilities,
-      equity,
-      retainedEarnings: retainedEarnings.toFixed(2),
-      totalAssets: totalAssets.toFixed(2),
-      totalLiabilities: totalLiabilities.toFixed(2),
-      totalEquity: totalEquity.toFixed(2),
-      balanced: Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01,
+      assets: assets.map((entry) => entry.row),
+      liabilities: liabilities.map((entry) => entry.row),
+      equity: equity.map((entry) => entry.row),
+      retainedEarnings: roundDecimal(retainedEarnings, 2),
+      totalAssets: roundDecimal(totalAssets, 2),
+      totalLiabilities: roundDecimal(totalLiabilities, 2),
+      totalEquity: roundDecimal(totalEquity, 2),
+      balanced:
+        compareDecimals(totalAssets, sumDecimals([totalLiabilities, totalEquity])) === 0,
     };
   }
 

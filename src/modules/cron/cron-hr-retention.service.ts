@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
+import { StorageService } from "../storage/storage.service";
 import type { TenantTx } from "../../common/tenant";
 import {
   hrRetentionPolicies,
@@ -17,6 +18,23 @@ import {
 
 const BATCH_SIZE = 200;
 
+const NON_OBJECT_FILE_REFERENCES = new Set(["retention://redacted", ""]);
+
+function collectRetiredKeys(
+  into: string[],
+  candidates: ReadonlyArray<{ id: number; fileUrl: string | null }>,
+  affectedIds: ReadonlyArray<number>,
+): void {
+  const affected = new Set(affectedIds);
+  for (const candidate of candidates) {
+    if (!affected.has(candidate.id)) continue;
+    const reference = candidate.fileUrl;
+    if (!reference || NON_OBJECT_FILE_REFERENCES.has(reference)) continue;
+    if (/^https?:\/\//i.test(reference)) continue;
+    into.push(reference);
+  }
+}
+
 export interface HrRetentionSweepResult {
   organizations: number;
   employeeSoftDeleted: number;
@@ -24,6 +42,8 @@ export interface HrRetentionSweepResult {
   attendanceDeleted: number;
   documentsDeleted: number;
   onboardingDocumentsRedacted: number;
+  storageObjectsDeleted: number;
+  storageObjectsOrphaned: number;
   protectedDocumentRecords: number;
   protectedPayrollPolicies: number;
   /** @deprecated Compatibility fields; policies are no longer silently skipped. */
@@ -36,7 +56,10 @@ export interface HrRetentionSweepResult {
 export class CronHrRetentionService {
   private readonly logger = new Logger(CronHrRetentionService.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly storage: StorageService,
+  ) {}
 
   async sweep(): Promise<HrRetentionSweepResult> {
     const result: HrRetentionSweepResult = {
@@ -46,11 +69,15 @@ export class CronHrRetentionService {
       attendanceDeleted: 0,
       documentsDeleted: 0,
       onboardingDocumentsRedacted: 0,
+      storageObjectsDeleted: 0,
+      storageObjectsOrphaned: 0,
       protectedDocumentRecords: 0,
       protectedPayrollPolicies: 0,
       skippedDocumentPolicies: 0,
       skippedPayrollPolicies: 0,
     };
+
+    const retiredKeys = new Map<string, string[]>();
 
     const sweepResult = await forEachOrg(this.db, "hr-policy-retention", async (tx, orgId) => {
       const policies = await tx
@@ -60,9 +87,20 @@ export class CronHrRetentionService {
 
       for (const policy of policies) {
         const cutoff = new Date(Date.now() - policy.retentionMonths * 30 * 24 * 3600 * 1000);
-        await this.applyPolicy(tx, orgId, policy.id, policy.recordType, policy.action, cutoff, result);
+        await this.applyPolicy(
+          tx,
+          orgId,
+          policy.id,
+          policy.recordType,
+          policy.action,
+          cutoff,
+          result,
+          retiredKeys,
+        );
       }
     });
+
+    await this.deleteRetiredObjects(retiredKeys, result);
 
     result.organizations = sweepResult.organizations;
     this.logger.log(
@@ -72,6 +110,8 @@ export class CronHrRetentionService {
         `${result.attendanceDeleted} attendance rows deleted, ` +
         `${result.documentsDeleted} documents deleted, ` +
         `${result.onboardingDocumentsRedacted} onboarding documents redacted, ` +
+        `${result.storageObjectsDeleted} stored objects deleted, ` +
+        `${result.storageObjectsOrphaned} stored objects left orphaned, ` +
         `${result.protectedDocumentRecords} document records protected, ` +
         `${result.protectedPayrollPolicies} payroll policies retained as immutable financial records`,
     );
@@ -86,6 +126,7 @@ export class CronHrRetentionService {
     action: string,
     cutoff: Date,
     result: HrRetentionSweepResult,
+    retiredKeys: Map<string, string[]>,
   ): Promise<void> {
     if (recordType === "employee") {
       const count = await this.sweepEmployees(tx, orgId, cutoff);
@@ -110,6 +151,11 @@ export class CronHrRetentionService {
     }
     if (recordType === "document") {
       const counts = await this.sweepDocuments(tx, orgId, cutoff, action);
+      if (counts.retiredKeys.length > 0) {
+        const pending = retiredKeys.get(orgId) ?? [];
+        pending.push(...counts.retiredKeys);
+        retiredKeys.set(orgId, pending);
+      }
       result.documentsDeleted += counts.deleted;
       result.onboardingDocumentsRedacted += counts.redacted;
       result.protectedDocumentRecords += counts.protected;
@@ -197,18 +243,51 @@ export class CronHrRetentionService {
     return rows.length;
   }
 
+  /**
+   * Deletes the stored objects whose rows retention has just removed or
+   * redacted. It runs after the sweep's transactions have committed, never
+   * inside one: an object delete is a network call, and holding a pooled
+   * connection open across it is how one storage outage stalls every tenant.
+   */
+  private async deleteRetiredObjects(
+    retiredKeys: Map<string, string[]>,
+    result: HrRetentionSweepResult,
+  ): Promise<void> {
+    for (const [orgId, keys] of retiredKeys) {
+      for (const key of keys) {
+        try {
+          await this.storage.deleteFileIfPresent(orgId, key);
+          result.storageObjectsDeleted += 1;
+        } catch (err) {
+          result.storageObjectsOrphaned += 1;
+          this.logger.error(
+            "[hr-retention] stored object survived its retired record — orphan left in object storage",
+            { orgId, key, error: err instanceof Error ? err.message : String(err) },
+          );
+        }
+      }
+      retiredKeys.set(orgId, []);
+    }
+  }
+
   private async sweepDocuments(
     tx: TenantTx,
     orgId: string,
     cutoff: Date,
     action: string,
-  ): Promise<{ deleted: number; redacted: number; protected: number }> {
+  ): Promise<{
+    deleted: number;
+    redacted: number;
+    protected: number;
+    retiredKeys: string[];
+  }> {
     // A single batch per table keeps each invocation bounded. Processed rows
     // stop matching, so the next invocation resumes without a cursor and a
     // retry cannot delete or redact the same row twice.
     let redacted = 0;
+    const retiredKeys: string[] = [];
     const genericRows = await tx
-      .select({ id: documents.id })
+      .select({ id: documents.id, fileUrl: documents.fileUrl })
       .from(documents)
       .where(sql`${documents.orgId} = ${orgId}
         AND ${documents.createdAt} < ${cutoff}
@@ -229,6 +308,7 @@ export class CronHrRetentionService {
         .where(sql`${documents.orgId} = ${orgId} AND ${documents.id} IN (${sql.join(genericRows.map((row) => sql`${row.id}`), sql`, `)})`)
         .returning({ id: documents.id });
       deleted += rows.length;
+      collectRetiredKeys(retiredKeys, genericRows, rows.map((row) => row.id));
     } else if (action === "anonymize" && genericRows.length > 0) {
       const rows = await tx
         .update(documents)
@@ -236,10 +316,11 @@ export class CronHrRetentionService {
         .where(sql`${documents.orgId} = ${orgId} AND ${documents.id} IN (${sql.join(genericRows.map((row) => sql`${row.id}`), sql`, `)})`)
         .returning({ id: documents.id });
       redacted += rows.length;
+      collectRetiredKeys(retiredKeys, genericRows, rows.map((row) => row.id));
     }
 
     const onboardingRows = await tx
-      .select({ id: onboardingDocuments.id })
+      .select({ id: onboardingDocuments.id, fileUrl: onboardingDocuments.fileUrl })
       .from(onboardingDocuments)
       .where(sql`${onboardingDocuments.orgId} = ${orgId}
         AND ${onboardingDocuments.createdAt} < ${cutoff}
@@ -269,6 +350,7 @@ export class CronHrRetentionService {
           .where(sql`${onboardingDocuments.orgId} = ${orgId} AND ${onboardingDocuments.id} IN (${sql.join(deletableIds.map((id) => sql`${id}`), sql`, `)})`)
           .returning({ id: onboardingDocuments.id });
         deleted += rows.length;
+        collectRetiredKeys(retiredKeys, onboardingRows, rows.map((row) => row.id));
       }
 
       const redactIds = onboardingRows
@@ -281,11 +363,12 @@ export class CronHrRetentionService {
           .where(sql`${onboardingDocuments.orgId} = ${orgId} AND ${onboardingDocuments.id} IN (${sql.join(redactIds.map((id) => sql`${id}`), sql`, `)})`)
           .returning({ id: onboardingDocuments.id });
         redacted = rows.length;
+        collectRetiredKeys(retiredKeys, onboardingRows, rows.map((row) => row.id));
       }
       protectedCount = onboardingRows.length - deleted - redacted;
     }
 
-    return { deleted, redacted, protected: protectedCount };
+    return { deleted, redacted, protected: protectedCount, retiredKeys };
   }
 
   private async auditLog(

@@ -30,7 +30,7 @@ describe("KbPageCommentsService — cross-tenant isolation", () => {
         where: jest.fn().mockImplementation((w: unknown) => {
           wheres.push(w);
           return Object.assign(Promise.resolve([]), {
-            orderBy: jest.fn().mockResolvedValue([]),
+            orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
           });
         }),
       };

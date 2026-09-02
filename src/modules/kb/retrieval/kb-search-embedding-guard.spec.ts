@@ -42,9 +42,8 @@ const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
 function makeEmbeddings() {
   return {
-    isConfigured: jest.fn().mockReturnValue(true),
-    embedQuery: jest.fn().mockResolvedValue([0.1, 0.2]),
-    toVectorLiteral: jest.fn().mockReturnValue("[0.1,0.2]"),
+    isEmbeddingConfigured: jest.fn().mockReturnValue(true),
+    embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: [0.1, 0.2], vectorLiteral: "[0.1,0.2]" }),
   };
 }
 
@@ -62,7 +61,7 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
 
     await svc.retrieveTopArticles(makeUser(), "how do I reset my password", 6);
 
-    expect(embeddings.embedQuery).not.toHaveBeenCalled();
+    expect(embeddings.embedQueryWithCredit).not.toHaveBeenCalled();
   });
 
   it("returns nothing from retrieveTopSources without embedding when there are no chunks", async () => {
@@ -79,7 +78,7 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
     const result = await svc.retrieveTopSources(makeUser(), "anything at all", 4);
 
     expect(result).toEqual([]);
-    expect(embeddings.embedQuery).not.toHaveBeenCalled();
+    expect(embeddings.embedQueryWithCredit).not.toHaveBeenCalled();
   });
 
   it("does embed once the org has at least one indexed chunk", async () => {
@@ -95,6 +94,6 @@ describe("KB embedding guard — an unseeded knowledge base costs nothing", () =
 
     await svc.retrieveTopArticles(makeUser(), "how do I reset my password", 6);
 
-    expect(embeddings.embedQuery).toHaveBeenCalled();
+    expect(embeddings.embedQueryWithCredit).toHaveBeenCalled();
   });
 });

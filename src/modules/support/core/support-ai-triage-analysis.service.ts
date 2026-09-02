@@ -8,7 +8,6 @@ import { redactSensitiveData } from "../../ai/core/redaction.util";
 import { logger } from "../../../common/logger/logger.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { OrgFeaturesService } from "../../ai/core/services/org-features.service";
-import { EmbeddingsService } from "../../ai/core/providers/embeddings.service";
 import { SupportAiEmbeddingsHelper } from "./support-ai-embeddings.helper";
 import { SupportAiTriageDataService } from "./support-ai-triage-data.service";
 import { analysisSchema, rootCauseSchema } from "./support-ai-triage.schemas";
@@ -20,7 +19,6 @@ export class SupportAiTriageAnalysisService {
     private readonly data: SupportAiTriageDataService,
     private readonly aiGateway: AiGatewayService,
     private readonly orgFeatures: OrgFeaturesService,
-    private readonly embeddings: EmbeddingsService,
     private readonly embHelper: SupportAiEmbeddingsHelper,
   ) {}
 
@@ -114,7 +112,7 @@ export class SupportAiTriageAnalysisService {
   }
 
   async findDuplicates(orgId: string, ticketId: number) {
-    if (!this.embeddings.isConfigured()) return null;
+    if (!this.aiGateway.isEmbeddingConfigured()) return null;
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.supportAi) return null;
     const ticket = await this.data.getTicketOrThrow(orgId, ticketId);
@@ -139,7 +137,7 @@ export class SupportAiTriageAnalysisService {
   }
 
   async findRootCauseCluster(orgId: string, ticketId: number, userId?: string) {
-    if (!this.embeddings.isConfigured()) return null;
+    if (!this.aiGateway.isEmbeddingConfigured()) return null;
     const flags = await this.orgFeatures.getFlags(orgId);
     if (!flags.supportAi) return null;
     const ticket = await this.data.getTicketOrThrow(orgId, ticketId);

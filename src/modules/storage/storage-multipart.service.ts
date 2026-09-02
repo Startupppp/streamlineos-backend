@@ -7,7 +7,8 @@ import {
   UploadPartCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { StorageService } from "./storage.service";
+import { StorageService, isMissingObjectError } from "./storage.service";
+import { sanitizeFileName } from "./storage-key";
 
 const PART_URL_TTL_SECONDS = 3600;
 const ABANDONED_AFTER_MS = 24 * 60 * 60 * 1000;
@@ -30,6 +31,18 @@ export interface PresignedPartUrl {
   url: string;
 }
 
+export type CompletionOutcome =
+  | "completed"
+  | "already-completed"
+  | "unknown-upload";
+
+function isUnknownUploadError(error: unknown): boolean {
+  if (isMissingObjectError(error)) return true;
+  if (!(error instanceof Error)) return false;
+  const details = error as Error & { name?: string; Code?: string };
+  return details.name === "NoSuchUpload" || details.Code === "NoSuchUpload";
+}
+
 @Injectable()
 export class StorageMultipartService {
   private readonly logger = new Logger(StorageMultipartService.name);
@@ -50,9 +63,8 @@ export class StorageMultipartService {
     if (!placement.bucketName)
       throw new Error("Storage bucket not configured");
 
-    const sanitized = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
     const { randomUUID } = await import("crypto");
-    const key = `${orgId}/${folder}/${randomUUID()}-${sanitized}`;
+    const key = `${orgId}/${folder}/${randomUUID()}-${sanitizeFileName(fileName)}`;
 
     const create = await placement.client.send(
       new CreateMultipartUploadCommand({
@@ -83,27 +95,43 @@ export class StorageMultipartService {
     return { uploadId, key, partUrls };
   }
 
+  /**
+   * A retried completion is the normal case, not the exception: the client
+   * cannot tell a lost response from a lost request. S3 and R2 forget the
+   * upload id the moment the first completion succeeds, so the second attempt
+   * fails `NoSuchUpload` — which is indistinguishable from a bogus id unless
+   * the object itself is consulted. Answering "already-completed" is what keeps
+   * the retry from either duplicating the record or orphaning the object.
+   */
   async complete(
     orgId: string,
     key: string,
     uploadId: string,
     parts: CompletedPart[],
-  ): Promise<void> {
+  ): Promise<CompletionOutcome> {
     const placement = await this.storage.placementForOrg(orgId);
     if (!placement.bucketName) throw new Error("Storage bucket not configured");
 
-    await placement.client.send(
-      new CompleteMultipartUploadCommand({
-        Bucket: placement.bucketName,
-        Key: key,
-        UploadId: uploadId,
-        MultipartUpload: {
-          Parts: parts
-            .sort((a, b) => a.partNumber - b.partNumber)
-            .map((p) => ({ PartNumber: p.partNumber, ETag: p.eTag })),
-        },
-      }),
-    );
+    try {
+      await placement.client.send(
+        new CompleteMultipartUploadCommand({
+          Bucket: placement.bucketName,
+          Key: key,
+          UploadId: uploadId,
+          MultipartUpload: {
+            Parts: parts
+              .sort((a, b) => a.partNumber - b.partNumber)
+              .map((p) => ({ PartNumber: p.partNumber, ETag: p.eTag })),
+          },
+        }),
+      );
+      return "completed";
+    } catch (error) {
+      if (!isUnknownUploadError(error)) throw error;
+      const existing = await this.storage.describeObject(orgId, key);
+      if (existing) return "already-completed";
+      return "unknown-upload";
+    }
   }
 
   async abort(orgId: string, key: string, uploadId: string): Promise<void> {
@@ -119,7 +147,7 @@ export class StorageMultipartService {
         }),
       );
     } catch (err: unknown) {
-      this.logger.warn(`Abort multipart upload failed for key=${key}: ${String(err)}`);
+      this.logger.warn(`Abort multipart upload failed: ${String(err)}`, { key });
     }
   }
 
@@ -157,9 +185,10 @@ export class StorageMultipartService {
           );
           aborted++;
         } catch (err: unknown) {
-          this.logger.warn(
-            `Could not abort stale upload key=${upload.Key} id=${upload.UploadId}: ${String(err)}`,
-          );
+          this.logger.warn(`Could not abort stale upload: ${String(err)}`, {
+            key: upload.Key,
+            uploadId: upload.UploadId,
+          });
         }
       }
 

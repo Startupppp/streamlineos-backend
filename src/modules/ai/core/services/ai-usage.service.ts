@@ -5,6 +5,20 @@ import { type Db } from "../../../../db/drizzle.module";
 import { logger } from "../../../../common/logger/logger.service";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { computeTokenCharge } from "../billing/ai-model-pricing.constants";
+import { getObservabilityContext } from "../../../../common/observability";
+
+const CORRELATION_ID_MAX_LENGTH = 64;
+
+/**
+ * Defaulted at the single write site, so a caller that forgets it still produces
+ * a row that joins back to the request — the streaming settle path had no way to
+ * pass one at all, and every stream it billed landed with a null.
+ */
+function resolveCorrelationId(explicit: string | undefined): string | null {
+  const candidate = explicit ?? getObservabilityContext()?.correlationId;
+  if (candidate === undefined) return null;
+  return candidate.length <= CORRELATION_ID_MAX_LENGTH ? candidate : null;
+}
 
 export interface TrackAiUsageParams {
   orgId: string;
@@ -27,7 +41,8 @@ export class AiUsageService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async track(params: TrackAiUsageParams): Promise<void> {
-    const { orgId, userId, feature, model, latencyMs, correlationId, outcome } = params;
+    const { orgId, userId, feature, model, latencyMs, outcome } = params;
+    const correlationId = resolveCorrelationId(params.correlationId);
     const metadata: Record<string, unknown> = { ...(params.metadata ?? {}) };
     if (params.ttftMs !== undefined) metadata["ttftMs"] = params.ttftMs;
     if (params.appOverheadMs !== undefined) metadata["appOverheadMs"] = params.appOverheadMs;
@@ -51,7 +66,7 @@ export class AiUsageService {
         creditsMilli,
         metadata: metadata ?? null,
         latencyMs: latencyMs ?? null,
-        correlationId: correlationId ?? null,
+        correlationId,
         outcome: outcome ?? null,
       }), { orgId });
     } catch (error) {

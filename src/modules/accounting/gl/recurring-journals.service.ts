@@ -12,6 +12,7 @@ import {
   type RecurringLine,
   recurringLineArraySchema,
 } from "./dto/recurring-journals.schemas";
+import { compareDecimals, decimalFromNumber, sumDecimals } from "../core/money.util";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -223,8 +224,8 @@ export class RecurringJournalsService {
         entryId: entry.id,
         accountId: line.accountId,
         orgId: tmpl.orgId,
-        debit: line.debit.toFixed(4),
-        credit: line.credit.toFixed(4),
+        debit: decimalFromNumber(line.debit),
+        credit: decimalFromNumber(line.credit),
         description: line.description ?? null,
         lineOrder: idx,
       }));
@@ -253,11 +254,12 @@ export class RecurringJournalsService {
   }
 
   private validateLines(lines: RecurringLine[]): void {
-    const totalDebit = lines.reduce((s, l) => s + l.debit, 0);
-    const totalCredit = lines.reduce((s, l) => s + l.credit, 0);
-    const diff = Math.abs(Math.round((totalDebit - totalCredit) * 100) / 100);
-    if (diff > 0.009) {
-      throw new BadRequestException(`Recurring journal lines are unbalanced: debit=${totalDebit} credit=${totalCredit}`);
+    const totalDebit = sumDecimals(lines.map((l) => decimalFromNumber(l.debit)));
+    const totalCredit = sumDecimals(lines.map((l) => decimalFromNumber(l.credit)));
+    if (compareDecimals(totalDebit, totalCredit) !== 0) {
+      throw new BadRequestException(
+        `Recurring journal lines are unbalanced: debit=${totalDebit} credit=${totalCredit}`,
+      );
     }
   }
 }

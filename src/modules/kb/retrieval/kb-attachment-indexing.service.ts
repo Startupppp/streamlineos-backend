@@ -1,12 +1,11 @@
-import { Inject, Injectable, Logger } from "@nestjs/common";
+import { Inject, Injectable, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { kbArticleChunks, kbArticleAttachments, kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import {
-  EmbeddingsService,
-  EMBEDDING_MODEL,
-} from "../../ai/core/providers/embeddings.service";
+import { EMBEDDING_MODEL } from "../../ai/core/providers/embeddings.service";
+import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { StorageService } from "../../storage/storage.service";
 import {
   extractAttachmentText,
@@ -14,25 +13,29 @@ import {
 } from "./kb-attachment-extract.util";
 import { chunkText, streamToBuffer } from "./kb-chunk-utils";
 
-const EMBED_BATCH_SIZE = 64;
-
 @Injectable()
 export class KbAttachmentIndexingService {
   private readonly logger = new Logger(KbAttachmentIndexingService.name);
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly embeddings: EmbeddingsService,
+    private readonly aiGateway: AiGatewayService,
     private readonly storage: StorageService,
   ) {}
 
   private async embedInBatches(orgId: string, chunks: string[], feature = "kb.indexing"): Promise<number[][]> {
-    const result: number[][] = [];
-    for (let i = 0; i < chunks.length; i += EMBED_BATCH_SIZE) {
-      const batchEmbeddings = await this.embeddings.embedBatch(chunks.slice(i, i + EMBED_BATCH_SIZE), orgId, feature);
-      result.push(...batchEmbeddings);
+    const embedResult = await this.aiGateway.embedBatchWithCredit({
+      texts: chunks,
+      orgId,
+      feature,
+      charge: true,
+    });
+    if (!embedResult.ok) {
+      if (embedResult.kind === "quota_exceeded")
+        throw new InsufficientAiCreditsException({ message: embedResult.message });
+      throw new ServiceUnavailableException(embedResult.message);
     }
-    return result;
+    return embedResult.vectors;
   }
 
   async indexSource(
@@ -40,7 +43,7 @@ export class KbAttachmentIndexingService {
     sourceId: number,
     text: string,
   ): Promise<number> {
-    if (!this.embeddings.isConfigured()) return 0;
+    if (!this.aiGateway.isEmbeddingConfigured()) return 0;
     const chunks = chunkText(text);
 
     if (chunks.length === 0) {
@@ -110,7 +113,7 @@ export class KbAttachmentIndexingService {
       },
     });
 
-    if (!attachment || !this.embeddings.isConfigured()) {
+    if (!attachment || !this.aiGateway.isEmbeddingConfigured()) {
       await this.removeAttachmentChunks(orgId, attachmentId);
       return { chunks: 0, warning: null };
     }
@@ -196,7 +199,7 @@ export class KbAttachmentIndexingService {
     mimeType: string,
     fileName: string,
   ): Promise<{ chunks: number; warning: string | null }> {
-    if (!this.embeddings.isConfigured() || !isExtractableMime(mimeType))
+    if (!this.aiGateway.isEmbeddingConfigured() || !isExtractableMime(mimeType))
       return { chunks: 0, warning: null };
 
     const page = await this.db.query.kbPages.findFirst({

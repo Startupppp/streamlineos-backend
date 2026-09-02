@@ -32,7 +32,7 @@ export const hrSafetyIncidents = pgTable("hr_safety_incidents", {
   type: hrSafetyIncidentTypeEnum("type").notNull(),
   location: text("location").notNull(),
   occurredAt: timestamp("occurred_at").notNull(),
-  reportedBy: text("reported_by").references(() => users.id, { onDelete: "set null" }).notNull(),
+  reportedBy: text("reported_by").references(() => users.id).notNull(),
   description: text("description").notNull(),
   severity: hrSafetyIncidentSeverityEnum("severity").notNull(),
   status: hrSafetyIncidentStatusEnum("status").default("open").notNull(),

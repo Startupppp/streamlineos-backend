@@ -46,7 +46,7 @@ export class KbCommentsService {
       .from(kbArticleComments)
       .leftJoin(users, eq(users.id, kbArticleComments.authorId))
       .where(and(...conditions))
-      .orderBy(asc(kbArticleComments.createdAt))
+      .orderBy(asc(kbArticleComments.createdAt), asc(kbArticleComments.id))
       .limit(PAGE_SIZE);
     return rows.map(function toCommentWithAuthor(row) {
       const { authorName, ...comment } = row;

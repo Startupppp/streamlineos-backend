@@ -42,11 +42,13 @@ export const supportTickets = pgTable("support_tickets", {
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_support_tickets_assignee_actor",
   }).onDelete("set null"),
+  // No onDelete: createdByMembershipId is the ticket's only creator identity and
+  // is not nullable, so SET NULL could only raise 23502. 0992 made it NO ACTION.
   foreignKey({
     columns: [table.orgId, table.createdByMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_support_tickets_created_actor",
-  }).onDelete("set null"),
+  }),
   // Queue view: filter by org + queue + open statuses, order by priority then SLA deadline.
   index("idx_support_tickets_org_queue_status_priority").on(table.orgId, table.queueId, table.status, table.priority, table.createdAt),
   index("idx_support_tickets_client").on(table.clientId),

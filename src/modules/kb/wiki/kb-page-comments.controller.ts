@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -28,6 +29,10 @@ import { z } from "zod";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
 const commentIdParams = z.object({ commentId: z.coerce.number().int().positive() }).strict();
+const cursorQuery = z.object({
+  afterCreatedAt: z.string().optional(),
+  afterId: z.coerce.number().int().positive().optional(),
+}).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard)
@@ -37,12 +42,17 @@ export class KbPageCommentsController {
   @Get("pages/:pageId/comments")
   @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:view")
-  @Validate({ params: pageIdParams })
+  @Validate({ params: pageIdParams, query: cursorQuery })
   async list(
     @Param("pageId", ParseIntPipe) pageId: number,
+    @Query("afterCreatedAt") afterCreatedAt: string | undefined,
+    @Query("afterId") afterId: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.comments.list(u, pageId);
+    const cursor = afterCreatedAt && afterId
+      ? { sortValue: afterCreatedAt, id: afterId }
+      : undefined;
+    return this.comments.list(u, pageId, cursor);
   }
 
   @Post("pages/:pageId/comments")

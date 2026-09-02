@@ -44,7 +44,7 @@ describe("CronHelpdeskRetentionService", () => {
       async (_db: unknown, _label: string, cb: OrgCallback) => {
         await cb(tx, OWNER_ORG);
         await cb(tx, OTHER_ORG);
-        return { organizations: 2 };
+        return { organizations: 2, succeeded: 2, failed: 0 };
       },
     );
     const db = {} as unknown as Db;
@@ -62,7 +62,7 @@ describe("CronHelpdeskRetentionService", () => {
       async (_db: unknown, _label: string, cb: OrgCallback) => {
         await cb(tx, OWNER_ORG);
         await cb(tx, OTHER_ORG);
-        return { organizations: 2 };
+        return { organizations: 2, succeeded: 2, failed: 0 };
       },
     );
     const db = {} as unknown as Db;
@@ -90,7 +90,7 @@ describe("CronHelpdeskRetentionService", () => {
     (forEachOrg as jest.Mock).mockImplementation(
       async (_db: unknown, _label: string, cb: OrgCallback) => {
         await cb(tx, OWNER_ORG);
-        return { organizations: 1 };
+        return { organizations: 1, succeeded: 1, failed: 0 };
       },
     );
     const db = {} as unknown as Db;
@@ -109,7 +109,7 @@ describe("CronHelpdeskRetentionService", () => {
     (forEachOrg as jest.Mock).mockImplementation(
       async (_db: unknown, _label: string, cb: OrgCallback) => {
         await cb(tx, OWNER_ORG);
-        return { organizations: 1 };
+        return { organizations: 1, succeeded: 1, failed: 0 };
       },
     );
     const db = {} as unknown as Db;
@@ -130,7 +130,7 @@ describe("CronMailRetentionService", () => {
     (forEachOrg as jest.Mock).mockImplementation(
       async (_db: unknown, _label: string, cb: OrgCallback) => {
         await cb(tx, OWNER_ORG);
-        return { organizations: 1 };
+        return { organizations: 1, succeeded: 1, failed: 0 };
       },
     );
     const db = {} as unknown as Db;
@@ -158,7 +158,7 @@ describe("CronMailRetentionService", () => {
       async (_db: unknown, _label: string, cb: OrgCallback) => {
         await cb(tx, OWNER_ORG);
         await cb(tx, OTHER_ORG);
-        return { organizations: 2 };
+        return { organizations: 2, succeeded: 2, failed: 0 };
       },
     );
     const db = {} as unknown as Db;
@@ -186,7 +186,7 @@ describe("CronAnnouncementsRetentionService", () => {
     (forEachOrg as jest.Mock).mockImplementation(
       async (_db: unknown, _label: string, cb: OrgCallback) => {
         await cb(tx, OWNER_ORG);
-        return { organizations: 1 };
+        return { organizations: 1, succeeded: 1, failed: 0 };
       },
     );
     const db = {} as unknown as Db;
@@ -224,7 +224,7 @@ describe("CronAnnouncementsRetentionService", () => {
     (forEachOrg as jest.Mock).mockImplementation(
       async (_db: unknown, _label: string, cb: OrgCallback) => {
         await cb(tx, OWNER_ORG);
-        return { organizations: 1 };
+        return { organizations: 1, succeeded: 1, failed: 0 };
       },
     );
     const db = {} as unknown as Db;
@@ -244,7 +244,7 @@ describe("CronAnnouncementsRetentionService", () => {
     (forEachOrg as jest.Mock).mockImplementation(
       async (_db: unknown, _label: string, cb: OrgCallback) => {
         await cb(tx, OWNER_ORG);
-        return { organizations: 1 };
+        return { organizations: 1, succeeded: 1, failed: 0 };
       },
     );
     const db = {} as unknown as Db;
@@ -256,4 +256,30 @@ describe("CronAnnouncementsRetentionService", () => {
     expect(result.agedDeleted).toBe(0);
     expect(tx.insert).not.toHaveBeenCalled();
   });
+});
+
+describe("per-tenant failure visibility", () => {
+  beforeEach(() => jest.resetAllMocks());
+
+  it.each([
+    ["helpdesk", () => new CronHelpdeskRetentionService({} as unknown as Db)],
+    ["mail", () => new CronMailRetentionService({} as unknown as Db)],
+    ["announcements", () => new CronAnnouncementsRetentionService({} as unknown as Db)],
+  ])(
+    "%s: a tenant whose sweep threw is reported, not swallowed into a clean success",
+    async (_name, build) => {
+      const tx = makeDeleteTx(1);
+      (forEachOrg as jest.Mock).mockImplementation(
+        async (_db: unknown, _label: string, cb: OrgCallback) => {
+          await cb(tx, OWNER_ORG);
+          return { organizations: 2, succeeded: 1, failed: 1 };
+        },
+      );
+
+      const result = await build().sweep();
+
+      expect(result.organizations).toBe(2);
+      expect(result.organizationsFailed).toBe(1);
+    },
+  );
 });

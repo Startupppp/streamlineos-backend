@@ -47,15 +47,13 @@ const makeAccess = (spaceIds: number[] = [1]) => ({
 });
 
 const makeEmbeddings = () => ({
-  isConfigured: jest.fn().mockReturnValue(false),
-  embedQuery: jest.fn(),
-  toVectorLiteral: jest.fn(),
+  isEmbeddingConfigured: jest.fn().mockReturnValue(false),
+  embedQueryWithCredit: jest.fn(),
 });
 
 const makeConfiguredEmbeddings = () => ({
-  isConfigured: jest.fn().mockReturnValue(true),
-  embedQuery: jest.fn().mockResolvedValue([0.1, 0.2]),
-  toVectorLiteral: jest.fn().mockReturnValue("[0.1,0.2]"),
+  isEmbeddingConfigured: jest.fn().mockReturnValue(true),
+  embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: [0.1, 0.2], vectorLiteral: "[0.1,0.2]" }),
 });
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });

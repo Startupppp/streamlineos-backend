@@ -1,6 +1,11 @@
 import type { SQL } from "drizzle-orm";
 import { forEachOrg } from "../for-each-org";
 import { getTenantContext } from "../tenant-context";
+import {
+  getObservabilityContext,
+  runWithObservabilityContext,
+} from "../../observability/observability-context";
+import { logger } from "../../logger/logger.service";
 import type { Db } from "../../../db/drizzle.module";
 import {
   clearRegionRegistry,
@@ -246,5 +251,76 @@ describe("forEachOrg — cell-aware enumeration", () => {
 
     expect(seen).toEqual([]);
     expect(result.organizations).toBe(0);
+  });
+});
+
+describe("forEachOrg — background work states its tenant in the log context", () => {
+  it("names the organisation on every line the callback emits, not only in the caller's meta", async () => {
+    const { db } = makeMockDb(["org-a", "org-b"]);
+    const lines: Record<string, unknown>[] = [];
+    const spy = jest.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      lines.push(JSON.parse(String(chunk)) as Record<string, unknown>);
+      return true;
+    });
+
+    try {
+      await forEachOrg(db, "retention-sweep", async () => {
+        logger.info("purged a batch");
+      });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(lines.map((line) => line["orgId"])).toEqual(["org-a", "org-b"]);
+    expect(lines.every((line) => line["route"] === "sweep:retention-sweep")).toBe(true);
+  });
+
+  it("carries the triggering request's correlation id through, so the sweep joins its cron call", async () => {
+    const { db } = makeMockDb(["org-a", "org-b"]);
+    const seen: (string | undefined)[] = [];
+
+    await runWithObservabilityContext(
+      { correlationId: "cid-cron-tick", route: "/cron/retention", method: "POST" },
+      () =>
+        forEachOrg(db, "retention-sweep", async () => {
+          seen.push(getObservabilityContext()?.correlationId);
+        }),
+    );
+
+    expect(seen).toEqual(["cid-cron-tick", "cid-cron-tick"]);
+  });
+
+  it("(bite proof) the ambient context is not mutated — the caller's orgId survives the sweep", async () => {
+    const { db } = makeMockDb(["org-a"]);
+
+    await runWithObservabilityContext(
+      { correlationId: "cid-cron-tick", orgId: "org-trigger" },
+      async () => {
+        await forEachOrg(db, "retention-sweep", async () => undefined);
+        expect(getObservabilityContext()?.orgId).toBe("org-trigger");
+      },
+    );
+  });
+
+  it("a failed organization's error line carries that organization at the top level", async () => {
+    const { db } = makeMockDb(["org-a"]);
+    const lines: Record<string, unknown>[] = [];
+    const spy = jest.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      lines.push(JSON.parse(String(chunk)) as Record<string, unknown>);
+      return true;
+    });
+
+    let result;
+    try {
+      result = await forEachOrg(db, "retention-sweep", async () => {
+        throw new Error("boom");
+      });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(result).toMatchObject({ organizations: 1, succeeded: 0, failed: 1 });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ orgId: "org-a", route: "sweep:retention-sweep" });
   });
 });

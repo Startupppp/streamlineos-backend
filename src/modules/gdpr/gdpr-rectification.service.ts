@@ -5,7 +5,11 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { createHash } from "node:crypto";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
+import {
+  livePersonOfUser,
+  primaryEmploymentOfPerson,
+} from "../directory/employment-query";
 import {
   auditLogs,
   hrDataRequests,
@@ -277,31 +281,11 @@ export class GdprRectificationService {
     subjectUserId: string,
     value: string,
   ): Promise<CorrectionResult> {
-    const peopleRows = await tx
-      .select({ id: hrPeople.id })
-      .from(hrPeople)
-      .where(
-        and(
-          eq(hrPeople.orgId, orgId),
-          eq(hrPeople.userId, subjectUserId),
-          isNull(hrPeople.deletedAt),
-        ),
-      );
-    if (peopleRows.length === 0)
-      return { changed: false, beforeHash: this.valueHash(null), afterHash: this.valueHash(value) };
-
-    const personIds = peopleRows.map((p) => p.id);
     const [employment] = await tx
       .select({ id: hrEmployments.id })
-      .from(hrEmployments)
-      .where(
-        and(
-          eq(hrEmployments.orgId, orgId),
-          inArray(hrEmployments.personId, personIds),
-          isNull(hrEmployments.deletedAt),
-          eq(hrEmployments.isPrimary, true),
-        ),
-      )
+      .from(hrPeople)
+      .innerJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+      .where(livePersonOfUser(orgId, subjectUserId))
       .limit(1);
     if (!employment)
       return { changed: false, beforeHash: this.valueHash(null), afterHash: this.valueHash(value) };

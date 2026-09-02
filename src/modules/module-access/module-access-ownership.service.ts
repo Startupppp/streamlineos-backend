@@ -164,7 +164,7 @@ export class ModuleAccessOwnershipService {
 
     await Promise.all([
       this.cache.invalidate(CACHE_KEYS.moduleAccessOwnership(orgId, moduleKey)),
-      this.cache.invalidateNamespace(`ownership:transfers:${orgId}`),
+      this.cache.invalidateNamespaceForOrg(orgId, "ownership:transfers"),
     ]);
 
     this.audit.log({
@@ -244,7 +244,7 @@ export class ModuleAccessOwnershipService {
       this.cache.invalidate(
         CACHE_KEYS.moduleAccessOwnership(actor.orgId, moduleKey),
       ),
-      this.cache.invalidateNamespace(`ownership:transfers:${actor.orgId}`),
+      this.cache.invalidateNamespaceForOrg(actor.orgId, "ownership:transfers"),
     ]);
 
     this.audit.log({

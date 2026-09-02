@@ -73,14 +73,17 @@ const JOURNAL_ENTRY_COUNT = (() => {
 
 // CRM tables: name prefix OR tables identified from schema/crm/ source.
 // Tables whose SQL name does NOT start with crm_ but live in the CRM module.
+// `credit_notes` and `vendor_credits` (schema/accounting/finance-ar-ap.ts) and `enterprise_quotes`
+// (schema/billing/billing.ts) were listed here and are NOT CRM. Because CRM is excluded from this
+// release they were skipped in both modes, hiding their foreign keys behind a scope exclusion they
+// never belonged to. An exclusion keyed on a table name rather than a schema path widens itself.
 const CRM_TABLE_NAMES = new Set([
   "clients", "leads", "deals", "contacts", "quotes", "pipelines", "pipeline_stages",
   "activities", "campaigns", "campaign_recipients", "quote_items", "contact_notes",
   "contact_tags", "deal_activities", "deal_approvals", "deal_meetings",
   "lead_activities", "lead_emails", "lead_notes", "lead_tasks",
-  "enterprise_quotes", "client_accounts", "client_onboarding_items",
+  "client_accounts", "client_onboarding_items",
   "client_opportunities", "commissions", "csat_surveys", "quote_line_items",
-  "vendor_credits", "credit_notes",
 ]);
 
 // Inventory tables: name prefix inv_ or items from schema/inventory/
@@ -165,11 +168,18 @@ async function runQuery(postgres, url) {
     // The default target is a shared scratch database that other sessions reset and cold-replay.
     // A half-applied chain reports a large actionable count that looks like a release failure but
     // is only a statement about that database, so say so rather than let the number stand alone.
-    const [replay] = await sql`
-      SELECT (SELECT count(*)::int FROM drizzle.__replay) AS applied
-      WHERE to_regclass('drizzle.__replay') IS NOT NULL
-    `.catch(() => [undefined]);
-    const midBootstrap = replay ? replay.applied : null;
+    // Two ledgers exist: replay-chain-cold.mjs writes drizzle.__replay, db-bootstrap.mjs writes
+    // drizzle.__drizzle_migrations. Reading only the first made this guard inert against every
+    // database built by db:bootstrap, which is the path the release evidence actually uses.
+    const ledgerCounts = [];
+    for (const relation of ["drizzle.__replay", "drizzle.__drizzle_migrations"]) {
+      const [row] = await sql.unsafe(
+        `SELECT count(*)::int AS applied FROM ${relation}`,
+      ).catch(() => [undefined]);
+      if (row) ledgerCounts.push(row.applied);
+    }
+    const midBootstrap = ledgerCounts.length > 0 ? Math.max(...ledgerCounts) : null;
+    const [{ target }] = await sql`SELECT current_database() AS target`;
 
     const rows = await sql`
       WITH tenant AS (
@@ -212,6 +222,7 @@ async function runQuery(postgres, url) {
       result.actionable.push(r);
     }
     result.midBootstrap = midBootstrap;
+    result.target = target;
     return result;
   } finally {
     await sql.end();
@@ -291,11 +302,11 @@ function extractForeignKeyBlocks(src) {
   return blocks;
 }
 
-// Detect inline .references(() => table.col) calls
+// Detect inline .references(() => table.col) calls, including the self-referencing
+// .references((): AnyPgColumn => table.col) form a bare `()\s*=>` pattern could not see.
 function extractInlineReferences(src) {
   const blocks = [];
-  // Match: columnName: type("col_name").notNull()...references(() => table.field, {...})
-  const re = /\b(\w+)\s*:\s*\w+\s*\([^)]*\)[^,;]*\.references\s*\(\s*\(\s*\)\s*=>\s*(\w+)\.(\w+)/g;
+  const re = /\b(\w+)\s*:\s*\w+\s*\([^)]*\)[^,;]*\.references\s*\(\s*\(\s*\)\s*(?::\s*[A-Za-z_$][\w$<>.\[\]|\s]*?)?=>\s*(\w+)\.(\w+)/g;
   for (const m of src.matchAll(re)) {
     const propName = m[1];
     const targetTable = m[2];
@@ -459,8 +470,32 @@ export const crmTable = pgTable("crm_excluded", {
 ]);
 `;
 
+  const fixtureAnnotatedInlineRef = `
+export const inlineChild = pgTable("inline_child", {
+  orgId: text("org_id").notNull(),
+  parentTblId: integer("parent_tbl_id").references((): AnyPgColumn => parentTbl.id, { onDelete: "set null" }),
+}, (table) => [
+  unique("uniq_inline_child_org_id").on(table.orgId, table.id),
+]);
+`;
+
+  const fixtureAccountingNotCrm = `
+export const creditNotes = pgTable("credit_notes", {
+  orgId: text("org_id").notNull(),
+  parentTblId: integer("parent_tbl_id").references(() => parentTbl.id, { onDelete: "cascade" }),
+}, (table) => [
+  unique("uniq_credit_notes_org_id").on(table.orgId, table.id),
+]);
+`;
+
   const badExplicit = parseStaticViolations(fixtureExplicitBad, "fixture/bad.ts", allTenant);
   const badInline = parseStaticViolations(fixtureInlineRef, "fixture/inline.ts", allTenant);
+  const badAnnotatedInline = parseStaticViolations(fixtureAnnotatedInlineRef, "fixture/annotated.ts", allTenant);
+  const accountingNotCrm = parseStaticViolations(
+    fixtureAccountingNotCrm,
+    "src/db/schema/accounting/finance-ar-ap.ts",
+    new Set([...allTenant, "credit_notes"]),
+  );
   const good = parseStaticViolations(fixtureGoodComposite, "fixture/good.ts", allTenant);
   const globalRef = parseStaticViolations(fixtureGlobalRef, "fixture/global.ts", allTenant);
   const crmFile = parseStaticViolations(fixtureCrmFile, "src/db/schema/crm/excluded.ts", allTenant);
@@ -470,6 +505,8 @@ export const crmTable = pgTable("crm_excluded", {
     explicit_violation_table_name_correct: badExplicit[0]?.tableName === "bad_table",
     detects_inline_references_violation: badInline.length === 1,
     inline_violation_table_name_correct: badInline[0]?.tableName === "inline_child",
+    detects_return_type_annotated_inline_reference: badAnnotatedInline.length === 1,
+    accounting_credit_notes_is_not_excluded_as_crm: accountingNotCrm.length === 1,
     ignores_composite_fk: good.length === 0,
     ignores_global_user_ref: globalRef.length === 0,
     crm_file_path_excluded: crmFile.length === 0,
@@ -499,7 +536,7 @@ async function main() {
 
   if (catalogResult?.vacuous) {
     console.error(
-      `check-tenant-relationships: vacuity guard — scratch_boot_a has only ${catalogResult.tenant_tables} tenant table(s) (expected >= ${MIN_TENANT_TABLES}).`,
+      `check-tenant-relationships: vacuity guard — the target has only ${catalogResult.tenant_tables} tenant table(s) (expected >= ${MIN_TENANT_TABLES}).`,
     );
     console.error(
       `An unbootstrapped database has no tenant FKs to violate, so "zero actionable" here would prove nothing.`,
@@ -512,7 +549,8 @@ async function main() {
     const { total, actionable, excl_crm, excl_inv, excl_migrated } = catalogResult;
     const excl_total = excl_crm.length + excl_inv.length + excl_migrated.length;
 
-    console.log(`Mode                   pg_catalog (scratch_boot_a)`);
+    console.log(`Mode                   pg_catalog (${catalogResult.target ?? "unknown target"})`);
+    console.log(`Ledger rows on target  ${catalogResult.midBootstrap ?? "none found"} of ${JOURNAL_ENTRY_COUNT} journal entries`);
     console.log(`Total single-col FKs   ${total}`);
     console.log(`EXCL: CRM              ${excl_crm.length} (child or parent is a CRM table — AR-02 scope exclusion)`);
     console.log(`EXCL: Inventory        ${excl_inv.length} (child or parent is Inventory — AR-02 scope exclusion)`);
@@ -525,7 +563,7 @@ async function main() {
         `
 TARGET IS MID-BOOTSTRAP — this number is not release evidence.
 ` +
-        `  The target has a drizzle.__replay table with ${catalogResult.midBootstrap} of ${JOURNAL_ENTRY_COUNT} journal entries applied,
+        `  The target's migration ledger holds ${catalogResult.midBootstrap} of ${JOURNAL_ENTRY_COUNT} journal entries,
 ` +
         `  so the chain is only partly present and constraints later in it have not been created yet.
 ` +

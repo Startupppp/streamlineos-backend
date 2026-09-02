@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, inArray, lte, sql, sum } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, sql, sum } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { invoices, invoiceItems, purchaseBills, purchaseBillItems } from "../../../db/schema/crm/invoicing";
@@ -255,7 +255,7 @@ export class TaxDashboardService {
         periodEnd: accTaxPayments.periodEnd,
       })
       .from(accTaxPayments)
-      .where(eq(accTaxPayments.orgId, orgId))
+      .where(and(eq(accTaxPayments.orgId, orgId), isNull(accTaxPayments.archivedAt)))
       .orderBy(sql`${accTaxPayments.createdAt} DESC`)
       .limit(5);
     return rows;

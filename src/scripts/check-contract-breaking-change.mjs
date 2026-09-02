@@ -12,8 +12,20 @@
  *    Internal operations may be removed freely.
  *
  * 2. PARAMETER NARROWING — a published operation that previously accepted an
- *    optional query/path parameter now marks it required, or drops it entirely.
+ *    optional query/path parameter now marks it required, drops it entirely, or
+ *    adds a required parameter that was not in the recorded baseline.
  *    Internal operations may narrow freely.
+ *
+ *    The baseline lives in each published entry's `knownParameters`, frozen by
+ *    generate-api-contract-registry.mjs the first time the operation is
+ *    classified. Before ticket 34 the generator never wrote that field, so
+ *    `knownParameters ?? []` was empty for all 3,625 entries and this half of
+ *    the gate could not fire on real data — its self-test passed only because
+ *    the fixtures hand-built a field the generator never produced.
+ *
+ * FAIL-CLOSED CLASSIFICATION
+ * Both checks exempt an entry only when `classification` is exactly "internal".
+ * An unrecognised, null or missing classification is treated as published.
  *
  * Architecture decision 12 (root CLAUDE.md §3):
  *   "internal frontend/backend routes, types and schemas may break during this
@@ -47,6 +59,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { SRC_ROOT, collectTsFiles, scanWebhookEvents } from "./generate-api-contract-registry.mjs";
+
 const SELF_TEST = process.argv.includes("--self-test");
 const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 const OPENAPI_PATH = join(BACKEND_ROOT, "openapi.json");
@@ -56,6 +70,24 @@ const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete"]);
 
 function makeKey(method, path) {
   return `${method.toUpperCase()} ${path}`;
+}
+
+/**
+ * Fail-closed reading of `classification`. Only the exact string "internal" buys
+ * an exemption; everything else — "published", a typo, a null, a missing field —
+ * is treated as a published contract.
+ *
+ * The earlier `classification !== "published"` test failed OPEN on a retained
+ * entry. A retained entry describes an operation that is no longer in
+ * openapi.json, so check-api-contract-registry's completeness pass (which walks
+ * the OpenAPI document) never inspects it, and nothing else validated its
+ * schema. Editing a published tombstone's classification to "internl" therefore
+ * silenced the removal finding with both gates green — the same evasion the
+ * generator's retention comment guards against, reached by mutation instead of
+ * deletion.
+ */
+export function isExemptFromBackwardCompatibility(entry) {
+  return entry?.classification === "internal";
 }
 
 function isDeprecationWindowSatisfied(entry) {
@@ -79,16 +111,59 @@ export function findBreakingRemovals(document, registry) {
   const violations = [];
   for (const [key, entry] of Object.entries(registry.operations ?? {})) {
     if (liveKeys.has(key)) continue;
-    if (entry.classification !== "published") continue;
+    if (isExemptFromBackwardCompatibility(entry)) continue;
     if (isDeprecationWindowSatisfied(entry)) continue;
+    const unrecognised =
+      entry.classification !== "published"
+        ? ` [classification ${JSON.stringify(entry.classification ?? null)} is not a recognised value — treated as published, fail-closed]`
+        : "";
     violations.push({
       key,
-      issue: entry.sunsetAt
-        ? `published operation removed without a satisfied deprecation window (sunsetAt=${String(entry.sunsetAt)}, evidence=${entry.sunsetEvidence ? "present" : "MISSING"})`
-        : "published operation removed without sunsetAt date or dependency proof",
+      issue:
+        (entry.sunsetAt
+          ? `published operation removed without a satisfied deprecation window (sunsetAt=${String(entry.sunsetAt)}, evidence=${entry.sunsetEvidence ? "present" : "MISSING"})`
+          : "published operation removed without sunsetAt date or dependency proof") + unrecognised,
     });
   }
 
+  return violations;
+}
+
+/**
+ * A renamed or deleted outbound webhook event name.
+ *
+ * A customer subscribes to these names through the webhooks API and reads them
+ * out of the `event` field of every delivered body, so renaming one silently
+ * breaks somebody else's endpoint. Until ticket 34 nothing in the repository
+ * read them: `registry.events` holds OutboxWriter events, which our own relay
+ * consumes and which are internal by construction, and `registry.webhooks` was
+ * an empty `{}` that the generator never wrote to. Renaming `deal.won` therefore
+ * passed every gate.
+ *
+ * `emittedNames` is scanned from the source, so this bites on a rename whether
+ * or not the registry was regenerated afterwards — an entry's own `emittedFrom`
+ * would exempt every name it records, which is no check at all.
+ *
+ * The one exemption is `declaredIn`: a name no literal dispatch site spells out
+ * (a dispatcher called with a variable, or an enum of subscribable triggers) is
+ * declared by hand in published-contract-terms.json against the file that proves
+ * it. Removing that declaration is the deliberate act that retires such a name.
+ */
+export function findBreakingWebhookRemovals(emittedNames, registry) {
+  const live = new Set(emittedNames);
+  const violations = [];
+  for (const [name, entry] of Object.entries(registry.webhooks ?? {})) {
+    if (live.has(name)) continue;
+    if (typeof entry?.declaredIn === "string" && entry.declaredIn.length > 0) continue;
+    if (isExemptFromBackwardCompatibility(entry)) continue;
+    if (isDeprecationWindowSatisfied(entry)) continue;
+    violations.push({
+      key: `webhook ${name}`,
+      issue:
+        "published webhook event name is no longer emitted (renamed or deleted) and has no satisfied deprecation window. " +
+        "Customers subscribed to this name stop receiving deliveries with no error on their side.",
+    });
+  }
   return violations;
 }
 
@@ -104,10 +179,15 @@ export function findBreakingNarrowings(document, registry) {
 
       const key = makeKey(method, pathTemplate);
       const entry = (registry.operations ?? {})[key];
-      if (!entry || entry.classification !== "published") continue;
+      if (!entry || isExemptFromBackwardCompatibility(entry)) continue;
 
-      const registryParams = new Map((entry.knownParameters ?? []).map((p) => [p.name, p]));
-      if (registryParams.size === 0) continue;
+      // An absent baseline means nothing was ever recorded, so there is nothing
+      // to compare against. An empty ARRAY is a recorded fact — the operation
+      // took no parameters — and a required parameter appearing against it is a
+      // narrowing. check-api-contract-registry fails a published operation that
+      // carries no baseline at all, so absence cannot persist unnoticed.
+      if (!Array.isArray(entry.knownParameters)) continue;
+      const registryParams = new Map(entry.knownParameters.map((p) => [p.name, p]));
 
       const currentParams = new Map(
         (operation.parameters ?? [])
@@ -122,6 +202,15 @@ export function findBreakingNarrowings(document, registry) {
         } else if (!regParam.required && curParam.required === true) {
           violations.push({ key, issue: `published operation made optional parameter "${name}" required (narrowing)` });
         }
+      }
+
+      for (const [name, curParam] of currentParams) {
+        if (registryParams.has(name)) continue;
+        if (curParam.required !== true) continue;
+        violations.push({
+          key,
+          issue: `published operation added required parameter "${name}" that was not in the recorded baseline (narrowing)`,
+        });
       }
     }
   }
@@ -204,6 +293,103 @@ if (SELF_TEST) {
     fail("internal-narrowing-passes", `expected 0 violations for internal narrowing, got ${r8.length}`);
   else pass("internal-narrowing-passes — internal operations may narrow freely");
 
+  // Fail-closed classification. A retained tombstone is invisible to
+  // check-api-contract-registry's completeness pass (it walks the OpenAPI
+  // document, and a tombstone has no live operation), so if this gate exempted
+  // everything that was not literally "published", corrupting the field would
+  // silence a real removal with both gates green.
+  const corruptions = [
+    { label: "typo", classification: "internl" },
+    { label: "null", classification: null },
+    { label: "absent", classification: undefined },
+    { label: "trailing-space", classification: "published " },
+    { label: "capitalised", classification: "Internal" },
+  ];
+  for (const { label, classification } of corruptions) {
+    const entry = { xExposure: "public", sunsetAt: null, sunsetEvidence: null };
+    if (classification !== undefined) entry.classification = classification;
+    const got = findBreakingRemovals(emptyDoc, { operations: { "GET /public/widget": entry } });
+    if (got.length !== 1)
+      fail(`corrupt-classification-fails-closed(${label})`, `expected 1 violation, got ${got.length}`);
+    else pass(`corrupt-classification-fails-closed(${label}) — classification "${String(classification)}" is treated as published`);
+  }
+
+  const rNoBaseline = findBreakingNarrowings(
+    { paths: { "/public/x": { get: { operationId: "X", parameters: [{ name: "orgId", in: "query", required: true }] } } } },
+    { operations: { "GET /public/x": { classification: "published" } } },
+  );
+  if (rNoBaseline.length !== 0)
+    fail("absent-baseline-is-not-compared", `expected 0 violations with no knownParameters, got ${rNoBaseline.length}`);
+  else pass("absent-baseline-is-not-compared — an entry with no recorded baseline is left to the registry gate");
+
+  const rAdded = findBreakingNarrowings(
+    { paths: { "/public/x": { get: { operationId: "X", parameters: [{ name: "orgId", in: "query", required: true }] } } } },
+    { operations: { "GET /public/x": { classification: "published", knownParameters: [] } } },
+  );
+  if (rAdded.length !== 1 || !rAdded[0].issue.includes("added required parameter"))
+    fail("added-required-param-bites", `expected 1 added-required violation, got ${JSON.stringify(rAdded)}`);
+  else pass("added-required-param-bites — a new required parameter against a recorded empty baseline is a narrowing");
+
+  const rAddedOptional = findBreakingNarrowings(
+    { paths: { "/public/x": { get: { operationId: "X", parameters: [{ name: "cursor", in: "query", required: false }] } } } },
+    { operations: { "GET /public/x": { classification: "published", knownParameters: [] } } },
+  );
+  if (rAddedOptional.length !== 0)
+    fail("added-optional-param-passes", `expected 0 violations for a new optional parameter, got ${rAddedOptional.length}`);
+  else pass("added-optional-param-passes — widening with an optional parameter is not a breaking change");
+
+  // The renamed-webhook case the whole webhook catalogue exists for.
+  // The entries carry emittedFrom, as every scanned entry in the real registry
+  // does. Exempting a name because its own entry records where it used to be
+  // emitted would exempt every name there is, which is how the first version of
+  // this check silently passed a rename.
+  const webhookRegistry = {
+    webhooks: {
+      "deal.won": { classification: "published", version: "1", emittedFrom: ["src/modules/deals/deals.service.ts"], declaredIn: null, sunsetAt: null, sunsetEvidence: null },
+      "deal.lost": { classification: "published", version: "1", emittedFrom: ["src/modules/deals/deals.service.ts"], declaredIn: null, sunsetAt: null, sunsetEvidence: null },
+    },
+  };
+  const wStill = findBreakingWebhookRemovals(["deal.won", "deal.lost"], webhookRegistry);
+  if (wStill.length !== 0)
+    fail("webhook-still-emitted-passes", `expected 0 violations while both names are emitted, got ${wStill.length}`);
+  else pass("webhook-still-emitted-passes — an event name still emitted by a dispatcher is not a removal");
+
+  const wRenamed = findBreakingWebhookRemovals(["deal.closed_won", "deal.lost"], webhookRegistry);
+  if (wRenamed.length !== 1 || wRenamed[0].key !== "webhook deal.won")
+    fail("webhook-rename-bites", `expected renaming deal.won to be flagged, got ${JSON.stringify(wRenamed)}`);
+  else pass("webhook-rename-bites — renaming deal.won is a breaking change");
+
+  const wDeprecated = findBreakingWebhookRemovals(["deal.lost"], {
+    webhooks: {
+      "deal.won": { classification: "published", emittedFrom: ["src/modules/deals/deals.service.ts"], declaredIn: null, sunsetAt: pastDate, sunsetEvidence: "ticket-34: no subscriber uses it" },
+      "deal.lost": { classification: "published", emittedFrom: ["src/modules/deals/deals.service.ts"], declaredIn: null, sunsetAt: null, sunsetEvidence: null },
+    },
+  });
+  if (wDeprecated.length !== 0)
+    fail("webhook-satisfied-window-passes", `expected 0 violations with a satisfied window, got ${JSON.stringify(wDeprecated)}`);
+  else pass("webhook-satisfied-window-passes — a past sunsetAt plus evidence permits retiring an event name");
+
+  const wDeclared = findBreakingWebhookRemovals([], {
+    webhooks: { "survey.published": { classification: "published", emittedFrom: [], declaredIn: "src/modules/surveys/dto/survey-automation.schemas.ts" } },
+  });
+  if (wDeclared.length !== 0)
+    fail("webhook-declared-not-scanned-passes", "an event declared in the terms file must not read as removed");
+  else pass("webhook-declared-not-scanned-passes — an event the scanner cannot reach stays live via its declaring file");
+
+  const wInternal = findBreakingWebhookRemovals([], {
+    webhooks: { "internal.thing": { classification: "internal", emittedFrom: ["src/x.ts"], declaredIn: null } },
+  });
+  if (wInternal.length !== 0)
+    fail("webhook-internal-removal-passes", "an internal event may be removed freely");
+  else pass("webhook-internal-removal-passes — an internal event name may be removed freely");
+
+  const wCorrupt = findBreakingWebhookRemovals([], {
+    webhooks: { "deal.won": { classification: "internl", emittedFrom: ["src/modules/deals/deals.service.ts"], declaredIn: null, sunsetAt: null, sunsetEvidence: null } },
+  });
+  if (wCorrupt.length !== 1)
+    fail("webhook-corrupt-classification-fails-closed", `expected 1 violation, got ${wCorrupt.length}`);
+  else pass("webhook-corrupt-classification-fails-closed — an unrecognised webhook classification is treated as published");
+
   if (failed) {
     process.stderr.write("\nSELF-TEST FAILED\n");
     process.exit(1);
@@ -235,15 +421,24 @@ try {
   process.exit(2);
 }
 
+const sourceCache = new Map();
+const emittedWebhookEvents = scanWebhookEvents(collectTsFiles(SRC_ROOT), (p) => {
+  if (!sourceCache.has(p)) sourceCache.set(p, readFileSync(p, "utf8"));
+  return sourceCache.get(p);
+}).map((e) => e.name);
+
 const removals = findBreakingRemovals(document, registry);
 const narrowings = findBreakingNarrowings(document, registry);
-const totalViolations = removals.length + narrowings.length;
+const webhookRemovals = findBreakingWebhookRemovals(emittedWebhookEvents, registry);
+const totalViolations = removals.length + narrowings.length + webhookRemovals.length;
 
 const publishedOps = Object.values(registry.operations ?? {}).filter((e) => e.classification === "published").length;
 const internalOps = Object.values(registry.operations ?? {}).filter((e) => e.classification === "internal").length;
+const publishedWebhooks = Object.values(registry.webhooks ?? {}).filter((e) => e.classification !== "internal").length;
 
 process.stdout.write(
-  `check-contract-breaking-change: ${String(publishedOps)} published operations, ${String(internalOps)} internal\n`,
+  `check-contract-breaking-change: ${String(publishedOps)} published operations, ${String(internalOps)} internal, ` +
+  `${String(publishedWebhooks)} published webhook event names\n`,
 );
 
 if (removals.length > 0) {
@@ -262,10 +457,20 @@ if (narrowings.length > 0) {
   }
 }
 
+if (webhookRemovals.length > 0) {
+  process.stderr.write(`\n  BREAKING: ${String(webhookRemovals.length)} published webhook event name(s) renamed or removed:\n`);
+  for (const { key, issue } of webhookRemovals) {
+    process.stderr.write(`    ${key}\n`);
+    process.stderr.write(`        ${issue}\n`);
+  }
+}
+
 if (totalViolations > 0) {
   process.stderr.write(
     `\ncheck-contract-breaking-change: FAIL — ${String(totalViolations)} breaking change(s) detected.\n` +
-    `To permit a published removal: set sunsetAt (past date) + sunsetEvidence in contracts/api-contract-registry.json.\n`,
+    `To permit a published removal: declare the deprecation in contracts/published-contract-terms.json,\n` +
+    `set sunsetAt (past date) + sunsetEvidence on the entry, and re-run \`pnpm registry:generate\`.\n` +
+    `contracts/api-contract-registry.json is generated output and is never hand-edited.\n`,
   );
   process.exit(1);
 }

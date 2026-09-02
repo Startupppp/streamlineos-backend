@@ -101,10 +101,10 @@ export class TerminationLifecycleService {
 
   async invalidateHrDashboardCache(orgId: string): Promise<void> {
     await Promise.all([
-      this.cache.invalidate(`hr:analytics:${orgId}`),
+      this.cache.invalidateNamespaceForOrg(orgId, "hr:analytics"),
       this.cache.invalidate(`hr:dashboard:metrics:${orgId}`),
       this.cache.invalidate(`hr:dashboard:headcount-trends:${orgId}`),
-      this.cache.invalidate(`hr:celebrations:${orgId}`),
+      this.cache.invalidateNamespaceForOrg(orgId, "hr:celebrations"),
     ]);
   }
 

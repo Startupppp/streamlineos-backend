@@ -137,6 +137,24 @@ export class FileQuarantineService {
     return rows[0] ?? null;
   }
 
+  /**
+   * Replaces the size and type declared at initiate with what the object store
+   * actually holds. The declared values are the client's word; the quota and
+   * the type gate have to run on the measured ones.
+   */
+  async recordMeasuredObject(
+    id: string,
+    measured: { fileSizeBytes: number; mimeType: string },
+  ): Promise<void> {
+    await this.db
+      .update(fileQuarantineRecords)
+      .set({
+        fileSizeBytes: measured.fileSizeBytes,
+        mimeType: measured.mimeType,
+      })
+      .where(eq(fileQuarantineRecords.id, id));
+  }
+
   async markClean(id: string): Promise<void> {
     await this.db
       .update(fileQuarantineRecords)

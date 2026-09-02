@@ -148,7 +148,7 @@ export class MediaCompressionService {
         fileName: `${stripExtension(fileName)}.webp`,
       };
     } catch (err) {
-      this.logger.warn(`Image compression failed for "${fileName}", storing original: ${String(err)}`);
+      this.logger.warn(`Image compression failed, storing original: ${String(err)}`, { fileName });
       return { buffer, mimeType, fileName };
     }
   }
@@ -180,7 +180,7 @@ export class MediaCompressionService {
         fileName: `${stripExtension(fileName)}.mp4`,
       };
     } catch (err) {
-      this.logger.warn(`Video transcode failed for "${fileName}", storing original: ${String(err)}`);
+      this.logger.warn(`Video transcode failed, storing original: ${String(err)}`, { fileName });
       return { buffer, mimeType, fileName };
     } finally {
       await Promise.allSettled([unlink(inputPath), unlink(outputPath)]);

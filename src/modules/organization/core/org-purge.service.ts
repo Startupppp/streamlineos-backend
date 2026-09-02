@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import {
   accountOrganizationIndex,
   candidateOffers,
@@ -34,6 +34,9 @@ import {
 } from "../../../common/region/region-registry";
 import { OrganizationSagaService } from "./lifecycle/organization-saga.service";
 
+const MEMBER_PAGE_SIZE = 500;
+const CACHE_BUST_CONCURRENCY = 50;
+
 @Injectable()
 export class OrgPurgeService {
   constructor(
@@ -61,24 +64,44 @@ export class OrgPurgeService {
     return hold !== undefined;
   }
 
+  /**
+   * Keyset-drained: the previous `.limit(10000)` left every member past the
+   * ten-thousandth with live org-scoped access while the purge reported success.
+   */
   private async listMemberUserIds(db: DbOrTx, orgId: string): Promise<string[]> {
-    const members = await db
-      .select({ userId: organizationMembers.userId })
-      .from(organizationMembers)
-      .where(eq(organizationMembers.orgId, orgId))
-      .limit(10000);
-    return members.map((m) => m.userId);
+    const memberUserIds: string[] = [];
+    let cursor: number | null = null;
+    for (;;) {
+      const page: Array<{ id: number; userId: string }> = await db
+        .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            ...(cursor === null ? [] : [gt(organizationMembers.id, cursor)]),
+          ),
+        )
+        .orderBy(asc(organizationMembers.id))
+        .limit(MEMBER_PAGE_SIZE);
+      for (const member of page) memberUserIds.push(member.userId);
+      if (page.length < MEMBER_PAGE_SIZE) return memberUserIds;
+      const last = page[page.length - 1];
+      if (!last || last.id === cursor) return memberUserIds;
+      cursor = last.id;
+    }
   }
 
   private async bustMembersMembership(orgId: string, memberUserIds: string[]): Promise<void> {
-    await Promise.all(
-      memberUserIds.map((memberUserId) =>
-        Promise.all([
-          bustMembershipStatusCache(this.cache, memberUserId, orgId),
-          this.cache.invalidate(CACHE_KEYS.userSession(memberUserId)),
-        ]),
-      ),
-    );
+    for (let i = 0; i < memberUserIds.length; i += CACHE_BUST_CONCURRENCY) {
+      await Promise.all(
+        memberUserIds.slice(i, i + CACHE_BUST_CONCURRENCY).map((memberUserId) =>
+          Promise.all([
+            bustMembershipStatusCache(this.cache, memberUserId, orgId),
+            this.cache.invalidate(CACHE_KEYS.userSession(memberUserId)),
+          ]),
+        ),
+      );
+    }
   }
 
   private async revokeMembersAccess(orgId: string, memberUserIds: string[]): Promise<void> {

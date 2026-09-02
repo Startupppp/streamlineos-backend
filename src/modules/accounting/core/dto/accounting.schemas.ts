@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { queryBoolean } from "../../../../common/validation/query-boolean";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { compareDecimals, decimalFromNumber, sumDecimals } from "../money.util";
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD");
 const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
@@ -69,9 +70,9 @@ export const createJournalEntrySchema = z
   }).strict()
   .refine(
     (entry) => {
-      const totalDebit = entry.lines.reduce((sum, l) => sum + l.debit, 0);
-      const totalCredit = entry.lines.reduce((sum, l) => sum + l.credit, 0);
-      return Math.abs(totalDebit - totalCredit) < 0.01;
+      const totalDebit = sumDecimals(entry.lines.map((l) => decimalFromNumber(l.debit)));
+      const totalCredit = sumDecimals(entry.lines.map((l) => decimalFromNumber(l.credit)));
+      return compareDecimals(totalDebit, totalCredit) === 0;
     },
     { message: "Journal entry must balance: total debits must equal total credits", path: ["lines"] },
   );

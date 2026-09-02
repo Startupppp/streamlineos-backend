@@ -29,7 +29,6 @@ interface MockChain {
 const COMPRESSED = Buffer.from([0x01, 0x02, 0x03]);
 
 const MOCK_RESULT: UploadResult = {
-  url: "https://cdn.example.com/kb-media/org-1/file.webp",
   key: "kb-media/org-1/file.webp",
   size: COMPRESSED.length,
   mimeType: "image/webp",
@@ -196,7 +195,6 @@ describe("KbMediaService", () => {
         "photo.webp",
         "image/webp",
         undefined,
-        undefined,
       );
       expect(result.name).toBe("photo.jpg");
     });
@@ -220,7 +218,6 @@ describe("KbMediaService", () => {
         "banner.webp",
         "image/webp",
         undefined,
-        undefined,
       );
     });
   });
@@ -241,7 +238,6 @@ describe("KbMediaService", () => {
         "anim.gif",
         "image/gif",
         undefined,
-        undefined,
       );
     });
   });
@@ -258,7 +254,6 @@ describe("KbMediaService", () => {
         "clip.mp4",
         "video/mp4",
         undefined,
-        undefined,
       );
     });
   });
@@ -273,7 +268,6 @@ describe("KbMediaService", () => {
         expect.any(String),
         expect.any(String),
         undefined,
-        undefined,
       );
     });
 
@@ -285,7 +279,6 @@ describe("KbMediaService", () => {
         "kb-media/org-other",
         expect.any(String),
         expect.any(String),
-        undefined,
         undefined,
       );
     });
@@ -314,7 +307,6 @@ describe("KbMediaService", () => {
         expect.any(String),
         "img.webp",
         "image/webp",
-        undefined,
         undefined,
       );
     });

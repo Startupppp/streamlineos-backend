@@ -33,6 +33,33 @@ import {
 
 const PG_FK_VIOLATION = "23503";
 const PG_RESTRICT_VIOLATION = "23001";
+const PG_NOT_NULL_VIOLATION = "23502";
+
+function pgField(err: unknown, field: string): string | undefined {
+  if (typeof err !== "object" || err === null) return undefined;
+  const value = Reflect.get(err, field);
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+/**
+ * A 23502 raised while deleting a membership is an ON DELETE SET NULL writing
+ * NULL into a non-nullable column: the referential action is unreachable and the
+ * delete can never succeed until the constraint changes. Left unclassified it
+ * escapes as a 500, which is how this failed silently before 0992.
+ */
+function departureBlockMessage(err: unknown): string | null {
+  const code = pgField(err, "code");
+  if (code === PG_FK_VIOLATION || code === PG_RESTRICT_VIOLATION) {
+    return `a related record still references the membership (constraint: ${pgField(err, "constraint") ?? "unknown"})`;
+  }
+  if (code === PG_NOT_NULL_VIOLATION) {
+    const table = pgField(err, "table");
+    const column = pgField(err, "column");
+    const where = table && column ? `${table}.${column}` : (table ?? "an unknown table");
+    return `a related record requires the membership and cannot release it (${where})`;
+  }
+  return null;
+}
 
 @Injectable()
 export class OrgMemberDepartureService {
@@ -154,11 +181,10 @@ export class OrgMemberDepartureService {
         err instanceof NotFoundException
       )
         throw err;
-      const code = (err as { code?: string }).code;
-      if (code === PG_FK_VIOLATION || code === PG_RESTRICT_VIOLATION) {
-        const constraint = (err as { constraint?: string }).constraint ?? "";
+      const reason = departureBlockMessage(err);
+      if (reason) {
         throw new BadRequestException(
-          `Cannot remove this member: a related record still references their membership (constraint: ${constraint || "unknown"}). Resolve the dependency and retry.`,
+          `Cannot remove this member: ${reason}. Resolve the dependency and retry.`,
         );
       }
       throw err;
@@ -330,11 +356,10 @@ export class OrgMemberDepartureService {
       return { success: true, nextOrgId };
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
-      const code = (err as { code?: string }).code;
-      if (code === PG_FK_VIOLATION || code === PG_RESTRICT_VIOLATION) {
-        const constraint = (err as { constraint?: string }).constraint ?? "";
+      const reason = departureBlockMessage(err);
+      if (reason) {
         throw new BadRequestException(
-          `Cannot leave this organization: a related record still references your membership (constraint: ${constraint || "unknown"}). Resolve the dependency and retry.`,
+          `Cannot leave this organization: ${reason}. Resolve the dependency and retry.`,
         );
       }
       throw err;

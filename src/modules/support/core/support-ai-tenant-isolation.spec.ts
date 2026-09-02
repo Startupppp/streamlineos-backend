@@ -41,9 +41,8 @@ function makeDataSvc(
   };
 
   const embeddings = {
-    isConfigured: jest.fn().mockReturnValue(true),
-    embedQuery: jest.fn().mockResolvedValue([0.1, 0.2]),
-    toVectorLiteral: jest.fn().mockReturnValue("[0.1,0.2]"),
+    isEmbeddingConfigured: jest.fn().mockReturnValue(true),
+    embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: [0.1, 0.2], vectorLiteral: "[0.1,0.2]" }),
   };
 
   const orgFeatures = {

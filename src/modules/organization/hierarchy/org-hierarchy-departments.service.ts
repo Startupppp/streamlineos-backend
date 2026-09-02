@@ -120,6 +120,7 @@ export class OrgHierarchyDepartmentsService {
           eq(departmentBranches.id, orgUnits.parentId),
           eq(departmentBranches.orgId, orgUnits.orgId),
           eq(departmentBranches.kind, "BRANCH"),
+          isNull(departmentBranches.deletedAt),
         ),
       )
       .where(filters)

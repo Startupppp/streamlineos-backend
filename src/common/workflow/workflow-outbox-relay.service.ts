@@ -3,7 +3,10 @@ import { and, asc, eq, gt } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { outboxEvents } from "../../db/schema";
-import { reportError } from "../observability";
+import { randomUUID } from "node:crypto";
+import { reportError, runWithObservabilityContext } from "../observability";
+import { currentRelease } from "../observability/release";
+import { PROCESS_CELL_ID } from "../cell-resources/cell-id";
 import { WorkflowRegistry } from "./workflow-registry";
 import { WorkflowRunnerService } from "./workflow-runner.service";
 
@@ -91,31 +94,49 @@ export class WorkflowOutboxRelayService {
     let highest = 0;
 
     for (const event of events) {
-      for (const definition of this.registry.triggeredBy(event.eventType)) {
-        try {
-          const runId = await this.runner.start({
-            organizationId: event.organizationId,
-            workflowName: definition.name,
-            input: (event.payload ?? {}) as Record<string, unknown>,
-            correlationId: event.correlationId,
-            causationEventId: event.eventId,
-            maxAttempts: definition.maxAttempts,
-          });
-          if (runId) started += 1;
-        } catch (error) {
-          // One malformed event must not stall the relay for every other tenant.
-          reportError(error, {
-            phase: "workflow-relay",
-            eventType: event.eventType,
-            orgId: event.organizationId,
-          });
-          this.logger.error(
-            `Relay failed for ${event.eventType} → ${definition.name}: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-        }
-      }
+      /**
+       * The relay runs on a timer, in a process that did not serve the request
+       * that produced the event, so there is no scope to inherit and nothing may
+       * be borrowed from whatever triggered the tick. The context is stated from
+       * the row: the producer's correlation id joins the workflow run's log lines
+       * back to the request, and the organisation is named rather than assumed.
+       */
+      await runWithObservabilityContext(
+        {
+          correlationId: event.correlationId ?? randomUUID(),
+          orgId: event.organizationId,
+          route: `workflow-relay:${event.eventType}`,
+          cellId: PROCESS_CELL_ID,
+          release: currentRelease(),
+        },
+        async () => {
+          for (const definition of this.registry.triggeredBy(event.eventType)) {
+            try {
+              const runId = await this.runner.start({
+                organizationId: event.organizationId,
+                workflowName: definition.name,
+                input: (event.payload ?? {}) as Record<string, unknown>,
+                correlationId: event.correlationId,
+                causationEventId: event.eventId,
+                maxAttempts: definition.maxAttempts,
+              });
+              if (runId) started += 1;
+            } catch (error) {
+              // One malformed event must not stall the relay for every other tenant.
+              reportError(error, {
+                phase: "workflow-relay",
+                eventType: event.eventType,
+                orgId: event.organizationId,
+              });
+              this.logger.error(
+                `Relay failed for ${event.eventType} → ${definition.name}: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            }
+          }
+        },
+      );
 
       highest = Math.max(highest, event.outboxEventId);
     }

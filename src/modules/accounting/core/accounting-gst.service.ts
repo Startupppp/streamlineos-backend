@@ -15,6 +15,14 @@ import {
   buildBlock,
   summarizeSection,
 } from "./accounting-gst.helpers";
+import {
+  addDecimals,
+  compareDecimals,
+  roundDecimal,
+  subtractDecimals,
+  sumDecimals,
+  toDecimal,
+} from "./money.util";
 
 const GSTR1_STATUSES = ["ISSUED", "PAID", "FAILED"] as const;
 const OUTWARD_STATUSES = ["ISSUED", "PAID", "FAILED"] as const;
@@ -59,7 +67,13 @@ export class AccountingGstService {
       );
 
     const sections = new Map<Gstr1Section, SectionAccumulator>();
-    const grand = { taxable: 0, cgst: 0, sgst: 0, igst: 0, invoiceIds: new Set<number>() };
+    const grand = {
+      taxable: "0",
+      cgst: "0",
+      sgst: "0",
+      igst: "0",
+      invoiceIds: new Set<number>(),
+    };
 
     if (invoiceRows.length > 0) {
       const invoiceIds = invoiceRows.map((r) => r.id);
@@ -80,10 +94,10 @@ export class AccountingGstService {
         if (lines.length === 0) continue;
         allocateInvoice(invoice, lines, sections);
         grand.invoiceIds.add(invoice.id);
-        grand.cgst += Number(invoice.cgstAmount);
-        grand.sgst += Number(invoice.sgstAmount);
-        grand.igst += Number(invoice.igstAmount);
-        for (const line of lines) grand.taxable += Number(line.amount);
+        grand.cgst = addDecimals(grand.cgst, toDecimal(invoice.cgstAmount));
+        grand.sgst = addDecimals(grand.sgst, toDecimal(invoice.sgstAmount));
+        grand.igst = addDecimals(grand.igst, toDecimal(invoice.igstAmount));
+        grand.taxable = addDecimals(grand.taxable, sumDecimals(lines.map((line) => line.amount)));
       }
     }
 
@@ -97,10 +111,10 @@ export class AccountingGstService {
       b2b: b2bAccum ? summarizeSection(b2bAccum, stateNameByCode) : emptySection("B2B"),
       b2c: b2cAccum ? summarizeSection(b2cAccum, stateNameByCode) : emptySection("B2C"),
       grandTotal: {
-        taxableValue: grand.taxable.toFixed(2),
-        cgst: grand.cgst.toFixed(2),
-        sgst: grand.sgst.toFixed(2),
-        igst: grand.igst.toFixed(2),
+        taxableValue: roundDecimal(grand.taxable, 2),
+        cgst: roundDecimal(grand.cgst, 2),
+        sgst: roundDecimal(grand.sgst, 2),
+        igst: roundDecimal(grand.igst, 2),
         invoices: grand.invoiceIds.size,
       },
     };
@@ -159,27 +173,37 @@ export class AccountingGstService {
     ]);
 
     const outwardRow = outwardAgg[0] ?? { taxable: "0", cgst: "0", sgst: "0", igst: "0", discount: "0" };
-    const outwardTaxable = Number(outwardRow.taxable ?? 0) - Number(outwardRow.discount ?? 0);
-    const outwardCgst = Number(outwardRow.cgst ?? 0);
-    const outwardSgst = Number(outwardRow.sgst ?? 0);
-    const outwardIgst = Number(outwardRow.igst ?? 0);
+    const outwardTaxable = subtractDecimals(
+      toDecimal(outwardRow.taxable),
+      toDecimal(outwardRow.discount),
+    );
+    const outwardCgst = toDecimal(outwardRow.cgst);
+    const outwardSgst = toDecimal(outwardRow.sgst);
+    const outwardIgst = toDecimal(outwardRow.igst);
 
     const rcRow = reverseChargeAgg[0] ?? { taxable: "0", cgst: "0", sgst: "0", igst: "0" };
-    const rcTaxable = Number(rcRow.taxable ?? 0);
-    const rcCgst = Number(rcRow.cgst ?? 0);
-    const rcSgst = Number(rcRow.sgst ?? 0);
-    const rcIgst = Number(rcRow.igst ?? 0);
+    const rcTaxable = toDecimal(rcRow.taxable);
+    const rcCgst = toDecimal(rcRow.cgst);
+    const rcSgst = toDecimal(rcRow.sgst);
+    const rcIgst = toDecimal(rcRow.igst);
 
     const inwardRow = inwardAgg[0] ?? { taxable: "0", cgst: "0", sgst: "0", igst: "0", discount: "0" };
-    const itcTaxable = Number(inwardRow.taxable ?? 0) - Number(inwardRow.discount ?? 0);
-    const itcCgst = Number(inwardRow.cgst ?? 0);
-    const itcSgst = Number(inwardRow.sgst ?? 0);
-    const itcIgst = Number(inwardRow.igst ?? 0);
+    const itcTaxable = subtractDecimals(
+      toDecimal(inwardRow.taxable),
+      toDecimal(inwardRow.discount),
+    );
+    const itcCgst = toDecimal(inwardRow.cgst);
+    const itcSgst = toDecimal(inwardRow.sgst);
+    const itcIgst = toDecimal(inwardRow.igst);
 
-    const netCgst = Math.max(0, outwardCgst - itcCgst);
-    const netSgst = Math.max(0, outwardSgst - itcSgst);
-    const netIgst = Math.max(0, outwardIgst - itcIgst);
-    const netTotal = netCgst + netSgst + netIgst;
+    const netOfCredit = (output: string, credit: string): string => {
+      const net = subtractDecimals(output, credit);
+      return compareDecimals(net, "0") > 0 ? net : "0";
+    };
+    const netCgst = netOfCredit(outwardCgst, itcCgst);
+    const netSgst = netOfCredit(outwardSgst, itcSgst);
+    const netIgst = netOfCredit(outwardIgst, itcIgst);
+    const netTotal = sumDecimals([netCgst, netSgst, netIgst]);
 
     return {
       from,
@@ -196,10 +220,10 @@ export class AccountingGstService {
         net: buildBlock(itcTaxable, itcCgst, itcSgst, itcIgst),
       },
       netTaxPayable: {
-        cgst: netCgst.toFixed(2),
-        sgst: netSgst.toFixed(2),
-        igst: netIgst.toFixed(2),
-        total: netTotal.toFixed(2),
+        cgst: roundDecimal(netCgst, 2),
+        sgst: roundDecimal(netSgst, 2),
+        igst: roundDecimal(netIgst, 2),
+        total: roundDecimal(netTotal, 2),
       },
       invoiceCount: Number(outwardCountRows[0]?.c ?? 0),
       billCount: Number(inwardCountRows[0]?.c ?? 0),

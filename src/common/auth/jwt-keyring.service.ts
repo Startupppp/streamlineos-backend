@@ -19,6 +19,30 @@ interface KeyEntry {
 const TOKEN_TTL = "10m";
 const TOKEN_CLOCK_SKEW_SECS = 30;
 
+/**
+ * `/auth/.well-known/jwks.json` is `@Public()`, so whatever `publicJwk` holds is
+ * served to the internet. `importJWK` accepts a private JWK just as readily as a
+ * public one, and `exportJWK` then round-trips `d` straight back out — so an
+ * entry whose `publicKey` slot was filled with the private half published the
+ * Ed25519 seed and let anyone forge a token for any user. Project instead of
+ * spreading: only these members ever reach the document.
+ */
+const PUBLIC_JWK_MEMBERS = ["crv", "x", "y", "n", "e"] as const;
+const PRIVATE_JWK_MEMBERS = ["d", "p", "q", "dp", "dq", "qi", "k"] as const;
+
+function toPublicJwk(jwk: JWK, kid: string): JWK {
+  const projected: JWK = { kty: jwk.kty, kid, alg: "EdDSA", use: "sig" };
+  for (const member of PUBLIC_JWK_MEMBERS) {
+    const value = jwk[member];
+    if (value !== undefined) projected[member] = value;
+  }
+  return projected;
+}
+
+function carriesPrivateMaterial(jwk: JWK): boolean {
+  return PRIVATE_JWK_MEMBERS.some((member) => jwk[member] !== undefined);
+}
+
 @Injectable()
 export class JwtKeyringService {
   private readonly logger = new Logger(JwtKeyringService.name);
@@ -54,15 +78,15 @@ export class JwtKeyringService {
       if (!entry.kid || !entry.privateKey || !entry.publicKey) {
         throw new Error("Each AUTH_SIGNING_KEYS entry must have kid, privateKey, and publicKey");
       }
+      if (carriesPrivateMaterial(entry.publicKey)) {
+        this.logger.error(
+          `AUTH_SIGNING_KEYS entry "${entry.kid}" has private key material in its publicKey slot. ` +
+            "It is being stripped before publication, but treat that key as compromised and rotate it.",
+        );
+      }
       const privateKey = await importJWK(entry.privateKey, "EdDSA");
       const publicKey = await importJWK(entry.publicKey, "EdDSA");
-      const rawPublicJwk = await exportJWK(publicKey);
-      const publicJwk: JWK = {
-        ...rawPublicJwk,
-        kid: entry.kid,
-        alg: "EdDSA",
-        use: "sig",
-      };
+      const publicJwk = toPublicJwk(await exportJWK(publicKey), entry.kid);
       this.keys.push({ kid: entry.kid, privateKey, publicKey, publicJwk });
     }
 

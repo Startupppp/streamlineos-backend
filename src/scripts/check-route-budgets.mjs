@@ -42,6 +42,9 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const SELF_TEST = process.argv.includes("--self-test");
+// A CI job that reads only the exit code cannot tell INCONCLUSIVE from OK.
+// STREAMLINE_STRICT_BUDGETS=1 (or --strict) makes the distinction machine-readable.
+const STRICT = process.env.STREAMLINE_STRICT_BUDGETS === "1" || process.argv.includes("--strict");
 const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 const OPENAPI_PATH = join(BACKEND_ROOT, "openapi.json");
 const BUDGETS_PATH = join(BACKEND_ROOT, "contracts", "route-budgets.json");
@@ -269,14 +272,14 @@ if (budgetCount > 0 && pendingMeasurement === budgetCount) {
   process.stdout.write(
     `  INCONCLUSIVE — manifest is valid, but every declared budget is unmeasured, so "no budgets exceeded" proves nothing. Populate the measured fields before citing this gate as evidence.\n`,
   );
-  process.exit(0);
+  process.exit(STRICT ? 2 : 0);
 }
 
 if (pendingMeasurement > 0) {
   process.stdout.write(
     `  PARTIAL — ${String(budgetCount - pendingMeasurement)} of ${String(budgetCount)} budgets measured and within ceiling; ${String(pendingMeasurement)} unmeasured and therefore unenforced\n`,
   );
-  process.exit(0);
+  process.exit(STRICT ? 2 : 0);
 }
 
 process.stdout.write(`  OK — route budget manifest is valid and no budgets exceeded\n`);

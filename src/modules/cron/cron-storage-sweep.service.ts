@@ -60,7 +60,7 @@ export class CronStorageSweepService {
       const aborted = await this.multipart.sweepAbandonedUploads(orgId);
       result.multipartAborted += aborted;
     } catch (err) {
-      this.logger.warn(`Multipart sweep failed for org=${orgId}: ${String(err)}`);
+      this.logger.warn(`Multipart sweep failed: ${String(err)}`, { orgId });
     }
 
     const now = Date.now();
@@ -91,7 +91,8 @@ export class CronStorageSweepService {
       } catch (err) {
         result.deleteFailures += 1;
         this.logger.error(
-          `[storage-sweep] S3 delete failed, quarantine record kept so the key stays blocked: org=${orgId} key=${record.storageKey}: ${String(err)}`,
+          `[storage-sweep] S3 delete failed, quarantine record kept so the key stays blocked: ${String(err)}`,
+          { orgId, storageKey: record.storageKey },
         );
         continue;
       }
@@ -101,7 +102,8 @@ export class CronStorageSweepService {
       } catch (err) {
         result.deleteFailures += 1;
         this.logger.error(
-          `[storage-sweep] quarantine soft-delete failed for id=${record.id}: ${String(err)}`,
+          `[storage-sweep] quarantine soft-delete failed: ${String(err)}`,
+          { quarantineId: record.id },
         );
       }
     }

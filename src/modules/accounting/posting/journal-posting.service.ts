@@ -21,6 +21,7 @@ import {
   INVOICE_SOURCE_TYPE,
   INVOICE_SEND_SOURCE_EVENT,
 } from "./journal-posting.data";
+import { compareDecimals, decimalFromNumber, sumDecimals } from "../core/money.util";
 
 export type { DbOrTx, DraftLine, DraftEntry, PersistedEntry, PostInvoiceInput, PostPaymentInput, PostPurchaseBillInput, PostVendorPaymentInput };
 
@@ -69,11 +70,11 @@ export class JournalPostingService {
   }
 
   private assertBalanced(lines: DraftLine[]): void {
-    const totalDebitMinor = lines.reduce((acc, l) => acc + Math.round(l.debit * 100), 0);
-    const totalCreditMinor = lines.reduce((acc, l) => acc + Math.round(l.credit * 100), 0);
-    if (totalDebitMinor !== totalCreditMinor) {
+    const totalDebit = sumDecimals(lines.map((l) => decimalFromNumber(l.debit)));
+    const totalCredit = sumDecimals(lines.map((l) => decimalFromNumber(l.credit)));
+    if (compareDecimals(totalDebit, totalCredit) !== 0) {
       throw new Error(
-        `Unbalanced journal entry: debit=${totalDebitMinor} credit=${totalCreditMinor} diff=${totalDebitMinor - totalCreditMinor} (minor units)`,
+        `Unbalanced journal entry: debit=${totalDebit} credit=${totalCredit} (ledger scale)`,
       );
     }
     for (const line of lines) {
@@ -158,8 +159,8 @@ export class JournalPostingService {
             orgId: draft.orgId,
             entryId: entry.id,
             accountId,
-            debit: line.debit.toFixed(4),
-            credit: line.credit.toFixed(4),
+            debit: decimalFromNumber(line.debit),
+            credit: decimalFromNumber(line.credit),
             description: line.description ?? null,
             lineOrder: idx,
           };

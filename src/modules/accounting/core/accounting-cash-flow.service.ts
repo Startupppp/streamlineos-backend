@@ -9,6 +9,17 @@ import { ACCT_STATEMENTS_NS } from "../settings/accounting-settings.constants";
 import { ACCOUNT_CODES } from "./posting-rules";
 import { type ProfitLossQuery } from "./dto/accounting.schemas";
 import type { AccountType } from "./accounting.types";
+import {
+  absDecimal,
+  addDecimals,
+  allocateDecimal,
+  compareDecimals,
+  isZero,
+  roundDecimal,
+  subtractDecimals,
+  sumDecimals,
+  toDecimal,
+} from "./money.util";
 
 type SectionKey = "operating" | "investing" | "financing";
 
@@ -84,7 +95,7 @@ export class AccountingCashFlowService {
       };
     }
 
-    const cashNetUpTo = async (asOf: string): Promise<number> => {
+    const cashNetUpTo = async (asOf: string): Promise<string> => {
       const rows = await this.db
         .select({ debit: sum(journalLines.debit), credit: sum(journalLines.credit) })
         .from(journalLines)
@@ -98,12 +109,12 @@ export class AccountingCashFlowService {
           ),
         );
       const row = rows[0];
-      return Number(row?.debit ?? 0) - Number(row?.credit ?? 0);
+      return subtractDecimals(toDecimal(row?.debit), toDecimal(row?.credit));
     };
 
     const openingCash = await cashNetUpTo(openingAsOf);
     const closingCash = await cashNetUpTo(toStr);
-    const netChange = closingCash - openingCash;
+    const netChange = subtractDecimals(closingCash, openingCash);
 
     const periodCashEntries = await this.db
       .selectDistinct({ entryId: journalLines.entryId })
@@ -120,7 +131,7 @@ export class AccountingCashFlowService {
       );
     const entryIds = periodCashEntries.map((row) => row.entryId);
 
-    const buckets: Record<SectionKey, Map<string, number>> = {
+    const buckets: Record<SectionKey, Map<string, string>> = {
       operating: new Map(),
       investing: new Map(),
       financing: new Map(),
@@ -150,56 +161,59 @@ export class AccountingCashFlowService {
       }
 
       for (const entryLines of grouped.values()) {
-        const cashMovement = entryLines
-          .filter((line) => cashIdSet.has(line.accountId))
-          .reduce((acc, line) => acc + (Number(line.debit) - Number(line.credit)), 0);
-        if (Math.abs(cashMovement) < 0.005) continue;
+        const cashMovement = sumDecimals(
+          entryLines
+            .filter((line) => cashIdSet.has(line.accountId))
+            .map((line) => subtractDecimals(toDecimal(line.debit), toDecimal(line.credit))),
+        );
+        if (isZero(cashMovement)) continue;
 
         const offsetting = entryLines.filter((line) => !cashIdSet.has(line.accountId));
-        const offsetTotal = offsetting.reduce(
-          (acc, line) => acc + Math.abs(Number(line.debit) - Number(line.credit)),
-          0,
+        const weights = offsetting.map((line) =>
+          absDecimal(subtractDecimals(toDecimal(line.debit), toDecimal(line.credit))),
         );
-        if (offsetTotal < 0.005) continue;
+        if (isZero(sumDecimals(weights))) continue;
 
-        for (const line of offsetting) {
-          const weight = Math.abs(Number(line.debit) - Number(line.credit)) / offsetTotal;
-          const inflow = cashMovement * weight;
-          if (Math.abs(inflow) < 0.005) continue;
+        const inflows = allocateDecimal(cashMovement, weights);
+        offsetting.forEach((line, index) => {
+          const inflow = inflows[index];
+          if (isZero(inflow)) return;
           const section = classify(line.accountType, line.code);
           const key = `${line.code}::${line.name}`;
           const bucket = buckets[section];
-          bucket.set(key, (bucket.get(key) ?? 0) + inflow);
-        }
+          bucket.set(key, addDecimals(bucket.get(key) ?? "0", inflow));
+        });
       }
     }
 
+    const sectionTotals: string[] = [];
     const sections = SECTION_KEYS.map((key) => {
       const items = Array.from(buckets[key].entries())
         .map(([compound, amount]) => {
           const [code, name] = compound.split("::");
           return { label: `${code} - ${name}`, amount };
         })
-        .filter((item) => Math.abs(item.amount) >= 0.005)
+        .filter((item) => !isZero(item.amount))
         .sort((a, b) => a.label.localeCompare(b.label));
-      const total = items.reduce((acc, item) => acc + item.amount, 0);
+      const total = sumDecimals(items.map((item) => item.amount));
+      sectionTotals.push(total);
       return {
         key,
         label: SECTION_LABELS[key],
-        items: items.map((item) => ({ label: item.label, amount: item.amount.toFixed(2) })),
-        total: total.toFixed(2),
+        items: items.map((item) => ({ label: item.label, amount: roundDecimal(item.amount, 2) })),
+        total: roundDecimal(total, 2),
       };
     });
 
-    const sectionsTotal = sections.reduce((acc, section) => acc + Number(section.total), 0);
+    const sectionsTotal = sumDecimals(sectionTotals);
 
     return {
       from: fromStr,
       to: toStr,
-      openingCash: openingCash.toFixed(2),
-      closingCash: closingCash.toFixed(2),
-      netChange: netChange.toFixed(2),
-      reconciled: Math.abs(sectionsTotal - netChange) < 0.01,
+      openingCash: roundDecimal(openingCash, 2),
+      closingCash: roundDecimal(closingCash, 2),
+      netChange: roundDecimal(netChange, 2),
+      reconciled: compareDecimals(sectionsTotal, netChange) === 0,
       sections,
     };
   }

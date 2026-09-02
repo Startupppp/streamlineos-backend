@@ -10,12 +10,13 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { EmbeddingsService } from "../../ai/core/providers/embeddings.service";
+import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { OrgFeaturesService } from "../../ai/core/services/org-features.service";
 import { KbAccessService } from "../../kb/core/kb-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 const KB_SIMILARITY_THRESHOLD = 0.2;
+const SUPPORT_KB_SEARCH_FEATURE = "support.kb-search";
 
 export type SuggestionType = (typeof supportAiSuggestions.$inferInsert)["type"];
 export type KbSource = { articleId: number; title: string; url: string };
@@ -24,13 +25,13 @@ export type KbSource = { articleId: number; title: string; url: string };
 export class SupportAiTriageDataService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly embeddings: EmbeddingsService,
+    private readonly aiGateway: AiGatewayService,
     private readonly orgFeatures: OrgFeaturesService,
     private readonly kbAccess: KbAccessService,
   ) {}
 
   isEmbeddingsConfigured(): boolean {
-    return this.embeddings.isConfigured();
+    return this.aiGateway.isEmbeddingConfigured();
   }
 
   async isAvailable(orgId: string): Promise<boolean> {
@@ -111,13 +112,18 @@ export class SupportAiTriageDataService {
     user: CurrentUserContext,
     query: string,
   ): Promise<KbSource[]> {
-    if (!this.embeddings.isConfigured()) return [];
+    if (!this.aiGateway.isEmbeddingConfigured()) return [];
     const accessibleSpaceIds = await this.kbAccess.getAccessibleSpaceIds(user);
     if (accessibleSpaceIds.length === 0) return [];
     const principal = await this.kbAccess.getPrincipalIds(user);
-    const vector = this.embeddings.toVectorLiteral(
-      await this.embeddings.embedQuery(query, user.orgId, "support.kb-search"),
-    );
+    const embedResult = await this.aiGateway.embedQueryWithCredit({
+      text: query,
+      orgId: user.orgId,
+      feature: SUPPORT_KB_SEARCH_FEATURE,
+      charge: true,
+    });
+    if (!embedResult.ok) return [];
+    const vector = embedResult.vectorLiteral;
     const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
     const kar = kbArticleRestrictions;
     const restrictionFilter = sql`(

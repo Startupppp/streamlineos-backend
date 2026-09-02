@@ -14,6 +14,12 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  FRONTEND_ROOT,
+  frontendAvailable,
+  frontendUnreachableReason,
+  reportUnreachable,
+} from "./check-repo-paths.mjs";
+import {
   loadBackendCatalog,
   loadModuleManifest,
   parseNavGates,
@@ -69,10 +75,20 @@ export function checkNavRoutePilot(pilotEntry, navRoutes) {
 const args = process.argv.slice(2);
 
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
-// scripts/ -> src/ -> backend/ -> repo root
-const REPO_ROOT = resolve(SCRIPT_DIR, "../../..");
-const BACKEND_MODULES_DIR = join(REPO_ROOT, "backend", "src", "modules");
-const NAV_DIR = join(REPO_ROOT, "frontend", "components", "layout", "sidebar");
+// scripts/ -> src/ -> backend root. The frontend is found by marker, not depth.
+const REPO_ROOT = resolve(SCRIPT_DIR, "../..");
+const BACKEND_MODULES_DIR = join(REPO_ROOT, "src", "modules");
+const NAV_DIR = frontendAvailable
+  ? join(FRONTEND_ROOT, "components", "layout", "sidebar")
+  : null;
+const MIN_CONTROLLER_FILES = 100;
+const MIN_ROUTE_REFS = 200;
+const MIN_NAV_FILES = 5;
+const MIN_NAV_GATES = 50;
+
+function isVacuousScan(fileCount, refCount) {
+  return fileCount < MIN_CONTROLLER_FILES || refCount < MIN_ROUTE_REFS;
+}
 
 const SPEC_RE = /\.(spec|e2e-spec|test)\.ts$/;
 const NAV_FILE_RE = /^sidebar-(home-nav|nav-groups-.+|nav-routes-.+)\.ts$/;
@@ -262,6 +278,13 @@ try {
   process.exit(2);
 }
 
+if (!frontendAvailable)
+  reportUnreachable(
+    "check-navigation-permissions",
+    "the whole gate — every navigation permission gate lives in the frontend",
+    frontendUnreachableReason(),
+  );
+
 if (!existsSync(NAV_DIR)) {
   process.stderr.write(`Cannot read frontend navigation manifest dir: ${NAV_DIR}\n`);
   process.exit(2);
@@ -283,9 +306,18 @@ for (const { file, src } of files)
     else unresolvedRouteArgs++;
   }
 
+if (isVacuousScan(files.length, enforced.size + unresolvedRouteArgs)) {
+  process.stderr.write(
+    `check-navigation-permissions: vacuity guard — scanned ${files.length} files (floor ${MIN_CONTROLLER_FILES}) under ${BACKEND_MODULES_DIR} and found ${enforced.size + unresolvedRouteArgs} @RequirePermission usages (floor ${MIN_ROUTE_REFS}); every nav gate would read as unenforced because the scan is broken.\n`,
+  );
+  process.exit(2);
+}
+
 const navFiles = readdirSync(NAV_DIR).filter((n) => NAV_FILE_RE.test(n));
-if (navFiles.length === 0) {
-  process.stderr.write(`No navigation manifest files matched in ${NAV_DIR}\n`);
+if (navFiles.length < MIN_NAV_FILES) {
+  process.stderr.write(
+    `check-navigation-permissions: vacuity guard — ${navFiles.length} navigation manifest file(s) matched ${NAV_FILE_RE} in ${NAV_DIR} (floor ${MIN_NAV_FILES}).\n`,
+  );
   process.exit(2);
 }
 
@@ -293,6 +325,13 @@ const gates = [];
 for (const name of navFiles) {
   const full = join(NAV_DIR, name);
   gates.push(...parseNavGates(readFileSync(full, "utf8"), full));
+}
+
+if (gates.length < MIN_NAV_GATES) {
+  process.stderr.write(
+    `check-navigation-permissions: vacuity guard — parsed ${gates.length} navigation permission gate(s) from ${navFiles.length} manifest file(s) (floor ${MIN_NAV_GATES}); the manifest parser is broken.\n`,
+  );
+  process.exit(2);
 }
 
 // -- report ------------------------------------------------------------------

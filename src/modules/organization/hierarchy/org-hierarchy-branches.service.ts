@@ -139,6 +139,7 @@ export class OrgHierarchyBranchesService {
           eq(branchBusinessUnits.id, orgUnits.parentId),
           eq(branchBusinessUnits.orgId, orgUnits.orgId),
           eq(branchBusinessUnits.kind, "BUSINESS_UNIT"),
+          isNull(branchBusinessUnits.deletedAt),
         ),
       )
       .where(filters)

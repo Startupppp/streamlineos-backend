@@ -151,8 +151,9 @@ export class RecruitmentJobsController {
   async removeRecruiter(
     @Param("jobId", ParseIntPipe) jobId: number,
     @Body() body: AssignRecruiterInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.jobs.removeRecruiter(jobId, body);
+    await this.jobs.removeRecruiter(u.orgId, jobId, body);
   }
 
   @Get("jobs/:jobId/share")

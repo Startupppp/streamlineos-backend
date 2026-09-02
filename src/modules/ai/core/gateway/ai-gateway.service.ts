@@ -28,6 +28,8 @@ import type {
   InvokeTextOpts,
   EmbedQueryOpts,
   EmbedQueryResult,
+  EmbedBatchOpts,
+  EmbedBatchResult,
 } from "./ai-gateway.types";
 
 export type {
@@ -36,6 +38,8 @@ export type {
   InvokeTextOpts,
   EmbedQueryOpts,
   EmbedQueryResult,
+  EmbedBatchOpts,
+  EmbedBatchResult,
 };
 
 const CONCURRENCY_EXCEEDED_MESSAGE = "Too many concurrent AI requests for this organization";
@@ -78,6 +82,20 @@ export class AiGatewayService {
       return { ok: false, kind: "concurrency_exceeded", message: CONCURRENCY_EXCEEDED_MESSAGE, correlationId };
     try {
       return await this.embedder.run(opts, correlationId);
+    } finally {
+      this.concurrencyLimiter.release(opts.orgId);
+    }
+  }
+
+  async embedBatchWithCredit(opts: EmbedBatchOpts): Promise<EmbedBatchResult> {
+    const correlationId = randomUUID();
+    if (opts.texts.length === 0) return { ok: true, vectors: [] };
+
+    const allowed = await this.concurrencyLimiter.acquire(opts.orgId);
+    if (!allowed)
+      return { ok: false, kind: "concurrency_exceeded", message: CONCURRENCY_EXCEEDED_MESSAGE, correlationId };
+    try {
+      return await this.embedder.runBatch(opts, correlationId);
     } finally {
       this.concurrencyLimiter.release(opts.orgId);
     }

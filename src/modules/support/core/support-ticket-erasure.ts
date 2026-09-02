@@ -48,7 +48,7 @@ export async function anonymiseSubjectSupportTickets(
 
   let cursor: number | null = null;
   for (;;) {
-    const page = await tx
+    const page: Array<{ id: number }> = await tx
       .select({ id: supportTickets.id })
       .from(supportTickets)
       .where(
@@ -62,7 +62,7 @@ export async function anonymiseSubjectSupportTickets(
       .limit(SUPPORT_ERASURE_PAGE);
     if (page.length === 0) return result;
 
-    const ticketIds = page.map((row) => row.id);
+    const ticketIds: number[] = page.map((row) => row.id);
 
     const anonymised = await tx
       .update(supportTickets)

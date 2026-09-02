@@ -11,7 +11,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import type { HeadcountInput, OrgChartQueryInput } from "./dto/hr-directory.schemas";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
@@ -35,8 +35,10 @@ export class OrgStructureService {
   ) {}
 
   async getDirectory(orgId: string, actorUserId: string, scope: DataScope) {
-    return this.cache.cached(
-      `hr:directory:${orgId}:${actorUserId}:${scope}`,
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "hr:directory",
+      `${actorUserId}:${scope}`,
       () => this.buildDirectory(orgId, actorUserId, scope),
       CACHE_TTL.MEDIUM,
     );
@@ -121,8 +123,9 @@ export class OrgStructureService {
   }
 
   getHeadcount(orgId: string, query: HeadcountInput) {
-    return this.cache.cachedVersioned(
-      CACHE_KEYS.hrHeadcountNamespace(orgId),
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "hr:headcount",
       `group:${query.groupBy}`,
       () => this.buildHeadcount(orgId, query),
       CACHE_TTL.MEDIUM,

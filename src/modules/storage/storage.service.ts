@@ -16,6 +16,7 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { MediaCompressionService } from "../../common/media/media-compression.service";
+import { sanitizeFileName } from "./storage-key";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
 import {
@@ -33,7 +34,6 @@ interface R2Config {
 }
 
 export interface UploadResult {
-  url: string;
   key: string;
   size: number;
   mimeType: string;
@@ -70,16 +70,6 @@ const MIME_MAP: Record<string, string> = {
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
-const PRIVATE_FOLDERS = new Set([
-  "documents",
-  "hr-documents",
-  "onboarding",
-  "onboarding-docs",
-  "resignations",
-  "hr-exports",
-  "chat",
-]);
-
 export function isMissingObjectError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const details = error as Error & {
@@ -102,7 +92,6 @@ export type StorageConfig = Pick<
 export interface StoragePlacement {
   readonly client: S3Client;
   readonly bucketName?: string;
-  readonly publicUrl?: string;
   readonly keyPrefix?: string;
 }
 
@@ -146,7 +135,6 @@ export class StorageService {
       return {
         client: this.clientFor(cfg),
         bucketName: cfg.bucketName,
-        publicUrl: this.config.NEXT_PUBLIC_R2_PUBLIC_URL,
       };
     }
 
@@ -155,7 +143,6 @@ export class StorageService {
     return {
       client: this.clientFor(cfg),
       bucketName: cfg.bucketName,
-      publicUrl: storage.publicUrl ?? this.config.NEXT_PUBLIC_R2_PUBLIC_URL,
       keyPrefix: storage.keyPrefix,
     };
   }
@@ -217,16 +204,14 @@ export class StorageService {
     return bucket;
   }
 
-  private publicUrlFor(
+  private static objectKey(
+    placement: StoragePlacement,
+    orgId: string,
     folder: string,
-    key: string,
-    regionPublicUrl: string | undefined,
-    override?: string,
+    fileName: string,
   ): string {
-    const folderRoot = folder.split("/", 1)[0] ?? folder;
-    if (PRIVATE_FOLDERS.has(folderRoot)) return key;
-    const publicBase = override ?? regionPublicUrl;
-    return publicBase ? `${publicBase}/${key}` : key;
+    const rawKey = `${orgId}/${folder}/${randomUUID()}-${sanitizeFileName(fileName)}`;
+    return placement.keyPrefix ? `${placement.keyPrefix}/${rawKey}` : rawKey;
   }
 
   async uploadFile(
@@ -236,16 +221,10 @@ export class StorageService {
     fileName = "file",
     mimeType = "application/octet-stream",
     bucketOverride?: string,
-    publicUrlOverride?: string,
   ): Promise<UploadResult> {
     const placement = await this.placementFor(orgId);
     const bucketName = this.requireBucketFrom(placement, bucketOverride);
-
-    const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
-    const rawKey = `${orgId}/${folder}/${randomUUID()}-${sanitizedName}`;
-    const key = placement.keyPrefix
-      ? `${placement.keyPrefix}/${rawKey}`
-      : rawKey;
+    const key = StorageService.objectKey(placement, orgId, folder, fileName);
 
     await placement.client.send(
       new PutObjectCommand({
@@ -257,12 +236,6 @@ export class StorageService {
     );
 
     return {
-      url: this.publicUrlFor(
-        folder,
-        key,
-        placement.publicUrl,
-        publicUrlOverride,
-      ),
       key,
       size: buffer.length,
       mimeType,
@@ -278,16 +251,11 @@ export class StorageService {
     fileName = "file",
     mimeType = "application/octet-stream",
     bucketOverride?: string,
-    publicUrlOverride?: string,
     sha256 = "",
   ): Promise<UploadResult> {
     const placement = await this.placementFor(orgId);
     const bucketName = this.requireBucketFrom(placement, bucketOverride);
-    const sanitizedName = fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
-    const rawKey = `${orgId}/${folder}/${randomUUID()}-${sanitizedName}`;
-    const key = placement.keyPrefix
-      ? `${placement.keyPrefix}/${rawKey}`
-      : rawKey;
+    const key = StorageService.objectKey(placement, orgId, folder, fileName);
 
     await placement.client.send(
       new PutObjectCommand({
@@ -300,12 +268,6 @@ export class StorageService {
     );
 
     return {
-      url: this.publicUrlFor(
-        folder,
-        key,
-        placement.publicUrl,
-        publicUrlOverride,
-      ),
       key,
       size: contentLength,
       mimeType,
@@ -320,7 +282,6 @@ export class StorageService {
     fileName = "file",
     mimeType = "application/octet-stream",
     bucketOverride?: string,
-    publicUrlOverride?: string,
   ): Promise<UploadResult> {
     const compressed = await this.compression.compress(
       buffer,
@@ -334,7 +295,6 @@ export class StorageService {
       compressed.fileName,
       compressed.mimeType,
       bucketOverride,
-      publicUrlOverride,
     );
   }
 
@@ -344,10 +304,8 @@ export class StorageService {
     folder: string,
     fileName: string,
     mimeType: string,
-    publicUrlOverride?: string,
   ): Promise<{
     key: string;
-    url: string;
     compressedBuffer: Buffer;
     compressedMimeType: string;
     size: number;
@@ -358,13 +316,15 @@ export class StorageService {
       mimeType,
       fileName,
     );
-    const sanitizedName = compressed.fileName.replace(/[^a-zA-Z0-9.-]/g, "-");
-    const rawKey = `${folder}/${randomUUID()}-${sanitizedName}`;
-    const key = `${orgId}/${rawKey}`;
-    const url = this.publicUrlFor(folder, key, publicUrlOverride);
+    const placement = await this.placementFor(orgId);
+    const key = StorageService.objectKey(
+      placement,
+      orgId,
+      folder,
+      compressed.fileName,
+    );
     return {
       key,
-      url,
       compressedBuffer: compressed.buffer,
       compressedMimeType: compressed.mimeType,
       size: compressed.buffer.length,
@@ -372,6 +332,12 @@ export class StorageService {
     };
   }
 
+  /**
+   * Writes to a key the caller already holds. The key is used verbatim: it came
+   * from `compressAndPreGenerateKey`, which has already applied the region key
+   * prefix, and prefixing again here would store the object somewhere no read
+   * path looks.
+   */
   async uploadToKey(
     orgId: string,
     buffer: Buffer,
@@ -381,13 +347,10 @@ export class StorageService {
   ): Promise<void> {
     const placement = await this.placementFor(orgId);
     const bucketName = this.requireBucketFrom(placement, bucketOverride);
-    const resolvedKey = placement.keyPrefix
-      ? `${placement.keyPrefix}/${key}`
-      : key;
     await placement.client.send(
       new PutObjectCommand({
         Bucket: bucketName,
-        Key: resolvedKey,
+        Key: key,
         Body: buffer,
         ContentType: mimeType,
       }),
@@ -411,6 +374,74 @@ export class StorageService {
     await placement.client.send(
       new DeleteObjectCommand({ Bucket: bucketName, Key: key }),
     );
+  }
+
+  /**
+   * Cleanup path. A failed upload, a rejected transform and an aborted
+   * multipart all have to remove the object, and none of them may fail because
+   * the object was never written in the first place.
+   */
+  async deleteFileIfPresent(orgId: string, key: string): Promise<boolean> {
+    try {
+      await this.deleteFile(orgId, key);
+      return true;
+    } catch (error) {
+      if (isMissingObjectError(error)) return false;
+      throw error;
+    }
+  }
+
+  async describeObject(
+    orgId: string,
+    key: string,
+  ): Promise<{ contentLength: number; contentType: string } | null> {
+    const placement = await this.placementFor(orgId);
+    const bucketName = this.requireBucketFrom(placement);
+    try {
+      const response = await placement.client.send(
+        new HeadObjectCommand({ Bucket: bucketName, Key: key }),
+      );
+      return {
+        contentLength: response.ContentLength ?? 0,
+        contentType: response.ContentType ?? "application/octet-stream",
+      };
+    } catch (error) {
+      if (isMissingObjectError(error)) return null;
+      throw error;
+    }
+  }
+
+  /**
+   * Reads only the leading bytes, so a multipart object can be sniffed without
+   * pulling a multi-gigabyte body back through the API.
+   */
+  async readObjectPrefix(
+    orgId: string,
+    key: string,
+    byteCount: number,
+  ): Promise<Buffer | null> {
+    const placement = await this.placementFor(orgId);
+    const bucketName = this.requireBucketFrom(placement);
+    try {
+      const response = await placement.client.send(
+        new GetObjectCommand({
+          Bucket: bucketName,
+          Key: key,
+          Range: `bytes=0-${Math.max(byteCount - 1, 0)}`,
+        }),
+      );
+      const body = response.Body;
+      if (!body || !(body instanceof Readable)) return null;
+      const chunks: Buffer[] = [];
+      for await (const chunk of body) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+        if (Buffer.concat(chunks).length >= byteCount) break;
+      }
+      return Buffer.concat(chunks).subarray(0, byteCount);
+    } catch (error) {
+      if (isMissingObjectError(error)) return null;
+      throw error;
+    }
   }
 
   async fileExists(orgId: string, key: string): Promise<boolean> {

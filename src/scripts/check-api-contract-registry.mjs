@@ -49,6 +49,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { SRC_ROOT, collectTsFiles, scanWebhookEvents } from "./generate-api-contract-registry.mjs";
+
 const SELF_TEST = process.argv.includes("--self-test");
 const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 const OPENAPI_PATH = join(BACKEND_ROOT, "openapi.json");
@@ -83,6 +85,140 @@ export function findUnclassifiedOperations(document, registry) {
     }
   }
 
+  return violations;
+}
+
+/**
+ * Schema validity for EVERY registry entry, live or retained.
+ *
+ * findUnclassifiedOperations walks the OpenAPI document, so it can only see
+ * entries that still have a live operation. A retained entry — the tombstone
+ * check-contract-breaking-change reads to detect a removal — has no live
+ * operation and was therefore never validated by anything. Corrupting a
+ * published tombstone's classification to "internl" silenced the removal
+ * finding with every gate green. The generator's retention comment guards
+ * against deleting a tombstone; this guards against mutating one.
+ */
+export function findInvalidEntries(registry) {
+  const violations = [];
+  for (const [key, entry] of Object.entries(registry.operations ?? {})) {
+    if (typeof entry !== "object" || entry === null) {
+      violations.push({ key, issue: "registry entry is not an object" });
+      continue;
+    }
+    if (!VALID_CLASSIFICATIONS.has(entry.classification)) {
+      violations.push({
+        key,
+        issue: `invalid classification ${JSON.stringify(entry.classification ?? null)} — must be "internal" or "published"`,
+      });
+    }
+    if (entry.classificationOverride !== undefined && entry.classificationOverride !== null && !VALID_CLASSIFICATIONS.has(entry.classificationOverride)) {
+      violations.push({
+        key,
+        issue: `invalid classificationOverride ${JSON.stringify(entry.classificationOverride)} — must be "internal", "published" or null`,
+      });
+    }
+  }
+  return violations;
+}
+
+/**
+ * Ticket 34's published-contract terms, enforced on exactly the set the registry
+ * classifies as published — never on `x-exposure`, which answers "how is this
+ * route authorized", not "who committed to it".
+ *
+ * Every published operation must carry:
+ *   - a version, matching the `/v<N>/` segment of its path when it has one, OR a
+ *     declared deprecation window with a date
+ *   - at least one named consumer
+ *   - an idempotency/replay rule
+ *   - a frozen parameter baseline for check-contract-breaking-change to compare
+ *     against
+ */
+export function findPublishedContractGaps(registry) {
+  const violations = [];
+  for (const [key, entry] of Object.entries(registry.operations ?? {})) {
+    if (entry?.classification !== "published") continue;
+    const pathTemplate = key.slice(key.indexOf(" ") + 1);
+
+    const pathVersion = (pathTemplate.split("/").find((s) => /^v[0-9]+$/.test(s)) ?? "").slice(1) || null;
+    const version = typeof entry.version === "string" && entry.version.length > 0 ? entry.version : null;
+    const deprecationDate = typeof entry.deprecation?.sunsetAt === "string" ? entry.deprecation.sunsetAt : null;
+
+    if (version === null && deprecationDate === null) {
+      violations.push({ key, issue: "published operation has neither a version nor a deprecation window with a date" });
+    }
+    if (pathVersion !== null && version !== pathVersion) {
+      violations.push({
+        key,
+        issue: `version "${String(entry.version)}" disagrees with the "/v${pathVersion}/" segment in its own path`,
+      });
+    }
+    if (deprecationDate !== null && Number.isNaN(new Date(deprecationDate).getTime())) {
+      violations.push({ key, issue: `deprecation.sunsetAt "${deprecationDate}" is not a parseable date` });
+    }
+    if (!Array.isArray(entry.consumers) || entry.consumers.length === 0) {
+      violations.push({ key, issue: "published operation names no consumer" });
+    }
+    if (!Array.isArray(entry.knownParameters)) {
+      violations.push({ key, issue: "published operation has no recorded parameter baseline (knownParameters)" });
+    }
+    const idem = entry.idempotency;
+    if (typeof idem !== "object" || idem === null || typeof idem.mode !== "string" || typeof idem.replay !== "string" || idem.replay.length === 0) {
+      violations.push({
+        key,
+        issue: "published operation documents no idempotency/replay rule — declare it in contracts/published-contract-terms.json",
+      });
+    }
+  }
+  return violations;
+}
+
+/**
+ * Outbound customer webhook events. `registry.events` holds OutboxWriter events,
+ * which our own relay consumes and which are internal by construction. These are
+ * the names a customer subscribes to and reads out of the delivered body, so
+ * renaming one breaks somebody else's endpoint. Until ticket 34 the registry's
+ * `webhooks` object was an empty `{}` the generator never wrote to, so no gate
+ * in the repository read them at all.
+ */
+/**
+ * The same fail-closed rule operations get, applied to webhook event names: an
+ * event a dispatcher emits today but the registry has never seen is unclassified,
+ * and unclassified means published. Scanning the source here rather than trusting
+ * the registry's own snapshot is what makes the gate bite on a rename that was
+ * never followed by `registry:generate` — which is precisely how `deal.won` could
+ * be renamed with every gate green.
+ */
+export function findUnclassifiedWebhookEvents(emittedNames, registry) {
+  const known = new Set(Object.keys(registry.webhooks ?? {}));
+  return emittedNames.filter((n) => !known.has(n)).map((name) => ({
+    key: `webhook ${name}`,
+    issue: "emitted by a dispatcher but absent from the registry — treated as published (fail-closed)",
+  }));
+}
+
+export function findWebhookContractGaps(registry) {
+  const violations = [];
+  for (const [name, entry] of Object.entries(registry.webhooks ?? {})) {
+    if (typeof entry !== "object" || entry === null) {
+      violations.push({ key: `webhook ${name}`, issue: "registry entry is not an object" });
+      continue;
+    }
+    if (!VALID_CLASSIFICATIONS.has(entry.classification)) {
+      violations.push({
+        key: `webhook ${name}`,
+        issue: `invalid classification ${JSON.stringify(entry.classification ?? null)} — must be "internal" or "published"`,
+      });
+    }
+    if (entry.classification === "internal") continue;
+    if (typeof entry.version !== "string" || entry.version.length === 0) {
+      violations.push({ key: `webhook ${name}`, issue: "published webhook event has no version" });
+    }
+    if (!Array.isArray(entry.consumers) || entry.consumers.length === 0) {
+      violations.push({ key: `webhook ${name}`, issue: "published webhook event names no consumer" });
+    }
+  }
   return violations;
 }
 
@@ -232,6 +368,87 @@ if (SELF_TEST) {
     fail("count-by-classification", `expected 2/1/1, got ${JSON.stringify(counts)}`);
   else pass("count-by-classification — counts by classification are accurate");
 
+  // A retained tombstone has no live operation, so findUnclassifiedOperations
+  // (which walks the OpenAPI document) cannot see it. Before ticket 34 nothing
+  // validated it, and mutating its classification silenced a real removal.
+  for (const bad of ["internl", null, "published ", "Internal"]) {
+    const entry = { xExposure: "public", sunsetAt: null, sunsetEvidence: null };
+    if (bad !== null) entry.classification = bad;
+    const reg = { operations: { "GET /old-removed": entry } };
+    const viaCompleteness = findUnclassifiedOperations({ paths: {} }, reg).length;
+    const viaEntryScan = findInvalidEntries(reg).length;
+    if (viaCompleteness !== 0)
+      fail("tombstone-invisible-to-completeness", `expected the completeness pass to see 0, got ${viaCompleteness}`);
+    else if (viaEntryScan !== 1)
+      fail(`tombstone-classification-validated(${String(bad)})`, `expected 1 violation, got ${viaEntryScan}`);
+    else pass(`tombstone-classification-validated(${String(bad)}) — a retained entry's classification is validated even though no live operation exists`);
+  }
+
+  if (findInvalidEntries({ operations: { "GET /a": { classification: "published" }, "GET /b": { classification: "internal" } } }).length !== 0)
+    fail("valid-entries-pass", "two well-formed entries should produce 0 violations");
+  else pass("valid-entries-pass — well-formed entries produce 0 violations");
+
+  if (findInvalidEntries({ operations: { "GET /a": { classification: "internal", classificationOverride: "BOGUS" } } }).length !== 1)
+    fail("invalid-override-flagged", "an unrecognised classificationOverride should be flagged");
+  else pass("invalid-override-flagged — an unrecognised classificationOverride is a violation");
+
+  const goodPublished = {
+    classification: "published",
+    version: "1",
+    consumers: ["external automation agents"],
+    knownParameters: [],
+    idempotency: { mode: "safe", key: null, replay: "Safe method." },
+    deprecation: null,
+  };
+  if (findPublishedContractGaps({ operations: { "GET /public/x": goodPublished } }).length !== 0)
+    fail("complete-published-entry-passes", "a fully specified published entry should produce 0 gaps");
+  else pass("complete-published-entry-passes — a fully specified published entry produces 0 gaps");
+
+  if (findPublishedContractGaps({ operations: { "GET /public/x": { ...goodPublished, idempotency: null } } }).length !== 1)
+    fail("missing-idempotency-flagged", "a published entry with no idempotency rule should be flagged");
+  else pass("missing-idempotency-flagged — a published operation with no replay rule is a gap");
+
+  if (findPublishedContractGaps({ operations: { "GET /public/x": { ...goodPublished, knownParameters: undefined } } }).length !== 1)
+    fail("missing-baseline-flagged", "a published entry with no parameter baseline should be flagged");
+  else pass("missing-baseline-flagged — a published operation with no parameter baseline is a gap");
+
+  if (findPublishedContractGaps({ operations: { "GET /public/x": { ...goodPublished, consumers: [] } } }).length !== 1)
+    fail("no-consumer-flagged", "a published entry naming no consumer should be flagged");
+  else pass("no-consumer-flagged — a published operation naming no consumer is a gap");
+
+  const unversioned = { ...goodPublished, version: "", deprecation: null };
+  if (findPublishedContractGaps({ operations: { "GET /public/x": unversioned } }).length !== 1)
+    fail("unversioned-without-window-flagged", "an unversioned entry with no deprecation window should be flagged");
+  else pass("unversioned-without-window-flagged — no version and no dated deprecation window is a gap");
+
+  const unversionedButDeprecated = { ...unversioned, deprecation: { sunsetAt: "2026-10-25", replacedBy: "/crm/organizations" } };
+  if (findPublishedContractGaps({ operations: { "GET /public/x": unversionedButDeprecated } }).length !== 0)
+    fail("deprecation-window-satisfies-versioning", "a dated deprecation window should satisfy the versioning requirement");
+  else pass("deprecation-window-satisfies-versioning — a dated deprecation window is an accepted alternative to a version");
+
+  const mismatched = { operations: { "GET /agent/v2/projects": { ...goodPublished, version: "1" } } };
+  const mismatchGaps = findPublishedContractGaps(mismatched);
+  if (mismatchGaps.length !== 1 || !mismatchGaps[0].issue.includes("disagrees"))
+    fail("path-version-mismatch-flagged", `expected a version/path disagreement, got ${JSON.stringify(mismatchGaps)}`);
+  else pass("path-version-mismatch-flagged — a registry version that disagrees with the path's /vN/ segment is a gap");
+
+  if (findPublishedContractGaps({ operations: { "GET /internal/x": { classification: "internal" } } }).length !== 0)
+    fail("internal-entries-exempt-from-terms", "internal entries should not be held to published terms");
+  else pass("internal-entries-exempt-from-terms — internal operations are not held to published contract terms");
+
+  const goodWebhook = { classification: "published", version: "1", consumers: ["customer endpoints"] };
+  if (findWebhookContractGaps({ webhooks: { "deal.won": goodWebhook } }).length !== 0)
+    fail("complete-webhook-passes", "a fully specified webhook event should produce 0 gaps");
+  else pass("complete-webhook-passes — a versioned webhook event with a named consumer produces 0 gaps");
+
+  if (findWebhookContractGaps({ webhooks: { "deal.won": { ...goodWebhook, version: "" } } }).length !== 1)
+    fail("unversioned-webhook-flagged", "an unversioned published webhook event should be flagged");
+  else pass("unversioned-webhook-flagged — an unversioned published webhook event is a gap");
+
+  if (findWebhookContractGaps({ webhooks: { "deal.won": { classification: "wat", version: "1", consumers: ["x"] } } }).length !== 1)
+    fail("webhook-classification-validated", "an unrecognised webhook classification should be flagged");
+  else pass("webhook-classification-validated — an unrecognised webhook classification is a gap");
+
   if (failed) {
     process.stderr.write("\nSELF-TEST FAILED\n");
     process.exit(1);
@@ -265,12 +482,15 @@ try {
 
 const registryOpCount = Object.keys(registry.operations ?? {}).length;
 const registryEventCount = Object.keys(registry.events ?? {}).length;
+const webhookEntries = Object.entries(registry.webhooks ?? {});
+const publishedWebhooks = webhookEntries.filter(([, w]) => w?.classification !== "internal").length;
 const { internal, published } = countByClassification(registry);
 
 process.stdout.write(
   `check-api-contract-registry: registry v${String(registry.version ?? "?")} — ` +
   `${String(registryOpCount)} operations (${String(published)} published, ${String(internal)} internal), ` +
-  `${String(registryEventCount)} events\n`,
+  `${String(registryEventCount)} outbox events, ` +
+  `${String(webhookEntries.length)} outbound webhook events (${String(publishedWebhooks)} published)\n`,
 );
 
 const duplicates = findDuplicateOperationIds(document);
@@ -306,5 +526,71 @@ if (violations.length > 0) {
   process.exit(1);
 }
 
+const invalid = findInvalidEntries(registry);
+if (invalid.length > 0) {
+  process.stderr.write(`\ncheck-api-contract-registry: FAIL — ${String(invalid.length)} registry entry/entries carry an invalid classification\n`);
+  process.stderr.write(`  (this pass covers RETAINED entries too — they have no live operation, so the completeness pass above never sees them)\n\n`);
+  for (const { key, issue } of invalid.slice(0, 50)) {
+    process.stderr.write(`  ${key}\n      ${issue}\n`);
+  }
+  if (invalid.length > 50) process.stderr.write(`  ... and ${String(invalid.length - 50)} more\n`);
+  process.exit(1);
+}
+
+const gaps = findPublishedContractGaps(registry);
+if (gaps.length > 0) {
+  process.stderr.write(`\ncheck-api-contract-registry: FAIL — ${String(gaps.length)} published contract term(s) missing\n\n`);
+  for (const { key, issue } of gaps.slice(0, 60)) {
+    process.stderr.write(`  ${key}\n      ${issue}\n`);
+  }
+  if (gaps.length > 60) process.stderr.write(`  ... and ${String(gaps.length - 60)} more\n`);
+  process.stderr.write(
+    `\nDeclare the missing term in contracts/published-contract-terms.json and re-run\n` +
+    `  pnpm registry:generate\n` +
+    `contracts/api-contract-registry.json is generated output and is never hand-edited.\n`,
+  );
+  process.exit(1);
+}
+
+const sourceCache = new Map();
+const emittedWebhookEvents = scanWebhookEvents(collectTsFiles(SRC_ROOT), (p) => {
+  if (!sourceCache.has(p)) sourceCache.set(p, readFileSync(p, "utf8"));
+  return sourceCache.get(p);
+}).map((e) => e.name);
+
+const webhookGaps = [
+  ...findUnclassifiedWebhookEvents(emittedWebhookEvents, registry),
+  ...findWebhookContractGaps(registry),
+];
+if (webhookGaps.length > 0) {
+  process.stderr.write(`\ncheck-api-contract-registry: FAIL — ${String(webhookGaps.length)} outbound webhook contract gap(s)\n\n`);
+  for (const { key, issue } of webhookGaps) process.stderr.write(`  ${key}\n      ${issue}\n`);
+  process.stderr.write(`\nRun: pnpm registry:generate to catalogue new webhook event names and commit the result.\n`);
+  process.exit(1);
+}
+
+const declaredOnlyWebhooks = Object.entries(registry.webhooks ?? {}).filter(
+  ([name, w]) => !emittedWebhookEvents.includes(name) && typeof w?.declaredIn === "string" && w.declaredIn.length > 0,
+);
+if (declaredOnlyWebhooks.length > 0) {
+  process.stdout.write(
+    `  REPORT: ${String(declaredOnlyWebhooks.length)} webhook event name(s) reached only through a variable dispatch,\n` +
+    `  declared by hand in contracts/published-contract-terms.json against the file that proves them:\n`,
+  );
+  for (const [name, w] of declaredOnlyWebhooks) process.stdout.write(`    ${name}  <- ${w.declaredIn}\n`);
+}
+
+const retiredWebhooks = Object.entries(registry.webhooks ?? {}).filter(
+  ([name, w]) =>
+    !emittedWebhookEvents.includes(name) && !(typeof w?.declaredIn === "string" && w.declaredIn.length > 0),
+);
+if (retiredWebhooks.length > 0) {
+  process.stdout.write(`  REPORT: ${String(retiredWebhooks.length)} retained webhook event(s) no longer emitted by any dispatcher:\n`);
+  for (const [name] of retiredWebhooks) process.stdout.write(`    ${name}\n`);
+  process.stdout.write(`  check-contract-breaking-change reads exactly this state to detect a rename.\n`);
+}
+
 process.stdout.write(`  OK — all ${String(registryOpCount)} operations are classified\n`);
+process.stdout.write(`  OK — all ${String(published)} published operations carry a version or dated deprecation window, a named consumer, an idempotency/replay rule and a parameter baseline\n`);
+process.stdout.write(`  OK — all ${String(webhookEntries.length)} outbound webhook event names are catalogued and versioned\n`);
 process.exit(0);

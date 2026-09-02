@@ -32,6 +32,29 @@ function makeTx(deleteRows: Array<{ id: string }>): MockTx {
   return tx;
 }
 
+function rowsOfSize(size: number): Array<{ id: string }> {
+  return new Array(size).fill(null).map((_, i) => ({ id: `msg-${i}` }));
+}
+
+function makeSequencedTx(pages: Array<Array<{ id: string }>>): MockTx {
+  const insertValues = jest.fn().mockResolvedValue(undefined);
+  let call = 0;
+  const tx: MockTx = {
+    delete: jest.fn().mockImplementation(() => {
+      const rows = pages[call] ?? [];
+      call += 1;
+      return {
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue(rows),
+        }),
+      };
+    }),
+    insert: jest.fn().mockReturnValue({ values: insertValues }),
+  };
+  (globalThis as { __mailCronTx?: unknown }).__mailCronTx = tx;
+  return tx;
+}
+
 function getInsertValues(tx: MockTx): jest.Mock {
   return (tx.insert.mock.results[0]?.value as { values: jest.Mock } | undefined)?.values ?? jest.fn();
 }
@@ -88,11 +111,35 @@ describe("CronMailRetentionService", () => {
     });
   });
 
-  describe("boundedness", () => {
-    it("accumulates up to 500 deletions per org per sweep (BATCH_SIZE=500)", async () => {
-      makeTx(new Array(500).fill(null).map((_, i) => ({ id: `msg-${i}` })));
+  describe("resumable drain (backlog larger than one batch)", () => {
+    it("keeps deleting until a short batch proves the backlog is exhausted", async () => {
+      const tx = makeSequencedTx([rowsOfSize(500), rowsOfSize(500), rowsOfSize(120)]);
       const result = await service.sweep();
-      expect(result.rowsDeleted).toBe(500);
+      expect(tx.delete).toHaveBeenCalledTimes(3);
+      expect(result.rowsDeleted).toBe(1120);
+      expect(result.truncated).toBe(false);
+    });
+
+    it("reports truncated when the batch cap is reached with rows still eligible", async () => {
+      const tx = makeSequencedTx(
+        new Array(200).fill(null).map(() => rowsOfSize(500)),
+      );
+      const result = await service.sweep();
+      expect(tx.delete).toHaveBeenCalledTimes(100);
+      expect(result.rowsDeleted).toBe(50_000);
+      expect(result.truncated).toBe(true);
+    });
+
+    it("records the truncation in the audit row rather than reporting a clean sweep", async () => {
+      const tx = makeSequencedTx(
+        new Array(200).fill(null).map(() => rowsOfSize(500)),
+      );
+      await service.sweep();
+      expect(getInsertValues(tx)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          after: expect.objectContaining({ truncated: true, count: 50_000 }),
+        }),
+      );
     });
   });
 

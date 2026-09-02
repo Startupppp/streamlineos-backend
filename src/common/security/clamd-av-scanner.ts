@@ -34,7 +34,7 @@ export class ClamAvScanner extends AvScanner implements OnModuleInit {
       };
 
       const scanTimer = setTimeout(() => {
-        this.logger.warn(`ClamAV scan timed out for "${filename}"`);
+        this.logger.warn("ClamAV scan timed out", { filename });
         settle({ status: "error", reason: "scan-timeout" });
       }, SCAN_TIMEOUT_MS);
 
@@ -72,12 +72,12 @@ export class ClamAvScanner extends AvScanner implements OnModuleInit {
 
       socket.on("error", (err: Error) => {
         clearTimeout(scanTimer);
-        this.logger.error(`ClamAV connection error for "${filename}": ${err.message}`);
+        this.logger.error(`ClamAV connection error: ${err.message}`, { filename });
         settle({ status: "error", reason: `clamd-unreachable: ${err.message}` });
       });
 
       socket.on("timeout", () => {
-        this.logger.warn(`ClamAV socket timeout for "${filename}"`);
+        this.logger.warn("ClamAV socket timeout", { filename });
         settle({ status: "error", reason: "scan-timeout" });
       });
     });

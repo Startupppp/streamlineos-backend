@@ -51,7 +51,7 @@ export const subscriptionPayments = pgTable("subscription_payments", {
 
 export const coupons = pgTable("coupons", {
   id: serial("id").primaryKey(),
-  code: text("code").notNull().unique(),
+  code: text("code").notNull(),
   type: text("type").$type<"PERCENTAGE" | "FIXED">().notNull(),
   value: numeric("value", { precision: 15, scale: 2 }).notNull(),
   minPurchase: numeric("min_purchase", { precision: 15, scale: 2 }),
@@ -64,6 +64,10 @@ export const coupons = pgTable("coupons", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  // Tenant-scoped, not global: a global UNIQUE(code) lets the first org to claim
+  // a code deny it to every other org and turn the 409 into an existence oracle.
+  uniqueIndex("uniq_coupons_platform_code").on(table.code).where(sql`org_id IS NULL`),
+  uniqueIndex("uniq_coupons_org_code").on(table.orgId, table.code).where(sql`org_id IS NOT NULL`),
   index("idx_coupons_code").on(table.code),
   index("idx_coupons_is_active").on(table.isActive),
   index("idx_coupons_org").on(table.orgId),

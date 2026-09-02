@@ -15,6 +15,7 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  Logger,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
@@ -39,6 +40,13 @@ import {
 } from "../../db/schema";
 import { StorageService, type FileStreamResult, type UploadJobResult } from "./storage.service";
 import { validateMagicBytes } from "./file-signatures";
+import {
+  isForeignOrgKey,
+  isSensitiveFolderRoot,
+  ORG_NAMESPACED_KEY_FOLDERS,
+  parseStorageKey,
+  sanitizeFolder,
+} from "./storage-key";
 import { FileQuarantineService } from "./file-quarantine.service";
 import { MediaCompressionService } from "../../common/media/media-compression.service";
 import { AccessService } from "../access/access.service";
@@ -52,43 +60,9 @@ import {
 } from "./dto/storage.schemas";
 
 const MAX_UPLOAD_SIZE = 10 * 1024 * 1024;
+const TRANSFORM_TIMEOUT_MS = 30_000;
 const ORG_QUOTA_BYTES = 5 * 1024 * 1024 * 1024;
 const USER_QUOTA_BYTES = 500 * 1024 * 1024;
-
-const SENSITIVE_KEY_PREFIXES = [
-  "payroll/",
-  "payslips/",
-  "hr-documents/",
-  "documents/",
-  "hr/",
-  "onboarding/",
-  "onboarding-docs/",
-  "candidate-vault/",
-  "candidates/",
-  "esign/",
-  "e-sign/",
-  "signatures/",
-  "bank-batches/",
-  "resignations/",
-];
-
-function isSensitiveKey(fileKey: string): boolean {
-  const normalized = fileKey.replace(/^\/+/, "").toLowerCase();
-  return SENSITIVE_KEY_PREFIXES.some((prefix) => normalized.startsWith(prefix));
-}
-
-const ORG_NAMESPACED_KEY_FOLDERS = ["kb-media"];
-
-/**
- * Some folders carry the owning organisation in the key itself, so ownership is
- * provable without a table. Without this, `resolveFileOwner` returns null for
- * them and the cross-org check is skipped entirely.
- */
-function orgFromNamespacedKey(fileKey: string): string | null {
-  const [folder, orgId] = fileKey.replace(/^\/+/, "").split("/");
-  if (!folder || !orgId) return null;
-  return ORG_NAMESPACED_KEY_FOLDERS.includes(folder) ? orgId : null;
-}
 
 type FileOwner = {
   orgId: string;
@@ -97,6 +71,20 @@ type FileOwner = {
 
 function requiresDedicatedAccess(owner: FileOwner): boolean {
   return owner.access !== "GENERIC";
+}
+
+async function withDeadline<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`transform exceeded ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 const ALLOWED_UPLOAD_TYPES = [
@@ -124,6 +112,8 @@ const GENERIC_SENSITIVE_UPLOAD_PERMISSIONS: Readonly<
 @Controller("storage")
 @UseGuards(JwtAuthGuard)
 export class StorageController {
+  private readonly logger = new Logger(StorageController.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly storage: StorageService,
@@ -147,8 +137,9 @@ export class StorageController {
       throw new ServiceUnavailableException("File storage is not available");
     if (!file) throw new BadRequestException("No file provided");
 
-    const rawFolder = folderField && folderField.length > 0 ? folderField : "uploads";
-    const folder = rawFolder.replace(/[^a-zA-Z0-9_-]/g, "-");
+    const folder = sanitizeFolder(
+      folderField && folderField.length > 0 ? folderField : "uploads",
+    );
     await this.assertUploadAllowed(folder, u);
 
     if (file.size > MAX_UPLOAD_SIZE) throw new BadRequestException("File too large (max 10MB)");
@@ -172,13 +163,18 @@ export class StorageController {
     if (scanResult.status === "error")
       throw new ServiceUnavailableException("Malware scan unavailable — upload rejected");
 
-    const preGen = await this.storage.compressAndPreGenerateKey(
-      u.orgId,
-      file.buffer,
-      folder,
-      file.originalname,
-      file.mimetype,
-    );
+    const preGen = await withDeadline(
+      this.storage.compressAndPreGenerateKey(
+        u.orgId,
+        file.buffer,
+        folder,
+        file.originalname,
+        file.mimetype,
+      ),
+      TRANSFORM_TIMEOUT_MS,
+    ).catch(() => {
+      throw new UnprocessableEntityException("File could not be processed");
+    });
 
     const quarantineId = await this.quarantine.begin({
       orgId: u.orgId,
@@ -191,50 +187,106 @@ export class StorageController {
     });
 
     const { orgId, userId } = u;
-    const { key, url, compressedBuffer, compressedMimeType, size, sha256 } = preGen;
+    const { key, compressedBuffer, compressedMimeType, size, sha256 } = preGen;
     const originalMimeType = file.mimetype;
 
-    const deferred = registerAfterCommit(async () => {
-      await this.storage.uploadToKey(orgId, compressedBuffer, key, compressedMimeType);
-      await this.quarantine.markClean(quarantineId);
-
-      const thumbBuffer = await this.compression.generateThumbnail(compressedBuffer, originalMimeType);
-      if (thumbBuffer) {
-        const thumbKey = `${key}-thumb.webp`;
-        await this.storage.uploadToKey(orgId, thumbBuffer, thumbKey, "image/webp");
-      }
-
-      this.audit.log({
-        action: "file.upload",
-        userId,
+    const publish = () =>
+      this.publishUpload({
         orgId,
-        metadata: { fileKey: key, fileSize: size, mimeType: compressedMimeType },
-      });
-    });
-
-    if (!deferred) {
-      await this.storage.uploadToKey(orgId, compressedBuffer, key, compressedMimeType);
-      await this.quarantine.markClean(quarantineId);
-
-      const thumbBuffer = await this.compression.generateThumbnail(compressedBuffer, originalMimeType);
-      if (thumbBuffer) {
-        const thumbKey = `${key}-thumb.webp`;
-        await this.storage.uploadToKey(orgId, thumbBuffer, thumbKey, "image/webp");
-      }
-
-      this.audit.log({
-        action: "file.upload",
         userId,
-        orgId,
-        metadata: { fileKey: key, fileSize: size, mimeType: compressedMimeType },
+        quarantineId,
+        key,
+        body: compressedBuffer,
+        mimeType: compressedMimeType,
+        originalMimeType,
+        size,
       });
+
+    if (!registerAfterCommit(publish)) await publish();
+
+    return {
+      quarantineId,
+      status: "pending_scan",
+      key,
+      url: key,
+      mimeType: compressedMimeType,
+      size,
+      sha256,
+    };
+  }
+
+  /**
+   * Puts the object down, releases it from quarantine, then derives the
+   * preview. The order is the point: nothing is reachable until the row that
+   * gates it says clean, and a failure at any step removes both the row and the
+   * object rather than leaving one without the other.
+   */
+  private async publishUpload(job: {
+    orgId: string;
+    userId: string;
+    quarantineId: string;
+    key: string;
+    body: Buffer;
+    mimeType: string;
+    originalMimeType: string;
+    size: number;
+  }): Promise<void> {
+    try {
+      await this.storage.uploadToKey(job.orgId, job.body, job.key, job.mimeType);
+    } catch (error) {
+      await this.quarantine.markError(job.quarantineId);
+      /**
+       * The object goes first. `isKeyBlocked` ignores a soft-deleted row, so
+       * dropping the row before the bytes are gone would publish exactly the
+       * half-written file this path exists to retract.
+       */
+      await this.storage.deleteFileIfPresent(job.orgId, job.key).catch(() => false);
+      await this.quarantine.softDelete(job.quarantineId);
+      throw error;
     }
 
-    return { quarantineId, status: "pending_scan", key, url, mimeType: compressedMimeType, size, sha256 };
+    await this.quarantine.markClean(job.quarantineId);
+
+    this.audit.log({
+      action: "file.upload",
+      userId: job.userId,
+      orgId: job.orgId,
+      metadata: { fileKey: job.key, fileSize: job.size, mimeType: job.mimeType },
+    });
+
+    await this.deriveThumbnail(job.orgId, job.key, job.body, job.originalMimeType);
+  }
+
+  /**
+   * A derived preview is best-effort by construction: the original is already
+   * published, so a failed transform must clean up its own half-written object
+   * and leave the upload standing rather than failing the whole job.
+   */
+  private async deriveThumbnail(
+    orgId: string,
+    key: string,
+    body: Buffer,
+    originalMimeType: string,
+  ): Promise<void> {
+    const thumbKey = `${key}-thumb.webp`;
+    try {
+      const thumbBuffer = await withDeadline(
+        this.compression.generateThumbnail(body, originalMimeType),
+        TRANSFORM_TIMEOUT_MS,
+      );
+      if (!thumbBuffer) return;
+      await this.storage.uploadToKey(orgId, thumbBuffer, thumbKey, "image/webp");
+    } catch (error) {
+      await this.storage.deleteFileIfPresent(orgId, thumbKey).catch(() => false);
+      this.logger.warn(
+        `thumbnail transform failed: ${error instanceof Error ? error.message : String(error)}`,
+        { key },
+      );
+    }
   }
 
   @Get("download")
-  @AuthorizedInService("resolveFileOwner")
+  @AuthorizedInService("assertKeyReadable")
   @Validate({ query: downloadQuerySchema })
   async download(
     @Query() queryParams: DownloadQueryInput,
@@ -255,17 +307,7 @@ export class StorageController {
 
     const orgId = u.orgId;
 
-    const fileOwner = await this.resolveFileOwner(fileKey);
-    if (fileOwner !== null) {
-      if (fileOwner.orgId !== orgId) throw new NotFoundException("File not found");
-      if (requiresDedicatedAccess(fileOwner)) throw new ForbiddenException("Access denied");
-    } else if (isSensitiveKey(fileKey)) {
-      throw new NotFoundException("File not found");
-    }
-
-    if (await this.quarantine.isKeyBlocked(orgId, fileKey)) {
-      throw new NotFoundException("File not found");
-    }
+    await this.assertKeyReadable(fileKey, u, "File not found");
 
     this.audit.log({ action: "file.download", userId: u.userId, orgId, metadata: { fileKey } });
 
@@ -286,7 +328,7 @@ export class StorageController {
   }
 
   @Get("image")
-  @AuthorizedInService("resolveFileOwner")
+  @AuthorizedInService("assertKeyReadable")
   @Validate({ query: imageQuerySchema })
   async image(
     @Query() queryParams: ImageQueryInput,
@@ -301,13 +343,7 @@ export class StorageController {
       throw new ServiceUnavailableException("Storage not available");
     }
 
-    const fileOwner = await this.resolveFileOwner(keyParam);
-    if (fileOwner !== null) {
-      if (fileOwner.orgId !== u.orgId) throw new NotFoundException("Not found");
-      if (requiresDedicatedAccess(fileOwner)) throw new ForbiddenException("Access denied");
-    } else if (isSensitiveKey(keyParam)) {
-      throw new NotFoundException("Not found");
-    }
+    await this.assertKeyReadable(keyParam, u, "Not found");
 
     const stream = await this.openStream(u.orgId, keyParam, "Not found");
     res.setHeader("Content-Type", stream.contentType || this.storage.getMimeType(keyParam));
@@ -316,15 +352,51 @@ export class StorageController {
   }
 
   /**
-   * Storage keys aren't org-namespaced, so this is the only place cross-org ownership can be
-   * checked. Protected resource types are denied here even for the same tenant and must use
+   * The single gate every read of a raw object key passes, and it runs on the
+   * request that mints the signed URL rather than on the one that listed the
+   * file — a permission revoked between the two has to bite.
+   *
+   * Order matters. The key is refused for naming a foreign organisation before
+   * anything is looked up, because a key the client chose is an input, not a
+   * fact; only then is ownership resolved from the tables, and only then is the
+   * quarantine consulted, so an unscanned or infected object is unreachable on
+   * both the signed-URL and the streamed path.
+   */
+  private async assertKeyReadable(
+    fileKey: string,
+    user: CurrentUserContext,
+    notFoundMessage: string,
+  ): Promise<void> {
+    if (isForeignOrgKey(fileKey, user.orgId))
+      throw new NotFoundException(notFoundMessage);
+
+    const fileOwner = await this.resolveFileOwner(fileKey, user.orgId);
+    if (fileOwner !== null) {
+      if (fileOwner.orgId !== user.orgId)
+        throw new NotFoundException(notFoundMessage);
+      if (requiresDedicatedAccess(fileOwner))
+        throw new ForbiddenException("Access denied");
+    } else if (isSensitiveFolderRoot(parseStorageKey(fileKey, user.orgId).folderRoot)) {
+      throw new NotFoundException(notFoundMessage);
+    }
+
+    if (await this.quarantine.isKeyBlocked(user.orgId, fileKey))
+      throw new NotFoundException(notFoundMessage);
+  }
+
+  /**
+   * Protected resource types are denied here even for the same tenant and must use
    * their permission- and record-scoped download endpoint. Omitting a table means a file cannot be proven to belong to any
    * org: callers treat an unresolved sensitive key as a denial, so a missing table locks its
    * own file type out rather than exposing it. Returns the owning orgId, or null if untracked.
    */
-  private async resolveFileOwner(fileKey: string): Promise<FileOwner | null> {
-    const namespacedOrgId = orgFromNamespacedKey(fileKey);
-    if (namespacedOrgId) return { orgId: namespacedOrgId, access: "GENERIC" };
+  private async resolveFileOwner(
+    fileKey: string,
+    callerOrgId: string,
+  ): Promise<FileOwner | null> {
+    const { ownerOrgId, folderRoot } = parseStorageKey(fileKey, callerOrgId);
+    if (ownerOrgId !== null && ORG_NAMESPACED_KEY_FOLDERS.has(folderRoot))
+      return { orgId: ownerOrgId, access: "GENERIC" };
 
     const like = `%${fileKey}%`;
     const [doc, onboardingDoc, expense, reimbursement, handbookVersion, payslip, vaultDoc] =
@@ -353,8 +425,8 @@ export class StorageController {
     user: CurrentUserContext,
   ): Promise<void> {
     const required = GENERIC_SENSITIVE_UPLOAD_PERMISSIONS[folder];
-    const isSensitive = isSensitiveKey(`${folder}/file`);
-    if (!isSensitive) return;
+    const folderRoot = folder.split("/", 1)[0] ?? folder;
+    if (!isSensitiveFolderRoot(folderRoot)) return;
     if (user.isOrgOwner && required) return;
     if (!required) throw new ForbiddenException("Use the feature-specific upload endpoint");
 

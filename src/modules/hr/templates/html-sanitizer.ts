@@ -18,7 +18,8 @@ const ALLOWED_ATTRS: Record<string, Set<string>> = {
 };
 
 const DANGEROUS_ATTR_PATTERN = /^on/i;
-const DANGEROUS_HREF_PATTERN = /^(?:javascript|vbscript|data):/i;
+const DANGEROUS_URL_PATTERN = /^(?:javascript|vbscript|data):/i;
+const URL_BEARING_ATTRS = new Set(["href", "src"]);
 
 function sanitizeTag(tagName: string, attrsString: string): string {
   const lower = tagName.toLowerCase();
@@ -34,7 +35,7 @@ function sanitizeTag(tagName: string, attrsString: string): string {
     const value = match[2] ?? match[3] ?? match[4] ?? "";
     if (DANGEROUS_ATTR_PATTERN.test(name)) continue;
     if (!allowed.has(name)) continue;
-    if (name === "href" && DANGEROUS_HREF_PATTERN.test(value.trim())) continue;
+    if (URL_BEARING_ATTRS.has(name) && DANGEROUS_URL_PATTERN.test(value.trim())) continue;
     sanitizedAttrs.push(`${name}="${value.replace(/"/g, "&quot;")}"`);
   }
 

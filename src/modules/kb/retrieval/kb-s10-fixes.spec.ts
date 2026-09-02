@@ -54,9 +54,8 @@ describe("Fix 1 — retrieveTopSources carries chunk-side orgId predicate", () =
       getPrincipalIds: jest.fn().mockResolvedValue({ userId: "u1", roleSlugs: [] }),
     };
     const embeddings = {
-      isConfigured: jest.fn().mockReturnValue(true),
-      embedQuery: jest.fn().mockResolvedValue([0.1]),
-      toVectorLiteral: jest.fn().mockReturnValue("[0.1]"),
+      isEmbeddingConfigured: jest.fn().mockReturnValue(true),
+      embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: [0.1], vectorLiteral: "[0.1]" }),
     };
 
     const svc = new KbSearchService(
@@ -176,18 +175,15 @@ describe("Fix 2 — reindexAll uses keyset pagination", () => {
 });
 
 describe("Fix 3 — embedInBatches: batched calls, order preserved across boundary", () => {
-  it("uses embedBatch instead of per-chunk embedQuery and preserves order across batch boundary", async () => {
+  it("makes one credited gateway batch call for the whole document and preserves chunk order", async () => {
     const CHUNKS_COUNT = 65;
     const text = "word ".repeat(20000);
 
     const capturedInsertValues: Array<Array<{ chunkIndex: number; embedding: number[] }>> = [];
-    let batchStart = 0;
-    const embedBatch = jest.fn().mockImplementation((texts: string[]) => {
-      const result = texts.map((_, i) => [batchStart + i]);
-      batchStart += texts.length;
-      return Promise.resolve(result);
-    });
-    const embedQuery = jest.fn();
+    const embedBatchWithCredit = jest.fn().mockImplementation(({ texts }: { texts: string[] }) =>
+      Promise.resolve({ ok: true, vectors: texts.map((_, i) => [i]) }),
+    );
+    const embedQueryWithCredit = jest.fn();
 
     const deleteWhere = jest.fn().mockResolvedValue([]);
     const insertValues = jest.fn().mockImplementation((vals: unknown) => {
@@ -209,21 +205,22 @@ describe("Fix 3 — embedInBatches: batched calls, order preserved across bounda
     extractMocks.isExtractableMime.mockReturnValue(true);
 
     const storage = { getFileStream: jest.fn().mockResolvedValue({ body: {} }) } as never;
-    const embeddings = {
-      isConfigured: jest.fn().mockReturnValue(true),
-      embedBatch,
-      embedQuery,
+    const gateway = {
+      isEmbeddingConfigured: jest.fn().mockReturnValue(true),
+      embedBatchWithCredit,
+      embedQueryWithCredit,
     } as never;
-    const svc = new KbAttachmentIndexingService(db, embeddings, storage);
+    const svc = new KbAttachmentIndexingService(db, gateway, storage);
 
     await svc.indexSource("org-1", 1, text);
 
-    expect(embedQuery).not.toHaveBeenCalled();
-    expect(embedBatch).toHaveBeenCalled();
-
-    const allCalls = embedBatch.mock.calls as string[][];
-    for (const call of allCalls)
-      expect(call[0].length).toBeLessThanOrEqual(64);
+    expect(embedQueryWithCredit).not.toHaveBeenCalled();
+    expect(embedBatchWithCredit).toHaveBeenCalledTimes(1);
+    expect(embedBatchWithCredit).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: "org-1", feature: "kb.indexing", charge: true }),
+    );
+    const batchCall = embedBatchWithCredit.mock.calls[0]?.[0] as { texts: string[] };
+    expect(batchCall.texts.length).toBeGreaterThanOrEqual(CHUNKS_COUNT);
 
     const rows = capturedInsertValues[0];
     if (rows && rows.length >= 65) {
@@ -269,15 +266,15 @@ describe("Fix 4 — indexPageDocument: delete-before-insert in transaction, ACL 
     extractMocks.extractAttachmentText.mockResolvedValue(shortText);
     extractMocks.isExtractableMime.mockReturnValue(true);
 
-    const embedBatch = jest.fn().mockImplementation((texts: string[]) =>
-      Promise.resolve(texts.map(() => [0.5])),
+    const embedBatchWithCredit = jest.fn().mockImplementation(({ texts }: { texts: string[] }) =>
+      Promise.resolve({ ok: true, vectors: texts.map(() => [0.5]) }),
     );
-    const embeddings = {
-      isConfigured: jest.fn().mockReturnValue(true),
-      embedBatch,
+    const gateway = {
+      isEmbeddingConfigured: jest.fn().mockReturnValue(true),
+      embedBatchWithCredit,
     } as never;
 
-    const svc = new KbAttachmentIndexingService(db, embeddings, {} as never);
+    const svc = new KbAttachmentIndexingService(db, gateway, {} as never);
     const result = await svc.indexPageDocument("org-1", 7, Buffer.from("pdf"), "application/pdf", "doc.pdf");
 
     expect(result.chunks).toBeGreaterThan(0);
@@ -307,7 +304,7 @@ describe("Fix 4 — indexPageDocument: delete-before-insert in transaction, ACL 
 
     extractMocks.isExtractableMime.mockReturnValue(true);
 
-    const embeddings = { isConfigured: jest.fn().mockReturnValue(true) } as never;
+    const embeddings = { isEmbeddingConfigured: jest.fn().mockReturnValue(true) } as never;
     const svc = new KbAttachmentIndexingService(db, embeddings, {} as never);
     const result = await svc.indexPageDocument("org-1", 99, Buffer.from(""), "application/pdf", "f.pdf");
 

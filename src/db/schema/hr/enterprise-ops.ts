@@ -117,7 +117,7 @@ export const hrEmergencyEvents = pgTable("hr_emergency_events", {
   locationId: text("location_id"),
   status: hrEmergencyEventStatusEnum("status").notNull().default("active"),
   message: text("message").notNull(),
-  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }).notNull(),
+  createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   resolvedAt: timestamp("resolved_at"),
@@ -185,7 +185,7 @@ export const hrSimulations = pgTable("hr_simulations", {
   type: hrSimulationTypeEnum("type").notNull(),
   input: jsonb("input").notNull().$type<Record<string, unknown>>(),
   result: jsonb("result").notNull().$type<Record<string, unknown>>(),
-  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }).notNull(),
+  createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   unique("uniq_hr_simulations_org_id").on(t.orgId, t.id),

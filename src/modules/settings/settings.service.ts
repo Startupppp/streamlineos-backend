@@ -25,6 +25,7 @@ import { assertMayGrantRole } from "../../common/rbac/assert-may-grant-role";
 import { syncStructuralRoleAssignment } from "../../common/rbac/sync-structural-role";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import {
   VALID_API_KEY_SCOPES,
@@ -202,6 +203,11 @@ export class SettingsService {
       })
       .where(eq(organizations.id, u.orgId));
 
+    await Promise.all([
+      this.cache.invalidateForOrg(u.orgId, "org:settings"),
+      this.cache.invalidateNamespaceForOrg(u.orgId, "org:profile"),
+    ]);
+
     return { success: true, flag: input.flag, enabled: input.enabled };
   }
 
@@ -343,7 +349,10 @@ export class SettingsService {
       await syncStructuralRoleAssignment(tx, u.orgId, member.id, role);
     });
 
-    await bustMembershipStatusCache(this.cache, targetUserId, u.orgId);
+    await Promise.all([
+      bustMembershipStatusCache(this.cache, targetUserId, u.orgId),
+      this.cache.invalidate(CACHE_KEYS.userSession(targetUserId)),
+    ]);
 
     return { success: true, userId: targetUserId, role };
   }

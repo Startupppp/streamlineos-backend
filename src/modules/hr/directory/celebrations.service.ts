@@ -133,8 +133,10 @@ export class CelebrationsService {
 
   getCelebrations(orgId: string, actorUserId: string, scope: DataScope) {
     const today = new Date().toISOString().slice(0, 10);
-    return this.cache.cached(
-      `hr:celebrations:${orgId}:${actorUserId}:${scope}:${today}`,
+    return this.cache.cachedVersionedForOrg(
+      orgId,
+      "hr:celebrations",
+      `${actorUserId}:${scope}:${today}`,
       () => this.buildCelebrations(orgId, actorUserId, scope),
       CACHE_TTL.MEDIUM,
     );

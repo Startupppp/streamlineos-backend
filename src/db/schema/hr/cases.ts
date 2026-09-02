@@ -136,7 +136,7 @@ export const hrDisciplinaryActions = pgTable("hr_disciplinary_actions", {
   actionType: hrDisciplinaryActionTypeEnum("action_type").notNull(),
   letterRenderId: integer("letter_render_id"),
   effectiveDate: timestamp("effective_date").notNull(),
-  issuedBy: text("issued_by").references(() => users.id, { onDelete: "set null" }).notNull(),
+  issuedBy: text("issued_by").references(() => users.id).notNull(),
   note: text("note"),
   acknowledgedAt: timestamp("acknowledged_at"),
   acknowledgedBy: text("acknowledged_by").references(() => users.id, { onDelete: "set null" }),

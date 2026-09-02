@@ -6,8 +6,14 @@
  * sequential scan -- an isolation cost, not a tuning preference. Reads the
  * Drizzle schema, so it needs no database and can gate every commit.
  *
- * Usage:  node src/scripts/check-tenant-indexes.mjs [--self-test]
- * Exit:   0 clean · 1 a table has none · 2 the parser found implausibly few
+ * The default mode reads the Drizzle declarations, which is what a commit can gate on. It is not
+ * the whole truth: 554 tenant-anchor `unique(org_id, id)` constraints exist only in migrations, so
+ * a table can be red here and indexed in the catalog. `--db` asks a bootstrapped database instead,
+ * via TENANT_RELATIONSHIP_DB_URL / DIRECT_DATABASE_URL / DATABASE_URL, and that answer is the one
+ * that describes what the planner will actually do under RLS.
+ *
+ * Usage:  node src/scripts/check-tenant-indexes.mjs [--self-test|--db]
+ * Exit:   0 clean · 1 a table has none · 2 the parser found implausibly few / no reachable target
  */
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
@@ -15,6 +21,7 @@ import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
+const DB_MODE = args.includes("--db");
 
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
@@ -60,10 +67,13 @@ function propertyDefinition(src, from) {
   return src.slice(from);
 }
 
-// Parse every pgTable declaration in one schema source file
+// Parse every table declaration in one schema source file. The Build module declares its 83
+// tables as `build.table(...)` / `buildEvents.table(...)` through pgSchema(), so a `pgTable(`-only
+// pattern reported a clean schema while never seeing a whole Postgres schema. The sibling gates
+// check-tenant-relationships and check-drop-column-safety already use this two-form pattern.
 export function parseTables(src, filePath) {
   const tables = [];
-  const decl = /export\s+const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*pgTable\(/g;
+  const decl = /export\s+const\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(?:pgTable|[A-Za-z_$][A-Za-z0-9_$]*\.table)\(/g;
 
   for (const match of src.matchAll(decl)) {
     const open = match.index + match[0].length - 1;
@@ -177,6 +187,24 @@ if (args.includes("--self-test")) {
     `  workWeekStart: integer("work_week_start").notNull().default(1),`,
     `});`,
     ``,
+    // The Build module's form: pgSchema("build") then build.table(...). 83 real tables look
+    // like this and a pgTable-only pattern reported the whole schema as clean.
+    `export const buildScopedGood = build.table("build_scoped_good", {`,
+    `  id: uuid("id").primaryKey(),`,
+    `  orgId: text("org_id").notNull(),`,
+    `  status: text("status"),`,
+    `}, (table) => [`,
+    `  index("idx_build_scoped_good_org_status").on(table.orgId, table.status),`,
+    `]);`,
+    ``,
+    `export const buildScopedBad = buildEvents.table("build_scoped_bad", {`,
+    `  id: uuid("id").primaryKey(),`,
+    `  orgId: text("org_id").notNull(),`,
+    `  ticketId: integer("ticket_id"),`,
+    `}, (table) => [`,
+    `  index("idx_build_scoped_bad_ticket").on(table.ticketId),`,
+    `]);`,
+    ``,
     // Not a tenant table
     `export const globalCatalog = pgTable("global_catalog", {`,
     `  id: uuid("id").primaryKey(),`,
@@ -192,8 +220,11 @@ if (args.includes("--self-test")) {
   };
 
   const checks = {
-    findsAllSevenTenantTables: parsed.length === 7,
+    findsAllNineTenantTables: parsed.length === 9,
     ignoresNonTenantTable: !byName.has("global_catalog"),
+    readsPgSchemaTableForm: byName.has("build_scoped_good"),
+    pgSchemaLeadingIndexPasses: leads("build_scoped_good") === true,
+    pgSchemaTrailingTenantFails: leads("build_scoped_bad") === false,
     columnLevelPrimaryKeyCounts: leads("tenant_is_the_pk") === true,
     columnLevelUniqueCounts: leads("tenant_is_unique") === true,
     // The id column's own .primaryKey() must not be mistaken for the tenant's
@@ -213,6 +244,100 @@ if (args.includes("--self-test")) {
   const pass = Object.values(checks).every(Boolean);
   process.stdout.write(JSON.stringify({ selfTest: true, pass, checks }, null, 2) + "\n");
   process.exit(pass ? 0 : 1);
+}
+
+// -- pg_catalog mode ---------------------------------------------------------
+
+const MIN_CATALOG_TENANT_TABLES = 400;
+
+async function runCatalogMode() {
+  const { default: postgres } = await import("postgres");
+  try {
+    const dotenv = await import("dotenv");
+    dotenv.config({ path: resolve(BACKEND_ROOT, ".env") });
+  } catch {
+    /* .env is optional when the URL is already in the environment */
+  }
+
+  const rawUrl =
+    process.env.TENANT_RELATIONSHIP_DB_URL ||
+    process.env.DIRECT_DATABASE_URL ||
+    process.env.DATABASE_URL;
+  if (!rawUrl) {
+    process.stderr.write("--db needs TENANT_RELATIONSHIP_DB_URL, DIRECT_DATABASE_URL or DATABASE_URL.\n");
+    process.exit(2);
+  }
+  const cleanUrl = rawUrl.replace(/'/g, "");
+  if (/\/neondb(\?|$)/.test(cleanUrl) || /\/cell2(\?|$)/.test(cleanUrl)) {
+    process.stderr.write("Refusing to read neondb or cell2 — point at a scratch target.\n");
+    process.exit(2);
+  }
+
+  const sql = postgres(cleanUrl, { prepare: false, max: 1, onnotice: () => {}, connect_timeout: 10, idle_timeout: 15 });
+  try {
+    const [{ target }] = await sql`SELECT current_database() AS target`;
+    const rows = await sql`
+      WITH org_tables AS (
+        SELECT c.oid AS reloid, n.nspname, c.relname,
+               (SELECT a.attnum FROM pg_attribute a
+                 WHERE a.attrelid = c.oid AND NOT a.attisdropped
+                   AND a.attname = ANY(${TENANT_COLUMNS})
+                 ORDER BY (a.attname = 'org_id') DESC LIMIT 1) AS org_attnum
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind IN ('r', 'p')
+          AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+          AND EXISTS (
+            SELECT 1 FROM pg_attribute a
+            WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
+              AND a.attname = ANY(${TENANT_COLUMNS})
+          )
+      )
+      SELECT t.nspname, t.relname,
+             EXISTS (
+               SELECT 1 FROM pg_index i
+               WHERE i.indrelid = t.reloid AND i.indisvalid
+                 AND (i.indkey::int2[])[0] = t.org_attnum
+             ) AS has_leading,
+             (SELECT count(*)::int FROM pg_index i2 WHERE i2.indrelid = t.reloid) AS index_count
+      FROM org_tables t
+      ORDER BY t.nspname, t.relname`;
+
+    if (rows.length < MIN_CATALOG_TENANT_TABLES) {
+      process.stderr.write(
+        `Vacuity guard — ${target} has only ${rows.length} tenant table(s) (expected >= ${MIN_CATALOG_TENANT_TABLES}). ` +
+          `An unbootstrapped database has no index coverage to be missing.\n`,
+      );
+      process.exit(2);
+    }
+
+    const missing = rows.filter((r) => !r.has_leading && !NOT_TENANT_PARTITIONED.has(r.relname));
+    const excused = rows.filter((r) => !r.has_leading && NOT_TENANT_PARTITIONED.has(r.relname));
+
+    console.log(`Mode                    pg_catalog (${target})`);
+    console.log(`Tenant tables           ${rows.length}`);
+    console.log(`Leading tenant index    ${rows.length - missing.length - excused.length}`);
+    console.log("");
+    for (const r of excused)
+      console.log(`  SKIP  ${r.nspname}.${r.relname}  — ${NOT_TENANT_PARTITIONED.get(r.relname)}`);
+
+    if (missing.length === 0) {
+      console.log("OK — every tenant table in the catalog has an index leading with its tenant column.");
+      return 0;
+    }
+    console.error("NO LEADING TENANT INDEX — the RLS qual falls back to a sequential scan:");
+    for (const r of missing)
+      console.error(`  FAIL  ${r.nspname}.${r.relname}  — ${r.index_count} index(es), none leading with the tenant column`);
+    console.error("");
+    console.error(`FAIL — ${missing.length} of ${rows.length} tenant tables have no leading tenant index.`);
+    return 1;
+  } finally {
+    await sql.end();
+  }
+}
+
+if (DB_MODE) {
+  process.exit(await runCatalogMode());
 }
 
 // -- run ---------------------------------------------------------------------

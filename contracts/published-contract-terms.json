@@ -1,0 +1,564 @@
+{
+  "$schema": "hand-authored input to src/scripts/generate-api-contract-registry.mjs",
+  "schemaVersion": "1.0",
+  "$comment": [
+    "Human declarations about PUBLISHED contracts. This file is hand-authored; contracts/api-contract-registry.json",
+    "is generated OUTPUT and is never hand-edited. A declaration made here reaches the registry by running",
+    "`pnpm registry:generate`.",
+    "Every entry states what the code actually does, verified by reading the handler named in `evidence`.",
+    "`at-least-once-unfenced` is a finding, not an endorsement: it records that the operation has no server-side",
+    "replay fence, so a consumer that retries after a timeout must expect a duplicate. Recording it truthfully is",
+    "what lets the gate pass while leaving the defect visible; inventing a fence that does not exist would not.",
+    "Note that @Idempotent(command) is inert on unauthenticated routes -- idempotency.interceptor.ts falls through",
+    "to next.handle() unfenced when the request carries no orgId/userId -- so no @Public() route can be made",
+    "idempotent by adding that decorator alone.",
+    "`webhookEvents` declares subscribable outbound event names that no literal dispatch site spells out -- a dispatcher called with a variable, or an enum of subscribable triggers. Names emitted from a literal call site are discovered by the scanner and must NOT be repeated here."
+  ],
+  "idempotencyModes": {
+    "safe": "Read-only. Derived automatically from the HTTP method; never declared here.",
+    "idempotency-key": "Fenced by @Idempotent(command) on command_fences (org, audience, Idempotency-Key). Derived from x-idempotent; never declared here.",
+    "provider-signature-and-event-id": "Signature verified, then the provider's event id is stored under a unique constraint. A redelivery is a no-op.",
+    "provider-signature-idempotent-effect": "Signature verified; no event id is stored, but the write converges (upsert or re-sync).",
+    "single-use-token": "A conditional UPDATE ... WHERE <still-unused> RETURNING consumes the token exactly once; zero rows is an error.",
+    "single-use-token-racy": "The same intent, expressed as a read-then-write. Sequential replays are refused, concurrent ones are not fenced.",
+    "natural-key-upsert": "The write is an upsert on a natural key, so replays converge without a token being consumed.",
+    "advisory-dedup-unfenced": "A SELECT-then-INSERT dedupe with no unique index behind it. Racy under concurrency.",
+    "replayable-write": "An in-place write that a replay overwrites with the same values.",
+    "optimistic-concurrency": "Lost-update protection via an expected-version field. Not replay protection.",
+    "captcha-single-use": "The provider's single-use CAPTCHA token is the de facto fence.",
+    "no-persistence-rate-limited": "No business write; a replay costs budget, not data.",
+    "at-least-once-unfenced": "No server-side dedupe. A retry duplicates. Recorded so consumers and reviewers can see it."
+  },
+  "operations": {
+    "PATCH /agent/v1/tickets/{ticketId}": {
+      "idempotency": {
+        "mode": "optimistic-concurrency",
+        "key": "expectedUpdatedAt",
+        "replay": "expectedUpdatedAt is compared to the stored updatedAt and a mismatch raises a conflict. This is lost-update protection, not replay protection, and the field is optional \u2014 an agent that omits it gets neither."
+      },
+      "evidence": "src/modules/build/core/projects-tickets-update.service.ts"
+    },
+    "PATCH /public/offer/{token}/respond": {
+      "idempotency": {
+        "mode": "single-use-token-racy",
+        "key": "offer acceptance token",
+        "replay": "A pre-read outside the transaction refuses any offer whose status is not SENT or VIEWED (409), and the write moves it to a terminal status. The guard is a read-then-write, not a conditional UPDATE, so concurrent responses are not fenced."
+      },
+      "evidence": "src/modules/public/public-offers.service.ts"
+    },
+    "PATCH /public/surveys/{collectorToken}/session/{sessionId}": {
+      "idempotency": {
+        "mode": "replayable-write",
+        "key": "response session id",
+        "replay": "Answers are deleted and re-inserted per question id inside one transaction, so replaying the same payload converges. Refused once the session leaves 'in_progress'."
+      },
+      "evidence": "src/modules/surveys/survey-response.service.ts"
+    },
+    "PATCH /public/whiteboard-links/{token}": {
+      "idempotency": {
+        "mode": "replayable-write",
+        "key": "share token",
+        "replay": "Last-write-wins replacement of the whole scene on project_whiteboards; replaying the same payload converges on the same state. The share token is reusable and the write is unauthenticated when publicAccess='editor'."
+      },
+      "evidence": "src/modules/build/execution/whiteboard-sharing.service.ts"
+    },
+    "POST /agent/v1/projects": {
+      "idempotency": {
+        "mode": "natural-key-upsert",
+        "key": "caller-supplied project key",
+        "replay": "When the caller supplies `key`, uniq_projects_org_key rejects the duplicate with 409. When `key` is omitted the key is randomly generated, so a retry silently creates a second project \u2014 callers that need retry safety must send an explicit key."
+      },
+      "evidence": "src/modules/agent-access/agent.controller.ts"
+    },
+    "POST /agent/v1/projects/{projectId}/tickets": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into tickets with a sequential ticket number. A retry creates a second ticket. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/build/core/projects-tickets-create.service.ts"
+    },
+    "POST /agent/v1/tickets/{ticketId}/comments": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into ticket_comments. A retry creates a duplicate comment. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/build/core/projects-ticket-comments.service.ts"
+    },
+    "POST /careers/apply": {
+      "idempotency": {
+        "mode": "advisory-dedup-unfenced",
+        "key": null,
+        "replay": "A SELECT on (candidate_id, job_posting_id) returns {alreadyApplied:true} instead of inserting, but no unique index backs it \u2014 concurrent retries can both insert."
+      },
+      "evidence": "src/modules/careers/careers.service.ts"
+    },
+    "POST /crm/consent/unsubscribe": {
+      "idempotency": {
+        "mode": "natural-key-upsert",
+        "key": null,
+        "replay": "The unsubscribe token is HMAC-signed and stateless \u2014 it is never marked consumed \u2014 but the write is onConflictDoUpdate on (org_id, contact_id, channel), so replays converge on the same consent row."
+      },
+      "evidence": "src/modules/crm/consent/crm-consent.controller.ts"
+    },
+    "POST /crm/mailboxes/push": {
+      "idempotency": {
+        "mode": "provider-signature-idempotent-effect",
+        "key": null,
+        "replay": "x-mailbox-signature verified against crm_mailbox_sync.push_secret. The handler re-runs a watermarked sync rather than writing, so a duplicate push converges instead of duplicating."
+      },
+      "evidence": "src/modules/ingress/adapters/crm-mailbox.controller.ts"
+    },
+    "POST /csat/{surveyId}/responses": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Unauthenticated insert into csat_responses keyed only on a numeric survey id \u2014 no token, no dedupe, no handler rate limit. A retry creates a second response. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/csat/csat.service.ts"
+    },
+    "POST /integrations/git/webhook": {
+      "idempotency": {
+        "mode": "provider-signature-and-event-id",
+        "key": "x-github-delivery / x-gitlab-event-uuid",
+        "replay": "GitHub HMAC or GitLab token verified, then the delivery id is inserted into git_webhook_seen_deliveries with onConflictDoNothing on uniq_git_webhook_seen_deliveries_delivery. If the provider omits the delivery header the dedupe is skipped and the delivery is processed at-least-once."
+      },
+      "evidence": "src/modules/integrations/git/integrations-git.controller.ts"
+    },
+    "POST /leads/ingest": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into leads with no conflict target and no natural key; ApiKeyGuard authenticates but does not deduplicate. A retried ingest creates a second lead. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/party/party-legacy-leads.ts"
+    },
+    "POST /notifications/unsubscribe/{token}": {
+      "idempotency": {
+        "mode": "natural-key-upsert",
+        "key": null,
+        "replay": "Stateless HMAC token, not single-use. The write is onConflictDoNothing on (org_id, email, channel) in email_suppressions, so replays converge."
+      },
+      "evidence": "src/modules/email/unsubscribe.controller.ts"
+    },
+    "POST /organization/invitations/accept": {
+      "idempotency": {
+        "mode": "single-use-token",
+        "key": "invitation token",
+        "replay": "UPDATE invitations SET status='ACCEPTED' WHERE id=? AND status='PENDING' AND accepted_at IS NULL RETURNING; zero rows raises 404. The token is matched by tokenHash and is consumed exactly once."
+      },
+      "evidence": "src/modules/organization/core/invitation-acceptance.service.ts"
+    },
+    "POST /organization/invitations/decline": {
+      "idempotency": {
+        "mode": "single-use-token",
+        "key": "invitation token",
+        "replay": "UPDATE invitations SET status='DECLINED' WHERE id=? AND status='PENDING' RETURNING; zero rows raises 404. Consumed exactly once."
+      },
+      "evidence": "src/modules/organization/core/invitation-acceptance.service.ts"
+    },
+    "POST /platform/contact": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into platform_messages with a fresh random public code; rate limiter public:contact only. A retry creates a second message. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/platform/platform.service.ts"
+    },
+    "POST /portal/auth/accept-invitation": {
+      "idempotency": {
+        "mode": "single-use-token-racy",
+        "key": "portal invitation token",
+        "replay": "The pre-read requires status='PENDING', but the consuming UPDATE portal_invitations SET status='ACCEPTED' carries no status predicate and no affected-row check. Sequential replays are refused by the read; concurrent ones are not fenced."
+      },
+      "evidence": "src/modules/portal/auth/portal-auth.service.ts"
+    },
+    "POST /portal/v1/projects/{projectId}/change-requests": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into change_requests; auth is the portal session token only. A retry creates a duplicate change request. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/portal/client/portal-client.service.ts"
+    },
+    "POST /public/careers/{orgSlug}/jobs/{jobId}/apply": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "The candidate row is onConflictDoNothing on (org_id, email), but the candidate_applications insert is unconditional and mints a new tracking token. A retry creates a duplicate application. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/public/public-careers.service.ts"
+    },
+    "POST /public/contact": {
+      "idempotency": {
+        "mode": "captcha-single-use",
+        "key": "cf-turnstile-token",
+        "replay": "Turnstile token verified server-side and single-use provider-side; nothing is persisted, the effect is one outbound email. A replay with a fresh token re-sends it."
+      },
+      "evidence": "src/modules/public/public.controller.ts"
+    },
+    "POST /public/feedbucket/{publicKey}": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into feedbucket_submissions with no conflict target; auth is the widget public key. A retry creates a second submission. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/feedbucket/feedbucket-public.service.ts"
+    },
+    "POST /public/feedbucket/{publicKey}/ai-assist": {
+      "idempotency": {
+        "mode": "no-persistence-rate-limited",
+        "key": null,
+        "replay": "No business write; rate limiters feedbucket:ai-assist and feedbucket:ai-assist-daily only. A replay spends model budget."
+      },
+      "evidence": "src/modules/feedbucket/feedbucket-public.controller.ts"
+    },
+    "POST /public/forms/{token}/submit": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into form_submissions; the collector token is reusable and never consumed. A retry creates a second submission. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/public/public-forms.service.ts"
+    },
+    "POST /public/hr-forms/{orgId}/{slug}/submit": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Validated then inserted as a new submission row; no natural key and no token consumption. A retry creates a second submission. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/hr/forms/hr-forms-submissions.service.ts"
+    },
+    "POST /public/intake/{projectId}": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into intake_items keyed only on the project id. A retry creates a second item. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/public/intake.service.ts"
+    },
+    "POST /public/interview-booking/{token}": {
+      "idempotency": {
+        "mode": "single-use-token",
+        "key": "booking link token",
+        "replay": "UPDATE interview_booking_links SET status='booked' WHERE id=? AND status='pending' RETURNING; zero rows raises 410 Gone. Consumed exactly once."
+      },
+      "evidence": "src/modules/hr/interviews/hr-interview-booking.service.ts"
+    },
+    "POST /public/kb/ask": {
+      "idempotency": {
+        "mode": "no-persistence-rate-limited",
+        "key": null,
+        "replay": "No business write; rate limiter ai:public-kb-ask only. A replay is safe for data but spends model budget."
+      },
+      "evidence": "src/modules/ai/core/controllers/kb-rag.controller.ts"
+    },
+    "POST /public/kb/stream-ask": {
+      "idempotency": {
+        "mode": "no-persistence-rate-limited",
+        "key": null,
+        "replay": "No business write; rate limiter ai:public-kb-ask only. A replay is safe for data but spends model budget."
+      },
+      "evidence": "src/modules/ai/core/controllers/kb-rag.controller.ts"
+    },
+    "POST /public/kb/{slug}/feedback": {
+      "idempotency": {
+        "mode": "natural-key-upsert",
+        "key": null,
+        "replay": "onConflictDoNothing on (org_id, article_id, visitor_id), counter bumped only when a row was inserted. visitor_id falls back to the client IP, so a replay from the same visitor is absorbed."
+      },
+      "evidence": "src/modules/public/kb.service.ts"
+    },
+    "POST /public/lead-form/{token}": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare mirrored-lead insert; the collector token is reusable. A retry creates a second lead. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/public/crm.service.ts"
+    },
+    "POST /public/nps/{token}": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into nps_responses; the public token is reusable and never consumed. A retry creates a second response. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/public/crm.service.ts"
+    },
+    "POST /public/referrals/register": {
+      "idempotency": {
+        "mode": "advisory-dedup-unfenced",
+        "key": null,
+        "replay": "A SELECT on external_referrers returns the existing referral token instead of inserting. Advisory only; no unique constraint is quoted."
+      },
+      "evidence": "src/modules/public/public-referrers.service.ts"
+    },
+    "POST /public/referrals/{token}/submit": {
+      "idempotency": {
+        "mode": "advisory-dedup-unfenced",
+        "key": null,
+        "replay": "A SELECT on (referrer_id, candidate_id) returns {alreadyReferred:true} instead of inserting. Advisory only; no unique index backs it."
+      },
+      "evidence": "src/modules/public/public-referrers.service.ts"
+    },
+    "POST /public/roadmap/feedback": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into feedback_posts. A retry creates a second post. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/public/roadmap.service.ts"
+    },
+    "POST /public/roadmap/vote": {
+      "idempotency": {
+        "mode": "natural-key-upsert",
+        "key": null,
+        "replay": "insert(roadmap_votes) with onConflictDoNothing on the voter key; the vote counter is incremented only when a row was actually inserted, so a replay neither double-votes nor double-counts."
+      },
+      "evidence": "src/modules/public/roadmap.service.ts"
+    },
+    "POST /public/sign/forms/{slug}/submit": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Each submission instantiates a fresh envelope from the template; the slug is a reusable public form address, capped only by maxSubmissions. A retry creates a second envelope. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/e-sign/sign-public-form.service.ts"
+    },
+    "POST /public/sign/{token}/adopt-signature": {
+      "idempotency": {
+        "mode": "replayable-write",
+        "key": "signing token",
+        "replay": "Stores the adopted signature on the recipient row in place; a replay overwrites it."
+      },
+      "evidence": "src/modules/e-sign/sign-public.service.ts"
+    },
+    "POST /public/sign/{token}/auth": {
+      "idempotency": {
+        "mode": "replayable-write",
+        "key": "signing token",
+        "replay": "Authenticates the recipient against the current OTP and updates the recipient row in place; replayable without creating additional state."
+      },
+      "evidence": "src/modules/e-sign/sign-public.service.ts"
+    },
+    "POST /public/sign/{token}/complete": {
+      "idempotency": {
+        "mode": "single-use-token",
+        "key": "signing token",
+        "replay": "UPDATE sign_recipients SET status='completed', token_revoked_at=now() WHERE id=? AND status='authenticated' RETURNING; zero rows raises 400 'already completed'. The signing token is revoked by the same statement."
+      },
+      "evidence": "src/modules/e-sign/sign-public.service.ts"
+    },
+    "POST /public/sign/{token}/consent": {
+      "idempotency": {
+        "mode": "replayable-write",
+        "key": "signing token",
+        "replay": "Records e-signature consent on the recipient row in place; a replay writes the same values."
+      },
+      "evidence": "src/modules/e-sign/sign-public.service.ts"
+    },
+    "POST /public/sign/{token}/decline": {
+      "idempotency": {
+        "mode": "single-use-token",
+        "key": "signing token",
+        "replay": "UPDATE sign_recipients SET status='declined', token_revoked_at=now() WHERE id=? AND status=<observed> RETURNING; zero rows raises 400. The signing token is revoked by the same statement."
+      },
+      "evidence": "src/modules/e-sign/sign-public.service.ts"
+    },
+    "POST /public/sign/{token}/fields/{fieldId}": {
+      "idempotency": {
+        "mode": "replayable-write",
+        "key": "signing token",
+        "replay": "Field value upsert keyed on the recipient and field; a replay overwrites the same field rather than appending."
+      },
+      "evidence": "src/modules/e-sign/sign-public.service.ts"
+    },
+    "POST /public/sign/{token}/request-otp": {
+      "idempotency": {
+        "mode": "replayable-write",
+        "key": "signing token",
+        "replay": "Re-issues a one-time code against the same recipient row; a replay supersedes the previous code rather than creating a second signature."
+      },
+      "evidence": "src/modules/e-sign/sign-public.service.ts"
+    },
+    "POST /public/surveys/live/{sessionCode}/answer": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into survey_answers, guarded only by the session's current question. A retry records a second answer. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/surveys/survey-live-participant.service.ts"
+    },
+    "POST /public/surveys/live/{sessionCode}/join": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into survey_response_sessions returning a participant token. A retry creates a second participant. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/surveys/survey-live-participant.service.ts"
+    },
+    "POST /public/surveys/{collectorToken}/session/{sessionId}/submit": {
+      "idempotency": {
+        "mode": "single-use-token-racy",
+        "key": "response session id",
+        "replay": "Inside the transaction the session status must be 'in_progress' or the request is refused with 400 'already submitted'; the check is a read-then-write, not a conditional UPDATE. Answer writes are delete-then-insert per question and therefore replay-safe."
+      },
+      "evidence": "src/modules/surveys/survey-response.service.ts"
+    },
+    "POST /public/surveys/{collectorToken}/start": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into survey_response_sessions. A retry creates a second session. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/surveys/survey-response.service.ts"
+    },
+    "POST /public/waitlist": {
+      "idempotency": {
+        "mode": "natural-key-upsert",
+        "key": null,
+        "replay": "onConflictDoUpdate on platform_waitlist.email \u2014 a replay updates the same row rather than creating a second entry."
+      },
+      "evidence": "src/modules/public/waitlist.service.ts"
+    },
+    "POST /support/chat/{orgId}/start": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Mints a fresh inbound secret and creates a new support ticket on every call. A retry creates a second ticket. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/support/core/support-channels.service.ts"
+    },
+    "POST /support/chat/{orgId}/{sessionToken}/messages": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Resolves the ticket by session token and appends unconditionally. A retry appends a duplicate message. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
+      },
+      "evidence": "src/modules/support/core/support-channels.service.ts"
+    },
+    "POST /support/csat/{token}": {
+      "idempotency": {
+        "mode": "single-use-token",
+        "key": "csat request token",
+        "replay": "UPDATE support_csat_requests SET responded_at=now() WHERE id=? AND org_id=? AND responded_at IS NULL RETURNING; zero rows raises 409. Consumed exactly once."
+      },
+      "evidence": "src/modules/support/core/support-csat.controller.ts"
+    },
+    "POST /support/inbound/email/{orgId}": {
+      "idempotency": {
+        "mode": "advisory-dedup-unfenced",
+        "key": "provider message id",
+        "replay": "x-webhook-secret compared to support_channels.inbound_secret (401). Dedupe is a SELECT-then-INSERT on support_ticket_messages.source_message_id backed by idx_support_ticket_messages_source_message, which is NOT unique, so two concurrent redeliveries can both insert."
+      },
+      "evidence": "src/modules/support/core/support-channels.controller.ts"
+    },
+    "POST /support/inbound/sms/{orgId}": {
+      "idempotency": {
+        "mode": "advisory-dedup-unfenced",
+        "key": "provider message id",
+        "replay": "x-webhook-secret compared to support_channels.inbound_secret (401). Dedupe is a SELECT-then-INSERT on support_ticket_messages.source_message_id backed by idx_support_ticket_messages_source_message, which is NOT unique, so two concurrent redeliveries can both insert."
+      },
+      "evidence": "src/modules/support/core/support-channels.controller.ts"
+    },
+    "POST /support/inbound/whatsapp/{orgId}": {
+      "idempotency": {
+        "mode": "advisory-dedup-unfenced",
+        "key": "provider message id",
+        "replay": "x-webhook-secret compared to support_channels.inbound_secret (401). Dedupe is a SELECT-then-INSERT on support_ticket_messages.source_message_id backed by idx_support_ticket_messages_source_message, which is NOT unique, so two concurrent redeliveries can both insert."
+      },
+      "evidence": "src/modules/support/core/support-channels.controller.ts"
+    },
+    "POST /webhooks/email/{provider}": {
+      "idempotency": {
+        "mode": "provider-signature-idempotent-effect",
+        "key": null,
+        "replay": "Svix signature (svix-id/svix-timestamp/svix-signature) verified before parsing. No provider event id is stored; the effect is an email_suppressions upsert with onConflictDoNothing on (email, channel), so a redelivery converges to the same state."
+      },
+      "evidence": "src/modules/email/email-webhook.controller.ts"
+    },
+    "POST /webhooks/payments/{providerKey}/{environment}/{orgId}": {
+      "idempotency": {
+        "mode": "provider-signature-and-event-id",
+        "key": "provider event id",
+        "replay": "Provider signature verified before parsing (401 on failure), then the provider event id is inserted into payment_webhook_events with onConflictDoNothing on the unique index uq_payment_webhook_events_provider_env_event. A redelivery of the same provider event is a no-op."
+      },
+      "evidence": "src/modules/billing/payments/payment-webhooks-public.controller.ts"
+    },
+    "POST /webhooks/razorpay/{orgId}": {
+      "idempotency": {
+        "mode": "provider-signature-and-event-id",
+        "key": "provider event id",
+        "replay": "Legacy URL alias for the payments webhook; same signature check and same uq_payment_webhook_events_provider_env_event fence. The event id is read from the body, not a header."
+      },
+      "evidence": "src/modules/billing/core/razorpay-webhook.controller.ts"
+    }
+  },
+  "webhookEvents": {
+    "survey.published": {
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "note": "Subscribable survey automation trigger. SurveyAutomationService.record() dispatches it through WebhooksDispatchService with a variable event name, so no literal dispatch site names it and the scanner cannot find it."
+    },
+    "survey.response.started": {
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "note": "Subscribable survey automation trigger. SurveyAutomationService.record() dispatches it through WebhooksDispatchService with a variable event name, so no literal dispatch site names it and the scanner cannot find it."
+    },
+    "survey.response.submitted": {
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "note": "Subscribable survey automation trigger. SurveyAutomationService.record() dispatches it through WebhooksDispatchService with a variable event name, so no literal dispatch site names it and the scanner cannot find it."
+    },
+    "survey.assessment.passed": {
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "note": "Subscribable survey automation trigger. SurveyAutomationService.record() dispatches it through WebhooksDispatchService with a variable event name, so no literal dispatch site names it and the scanner cannot find it."
+    },
+    "survey.assessment.failed": {
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "note": "Subscribable survey automation trigger. SurveyAutomationService.record() dispatches it through WebhooksDispatchService with a variable event name, so no literal dispatch site names it and the scanner cannot find it."
+    },
+    "survey.live.started": {
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "note": "Subscribable survey automation trigger. SurveyAutomationService.record() dispatches it through WebhooksDispatchService with a variable event name, so no literal dispatch site names it and the scanner cannot find it."
+    },
+    "survey.live.ended": {
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "note": "Subscribable survey automation trigger. SurveyAutomationService.record() dispatches it through WebhooksDispatchService with a variable event name, so no literal dispatch site names it and the scanner cannot find it."
+    },
+    "survey.lead.created": {
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "note": "Subscribable survey automation trigger. SurveyAutomationService.record() dispatches it through WebhooksDispatchService with a variable event name, so no literal dispatch site names it and the scanner cannot find it."
+    },
+    "survey.collector.completed_quota": {
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "note": "Subscribable survey automation trigger. SurveyAutomationService.record() dispatches it through WebhooksDispatchService with a variable event name, so no literal dispatch site names it and the scanner cannot find it."
+    }
+  },
+  "parameterBaselineResets": {}
+}

@@ -12,6 +12,7 @@ import {
   evaluatePeriodReconciliation,
   type PeriodReconCheck,
 } from "./lib/period-reconciliation";
+import { addDecimals, roundDecimal, toDecimal } from "../../accounting/core/money.util";
 
 export interface PeriodReconciliationReport {
   periodKey: string;
@@ -53,8 +54,8 @@ export interface PeriodReconciliationReport {
   warningCount: number;
 }
 
-function money(n: number): string {
-  return (Math.round(n * 100) / 100).toFixed(2);
+function money(value: string): string {
+  return roundDecimal(value, 2);
 }
 
 /**
@@ -78,9 +79,9 @@ export class PeriodReconciliationService {
       totalAmount: string;
       itemCount: number;
     }[] = [];
-    let totalPaid = 0;
-    let totalPending = 0;
-    let totalFailed = 0;
+    let totalPaid = "0";
+    let totalPending = "0";
+    let totalFailed = "0";
 
     if (run) {
       payoutBatches = await this.db
@@ -115,10 +116,10 @@ export class PeriodReconciliationService {
           .groupBy(payrollBankBatchItems.status);
 
         for (const row of itemAgg) {
-          const amt = parseFloat(row.total) || 0;
-          if (row.status === "PAID") totalPaid += amt;
-          else if (row.status === "FAILED") totalFailed += amt;
-          else totalPending += amt; // PENDING, SENT, HELD, etc.
+          const amt = toDecimal(row.total);
+          if (row.status === "PAID") totalPaid = addDecimals(totalPaid, amt);
+          else if (row.status === "FAILED") totalFailed = addDecimals(totalFailed, amt);
+          else totalPending = addDecimals(totalPending, amt); // PENDING, SENT, HELD, etc.
         }
       }
     }
@@ -141,14 +142,14 @@ export class PeriodReconciliationService {
     const evaluation = evaluatePeriodReconciliation({
       hasRun: run != null,
       runStatus: run?.status ?? null,
-      runNet: run != null ? parseFloat(run.netTotal ?? "0") || 0 : null,
+      runNet: run != null ? toDecimal(run.netTotal) : null,
       hasPayoutBatch: payoutBatches.length > 0,
       payoutPaid: totalPaid,
       payoutPending: totalPending,
       payoutFailed: totalFailed,
       hasJournal: journalRow != null,
-      journalDebits: journalRow != null ? parseFloat(journalRow.totalDebits) || 0 : null,
-      journalCredits: journalRow != null ? parseFloat(journalRow.totalCredits) || 0 : null,
+      journalDebits: journalRow != null ? toDecimal(journalRow.totalDebits) : null,
+      journalCredits: journalRow != null ? toDecimal(journalRow.totalCredits) : null,
       journalStatus: journalRow?.status ?? null,
       journalReconStatus: journalRow?.reconciliationStatus ?? null,
     });

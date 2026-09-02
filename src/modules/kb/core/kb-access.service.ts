@@ -17,6 +17,7 @@ import { accountableMembershipId, actingMembershipId } from "../../../common/aut
 import { CacheService } from "../../../common/cache/cache.service";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { AccessService } from "../../access/access.service";
+import { kbAclCacheKey, type KbAclDimension } from "./kb-acl-cache-key";
 
 const KB_MANAGE_SPACES = "kb:spaces:manage";
 const KB_SPACE_VIEWER_PERMISSION = "kb:spaces:view";
@@ -52,11 +53,19 @@ export class KbAccessService {
     return rows.map((r) => r.slug);
   }
 
+  private async resolveAclDimension(user: CurrentUserContext): Promise<KbAclDimension> {
+    return {
+      permissionsVersion: await this.access.getPermissionsVersion(user.orgId),
+      membershipId: user.principal !== undefined ? accountableMembershipId(user.principal) : null,
+    };
+  }
+
   async getAccessibleSpaceIds(user: CurrentUserContext): Promise<number[]> {
+    const acl = await this.resolveAclDimension(user);
     return this.cache.cachedVersioned(
       `kb:acc-spaces:${user.orgId}`,
-      user.userId,
-      () => this.computeAccessibleSpaceIds(user),
+      kbAclCacheKey(user.userId, acl),
+      () => this.computeAccessibleSpaceIds(user, acl),
       60,
     );
   }
@@ -69,7 +78,10 @@ export class KbAccessService {
     return getAccessibleProjectIds(this.db, user);
   }
 
-  private async computeAccessibleSpaceIds(user: CurrentUserContext): Promise<number[]> {
+  private async computeAccessibleSpaceIds(
+    user: CurrentUserContext,
+    acl: KbAclDimension,
+  ): Promise<number[]> {
     const spaces = await this.db
       .select({ id: kbSpaces.id, audience: kbSpaces.audience })
       .from(kbSpaces)
@@ -77,7 +89,7 @@ export class KbAccessService {
 
     if (await this.isAdmin(user)) return spaces.map((s) => s.id);
 
-    const membershipId = user.principal !== undefined ? accountableMembershipId(user.principal) : null;
+    const membershipId = acl.membershipId;
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const roleSlugs = await this.resolveRoleSlugs(user.orgId, user.userId);
     const directMatch = eq(kbSpaceMembers.membershipId, membershipId);

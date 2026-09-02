@@ -17,6 +17,7 @@ import {
   type ListCustomersOutstandingQuery,
 } from "./dto/accounting.schemas";
 import { AccountingAgedReceivablesService } from "./accounting-aged-receivables.service";
+import { addDecimals, roundDecimal, subtractDecimals, toDecimal } from "./money.util";
 
 function escapeLike(value: string): string {
   return value.replaceAll("%", "\\%").replaceAll("_", "\\_");
@@ -90,7 +91,7 @@ export class AccountingReceivablesService {
       state: r.state,
       gstin: r.gstin,
       invoiceCount: Number(r.invoiceCount ?? 0),
-      outstanding: Number(r.outstanding ?? 0).toFixed(2),
+      outstanding: roundDecimal(toDecimal(r.outstanding), 2),
     }));
 
     return buildCursorPage(items, limit, (item) => ({ sortValue: item.clientName, id: String(item.clientId) }));
@@ -138,8 +139,8 @@ export class AccountingReceivablesService {
     ]);
 
     const paymentIds = paymentRows.map((r) => r.id);
-    const totalInvoiced = Number(invoiceTotalsRows[0]?.total ?? 0);
-    const totalPaid = Number(paymentTotalsRows[0]?.total ?? 0);
+    const totalInvoiced = toDecimal(invoiceTotalsRows[0]?.total);
+    const totalPaid = toDecimal(paymentTotalsRows[0]?.total);
 
     let lines: CustomerLedgerLine[] = [];
     if (arAccountId !== null) {
@@ -155,9 +156,9 @@ export class AccountingReceivablesService {
         clientName: client.name,
         state: client.state,
         gstin: client.gstin,
-        totalInvoiced: totalInvoiced.toFixed(2),
-        totalPaid: totalPaid.toFixed(2),
-        outstanding: (totalInvoiced - totalPaid).toFixed(2),
+        totalInvoiced: roundDecimal(totalInvoiced, 2),
+        totalPaid: roundDecimal(totalPaid, 2),
+        outstanding: roundDecimal(subtractDecimals(totalInvoiced, totalPaid), 2),
       },
       lines,
     };
@@ -217,12 +218,12 @@ export class AccountingReceivablesService {
     invoiceById: Map<number, string>,
     paymentToInvoice: Map<number, number>,
   ): CustomerLedgerLine[] {
-    let running = 0;
+    let running = "0";
     const lines: CustomerLedgerLine[] = [];
     for (const row of rows) {
-      const debit = Number(row.debit ?? 0);
-      const credit = Number(row.credit ?? 0);
-      running += debit - credit;
+      const debit = toDecimal(row.debit);
+      const credit = toDecimal(row.credit);
+      running = addDecimals(running, subtractDecimals(debit, credit));
       const { invoiceId, invoiceNumber } = this.resolveInvoiceFromSource(
         row.sourceType,
         row.sourceId,
@@ -238,9 +239,9 @@ export class AccountingReceivablesService {
         description: row.lineDescription ?? row.entryDescription,
         invoiceId,
         invoiceNumber,
-        debit: debit.toFixed(2),
-        credit: credit.toFixed(2),
-        runningBalance: running.toFixed(2),
+        debit: roundDecimal(debit, 2),
+        credit: roundDecimal(credit, 2),
+        runningBalance: roundDecimal(running, 2),
       });
     }
     return lines;

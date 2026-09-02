@@ -58,7 +58,7 @@ export class NoopAvScanner extends AvScanner implements OnModuleInit {
 
   async scan(_buffer: Buffer, filename: string, _mimeType: string): Promise<AvScanResult> {
     if (process.env.NODE_ENV === "production") {
-      this.logger.warn(`File "${filename}" uploaded without malware scan — scanning is disabled`);
+      this.logger.warn("File uploaded without malware scan — scanning is disabled", { filename });
       return { status: "error", reason: "malware-scanning-disabled" };
     }
     return { status: "clean" };

@@ -41,6 +41,25 @@ function makeTx(expiredRows: Array<{ id: string }>, agedRows: Array<{ id: string
   return tx;
 }
 
+function rowsOfSize(size: number, prefix: string): Array<{ id: string }> {
+  return new Array(size).fill(null).map((_, i) => ({ id: `${prefix}-${i}` }));
+}
+
+function makeSequencedTx(pages: Array<Array<{ id: string }>>): MockTx {
+  const insertValues = jest.fn().mockResolvedValue(undefined);
+  let call = 0;
+  const tx: MockTx = {
+    delete: jest.fn().mockImplementation(() => {
+      const rows = pages[call] ?? [];
+      call += 1;
+      return makeDeleteChain(rows);
+    }),
+    insert: jest.fn().mockReturnValue({ values: insertValues }),
+  };
+  (globalThis as { __announcementsCronTx?: unknown }).__announcementsCronTx = tx;
+  return tx;
+}
+
 function getInsertValues(tx: MockTx): jest.Mock {
   return (tx.insert.mock.results[0]?.value as { values: jest.Mock } | undefined)?.values ?? jest.fn();
 }
@@ -107,23 +126,43 @@ describe("CronAnnouncementsRetentionService", () => {
     });
   });
 
-  describe("boundedness", () => {
-    it("accumulates up to 200 expired deletions per org per sweep (BATCH_SIZE=200)", async () => {
-      makeTx(
-        new Array(200).fill(null).map((_, i) => ({ id: `expired-${i}` })),
-        [],
-      );
+  describe("resumable drain (backlog larger than one batch)", () => {
+    it("drains both phases past the batch size until each returns a short batch", async () => {
+      const tx = makeSequencedTx([
+        rowsOfSize(200, "expired"),
+        rowsOfSize(200, "expired"),
+        rowsOfSize(15, "expired"),
+        rowsOfSize(200, "aged"),
+        rowsOfSize(6, "aged"),
+      ]);
       const result = await service.sweep();
-      expect(result.expiredDeleted).toBe(200);
+      expect(tx.delete).toHaveBeenCalledTimes(5);
+      expect(result.expiredDeleted).toBe(415);
+      expect(result.agedDeleted).toBe(206);
+      expect(result.truncated).toBe(false);
     });
 
-    it("accumulates up to 200 aged deletions per org per sweep (BATCH_SIZE=200)", async () => {
-      makeTx(
-        [],
-        new Array(200).fill(null).map((_, i) => ({ id: `aged-${i}` })),
+    it("reports truncated when either phase reaches the batch cap", async () => {
+      const tx = makeSequencedTx(
+        new Array(250).fill(null).map(() => rowsOfSize(200, "expired")),
       );
       const result = await service.sweep();
-      expect(result.agedDeleted).toBe(200);
+      expect(tx.delete).toHaveBeenCalledTimes(200);
+      expect(result.expiredDeleted).toBe(20_000);
+      expect(result.agedDeleted).toBe(20_000);
+      expect(result.truncated).toBe(true);
+    });
+
+    it("records the truncation in the audit row rather than reporting a clean sweep", async () => {
+      const tx = makeSequencedTx(
+        new Array(250).fill(null).map(() => rowsOfSize(200, "expired")),
+      );
+      await service.sweep();
+      expect(getInsertValues(tx)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          after: expect.objectContaining({ truncated: true }),
+        }),
+      );
     });
   });
 

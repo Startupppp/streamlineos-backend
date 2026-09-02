@@ -43,9 +43,8 @@ const makeAccess = (spaceIds: number[] = [1], isAdminResult = false) => ({
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
 
 const makeEmbeddings = () => ({
-  isConfigured: jest.fn().mockReturnValue(false),
-  embedQuery: jest.fn(),
-  toVectorLiteral: jest.fn(),
+  isEmbeddingConfigured: jest.fn().mockReturnValue(false),
+  embedQueryWithCredit: jest.fn(),
 });
 
 describe("KbSearchService — restriction enforcement", () => {

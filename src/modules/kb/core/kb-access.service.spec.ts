@@ -54,7 +54,10 @@ describe("KbAccessService — KB_SPACE_VIEWER_PERMISSION constant (Task 2)", () 
       },
     };
 
-    const access = { holds: jest.fn().mockResolvedValue(false) } as unknown as AccessService;
+    const access = {
+      holds: jest.fn().mockResolvedValue(false),
+      getPermissionsVersion: jest.fn().mockResolvedValue(1),
+    } as unknown as AccessService;
     const cache = {
       cachedVersioned: jest.fn().mockImplementation(
         (_ns: unknown, _uid: unknown, fn: () => unknown) => fn(),

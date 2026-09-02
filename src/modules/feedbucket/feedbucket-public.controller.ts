@@ -212,7 +212,7 @@ export class FeedbucketPublicController {
     const recording = files?.recording?.[0];
 
     let screenshotUpload:
-      | { url: string; size: number; mimeType: string }
+      | { key: string; size: number; mimeType: string }
       | undefined;
     if (screenshot) {
       if (screenshot.size > MAX_SCREENSHOT_BYTES)
@@ -238,7 +238,7 @@ export class FeedbucketPublicController {
     }
 
     let recordingUpload:
-      | { url: string; size: number; mimeType: string }
+      | { key: string; size: number; mimeType: string }
       | undefined;
     if (recording) {
       if (recording.size > MAX_RECORDING_BYTES) {
@@ -255,8 +255,8 @@ export class FeedbucketPublicController {
       );
     }
 
-    const screenshotUrl = screenshotUpload?.url;
-    const recordingUrl = recordingUpload?.url;
+    const screenshotUrl = screenshotUpload?.key;
+    const recordingUrl = recordingUpload?.key;
 
     await runInTenantTransaction(
       this.db,
@@ -271,7 +271,7 @@ export class FeedbucketPublicController {
           await tx.insert(feedbucketAttachments).values({
             submissionId,
             orgId: widget.orgId,
-            fileUrl: screenshotUpload.url,
+            fileUrl: screenshotUpload.key,
             fileSize: screenshotUpload.size,
             fileName: screenshot.originalname,
             mimeType: screenshotUpload.mimeType,
@@ -281,7 +281,7 @@ export class FeedbucketPublicController {
           await tx.insert(feedbucketAttachments).values({
             orgId: widget.orgId,
             submissionId,
-            fileUrl: recordingUpload.url,
+            fileUrl: recordingUpload.key,
             mimeType: recordingUpload.mimeType,
             fileName: recording.originalname,
             fileSize: recordingUpload.size,

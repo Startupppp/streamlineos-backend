@@ -130,6 +130,7 @@ export class OrgHierarchyTeamsService {
           eq(teamDepartments.id, orgUnits.parentId),
           eq(teamDepartments.orgId, orgUnits.orgId),
           eq(teamDepartments.kind, "DEPARTMENT"),
+          isNull(teamDepartments.deletedAt),
         ),
       )
       .where(filters)
@@ -170,13 +171,14 @@ export class OrgHierarchyTeamsService {
         eq(orgUnits.id, departmentId),
         eq(orgUnits.orgId, orgId),
         eq(orgUnits.kind, "DEPARTMENT"),
+        eq(orgUnits.status, "ACTIVE"),
         isNull(orgUnits.deletedAt),
       ),
       columns: { id: true },
     });
     if (!department) {
       throw new BadRequestException(
-        "Select a valid department from this organization",
+        "Select an active department from this organization",
       );
     }
   }

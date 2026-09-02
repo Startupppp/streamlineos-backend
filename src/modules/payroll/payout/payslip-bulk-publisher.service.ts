@@ -200,7 +200,7 @@ export class PayslipBulkPublisherService {
             fileName,
             "application/pdf",
           );
-          pdfUrl = uploadResult.url;
+          pdfUrl = uploadResult.key;
         } else if (!renderedPdfBuffer) {
           failureReason = "PDF generation returned empty buffer";
         }

@@ -2,16 +2,20 @@ import { KbIndexingService } from "./kb-indexing.service";
 
 function makeEmbeddings(configured = true) {
   return {
-    isConfigured: jest.fn().mockReturnValue(configured),
-    embedQuery: jest.fn().mockResolvedValue(new Array(1536).fill(0.1)),
-    toVectorLiteral: jest.fn((v: number[]) => `[${v.join(",")}]`),
+    isEmbeddingConfigured: jest.fn().mockReturnValue(configured),
+    embedBatchWithCredit: jest
+      .fn()
+      .mockImplementation(({ texts }: { texts: string[] }) => Promise.resolve({
+        ok: true,
+        vectors: texts.map(() => new Array(1536).fill(0.1) as number[]),
+      })),
   };
 }
 
 function makeCheckpoint() {
   return {
     loadCheckpoints: jest.fn().mockResolvedValue(new Map()),
-    saveCheckpoint: jest.fn().mockResolvedValue(undefined),
+    saveCheckpoints: jest.fn().mockResolvedValue(undefined),
     clearCheckpoints: jest.fn().mockResolvedValue(undefined),
   };
 }

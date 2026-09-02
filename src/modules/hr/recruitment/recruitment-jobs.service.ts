@@ -312,7 +312,8 @@ export class RecruitmentJobsService {
     return row ?? { message: "Already assigned" };
   }
 
-  async removeRecruiter(jobId: number, input: AssignRecruiterInput) {
+  async removeRecruiter(orgId: string, jobId: number, input: AssignRecruiterInput) {
+    await this.ensureJob(orgId, jobId);
     await this.db
       .delete(jobRecruiters)
       .where(and(eq(jobRecruiters.jobPostingId, jobId), eq(jobRecruiters.userId, input.userId)));

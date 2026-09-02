@@ -90,7 +90,7 @@ export class OnboardingDocumentsController {
     if (scanResult.status === "error")
       throw new ServiceUnavailableException("Malware scan unavailable — upload rejected");
 
-    const { key, url, compressedBuffer, compressedMimeType, size } =
+    const { key, compressedBuffer, compressedMimeType, size } =
       await this.storage.compressAndPreGenerateKey(
         u.orgId,
         file.buffer,
@@ -107,7 +107,7 @@ export class OnboardingDocumentsController {
         userId: u.userId,
         name: file.originalname,
         type,
-        fileUrl: url,
+        fileUrl: key,
         fileSize: size,
         mimeType: compressedMimeType,
         uploadedBy: u.userId,
@@ -142,6 +142,6 @@ export class OnboardingDocumentsController {
       await this.storage.uploadToKey(u.orgId, compressedBuffer, key, compressedMimeType);
     }
 
-    return { url };
+    return { url: key };
   }
 }

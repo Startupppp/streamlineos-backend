@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { okrGoals, okrKeyResults } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
@@ -29,7 +29,7 @@ export class GoalKeyResultsService {
     input: CreateKeyResultInput,
   ): Promise<typeof okrKeyResults.$inferSelect | null> {
     const goal = await this.db.query.okrGoals.findFirst({
-      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId)),
+      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)),
       columns: { id: true },
     });
     if (!goal) return null;

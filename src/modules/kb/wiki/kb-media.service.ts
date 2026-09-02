@@ -10,6 +10,7 @@ import type { AppConfig } from "../../../config/env.validation";
 import { AvScanner } from "../../../common/security/av-scan";
 
 export interface KbMediaUploadResult extends UploadResult {
+  url: string;
   name: string;
 }
 
@@ -113,16 +114,13 @@ export class KbMediaService {
     }
 
     const kbBucket = this.config.R2_KB_BUCKET_NAME;
-    const kbPublicUrl = this.config.R2_KB_PUBLIC_URL;
-    const useKbBucket = Boolean(kbBucket && kbPublicUrl);
     const result = await this.storage.uploadFile(
       u.orgId,
       uploadBuffer,
       folder,
       uploadName,
       uploadMime,
-      useKbBucket ? kbBucket : undefined,
-      useKbBucket ? kbPublicUrl : undefined,
+      kbBucket,
     );
 
     this.audit.log({
@@ -140,6 +138,6 @@ export class KbMediaService {
         });
     }
 
-    return { ...result, name: originalname };
+    return { ...result, url: result.key, name: originalname };
   }
 }

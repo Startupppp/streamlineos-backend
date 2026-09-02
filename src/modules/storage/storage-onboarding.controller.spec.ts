@@ -76,7 +76,6 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
       isConfigured: jest.fn().mockReturnValue(true),
       compressAndPreGenerateKey: jest.fn().mockResolvedValue({
         key: "onboarding/uuid-id-doc.pdf",
-        url: "https://cdn.example.com/onboarding/uuid-id-doc.pdf",
         compressedBuffer: Buffer.from("compressed"),
         compressedMimeType: "application/pdf",
         size: 10,
@@ -130,15 +129,15 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
     await capturedHook!();
 
     expect(callOrder).toEqual(["db-committed", "upload"]);
-    expect(result.url).toBe("https://cdn.example.com/onboarding/uuid-id-doc.pdf");
+    expect(result.url).toBe("onboarding/uuid-id-doc.pdf");
   });
 
-  it("returns the pre-generated URL immediately without waiting for the upload", async () => {
+  it("returns the pre-generated tenant-private key immediately without waiting for the upload", async () => {
     mockRegisterAfterCommit.mockReturnValue(true);
 
     const result = await controller.upload(makeFile(), "ID_PROOF", makeUser());
 
-    expect(result).toEqual({ url: "https://cdn.example.com/onboarding/uuid-id-doc.pdf" });
+    expect(result).toEqual({ url: "onboarding/uuid-id-doc.pdf" });
     expect(mockStorage.uploadToKey).not.toHaveBeenCalled();
   });
 
@@ -186,7 +185,6 @@ describe("OnboardingDocumentsController.upload — AV scan gate", () => {
       isConfigured: jest.fn().mockReturnValue(true),
       compressAndPreGenerateKey: jest.fn().mockResolvedValue({
         key: "onboarding/uuid-id-doc.pdf",
-        url: "https://cdn.example.com/onboarding/uuid-id-doc.pdf",
         compressedBuffer: Buffer.from("compressed"),
         compressedMimeType: "application/pdf",
         size: 10,

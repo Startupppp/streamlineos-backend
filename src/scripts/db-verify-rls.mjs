@@ -274,9 +274,8 @@ try {
       (SELECT count(DISTINCT c.oid)::int FROM pg_class c
         JOIN pg_namespace n2 ON n2.oid = c.relnamespace
         JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
-        WHERE n2.nspname IN ('public','build','build_events') AND c.relkind='r'
-          AND a.attname IN ('org_id','organization_id')
-          AND format_type(a.atttypid, NULL)='text') AS tenant_columns,
+        WHERE n2.nspname IN ('public','build','build_events') AND c.relkind IN ('r','p')
+          AND a.attname IN ('org_id','organization_id')) AS tenant_columns,
       (SELECT count(*)::int FROM pg_class c
         JOIN pg_namespace n ON n.oid=c.relnamespace
         WHERE n.nspname IN ('public','build','build_events') AND c.relrowsecurity) AS rls_enabled`;
@@ -294,9 +293,8 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
     JOIN pg_namespace n ON n.oid = c.relnamespace
     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
     WHERE n.nspname IN ('public','build','build_events')
-      AND c.relkind = 'r'
+      AND c.relkind IN ('r','p')
       AND a.attname IN ('org_id','organization_id')
-      AND format_type(a.atttypid, NULL) = 'text'
       AND NOT c.relrowsecurity
     ORDER BY tbl`;
 
@@ -327,6 +325,42 @@ BUCKET SUMMARY  (${coverage.tenant_columns} tenant-scoped tables scanned)` +
   for (const t of buckets.crm) console.log(`  excluded  ${t} — CRM is out of release scope`);
   for (const t of buckets.platformGlobal) console.log(`  skip      ${t} — registered platform-global`);
 
+  // A scope exclusion is a statement about who fixes it, never about whether the exposure is
+  // real. Grants arrive through ALTER DEFAULT PRIVILEGES, so an excluded table with no policy
+  // is still readable org-wide by anything reaching raw SQL as the app role. Name that here
+  // rather than let a release exclusion read as an all-clear.
+  const excludedNoPolicy = [...buckets.inventory, ...buckets.crm];
+  if (excludedNoPolicy.length > 0) {
+    const appRole = process.env.APP_DB_ROLE || "streamline_app";
+    const [{ present }] = await sql`
+      SELECT count(*)::int AS present FROM pg_roles WHERE rolname = ${appRole}`;
+    if (present === 0) {
+      console.log(
+        `\nEXPOSURE  ${excludedNoPolicy.length} out-of-scope table(s) carry a tenant column with no policy.` +
+        `\n          Role ${appRole} does not exist on this target, so its DML could not be measured.`,
+      );
+    } else {
+      const grants = await sql`
+        SELECT n.nspname || '.' || c.relname AS tbl,
+               has_table_privilege(${appRole}, c.oid, 'SELECT') AS can_select,
+               (has_table_privilege(${appRole}, c.oid, 'INSERT')
+                 OR has_table_privilege(${appRole}, c.oid, 'UPDATE')
+                 OR has_table_privilege(${appRole}, c.oid, 'DELETE')) AS can_write
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname || '.' || c.relname = ANY(${excludedNoPolicy})
+        ORDER BY tbl`;
+      const reachable = grants.filter((g) => g.can_select || g.can_write);
+      console.log(
+        `\nEXPOSURE  ${excludedNoPolicy.length} out-of-scope table(s) carry a tenant column with no policy;` +
+        `\n          ${reachable.length} of them grant ${appRole} access, so their rows are readable across every org.` +
+        `\n          Out of release scope means "someone else fixes it", not "it is not exposed".`,
+      );
+      for (const g of reachable)
+        console.log(`  exposed   ${g.tbl}  — ${appRole} SELECT=${g.can_select} WRITE=${g.can_write}, policies=0`);
+    }
+  }
+
   // 2. Tables that have RLS enabled and an org_id column but lack any policy that
   //    references the org column.  An empty policy set leaves the table readable by
   //    no one (deny-by-default), which is safe but almost certainly wrong for a
@@ -337,13 +371,12 @@ BUCKET SUMMARY  (${coverage.tenant_columns} tenant-scoped tables scanned)` +
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname IN ('public','build','build_events')
-      AND c.relkind = 'r'
+      AND c.relkind IN ('r','p')
       AND c.relrowsecurity
       AND EXISTS (
         SELECT 1 FROM pg_attribute a
         WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
           AND a.attname IN ('org_id','organization_id')
-          AND format_type(a.atttypid, NULL) = 'text'
       )
       AND NOT EXISTS (
         SELECT 1 FROM pg_policies p
@@ -409,11 +442,10 @@ BUCKET SUMMARY  (${coverage.tenant_columns} tenant-scoped tables scanned)` +
     JOIN pg_namespace n ON n.oid = c.relnamespace
     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
     WHERE n.nspname IN ('public','build','build_events')
-      AND c.relkind = 'r'
+      AND c.relkind IN ('r','p')
       AND c.relrowsecurity
       AND NOT c.relforcerowsecurity
       AND a.attname IN ('org_id','organization_id')
-      AND format_type(a.atttypid, NULL) = 'text'
     ORDER BY tbl`;
 
   const notForcedTenant = notForced.filter(({ tbl }) => classifyTable(tbl) === "IN-SCOPE");

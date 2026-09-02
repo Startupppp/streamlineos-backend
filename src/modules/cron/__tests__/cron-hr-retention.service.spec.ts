@@ -1,5 +1,6 @@
 import { Test } from "@nestjs/testing";
 import { CronHrRetentionService } from "../cron-hr-retention.service";
+import { StorageService } from "../../storage/storage.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 
 const ORG_ID = "org-aaaaaaaa-0000-0000-0000-000000000001";
@@ -108,6 +109,10 @@ describe("CronHrRetentionService", () => {
       providers: [
         CronHrRetentionService,
         { provide: DRIZZLE, useValue: mockDb },
+        {
+          provide: StorageService,
+          useValue: { deleteFileIfPresent: jest.fn().mockResolvedValue(true) },
+        },
       ],
     }).compile();
 

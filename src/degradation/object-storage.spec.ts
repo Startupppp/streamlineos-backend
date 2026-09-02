@@ -24,7 +24,7 @@ function makeStorageService(endpoint: string): StorageService {
 }
 
 describe("Object storage degraded — pre-generated key survives upload failure", () => {
-  it("compressAndPreGenerateKey generates the key and URL before any network call", async () => {
+  it("compressAndPreGenerateKey generates the key before any network call", async () => {
     const service = makeStorageService("http://unreachable:1");
 
     const buffer = Buffer.from("test-data");
@@ -37,16 +37,15 @@ describe("Object storage degraded — pre-generated key survives upload failure"
     );
 
     expect(result.key).toMatch(/^org-test\/uploads\/.+\.jpg$/);
-    expect(result.url).toBeTruthy();
     expect(result.compressedBuffer).toBeInstanceOf(Buffer);
     expect(result.size).toBeGreaterThan(0);
   });
 
-  it("the pre-generated key and URL are stable — metadata can be stored before the upload attempt", async () => {
+  it("the pre-generated key is stable and never a public URL — metadata can be stored before the upload attempt", async () => {
     const service = makeStorageService("http://unreachable:1");
     const buffer = Buffer.from("test-data");
 
-    const { key, url } = await service.compressAndPreGenerateKey(
+    const { key } = await service.compressAndPreGenerateKey(
       "org-test",
       buffer,
       "uploads",
@@ -55,8 +54,8 @@ describe("Object storage degraded — pre-generated key survives upload failure"
     );
 
     expect(key).toBeTruthy();
-    expect(url).toBeTruthy();
     expect(key.startsWith("org-test/uploads/")).toBe(true);
+    expect(key).not.toMatch(/^https?:\/\//);
   });
 });
 

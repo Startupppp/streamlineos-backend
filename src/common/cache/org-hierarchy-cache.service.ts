@@ -37,6 +37,7 @@ export class OrgHierarchyCacheService {
       Promise.all([
         this.cache.invalidateNamespaceForOrg(orgId, "org:hierarchy"),
         this.cache.invalidateNamespaceForOrg(orgId, "hr:headcount"),
+        this.cache.invalidateNamespaceForOrg(orgId, "hr:directory"),
       ]).then(() => undefined);
 
     if (!registerAfterCommit(invalidate)) {

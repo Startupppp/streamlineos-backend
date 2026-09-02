@@ -114,7 +114,7 @@ describe("KbIndexingService — cross-tenant isolation", () => {
       delete: jest.fn().mockReturnValue({ where: deletedWhere }),
       transaction: jest.fn().mockImplementation(async (fn: (tx: ReturnType<typeof makeTx>) => unknown) => fn(makeTx())),
     } as unknown as Db;
-    const embeddings = { isConfigured: jest.fn().mockReturnValue(false) } as never;
+    const embeddings = { isEmbeddingConfigured: jest.fn().mockReturnValue(false) } as never;
     const checkpoint = {} as never;
     const svc = new KbIndexingService(db, embeddings, checkpoint);
     await svc.indexArticle(ATTACKER, 42);
@@ -142,7 +142,7 @@ describe("KbIndexingService — cross-tenant isolation", () => {
       delete: jest.fn().mockReturnValue({ where: deleteWhere }),
       transaction: jest.fn().mockImplementation(async (fn: (tx: ReturnType<typeof makeTx>) => unknown) => fn(makeTx())),
     } as unknown as Db;
-    const embeddings = { isConfigured: jest.fn().mockReturnValue(false) } as never;
+    const embeddings = { isEmbeddingConfigured: jest.fn().mockReturnValue(false) } as never;
     const checkpoint = {} as never;
     const svc = new KbIndexingService(db, embeddings, checkpoint);
     await svc.indexArticle(OWNER, 42);

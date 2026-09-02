@@ -1,8 +1,8 @@
 {
   "version": "1",
-  "schemaVersion": "1.0",
-  "generatedAt": "2026-09-02T08:46:33.697Z",
-  "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and webhook is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
+  "schemaVersion": "1.1",
+  "generatedAt": "2026-09-02T11:45:38.471Z",
+  "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
       "classification": "internal",
@@ -2292,7 +2292,16 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /agent/v1/projects": {
       "classification": "published",
@@ -2305,7 +2314,42 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "afterId",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "pmWorkspaceId",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "search",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "status",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /agent/v1/projects": {
       "classification": "published",
@@ -2318,7 +2362,16 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "natural-key-upsert",
+        "key": "caller-supplied project key",
+        "replay": "When the caller supplies `key`, uniq_projects_org_key rejects the duplicate with 409. When `key` is omitted the key is randomly generated, so a retry silently creates a second project — callers that need retry safety must send an explicit key.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/agent-access/agent.controller.ts"
     },
     "POST /agent/v1/projects/{projectId}/tickets": {
       "classification": "published",
@@ -2331,7 +2384,22 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into tickets with a sequential ticket number. A retry creates a second ticket. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/build/core/projects-tickets-create.service.ts"
     },
     "GET /agent/v1/projects/{projectId}/tickets": {
       "classification": "published",
@@ -2344,7 +2412,107 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "assigneeId",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "cursor",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "cycleId",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "dueDateFrom",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "dueDateTo",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "epicId",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "labelIds",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "moduleIds",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "orderBy",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "orderDir",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "priority",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "search",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "sprintId",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "sprintIds",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "status",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "type",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /agent/v1/tickets/{ticketId}": {
       "classification": "published",
@@ -2357,7 +2525,22 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "ticketId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "PATCH /agent/v1/tickets/{ticketId}": {
       "classification": "published",
@@ -2370,7 +2553,22 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "ticketId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "optimistic-concurrency",
+        "key": "expectedUpdatedAt",
+        "replay": "expectedUpdatedAt is compared to the stored updatedAt and a mismatch raises a conflict. This is lost-update protection, not replay protection, and the field is optional — an agent that omits it gets neither.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/build/core/projects-tickets-update.service.ts"
     },
     "POST /agent/v1/tickets/{ticketId}/comments": {
       "classification": "published",
@@ -2383,7 +2581,22 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "ticketId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into ticket_comments. A retry creates a duplicate comment. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/build/core/projects-ticket-comments.service.ts"
     },
     "GET /agent/v1/work": {
       "classification": "published",
@@ -2396,7 +2609,112 @@
         "external automation agents holding an agent token (AgentTokenGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "assigneeId",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "cursor",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "cycleId",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "dueDateFrom",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "dueDateTo",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "epicId",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "excludeStatus",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "labelIds",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "orderBy",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "orderDir",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "pmWorkspaceId",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "priority",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "projectIds",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "scope",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "search",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "sprintId",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "status",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "type",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /ai/account-summary": {
       "classification": "internal",
@@ -3267,7 +3585,16 @@
         "external verifiers of our issued JWTs"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /auth/audit/analytics": {
       "classification": "internal",
@@ -4022,7 +4349,22 @@
         "the public marketing site and any feed reader"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /blog/by-slug/{slug}/adjacent": {
       "classification": "published",
@@ -4035,7 +4377,22 @@
         "the public marketing site and any feed reader"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /blog/categories": {
       "classification": "published",
@@ -4048,7 +4405,16 @@
         "the public marketing site and any feed reader"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /blog/feed": {
       "classification": "published",
@@ -4061,7 +4427,47 @@
         "the public marketing site and any feed reader"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "category",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "cursor",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "featured",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "search",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "tag",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /branches": {
       "classification": "internal",
@@ -7660,7 +8066,16 @@
         "the public careers page"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /careers/apply": {
       "classification": "published",
@@ -7673,7 +8088,16 @@
         "external applicants"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "advisory-dedup-unfenced",
+        "key": null,
+        "replay": "A SELECT on (candidate_id, job_posting_id) returns {alreadyApplied:true} instead of inserting, but no unique index backs it — concurrent retries can both insert.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/careers/careers.service.ts"
     },
     "POST /chat": {
       "classification": "internal",
@@ -9672,7 +10096,16 @@
         "external recipients managing marketing consent"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "natural-key-upsert",
+        "key": null,
+        "replay": "The unsubscribe token is HMAC-signed and stateless — it is never marked consumed — but the write is onConflictDoUpdate on (org_id, contact_id, channel), so replays converge on the same consent row.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/crm/consent/crm-consent.controller.ts"
     },
     "GET /crm/customer-360/client/{clientId}": {
       "classification": "internal",
@@ -10147,7 +10580,16 @@
         "inbound mail provider push notifications"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "provider-signature-idempotent-effect",
+        "key": null,
+        "replay": "x-mailbox-signature verified against crm_mailbox_sync.push_secret. The handler re-runs a watermarked sync rather than writing, so a duplicate push converges instead of duplicating.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/ingress/adapters/crm-mailbox.controller.ts"
     },
     "POST /crm/mailboxes/sync": {
       "classification": "internal",
@@ -12577,7 +13019,22 @@
         "external CSAT survey respondents"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "surveyId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Unauthenticated insert into csat_responses keyed only on a numeric survey id — no token, no dedupe, no handler rate limit. A retry creates a second response. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/csat/csat.service.ts"
     },
     "GET /customer-executive/health": {
       "classification": "internal",
@@ -24217,7 +24674,22 @@
         "inbound GitHub/GitLab webhooks"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "connectionId",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "idempotency": {
+        "mode": "provider-signature-and-event-id",
+        "key": "x-github-delivery / x-gitlab-event-uuid",
+        "replay": "GitHub HMAC or GitLab token verified, then the delivery id is inserted into git_webhook_seen_deliveries with onConflictDoNothing on uniq_git_webhook_seen_deliveries_delivery. If the provider omits the delivery header the dedupe is skipped and the delivery is processed at-least-once.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/integrations/git/integrations-git.controller.ts"
     },
     "POST /internal/audit": {
       "classification": "internal",
@@ -28267,7 +28739,16 @@
         "external lead sources holding an API key (ApiKeyGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into leads with no conflict target and no natural key; ApiKeyGuard authenticates but does not deduplicate. A retried ingest creates a second lead. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/party/party-legacy-leads.ts"
     },
     "POST /leads/merge": {
       "classification": "internal",
@@ -29710,7 +30191,22 @@
         "mail clients and providers following List-Unsubscribe links"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /notifications/unsubscribe/{token}": {
       "classification": "published",
@@ -29723,7 +30219,22 @@
         "mail clients and providers following List-Unsubscribe links"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "natural-key-upsert",
+        "key": null,
+        "replay": "Stateless HMAC token, not single-use. The write is onConflictDoNothing on (org_id, email, channel) in email_suppressions, so replays converge.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/email/unsubscribe.controller.ts"
     },
     "GET /offer-fulfillment": {
       "classification": "internal",
@@ -30726,7 +31237,16 @@
         "invitees following an emailed invitation link"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "single-use-token",
+        "key": "invitation token",
+        "replay": "UPDATE invitations SET status='ACCEPTED' WHERE id=? AND status='PENDING' AND accepted_at IS NULL RETURNING; zero rows raises 404. The token is matched by tokenHash and is consumed exactly once.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/organization/core/invitation-acceptance.service.ts"
     },
     "POST /organization/invitations/decline": {
       "classification": "published",
@@ -30739,7 +31259,16 @@
         "invitees following an emailed invitation link"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "single-use-token",
+        "key": "invitation token",
+        "replay": "UPDATE invitations SET status='DECLINED' WHERE id=? AND status='PENDING' RETURNING; zero rows raises 404. Consumed exactly once.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/organization/core/invitation-acceptance.service.ts"
     },
     "GET /organization/invitations/validate": {
       "classification": "published",
@@ -30752,7 +31281,22 @@
         "invitees following an emailed invitation link"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "query",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /organization/leave": {
       "classification": "internal",
@@ -33361,7 +33905,16 @@
         "the public contact form"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into platform_messages with a fresh random public code; rate limiter public:contact only. A retry creates a second message. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/platform/platform.service.ts"
     },
     "POST /platform/operator-access/grants": {
       "classification": "internal",
@@ -33561,7 +34114,16 @@
         "external project clients redeeming a portal invitation"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "single-use-token-racy",
+        "key": "portal invitation token",
+        "replay": "The pre-read requires status='PENDING', but the consuming UPDATE portal_invitations SET status='ACCEPTED' carries no status predicate and no affected-row check. Sequential replays are refused by the read; concurrent ones are not fenced.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/portal/auth/portal-auth.service.ts"
     },
     "GET /portal/v1/projects": {
       "classification": "published",
@@ -33574,7 +34136,16 @@
         "external project clients holding a portal JWT (PortalJwtAuthGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /portal/v1/projects/{projectId}/change-requests": {
       "classification": "published",
@@ -33587,7 +34158,22 @@
         "external project clients holding a portal JWT (PortalJwtAuthGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into change_requests; auth is the portal session token only. A retry creates a duplicate change request. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/portal/client/portal-client.service.ts"
     },
     "GET /portal/v1/projects/{projectId}/overview": {
       "classification": "published",
@@ -33600,7 +34186,22 @@
         "external project clients holding a portal JWT (PortalJwtAuthGuard)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /principal-groups": {
       "classification": "internal",
@@ -33712,7 +34313,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /public/careers/{orgSlug}/jobs": {
       "classification": "published",
@@ -33725,7 +34341,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgSlug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /public/careers/{orgSlug}/jobs/{jobId}": {
       "classification": "published",
@@ -33738,7 +34369,27 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "jobId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "orgSlug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /public/careers/{orgSlug}/jobs/{jobId}/apply": {
       "classification": "published",
@@ -33751,7 +34402,27 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "jobId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "orgSlug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "The candidate row is onConflictDoNothing on (org_id, email), but the candidate_applications insert is unconditional and mints a new tracking token. A retry creates a duplicate application. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/public/public-careers.service.ts"
     },
     "POST /public/contact": {
       "classification": "published",
@@ -33764,7 +34435,16 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "captcha-single-use",
+        "key": "cf-turnstile-token",
+        "replay": "Turnstile token verified server-side and single-use provider-side; nothing is persisted, the effect is one outbound email. A replay with a fresh token re-sends it.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/public/public.controller.ts"
     },
     "POST /public/feedbucket/{publicKey}": {
       "classification": "published",
@@ -33777,7 +34457,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "publicKey",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into feedbucket_submissions with no conflict target; auth is the widget public key. A retry creates a second submission. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/feedbucket/feedbucket-public.service.ts"
     },
     "POST /public/feedbucket/{publicKey}/ai-assist": {
       "classification": "published",
@@ -33790,7 +34485,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "publicKey",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "no-persistence-rate-limited",
+        "key": null,
+        "replay": "No business write; rate limiters feedbucket:ai-assist and feedbucket:ai-assist-daily only. A replay spends model budget.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/feedbucket/feedbucket-public.controller.ts"
     },
     "GET /public/feedbucket/{publicKey}/config": {
       "classification": "published",
@@ -33803,7 +34513,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "publicKey",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /public/forms/{token}": {
       "classification": "published",
@@ -33816,7 +34541,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /public/forms/{token}/submit": {
       "classification": "published",
@@ -33829,7 +34569,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into form_submissions; the collector token is reusable and never consumed. A retry creates a second submission. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/public/public-forms.service.ts"
     },
     "GET /public/hr-forms/{orgId}/{slug}": {
       "classification": "published",
@@ -33842,7 +34597,27 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /public/hr-forms/{orgId}/{slug}/submit": {
       "classification": "published",
@@ -33855,7 +34630,27 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Validated then inserted as a new submission row; no natural key and no token consumption. A retry creates a second submission. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/hr/forms/hr-forms-submissions.service.ts"
     },
     "POST /public/intake/{projectId}": {
       "classification": "published",
@@ -33868,7 +34663,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "projectId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into intake_items keyed only on the project id. A retry creates a second item. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/public/intake.service.ts"
     },
     "GET /public/interview-booking/{token}": {
       "classification": "published",
@@ -33881,7 +34691,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /public/interview-booking/{token}": {
       "classification": "published",
@@ -33894,7 +34719,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "single-use-token",
+        "key": "booking link token",
+        "replay": "UPDATE interview_booking_links SET status='booked' WHERE id=? AND status='pending' RETURNING; zero rows raises 410 Gone. Consumed exactly once.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/hr/interviews/hr-interview-booking.service.ts"
     },
     "GET /public/kb": {
       "classification": "published",
@@ -33907,7 +34747,42 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "categoryId",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "cursor",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "org",
+          "in": "query",
+          "required": true
+        },
+        {
+          "name": "pageSize",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "search",
+          "in": "query",
+          "required": false
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /public/kb/{slug}": {
       "classification": "published",
@@ -33920,7 +34795,27 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "org",
+          "in": "query",
+          "required": true
+        },
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /public/kb/{slug}/attachments": {
       "classification": "published",
@@ -33933,7 +34828,37 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "org",
+          "in": "query",
+          "required": true
+        },
+        {
+          "name": "page",
+          "in": "query",
+          "required": false
+        },
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /public/kb/{slug}/feedback": {
       "classification": "published",
@@ -33946,7 +34871,27 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "org",
+          "in": "query",
+          "required": true
+        },
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "natural-key-upsert",
+        "key": null,
+        "replay": "onConflictDoNothing on (org_id, article_id, visitor_id), counter bumped only when a row was inserted. visitor_id falls back to the client IP, so a replay from the same visitor is absorbed.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/public/kb.service.ts"
     },
     "POST /public/kb/ask": {
       "classification": "published",
@@ -33959,7 +34904,16 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "no-persistence-rate-limited",
+        "key": null,
+        "replay": "No business write; rate limiter ai:public-kb-ask only. A replay is safe for data but spends model budget.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/ai/core/controllers/kb-rag.controller.ts"
     },
     "POST /public/kb/stream-ask": {
       "classification": "published",
@@ -33972,7 +34926,16 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "no-persistence-rate-limited",
+        "key": null,
+        "replay": "No business write; rate limiter ai:public-kb-ask only. A replay is safe for data but spends model budget.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/ai/core/controllers/kb-rag.controller.ts"
     },
     "GET /public/kb/widget/{orgId}": {
       "classification": "published",
@@ -33985,7 +34948,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /public/kb/widget/{orgId}/script": {
       "classification": "published",
@@ -33998,7 +34976,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /public/lead-form/{token}": {
       "classification": "published",
@@ -34011,7 +35004,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /public/lead-form/{token}": {
       "classification": "published",
@@ -34024,7 +35032,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare mirrored-lead insert; the collector token is reusable. A retry creates a second lead. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/public/crm.service.ts"
     },
     "GET /public/nps/{token}": {
       "classification": "published",
@@ -34037,7 +35060,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /public/nps/{token}": {
       "classification": "published",
@@ -34050,7 +35088,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into nps_responses; the public token is reusable and never consumed. A retry creates a second response. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/public/crm.service.ts"
     },
     "GET /public/offer/{token}": {
       "classification": "published",
@@ -34063,7 +35116,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "PATCH /public/offer/{token}/respond": {
       "classification": "published",
@@ -34076,7 +35144,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "single-use-token-racy",
+        "key": "offer acceptance token",
+        "replay": "A pre-read outside the transaction refuses any offer whose status is not SENT or VIEWED (409), and the write moves it to a terminal status. The guard is a read-then-write, not a conditional UPDATE, so concurrent responses are not fenced.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/public/public-offers.service.ts"
     },
     "GET /public/org/{orgId}": {
       "classification": "published",
@@ -34089,7 +35172,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /public/referrals/{token}": {
       "classification": "published",
@@ -34102,7 +35200,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /public/referrals/{token}/submit": {
       "classification": "published",
@@ -34115,7 +35228,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "advisory-dedup-unfenced",
+        "key": null,
+        "replay": "A SELECT on (referrer_id, candidate_id) returns {alreadyReferred:true} instead of inserting. Advisory only; no unique index backs it.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/public/public-referrers.service.ts"
     },
     "POST /public/referrals/register": {
       "classification": "published",
@@ -34128,7 +35256,16 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "advisory-dedup-unfenced",
+        "key": null,
+        "replay": "A SELECT on external_referrers returns the existing referral token instead of inserting. Advisory only; no unique constraint is quoted.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/public/public-referrers.service.ts"
     },
     "GET /public/roadmap": {
       "classification": "published",
@@ -34141,7 +35278,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "org",
+          "in": "query",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /public/roadmap/feedback": {
       "classification": "published",
@@ -34154,7 +35306,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "org",
+          "in": "query",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into feedback_posts. A retry creates a second post. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/public/roadmap.service.ts"
     },
     "POST /public/roadmap/vote": {
       "classification": "published",
@@ -34167,7 +35334,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "org",
+          "in": "query",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "natural-key-upsert",
+        "key": null,
+        "replay": "insert(roadmap_votes) with onConflictDoNothing on the voter key; the vote counter is incremented only when a row was actually inserted, so a replay neither double-votes nor double-counts.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/public/roadmap.service.ts"
     },
     "POST /public/sign/{token}/adopt-signature": {
       "classification": "published",
@@ -34180,7 +35362,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "replayable-write",
+        "key": "signing token",
+        "replay": "Stores the adopted signature on the recipient row in place; a replay overwrites it.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/e-sign/sign-public.service.ts"
     },
     "POST /public/sign/{token}/auth": {
       "classification": "published",
@@ -34193,7 +35390,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "replayable-write",
+        "key": "signing token",
+        "replay": "Authenticates the recipient against the current OTP and updates the recipient row in place; replayable without creating additional state.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/e-sign/sign-public.service.ts"
     },
     "POST /public/sign/{token}/complete": {
       "classification": "published",
@@ -34206,7 +35418,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "single-use-token",
+        "key": "signing token",
+        "replay": "UPDATE sign_recipients SET status='completed', token_revoked_at=now() WHERE id=? AND status='authenticated' RETURNING; zero rows raises 400 'already completed'. The signing token is revoked by the same statement.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/e-sign/sign-public.service.ts"
     },
     "POST /public/sign/{token}/consent": {
       "classification": "published",
@@ -34219,7 +35446,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "replayable-write",
+        "key": "signing token",
+        "replay": "Records e-signature consent on the recipient row in place; a replay writes the same values.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/e-sign/sign-public.service.ts"
     },
     "POST /public/sign/{token}/decline": {
       "classification": "published",
@@ -34232,7 +35474,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "single-use-token",
+        "key": "signing token",
+        "replay": "UPDATE sign_recipients SET status='declined', token_revoked_at=now() WHERE id=? AND status=<observed> RETURNING; zero rows raises 400. The signing token is revoked by the same statement.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/e-sign/sign-public.service.ts"
     },
     "GET /public/sign/{token}/documents/{documentId}/preview": {
       "classification": "published",
@@ -34245,7 +35502,27 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "documentId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /public/sign/{token}/fields/{fieldId}": {
       "classification": "published",
@@ -34258,7 +35535,27 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "fieldId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "replayable-write",
+        "key": "signing token",
+        "replay": "Field value upsert keyed on the recipient and field; a replay overwrites the same field rather than appending.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/e-sign/sign-public.service.ts"
     },
     "POST /public/sign/{token}/request-otp": {
       "classification": "published",
@@ -34271,7 +35568,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "replayable-write",
+        "key": "signing token",
+        "replay": "Re-issues a one-time code against the same recipient row; a replay supersedes the previous code rather than creating a second signature.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/e-sign/sign-public.service.ts"
     },
     "GET /public/sign/{token}/session": {
       "classification": "published",
@@ -34284,7 +35596,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "GET /public/sign/forms/{slug}": {
       "classification": "published",
@@ -34297,7 +35624,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /public/sign/forms/{slug}/submit": {
       "classification": "published",
@@ -34310,7 +35652,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "slug",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Each submission instantiates a fresh envelope from the template; the slug is a reusable public form address, capped only by maxSubmissions. A retry creates a second envelope. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/e-sign/sign-public-form.service.ts"
     },
     "GET /public/surveys/{collectorToken}": {
       "classification": "published",
@@ -34323,7 +35680,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "collectorToken",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "PATCH /public/surveys/{collectorToken}/session/{sessionId}": {
       "classification": "published",
@@ -34336,7 +35708,27 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "collectorToken",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "sessionId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "replayable-write",
+        "key": "response session id",
+        "replay": "Answers are deleted and re-inserted per question id inside one transaction, so replaying the same payload converges. Refused once the session leaves 'in_progress'.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/surveys/survey-response.service.ts"
     },
     "POST /public/surveys/{collectorToken}/session/{sessionId}/submit": {
       "classification": "published",
@@ -34349,7 +35741,27 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "collectorToken",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "sessionId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "single-use-token-racy",
+        "key": "response session id",
+        "replay": "Inside the transaction the session status must be 'in_progress' or the request is refused with 400 'already submitted'; the check is a read-then-write, not a conditional UPDATE. Answer writes are delete-then-insert per question and therefore replay-safe.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/surveys/survey-response.service.ts"
     },
     "POST /public/surveys/{collectorToken}/start": {
       "classification": "published",
@@ -34362,7 +35774,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "collectorToken",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into survey_response_sessions. A retry creates a second session. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/surveys/survey-response.service.ts"
     },
     "GET /public/surveys/live/{sessionCode}": {
       "classification": "published",
@@ -34375,7 +35802,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "sessionCode",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /public/surveys/live/{sessionCode}/answer": {
       "classification": "published",
@@ -34388,7 +35830,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "sessionCode",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into survey_answers, guarded only by the session's current question. A retry records a second answer. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/surveys/survey-live-participant.service.ts"
     },
     "POST /public/surveys/live/{sessionCode}/join": {
       "classification": "published",
@@ -34401,7 +35858,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "sessionCode",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into survey_response_sessions returning a participant token. A retry creates a second participant. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/surveys/survey-live-participant.service.ts"
     },
     "GET /public/vendor-portal/{token}": {
       "classification": "published",
@@ -34414,7 +35886,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /public/waitlist": {
       "classification": "published",
@@ -34427,7 +35914,16 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "natural-key-upsert",
+        "key": null,
+        "replay": "onConflictDoUpdate on platform_waitlist.email — a replay updates the same row rather than creating a second entry.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/public/waitlist.service.ts"
     },
     "GET /public/whiteboard-links/{token}": {
       "classification": "published",
@@ -34440,7 +35936,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "PATCH /public/whiteboard-links/{token}": {
       "classification": "published",
@@ -34453,7 +35964,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "replayable-write",
+        "key": "share token",
+        "replay": "Last-write-wins replacement of the whole scene on project_whiteboards; replaying the same payload converges on the same state. The share token is reusable and the write is unauthenticated when publicAccess='editor'.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/build/execution/whiteboard-sharing.service.ts"
     },
     "GET /public/wiki/{token}": {
       "classification": "published",
@@ -34466,7 +35992,22 @@
         "unauthenticated external users via share links, embedded widgets and emailed forms"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /push/subscribe": {
       "classification": "internal",
@@ -36877,7 +38418,27 @@
         "the external support chat widget embedded on customer sites"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "sessionToken",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /support/chat/{orgId}/{sessionToken}/messages": {
       "classification": "published",
@@ -36890,7 +38451,27 @@
         "the external support chat widget embedded on customer sites"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "sessionToken",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Resolves the ticket by session token and appends unconditionally. A retry appends a duplicate message. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/support/core/support-channels.service.ts"
     },
     "POST /support/chat/{orgId}/start": {
       "classification": "published",
@@ -36903,7 +38484,22 @@
         "the external support chat widget embedded on customer sites"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Mints a fresh inbound secret and creates a new support ticket on every call. A retry creates a second ticket. No server-side replay fence: a client that retries after a timeout must expect a duplicate.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/support/core/support-channels.service.ts"
     },
     "GET /support/csat/{token}": {
       "classification": "published",
@@ -36916,7 +38512,22 @@
         "external CSAT links delivered by email"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "safe",
+        "key": null,
+        "replay": "Safe method — repeating the request produces no additional side effect.",
+        "source": "http-method"
+      },
+      "contractEvidence": null
     },
     "POST /support/csat/{token}": {
       "classification": "published",
@@ -36929,7 +38540,22 @@
         "external CSAT links delivered by email"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "token",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "single-use-token",
+        "key": "csat request token",
+        "replay": "UPDATE support_csat_requests SET responded_at=now() WHERE id=? AND org_id=? AND responded_at IS NULL RETURNING; zero rows raises 409. Consumed exactly once.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/support/core/support-csat.controller.ts"
     },
     "GET /support/custom-fields": {
       "classification": "internal",
@@ -36986,7 +38612,22 @@
         "inbound email/SMS/WhatsApp provider push"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "advisory-dedup-unfenced",
+        "key": "provider message id",
+        "replay": "x-webhook-secret compared to support_channels.inbound_secret (401). Dedupe is a SELECT-then-INSERT on support_ticket_messages.source_message_id backed by idx_support_ticket_messages_source_message, which is NOT unique, so two concurrent redeliveries can both insert.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/support/core/support-channels.controller.ts"
     },
     "POST /support/inbound/sms/{orgId}": {
       "classification": "published",
@@ -36999,7 +38640,22 @@
         "inbound email/SMS/WhatsApp provider push"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "advisory-dedup-unfenced",
+        "key": "provider message id",
+        "replay": "x-webhook-secret compared to support_channels.inbound_secret (401). Dedupe is a SELECT-then-INSERT on support_ticket_messages.source_message_id backed by idx_support_ticket_messages_source_message, which is NOT unique, so two concurrent redeliveries can both insert.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/support/core/support-channels.controller.ts"
     },
     "POST /support/inbound/whatsapp/{orgId}": {
       "classification": "published",
@@ -37012,7 +38668,22 @@
         "inbound email/SMS/WhatsApp provider push"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "advisory-dedup-unfenced",
+        "key": "provider message id",
+        "replay": "x-webhook-secret compared to support_channels.inbound_secret (401). Dedupe is a SELECT-then-INSERT on support_ticket_messages.source_message_id backed by idx_support_ticket_messages_source_message, which is NOT unique, so two concurrent redeliveries can both insert.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/support/core/support-channels.controller.ts"
     },
     "GET /support/kb/articles": {
       "classification": "internal",
@@ -39600,7 +41271,22 @@
         "inbound provider webhooks (email, payments, Razorpay)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "provider",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "provider-signature-idempotent-effect",
+        "key": null,
+        "replay": "Svix signature (svix-id/svix-timestamp/svix-signature) verified before parsing. No provider event id is stored; the effect is an email_suppressions upsert with onConflictDoNothing on (email, channel), so a redelivery converges to the same state.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/email/email-webhook.controller.ts"
     },
     "POST /webhooks/payments/{providerKey}/{environment}/{orgId}": {
       "classification": "published",
@@ -39613,7 +41299,32 @@
         "inbound provider webhooks (email, payments, Razorpay)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "environment",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true
+        },
+        {
+          "name": "providerKey",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "provider-signature-and-event-id",
+        "key": "provider event id",
+        "replay": "Provider signature verified before parsing (401 on failure), then the provider event id is inserted into payment_webhook_events with onConflictDoNothing on the unique index uq_payment_webhook_events_provider_env_event. A redelivery of the same provider event is a no-op.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/billing/payments/payment-webhooks-public.controller.ts"
     },
     "POST /webhooks/razorpay/{orgId}": {
       "classification": "published",
@@ -39626,7 +41337,22 @@
         "inbound provider webhooks (email, payments, Razorpay)"
       ],
       "sunsetAt": null,
-      "sunsetEvidence": null
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [
+        {
+          "name": "orgId",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "idempotency": {
+        "mode": "provider-signature-and-event-id",
+        "key": "provider event id",
+        "replay": "Legacy URL alias for the payments webhook; same signature check and same uq_payment_webhook_events_provider_env_event fence. The event id is read from the body, not a header.",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/billing/core/razorpay-webhook.controller.ts"
     },
     "GET /workflows": {
       "classification": "internal",
@@ -40348,5 +42074,356 @@
       "sunsetEvidence": null
     }
   },
-  "webhooks": {}
+  "webhooks": {
+    "comment.created": {
+      "classification": "published",
+      "scope": "project",
+      "dispatcher": "ProjectsWebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [
+        "src/modules/build/core/projects-ticket-comments.service.ts"
+      ],
+      "declaredIn": null,
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "deal.lost": {
+      "classification": "published",
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [
+        "src/modules/deals/deals.service.ts"
+      ],
+      "declaredIn": null,
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "deal.won": {
+      "classification": "published",
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [
+        "src/modules/deals/deals.service.ts"
+      ],
+      "declaredIn": null,
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "employee.hired": {
+      "classification": "published",
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [
+        "src/modules/hr/directory/employee-onboarding.service.ts"
+      ],
+      "declaredIn": null,
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "lead.created": {
+      "classification": "published",
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [
+        "src/modules/leads/leads.service.ts"
+      ],
+      "declaredIn": null,
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "lead.updated": {
+      "classification": "published",
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [
+        "src/modules/leads/leads.service.ts"
+      ],
+      "declaredIn": null,
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "leave.approved": {
+      "classification": "published",
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [
+        "src/modules/hr/time/leave-decision-effects.service.ts"
+      ],
+      "declaredIn": null,
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "member.added": {
+      "classification": "published",
+      "scope": "project",
+      "dispatcher": "ProjectsWebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [
+        "src/modules/build/core/projects-members.service.ts"
+      ],
+      "declaredIn": null,
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "member.removed": {
+      "classification": "published",
+      "scope": "project",
+      "dispatcher": "ProjectsWebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [
+        "src/modules/build/core/projects-members.service.ts"
+      ],
+      "declaredIn": null,
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "member.role_updated": {
+      "classification": "published",
+      "scope": "project",
+      "dispatcher": "ProjectsWebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [
+        "src/modules/build/core/projects-members.service.ts"
+      ],
+      "declaredIn": null,
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "survey.assessment.failed": {
+      "classification": "published",
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [],
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "survey.assessment.passed": {
+      "classification": "published",
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [],
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "survey.collector.completed_quota": {
+      "classification": "published",
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [],
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "survey.lead.created": {
+      "classification": "published",
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [],
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "survey.live.ended": {
+      "classification": "published",
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [],
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "survey.live.started": {
+      "classification": "published",
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [],
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "survey.published": {
+      "classification": "published",
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [],
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "survey.response.started": {
+      "classification": "published",
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [],
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "survey.response.submitted": {
+      "classification": "published",
+      "scope": "organization",
+      "dispatcher": "WebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [],
+      "declaredIn": "src/modules/surveys/dto/survey-automation.schemas.ts",
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "ticket.assigned": {
+      "classification": "published",
+      "scope": "project",
+      "dispatcher": "ProjectsWebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [
+        "src/modules/build/core/projects-tickets-update.service.ts"
+      ],
+      "declaredIn": null,
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "ticket.created": {
+      "classification": "published",
+      "scope": "project",
+      "dispatcher": "ProjectsWebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [
+        "src/modules/build/core/projects-tickets-create.service.ts"
+      ],
+      "declaredIn": null,
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "ticket.deleted": {
+      "classification": "published",
+      "scope": "project",
+      "dispatcher": "ProjectsWebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [
+        "src/modules/build/core/projects-tickets.service.ts"
+      ],
+      "declaredIn": null,
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "ticket.updated": {
+      "classification": "published",
+      "scope": "project",
+      "dispatcher": "ProjectsWebhooksDispatchService",
+      "version": "1",
+      "consumers": [
+        "customer-registered webhook endpoints (webhooks API subscriptions)"
+      ],
+      "emittedFrom": [
+        "src/modules/build/core/projects-tickets-update.service.ts"
+      ],
+      "declaredIn": null,
+      "subscribable": true,
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    }
+  }
 }

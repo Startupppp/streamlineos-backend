@@ -21,9 +21,8 @@ function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserConte
 }
 
 const makeEmbeddings = () => ({
-  isConfigured: jest.fn().mockReturnValue(false),
-  embedQuery: jest.fn(),
-  toVectorLiteral: jest.fn(),
+  isEmbeddingConfigured: jest.fn().mockReturnValue(false),
+  embedQueryWithCredit: jest.fn(),
 });
 
 const makeEvents = () => ({ record: jest.fn().mockResolvedValue(undefined) });
@@ -80,9 +79,8 @@ describe("KB cross-tenant isolation", () => {
     // retrieveTopSources returns immediately when embeddings are unconfigured, so
     // the shared makeEmbeddings() (isConfigured: false) made this unreachable.
     const embeddings = {
-      isConfigured: jest.fn().mockReturnValue(true),
-      embedQuery: jest.fn().mockResolvedValue([0.1, 0.2]),
-      toVectorLiteral: jest.fn().mockReturnValue("[0.1,0.2]"),
+      isEmbeddingConfigured: jest.fn().mockReturnValue(true),
+      embedQueryWithCredit: jest.fn().mockResolvedValue({ ok: true, vector: [0.1, 0.2], vectorLiteral: "[0.1,0.2]" }),
     };
 
     const svc = new KbSearchService(

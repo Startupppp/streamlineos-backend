@@ -10,6 +10,13 @@ import type { PostOpeningBalancesInput } from "./dto/settings.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { FinancePostingService } from "../posting/finance-posting.service";
 import type { PostJournalLine } from "../core/finance-posting.types";
+import {
+  absDecimal,
+  compareDecimals,
+  decimalFromNumber,
+  subtractDecimals,
+  sumDecimals,
+} from "../core/money.util";
 
 @Injectable()
 export class OpeningBalancesService {
@@ -86,22 +93,23 @@ export class OpeningBalancesService {
   }
 
   private async doPost(u: CurrentUserContext, input: PostOpeningBalancesInput) {
-    const debitTotal = input.lines.reduce((s, l) => s + (l.debit ?? 0), 0);
-    const creditTotal = input.lines.reduce((s, l) => s + (l.credit ?? 0), 0);
-    const diff = Math.round((debitTotal - creditTotal) * 100) / 100;
+    const debitTotal = sumDecimals(input.lines.map((l) => decimalFromNumber(l.debit ?? 0)));
+    const creditTotal = sumDecimals(input.lines.map((l) => decimalFromNumber(l.credit ?? 0)));
+    const diff = subtractDecimals(debitTotal, creditTotal);
 
     const lines: PostJournalLine[] = input.lines.map((l) => ({
       accountId: l.accountId,
-      debit: (l.debit ?? 0).toFixed(4),
-      credit: (l.credit ?? 0).toFixed(4),
+      debit: decimalFromNumber(l.debit ?? 0),
+      credit: decimalFromNumber(l.credit ?? 0),
       description: "Opening balance",
     }));
 
-    if (Math.abs(diff) > 0.009) {
+    const sign = compareDecimals(diff, "0");
+    if (sign !== 0) {
       lines.push({
         systemPurpose: "RETAINED_EARNINGS",
-        debit: diff > 0 ? "0.0000" : Math.abs(diff).toFixed(4),
-        credit: diff > 0 ? diff.toFixed(4) : "0.0000",
+        debit: sign > 0 ? "0.0000" : absDecimal(diff),
+        credit: sign > 0 ? diff : "0.0000",
         description: "Opening balance auto-balance",
       });
     }

@@ -98,3 +98,17 @@ export interface EmbedQuerySuccess {
 }
 
 export type EmbedQueryResult = EmbedQuerySuccess | AiInvokeFailure;
+
+export interface EmbedBatchOpts {
+  texts: string[];
+  orgId: string;
+  feature: string;
+  charge: boolean;
+}
+
+export interface EmbedBatchSuccess {
+  ok: true;
+  vectors: number[][];
+}
+
+export type EmbedBatchResult = EmbedBatchSuccess | AiInvokeFailure;

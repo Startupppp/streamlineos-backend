@@ -27,6 +27,7 @@ import { ResponseTransformInterceptor } from "./common/interceptors/response-tra
 import { resolveAdmissionConfig } from "./common/admission/admission.config";
 import { logger } from "./common/logger/logger.service";
 import { API_VERSION_CURRENT } from "./common/http/api-version";
+import { shutdownGate } from "./health/shutdown-gate";
 
 setDefaultResultOrder("ipv4first");
 
@@ -95,6 +96,10 @@ async function bootstrap(): Promise<void> {
   });
   app.use(compression());
   app.enableShutdownHooks();
+  // Ahead of routing so a request arriving after the drain has begun is refused
+  // before it takes a connection, and one already running is counted so
+  // `beforeApplicationShutdown` can wait for it.
+  app.use(shutdownGate);
   app.use(correlationIdMiddleware);
 
   app.enableCors({

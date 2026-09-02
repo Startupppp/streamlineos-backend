@@ -7,14 +7,18 @@ const sha256 = (text: string): string =>
   createHash("sha256").update(text).digest("hex");
 
 const makeEmbeddings = (configured = true) => ({
-  isConfigured: jest.fn().mockReturnValue(configured),
-  embedQuery: jest.fn().mockResolvedValue(new Array(EMBEDDING_DIM).fill(0.1)),
-  toVectorLiteral: jest.fn((v: number[]) => `[${v.join(",")}]`),
+  isEmbeddingConfigured: jest.fn().mockReturnValue(configured),
+  embedBatchWithCredit: jest
+    .fn()
+    .mockImplementation(({ texts }: { texts: string[] }) => Promise.resolve({
+      ok: true,
+      vectors: texts.map(() => new Array(EMBEDDING_DIM).fill(0.1) as number[]),
+    })),
 });
 
 const makeCheckpoint = () => ({
   loadCheckpoints: jest.fn().mockResolvedValue(new Map()),
-  saveCheckpoint: jest.fn().mockResolvedValue(undefined),
+  saveCheckpoints: jest.fn().mockResolvedValue(undefined),
   clearCheckpoints: jest.fn().mockResolvedValue(undefined),
 });
 
@@ -111,7 +115,7 @@ describe("KbIndexingService — content-hash guard", () => {
 
       await svc.indexPage("org-1", 99);
 
-      expect(embeddings.embedQuery).not.toHaveBeenCalled();
+      expect(embeddings.embedBatchWithCredit).not.toHaveBeenCalled();
     }
 
     const { db } = makeDb(null);
@@ -129,7 +133,7 @@ describe("KbIndexingService — content-hash guard", () => {
 
     await svc.indexPage("org-1", 99);
 
-    expect(embeddings.embedQuery).not.toHaveBeenCalled();
+    expect(embeddings.embedBatchWithCredit).not.toHaveBeenCalled();
   });
 
   it("skips re-embedding when the stored hash matches the current article text", async () => {
@@ -144,7 +148,7 @@ describe("KbIndexingService — content-hash guard", () => {
     const svc = new KbIndexingService(db as never, embeddings as never, makeCheckpoint() as never);
     await svc.indexArticle("org-1", 1);
 
-    expect(embeddings.embedQuery).not.toHaveBeenCalled();
+    expect(embeddings.embedBatchWithCredit).not.toHaveBeenCalled();
   });
 
   it("re-embeds when the stored hash differs from the current article text", async () => {
@@ -165,7 +169,7 @@ describe("KbIndexingService — content-hash guard", () => {
     const svc = new KbIndexingService(db as never, embeddings as never, makeCheckpoint() as never);
     await svc.indexArticle("org-1", 1);
 
-    expect(embeddings.embedQuery).toHaveBeenCalled();
+    expect(embeddings.embedBatchWithCredit).toHaveBeenCalled();
   });
 
   it("re-embeds when no hash is stored yet (existing chunks predate the column)", async () => {
@@ -185,7 +189,7 @@ describe("KbIndexingService — content-hash guard", () => {
     const svc = new KbIndexingService(db as never, embeddings as never, makeCheckpoint() as never);
     await svc.indexArticle("org-1", 1);
 
-    expect(embeddings.embedQuery).toHaveBeenCalled();
+    expect(embeddings.embedBatchWithCredit).toHaveBeenCalled();
   });
 
   it("skips re-embedding for pages when content and ACL are both unchanged", async () => {
@@ -210,7 +214,7 @@ describe("KbIndexingService — content-hash guard", () => {
     const svc = new KbIndexingService(db as never, embeddings as never, makeCheckpoint() as never);
     await svc.indexPage("org-1", 1);
 
-    expect(embeddings.embedQuery).not.toHaveBeenCalled();
+    expect(embeddings.embedBatchWithCredit).not.toHaveBeenCalled();
     expect(db.update as jest.Mock).not.toHaveBeenCalled();
   });
 
@@ -237,7 +241,7 @@ describe("KbIndexingService — content-hash guard", () => {
     const svc = new KbIndexingService(db as never, embeddings as never, makeCheckpoint() as never);
     await svc.indexPage("org-1", 99);
 
-    expect(embeddings.embedQuery).not.toHaveBeenCalled();
+    expect(embeddings.embedBatchWithCredit).not.toHaveBeenCalled();
     expect(tx.insert as jest.Mock).not.toHaveBeenCalled();
     expect(db.update as jest.Mock).toHaveBeenCalled();
     const setMock = ((db.update as jest.Mock).mock.results[0]?.value as { set: jest.Mock }).set;

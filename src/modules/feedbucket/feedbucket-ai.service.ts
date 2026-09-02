@@ -15,8 +15,10 @@ import { feedbucketSubmissions } from "../../db/schema";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
+import { sanitizeHtml } from "../hr/templates/html-sanitizer";
 import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { StorageService } from "../storage/storage.service";
 import {
   FeedbackAnalysisSchema,
   type FeedbackAnalysis,
@@ -88,15 +90,6 @@ function getAllowedStorageHost(): string | null {
   }
 }
 
-function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, "")
-    .replace(/href\s*=\s*["']?\s*javascript:[^"'\s>]*/gi, 'href="#"')
-    .replace(/src\s*=\s*["']?\s*javascript:[^"'\s>]*/gi, 'src=""');
-}
-
 @Injectable()
 export class FeedbucketAiService {
   constructor(
@@ -106,6 +99,7 @@ export class FeedbucketAiService {
     private readonly rateLimiter: RateLimitService,
     private readonly ticketsService: ProjectsTicketsService,
     private readonly planLimits: PlanLimitsService,
+    private readonly storage: StorageService,
   ) {}
 
   private async loadSubmission(orgId: string, submissionId: number) {
@@ -130,17 +124,41 @@ export class FeedbucketAiService {
     return widget.projectId;
   }
 
+  /**
+   * The stored reference is a tenant-private object key, so the bytes come out
+   * of the object store directly. The legacy branch below still accepts a
+   * public URL on the configured storage host, for rows written before the key
+   * became the stored form.
+   */
   private async resolveScreenshotForVision(
-    screenshotUrl: string | null | undefined,
+    orgId: string,
+    screenshotReference: string | null | undefined,
   ): Promise<string[]> {
-    if (!screenshotUrl) return [];
+    if (!screenshotReference) return [];
+
+    if (!/^https?:\/\//i.test(screenshotReference)) {
+      if (!this.storage.isValidFileKey(screenshotReference)) return [];
+      try {
+        const buf = await this.storage.readObjectPrefix(
+          orgId,
+          screenshotReference,
+          MAX_IMAGE_BYTES,
+        );
+        if (!buf || buf.length === 0) return [];
+        const mime = detectImageMime(buf);
+        if (!mime) return [];
+        return [`data:${mime};base64,${buf.toString("base64")}`];
+      } catch {
+        return [];
+      }
+    }
 
     const allowedHost = getAllowedStorageHost();
     if (!allowedHost) return [];
 
     let parsedUrl: URL;
     try {
-      parsedUrl = new URL(screenshotUrl);
+      parsedUrl = new URL(screenshotReference);
     } catch {
       return [];
     }
@@ -153,7 +171,7 @@ export class FeedbucketAiService {
 
       let res: Response;
       try {
-        res = await fetch(screenshotUrl, { signal: controller.signal });
+        res = await fetch(screenshotReference, { signal: controller.signal });
       } finally {
         clearTimeout(timer);
       }
@@ -280,7 +298,7 @@ export class FeedbucketAiService {
       );
     }
 
-    const images = await this.resolveScreenshotForVision(submission.screenshotUrl);
+    const images = await this.resolveScreenshotForVision(u.orgId, submission.screenshotUrl);
 
     const analysis = await this.runVisionAnalysis({
       orgId: u.orgId,

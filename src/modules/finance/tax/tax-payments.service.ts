@@ -142,7 +142,7 @@ export class TaxPaymentsService {
         amount: accTaxPayments.amount,
       })
       .from(accTaxPayments)
-      .where(and(eq(accTaxPayments.id, paymentId), eq(accTaxPayments.orgId, orgId)))
+      .where(and(eq(accTaxPayments.id, paymentId), eq(accTaxPayments.orgId, orgId), isNull(accTaxPayments.archivedAt)))
       .limit(1);
 
     if (!payment) throw new NotFoundException(`Tax payment ${paymentId} not found`);

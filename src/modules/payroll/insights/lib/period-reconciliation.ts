@@ -4,13 +4,15 @@
  * bank-statement or provider settlement (those remain export/manual).
  */
 
+import { compareDecimals, roundDecimal, subtractDecimals } from "../../../accounting/core/money.util";
+
 export interface PeriodReconMoneyInputs {
-  runNet: number | null;
-  payoutPaid: number;
-  payoutPending: number;
-  payoutFailed: number;
-  journalDebits: number | null;
-  journalCredits: number | null;
+  runNet: string | null;
+  payoutPaid: string;
+  payoutPending: string;
+  payoutFailed: string;
+  journalDebits: string | null;
+  journalCredits: string | null;
   journalStatus: string | null;
   journalReconStatus: string | null;
   runStatus: string | null;
@@ -37,14 +39,8 @@ export interface PeriodReconEvaluation {
   warningCount: number;
 }
 
-const EPS = 0.009; // half-cent tolerance on rupee money
-
-function money(n: number): string {
-  return (Math.round(n * 100) / 100).toFixed(2);
-}
-
-function nearlyEqual(a: number, b: number): boolean {
-  return Math.abs(a - b) <= EPS;
+function money(value: string): string {
+  return roundDecimal(value, 2);
 }
 
 /**
@@ -64,7 +60,7 @@ export function evaluatePeriodReconciliation(input: PeriodReconMoneyInputs): Per
   });
 
   if (input.hasJournal && input.journalDebits != null && input.journalCredits != null) {
-    const balanced = nearlyEqual(input.journalDebits, input.journalCredits);
+    const balanced = compareDecimals(input.journalDebits, input.journalCredits) === 0;
     checks.push({
       key: "journal_balanced",
       label: "Journal batch balances",
@@ -75,7 +71,7 @@ export function evaluatePeriodReconciliation(input: PeriodReconMoneyInputs): Per
         : `Debits ${money(input.journalDebits)} ≠ credits ${money(input.journalCredits)}`,
       expected: money(input.journalDebits),
       actual: money(input.journalCredits),
-      delta: money(input.journalDebits - input.journalCredits),
+      delta: money(subtractDecimals(input.journalDebits, input.journalCredits)),
     });
   } else {
     checks.push({
@@ -124,9 +120,9 @@ export function evaluatePeriodReconciliation(input: PeriodReconMoneyInputs): Per
 
   if (input.hasRun && input.runNet != null && input.hasPayoutBatch) {
     // When all items paid (no pending), paid should match run net (excluding failed)
-    const allSettled = input.payoutPending <= EPS;
+    const allSettled = compareDecimals(input.payoutPending, "0") <= 0;
     if (allSettled) {
-      const match = nearlyEqual(input.runNet, input.payoutPaid);
+      const match = compareDecimals(input.runNet, input.payoutPaid) === 0;
       checks.push({
         key: "run_net_vs_payout_paid",
         label: "Run net matches payout paid total",
@@ -137,7 +133,7 @@ export function evaluatePeriodReconciliation(input: PeriodReconMoneyInputs): Per
           : `Run net ${money(input.runNet)} vs paid ${money(input.payoutPaid)} — investigate failed/held items or partial pays`,
         expected: money(input.runNet),
         actual: money(input.payoutPaid),
-        delta: money(input.runNet - input.payoutPaid),
+        delta: money(subtractDecimals(input.runNet, input.payoutPaid)),
       });
     } else {
       checks.push({
@@ -161,7 +157,7 @@ export function evaluatePeriodReconciliation(input: PeriodReconMoneyInputs): Per
     // Balanced journal total credits ≈ full double-entry side; net payable is often
     // half when expense/payable pair — only assert balance already checked above.
     // Soft check: journal credits >= run net (payable + other liabilities).
-    const covers = input.journalCredits + EPS >= input.runNet;
+    const covers = compareDecimals(input.journalCredits, input.runNet) >= 0;
     checks.push({
       key: "journal_covers_run_net",
       label: "Journal credits cover run net",

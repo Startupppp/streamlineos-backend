@@ -61,12 +61,18 @@ export class EmbeddingsService {
     return vec;
   }
 
-  async embedBatch(texts: string[], orgId: string, feature: string): Promise<number[][]> {
+  async embedBatchRaw(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
     const client = this.getEmbeddings();
     const out: number[][] = [];
     for (let i = 0; i < texts.length; i += MAX_EMBED_BATCH)
       out.push(...(await client.embedDocuments(texts.slice(i, i + MAX_EMBED_BATCH))));
+    return out;
+  }
+
+  async embedBatch(texts: string[], orgId: string, feature: string): Promise<number[][]> {
+    if (texts.length === 0) return [];
+    const out = await this.embedBatchRaw(texts);
     const totalTokens = texts.reduce((sum, t) => sum + estimateTokens(t), 0);
     await this.usage
       .track({

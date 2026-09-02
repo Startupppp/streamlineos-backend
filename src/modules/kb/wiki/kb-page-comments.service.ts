@@ -5,6 +5,8 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreatePageCommentInput, UpdatePageCommentInput } from "./dto/kb-page-comments.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import type { KeysetPosition } from "../../../common/pagination/keyset";
+import { keysetAfterId } from "../../../common/pagination/keyset";
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
@@ -12,6 +14,8 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import { AccessService } from "../../access/access.service";
 
 type CommentRow = typeof kbPageComments.$inferSelect;
+
+const PAGE_SIZE = 50;
 
 @Injectable()
 export class KbPageCommentsService {
@@ -21,9 +25,15 @@ export class KbPageCommentsService {
     private readonly access: AccessService,
   ) {}
 
-  async list(user: CurrentUserContext, pageId: number): Promise<Array<CommentRow & { authorName: string | null }>> {
+  async list(
+    user: CurrentUserContext,
+    pageId: number,
+    cursor?: KeysetPosition,
+  ): Promise<Array<CommentRow & { authorName: string | null }>> {
     const orgId = user.orgId;
     await this.assertPageExists(user, pageId);
+    const conditions = [eq(kbPageComments.orgId, orgId), eq(kbPageComments.pageId, pageId)];
+    if (cursor) conditions.push(keysetAfterId(kbPageComments.createdAt, kbPageComments.id, cursor));
     const rows = await this.db
       .select({
         comment: kbPageComments,
@@ -32,8 +42,9 @@ export class KbPageCommentsService {
       })
       .from(kbPageComments)
       .leftJoin(users, eq(users.id, kbPageComments.authorId))
-      .where(and(eq(kbPageComments.orgId, orgId), eq(kbPageComments.pageId, pageId)))
-      .orderBy(asc(kbPageComments.createdAt));
+      .where(and(...conditions))
+      .orderBy(asc(kbPageComments.createdAt), asc(kbPageComments.id))
+      .limit(PAGE_SIZE);
     return rows.map(function toCommentWithAuthor(row) {
       return { ...row.comment, authorName: row.authorName ?? row.authorEmail };
     });

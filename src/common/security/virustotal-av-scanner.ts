@@ -40,7 +40,7 @@ export class VirusTotalScanner extends AvScanner implements OnModuleInit {
       return await this.pollAnalysis(analysisId, filename);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`VirusTotal scan failed for "${filename}": ${message}`);
+      this.logger.error(`VirusTotal scan failed: ${message}`, { filename });
       return { status: "error", reason: `vt-api-error: ${message}` };
     }
   }
@@ -95,7 +95,7 @@ export class VirusTotalScanner extends AvScanner implements OnModuleInit {
       if (parsed.data.data?.attributes?.status !== "completed") continue;
       return this.parseStats(parsed.data.data.attributes.stats ?? null);
     }
-    this.logger.warn(`VirusTotal analysis timed out for "${filename}"`);
+    this.logger.warn("VirusTotal analysis timed out", { filename });
     return { status: "error", reason: "vt-analysis-timeout" };
   }
 

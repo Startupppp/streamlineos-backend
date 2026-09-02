@@ -3,6 +3,7 @@ import { Redis } from "@upstash/redis";
 import { randomUUID } from "node:crypto";
 import { withSpan } from "../observability/tracing";
 import { getRegionRegistry, hasRegionRegistry } from "../region/region-registry";
+import type { ExactCacheKey } from "./cache-keys";
 
 export const REDIS = "REDIS";
 export const REDIS_COMMAND_TIMEOUT = "REDIS_COMMAND_TIMEOUT";
@@ -64,7 +65,7 @@ export class CacheService {
     );
   }
 
-  async cached<T>(key: string, fetcher: () => Promise<T>, ttlSeconds = 300): Promise<T> {
+  async cached<T>(key: ExactCacheKey, fetcher: () => Promise<T>, ttlSeconds = 300): Promise<T> {
     return this.cachedWithRedis(this.redis, key, fetcher, ttlSeconds);
   }
 
@@ -203,7 +204,7 @@ export class CacheService {
     return new Promise((resolve) => setTimeout(resolve, milliseconds));
   }
 
-  async get<T>(key: string): Promise<T | null> {
+  async get<T>(key: ExactCacheKey): Promise<T | null> {
     const redis = this.redis;
     if (!redis) return null;
     try {
@@ -213,7 +214,7 @@ export class CacheService {
     }
   }
 
-  async set(key: string, value: unknown, ttlSeconds: number): Promise<void> {
+  async set(key: ExactCacheKey, value: unknown, ttlSeconds: number): Promise<void> {
     const redis = this.redis;
     if (!redis) return;
     try {
@@ -223,13 +224,13 @@ export class CacheService {
     }
   }
 
-  async invalidate(key: string): Promise<void> {
+  async invalidate(key: ExactCacheKey): Promise<void> {
     const redis = this.redis;
     if (!redis) return;
     await this.invalidateWithRetry("invalidate", key, () => redis.del(key));
   }
 
-  async del(key: string): Promise<void> {
+  async del(key: ExactCacheKey): Promise<void> {
     return this.invalidate(key);
   }
 
@@ -266,14 +267,14 @@ export class CacheService {
     }
   }
 
-  async orgScopedKey(orgId: string, localKey: string): Promise<string> {
+  async orgScopedKey(orgId: string, localKey: ExactCacheKey): Promise<string> {
     const prefix = await this.cellPrefixForOrg(orgId);
     return prefix ? `${prefix}:${orgId}:${localKey}` : `${orgId}:${localKey}`;
   }
 
   async cachedForOrg<T>(
     orgId: string,
-    localKey: string,
+    localKey: ExactCacheKey,
     fetcher: () => Promise<T>,
     baseTtl = 300,
   ): Promise<T> {
@@ -284,7 +285,7 @@ export class CacheService {
 
   async cachedForOrgWith<T>(
     orgId: string,
-    localKey: string,
+    localKey: ExactCacheKey,
     fetcher: () => Promise<T>,
     ttlFn: (result: T) => number,
     maxTtl: number,
@@ -317,7 +318,7 @@ export class CacheService {
     );
   }
 
-  async invalidateForOrg(orgId: string, localKey: string): Promise<void> {
+  async invalidateForOrg(orgId: string, localKey: ExactCacheKey): Promise<void> {
     const redis = await this.redisForOrg(orgId);
     const prefix = await this.cellPrefixForOrg(orgId);
     const key = prefix ? `${prefix}:${orgId}:${localKey}` : `${orgId}:${localKey}`;

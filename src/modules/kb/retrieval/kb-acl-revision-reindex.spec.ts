@@ -4,16 +4,16 @@ import { KbMembersService } from "../wiki/kb-members.service";
 function makeCheckpoint() {
   return {
     loadCheckpoints: jest.fn().mockResolvedValue(new Map()),
-    saveCheckpoint: jest.fn().mockResolvedValue(undefined),
+    saveCheckpoints: jest.fn().mockResolvedValue(undefined),
     clearCheckpoints: jest.fn().mockResolvedValue(undefined),
   };
 }
 
 function makeEmbeddings() {
   return {
-    isConfigured: jest.fn().mockReturnValue(false),
-    embedQuery: jest.fn(),
-    toVectorLiteral: jest.fn(),
+    isEmbeddingConfigured: jest.fn().mockReturnValue(false),
+    embedQueryWithCredit: jest.fn(),
+    embedBatchWithCredit: jest.fn(),
   };
 }
 
