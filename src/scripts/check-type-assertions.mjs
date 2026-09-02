@@ -45,11 +45,35 @@ const SRC = fileURLToPath(new URL("../", import.meta.url));
 /** A scan that suddenly finds nothing is far likelier to be broken than the tree clean. */
 const SCAN_FLOOR_FILES = 2000;
 
-const BANNED = {
+/**
+ * Patterns that appear in CODE. These are counted with comments stripped, so a
+ * comment discussing a cast is never mistaken for one.
+ */
+const BANNED_IN_CODE = {
   "as any": /(?<![\w$])as\s+any(?![\w$])/g,
-  "@ts-ignore": /@ts-ignore/g,
-  "@ts-expect-error": /@ts-expect-error/g,
-  "@ts-nocheck": /@ts-nocheck/g,
+};
+
+/**
+ * Patterns that appear in COMMENTS, because that is the only place TypeScript
+ * reads them. These MUST be matched in the raw source.
+ *
+ * This split is a correction. All four escapes were previously counted with
+ * `countOutsideComments`, which strips comments before matching — and a
+ * suppression directive is only ever written inside a comment. So rule 1 was
+ * structurally incapable of ever firing for the three directives: it reported
+ * zero on a file whose first line is `// @ts-ignore`. The count was zero
+ * because the check could not see, not because the tree was clean. Only
+ * `as any`, which appears in code, was genuinely enforced.
+ *
+ * Anchoring to the start of the comment is what keeps prose honest.
+ * TypeScript only honours a directive that begins the comment, so
+ * `// @ts-ignore` is a real suppression while `// we ship zero @ts-ignore` is a
+ * sentence, and only the first matches.
+ */
+const BANNED_DIRECTIVES = {
+  "@ts-ignore": /(?:\/\/|\/\*)\s*@ts-ignore\b/g,
+  "@ts-expect-error": /(?:\/\/|\/\*)\s*@ts-expect-error\b/g,
+  "@ts-nocheck": /(?:\/\/|\/\*)\s*@ts-nocheck\b/g,
 };
 
 const DOUBLE_CAST = /\bas\s+unknown\s+as\b/g;
@@ -131,8 +155,12 @@ function scan(root) {
       continue;
     }
     const rel = relative(root, file).replace(/\\/g, "/");
-    for (const [name, pattern] of Object.entries(BANNED)) {
+    for (const [name, pattern] of Object.entries(BANNED_IN_CODE)) {
       const n = countOutsideComments(source, pattern);
+      if (n) banned.set(`${rel} :: ${name}`, n);
+    }
+    for (const [name, pattern] of Object.entries(BANNED_DIRECTIVES)) {
+      const n = [...source.matchAll(pattern)].length;
       if (n) banned.set(`${rel} :: ${name}`, n);
     }
     const casts = countOutsideComments(source, DOUBLE_CAST);
@@ -177,10 +205,24 @@ function runSelfTest() {
     "(c) a block comment describing a cast must NOT be counted");
   assert(countOutsideComments("const url = 'https://x/y'; const a = b as unknown as C;\n", DOUBLE_CAST) === 1,
     "(d) a `//` inside a string must not blind the rest of the line");
-  assert(countOutsideComments("const x = y as any;\n", BANNED["as any"]) === 1,
+  assert(countOutsideComments("const x = y as any;\n", BANNED_IN_CODE["as any"]) === 1,
     "(e) `as any` must be counted");
-  assert(countOutsideComments("const x: Whereas anything = 1;\n", BANNED["as any"]) === 0,
+  assert(countOutsideComments("const x: Whereas anything = 1;\n", BANNED_IN_CODE["as any"]) === 0,
     "(f) `as any` must not match inside a longer identifier");
+
+  // The regression these three guard is the one this gate shipped with: all four
+  // escapes were counted with comments stripped, so the three DIRECTIVES could
+  // never fire. (e1) pins the precondition, (e2) pins the fix, (e3) pins prose.
+  const directiveHits = (src, name) => [...src.matchAll(BANNED_DIRECTIVES[name])].length;
+  assert(countOutsideComments("// @ts-ignore\nconst x = 1;\n", /@ts-ignore/g) === 0,
+    "(e1) precondition: a comment-stripping counter CANNOT see a directive — which is why directives are matched raw");
+  assert(directiveHits("// @ts-ignore\nconst x = 1;\n", "@ts-ignore") === 1
+    && directiveHits("//@ts-ignore\n", "@ts-ignore") === 1
+    && directiveHits("/* @ts-expect-error */\n", "@ts-expect-error") === 1
+    && directiveHits("// @ts-nocheck\n", "@ts-nocheck") === 1,
+    "(e2) a real suppression directive MUST be caught, with or without a space, in a line or block comment");
+  assert(directiveHits("// we ship zero @ts-ignore in application code\n", "@ts-ignore") === 0,
+    "(e3) prose mentioning a directive is not a directive — TypeScript only honours one that begins the comment");
 
   const ledger = new Map([
     ["a.ts", { count: 2, seam: "external", invariant: "x" }],
@@ -206,7 +248,7 @@ function runSelfTest() {
       `(m) ${file}: every entry needs a written invariant, not a placeholder`);
   }
 
-  console.log("PASS: self-test (11 assertions + a written invariant on all "
+  console.log("PASS: self-test (14 assertions + a written invariant on all "
     + `${DOUBLE_CAST_LEDGER.size} ledger entries)\n`);
   for (const line of [
     "  (a) a real double cast                        -> counted",
@@ -215,6 +257,9 @@ function runSelfTest() {
     "  (d) a `//` inside a string                    -> does not blind the line",
     "  (e) `as any`                                  -> counted",
     "  (f) `as any` inside a longer identifier       -> not counted",
+    "  (e1) comment-stripping CANNOT see a directive -> why directives are matched raw",
+    "  (e2) a real @ts-ignore/-expect-error/-nocheck -> caught (gate bites)",
+    "  (e3) prose mentioning a directive             -> not a directive",
     "  (g) a file gaining a cast                     -> growth (gate bites)",
     "  (h) a file absent from the ledger             -> new (gate bites)",
     "  (i) a ledgered file with no casts left        -> stale (gate bites)",
