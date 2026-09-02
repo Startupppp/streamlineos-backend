@@ -9,6 +9,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { SupportAiTriageService } from "./support-ai-triage.service";
+import { SupportAiTriageAnalysisService } from "./support-ai-triage-analysis.service";
 import { SupportAiTranslationService } from "./support-ai-translation.service";
 import { SupportAiReportHelper, type AiReportFilters } from "./support-ai-report.helper";
 import type { ResolveAiSuggestionInput } from "./dto/support.schemas";
@@ -18,12 +19,13 @@ export class SupportAiService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly triage: SupportAiTriageService,
+    private readonly analysis: SupportAiTriageAnalysisService,
     private readonly translation: SupportAiTranslationService,
     private readonly reportHelper: SupportAiReportHelper,
   ) {}
 
   analyzeTicket(orgId: string, ticketId: number) {
-    return this.triage.analyzeTicket(orgId, ticketId);
+    return this.analysis.analyzeTicket(orgId, ticketId);
   }
 
   suggestReply(user: CurrentUserContext, ticketId: number) {
@@ -39,7 +41,7 @@ export class SupportAiService {
   }
 
   findDuplicates(orgId: string, ticketId: number) {
-    return this.triage.findDuplicates(orgId, ticketId);
+    return this.analysis.findDuplicates(orgId, ticketId);
   }
 
   generateHandoffSummary(user: CurrentUserContext, ticketId: number) {
@@ -47,7 +49,7 @@ export class SupportAiService {
   }
 
   findRootCauseCluster(orgId: string, ticketId: number, userId?: string) {
-    return this.triage.findRootCauseCluster(orgId, ticketId, userId);
+    return this.analysis.findRootCauseCluster(orgId, ticketId, userId);
   }
 
   translateMessage(orgId: string, ticketId: number, messageId: number, targetLanguage: string, userId?: string) {
@@ -68,8 +70,8 @@ export class SupportAiService {
 
   async runFullAnalysis(orgId: string, ticketId: number, _userId?: string): Promise<void> {
     await Promise.allSettled([
-      this.triage.analyzeTicket(orgId, ticketId),
-      this.triage.findDuplicates(orgId, ticketId),
+      this.analysis.analyzeTicket(orgId, ticketId),
+      this.analysis.findDuplicates(orgId, ticketId),
     ]);
   }
 

@@ -13,7 +13,7 @@ import { CronKbService } from "./cron-kb.service";
 import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
 import { CronKbChatRetentionService } from "./cron-kb-chat-retention.service";
 import { CronSupportService } from "./cron-support.service";
-import { SupportKbGapService } from "../support/kb-gap/support-kb-gap.service";
+import { SupportKbGapDetectionService } from "../support/kb-gap/support-kb-gap-detection.service";
 import { CronLeaseService } from "./cron-lease.service";
 import { SessionsService } from "../sessions/sessions.service";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
@@ -26,7 +26,7 @@ export class CronSupportController {
     private readonly kbChunkRetention: CronKbChunkRetentionService,
     private readonly kbChatRetention: CronKbChatRetentionService,
     private readonly support: CronSupportService,
-    private readonly supportKbGap: SupportKbGapService,
+    private readonly supportKbGap: SupportKbGapDetectionService,
     private readonly cronLease: CronLeaseService,
     private readonly sessions: SessionsService,
   ) {}

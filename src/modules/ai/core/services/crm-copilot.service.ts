@@ -18,7 +18,7 @@ import { OrgFeaturesService } from "./org-features.service";
 import { CrmContentService } from "./crm-content.service";
 import { CrmPipelineService } from "./crm-pipeline.service";
 import { CrmCopilotLeadService } from "./crm-copilot-lead.service";
-import { ConversationSummarySchema } from "../dto/output.schemas";
+import { ConversationSummarySchema, DealInsightsSchema, type DealInsights } from "../dto/output.schemas";
 import { throwOnAiFailure } from "./gateway-result.util";
 
 interface CitationItem {
@@ -26,15 +26,6 @@ interface CitationItem {
   title: string;
   snippet: string;
 }
-
-const DealInsightsSchema = z.object({
-  summary: z.string(),
-  risks: z.array(z.string()),
-  recommendedPlays: z.array(z.string()),
-  stakeholdersGap: z.string(),
-});
-
-type DealInsights = z.infer<typeof DealInsightsSchema>;
 
 function truncate(s: string | null | undefined, max: number): string {
   if (!s) return "";

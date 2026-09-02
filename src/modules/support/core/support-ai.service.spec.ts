@@ -5,6 +5,8 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { SupportAiService } from "./support-ai.service";
 import { SupportAiTriageService } from "./support-ai-triage.service";
+import { SupportAiTriageAnalysisService } from "./support-ai-triage-analysis.service";
+import { SupportAiTriageDataService } from "./support-ai-triage-data.service";
 import { SupportAiTranslationService } from "./support-ai-translation.service";
 import { SupportAiEmbeddingsHelper } from "./support-ai-embeddings.helper";
 import { SupportAiSettingsService } from "./support-ai-settings.service";
@@ -118,6 +120,8 @@ describe("SupportAiService", () => {
       providers: [
         SupportAiService,
         SupportAiTriageService,
+        SupportAiTriageAnalysisService,
+        SupportAiTriageDataService,
         SupportAiTranslationService,
         SupportAiEmbeddingsHelper,
         { provide: DRIZZLE, useValue: mockDb },
@@ -258,7 +262,7 @@ describe("SupportAiService", () => {
   describe("suggestMacro", () => {
     it("returns null when there are no candidate macros", async () => {
       mockDb.query.supportMacros.findMany.mockResolvedValueOnce([]);
-      const result = await service.suggestMacro("org1", "user1", 42);
+      const result = await service.suggestMacro("org1", "user1", 42, 1);
       expect(result).toBeNull();
       expect(mockGateway.invokeStructured).not.toHaveBeenCalled();
     });
@@ -266,14 +270,14 @@ describe("SupportAiService", () => {
     it("returns null when the model picks no good match", async () => {
       mockDb.query.supportMacros.findMany.mockResolvedValueOnce([{ id: 1, title: "Reset password", body: "..." }]);
       mockGateway.invokeStructured.mockResolvedValueOnce(makeGatewayOk({ macroId: null, reason: "no good fit", confidence: 0.4 }));
-      const result = await service.suggestMacro("org1", "user1", 42);
+      const result = await service.suggestMacro("org1", "user1", 42, 1);
       expect(result).toBeNull();
     });
 
     it("returns null if the model hallucinates a macro id not in the candidate list", async () => {
       mockDb.query.supportMacros.findMany.mockResolvedValueOnce([{ id: 1, title: "Reset password", body: "..." }]);
       mockGateway.invokeStructured.mockResolvedValueOnce(makeGatewayOk({ macroId: 999, reason: "made up", confidence: 0.9 }));
-      const result = await service.suggestMacro("org1", "user1", 42);
+      const result = await service.suggestMacro("org1", "user1", 42, 1);
       expect(result).toBeNull();
     });
 
@@ -281,7 +285,7 @@ describe("SupportAiService", () => {
       mockDb.query.supportMacros.findMany.mockResolvedValueOnce([{ id: 7, title: "Reset password", body: "..." }]);
       mockGateway.invokeStructured.mockResolvedValueOnce(makeGatewayOk({ macroId: 7, reason: "matches password reset", confidence: 0.85 }));
 
-      const result = await service.suggestMacro("org1", "user1", 42);
+      const result = await service.suggestMacro("org1", "user1", 42, 1);
 
       expect(result).not.toBeNull();
       const [call] = mockGateway.invokeStructured.mock.calls;
