@@ -87,12 +87,14 @@ function expandRecurring(
 
     if (ex?.isCancelled) continue;
 
-    const utcEnd = new Date(utcStart.getTime() + duration);
+    const effectiveStart = ex?.modifiedStart ?? utcStart;
+    const nominalEnd = new Date(utcStart.getTime() + duration);
+    const effectiveEnd = ex?.modifiedEnd ?? (ex?.modifiedStart ? new Date(ex.modifiedStart.getTime() + duration) : nominalEnd);
     results.push({
       eventId: event.id,
       title: ex?.modifiedTitle ?? event.title,
-      startDate: ex?.modifiedStart ?? utcStart,
-      endDate: ex?.modifiedEnd ?? utcEnd,
+      startDate: effectiveStart,
+      endDate: effectiveEnd,
       allDay: event.allDay,
       timezone: event.timezone,
       orgId: event.orgId,

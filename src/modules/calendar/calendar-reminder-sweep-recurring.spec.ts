@@ -13,10 +13,26 @@ const mockedForEachOrg = forEachOrg as jest.MockedFunction<typeof forEachOrg>;
 
 function makeChain(result: unknown[]) {
   const limit = jest.fn().mockResolvedValue(result);
-  const where = jest.fn().mockReturnValue({ limit });
+  const orderBy = jest.fn().mockReturnValue({ limit });
+  const where = jest.fn().mockReturnValue({ limit, orderBy });
   const innerJoin = jest.fn().mockReturnValue({ where });
   const from = jest.fn().mockReturnValue({ where, innerJoin });
   return { from, where, limit };
+}
+
+interface OutboxRow {
+  dedupeKey: string;
+  targetUserIds: string[];
+  message: string;
+  title: string;
+  entityId: string;
+}
+
+function insertedRows(values: jest.Mock): OutboxRow[] {
+  return values.mock.calls.flatMap((call) => {
+    const [payload] = call;
+    return Array.isArray(payload) ? (payload as OutboxRow[]) : [payload as OutboxRow];
+  });
 }
 
 function makeInsertCapture() {
@@ -93,11 +109,8 @@ describe("CalendarReminderSweepService — recurring event reminder dedupeKey", 
     expect(result.candidates).toBe(1);
     expect(insertCap.capturedValues).toHaveBeenCalledTimes(1);
 
-    const row = insertCap.capturedValues.mock.calls[0]?.[0] as {
-      dedupeKey: string;
-      message: string;
-      targetUserIds: string[];
-    };
+    const [row] = insertedRows(insertCap.capturedValues);
+    if (!row) throw new Error("expected one queued reminder row");
     expect(row.dedupeKey).toBe(
       `calendar:reminder:${eventId}:${expectedOccurrenceStart.toISOString()}:${membershipId}`,
     );
@@ -184,7 +197,8 @@ describe("CalendarReminderSweepService — recurring event reminder dedupeKey", 
     const svc = new CalendarReminderSweepService(db);
     await svc.run(now);
 
-    const row = insertCap.capturedValues.mock.calls[0]?.[0] as { dedupeKey: string; targetUserIds: string[] };
+    const [row] = insertedRows(insertCap.capturedValues);
+    if (!row) throw new Error("expected one queued reminder row");
     expect(row.dedupeKey).toBe(`calendar:reminder:${eventId}:${eventStart.toISOString()}:${membershipId}`);
     expect(row.targetUserIds).toEqual([userId]);
     expect(updateCap.update).toHaveBeenCalledTimes(1);
@@ -379,7 +393,8 @@ describe("CalendarReminderSweepService — rescheduled recurring occurrences (mo
     expect(result.candidates).toBe(1);
     expect(insertCap.capturedValues).toHaveBeenCalledTimes(1);
 
-    const row = insertCap.capturedValues.mock.calls[0]?.[0] as { dedupeKey: string; message: string };
+    const [row] = insertedRows(insertCap.capturedValues);
+    if (!row) throw new Error("expected one queued reminder row");
     expect(row.dedupeKey).toBe(`calendar:reminder:${eventId}:${nominalStart.toISOString()}:${membershipId}`);
     expect(row.message).toContain(modifiedStart.toISOString());
   });
@@ -507,11 +522,8 @@ describe("CalendarReminderSweepService — rescheduled recurring occurrences (mo
     const result = await svc.run(now);
 
     expect(result.candidates).toBe(1);
-    const row = insertCap.capturedValues.mock.calls[0]?.[0] as {
-      dedupeKey: string;
-      message: string;
-      title: string;
-    };
+    const [row] = insertedRows(insertCap.capturedValues);
+    if (!row) throw new Error("expected one queued reminder row");
     expect(row.dedupeKey).toBe(`calendar:reminder:${eventId}:${nominalStart.toISOString()}:${membershipId}`);
     expect(row.message).toContain(modifiedStart.toISOString());
     expect(row.title).toContain("Sprint planning (rescheduled)");

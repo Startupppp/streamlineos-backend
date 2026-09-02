@@ -17,6 +17,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { AuditService } from "../../common/audit/audit.service";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { MailService } from "./mail.service";
 import { MailAiService } from "./mail-ai.service";
 import {
@@ -108,6 +109,7 @@ export class MailController {
 
   @Post("send")
   @HttpCode(200)
+  @Idempotent("mail.send")
   @RequirePermission("mail:messages:send")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("mail:send")
@@ -123,6 +125,7 @@ export class MailController {
 
   @Post("reply")
   @HttpCode(200)
+  @Idempotent("mail.reply")
   @RequirePermission("mail:messages:send")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("mail:reply")

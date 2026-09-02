@@ -146,10 +146,25 @@ export const exportSchema = z
     { message: `Export range may not exceed ${EXPORT_MAX_SPAN_DAYS} days`, path: ["to"] },
   );
 
-export const externalEventsQuerySchema = z.object({
-  start: parseableDate,
-  end: parseableDate,
-});
+export const externalEventsQuerySchema = z
+  .object({
+    start: parseableDate,
+    end: parseableDate,
+  })
+  .refine(
+    (v) => new Date(v.end) > new Date(v.start),
+    { message: "end must be after start", path: ["end"] },
+  )
+  .refine(
+    (v) => {
+      const diffMs = new Date(v.end).getTime() - new Date(v.start).getTime();
+      return diffMs / (1000 * 60 * 60 * 24) <= CALENDAR_MAX_SPAN_DAYS;
+    },
+    {
+      message: `Date range may not exceed ${CALENDAR_MAX_SPAN_DAYS} days`,
+      path: ["end"],
+    },
+  );
 
 export type ListEventsInput = z.infer<typeof listEventsSchema>;
 export type CreateEventInput = z.infer<typeof createEventSchema>;

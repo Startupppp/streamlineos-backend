@@ -290,7 +290,15 @@ export class MailService {
     const conn: NormalizerConnectionMeta = { id: acc.id, composioAccountId: acc.composioConnectedAccountId, provider: acc.provider, accountEmail: acc.accountEmail };
     if (acc.provider === "gmail") {
       if (!threadId) throw new BadRequestException("threadId is required for Gmail replies");
-      await this.gmail.replyToThread(userId, conn, threadId, messageId, bodyHtml, cc);
+      const original = await this.gmail.getMessage(userId, conn, messageId);
+      let recipientEmail: string | undefined;
+      if (original.from.email !== acc.accountEmail) {
+        recipientEmail = original.from.email;
+      } else {
+        recipientEmail = original.to[0]?.email;
+      }
+      if (!recipientEmail) throw new BadRequestException("Cannot determine reply recipient: original message has no resolvable address");
+      await this.gmail.replyToThread(userId, conn, { threadId, recipientEmail, bodyHtml, cc });
     } else {
       await this.outlook.replyToMessage(userId, conn, messageId, bodyHtml, cc);
     }

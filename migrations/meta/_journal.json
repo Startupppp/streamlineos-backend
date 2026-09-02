@@ -4250,6 +4250,27 @@
       "when": 1803000010047,
       "tag": "0957_ar02_drop_workflow_single_fks",
       "breakpoints": true
+    },
+    {
+      "idx": 736,
+      "version": "7",
+      "when": 1803000010067,
+      "tag": "0982_calendar_recurrence_end_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 737,
+      "version": "7",
+      "when": 1803000010068,
+      "tag": "0980_chat_message_client_idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 738,
+      "version": "7",
+      "when": 1803000010069,
+      "tag": "0981_chat_channel_privacy_invariant",
+      "breakpoints": true
     }
   ]
 }

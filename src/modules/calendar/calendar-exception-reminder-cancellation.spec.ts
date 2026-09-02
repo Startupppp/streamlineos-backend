@@ -420,9 +420,25 @@ describe("exportEvents — visibility filter applied to export query", () => {
   it("excludes private events the caller neither created nor attends", async () => {
     const CALLER_MEMBERSHIP_ID = 77;
 
+    const exportRow = (id: number, title: string, visibility: string) => ({
+      id,
+      title,
+      visibility,
+      startDate: new Date("2024-06-10T09:00:00Z"),
+      endDate: new Date("2024-06-10T09:30:00Z"),
+      allDay: false,
+      timezone: "UTC",
+      rrule: null,
+      recurrenceEnd: null,
+      category: "general",
+      location: null,
+      description: null,
+      color: null,
+    });
+
     const mockRows = [
-      { id: 1, title: "Team event", visibility: "org" },
-      { id: 2, title: "Private event", visibility: "private" },
+      exportRow(1, "Team event", "org"),
+      exportRow(2, "Private event", "private"),
     ];
 
     const capturedWhereArgs: unknown[] = [];

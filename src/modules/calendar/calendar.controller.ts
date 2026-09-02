@@ -24,6 +24,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { CalendarService } from "./calendar.service";
+import { CalendarSyncStatusService } from "./calendar-sync-status.service";
 import { ExternalCalendarEventsService } from "./external-calendar-events.service";
 import { CalendarSourceRegistry } from "./calendar-source.registry";
 import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
@@ -84,6 +85,7 @@ export class CalendarController {
     private readonly externalEvents: ExternalCalendarEventsService,
     private readonly registry: CalendarSourceRegistry,
     private readonly sourcePreferences: CalendarSourcePreferencesService,
+    private readonly calendarSyncStatus: CalendarSyncStatusService,
   ) {}
 
   @Get("events")
@@ -210,6 +212,27 @@ export class CalendarController {
     );
     if (!row) throw new NotFoundException("Event not found, not a recurring event, or not authorized");
     return row;
+  }
+
+  @Get("events/:eventId/sync-status")
+  @Universal()
+  @Validate({ params: eventIdParams })
+  getSyncStatus(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.calendarSyncStatus.getSyncStatus(u.orgId, u.userId, eventId);
+  }
+
+  @Post("events/:eventId/sync-retry")
+  @Universal()
+  @HttpCode(200)
+  @Validate({ params: eventIdParams })
+  retrySync(
+    @Param("eventId", ParseIntPipe) eventId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.calendarSyncStatus.retrySync(u.orgId, u.userId, eventId);
   }
 
   @Get("events/:eventId/rsvp")

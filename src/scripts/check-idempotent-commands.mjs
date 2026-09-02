@@ -17,7 +17,7 @@ const DECORATOR_LINE_RE = /^\s*@\w/;
 const CLASS_PUBLIC_RE = /@Public\(\)\s*\n(?:\s*@[^\n]*\n)*\s*(?:export\s+)?(?:abstract\s+)?class\s/;
 
 const CRITICAL_ROUTE_RE =
-  /(?:^|\/)(?:checkout|purchase|payout|allocat|transfer|\/post$|\/ship$|\/receive$|\/dispatch$|\/adjust$|\/reverse$|count-post|invite|resend|publish|remind|approve|reject|submit|accept|decline|run-now|affiliate|referral|send-signin|test-send)(?:\/|$)/i;
+  /(?:^|\/)(?:checkout|purchase|payout|allocat|transfer|\/post$|\/ship$|\/receive$|\/dispatch$|\/adjust$|\/reverse$|count-post|invite|resend|publish|remind|approve|reject|submit|accept|decline|run-now|affiliate|referral|send-signin|test-send|send|reply)(?:\/|$)/i;
 
 const CRITICAL_METHOD_RE =
   /\b(?:checkout|purchaseAddon|purchaseCredits|createOrder|installApp|startTrial|registerAffiliate|requestAffiliatePayoutRequest|createReferral|submitEnterpriseQuote|approveEnterpriseQuote|rejectEnterpriseQuote|sendEnterpriseQuote|acceptEnterpriseQuote|initiateOrgTransfer|initiateModuleTransfer|acceptTransfer|declineTransfer|cancelTransfer|inviteUser|bulkInvite|resendInvite|sendSigninLink|invite|remind|testSend|allocate|runNow|submitForApproval|approveJournal|rejectJournal|publish|ship|postAdjustment|postTransfer|createAdjustment)\b/;

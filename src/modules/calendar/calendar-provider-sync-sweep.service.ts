@@ -7,6 +7,7 @@ import { forEachOrg } from "../../common/tenant";
 import type { ForEachOrgResult } from "../../common/tenant/for-each-org";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { ExternalCalendarSyncService, type PushConnection, type PushEventInput } from "./external-calendar-sync.service";
+import { providerSyncPayloadSchema } from "./dto/provider-sync.schemas";
 
 const BATCH_LIMIT = 20;
 const LEASE_MS = 90_000;
@@ -90,18 +91,11 @@ export class CalendarProviderSyncSweepService {
   }
 
   private async processRow(row: typeof calendarProviderSyncQueue.$inferSelect): Promise<void> {
-    const payload = row.payload as {
-      userId?: string;
-      title?: string;
-      description?: string | null;
-      startIso?: string;
-      endIso?: string;
-      allDay?: boolean;
-      attendeeEmails?: string[];
-      addConference?: boolean;
-    };
-    const userId = payload.userId;
-    if (!userId) throw new Error("sync-queue row missing payload.userId");
+    const parsed = providerSyncPayloadSchema.safeParse(row.payload);
+    if (!parsed.success)
+      throw new Error(`sync-queue row ${row.id} malformed payload: ${parsed.error.message}`);
+    const payload = parsed.data;
+    const { userId } = payload;
 
     const conn = await this.resolveConnection(row.orgId, row.connectionId);
 

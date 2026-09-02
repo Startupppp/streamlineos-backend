@@ -6,6 +6,21 @@ import type { CalendarEventProjection, CalendarSourceContext } from "./calendar-
 import { CalendarSourceRegistry } from "./calendar-source.registry";
 import { CALENDAR_EVENTS_CAP } from "./dto/calendar.schemas";
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+
+function isLinkedTicket(v: unknown): v is LinkedTicket {
+  if (!isRecord(v)) return false;
+  return (
+    typeof v["id"] === "number" &&
+    typeof v["key"] === "string" &&
+    typeof v["title"] === "string" &&
+    typeof v["projectId"] === "number" &&
+    typeof v["status"] === "string"
+  );
+}
+
 function toItemSource(val: unknown): CalendarEventItem["source"] {
   if (
     val === "leave" ||
@@ -36,7 +51,7 @@ function projectionToItem(p: CalendarEventProjection): CalendarEventItem {
     entityType: typeof p.meta["entityType"] === "string" ? p.meta["entityType"] : null,
     myRsvpStatus: typeof p.meta["myRsvpStatus"] === "string" ? p.meta["myRsvpStatus"] : null,
     projectId: typeof p.meta["projectId"] === "number" ? p.meta["projectId"] : null,
-    linkedTicket: (p.meta["linkedTicket"] as LinkedTicket | null | undefined) ?? null,
+    linkedTicket: isLinkedTicket(p.meta["linkedTicket"]) ? p.meta["linkedTicket"] : null,
   };
 }
 
