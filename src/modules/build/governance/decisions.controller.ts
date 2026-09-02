@@ -45,7 +45,7 @@ export class DecisionsController {
     @Query() query: ListDecisionsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listDecisions(u.orgId, projectId, query);
+    return this.svc.listDecisions(u, projectId, query);
   }
 
   @Get(":decisionId")
@@ -56,7 +56,7 @@ export class DecisionsController {
     @Param("decisionId", ParseIntPipe) decisionId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getDecision(u.orgId, projectId, decisionId);
+    return this.svc.getDecision(u, projectId, decisionId);
   }
 
   @Post()
@@ -68,7 +68,7 @@ export class DecisionsController {
     @Body() body: CreateDecisionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createDecision(u.orgId, u.userId, projectId, body);
+    return this.svc.createDecision(u, projectId, body);
   }
 
   @Patch(":decisionId")
@@ -80,7 +80,7 @@ export class DecisionsController {
     @Body() body: UpdateDecisionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateDecision(u.orgId, u.userId, projectId, decisionId, body);
+    return this.svc.updateDecision(u, projectId, decisionId, body);
   }
 
   @Delete(":decisionId")
@@ -92,6 +92,6 @@ export class DecisionsController {
     @Param("decisionId", ParseIntPipe) decisionId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.softDeleteDecision(u.orgId, u.userId, projectId, decisionId);
+    return this.svc.softDeleteDecision(u, projectId, decisionId);
   }
 }

@@ -45,7 +45,7 @@ export class FormsController {
     @Query() query: ListFormsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listForms(u.orgId, projectId, query);
+    return this.svc.listForms(u, projectId, query);
   }
 
   @Get(":formId")
@@ -56,7 +56,7 @@ export class FormsController {
     @Param("formId", ParseIntPipe) formId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getForm(u.orgId, projectId, formId);
+    return this.svc.getForm(u, projectId, formId);
   }
 
   @Post()
@@ -68,7 +68,7 @@ export class FormsController {
     @Body() body: CreateFormInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createForm(u.orgId, u.userId, projectId, body);
+    return this.svc.createForm(u, projectId, body);
   }
 
   @Patch(":formId")
@@ -80,7 +80,7 @@ export class FormsController {
     @Body() body: UpdateFormInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateForm(u.orgId, u.userId, projectId, formId, body);
+    return this.svc.updateForm(u, projectId, formId, body);
   }
 
   @Delete(":formId")
@@ -92,6 +92,6 @@ export class FormsController {
     @Param("formId", ParseIntPipe) formId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteForm(u.orgId, u.userId, projectId, formId);
+    return this.svc.deleteForm(u, projectId, formId);
   }
 }

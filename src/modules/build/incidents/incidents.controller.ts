@@ -47,7 +47,7 @@ export class IncidentsController {
     @Query() query: ListIncidentsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listIncidents(u.orgId, projectId, query);
+    return this.svc.listIncidents(u, projectId, query);
   }
 
   @Get(":incidentId")
@@ -58,7 +58,7 @@ export class IncidentsController {
     @Param("incidentId", ParseIntPipe) incidentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getIncident(u.orgId, projectId, incidentId);
+    return this.svc.getIncident(u, projectId, incidentId);
   }
 
   @Post()
@@ -70,7 +70,7 @@ export class IncidentsController {
     @Body() body: CreateIncidentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createIncident(u.orgId, u.userId, projectId, body);
+    return this.svc.createIncident(u, projectId, body);
   }
 
   @Patch(":incidentId")
@@ -82,7 +82,7 @@ export class IncidentsController {
     @Body() body: UpdateIncidentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateIncident(u.orgId, u.userId, projectId, incidentId, body);
+    return this.svc.updateIncident(u, projectId, incidentId, body);
   }
 
   @Delete(":incidentId")
@@ -94,7 +94,7 @@ export class IncidentsController {
     @Param("incidentId", ParseIntPipe) incidentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteIncident(u.orgId, u.userId, projectId, incidentId);
+    return this.svc.deleteIncident(u, projectId, incidentId);
   }
 
   @Post(":incidentId/updates")
@@ -107,6 +107,6 @@ export class IncidentsController {
     @Body() body: AddIncidentUpdateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.addUpdate(u.orgId, u.userId, projectId, incidentId, body);
+    return this.svc.addUpdate(u, projectId, incidentId, body);
   }
 }

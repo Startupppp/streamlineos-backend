@@ -1,9 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { incidentUpdates, projectIncidents, projects, users } from "../../../db/schema";
+import { incidentUpdates, projectIncidents, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AccessService } from "../../access/access.service";
+import { assertProjectAccess } from "../core/project-access";
 import type {
   AddIncidentUpdateInput,
   CreateIncidentInput,
@@ -19,16 +22,9 @@ type SlaFields = Pick<IncidentPatch, "respondedAt" | "resolvedAt">;
 export class IncidentsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
     private readonly audit: AuditService,
   ) {}
-
-  private async assertProject(orgId: string, projectId: number): Promise<void> {
-    const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      columns: { id: true },
-    });
-    if (!p) throw new NotFoundException("Project not found");
-  }
 
   private async loadIncident(orgId: string, projectId: number, incidentId: number): Promise<IncidentRow> {
     const row = await this.db.query.projectIncidents.findFirst({
@@ -51,14 +47,14 @@ export class IncidentsService {
     return patch;
   }
 
-  async listIncidents(orgId: string, projectId: number, query: ListIncidentsQuery) {
-    await this.assertProject(orgId, projectId);
+  async listIncidents(u: CurrentUserContext, projectId: number, query: ListIncidentsQuery) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.db
       .select()
       .from(projectIncidents)
       .where(
         and(
-          eq(projectIncidents.orgId, orgId),
+          eq(projectIncidents.orgId, u.orgId),
           eq(projectIncidents.projectId, projectId),
           isNull(projectIncidents.deletedAt),
           query.status ? eq(projectIncidents.status, query.status) : undefined,
@@ -69,8 +65,8 @@ export class IncidentsService {
       .limit(100);
   }
 
-  async getIncident(orgId: string, projectId: number, incidentId: number) {
-    const incident = await this.loadIncident(orgId, projectId, incidentId);
+  async getIncident(u: CurrentUserContext, projectId: number, incidentId: number) {
+    const incident = await this.loadIncident(u.orgId, projectId, incidentId);
     const updates = await this.db
       .select({
         id: incidentUpdates.id,
@@ -85,22 +81,22 @@ export class IncidentsService {
       })
       .from(incidentUpdates)
       .leftJoin(users, eq(users.id, incidentUpdates.createdBy))
-      .where(and(eq(incidentUpdates.incidentId, incidentId), eq(incidentUpdates.orgId, orgId)))
+      .where(and(eq(incidentUpdates.incidentId, incidentId), eq(incidentUpdates.orgId, u.orgId)))
       .orderBy(desc(incidentUpdates.createdAt));
     return { ...incident, updates };
   }
 
-  async createIncident(orgId: string, userId: string, projectId: number, input: CreateIncidentInput) {
-    await this.assertProject(orgId, projectId);
+  async createIncident(u: CurrentUserContext, projectId: number, input: CreateIncidentInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const [incident] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
         .select({ maxNum: sql<number>`COALESCE(MAX(${projectIncidents.incidentNumber}), 0)` })
         .from(projectIncidents)
-        .where(and(eq(projectIncidents.projectId, projectId), eq(projectIncidents.orgId, orgId)));
+        .where(and(eq(projectIncidents.projectId, projectId), eq(projectIncidents.orgId, u.orgId)));
       const nextNumber = (maxRow?.maxNum ?? 0) + 1;
       return tx.insert(projectIncidents).values({
-        orgId,
+        orgId: u.orgId,
         projectId,
         incidentNumber: nextNumber,
         title: input.title,
@@ -115,14 +111,14 @@ export class IncidentsService {
         responseDueAt: input.responseDueAt ?? null,
         resolutionDueAt: input.resolutionDueAt ?? null,
         linkedTicketId: input.linkedTicketId ?? null,
-        createdBy: userId,
+        createdBy: u.userId,
       }).returning();
     });
     if (!incident) throw new NotFoundException("Failed to create incident");
     this.audit.log({
       action: "incident.created",
-      userId,
-      orgId,
+      userId: u.userId,
+      orgId: u.orgId,
       resourceType: "project_incident",
       resourceId: String(incident.id),
       metadata: { projectId, incidentId: incident.id, title: incident.title },
@@ -131,13 +127,12 @@ export class IncidentsService {
   }
 
   async updateIncident(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     projectId: number,
     incidentId: number,
     input: UpdateIncidentInput,
   ) {
-    const current = await this.loadIncident(orgId, projectId, incidentId);
+    const current = await this.loadIncident(u.orgId, projectId, incidentId);
     const patch: IncidentPatch = {};
     if (input.title !== undefined) patch.title = input.title;
     if (input.description !== undefined) patch.description = input.description ?? null;
@@ -157,13 +152,13 @@ export class IncidentsService {
     const [updated] = await this.db
       .update(projectIncidents)
       .set(patch)
-      .where(and(eq(projectIncidents.id, incidentId), eq(projectIncidents.orgId, orgId)))
+      .where(and(eq(projectIncidents.id, incidentId), eq(projectIncidents.orgId, u.orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Incident not found");
     this.audit.log({
       action: "incident.updated",
-      userId,
-      orgId,
+      userId: u.userId,
+      orgId: u.orgId,
       resourceType: "project_incident",
       resourceId: String(incidentId),
       metadata: { projectId, incidentId },
@@ -171,16 +166,16 @@ export class IncidentsService {
     return updated;
   }
 
-  async deleteIncident(orgId: string, userId: string, projectId: number, incidentId: number) {
-    await this.loadIncident(orgId, projectId, incidentId);
+  async deleteIncident(u: CurrentUserContext, projectId: number, incidentId: number) {
+    await this.loadIncident(u.orgId, projectId, incidentId);
     await this.db
       .update(projectIncidents)
       .set({ deletedAt: new Date() })
-      .where(and(eq(projectIncidents.id, incidentId), eq(projectIncidents.orgId, orgId)));
+      .where(and(eq(projectIncidents.id, incidentId), eq(projectIncidents.orgId, u.orgId)));
     this.audit.log({
       action: "incident.deleted",
-      userId,
-      orgId,
+      userId: u.userId,
+      orgId: u.orgId,
       resourceType: "project_incident",
       resourceId: String(incidentId),
       metadata: { projectId, incidentId },
@@ -188,34 +183,33 @@ export class IncidentsService {
   }
 
   async addUpdate(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     projectId: number,
     incidentId: number,
     input: AddIncidentUpdateInput,
   ) {
-    const current = await this.loadIncident(orgId, projectId, incidentId);
+    const current = await this.loadIncident(u.orgId, projectId, incidentId);
     const [update] = await this.db.transaction(async (tx) => {
       const rows = await tx.insert(incidentUpdates).values({
-        orgId,
+        orgId: u.orgId,
         incidentId,
         message: input.message,
         newStatus: input.newStatus ?? null,
-        createdBy: userId,
+        createdBy: u.userId,
       }).returning();
       if (input.newStatus) {
         const sla = this.computeSla(current, input.newStatus);
         await tx
           .update(projectIncidents)
           .set({ status: input.newStatus, ...sla })
-          .where(and(eq(projectIncidents.id, incidentId), eq(projectIncidents.orgId, orgId)));
+          .where(and(eq(projectIncidents.id, incidentId), eq(projectIncidents.orgId, u.orgId)));
       }
       return rows;
     });
     this.audit.log({
       action: "incident.update_added",
-      userId,
-      orgId,
+      userId: u.userId,
+      orgId: u.orgId,
       resourceType: "project_incident",
       resourceId: String(incidentId),
       metadata: { projectId, incidentId, updateId: update?.id },

@@ -45,7 +45,7 @@ export class RisksController {
     @Query() query: ListRisksQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listRisks(u.orgId, projectId, query);
+    return this.svc.listRisks(u, projectId, query);
   }
 
   @Get(":riskId")
@@ -56,7 +56,7 @@ export class RisksController {
     @Param("riskId", ParseIntPipe) riskId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getRisk(u.orgId, projectId, riskId);
+    return this.svc.getRisk(u, projectId, riskId);
   }
 
   @Post()
@@ -68,7 +68,7 @@ export class RisksController {
     @Body() body: CreateRiskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createRisk(u.orgId, u.userId, projectId, body);
+    return this.svc.createRisk(u, projectId, body);
   }
 
   @Patch(":riskId")
@@ -80,7 +80,7 @@ export class RisksController {
     @Body() body: UpdateRiskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateRisk(u.orgId, u.userId, projectId, riskId, body);
+    return this.svc.updateRisk(u, projectId, riskId, body);
   }
 
   @Delete(":riskId")
@@ -92,6 +92,6 @@ export class RisksController {
     @Param("riskId", ParseIntPipe) riskId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.softDeleteRisk(u.orgId, u.userId, projectId, riskId);
+    return this.svc.softDeleteRisk(u, projectId, riskId);
   }
 }
