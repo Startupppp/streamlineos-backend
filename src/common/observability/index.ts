@@ -4,6 +4,11 @@ export {
   getObservabilityContext,
   runWithObservabilityContext,
 } from "./observability-context";
+export {
+  correlationIdToPersist,
+  runInRestoredContext,
+  type AsyncHop,
+} from "./async-hop";
 export { ObservabilityEnrichmentInterceptor } from "./observability-enrichment.interceptor";
 export { structuredNestLogger } from "./nest-logger.adapter";
 export { LogSpanExporter } from "./log-span-exporter";

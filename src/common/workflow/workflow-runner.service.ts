@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
-import { bindObservabilityContext, reportError } from "../observability";
+import { reportError, runInRestoredContext } from "../observability";
 import { runInNewTenantTransaction } from "../tenant/run-in-tenant-transaction";
 import { executeRun, type RunOutcome, type RunRecord } from "./workflow-runner";
 import { WorkflowRegistry } from "./workflow-registry";
@@ -68,7 +68,35 @@ export class WorkflowRunnerService {
     return { claimed: runs.length, outcomes };
   }
 
+  /**
+   * Every run is executed inside the context its producer persisted.
+   *
+   * The drain is the far side of an asynchronous hop. It runs on a cron tick, in
+   * a process that never served the request the run came from, so there is no
+   * scope to inherit — and inheriting the tick's would be worse than none, since
+   * it would file the work under the sweep that happened to pick it up. Stated
+   * from the row, `workflow_runs.correlation_id` joins every step's log line,
+   * every error report and every span back to the request that caused the run.
+   */
   private async runOne(run: RunRecord): Promise<RunOutcome> {
+    return runInRestoredContext(
+      {
+        correlationId: run.correlationId,
+        orgId: run.organizationId,
+        route: `workflow:${run.workflowName}`,
+        span: {
+          name: "workflow.run",
+          attributes: {
+            "workflow.name": run.workflowName,
+            "workflow.attempt": run.attempt + 1,
+          },
+        },
+      },
+      () => this.execute(run),
+    );
+  }
+
+  private async execute(run: RunRecord): Promise<RunOutcome> {
     return executeRun({
       run,
       registry: this.registry,
@@ -101,15 +129,5 @@ export class WorkflowRunnerService {
         });
       },
     });
-  }
-
-  /**
-   * A drain bound to the caller's correlation id.
-   *
-   * Used by the relay, so the run a request caused is traceable back to that
-   * request even though it executes long after the response.
-   */
-  boundDrain(limit?: number): () => Promise<DrainResult> {
-    return bindObservabilityContext(() => this.drain(limit));
   }
 }

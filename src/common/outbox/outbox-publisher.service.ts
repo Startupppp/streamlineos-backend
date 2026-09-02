@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { organizations, outboxEvents } from "../../db/schema";
@@ -15,11 +14,8 @@ import { OutboxConsumerRegistry, type OutboxEventRow } from "./outbox-consumer.r
 import { runInNewTenantTransaction } from "../tenant/run-in-tenant-transaction";
 import { forEachOrg } from "../tenant";
 import { OutboxReportService } from "./outbox-report.service";
-import { runWithObservabilityContext } from "../observability/observability-context";
-import { withSpan } from "../observability/tracing";
-import { currentRelease } from "../observability/release";
+import { runInRestoredContext } from "../observability/async-hop";
 import { scrubBindParameters, truncateForLog } from "../observability/redact";
-import { PROCESS_CELL_ID } from "../cell-resources/cell-id";
 import type { OutboxFlushResult, OutboxMetrics, OutboxOrganizationReport, OutboxReport } from "./outbox-publisher.types";
 
 export type { OutboxFlushResult, OutboxMetrics, OutboxOrganizationReport, OutboxReport };
@@ -86,18 +82,20 @@ export class OutboxPublisherService {
    * log lines still group together — they simply do not join back to a request.
    */
   private inEventContext<T>(event: OutboxEventRow, fn: () => Promise<T>): Promise<T> {
-    return runWithObservabilityContext(
+    return runInRestoredContext(
       {
-        correlationId: event.correlationId ?? randomUUID(),
+        correlationId: event.correlationId,
         orgId: event.organizationId,
         route: `outbox:${event.eventType}`,
-        cellId: PROCESS_CELL_ID,
-        release: currentRelease(),
+        span: {
+          name: "outbox.deliver",
+          attributes: {
+            "outbox.event_type": event.eventType,
+            "outbox.attempt": event.retryCount + 1,
+          },
+        },
       },
-      () =>
-        withSpan("outbox.deliver", fn, {
-          attributes: { "outbox.event_type": event.eventType, "outbox.attempt": event.retryCount + 1 },
-        }),
+      fn,
     );
   }
 

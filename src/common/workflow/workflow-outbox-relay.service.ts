@@ -3,10 +3,7 @@ import { and, asc, eq, gt } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { outboxEvents } from "../../db/schema";
-import { randomUUID } from "node:crypto";
-import { reportError, runWithObservabilityContext } from "../observability";
-import { currentRelease } from "../observability/release";
-import { PROCESS_CELL_ID } from "../cell-resources/cell-id";
+import { reportError, runInRestoredContext } from "../observability";
 import { WorkflowRegistry } from "./workflow-registry";
 import { WorkflowRunnerService } from "./workflow-runner.service";
 
@@ -101,13 +98,12 @@ export class WorkflowOutboxRelayService {
        * the row: the producer's correlation id joins the workflow run's log lines
        * back to the request, and the organisation is named rather than assumed.
        */
-      await runWithObservabilityContext(
+      await runInRestoredContext(
         {
-          correlationId: event.correlationId ?? randomUUID(),
+          correlationId: event.correlationId,
           orgId: event.organizationId,
           route: `workflow-relay:${event.eventType}`,
-          cellId: PROCESS_CELL_ID,
-          release: currentRelease(),
+          span: { name: "workflow.relay", attributes: { "outbox.event_type": event.eventType } },
         },
         async () => {
           for (const definition of this.registry.triggeredBy(event.eventType)) {

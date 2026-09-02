@@ -1,6 +1,7 @@
 import { and, asc, eq, sql } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.types";
 import { workflowRuns, workflowSteps } from "../../db/schema";
+import { correlationIdToPersist } from "../observability/async-hop";
 import { leaseExpiry } from "./retry-policy";
 import type { RunLifecycleStore, RunRecord } from "./workflow-runner";
 import type { JsonValue, RecordedStep, WorkflowStepStore } from "./workflow.types";
@@ -187,7 +188,7 @@ export async function claimDueRuns(db: Db, limit: number): Promise<RunRecord[]> 
       LIMIT ${limit}
       FOR UPDATE SKIP LOCKED
     )
-    RETURNING workflow_run_id, organization_id, workflow_name, input, attempt, max_attempts
+    RETURNING workflow_run_id, organization_id, workflow_name, input, attempt, max_attempts, correlation_id
   `);
 
   return [...claimed].map((row) => {
@@ -197,6 +198,16 @@ export async function claimDueRuns(db: Db, limit: number): Promise<RunRecord[]> 
       organizationId: String(record.organization_id),
       workflowName: String(record.workflow_name),
       input: (record.input ?? {}) as Record<string, unknown>,
+      /**
+       * Claimed back with the run, because the drain is the far side of an
+       * asynchronous hop: the request that caused this run answered its client
+       * minutes or days ago, and this column is the only thing left that points
+       * at it. Left out of the projection, every step of every workflow reports
+       * under whatever correlation id the cron tick happened to carry.
+       */
+      correlationId: record.correlation_id === null || record.correlation_id === undefined
+        ? null
+        : String(record.correlation_id),
       attempt: Number(record.attempt ?? 0),
       maxAttempts: Number(record.max_attempts ?? 5),
     };
@@ -226,7 +237,7 @@ export async function startRun(db: Db, input: StartRunInput): Promise<string | n
       organizationId: input.organizationId,
       workflowName: input.workflowName,
       input: input.input,
-      correlationId: input.correlationId ?? null,
+      correlationId: correlationIdToPersist(input.correlationId),
       causationEventId: input.causationEventId ?? null,
       ...(input.maxAttempts === undefined ? {} : { maxAttempts: input.maxAttempts }),
     })
