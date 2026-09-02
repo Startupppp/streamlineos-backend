@@ -4642,6 +4642,13 @@
       "when": 1803000010114,
       "tag": "1040_t29_kb_membership_and_template_uniques",
       "breakpoints": true
+    },
+    {
+      "idx": 796,
+      "version": "7",
+      "when": 1803000010115,
+      "tag": "1027_t07b_dashboard_my_tasks_assignee_updated_index",
+      "breakpoints": true
     }
   ]
 }

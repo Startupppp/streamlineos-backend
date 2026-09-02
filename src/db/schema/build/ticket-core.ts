@@ -100,6 +100,7 @@ export const tickets = build.table(
     uniqueIndex("uniq_tickets_project_number").on(t.projectId, t.ticketNumber),
     index("idx_tickets_project_status").on(t.projectId, t.status),
     index("idx_tickets_org_assignee_status").on(t.orgId, t.assigneeMembershipId, t.status),
+    index("idx_tickets_org_assignee_updated_live").on(t.orgId, t.assigneeMembershipId, t.updatedAt),
     index("idx_tickets_org_assignee_due_open")
       .on(t.orgId, t.assigneeMembershipId, t.dueDate)
       .where(sql`status <> 'DONE'`),
