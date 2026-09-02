@@ -18,6 +18,13 @@ const directUrl =
   process.env.DIRECT_DATABASE_URL ||
   (/-pooler\..*\.neon\.tech/i.test(poolerUrl) ? poolerUrl.replace("-pooler.", ".") : poolerUrl);
 
+// 0431 pins this on the role `neondb_owner`, so the chain used to resolve the 152
+// unqualified `current_org_id()` references in 0619/0620/0655/0666/0677/0678/0701/0988
+// only for a connection whose role happened to carry that name. Setting it per session
+// makes the cold build reproduce the same resolution (`app.current_org_id`) under any
+// role, without editing an applied migration or shadowing the function in `public`.
+const MIGRATION_SEARCH_PATH = '"$user", public, build_events, app';
+
 function sha256(content) {
   return createHash("sha256").update(content).digest("hex");
 }
@@ -43,12 +50,38 @@ function splitStatements(content) {
   return [content];
 }
 
-async function applyMigrationStatements(url, statements) {
+// CREATE INDEX CONCURRENTLY is rejected inside a transaction block, and two historical
+// migrations issue their own BEGIN/COMMIT. Everything else is applied atomically so a
+// transaction-scoped temp table (`ON COMMIT DROP`, migrations 0921/0924/0927) survives
+// across statement-breakpoints and an interrupted run leaves no half-applied migration.
+function requiresAutocommit(content) {
+  if (/\bCONCURRENTLY\b/i.test(content)) return true;
+  return /^[ \t]*(BEGIN|START[ \t]+TRANSACTION|COMMIT|ROLLBACK)[ \t]*;/im.test(content);
+}
+
+async function applyMigrationStatements(url, statements, autocommit, ledger) {
   const sql = postgres(url, { max: 1, onnotice: () => {} });
   try {
-    for (const stmt of statements) {
-      await sql.unsafe(stmt);
+    await sql.unsafe(`SET search_path = ${MIGRATION_SEARCH_PATH}`);
+    if (autocommit) {
+      for (const stmt of statements) {
+        await sql.unsafe(stmt);
+      }
+      await sql`
+        INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
+        VALUES (${ledger.hash}, ${ledger.when})
+      `;
+      return;
     }
+    await sql.begin(async (tx) => {
+      for (const stmt of statements) {
+        await tx.unsafe(stmt);
+      }
+      await tx`
+        INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
+        VALUES (${ledger.hash}, ${ledger.when})
+      `;
+    });
   } finally {
     await sql.end();
   }
@@ -120,19 +153,17 @@ for (const entry of journal.entries) {
   }
 
   const statements = splitStatements(content);
+  const autocommit = requiresAutocommit(content);
 
   try {
-    await withRetry(() => applyMigrationStatements(directUrl, statements), 4);
-
-    const sql = postgres(directUrl, { max: 1 });
-    try {
-      await sql`
-        INSERT INTO drizzle.__drizzle_migrations (hash, created_at)
-        VALUES (${hash}, ${entry.when})
-      `;
-    } finally {
-      await sql.end();
-    }
+    await withRetry(
+      () =>
+        applyMigrationStatements(directUrl, statements, autocommit, {
+          hash,
+          when: entry.when,
+        }),
+      4
+    );
 
     console.log(`OK    [${entry.tag}]`);
     succeeded++;
