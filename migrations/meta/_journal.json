@@ -4432,6 +4432,13 @@
       "when": 1803000010083,
       "tag": "0987_s02_attendance_actor_column",
       "breakpoints": true
+    },
+    {
+      "idx": 765,
+      "version": "7",
+      "when": 1803000010084,
+      "tag": "0988_s02_rls_for_new_tenant_tables",
+      "breakpoints": true
     }
   ]
 }
