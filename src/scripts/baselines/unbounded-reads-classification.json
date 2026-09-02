@@ -414,10 +414,6 @@
     }
   },
   "unbounded": {
-    "/blog/blog.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "ensureUniqueSlug: findMany with limit:200; bounded by slug prefix selectivity (eq root OR LIKE root-%); at most 200 collision candidates fetched"
-    },
     "/access/access-permission-members.resolver.ts": {
       "verdict": "BOUNDED",
       "note": "access lane (excluded territory â€” other lane owns this module)"
@@ -438,10 +434,20 @@
       "verdict": "BOUNDED",
       "note": "Denied-module resolution is capped to the finite 100-module catalog"
     },
+    "/accounting/core/accounting-cash-flow.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "split from accounting-statements.service.ts; L65 inArray(ledgerAccounts.code, CASH_CODES) is bounded by a 2-element compile-time constant; L131 inArray(journalLines.entryId, entryIds) is bounded by the period-scoped cash entry ids the prior query returned"
+    },
     "/accounting/core/accounting-gst.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "aggregate-only projection (SUM of tax amounts per GST category); financial tax report cannot be paginated"
+    },
+    "/accounting/core/accounting-journal-entry.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "split from accounting-ledger.service.ts; L74 finApprovalPolicies is a per-org per-recordType config table bounded at 5; L189 reads the lines of one journal entry via eq(entryId)+eq(orgId)"
     },
     "/accounting/core/accounting-ledger.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -462,6 +468,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "aggregate-only financial statements (SUM per account); must compute over full period; cached"
+    },
+    "/accounting/core/accounting-vendor-query.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "split from accounting-payables-query.service.ts; L100/L123 are scoped to a single vendorId; L190 agedPayables now filters total - amount_paid > 0.005 in SQL instead of fetching every PAID bill org-wide and discarding it in JS"
     },
     "/accounting/gl/periods.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -693,6 +704,10 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "webhook receiver reads bounded by provider event ID (idempotency lookup, single-record) 2026-09-01"
     },
+    "/blog/blog.service.ts": {
+      "verdict": "BOUNDED",
+      "note": "ensureUniqueSlug: findMany with limit:200; bounded by slug prefix selectivity (eq root OR LIKE root-%); at most 200 collision candidates fetched"
+    },
     "/build/build-calendar-source.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Fetches tickets with due dates inside a date-range window (calendar start/end); bounded by the query predicate, typically â‰¤90 days of data per user",
@@ -772,6 +787,10 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Uses cursor limit+1 sentinel and aggregate count; all row-returning paths are capped",
       "justification": "cursor pagination with limit+1 sentinel; flagged selects are aggregate counts or bounded sub-reads; gate window missed limit placement 2026-09-01"
+    },
+    "/build/core/projects-tickets-read.query.ts": {
+      "verdict": "BOUNDED",
+      "note": "Shared ticket query receives a caller-enforced page limit and is not an unbounded endpoint"
     },
     "/build/core/projects-tickets-read.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -892,10 +911,15 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "careers reads bounded by jobPostingId or by published+orgId filter (small public set); job postings are a small list per org 2026-09-01"
     },
+    "/chat/chat-channel-list.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "listMemberChannels has .limit(PAGE_SIZE+1); listPublicChannels uses keyset pagination with limit(PAGE_SIZE+1); unread/lastMessage aggregates bounded by channelIds inArray; listMemberChannelIds bounded by single membership 2026-09-02"
+    },
     "/chat/chat-channels.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "listMemberChannels has .limit(100) on the channels query; memberships sub-select bounded by channelIds inArray; listPublicChannels has .limit(100); unread/lastMessage aggregates bounded by channelIds 2026-09-01"
+      "justification": "createChannel membership lookups bounded by caller's membership or allMembers set; DM existence check bounded by caller's channelIds; getOrCreateEntityChannel resolves one entity 2026-09-02"
     },
     "/chat/chat-huddles.service.ts": {
       "verdict": "BOUNDED",
@@ -1352,6 +1376,11 @@
       "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "all selects in this file already have limits or are aggregate projections"
+    },
+    "/finance/assets/depreciation-reverse.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "split from depreciation-runs.service.ts; L34 reads the lines of the run journal entry via eq(entryId)+eq(orgId); L66 enumerates one run via eq(runId)+eq(orgId), which the reversal must do in full"
     },
     "/finance/assets/depreciation-runs.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -1839,6 +1868,10 @@
     "/hr/time/attendance-clock.service.ts": {
       "verdict": "BOUNDED",
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+    },
+    "/hr/time/attendance-email-report.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Recipient lookup is bounded by the caller-supplied recipient list and active tenant membership"
     },
     "/hr/time/attendance-event-writer.service.ts": {
       "verdict": "BOUNDED",
@@ -2489,6 +2522,11 @@
       "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
     },
+    "/payroll/filings/filings-source.service.ts": {
+      "verdict": "STREAM",
+      "proof": "Statutory export employee and line-item sources use ascending tenant/run-scoped id batches of 500, preserving complete export semantics",
+      "note": "Complete statutory exports use resumable keyset batches"
+    },
     "/payroll/filings/filings.service.ts": {
       "verdict": "KEYSET-MIGRATED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
@@ -2549,6 +2587,11 @@
     "/payroll/insights/period-reconciliation.service.ts": {
       "verdict": "BOUNDED",
       "note": "export-cancellation lane â€” paired service+frontend migration required"
+    },
+    "/payroll/insights/reports-read.service.ts": {
+      "verdict": "STREAM",
+      "proof": "Bank report items use ascending id batches across the selected tenant-scoped batch page; variance baselines are limited to the current page's unique employee ids",
+      "note": "Report detail expansion is bounded per page and resumable"
     },
     "/payroll/insights/reports.service.ts": {
       "verdict": "KEYSET-MIGRATED",
@@ -2774,6 +2817,10 @@
       "note": "Has 5 explicit .limit() calls; KB article suggestions are capped per search context",
       "justification": "KB reads bounded by articleId or spaceId (per-article context) 2026-09-01"
     },
+    "/support/core/support-macros-assignment.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Assignment lookups are bounded by the caller-supplied candidate list and tenant scope"
+    },
     "/support/core/support-macros.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Has 3 explicit .limit() calls and 5 aggregate references; macro list is bounded per org",
@@ -2966,28 +3013,6 @@
       "verdict": "BOUNDED",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "listGlobalVariables capped at .limit(200); workflow variables are org config, typically <100 2026-09-01"
-    },
-    "/build/core/projects-tickets-read.query.ts": {
-      "verdict": "BOUNDED",
-      "note": "Shared ticket query receives a caller-enforced page limit and is not an unbounded endpoint"
-    },
-    "/hr/time/attendance-email-report.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Recipient lookup is bounded by the caller-supplied recipient list and active tenant membership"
-    },
-    "/support/core/support-macros-assignment.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Assignment lookups are bounded by the caller-supplied candidate list and tenant scope"
-    },
-    "/payroll/filings/filings-source.service.ts": {
-      "verdict": "STREAM",
-      "proof": "Statutory export employee and line-item sources use ascending tenant/run-scoped id batches of 500, preserving complete export semantics",
-      "note": "Complete statutory exports use resumable keyset batches"
-    },
-    "/payroll/insights/reports-read.service.ts": {
-      "verdict": "STREAM",
-      "proof": "Bank report items use ascending id batches across the selected tenant-scoped batch page; variance baselines are limited to the current page's unique employee ids",
-      "note": "Report detail expansion is bounded per page and resumable"
     }
   }
 }

@@ -1,13 +1,13 @@
 import postgres from 'postgres';
 import type { MediaCompressionService } from "../../../common/media/media-compression.service";
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { and, eq, inArray, count } from 'drizzle-orm';
+import { and, eq, inArray, count, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
 import * as schema from '../../../db/schema';
 import {
   organizations,
   organizationMembers,
   users,
-  auditLogs,
   payrollPolicies,
   payrollPolicyVersions,
   payrollRuns,
@@ -37,7 +37,7 @@ import { EmploymentFactsService } from '../../directory/employment-facts.service
 
 type TestDb = PostgresJsDatabase<typeof schema>;
 
-const P = 'e2e-payroll-iso-';
+const P = `e2e-payroll-iso-${randomUUID().slice(0, 8)}-`;
 const ORG_A = `${P}org-a`;
 const ORG_B = `${P}org-b`;
 const USER_A = `${P}user-a`;
@@ -71,9 +71,22 @@ async function assertTriggerRejects(promise: Promise<unknown>): Promise<void> {
   expect(triggerErrorMsg(caught)).toMatch(/immutable/i);
 }
 
+/**
+ * audit_logs is append-only (migration 0930), so the fixture detaches its rows from the
+ * organization through the supported function instead of deleting them; the users they
+ * reference are left behind and the fixture prefix is unique per run.
+ */
+async function detachAuditLogs(db: TestDb, orgIds: string[]): Promise<void> {
+  for (const orgId of orgIds) {
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT set_config('app.organization_id', ${orgId}, true)`);
+      await tx.execute(sql`SELECT app.nullify_audit_logs_org_id(${orgId})`);
+    });
+  }
+}
+
 async function cleanupStaleData(db: TestDb): Promise<void> {
   const orgIds = [ORG_A, ORG_B];
-  const userIds = [USER_A, USER_B];
   await db
     .update(payrollRuns)
     .set({ status: 'DRAFT' })
@@ -89,12 +102,11 @@ async function cleanupStaleData(db: TestDb): Promise<void> {
   await db.delete(payrollPolicyVersions).where(inArray(payrollPolicyVersions.orgId, orgIds));
   await db.delete(payrollPolicies).where(inArray(payrollPolicies.orgId, orgIds));
   await db.delete(employeeSalaryProfiles).where(inArray(employeeSalaryProfiles.orgId, orgIds));
-  await db.delete(auditLogs).where(inArray(auditLogs.userId, userIds));
+  await detachAuditLogs(db, orgIds);
   // organizations first: guard_owner_membership refuses to delete the membership the
   // owner pointer still names, and stands down only once that pointer is gone.
   await db.delete(organizations).where(inArray(organizations.id, orgIds));
   await db.delete(organizationMembers).where(inArray(organizationMembers.orgId, orgIds));
-  await db.delete(users).where(inArray(users.id, userIds));
 }
 
 const d = process.env.DATABASE_URL ? describe : describe.skip;

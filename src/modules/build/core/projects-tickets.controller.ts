@@ -84,7 +84,7 @@ export class ProjectsTicketsController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.getColumnCounts(u.orgId, projectId);
+    return this.tickets.getColumnCounts(u, projectId);
   }
 
   @Get(":projectId/tickets/export")

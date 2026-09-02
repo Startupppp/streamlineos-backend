@@ -1,8 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
-import { livePersonOfUser, orgUnitInOrg, primaryEmploymentOfPerson } from "../../directory/employment-query";
+import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 import {
-  hrEmployeeSensitiveFields,
   hrEmployments,
   hrPeople,
   organizationMembers,
@@ -301,30 +300,4 @@ export class HrDashboardReportsService {
     return FALLBACK_LATE_CHECKIN_HOUR * 60 + FALLBACK_LATE_CHECKIN_MINUTE;
   }
 
-  exportRows(orgId: string) {
-    return this.db
-      .select({
-        userId: organizationMembers.userId,
-        role: organizationMembers.role,
-        joinedAt: organizationMembers.joinedAt,
-        name: users.name,
-        firstName: users.firstName,
-        lastName: users.lastName,
-        email: users.email,
-        gender: users.gender,
-        dateOfBirth: users.dateOfBirth,
-        joiningDate: hrEmployments.joiningDate,
-        taxId: hrEmployeeSensitiveFields.taxId,
-        departmentName: orgUnits.name,
-      })
-      .from(organizationMembers)
-      .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
-      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-      .leftJoin(hrEmployeeSensitiveFields, and(eq(hrEmployeeSensitiveFields.employmentId, hrEmployments.id), eq(hrEmployeeSensitiveFields.orgId, orgId)))
-      .leftJoin(orgUnitMembers, and(eq(orgUnitMembers.membershipId, organizationMembers.id), eq(orgUnitMembers.orgId, orgId)))
-      .leftJoin(orgUnits, orgUnitInOrg(orgId, orgUnitMembers.orgUnitId))
-      .where(eq(organizationMembers.orgId, orgId))
-      .limit(10_000);
-  }
 }

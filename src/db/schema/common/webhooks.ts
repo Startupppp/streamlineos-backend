@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "./auth";
 
 export const webhookEndpoints = pgTable("webhook_endpoints", {
@@ -19,7 +19,7 @@ export const webhookEndpoints = pgTable("webhook_endpoints", {
 
 export const webhookLogs = pgTable("webhook_logs", {
   id: serial("id").primaryKey(),
-  endpointId: integer("endpoint_id").references(() => webhookEndpoints.id, { onDelete: "cascade" }).notNull(),
+  endpointId: integer("endpoint_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   event: text("event").notNull(),
   payload: jsonb("payload").$type<Record<string, unknown>>(),
@@ -29,6 +29,7 @@ export const webhookLogs = pgTable("webhook_logs", {
   success: boolean("success").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.endpointId], foreignColumns: [webhookEndpoints.orgId, webhookEndpoints.id], name: "fk_webhook_logs_endpoint_id_org" }).onDelete("cascade"),
   index("idx_webhook_logs_endpoint").on(table.endpointId),
   index("idx_webhook_logs_org_event").on(table.orgId, table.event),
   unique("uniq_webhook_logs_org_id").on(table.orgId, table.id),

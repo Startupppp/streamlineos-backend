@@ -5,13 +5,15 @@ import {
   meetingAttendees,
   meetingActionItems,
   meetingStandupEntries,
-  projects,
   projectMembers,
   organizationMembers,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
+import { assertProjectAccess } from "../core/project-access";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
   AddAttendeeInput,
   CreateMeetingInput,
@@ -44,15 +46,8 @@ export class MeetingsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
-
-  private async assertProject(orgId: string, projectId: number): Promise<void> {
-    const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      columns: { id: true },
-    });
-    if (!p) throw new NotFoundException("Project not found");
-  }
 
   private async loadMeeting(orgId: string, projectId: number, meetingId: number) {
     const row = await this.db.query.projectMeetings.findFirst({
@@ -67,8 +62,8 @@ export class MeetingsService {
     return row;
   }
 
-  async listMeetings(orgId: string, projectId: number, query: ListMeetingsQuery) {
-    await this.assertProject(orgId, projectId);
+  async listMeetings(u: CurrentUserContext, projectId: number, query: ListMeetingsQuery) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
 
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -88,7 +83,7 @@ export class MeetingsService {
       .from(projectMeetings)
       .where(
         and(
-          eq(projectMeetings.orgId, orgId),
+          eq(projectMeetings.orgId, u.orgId),
           eq(projectMeetings.projectId, projectId),
           isNull(projectMeetings.deletedAt),
           query.status ? eq(projectMeetings.status, query.status) : undefined,
@@ -101,18 +96,18 @@ export class MeetingsService {
                 FROM ${meetingAttendees} ma
                 INNER JOIN ${organizationMembers} om
                   ON om.id = ma.membership_id
-                 AND om.org_id = ${orgId}
+                 AND om.org_id = ${u.orgId}
                  AND om.user_id = ${query.attendeeId}
                  AND om.status = 'ACTIVE'
                 WHERE ma.meeting_id = ${projectMeetings.id}
-                  AND ma.org_id = ${orgId}
+                  AND ma.org_id = ${u.orgId}
               )`
             : undefined,
           query.hasActionItems === true
-            ? sql`EXISTS (SELECT 1 FROM ${meetingActionItems} WHERE ${meetingActionItems.meetingId} = ${projectMeetings.id} AND ${meetingActionItems.orgId} = ${orgId} AND ${meetingActionItems.deletedAt} IS NULL)`
+            ? sql`EXISTS (SELECT 1 FROM ${meetingActionItems} WHERE ${meetingActionItems.meetingId} = ${projectMeetings.id} AND ${meetingActionItems.orgId} = ${u.orgId} AND ${meetingActionItems.deletedAt} IS NULL)`
             : undefined,
           query.hasUnresolvedActionItems === true
-            ? sql`EXISTS (SELECT 1 FROM ${meetingActionItems} WHERE ${meetingActionItems.meetingId} = ${projectMeetings.id} AND ${meetingActionItems.orgId} = ${orgId} AND ${meetingActionItems.deletedAt} IS NULL AND ${meetingActionItems.status} NOT IN ('done', 'converted', 'cancelled'))`
+            ? sql`EXISTS (SELECT 1 FROM ${meetingActionItems} WHERE ${meetingActionItems.meetingId} = ${projectMeetings.id} AND ${meetingActionItems.orgId} = ${u.orgId} AND ${meetingActionItems.deletedAt} IS NULL AND ${meetingActionItems.status} NOT IN ('done', 'converted', 'cancelled'))`
             : undefined,
         ),
       )
@@ -131,14 +126,14 @@ export class MeetingsService {
       this.db
         .select({ meetingId: meetingAttendees.meetingId, count: sql<number>`count(*)::int` })
         .from(meetingAttendees)
-        .where(and(eq(meetingAttendees.orgId, orgId), inArray(meetingAttendees.meetingId, ids)))
+        .where(and(eq(meetingAttendees.orgId, u.orgId), inArray(meetingAttendees.meetingId, ids)))
         .groupBy(meetingAttendees.meetingId),
       this.db
         .select({ meetingId: meetingActionItems.meetingId, count: sql<number>`count(*)::int` })
         .from(meetingActionItems)
         .where(
           and(
-            eq(meetingActionItems.orgId, orgId),
+            eq(meetingActionItems.orgId, u.orgId),
             inArray(meetingActionItems.meetingId, ids),
             isNull(meetingActionItems.deletedAt),
           ),
@@ -149,7 +144,7 @@ export class MeetingsService {
         .from(meetingActionItems)
         .where(
           and(
-            eq(meetingActionItems.orgId, orgId),
+            eq(meetingActionItems.orgId, u.orgId),
             inArray(meetingActionItems.meetingId, ids),
             isNull(meetingActionItems.deletedAt),
             notInArray(meetingActionItems.status, ["done", "converted", "cancelled"]),
@@ -199,8 +194,8 @@ export class MeetingsService {
     return { ...meeting, attendees, actionItems, standupEntries };
   }
 
-  async createMeeting(orgId: string, userId: string, projectId: number, input: CreateMeetingInput) {
-    await this.assertProject(orgId, projectId);
+  async createMeeting(u: CurrentUserContext, projectId: number, input: CreateMeetingInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     let attendeeMemberships = new Map<string, number>();
 
     if (input.attendeeUserIds && input.attendeeUserIds.length > 0) {
@@ -226,12 +221,12 @@ export class MeetingsService {
       const [maxRow] = await tx
         .select({ maxNum: sql<number>`COALESCE(MAX(${projectMeetings.meetingNumber}), 0)` })
         .from(projectMeetings)
-        .where(and(eq(projectMeetings.projectId, projectId), eq(projectMeetings.orgId, orgId)));
+        .where(and(eq(projectMeetings.projectId, projectId), eq(projectMeetings.orgId, u.orgId)));
       const nextNumber = (maxRow?.maxNum ?? 0) + 1;
       const [created] = await tx
         .insert(projectMeetings)
         .values({
-          orgId,
+          orgId: u.orgId,
           projectId,
           meetingNumber: nextNumber,
           title: input.title,
@@ -245,7 +240,7 @@ export class MeetingsService {
           timezone: input.timezone ?? null,
           recurrenceRule: input.recurrenceRule ?? null,
           sprintId: input.sprintId ?? null,
-          createdBy: userId,
+          createdBy: u.userId,
         })
         .returning();
       if (!created) throw new NotFoundException("Failed to create meeting");
@@ -253,7 +248,7 @@ export class MeetingsService {
       if (input.attendeeUserIds && input.attendeeUserIds.length > 0) {
         await tx.insert(meetingAttendees).values(
           input.attendeeUserIds.map((uid) => ({
-            orgId,
+            orgId: u.orgId,
             meetingId: created.id,
             membershipId: attendeeMemberships.get(uid) ?? 0,
           })),
@@ -265,8 +260,8 @@ export class MeetingsService {
 
     this.audit.log({
       action: "meeting.created",
-      userId,
-      orgId,
+      userId: u.userId,
+      orgId: u.orgId,
       resourceType: "project_meeting",
       resourceId: String(meeting.id),
       metadata: { projectId, meetingId: meeting.id, title: meeting.title },

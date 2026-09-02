@@ -4,10 +4,12 @@ import {
   intakeItems,
   projectMilestones,
   projectViews,
-  projects,
   tickets,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { assertProjectAccess } from "../core/project-access";
 import { type Db } from "../../../db/drizzle.module";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
@@ -22,20 +24,16 @@ import type {
   UpdateViewInput,
 } from "./dto/workspace.schemas";
 
-async function assertProject(db: Db, orgId: string, projectId: number): Promise<void> {
-  const project = await db.query.projects.findFirst({
-    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-    columns: { id: true },
-  });
-  if (!project) throw new NotFoundException("Project not found");
-}
-
 @Injectable()
 export class MilestonesService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
-  async listMilestones(orgId: string, projectId: number) {
-    await assertProject(this.db, orgId, projectId);
+  async listMilestones(u: CurrentUserContext, projectId: number) {
+    const orgId = u.orgId;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.db.query.projectMilestones.findMany({
       where: and(eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)),
       orderBy: [asc(projectMilestones.targetDate)],
@@ -43,8 +41,10 @@ export class MilestonesService {
     });
   }
 
-  async createMilestone(orgId: string, userId: string, projectId: number, input: CreateMilestoneInput) {
-    await assertProject(this.db, orgId, projectId);
+  async createMilestone(u: CurrentUserContext, projectId: number, input: CreateMilestoneInput) {
+    const orgId = u.orgId;
+    const userId = u.userId;
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const [milestone] = await this.db
       .insert(projectMilestones)
       .values({

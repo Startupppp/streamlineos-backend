@@ -26,9 +26,7 @@ export const projectClientGrants = pgTable(
       .notNull(),
     portalMembershipId: text("portal_membership_id").notNull(),
     partyContactId: text("party_contact_id").notNull(),
-    projectId: integer("project_id")
-      .references(() => projects.id, { onDelete: "cascade" })
-      .notNull(),
+    projectId: integer("project_id").notNull(),
     pmWorkspaceId: text("pm_workspace_id"),
     canViewMilestones: boolean("can_view_milestones").notNull().default(false),
     canViewTasks: boolean("can_view_tasks").notNull().default(false),
@@ -56,6 +54,11 @@ export const projectClientGrants = pgTable(
       table.organizationId,
       table.projectId,
     ),
+    foreignKey({
+      columns: [table.organizationId, table.projectId],
+      foreignColumns: [projects.orgId, projects.id],
+      name: "fk_project_client_grants_project_id_org",
+    }).onDelete("cascade"),
     foreignKey({
       columns: [
         table.organizationId,

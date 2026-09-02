@@ -1,9 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { changeRequests, projects } from "../../../db/schema";
+import { changeRequests } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { assertProjectAccess } from "../core/project-access";
 import type { CreateChangeRequestInput, ListCrQuery, UpdateChangeRequestInput } from "./dto/change-requests.schemas";
 
 @Injectable()
@@ -11,18 +14,12 @@ export class ChangeRequestsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
 
-  private async assertProject(orgId: string, projectId: number) {
-    const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      columns: { id: true },
-    });
-    if (!p) throw new NotFoundException("Project not found");
-  }
-
-  async listChangeRequests(orgId: string, projectId: number, query: ListCrQuery) {
-    await this.assertProject(orgId, projectId);
+  async listChangeRequests(u: CurrentUserContext, projectId: number, query: ListCrQuery) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const conditions = [
       eq(changeRequests.orgId, orgId),
       eq(changeRequests.projectId, projectId),
@@ -50,8 +47,10 @@ export class ChangeRequestsService {
     return cr;
   }
 
-  async createChangeRequest(orgId: string, userId: string, projectId: number, input: CreateChangeRequestInput) {
-    await this.assertProject(orgId, projectId);
+  async createChangeRequest(u: CurrentUserContext, projectId: number, input: CreateChangeRequestInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
+    const userId = u.userId;
     const [cr] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx

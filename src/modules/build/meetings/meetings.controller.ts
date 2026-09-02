@@ -52,7 +52,7 @@ export class MeetingsController {
     @Query() query: ListMeetingsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listMeetings(u.orgId, projectId, query);
+    return this.svc.listMeetings(u, projectId, query);
   }
 
   @Get(":meetingId")
@@ -75,7 +75,7 @@ export class MeetingsController {
     @Body() body: CreateMeetingInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createMeeting(u.orgId, u.userId, projectId, body);
+    return this.svc.createMeeting(u, projectId, body);
   }
 
   @Patch(":meetingId")

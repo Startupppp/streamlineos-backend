@@ -33,6 +33,8 @@ export const accountingPeriods = pgTable("accounting_periods", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.closedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_accounting_periods_closed_by_membership" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.lockedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_accounting_periods_locked_by_membership" }).onDelete("set null"),
   unique("uniq_accounting_periods_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_accounting_periods_org_start").on(table.orgId, table.startDate),
   index("idx_accounting_periods_org_status").on(table.orgId, table.status),
@@ -54,12 +56,13 @@ export const accountingDimensions = pgTable("accounting_dimensions", {
 export const accountingDimensionValues = pgTable("accounting_dimension_values", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  dimensionId: integer("dimension_id").references(() => accountingDimensions.id, { onDelete: "cascade" }).notNull(),
+  dimensionId: integer("dimension_id").notNull(),
   name: text("name").notNull(),
   code: text("code").notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.dimensionId], foreignColumns: [accountingDimensions.orgId, accountingDimensions.id], name: "fk_accounting_dimension_values_dimension_id_org" }).onDelete("cascade"),
   unique("uniq_accounting_dim_values_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_accounting_dim_values_org_dim_code").on(table.orgId, table.dimensionId, table.code),
   index("idx_accounting_dim_values_org_dim").on(table.orgId, table.dimensionId),
@@ -81,11 +84,12 @@ export const accountingSettings = pgTable("accounting_settings", {
   taxRegistration: jsonb("tax_registration"),
   coaTemplate: text("coa_template"),
   setupCompletedAt: timestamp("setup_completed_at"),
-  retainedEarningsAccountId: integer("retained_earnings_account_id").references(() => ledgerAccounts.id),
+  retainedEarningsAccountId: integer("retained_earnings_account_id"),
   paymentTerms: jsonb("payment_terms").$type<PaymentTerm[]>().notNull().default([]),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.retainedEarningsAccountId], foreignColumns: [ledgerAccounts.orgId, ledgerAccounts.id], name: "fk_accounting_settings_retained_earnings_account_id_org" }),
   unique("uniq_accounting_settings_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_accounting_settings_org").on(table.orgId),
 ]);
@@ -107,10 +111,11 @@ export const accSystemAccountMap = pgTable("acc_system_account_map", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   purpose: accSystemPurposeEnum("purpose").notNull(),
-  accountId: integer("account_id").references(() => ledgerAccounts.id, { onDelete: "restrict" }).notNull(),
+  accountId: integer("account_id").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.accountId], foreignColumns: [ledgerAccounts.orgId, ledgerAccounts.id], name: "fk_acc_system_account_map_account_id_org" }).onDelete("restrict"),
   unique("uniq_acc_system_account_map_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_acc_system_account_map_org_purpose").on(table.orgId, table.purpose),
   index("idx_acc_system_account_map_org").on(table.orgId),

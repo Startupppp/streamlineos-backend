@@ -9,7 +9,7 @@ export const signPublicForms = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    templateId: integer("template_id").references(() => signTemplates.id, { onDelete: "cascade" }).notNull(),
+    templateId: integer("template_id").notNull(),
     slug: text("slug").notNull(),
     status: signPublicFormStatusEnum("status").default("draft").notNull(),
     accessCodeHash: text("access_code_hash"),
@@ -24,6 +24,7 @@ export const signPublicForms = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.templateId], foreignColumns: [signTemplates.orgId, signTemplates.id], name: "fk_sign_public_forms_template_id_org" }).onDelete("cascade"),
     uniqueIndex("uniq_sign_public_forms_slug").on(table.slug),
     index("idx_sign_public_forms_org_status").on(table.orgId, table.status),
     unique("uniq_sign_public_forms_org_id").on(table.orgId, table.id),

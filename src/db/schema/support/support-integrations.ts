@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, serial, text, integer, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { foreignKey, index, integer, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { organizations, users } from "../common/auth";
 import { supportTickets } from "./tickets";
 
@@ -14,7 +14,7 @@ export const supportTicketExternalLinks = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    ticketId: integer("ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
+    ticketId: integer("ticket_id").notNull(),
     entityType: supportExternalEntityTypeEnum("entity_type").notNull(),
     entityId: integer("entity_id").notNull(),
     label: text("label").notNull(),
@@ -22,6 +22,7 @@ export const supportTicketExternalLinks = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [supportTickets.orgId, supportTickets.id], name: "fk_support_ticket_external_links_ticket_id_org" }).onDelete("cascade"),
     uniqueIndex("uniq_support_ticket_external_links_ticket_entity").on(
       table.ticketId,
       table.entityType,

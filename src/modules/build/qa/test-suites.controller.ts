@@ -40,7 +40,7 @@ export class TestSuitesController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listSuites(u.orgId, projectId);
+    return this.svc.listSuites(u, projectId);
   }
 
   @Post()
@@ -52,7 +52,7 @@ export class TestSuitesController {
     @Body() body: CreateTestSuiteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createSuite(u.orgId, u.userId, projectId, body);
+    return this.svc.createSuite(u, projectId, body);
   }
 
   @Patch(":suiteId")

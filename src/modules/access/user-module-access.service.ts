@@ -18,21 +18,9 @@ import {
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { EntitlementsService } from "./entitlements.service";
 import { MANAGEABLE_MODULE_SET } from "./access-policy";
+import { isMissingRelationError } from "./access-error-utils";
 
 const DENIED_MODULES_TTL_MS = 15_000;
-
-function isMissingRelationError(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  if ("code" in error && error.code === "42P01") return true;
-  if (
-    "message" in error &&
-    typeof error.message === "string" &&
-    error.message.includes("does not exist")
-  )
-    return true;
-  if ("cause" in error) return isMissingRelationError(error.cause);
-  return false;
-}
 
 @Injectable()
 export class UserModuleAccessService {

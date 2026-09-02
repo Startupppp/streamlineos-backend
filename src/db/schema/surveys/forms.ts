@@ -41,13 +41,14 @@ export const surveyForms = pgTable("survey_forms", {
 export const surveyVersions = pgTable("survey_versions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  surveyId: integer("survey_id").references(() => surveyForms.id, { onDelete: "cascade" }).notNull(),
+  surveyId: integer("survey_id").notNull(),
   versionNumber: integer("version_number").notNull(),
   schemaSnapshot: jsonb("schema_snapshot").$type<Record<string, unknown> | null>(),
   publishedAt: timestamp("published_at"),
   createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.surveyId], foreignColumns: [surveyForms.orgId, surveyForms.id], name: "fk_survey_versions_survey_id_org" }).onDelete("cascade"),
   index("idx_survey_versions_survey").on(table.surveyId),
   unique("uq_survey_versions_survey_number").on(table.surveyId, table.versionNumber),
   unique("uniq_survey_versions_org_id").on(table.orgId, table.id),

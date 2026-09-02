@@ -28,6 +28,18 @@ describe("Cron auth (e2e)", () => {
     ["post", "/cron/support-sla-escalations"],
     ["get", "/cron/operator-grant-expiry"],
     ["post", "/cron/operator-grant-expiry"],
+    ["get", "/cron/trial-expiry"],
+    ["post", "/cron/trial-expiry"],
+    ["get", "/cron/monthly-plan-grants"],
+    ["post", "/cron/monthly-plan-grants"],
+    ["get", "/cron/ai-reservations-sweep"],
+    ["post", "/cron/ai-reservations-sweep"],
+    ["get", "/cron/auto-topup-flush"],
+    ["post", "/cron/auto-topup-flush"],
+    ["get", "/cron/provider-webhook-redrive"],
+    ["post", "/cron/provider-webhook-redrive"],
+    ["get", "/cron/ai-jobs-flush"],
+    ["post", "/cron/ai-jobs-flush"],
   ];
 
   function callRoute(method: Method, path: string): request.Test {

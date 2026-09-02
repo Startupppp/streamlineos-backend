@@ -11,8 +11,18 @@ function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   return [...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []), ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : [])];
 }
 
+function makeChain(): object {
+  const chain: Record<string, jest.Mock> = {};
+  chain["orderBy"] = jest.fn().mockImplementation(() => chain);
+  chain["limit"] = jest.fn().mockImplementation(() => Promise.resolve([]));
+  chain["then"] = jest
+    .fn()
+    .mockImplementation((resolve: (rows: unknown[]) => unknown) => resolve([]));
+  return chain;
+}
+
 function makeFrom(wheres: unknown[]): object {
-  const where = jest.fn().mockImplementation((a: unknown) => { wheres.push(a); return Promise.resolve([]); });
+  const where = jest.fn().mockImplementation((a: unknown) => { wheres.push(a); return makeChain(); });
   const self: Record<string, jest.Mock> = { where };
   self["innerJoin"] = jest.fn().mockImplementation(() => makeFrom(wheres));
   self["leftJoin"] = jest.fn().mockImplementation(() => makeFrom(wheres));

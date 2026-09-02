@@ -45,7 +45,7 @@ export class BugsController {
     @Query() query: BugListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listBugs(u.orgId, projectId, query);
+    return this.svc.listBugs(u, projectId, query);
   }
 
   @Get(":bugId")
@@ -68,7 +68,7 @@ export class BugsController {
     @Body() body: CreateBugInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createBug(u.orgId, u.userId, projectId, body);
+    return this.svc.createBug(u, projectId, body);
   }
 
   @Patch(":bugId")

@@ -132,7 +132,7 @@ export const createProfileSchema = z.object({
     amount: z.string().optional(),
     percent: z.string().optional(),
     formulaOverride: z.string().max(500).optional(),
-  })).optional().default([]),
+  })).max(200).optional().default([]),
 });
 export type CreateProfileInput = z.infer<typeof createProfileSchema>;
 

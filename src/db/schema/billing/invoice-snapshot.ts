@@ -97,6 +97,9 @@ export const billingInvoiceLineSnapshots = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.prorationLineId], foreignColumns: [billingProrationLines.orgId, billingProrationLines.id], name: "fk_billing_invoice_line_snapshots_proration_line_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [t.orgId, t.snapshotId], foreignColumns: [billingInvoiceSnapshots.orgId, billingInvoiceSnapshots.id], name: "fk_billing_invoice_line_snapshots_snapshot_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [t.orgId, t.usageRollupId], foreignColumns: [billingUsageRollups.orgId, billingUsageRollups.id], name: "fk_billing_invoice_line_snapshots_usage_rollup_id_org" }).onDelete("set null"),
     index("idx_billing_inv_lines_snapshot").on(t.snapshotId),
     index("idx_billing_inv_lines_org").on(t.orgId, t.snapshotId),
     unique("uniq_billing_invoice_line_snapshots_org_id").on(t.orgId, t.id),
@@ -124,6 +127,7 @@ export const billingCreditNotes = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.originalSnapshotId], foreignColumns: [billingInvoiceSnapshots.orgId, billingInvoiceSnapshots.id], name: "fk_billing_credit_notes_original_snapshot_id_org" }).onDelete("restrict"),
     uniqueIndex("uq_billing_credit_notes_org_number").on(t.orgId, t.noteNumber),
     index("idx_billing_credit_notes_org_snap").on(t.orgId, t.originalSnapshotId),
     index("idx_billing_credit_notes_org_status").on(t.orgId, t.status),
@@ -150,6 +154,7 @@ export const billingCreditNoteLines = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.creditNoteId], foreignColumns: [billingCreditNotes.orgId, billingCreditNotes.id], name: "fk_billing_credit_note_lines_credit_note_id_org" }).onDelete("cascade"),
     index("idx_billing_credit_note_lines_note").on(t.creditNoteId),
     index("idx_billing_credit_note_lines_org").on(t.orgId, t.creditNoteId),
     unique("uniq_billing_credit_note_lines_org_id").on(t.orgId, t.id),

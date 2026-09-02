@@ -37,27 +37,26 @@ function generateToken(): string {
   return randomBytes(32).toString("hex");
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function stringField(source: Record<string, unknown>, key: string): string | undefined {
+  const value = source[key];
+  return typeof value === "string" ? value : undefined;
+}
+
 function serializeEmailError(error: unknown): Record<string, unknown> {
-  if (!error || typeof error !== "object")
-    return { message: String(error) };
-  const err = error as {
-    name?: unknown;
-    message?: unknown;
-    permanent?: unknown;
-    cause?: unknown;
-  };
-  const cause =
-    err.cause && typeof err.cause === "object"
-      ? (err.cause as { message?: unknown; statusCode?: unknown; name?: unknown })
-      : null;
+  if (!isRecord(error)) return { message: String(error) };
+  const cause = isRecord(error.cause) ? error.cause : null;
+  const causeStatus = cause?.statusCode;
   return {
-    name: typeof err.name === "string" ? err.name : undefined,
-    message: typeof err.message === "string" ? err.message : String(error),
-    permanent: typeof err.permanent === "boolean" ? err.permanent : undefined,
-    causeMessage: typeof cause?.message === "string" ? cause.message : undefined,
-    causeStatus:
-      typeof cause?.statusCode === "number" ? cause.statusCode : undefined,
-    causeName: typeof cause?.name === "string" ? cause.name : undefined,
+    name: stringField(error, "name"),
+    message: stringField(error, "message") ?? String(error),
+    permanent: typeof error.permanent === "boolean" ? error.permanent : undefined,
+    causeMessage: cause ? stringField(cause, "message") : undefined,
+    causeStatus: typeof causeStatus === "number" ? causeStatus : undefined,
+    causeName: cause ? stringField(cause, "name") : undefined,
   };
 }
 

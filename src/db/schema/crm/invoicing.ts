@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { boolean, date, decimal, foreignKey, index, integer, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   invoiceStatusEnum, quoteStatusEnum,
@@ -13,7 +13,7 @@ export const invoices = pgTable("invoices", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   clientId: integer("client_id").references(() => clients.id),
-  projectId: integer("project_id").references(() => projects.id),
+  projectId: integer("project_id"),
   invoiceNumber: text("invoice_number").notNull(),
   status: invoiceStatusEnum("status").default("DRAFT").notNull(),
   subtotal: decimal("subtotal", { precision: 18, scale: 4 }).default("0").notNull(),
@@ -51,6 +51,7 @@ export const invoices = pgTable("invoices", {
   nextReminderAt: timestamp("next_reminder_at"),
   recurringTemplateId: integer("recurring_template_id"),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_invoices_project_id_org" }),
   index("idx_invoices_org_status").on(table.orgId, table.status),
   index("idx_invoices_client").on(table.clientId),
   index("idx_invoices_project").on(table.projectId),
@@ -76,7 +77,7 @@ export const invoiceItems = pgTable("invoice_items", {
 export const payments = pgTable("payments", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  invoiceId: integer("invoice_id").references(() => invoices.id, { onDelete: "cascade" }).notNull(),
+  invoiceId: integer("invoice_id").notNull(),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   paymentDate: date("payment_date").notNull(),
   paymentMethod: text("payment_method").notNull(),
@@ -86,6 +87,7 @@ export const payments = pgTable("payments", {
   createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.invoiceId], foreignColumns: [invoices.orgId, invoices.id], name: "fk_payments_invoice_id_org" }).onDelete("cascade"),
   index("idx_payments_invoice").on(table.invoiceId),
   index("idx_payments_org_date").on(table.orgId, table.paymentDate),
   unique("uniq_payments_org_id").on(table.orgId, table.id),
@@ -148,7 +150,7 @@ export const purchaseBillItems = pgTable("purchase_bill_items", {
 export const vendorPayments = pgTable("vendor_payments", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  billId: integer("bill_id").references(() => purchaseBills.id, { onDelete: "cascade" }).notNull(),
+  billId: integer("bill_id").notNull(),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
   paymentDate: date("payment_date").notNull(),
   paymentMethod: text("payment_method").notNull(),
@@ -158,6 +160,7 @@ export const vendorPayments = pgTable("vendor_payments", {
   createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.billId], foreignColumns: [purchaseBills.orgId, purchaseBills.id], name: "fk_vendor_payments_bill_id_org" }).onDelete("cascade"),
   index("idx_vendor_payments_bill").on(table.billId),
   index("idx_vendor_payments_org_date").on(table.orgId, table.paymentDate),
   unique("uniq_vendor_payments_org_id").on(table.orgId, table.id),

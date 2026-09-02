@@ -72,7 +72,9 @@ function buildDbMock(options: {
 
   const dbSelect = jest.fn().mockReturnValue({
     from: jest.fn().mockReturnValue({
-      where: jest.fn().mockResolvedValue(assignees),
+      innerJoin: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue(assignees),
+      }),
     }),
   });
 

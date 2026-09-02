@@ -41,7 +41,10 @@ export class PayslipDownloadService {
     caller: CurrentUserContext,
   ): Promise<StreamableFile> {
     const publication = await this.db.query.payslipPublications.findFirst({
-      where: eq(payslipPublications.id, publicationId),
+      where: and(
+        eq(payslipPublications.id, publicationId),
+        eq(payslipPublications.orgId, caller.orgId),
+      ),
       columns: {
         id: true,
         orgId: true,

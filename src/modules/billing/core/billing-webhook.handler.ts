@@ -1,25 +1,19 @@
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import {
-  ExternalEffectLedger,
-  ExternalEffectLeaseBusyError,
-} from "../../../common/outbox/external-effect-ledger";
+import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
 import { AiCreditsService } from "./ai-credits.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
-import { type RevenueEventInput } from "./revenue-events";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
 import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import { normalizedPaymentWebhookEventSchema, type PaymentWebhookPayment, type NormalizedPaymentWebhookEvent } from "../payments/dto/webhook.schemas";
 import { ProviderEventLedger, type ProviderEventKey } from "./provider-event-ledger";
 import { BillingPaymentState } from "./billing-payment-state";
+import { BillingWebhookEffects, type WebhookResult } from "./billing-webhook-effects";
 
-export interface WebhookResult {
-  status: number;
-  body: Record<string, unknown>;
-}
+export type { WebhookResult };
 
 export interface BillingWebhookDeps {
   db: Db;
@@ -36,10 +30,12 @@ export interface BillingWebhookDeps {
 export class BillingWebhookHandler {
   private readonly ledger: ProviderEventLedger;
   private readonly state: BillingPaymentState;
+  private readonly effects: BillingWebhookEffects;
 
   constructor(private readonly deps: BillingWebhookDeps) {
     this.ledger = new ProviderEventLedger(deps.db);
     this.state = new BillingPaymentState(deps.db, deps.planLimits);
+    this.effects = new BillingWebhookEffects(deps, this.state);
   }
 
   async handle(
@@ -104,26 +100,85 @@ export class BillingWebhookHandler {
     }
     const resolvedOrgId = org?.id ?? orgId;
 
+    return this.settle(event, payment, resolvedOrgId, providerKey, key);
+  }
+
+  /**
+   * Re-drives events the provider stopped retrying. The signature was verified when the row was
+   * recorded, so the stored payload is trusted here; nothing outside the ledger enters this path.
+   */
+  async redriveUnprocessed(
+    orgId: string,
+    window: { minAgeMs: number; maxAgeMs: number; limit: number },
+    now = new Date(),
+  ): Promise<{ attempted: number; recovered: number; failed: number }> {
+    const rows = await this.ledger.listRedrivable(orgId, window, now);
+    let recovered = 0;
+    let failed = 0;
+
+    for (const row of rows) {
+      const adapter = await this.deps.providers.resolve(orgId, row.provider);
+      if (!adapter) {
+        failed += 1;
+        continue;
+      }
+      const normalized = adapter.normalizeWebhook(JSON.stringify(row.rawPayload));
+      if (!normalized.ok) {
+        failed += 1;
+        continue;
+      }
+      const parsed = normalizedPaymentWebhookEventSchema.safeParse({
+        event: normalized.eventType,
+        payload: normalized.payload,
+      });
+      const payment = parsed.success ? parsed.data.payload.payment?.entity : undefined;
+      if (!parsed.success || !payment) {
+        failed += 1;
+        continue;
+      }
+      const result = await this.settle(parsed.data, payment, orgId, row.provider, {
+        orgId,
+        providerKey: row.provider,
+        providerEventId: row.providerEventId,
+      });
+      if (result.status === 200) recovered += 1;
+      else failed += 1;
+    }
+
+    return { attempted: rows.length, recovered, failed };
+  }
+
+  listProvisioningFailures(orgId: string) {
+    return this.ledger.listUnprocessed(orgId);
+  }
+
+  private async settle(
+    event: NormalizedPaymentWebhookEvent,
+    payment: PaymentWebhookPayment,
+    orgId: string,
+    providerKey: string,
+    key: ProviderEventKey,
+  ): Promise<WebhookResult> {
     try {
-      await this.state.persistPayment(payment, resolvedOrgId);
+      await this.state.persistPayment(payment, orgId);
     } catch (error) {
       logger.error(`[billing:${providerKey}] failed to persist payment`, { error });
       return { status: 500, body: { ok: false } };
     }
 
-    const applied = await this.applyEffects(event, payment, resolvedOrgId, providerKey);
+    const applied = await this.effects.apply(event, payment, orgId, providerKey);
     if (!applied.ok) return applied.result;
 
     // Success is claimed only here: the revenue events and the processed_at stamp commit together.
     try {
-      await runInNewTenantTransaction(this.deps.db, orgId, async (tx) => {
+      await runInNewTenantTransaction(this.deps.db, key.orgId, async (tx) => {
         for (const entry of applied.revenue) await this.deps.revenueAnalytics.emit(tx, entry);
         await this.ledger.acknowledge(tx, key);
       });
     } catch (error) {
       logger.error(`[billing:${providerKey}] failed to acknowledge the provider event`, { error, ...key });
-      await this.notifyProvisioningFailure(
-        orgId,
+      await this.effects.notifyProvisioningFailure(
+        key.orgId,
         payment.id,
         "your payment was received but its billing effects have not completed",
       );
@@ -133,122 +188,4 @@ export class BillingWebhookHandler {
     return { status: 200, body: { ok: true } };
   }
 
-  listProvisioningFailures(orgId: string) {
-    return this.ledger.listUnprocessed(orgId);
-  }
-
-  private async applyEffects(
-    event: NormalizedPaymentWebhookEvent,
-    payment: PaymentWebhookPayment,
-    orgId: string,
-    providerKey: string,
-  ): Promise<{ ok: true; revenue: RevenueEventInput[] } | { ok: false; result: WebhookResult }> {
-    const revenue: RevenueEventInput[] = [];
-    const packId = packIdFor(event, payment);
-
-    if (packId !== null) {
-      try {
-        await this.deps.externalEffectLedger.execute(
-          {
-            organizationId: orgId,
-            producerEventId: payment.id,
-            effectKey: `${payment.id}:pack-credit-grant`,
-            effectType: "billing.ai-pack-credit-grant",
-            providerIdempotency: "NONE",
-          },
-          () => this.deps.aiCredits.grantAiPackCreditsFromWebhook(orgId, packId, payment.id),
-        );
-        revenue.push({
-          type: "addon_purchase",
-          orgId,
-          mrr: 0,
-          amount: payment.amount,
-          metadata: { paymentId: payment.id, packId, source: "provider-webhook" },
-        });
-      } catch (err: unknown) {
-        if (err instanceof ExternalEffectLeaseBusyError)
-          return { ok: false, result: { status: 503, body: { ok: false, error: "grant in-flight" } } };
-        logger.error(`[billing:${providerKey}] ai pack credit grant failed`, {
-          orgId,
-          packId,
-          paymentId: payment.id,
-          err,
-        });
-        await this.notifyProvisioningFailure(
-          orgId,
-          payment.id,
-          "the AI credits you purchased could not be added",
-        );
-        return { ok: false, result: { status: 500, body: { ok: false } } };
-      }
-    }
-
-    if (event.event === "payment.failed" && payment.status === "failed") {
-      try {
-        await this.state.transitionToPastDue(orgId, payment.id);
-      } catch (err: unknown) {
-        logger.error(`[billing:${providerKey}] PAST_DUE transition failed`, {
-          orgId,
-          paymentId: payment.id,
-          err,
-        });
-        return { ok: false, result: { status: 500, body: { ok: false } } };
-      }
-    }
-
-    if (payment.status === "refunded") {
-      revenue.push({
-        type: "refund",
-        orgId,
-        mrr: 0,
-        amount: payment.amount,
-        metadata: { paymentId: payment.id, source: "provider-webhook" },
-      });
-    }
-
-    return { ok: true, revenue };
-  }
-
-  // Through the effect ledger so a retrying provider produces one message, not a stream.
-  private async notifyProvisioningFailure(
-    orgId: string,
-    paymentId: string,
-    detail: string,
-  ): Promise<void> {
-    try {
-      await this.deps.externalEffectLedger.execute(
-        {
-          organizationId: orgId,
-          producerEventId: paymentId,
-          effectKey: `${paymentId}:provisioning-failure-notice`,
-          effectType: "billing.provisioning-failure-notice",
-          providerIdempotency: "NONE",
-        },
-        () =>
-          runInNewTenantTransaction(this.deps.db, orgId, () =>
-            this.deps.paymentNotices.notifyOwner(orgId, {
-              title: "Payment received — provisioning is still pending",
-              message: `${detail}. We are retrying automatically; contact support if this does not clear shortly.`,
-              type: "WARNING",
-              priority: "HIGH",
-              link: "/settings/billing",
-            }),
-          ),
-      );
-    } catch (err: unknown) {
-      if (err instanceof ExternalEffectLeaseBusyError) return;
-      logger.error("[billing] could not tell the organisation about a provisioning failure", {
-        orgId,
-        paymentId,
-        err,
-      });
-    }
-  }
-}
-
-function packIdFor(event: NormalizedPaymentWebhookEvent, payment: PaymentWebhookPayment): number | null {
-  if (event.event !== "payment.captured" || payment.status !== "captured") return null;
-  if (!payment.notes?.packId) return null;
-  const packId = parseInt(String(payment.notes.packId), 10);
-  return isNaN(packId) ? null : packId;
 }

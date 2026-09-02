@@ -19,7 +19,7 @@ export const kbPageVersions = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    pageId: integer("page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
+    pageId: integer("page_id").notNull(),
     versionNumber: integer("version_number").notNull(),
     title: text("title").notNull().default(""),
     content: jsonb("content").$type<KbPageContent>(),
@@ -42,7 +42,7 @@ export const kbPageComments = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    pageId: integer("page_id").references(() => kbPages.id, { onDelete: "cascade" }).notNull(),
+    pageId: integer("page_id").notNull(),
     authorId: text("author_id").references(() => users.id, { onDelete: "set null" }),
     parentId: integer("parent_id"),
     content: text("content").notNull(),

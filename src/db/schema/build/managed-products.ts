@@ -72,7 +72,6 @@ export const managedProductReleases = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     managedProductId: integer("managed_product_id")
-      .references(() => managedProducts.id, { onDelete: "cascade" })
       .notNull(),
     name: text("name").notNull(),
     version: text("version").notNull(),
@@ -84,6 +83,7 @@ export const managedProductReleases = build.table(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.managedProductId], foreignColumns: [managedProducts.orgId, managedProducts.id], name: "fk_managed_product_releases_org_product" }).onDelete("cascade"),
     index("idx_managed_product_releases_product").on(table.managedProductId),
     index("idx_managed_product_releases_org_status").on(table.orgId, table.status),
     unique("uniq_managed_product_releases_org_id").on(table.orgId, table.id),

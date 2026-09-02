@@ -24,10 +24,10 @@ describe("HR lifecycle collection reads", () => {
     expect((analyticsSource.match(/\.limit\(1_000\)/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 
-  it("caps dashboard export materialization", () => {
-    expect(source("lifecycle/hr-dashboard-reports.service.ts")).toMatch(
-      /exportRows\(orgId: string\)[\s\S]{0,1500}\.where\(eq\(organizationMembers\.orgId, orgId\)\)\s*\.limit\(10_000\)/,
-    );
+  it("keeps the unrouted 10,000-row sensitive export deleted rather than capped", () => {
+    const reports = source("lifecycle/hr-dashboard-reports.service.ts");
+    expect(reports).not.toContain("exportRows");
+    expect(reports).not.toContain("hrEmployeeSensitiveFields");
   });
 
   it("caps probation person resolution to the requested id set", () => {

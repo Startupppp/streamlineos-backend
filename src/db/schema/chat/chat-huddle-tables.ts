@@ -44,7 +44,6 @@ export const chatHuddles = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     channelId: integer("channel_id")
-      .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
     startedByMembershipId: integer("started_by_membership_id").notNull(),
     status: text("status").default("active").notNull(),
@@ -70,7 +69,6 @@ export const chatHuddleParticipants = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     huddleId: integer("huddle_id")
-      .references(() => chatHuddles.id, { onDelete: "cascade" })
       .notNull(),
     membershipId: integer("membership_id").notNull(),
     joinedAt: timestamp("joined_at").defaultNow().notNull(),

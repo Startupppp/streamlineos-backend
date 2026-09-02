@@ -222,14 +222,24 @@ async function main() {
     //   uses Bitmap Heap Scan (not Index Only Scan), so this assertion always fails.
     // Breach type 3: scan-rows — maxScanRows 0; any real query scans at least 1 row.
     //
-    // All three must breach; if any passes or skips, the self-test is inconclusive.
+    // Breach type 4: seed floor — an unreachable minRows must report seed-too-small.
+    //
+    // All four must breach; if any passes or skips, the self-test is inconclusive.
+    //
+    // The first three override minRows to 1. Inheriting the base budget's minRows
+    // made the seed-size check fire first and short-circuit all three, so on any
+    // database smaller than the base budget's seed the self-test reported
+    // INCONCLUSIVE and proved nothing about the guards it exists to test. The
+    // seed-size check is itself a guard, so it gets its own fixture rather than
+    // standing in front of the others.
     const selfTestBase = BUDGETS.find((b) => b.id === "org-members-list") ?? BUDGETS[0];
     const budgets = SELF_TEST
       ? [
-          { ...selfTestBase, id: "self-test-ceiling", ceiling: 0 },
-          { ...selfTestBase, id: "self-test-assertion",
+          { ...selfTestBase, id: "self-test-ceiling", ceiling: 0, minRows: 1 },
+          { ...selfTestBase, id: "self-test-assertion", minRows: 1,
             planAssertions: [{ kind: "require-index-only-scan", relation: "organization_members" }] },
-          { ...selfTestBase, id: "self-test-scan-rows", maxScanRows: 0 },
+          { ...selfTestBase, id: "self-test-scan-rows", maxScanRows: 0, minRows: 1 },
+          { ...selfTestBase, id: "self-test-seed-floor", minRows: Number.MAX_SAFE_INTEGER },
         ]
       : filterIds
         ? BUDGETS.filter((b) => filterIds.has(b.id))
@@ -381,8 +391,10 @@ async function main() {
       if (result.status === "seed-too-small") {
         const label = `FAIL  ${budget.id.padEnd(36)} seed too small (${result.measured} < ${result.required})`;
         const detail = `${budget.id}: seed too small — ${result.measured} rows, need ${result.required}`;
-        if (SELF_TEST) unusable.push(detail);
-        else {
+        if (SELF_TEST) {
+          if (budget.id === "self-test-seed-floor") breaches.push(detail);
+          else unusable.push(detail);
+        } else {
           breaches.push(detail);
           console.error(label);
         }
@@ -446,13 +458,14 @@ async function main() {
         "self-test-ceiling",
         "self-test-assertion",
         "self-test-scan-rows",
+        "self-test-seed-floor",
       ]);
       const breachedIds = new Set(
         breaches.map((b) => b.split(":")[0].trim()),
       );
       const missing = [...EXPECTED_BREACH_IDS].filter((id) => !breachedIds.has(id));
       if (missing.length === 0) {
-        console.log("SELF-TEST PASS: all 3 breach types detected — ceiling, plan-assertion, scan-rows");
+        console.log("SELF-TEST PASS: all 4 breach types detected — ceiling, plan-assertion, scan-rows, seed-floor");
         process.exitCode = 0;
       } else {
         console.error(

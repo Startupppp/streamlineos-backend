@@ -78,11 +78,12 @@ export const supportTicketWatchers = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    ticketId: integer("ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
+    ticketId: integer("ticket_id").notNull(),
     userMembershipId: integer("user_membership_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [supportTickets.orgId, supportTickets.id], name: "fk_support_ticket_watchers_ticket_id_org" }).onDelete("cascade"),
     uniqueIndex("uniq_support_ticket_watchers_ticket_membership").on(table.ticketId, table.userMembershipId),
     index("idx_support_ticket_watchers_org_ticket").on(table.orgId, table.ticketId),
     unique("uniq_support_ticket_watchers_org_id").on(table.orgId, table.id),
@@ -128,13 +129,15 @@ export const supportTicketLinks = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    ticketId: integer("ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
-    linkedTicketId: integer("linked_ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
+    ticketId: integer("ticket_id").notNull(),
+    linkedTicketId: integer("linked_ticket_id").notNull(),
     relation: supportTicketLinkRelationEnum("relation").notNull(),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.linkedTicketId], foreignColumns: [supportTickets.orgId, supportTickets.id], name: "fk_support_ticket_links_linked_ticket_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [supportTickets.orgId, supportTickets.id], name: "fk_support_ticket_links_ticket_id_org" }).onDelete("cascade"),
     uniqueIndex("uniq_support_ticket_links_ticket_linked").on(table.ticketId, table.linkedTicketId),
     index("idx_support_ticket_links_org_ticket").on(table.orgId, table.ticketId),
     unique("uniq_support_ticket_links_org_id").on(table.orgId, table.id),

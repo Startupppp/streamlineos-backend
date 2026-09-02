@@ -34,8 +34,8 @@ export const timesheetRateCards = pgTable("timesheet_rate_cards", {
 export const timesheetRates = pgTable("timesheet_rates", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  rateCardId: integer("rate_card_id").references(() => timesheetRateCards.id, { onDelete: "set null" }),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
+  rateCardId: integer("rate_card_id"),
+  projectId: integer("project_id"),
   userMembershipId: integer("user_membership_id"),
   clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
   taskId: integer("task_id"),
@@ -49,6 +49,8 @@ export const timesheetRates = pgTable("timesheet_rates", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
+  foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_timesheet_rates_project_id_org" }),
+  foreignKey({ columns: [t.orgId, t.rateCardId], foreignColumns: [timesheetRateCards.orgId, timesheetRateCards.id], name: "fk_timesheet_rates_rate_card_id_org" }),
   index("idx_timesheet_rates_org_priority").on(t.orgId, t.priority),
   index("idx_timesheet_rates_org_project").on(t.orgId, t.projectId),
   index("idx_timesheet_rates_rate_card").on(t.rateCardId),

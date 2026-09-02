@@ -1,5 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
+import type { AccessService } from "../../access/access.service";
 import { IncidentsService } from "./incidents.service";
 
 describe("IncidentsService — cross-tenant isolation", () => {
@@ -7,6 +8,7 @@ describe("IncidentsService — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker";
 
   const audit = { log: jest.fn() } as never;
+  const mockAccess = { resolveUserPermissions: jest.fn() } as unknown as AccessService;
 
   function makeDb(projectRow: unknown | null, incidentRow: unknown | null = null) {
     const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockResolvedValue([]) });
@@ -23,7 +25,7 @@ describe("IncidentsService — cross-tenant isolation", () => {
 
   it("throws NotFoundException when accessing incident for a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
-    const svc = new IncidentsService(db, audit);
+    const svc = new IncidentsService(db, audit, mockAccess);
     await expect(svc.getIncident(ATTACKER_ORG, 1, 99)).rejects.toThrow(NotFoundException);
   });
 
@@ -31,7 +33,7 @@ describe("IncidentsService — cross-tenant isolation", () => {
     const project = { id: 1, orgId: OWNER_ORG };
     const incident = { id: 1, orgId: OWNER_ORG, projectId: 1, title: "Outage" };
     const db = makeDb(project, incident);
-    const svc = new IncidentsService(db, audit);
+    const svc = new IncidentsService(db, audit, mockAccess);
     const result = await svc.getIncident(OWNER_ORG, 1, 1);
     expect(result).toMatchObject({ id: 1 });
   });

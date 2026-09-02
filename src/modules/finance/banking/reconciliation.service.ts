@@ -388,6 +388,8 @@ export class ReconciliationService {
         ),
       );
 
+    await this.cache.invalidate(CACHE_RECON(orgId, bankAccountId));
+
     this.audit.log({
       action: "banking.reconciliation.ignore",
       userId,

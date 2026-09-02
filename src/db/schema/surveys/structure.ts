@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, text, serial, integer, boolean, jsonb, timestamp, index, unique } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
 import { surveyForms, surveyVersions } from "./forms";
@@ -28,8 +28,8 @@ export const surveyQuestionTypeEnum = pgEnum("survey_question_type", [
 export const surveySections = pgTable("survey_sections", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  surveyId: integer("survey_id").references(() => surveyForms.id, { onDelete: "cascade" }).notNull(),
-  versionId: integer("version_id").references(() => surveyVersions.id, { onDelete: "cascade" }).notNull(),
+  surveyId: integer("survey_id").notNull(),
+  versionId: integer("version_id").notNull(),
   title: text("title").notNull(),
   description: text("description"),
   sortOrder: integer("sort_order").default(0).notNull(),
@@ -37,6 +37,8 @@ export const surveySections = pgTable("survey_sections", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.surveyId], foreignColumns: [surveyForms.orgId, surveyForms.id], name: "fk_survey_sections_survey_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.versionId], foreignColumns: [surveyVersions.orgId, surveyVersions.id], name: "fk_survey_sections_version_id_org" }).onDelete("cascade"),
   index("idx_survey_sections_version").on(table.surveyId, table.versionId, table.sortOrder),
   unique("uniq_survey_sections_org_id").on(table.orgId, table.id),
 ]);
@@ -44,9 +46,9 @@ export const surveySections = pgTable("survey_sections", {
 export const surveyQuestions = pgTable("survey_questions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  surveyId: integer("survey_id").references(() => surveyForms.id, { onDelete: "cascade" }).notNull(),
-  versionId: integer("version_id").references(() => surveyVersions.id, { onDelete: "cascade" }).notNull(),
-  sectionId: integer("section_id").references(() => surveySections.id, { onDelete: "cascade" }).notNull(),
+  surveyId: integer("survey_id").notNull(),
+  versionId: integer("version_id").notNull(),
+  sectionId: integer("section_id").notNull(),
   questionKey: text("question_key").notNull(),
   variableName: text("variable_name"),
   type: surveyQuestionTypeEnum("type").notNull(),
@@ -60,6 +62,9 @@ export const surveyQuestions = pgTable("survey_questions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.sectionId], foreignColumns: [surveySections.orgId, surveySections.id], name: "fk_survey_questions_section_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.surveyId], foreignColumns: [surveyForms.orgId, surveyForms.id], name: "fk_survey_questions_survey_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.versionId], foreignColumns: [surveyVersions.orgId, surveyVersions.id], name: "fk_survey_questions_version_id_org" }).onDelete("cascade"),
   index("idx_survey_questions_section").on(table.surveyId, table.versionId, table.sectionId, table.sortOrder),
   unique("uq_survey_questions_version_key").on(table.versionId, table.questionKey),
   unique("uniq_survey_questions_org_id").on(table.orgId, table.id),
@@ -68,7 +73,7 @@ export const surveyQuestions = pgTable("survey_questions", {
 export const surveyQuestionChoices = pgTable("survey_question_choices", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  questionId: integer("question_id").references(() => surveyQuestions.id, { onDelete: "cascade" }).notNull(),
+  questionId: integer("question_id").notNull(),
   choiceKey: text("choice_key").notNull(),
   label: text("label").notNull(),
   value: text("value"),
@@ -77,6 +82,7 @@ export const surveyQuestionChoices = pgTable("survey_question_choices", {
   isCorrect: boolean("is_correct").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.questionId], foreignColumns: [surveyQuestions.orgId, surveyQuestions.id], name: "fk_survey_question_choices_question_id_org" }).onDelete("cascade"),
   index("idx_survey_question_choices_question").on(table.questionId, table.sortOrder),
   unique("uq_survey_question_choices_question_key").on(table.questionId, table.choiceKey),
   unique("uniq_survey_question_choices_org_id").on(table.orgId, table.id),
@@ -85,15 +91,18 @@ export const surveyQuestionChoices = pgTable("survey_question_choices", {
 export const surveyLogicRules = pgTable("survey_logic_rules", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  surveyId: integer("survey_id").references(() => surveyForms.id, { onDelete: "cascade" }).notNull(),
-  versionId: integer("version_id").references(() => surveyVersions.id, { onDelete: "cascade" }).notNull(),
-  sourceQuestionId: integer("source_question_id").references(() => surveyQuestions.id, { onDelete: "cascade" }).notNull(),
+  surveyId: integer("survey_id").notNull(),
+  versionId: integer("version_id").notNull(),
+  sourceQuestionId: integer("source_question_id").notNull(),
   condition: jsonb("condition").$type<Record<string, unknown>>().notNull(),
   action: jsonb("action").$type<Record<string, unknown>>().notNull(),
   target: jsonb("target").$type<Record<string, unknown> | null>(),
   sortOrder: integer("sort_order").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.sourceQuestionId], foreignColumns: [surveyQuestions.orgId, surveyQuestions.id], name: "fk_survey_logic_rules_source_question_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.surveyId], foreignColumns: [surveyForms.orgId, surveyForms.id], name: "fk_survey_logic_rules_survey_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.versionId], foreignColumns: [surveyVersions.orgId, surveyVersions.id], name: "fk_survey_logic_rules_version_id_org" }).onDelete("cascade"),
   index("idx_survey_logic_rules_source").on(table.surveyId, table.versionId, table.sourceQuestionId),
   unique("uniq_survey_logic_rules_org_id").on(table.orgId, table.id),
 ]);

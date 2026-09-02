@@ -39,7 +39,6 @@ export const roleAssignments = pgTable(
       .notNull(),
     organizationMembershipId: integer("organization_membership_id").notNull(),
     roleId: integer("role_id")
-      .references(() => roles.id, { onDelete: "cascade" })
       .notNull(),
     assignedByMembershipId: integer("assigned_by_membership_id"),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
@@ -47,6 +46,7 @@ export const roleAssignments = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.roleId], foreignColumns: [roles.orgId, roles.id], name: "fk_role_assignments_org_role" }).onDelete("cascade"),
     uniqueIndex("uniq_role_assignments_org_membership_role").on(
       table.orgId,
       table.organizationMembershipId,
@@ -81,7 +81,6 @@ export const rolePermissionGrants = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     roleId: integer("role_id")
-      .references(() => roles.id, { onDelete: "cascade" })
       .notNull(),
     permissionKey: text("permission_key")
       .references(() => permissions.name, { onDelete: "cascade" })
@@ -90,6 +89,7 @@ export const rolePermissionGrants = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.roleId], foreignColumns: [roles.orgId, roles.id], name: "fk_role_permission_grants_role_id_org" }).onDelete("cascade"),
     uniqueIndex("uniq_role_permission_grants_role_key").on(
       table.orgId,
       table.roleId,
@@ -112,7 +112,6 @@ export const userPermissionGrants = pgTable(
       .notNull(),
     organizationMembershipId: integer("organization_membership_id").notNull(),
     permissionKey: text("permission_key")
-      .references(() => permissions.name, { onDelete: "cascade" })
       .notNull(),
     scope: dataScopeEnum("scope").default("all").notNull(),
     moduleKey: text("module_key").notNull(),
@@ -285,9 +284,7 @@ export const principalGroups = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     kind: text("kind").$type<PrincipalGroupKind>().notNull(),
-    orgUnitId: text("org_unit_id").references(() => orgUnits.id, {
-      onDelete: "cascade",
-    }),
+    orgUnitId: text("org_unit_id"),
     name: text("name").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
@@ -296,6 +293,7 @@ export const principalGroups = pgTable(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.orgUnitId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_principal_groups_org_unit_id_org" }).onDelete("cascade"),
     uniqueIndex("uniq_principal_groups_org_name").on(table.orgId, table.name),
     uniqueIndex("uniq_principal_groups_org_id").on(table.orgId, table.id),
     index("idx_principal_groups_org").on(table.orgId),
@@ -311,12 +309,12 @@ export const principalGroupMembers = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     principalGroupId: uuid("principal_group_id")
-      .references(() => principalGroups.id, { onDelete: "cascade" })
       .notNull(),
     organizationMembershipId: integer("organization_membership_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.principalGroupId], foreignColumns: [principalGroups.orgId, principalGroups.id], name: "fk_principal_group_members_org_group" }).onDelete("cascade"),
     uniqueIndex("uniq_principal_group_members_group_member").on(
       table.principalGroupId,
       table.organizationMembershipId,
@@ -345,14 +343,14 @@ export const groupRoleAssignments = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     principalGroupId: uuid("principal_group_id")
-      .references(() => principalGroups.id, { onDelete: "cascade" })
       .notNull(),
     roleId: integer("role_id")
-      .references(() => roles.id, { onDelete: "cascade" })
       .notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.principalGroupId], foreignColumns: [principalGroups.orgId, principalGroups.id], name: "fk_group_role_assignments_org_group" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.roleId], foreignColumns: [roles.orgId, roles.id], name: "fk_group_role_assignments_org_role" }).onDelete("cascade"),
     uniqueIndex("uniq_group_role_assignments_group_role").on(
       table.orgId,
       table.principalGroupId,

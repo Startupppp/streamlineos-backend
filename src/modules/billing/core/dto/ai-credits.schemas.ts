@@ -9,18 +9,21 @@ export const aiCreditsUsageQuerySchema = z.object({
 
 export const purchaseAiPackSchema = z.object({
   packId: z.coerce.number().int().positive(),
-  paymentId: z.string().optional(),
-  orderId: z.string().optional(),
-  signature: z.string().optional(),
-});
+  paymentId: z.string().max(255).optional(),
+  orderId: z.string().max(255).optional(),
+  signature: z.string().max(512).optional(),
+}).strict();
 
 export type PurchaseAiPackInput = z.infer<typeof purchaseAiPackSchema>;
+
+export const AUTO_TOP_UP_MAX_THRESHOLD_CREDITS = 100_000;
 
 export const autoTopUpSchema = z.object({
   enabled: z.boolean(),
   packId: z.number().int().positive().optional(),
-  threshold: z.number().min(0).optional(),
-});
+  // A threshold above every purchasable pack re-triggers the top-up it just settled.
+  threshold: z.number().min(0).max(AUTO_TOP_UP_MAX_THRESHOLD_CREDITS).optional(),
+}).strict();
 
 export const listTransactionsSchema = z.object({
   cursor: z.string().optional(),

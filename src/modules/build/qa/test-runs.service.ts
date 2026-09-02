@@ -1,9 +1,12 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
-import { bugs, projects, testCases, testRunResults, testRuns } from "../../../db/schema";
+import { bugs, testCases, testRunResults, testRuns } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
+import { assertProjectAccess } from "../core/project-access";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
   CreateBugFromResultInput,
   CreateTestRunInput,
@@ -16,20 +19,13 @@ export class TestRunsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
 
-  private async assertProject(orgId: string, projectId: number): Promise<void> {
-    const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      columns: { id: true },
-    });
-    if (!p) throw new NotFoundException("Project not found");
-  }
-
-  async listRuns(orgId: string, projectId: number, query: { status?: "not_started" | "in_progress" | "completed" | "aborted" }) {
-    await this.assertProject(orgId, projectId);
+  async listRuns(u: CurrentUserContext, projectId: number, query: { status?: "not_started" | "in_progress" | "completed" | "aborted" }) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const conditions = [
-      eq(testRuns.orgId, orgId),
+      eq(testRuns.orgId, u.orgId),
       eq(testRuns.projectId, projectId),
       isNull(testRuns.deletedAt),
     ];
@@ -105,19 +101,19 @@ export class TestRunsService {
     return { ...run, results };
   }
 
-  async createRun(orgId: string, userId: string, projectId: number, input: CreateTestRunInput) {
-    await this.assertProject(orgId, projectId);
+  async createRun(u: CurrentUserContext, projectId: number, input: CreateTestRunInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
         .select({ maxNum: sql<number>`COALESCE(MAX(${testRuns.runNumber}), 0)` })
         .from(testRuns)
-        .where(and(eq(testRuns.projectId, projectId), eq(testRuns.orgId, orgId)));
+        .where(and(eq(testRuns.projectId, projectId), eq(testRuns.orgId, u.orgId)));
       const nextNumber = (maxRow?.maxNum ?? 0) + 1;
       const [created] = await tx
         .insert(testRuns)
         .values({
-          orgId,
+          orgId: u.orgId,
           projectId,
           runNumber: nextNumber,
           name: input.name,
@@ -126,7 +122,7 @@ export class TestRunsService {
           environment: input.environment,
           browserDevice: input.browserDevice,
           testerId: input.testerId ?? null,
-          createdBy: userId,
+          createdBy: u.userId,
         })
         .returning();
       let caseIds: number[];
@@ -137,7 +133,7 @@ export class TestRunsService {
           .where(
             and(
               inArray(testCases.id, input.caseIds),
-              eq(testCases.orgId, orgId),
+              eq(testCases.orgId, u.orgId),
               eq(testCases.projectId, projectId),
               isNull(testCases.deletedAt),
             ),
@@ -152,7 +148,7 @@ export class TestRunsService {
           .where(
             and(
               eq(testCases.suiteId, input.suiteId),
-              eq(testCases.orgId, orgId),
+              eq(testCases.orgId, u.orgId),
               eq(testCases.projectId, projectId),
               isNull(testCases.deletedAt),
             ),
@@ -164,7 +160,7 @@ export class TestRunsService {
           .from(testCases)
           .where(
             and(
-              eq(testCases.orgId, orgId),
+              eq(testCases.orgId, u.orgId),
               eq(testCases.projectId, projectId),
               isNull(testCases.deletedAt),
             ),
@@ -174,7 +170,7 @@ export class TestRunsService {
       if (caseIds.length > 0) {
         await tx.insert(testRunResults).values(
           caseIds.map((caseId) => ({
-            orgId,
+            orgId: u.orgId,
             projectId,
             runId: created.id,
             testCaseId: caseId,

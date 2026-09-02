@@ -102,7 +102,7 @@ export const hrWorkflowSteps = pgTable("hr_workflow_steps", {
 export const hrWorkflowInstances = pgTable("hr_workflow_instances", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  definitionId: integer("definition_id").references(() => hrWorkflowDefinitions.id, { onDelete: "restrict" }).notNull(),
+  definitionId: integer("definition_id").notNull(),
   definitionSnapshot: jsonb("definition_snapshot").$type<{ steps: unknown[] }>().notNull(),
   objectType: hrWorkflowObjectTypeEnum("object_type").notNull(),
   objectId: text("object_id").notNull(),
@@ -117,6 +117,7 @@ export const hrWorkflowInstances = pgTable("hr_workflow_instances", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.definitionId], foreignColumns: [hrWorkflowDefinitions.orgId, hrWorkflowDefinitions.id], name: "fk_hr_workflow_instances_definition_id_org" }),
   unique("uniq_hr_workflow_instances_org_id").on(table.orgId, table.id),
   index("idx_hr_wf_inst_org_obj").on(table.orgId, table.objectType, table.objectId),
   index("idx_hr_wf_inst_org_status").on(table.orgId, table.status),
@@ -130,7 +131,7 @@ export const hrWorkflowInstances = pgTable("hr_workflow_instances", {
 export const hrWorkflowStepActions = pgTable("hr_workflow_step_actions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  instanceId: integer("instance_id").references(() => hrWorkflowInstances.id, { onDelete: "cascade" }).notNull(),
+  instanceId: integer("instance_id").notNull(),
   stepOrder: integer("step_order").notNull(),
   approverUserId: text("approver_user_id").notNull(),
   approverMembershipId: integer("approver_membership_id"),
@@ -140,6 +141,7 @@ export const hrWorkflowStepActions = pgTable("hr_workflow_step_actions", {
   comment: text("comment"),
   actedAt: timestamp("acted_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.instanceId], foreignColumns: [hrWorkflowInstances.orgId, hrWorkflowInstances.id], name: "fk_hr_workflow_step_actions_org_instance" }).onDelete("cascade"),
   unique("uniq_hr_workflow_step_actions_org_id").on(table.orgId, table.id),
   index("idx_hr_wf_actions_org_instance").on(table.orgId, table.instanceId),
   index("idx_hr_wf_actions_org_acted_by_membership").on(table.orgId, table.actedByMembershipId),

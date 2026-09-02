@@ -18,22 +18,23 @@ describe("ProjectsWorkQueryService — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker";
 
   function makeDb(memberRows: unknown[], ticketRows: unknown[]) {
-    const ticketWhere = jest.fn().mockResolvedValue(ticketRows);
     const ticketOrderBy = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(ticketRows) });
     const ticketInnerJoin = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: ticketOrderBy }) });
     const memberWhere = jest.fn().mockResolvedValue(memberRows);
+    const memberInnerJoin = jest.fn().mockReturnValue({ where: memberWhere });
     const select = jest.fn()
-      .mockReturnValueOnce({ from: jest.fn().mockReturnValue({ where: memberWhere }) })
+      .mockReturnValueOnce({ from: jest.fn().mockReturnValue({ innerJoin: memberInnerJoin }) })
       .mockReturnValue({ from: jest.fn().mockReturnValue({ innerJoin: ticketInnerJoin }) });
-    return { db: { select } as unknown as Db, memberWhere };
+    return { db: { select } as unknown as Db, memberWhere, memberInnerJoin };
   }
 
   it("scopes search to attacker's orgId — returns empty when org has no projects (cross-tenant isolation)", async () => {
-    const { db, memberWhere } = makeDb([], []);
+    const { db, memberWhere, memberInnerJoin } = makeDb([], []);
     const svc = new ProjectsWorkQueryService(db);
     const result = await svc.searchOrgTickets(ATTACKER_ORG, "u1", "query", 10);
     expect(result).toHaveLength(0);
     expect(sqlValues(memberWhere.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
+    expect(sqlValues(memberInnerJoin.mock.calls[0]?.[1])).toContain("u1");
   });
 
   it("returns tickets for the owning org when member of project (same-tenant control)", async () => {
@@ -43,7 +44,11 @@ describe("ProjectsWorkQueryService — cross-tenant isolation", () => {
     const orderBy = jest.fn().mockReturnValue({ limit });
     const innerJoin = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy }) });
     const select = jest.fn()
-      .mockReturnValueOnce({ from: jest.fn().mockReturnValue({ where: memberWhere }) })
+      .mockReturnValueOnce({
+        from: jest.fn().mockReturnValue({
+          innerJoin: jest.fn().mockReturnValue({ where: memberWhere }),
+        }),
+      })
       .mockReturnValue({ from: jest.fn().mockReturnValue({ innerJoin }) });
     const db = { select } as unknown as Db;
     const svc = new ProjectsWorkQueryService(db);

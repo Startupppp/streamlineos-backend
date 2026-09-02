@@ -1,14 +1,4 @@
-import {
-  pgEnum,
-  text,
-  integer,
-  boolean,
-  timestamp,
-  jsonb,
-  index,
-  unique,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgEnum, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
@@ -35,7 +25,7 @@ export const formSubmissionStatusEnum = pgEnum("form_submission_status", [
 export const projectForms = build.table("project_forms", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+  projectId: integer("project_id").notNull(),
   formNumber: integer("form_number").notNull(),
   name: text("name").notNull(),
   description: text("description"),
@@ -56,6 +46,7 @@ export const projectForms = build.table("project_forms", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
 }, (t) => [
+  foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_forms_org_project" }).onDelete("cascade"),
   index("idx_project_forms_org_project").on(t.orgId, t.projectId).where(sql`deleted_at IS NULL`),
   uniqueIndex("uq_project_forms_project_number").on(t.projectId, t.formNumber),
   index("idx_project_forms_public_token").on(t.publicToken),
@@ -65,8 +56,8 @@ export const projectForms = build.table("project_forms", {
 export const formSubmissions = build.table("form_submissions", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  formId: integer("form_id").references(() => projectForms.id, { onDelete: "cascade" }).notNull(),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }).notNull(),
+  formId: integer("form_id").notNull(),
+  projectId: integer("project_id").notNull(),
   values: jsonb("values")
     .$type<Record<string, unknown>>()
     .notNull()
@@ -74,9 +65,12 @@ export const formSubmissions = build.table("form_submissions", {
   status: formSubmissionStatusEnum("status").notNull().default("submitted"),
   submittedByName: text("submitted_by_name"),
   submittedById: text("submitted_by_id").references(() => users.id, { onDelete: "set null" }),
-  convertedTicketId: integer("converted_ticket_id").references(() => tickets.id, { onDelete: "set null" }),
+  convertedTicketId: integer("converted_ticket_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
+  foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_form_submissions_org_project" }).onDelete("cascade"),
+  foreignKey({ columns: [t.orgId, t.convertedTicketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_form_submissions_org_ticket" }).onDelete("set null"),
+  foreignKey({ columns: [t.orgId, t.formId], foreignColumns: [projectForms.orgId, projectForms.id], name: "fk_form_submissions_org_form" }).onDelete("cascade"),
   index("idx_form_submissions_form").on(t.formId),
   index("idx_form_submissions_org_project_status").on(t.orgId, t.projectId, t.status),
   unique("uniq_form_submissions_org_id").on(t.orgId, t.id),

@@ -1,4 +1,4 @@
-import { Injectable, type OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { Inject } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -33,6 +33,8 @@ const postingIntentPayloadSchema = z.object({
 export class PayrollPostingIntentConsumer implements OutboxEventConsumer, OnModuleInit {
   readonly eventType = PAYROLL_RUN_POSTING_INTENT_EVENT;
 
+  private readonly logger = new Logger(PayrollPostingIntentConsumer.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly payrollPosting: PayrollPostingService,
@@ -56,11 +58,13 @@ export class PayrollPostingIntentConsumer implements OutboxEventConsumer, OnModu
 
     const parsed = postingIntentPayloadSchema.safeParse(event.payload);
     if (!parsed.success) {
+      await this.markTerminal(event, parsed.error.message);
       await inbox.markProcessed(CONSUMER_NAME, event.eventId, "FAILED", parsed.error.message);
       return;
     }
 
     if (parsed.data.orgId !== event.organizationId) {
+      await this.markTerminal(event, "payload orgId mismatch");
       await inbox.markProcessed(CONSUMER_NAME, event.eventId, "FAILED", "payload orgId mismatch");
       return;
     }
@@ -76,13 +80,27 @@ export class PayrollPostingIntentConsumer implements OutboxEventConsumer, OnModu
         .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, event.organizationId)));
       await inbox.markProcessed(CONSUMER_NAME, event.eventId, "COMPLETED");
     } catch (error: unknown) {
-      await inbox.markProcessed(
-        CONSUMER_NAME,
-        event.eventId,
-        "FAILED",
-        error instanceof Error ? error.message : String(error),
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      await this.markFailed(event.organizationId, runId);
+      await inbox.markProcessed(CONSUMER_NAME, event.eventId, "FAILED", message);
       throw error;
     }
+  }
+
+  private async markTerminal(event: OutboxEventRow, reason: string): Promise<void> {
+    const runId = Number(event.aggregateId);
+    if (!Number.isInteger(runId) || runId <= 0) {
+      this.logger.error(`posting intent ${event.eventId} is unattributable to a payroll run: ${reason}`);
+      return;
+    }
+    this.logger.error(`posting intent ${event.eventId} for run ${runId} is terminally undeliverable: ${reason}`);
+    await this.markFailed(event.organizationId, runId);
+  }
+
+  private async markFailed(organizationId: string, runId: number): Promise<void> {
+    await this.db
+      .update(payrollRuns)
+      .set({ postingState: "failed" })
+      .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, organizationId)));
   }
 }

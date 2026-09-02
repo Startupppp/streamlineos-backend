@@ -157,13 +157,14 @@ export const hrHelpdeskRouting = pgTable("hr_helpdesk_routing", {
 
 export const hrHelpdeskComments = pgTable("hr_helpdesk_comments", {
   id: serial("id").primaryKey(),
-  ticketId: integer("ticket_id").references(() => helpdeskTickets.id, { onDelete: "cascade" }).notNull(),
+  ticketId: integer("ticket_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   authorId: text("author_id").notNull(),
   authorMembershipId: integer("author_membership_id"),
   body: text("body").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [helpdeskTickets.orgId, helpdeskTickets.id], name: "fk_hr_helpdesk_comments_org_ticket" }).onDelete("cascade"),
   unique("uniq_hr_helpdesk_comments_org_id").on(table.orgId, table.id),
   index("idx_hr_helpdesk_comments_ticket").on(table.ticketId),
 ]);

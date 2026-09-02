@@ -1,16 +1,4 @@
-import {
-  pgTable,
-  pgEnum,
-  text,
-  serial,
-  timestamp,
-  boolean,
-  integer,
-  jsonb,
-  index,
-  unique,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 

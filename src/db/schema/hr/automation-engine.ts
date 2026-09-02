@@ -1,16 +1,4 @@
-import {
-  pgTable,
-  text,
-  serial,
-  timestamp,
-  boolean,
-  jsonb,
-  integer,
-  index,
-  uniqueIndex,
-  unique,
-  type AnyPgColumn,
-} from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, type AnyPgColumn, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 
@@ -52,7 +40,7 @@ export const hrAutomationRuns = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    ruleId: integer("rule_id").references(() => hrAutomationRules.id, { onDelete: "cascade" }).notNull(),
+    ruleId: integer("rule_id").notNull(),
     triggerEvent: text("trigger_event").notNull(),
     eventPayload: jsonb("event_payload").$type<Record<string, unknown>>(),
     status: text("status").notNull(),
@@ -64,6 +52,7 @@ export const hrAutomationRuns = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.ruleId], foreignColumns: [hrAutomationRules.orgId, hrAutomationRules.id], name: "fk_hr_automation_runs_org_rule" }).onDelete("cascade"),
     unique("uniq_hr_automation_runs_org_id").on(table.orgId, table.id),
     index("idx_hr_automation_runs_org_rule_created").on(table.orgId, table.ruleId, table.createdAt),
     index("idx_hr_automation_runs_org_status").on(table.orgId, table.status),

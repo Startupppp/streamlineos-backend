@@ -24,7 +24,6 @@ export const chatMessages = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     channelId: integer("channel_id")
-      .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
     senderMembershipId: integer("sender_membership_id"),
     content: text("content"),
@@ -34,6 +33,9 @@ export const chatMessages = pgTable(
     messageType: chatMessageTypeEnum("message_type").notNull().default("text"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     actionStatus: text("action_status"),
+    // Client-supplied so a send whose response was lost collides on retry instead of
+    // inserting a second message. Nullable: callers that omit it keep prior behaviour.
+    clientKey: text("client_key"),
     channelPosition: bigint("channel_position", { mode: "number" }).notNull().default(0),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
@@ -48,6 +50,9 @@ export const chatMessages = pgTable(
       .where(sql`is_deleted = false`),
     index("idx_chat_messages_org").on(table.orgId),
     index("idx_chat_messages_channel_position").on(table.orgId, table.channelId, table.channelPosition),
+    uniqueIndex("uniq_chat_messages_client_key")
+      .on(table.orgId, table.channelId, table.clientKey)
+      .where(sql`client_key IS NOT NULL`),
     unique("uniq_chat_messages_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.channelId], foreignColumns: [chatChannels.orgId, chatChannels.id], name: "fk_chat_messages_org_channel" }),
     foreignKey({ columns: [table.orgId, table.replyToId], foreignColumns: [table.orgId, table.id], name: "fk_chat_messages_org_reply" }),
@@ -82,7 +87,6 @@ export const chatAttachments = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     messageId: bigint("message_id", { mode: "number" })
-      .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
     fileName: text("file_name").notNull(),
     fileUrl: text("file_url").notNull(),
@@ -107,10 +111,8 @@ export const chatPinnedMessages = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     channelId: integer("channel_id")
-      .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
     messageId: bigint("message_id", { mode: "number" })
-      .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
     pinnedByMembershipId: integer("pinned_by_membership_id"),
     pinnedAt: timestamp("pinned_at").defaultNow().notNull(),
@@ -135,7 +137,6 @@ export const chatSavedMessages = pgTable(
       .notNull(),
     membershipId: integer("membership_id").notNull(),
     messageId: bigint("message_id", { mode: "number" })
-      .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
     savedAt: timestamp("saved_at").defaultNow().notNull(),
   },
@@ -156,10 +157,8 @@ export const chatReplyReminders = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     channelId: integer("channel_id")
-      .references(() => chatChannels.id, { onDelete: "cascade" })
       .notNull(),
     messageId: bigint("message_id", { mode: "number" })
-      .references(() => chatMessages.id, { onDelete: "cascade" })
       .notNull(),
     recipientMembershipId: integer("recipient_membership_id"),
     senderMembershipId: integer("sender_membership_id"),

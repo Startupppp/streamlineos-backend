@@ -20,7 +20,7 @@ export const kbArticleRestrictions = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    articleId: integer("article_id").references(() => kbArticles.id, { onDelete: "cascade" }).notNull(),
+    articleId: integer("article_id").notNull(),
     membershipId: integer("membership_id"),
     role: text("role"),
     team: text("team"),

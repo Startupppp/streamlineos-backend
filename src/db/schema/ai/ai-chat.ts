@@ -40,10 +40,11 @@ export const aiChatMessages = pgTable(
     userMembershipId: integer("user_membership_id"),
     role: text("role").$type<AiChatRole>().notNull(),
     content: text("content").notNull(),
-    conversationId: integer("conversation_id").references(() => aiChatConversations.id, { onDelete: "cascade" }),
+    conversationId: integer("conversation_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.conversationId], foreignColumns: [aiChatConversations.orgId, aiChatConversations.id], name: "fk_ai_chat_messages_conversation_id_org" }).onDelete("cascade"),
     index("idx_ai_chat_messages_org_user_id").on(table.orgId, table.userMembershipId, table.id),
     index("idx_ai_chat_messages_conversation_id").on(table.conversationId),
     unique("uniq_ai_chat_messages_org_id").on(table.orgId, table.id),

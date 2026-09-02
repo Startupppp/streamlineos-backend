@@ -37,7 +37,7 @@ export class ClientVisibilityController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getVisibilitySummary(u.orgId, projectId);
+    return this.svc.getVisibilitySummary(u, projectId);
   }
 
   @Patch("tickets/:ticketId")

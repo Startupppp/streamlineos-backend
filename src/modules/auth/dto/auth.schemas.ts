@@ -7,7 +7,7 @@ export const registerSchema = z.object({
   companyName: z.string().min(1, "Company name is required").max(200),
   phone: z.string().max(32).optional(),
   plan: z.string().max(50).optional(),
-});
+}).strict();
 
 export const verifyEmailSchema = z.object({
   token: z.string().min(1).max(256),

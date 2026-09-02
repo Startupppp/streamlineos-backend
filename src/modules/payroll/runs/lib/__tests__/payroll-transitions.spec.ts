@@ -63,7 +63,6 @@ describe("canTransitionRun — legal transitions", () => {
     ["EXCEPTIONS_FOUND", "DRAFT"],
     ["EXCEPTIONS_FOUND", "PENDING_APPROVAL"],
     ["PENDING_APPROVAL", "APPROVED"],
-    ["PENDING_APPROVAL", "LOCKED"],
     ["PENDING_APPROVAL", "PREVIEW_READY"],
     ["APPROVED", "LOCKED"],
     ["LOCKED", "PAID"],
@@ -100,6 +99,7 @@ describe("canTransitionRun — illegal transitions", () => {
     ["PREPARING", "EXCEPTIONS_FOUND"],
     ["REOPENED", "LOCKED"],
     ["REOPENED", "PAID"],
+    ["PENDING_APPROVAL", "LOCKED"],
   ];
 
   it.each(illegalCases)("canTransitionRun(%s → %s) === false", (from, to) => {
@@ -125,7 +125,8 @@ describe("PAYROLL_LOCKED_STATUSES", () => {
     expect(PAYROLL_LOCKED_STATUSES).toContain("CLOSED");
   });
 
-  it("PENDING_APPROVAL transitions include LOCKED for lockAfterApproval flow", () => {
-    expect(PAYROLL_RUN_TRANSITIONS["PENDING_APPROVAL"]).toContain("LOCKED");
+  it("PENDING_APPROVAL cannot reach LOCKED, so a manual lock cannot skip the approval chain", () => {
+    expect(PAYROLL_RUN_TRANSITIONS["PENDING_APPROVAL"]).not.toContain("LOCKED");
+    expect(PAYROLL_RUN_TRANSITIONS["APPROVED"]).toContain("LOCKED");
   });
 });

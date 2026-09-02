@@ -25,7 +25,11 @@ describe("LockingService — cross-tenant isolation", () => {
       query: {
         payrollRunEmployees: { findFirst: jest.fn().mockResolvedValue(null) },
       },
-      update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 1 }]) }),
+        }),
+      }),
       insert: jest.fn().mockReturnValue({
         values: jest.fn().mockReturnValue({
           onConflictDoUpdate: jest.fn().mockResolvedValue([]),

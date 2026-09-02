@@ -45,7 +45,7 @@ export class DecisionsController {
     @Query() query: ListDecisionsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listDecisions(u.orgId, projectId, query);
+    return this.svc.listDecisions(u, projectId, query);
   }
 
   @Get(":decisionId")
@@ -68,7 +68,7 @@ export class DecisionsController {
     @Body() body: CreateDecisionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createDecision(u.orgId, u.userId, projectId, body);
+    return this.svc.createDecision(u, projectId, body);
   }
 
   @Patch(":decisionId")

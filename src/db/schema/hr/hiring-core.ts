@@ -39,7 +39,7 @@ export const scorecardTemplates = pgTable("scorecard_templates", {
 
 export const hiringFlowRounds = pgTable("hiring_flow_rounds", {
   id: serial("id").primaryKey(),
-  flowId: integer("flow_id").references(() => hiringFlows.id, { onDelete: "cascade" }).notNull(),
+  flowId: integer("flow_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   name: text("name").notNull(),
   roundType: text("round_type").$type<"HR_SCREENING" | "TECHNICAL" | "MANAGER" | "CULTURAL_FIT" | "FINAL" | "CUSTOM">().notNull().default("CUSTOM"),
@@ -47,12 +47,14 @@ export const hiringFlowRounds = pgTable("hiring_flow_rounds", {
   durationMinutes: integer("duration_minutes").notNull().default(60),
   slaDays: integer("sla_days"),
   questionBankTag: text("question_bank_tag"),
-  scorecardTemplateId: integer("scorecard_template_id").references(() => scorecardTemplates.id),
+  scorecardTemplateId: integer("scorecard_template_id"),
   interviewerRoleRestriction: text("interviewer_role_restriction"),
   autoAdvanceThreshold: integer("auto_advance_threshold"),
   orderIndex: integer("order_index").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.flowId], foreignColumns: [hiringFlows.orgId, hiringFlows.id], name: "fk_hiring_flow_rounds_org_flow" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.scorecardTemplateId], foreignColumns: [scorecardTemplates.orgId, scorecardTemplates.id], name: "fk_hiring_flow_rounds_org_scorecard_template" }),
   unique("uniq_hiring_flow_rounds_org_id").on(table.orgId, table.id),
   index("idx_hiring_flow_rounds_flow").on(table.flowId),
 ]);
@@ -71,8 +73,8 @@ export const jobPostings = pgTable("job_postings", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   title: text("title").notNull(),
-  orgDepartmentId: text("org_department_id").references(() => orgUnits.id, { onDelete: "set null" }),
-  hiringFlowId: integer("hiring_flow_id").references(() => hiringFlows.id),
+  orgDepartmentId: text("org_department_id"),
+  hiringFlowId: integer("hiring_flow_id"),
   location: text("location"),
   type: text("type").default("FULL_TIME").notNull(),
   experience: text("experience"),
@@ -93,6 +95,8 @@ export const jobPostings = pgTable("job_postings", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.hiringFlowId], foreignColumns: [hiringFlows.orgId, hiringFlows.id], name: "fk_job_postings_hiring_flow_id_org" }),
+  foreignKey({ columns: [table.orgId, table.orgDepartmentId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_job_postings_org_department" }).onDelete("set null"),
   unique("uniq_job_postings_org_id").on(table.orgId, table.id),
   index("idx_job_postings_org").on(table.orgId),
   index("idx_job_postings_status").on(table.status),

@@ -228,6 +228,9 @@ export class ExpensesWriteService {
         .for("update");
 
       if (!expense) throw new NotFoundException("Expense not found.");
+      if (expense.userId === u.userId) {
+        throw new ForbiddenException("You cannot decide on your own expense.");
+      }
       const approvableStatuses: string[] = ["PENDING", "SUBMITTED"];
       if (!approvableStatuses.includes(expense.status ?? "")) {
         throw new BadRequestException("Expense has already been processed.");
@@ -243,7 +246,7 @@ export class ExpensesWriteService {
           rejectionReason: body.rejectionReason ?? null,
           updatedAt: new Date(),
         })
-        .where(eq(expenses.id, expenseId))
+        .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)))
         .returning({ id: expenses.id });
 
       if (!updated) {

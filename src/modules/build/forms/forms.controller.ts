@@ -45,7 +45,7 @@ export class FormsController {
     @Query() query: ListFormsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listForms(u.orgId, projectId, query);
+    return this.svc.listForms(u, projectId, query);
   }
 
   @Get(":formId")
@@ -68,7 +68,7 @@ export class FormsController {
     @Body() body: CreateFormInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createForm(u.orgId, u.userId, projectId, body);
+    return this.svc.createForm(u, projectId, body);
   }
 
   @Patch(":formId")

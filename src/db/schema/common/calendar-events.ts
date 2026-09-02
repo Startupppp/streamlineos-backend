@@ -60,6 +60,9 @@ export const calendarEvents = pgTable(
       table.integrationConnectionId,
       table.externalEventId,
     ),
+    index("idx_calendar_events_org_recurrence_end")
+      .on(table.orgId, table.recurrenceEnd)
+      .where(sql`rrule IS NOT NULL`),
     unique("uniq_calendar_events_org_id").on(table.orgId, table.id),
     foreignKey({
       columns: [table.orgId, table.createdByMembershipId],

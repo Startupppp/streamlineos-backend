@@ -298,85 +298,88 @@ export class PlanLimitsService {
     key: LimitKey,
     executor?: DbOrTx,
   ): Promise<number> {
+    // The caller's transaction is the only place a quota lock is held, so every count must read
+    // through it — reading `this.db` outside it re-opens the check-then-insert race the lock closes.
+    const countExecutor = executor ?? this.db;
     switch (key) {
       case "members": {
-        const rows = await (executor ?? this.db).execute(sql`SELECT ${seatCount(orgId)} AS count`);
+        const rows = await countExecutor.execute(sql`SELECT ${seatCount(orgId)} AS count`);
         return readCount(rows, "count");
       }
       case "projects": {
-        const rows = await this.db.execute(
+        const rows = await countExecutor.execute(
           sql`SELECT COUNT(*)::int AS count FROM build.projects WHERE org_id = ${orgId}`,
         );
         return readCount(rows, "count");
       }
       case "kbPages": {
-        const rows = await this.db.execute(
+        const rows = await countExecutor.execute(
           sql`SELECT COUNT(*)::int AS count FROM kb_pages WHERE org_id = ${orgId} AND deleted_at IS NULL`,
         );
         return readCount(rows, "count");
       }
       case "chatChannels": {
-        const rows = await this.db.execute(
+        const rows = await countExecutor.execute(
           sql`SELECT COUNT(*)::int AS count FROM chat_channels WHERE org_id = ${orgId}`,
         );
         return readCount(rows, "count");
       }
       case "crmLeads": {
-        const rows = await this.db.execute(
+        const rows = await countExecutor.execute(
           sql`SELECT (${liveCustomerCount(leadPartyMap.partyId, leadPartyMap.organizationId, orgId)}) AS count`,
         );
         return readCount(rows, "count");
       }
       case "crmContacts": {
-        const rows = await this.db.execute(
+        const rows = await countExecutor.execute(
           sql`SELECT (${liveCustomerCount(contactPartyMap.partyId, contactPartyMap.organizationId, orgId)}) AS count`,
         );
         return readCount(rows, "count");
       }
       case "crmDeals": {
-        const rows = await this.db.execute(
+        const rows = await countExecutor.execute(
           sql`SELECT COUNT(*)::int AS count FROM deals WHERE org_id = ${orgId}`,
         );
         return readCount(rows, "count");
       }
       case "supportTickets": {
-        const rows = await this.db.execute(
+        const rows = await countExecutor.execute(
           sql`SELECT COUNT(*)::int AS count FROM support_tickets WHERE org_id = ${orgId}`,
         );
         return readCount(rows, "count");
       }
       case "automations": {
-        const rows = await this.db.execute(
+        const rows = await countExecutor.execute(
           sql`SELECT COUNT(*)::int AS count FROM automation_rules WHERE org_id = ${orgId}`,
         );
         return readCount(rows, "count");
       }
       case "signEnvelopes": {
-        const rows = await this.db.execute(
+        const rows = await countExecutor.execute(
           sql`SELECT COUNT(*)::int AS count FROM sign_envelopes WHERE org_id = ${orgId}`,
         );
         return readCount(rows, "count");
       }
       case "surveys": {
-        const rows = await this.db.execute(
+        const rows = await countExecutor.execute(
           sql`SELECT COUNT(*)::int AS count FROM survey_forms WHERE org_id = ${orgId}`,
         );
         return readCount(rows, "count");
       }
       case "acctInvoices": {
-        const rows = await this.db.execute(
+        const rows = await countExecutor.execute(
           sql`SELECT COUNT(*)::int AS count FROM invoices WHERE org_id = ${orgId}`,
         );
         return readCount(rows, "count");
       }
       case "hrCandidates": {
-        const rows = await this.db.execute(
+        const rows = await countExecutor.execute(
           sql`SELECT COUNT(*)::int AS count FROM candidates WHERE org_id = ${orgId}`,
         );
         return readCount(rows, "count");
       }
       case "hrJobPostings": {
-        const rows = await this.db.execute(
+        const rows = await countExecutor.execute(
           sql`SELECT COUNT(*)::int AS count FROM job_postings WHERE org_id = ${orgId}`,
         );
         return readCount(rows, "count");

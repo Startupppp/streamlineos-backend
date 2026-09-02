@@ -17,9 +17,17 @@ function buildDb(selectCallCount: { count: number }) {
   return {
     select: jest.fn().mockImplementation(() => {
       selectCallCount.count++;
+      const whereResult = {
+        then: (resolve: (v: unknown) => void, _reject?: (e: unknown) => void) =>
+          Promise.resolve(liabilityRow).then(resolve, _reject),
+        catch: jest.fn(),
+        finally: jest.fn(),
+        [Symbol.toStringTag]: "Promise",
+        orderBy: jest.fn().mockResolvedValue(orgRows),
+      };
       return {
         from: jest.fn().mockReturnValue({
-          where: jest.fn().mockImplementation(() => Promise.resolve(liabilityRow)),
+          where: jest.fn().mockImplementation(() => whereResult),
           limit: jest.fn().mockResolvedValue(orgRows),
         }),
       };
@@ -28,8 +36,9 @@ function buildDb(selectCallCount: { count: number }) {
 }
 
 function makeService(db: Db) {
+  const cache = { cached: jest.fn().mockResolvedValue("PENDING"), set: jest.fn().mockResolvedValue(undefined) };
   const dispatch = { emit: jest.fn().mockResolvedValue(undefined) };
-  const svc = new TaxComplianceService(db, dispatch as never);
+  const svc = new TaxComplianceService(db, cache as never, dispatch as never);
   jest.spyOn(svc as unknown as { daysBetween: () => number }, "daysBetween").mockReturnValue(3);
   return svc;
 }

@@ -4,6 +4,7 @@ import { invoices, payments, finPaymentAllocations, organizationMembers, journal
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { FinancePostingService } from "../accounting/posting/finance-posting.service";
+import { INVOICE_SEND_SOURCE_EVENT, INVOICE_SOURCE_TYPE } from "../accounting/posting/journal-posting.data";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -92,9 +93,9 @@ export class InvoicesLifecycleService {
     const existingEntry = await this.db.query.journalEntries.findFirst({
       where: and(
         eq(journalEntries.orgId, orgId),
-        eq(journalEntries.sourceType, "invoice"),
+        eq(journalEntries.sourceType, INVOICE_SOURCE_TYPE),
         eq(journalEntries.sourceId, String(invoiceId)),
-        eq(journalEntries.sourceEvent, "invoice_send"),
+        eq(journalEntries.sourceEvent, INVOICE_SEND_SOURCE_EVENT),
       ),
       columns: { id: true, status: true },
     });

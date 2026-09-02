@@ -66,7 +66,7 @@ export class MilestonesController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.milestones.listMilestones(u.orgId, projectId);
+    return this.milestones.listMilestones(u, projectId);
   }
 
   @Post()
@@ -78,7 +78,7 @@ export class MilestonesController {
     @Body() body: CreateMilestoneInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.milestones.createMilestone(u.orgId, u.userId, projectId, body);
+    return this.milestones.createMilestone(u, projectId, body);
   }
 
   @Patch(":milestoneId")
@@ -243,7 +243,7 @@ export class WorkspaceViewsController {
 }
 
 @RequireModule("build")
-@Controller("whiteboards")
+@Controller("build/whiteboards")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class WhiteboardsHubController {
   constructor(private readonly whiteboards: WhiteboardsService) {}

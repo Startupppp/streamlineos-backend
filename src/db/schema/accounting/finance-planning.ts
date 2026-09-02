@@ -1,4 +1,4 @@
-import { boolean, decimal, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { boolean, decimal, foreignKey, index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
 import { ledgerAccounts } from "./accounting";
@@ -25,6 +25,8 @@ export const finBudgets = pgTable("fin_budgets", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.approvedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_fin_budgets_approved_by_membership" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_fin_budgets_created_by_membership" }).onDelete("set null"),
   unique("uniq_fin_budgets_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_budgets_org_name_year").on(table.orgId, table.name, table.fiscalYear),
   index("idx_fin_budgets_org_status").on(table.orgId, table.status),
@@ -32,15 +34,19 @@ export const finBudgets = pgTable("fin_budgets", {
 
 export const finBudgetLines = pgTable("fin_budget_lines", {
   id: serial("id").primaryKey(),
-  budgetId: integer("budget_id").references(() => finBudgets.id, { onDelete: "cascade" }).notNull(),
+  budgetId: integer("budget_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  accountId: integer("account_id").references(() => ledgerAccounts.id).notNull(),
-  departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
-  projectId: integer("project_id").references(() => projects.id),
+  accountId: integer("account_id").notNull(),
+  departmentId: text("department_id"),
+  projectId: integer("project_id"),
   periodKey: text("period_key").notNull(),
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.accountId], foreignColumns: [ledgerAccounts.orgId, ledgerAccounts.id], name: "fk_fin_budget_lines_account_id_org" }),
+  foreignKey({ columns: [table.orgId, table.budgetId], foreignColumns: [finBudgets.orgId, finBudgets.id], name: "fk_fin_budget_lines_budget_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_fin_budget_lines_project_id_org" }),
+  foreignKey({ columns: [table.orgId, table.departmentId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_fin_budget_lines_department_id_org" }).onDelete("set null"),
   unique("uniq_fin_budget_lines_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_fin_budget_lines_budget_acct_period").on(table.budgetId, table.accountId, table.periodKey, table.departmentId, table.projectId),
   index("idx_fin_budget_lines_org_budget").on(table.orgId, table.budgetId),
@@ -48,7 +54,7 @@ export const finBudgetLines = pgTable("fin_budget_lines", {
 
 export const finBudgetRevisions = pgTable("fin_budget_revisions", {
   id: serial("id").primaryKey(),
-  budgetId: integer("budget_id").references(() => finBudgets.id, { onDelete: "cascade" }).notNull(),
+  budgetId: integer("budget_id").notNull(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   revisionNumber: integer("revision_number").notNull(),
   snapshot: jsonb("snapshot").notNull(),
@@ -56,6 +62,7 @@ export const finBudgetRevisions = pgTable("fin_budget_revisions", {
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.budgetId], foreignColumns: [finBudgets.orgId, finBudgets.id], name: "fk_fin_budget_revisions_budget_id_org" }).onDelete("cascade"),
   unique("uniq_fin_budget_revisions_org_id").on(table.orgId, table.id),
   index("idx_fin_budget_revisions_budget").on(table.budgetId),
 ]);
@@ -71,6 +78,7 @@ export const finCashFlowScenarios = pgTable("fin_cash_flow_scenarios", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_fin_cash_flow_scenarios_created_by_membership" }).onDelete("set null"),
   unique("uniq_fin_cash_flow_scenarios_org_id").on(table.orgId, table.id),
   index("idx_fin_cash_flow_scenarios_org").on(table.orgId),
 ]);

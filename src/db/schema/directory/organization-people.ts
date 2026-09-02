@@ -25,10 +25,7 @@ export const organizationPeople = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
-    organizationMembershipId: integer("organization_membership_id").references(
-      () => organizationMembers.id,
-      { onDelete: "set null" },
-    ),
+    organizationMembershipId: integer("organization_membership_id"),
     firstName: text("first_name").notNull(),
     lastName: text("last_name").notNull(),
     displayName: text("display_name"),

@@ -1,9 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { projectRisks, projects } from "../../../db/schema";
+import { projectRisks } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { assertProjectAccess } from "../core/project-access";
 import type { CreateRiskInput, ListRisksQuery, UpdateRiskInput } from "./dto/governance.schemas";
 
 type RiskPatch = Partial<
@@ -18,15 +21,8 @@ export class RisksService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
-
-  private async assertProject(orgId: string, projectId: number): Promise<void> {
-    const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      columns: { id: true },
-    });
-    if (!p) throw new NotFoundException("Project not found");
-  }
 
   private async loadRisk(orgId: string, projectId: number, riskId: number) {
     const row = await this.db.query.projectRisks.findFirst({
@@ -41,14 +37,14 @@ export class RisksService {
     return row;
   }
 
-  async listRisks(orgId: string, projectId: number, query: ListRisksQuery) {
-    await this.assertProject(orgId, projectId);
+  async listRisks(u: CurrentUserContext, projectId: number, query: ListRisksQuery) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.db
       .select()
       .from(projectRisks)
       .where(
         and(
-          eq(projectRisks.orgId, orgId),
+          eq(projectRisks.orgId, u.orgId),
           eq(projectRisks.projectId, projectId),
           isNull(projectRisks.deletedAt),
           query.status ? eq(projectRisks.status, query.status) : undefined,
@@ -62,19 +58,19 @@ export class RisksService {
     return this.loadRisk(orgId, projectId, riskId);
   }
 
-  async createRisk(orgId: string, userId: string, projectId: number, input: CreateRiskInput) {
-    await this.assertProject(orgId, projectId);
+  async createRisk(u: CurrentUserContext, projectId: number, input: CreateRiskInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const [risk] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
         .select({ maxNum: sql<number>`COALESCE(MAX(${projectRisks.riskNumber}), 0)` })
         .from(projectRisks)
-        .where(and(eq(projectRisks.projectId, projectId), eq(projectRisks.orgId, orgId)));
+        .where(and(eq(projectRisks.projectId, projectId), eq(projectRisks.orgId, u.orgId)));
       const nextNumber = (maxRow?.maxNum ?? 0) + 1;
       return tx
         .insert(projectRisks)
         .values({
-          orgId,
+          orgId: u.orgId,
           projectId,
           riskNumber: nextNumber,
           title: input.title,
@@ -85,15 +81,15 @@ export class RisksService {
           ownerId: input.ownerId ?? null,
           mitigation: input.mitigation ?? null,
           linkedTicketId: input.linkedTicketId ?? null,
-          createdBy: userId,
+          createdBy: u.userId,
         })
         .returning();
     });
     if (!risk) throw new NotFoundException("Failed to create risk");
     this.audit.log({
       action: "risk.created",
-      userId,
-      orgId,
+      userId: u.userId,
+      orgId: u.orgId,
       resourceType: "project_risk",
       resourceId: String(risk.id),
       metadata: { projectId, riskId: risk.id, title: risk.title },

@@ -1,10 +1,11 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, desc, eq, lt, or } from "drizzle-orm";
+import { and, desc, eq, lt, or } from "drizzle-orm";
 import { changelogEntries } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { ChangelogListQuery, CreateChangelogInput, UpdateChangelogInput } from "./dto/projects.schemas";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { assertLinkedRoadmapItemInOrg } from "./roadmap-references";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 
 @Injectable()
@@ -48,6 +49,7 @@ export class ProjectsChangelogService {
   }
 
   async createChangelog(orgId: string, userId: string, input: CreateChangelogInput) {
+    await assertLinkedRoadmapItemInOrg(this.db, orgId, input.linkedRoadmapItemId);
     const [entry] = await this.db
       .insert(changelogEntries)
       .values({
@@ -74,6 +76,7 @@ export class ProjectsChangelogService {
   }
 
   async updateChangelog(orgId: string, entryId: number, input: UpdateChangelogInput) {
+    await assertLinkedRoadmapItemInOrg(this.db, orgId, input.linkedRoadmapItemId);
     const existing = await this.db.query.changelogEntries.findFirst({
       where: and(eq(changelogEntries.id, entryId), eq(changelogEntries.orgId, orgId)),
       columns: { isPublished: true, publishedAt: true },

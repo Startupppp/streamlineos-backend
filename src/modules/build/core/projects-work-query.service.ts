@@ -143,13 +143,16 @@ export class ProjectsWorkQueryService {
     const memberProjectIds = await this.db
       .select({ projectId: projectMembers.projectId })
       .from(projectMembers)
-      .where(
+      .innerJoin(
+        organizationMembers,
         and(
-          eq(projectMembers.orgId, orgId),
-          eq(projectMembers.membershipId, organizationMembers.id),
+          eq(organizationMembers.id, projectMembers.membershipId),
+          eq(organizationMembers.orgId, projectMembers.orgId),
           eq(organizationMembers.userId, userId),
+          eq(organizationMembers.status, "ACTIVE"),
         ),
-      );
+      )
+      .where(eq(projectMembers.orgId, orgId));
 
     const ids = memberProjectIds.map((r) => r.projectId);
     if (ids.length === 0) return [];
@@ -214,14 +217,16 @@ export class ProjectsWorkQueryService {
     const memberRows = await this.db
       .select({ projectId: projectMembers.projectId })
       .from(projectMembers)
-      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
-      .where(
+      .innerJoin(
+        organizationMembers,
         and(
-          eq(projectMembers.orgId, u.orgId),
-          eq(projectMembers.membershipId, organizationMembers.id),
+          eq(organizationMembers.id, projectMembers.membershipId),
+          eq(organizationMembers.orgId, projectMembers.orgId),
           eq(organizationMembers.userId, u.userId),
+          eq(organizationMembers.status, "ACTIVE"),
         ),
-      );
+      )
+      .where(eq(projectMembers.orgId, u.orgId));
 
     const memberProjectIds = memberRows.map((r) => r.projectId);
     if (memberProjectIds.length === 0) {

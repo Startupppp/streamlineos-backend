@@ -10,6 +10,7 @@ const mockDb = {
     supportBusinessHours: { findMany: jest.fn(), findFirst: jest.fn() },
     supportSlaPolicies: { findMany: jest.fn(), findFirst: jest.fn() },
     supportTickets: { findFirst: jest.fn(), findMany: jest.fn() },
+    organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 100 }) },
   },
   insert: jest.fn().mockReturnThis(),
   values: jest.fn().mockReturnThis(),
@@ -152,7 +153,7 @@ describe("SupportSlaService", () => {
           title: "Broken checkout",
           status: "OPEN",
           createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
-          assigneeId: "agent1",
+          assigneeMembership: { user: { id: "agent1" } },
           firstRespondedAt: null,
           firstResponseDueAt: new Date(Date.now() - 1000), // breached
           slaDeadline: new Date(Date.now() + 20 * 60 * 60 * 1000),
@@ -182,7 +183,7 @@ describe("SupportSlaService", () => {
           category: null,
           priority: "HIGH",
           createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
-          assigneeId: "agent1",
+          assigneeMembership: { user: { id: "agent1" } },
           firstRespondedAt: null,
           firstResponseDueAt: new Date(Date.now() + 30 * 60 * 1000), // still 30m out, due-soon territory
           slaDeadline: new Date(Date.now() + 20 * 60 * 60 * 1000),
@@ -206,7 +207,7 @@ describe("SupportSlaService", () => {
           category: "billing",
           priority: "URGENT",
           createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
-          assigneeId: "agent1",
+          assigneeMembership: { user: { id: "agent1" } },
           firstRespondedAt: null,
           firstResponseDueAt: new Date(Date.now() - 1000),
           slaDeadline: new Date(Date.now() + 20 * 60 * 60 * 1000),
@@ -230,7 +231,7 @@ describe("SupportSlaService", () => {
         "first_response_breached",
       );
       expect(mockDb.set).toHaveBeenCalledWith(
-        expect.objectContaining({ assigneeId: "agent2" }),
+        expect.objectContaining({ assigneeMembershipId: 100 }),
       );
       expect(mockNotifications.sendEscalationEmail).toHaveBeenCalledWith(
         "org1",
@@ -257,7 +258,7 @@ describe("SupportSlaService", () => {
           category: "billing",
           priority: "URGENT",
           createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
-          assigneeId: "agent1",
+          assigneeMembership: { user: { id: "agent1" } },
           firstRespondedAt: null,
           firstResponseDueAt: new Date(Date.now() - 1000),
           slaDeadline: new Date(Date.now() + 20 * 60 * 60 * 1000),
@@ -270,7 +271,7 @@ describe("SupportSlaService", () => {
 
       await service.runEscalations("org1");
 
-      expect(mockDb.set).not.toHaveBeenCalledWith(expect.objectContaining({ assigneeId: expect.anything() }));
+      expect(mockDb.set).not.toHaveBeenCalledWith(expect.objectContaining({ assigneeMembershipId: expect.anything() }));
     });
 
     it("skips notification when the ticket has no assignee, but still checks it", async () => {
@@ -280,7 +281,7 @@ describe("SupportSlaService", () => {
           title: "Broken checkout",
           status: "OPEN",
           createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
-          assigneeId: null,
+          assigneeMembership: null,
           firstRespondedAt: null,
           firstResponseDueAt: new Date(Date.now() - 1000),
           slaDeadline: new Date(Date.now() + 20 * 60 * 60 * 1000),

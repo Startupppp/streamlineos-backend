@@ -33,8 +33,8 @@ export const kbArticleTags = pgTable(
   "kb_article_tags",
   {
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    articleId: integer("article_id").references(() => kbArticles.id, { onDelete: "cascade" }).notNull(),
-    tagId: integer("tag_id").references(() => kbTags.id, { onDelete: "cascade" }).notNull(),
+    articleId: integer("article_id").notNull(),
+    tagId: integer("tag_id").notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.orgId, table.articleId, table.tagId] }),

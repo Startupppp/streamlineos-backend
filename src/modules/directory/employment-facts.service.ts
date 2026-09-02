@@ -1,11 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   hrEmployeeSensitiveFields,
   hrEmployments,
   hrPeople,
   hrReportingLines,
+  organizationMembers,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -18,6 +19,7 @@ import {
   livePersonOfEmployment,
   livePersonOfUser,
   managerEmploymentOfLine,
+  memberOfOrg,
   primaryEmploymentOfPerson,
   reportingLineOfEmployment,
   currentPrimaryReportingLine,
@@ -29,6 +31,9 @@ import {
   type EmploymentFacts,
   type SensitiveEmploymentFacts,
 } from "./employment-facts.types";
+
+/** The id list feeds an `IN (...)` clause, so a very flat org cannot unbound it. */
+export const DIRECT_REPORT_ID_CAP = 500;
 
 const managerEmployment = alias(hrEmployments, "employment_facts_manager_employment");
 const managerPerson = alias(hrPeople, "employment_facts_manager_person");
@@ -83,6 +88,7 @@ export class EmploymentFactsService {
         managerUserId: managerPerson.userId,
       })
       .from(users)
+      .innerJoin(organizationMembers, memberOfOrg(orgId, users.id))
       .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
       .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .leftJoin(hrReportingLines, reportingLineOfEmployment(orgId))
@@ -155,7 +161,9 @@ export class EmploymentFactsService {
           currentPrimaryReportingLine(orgId),
           eq(managerPerson.userId, managerUserId),
         ),
-      );
+      )
+      .orderBy(asc(reportPerson.userId))
+      .limit(DIRECT_REPORT_ID_CAP);
 
     return rows.map((row) => row.userId).filter((id): id is string => id !== null);
   }
@@ -227,6 +235,7 @@ export class EmploymentFactsService {
         panNumber: hrEmployeeSensitiveFields.panNumber,
       })
       .from(users)
+      .innerJoin(organizationMembers, memberOfOrg(orgId, users.id))
       .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
       .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
       .leftJoin(

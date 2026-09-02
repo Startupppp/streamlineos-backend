@@ -1,9 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { projectDecisions, projects } from "../../../db/schema";
+import { projectDecisions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { assertProjectAccess } from "../core/project-access";
 import type { CreateDecisionInput, ListDecisionsQuery, UpdateDecisionInput } from "./dto/governance.schemas";
 
 type DecisionPatch = Partial<
@@ -26,15 +29,8 @@ export class DecisionsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
-
-  private async assertProject(orgId: string, projectId: number): Promise<void> {
-    const p = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      columns: { id: true },
-    });
-    if (!p) throw new NotFoundException("Project not found");
-  }
 
   private async loadDecision(orgId: string, projectId: number, decisionId: number) {
     const row = await this.db.query.projectDecisions.findFirst({
@@ -49,14 +45,14 @@ export class DecisionsService {
     return row;
   }
 
-  async listDecisions(orgId: string, projectId: number, query: ListDecisionsQuery) {
-    await this.assertProject(orgId, projectId);
+  async listDecisions(u: CurrentUserContext, projectId: number, query: ListDecisionsQuery) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.db
       .select()
       .from(projectDecisions)
       .where(
         and(
-          eq(projectDecisions.orgId, orgId),
+          eq(projectDecisions.orgId, u.orgId),
           eq(projectDecisions.projectId, projectId),
           isNull(projectDecisions.deletedAt),
           query.status ? eq(projectDecisions.status, query.status) : undefined,
@@ -71,23 +67,22 @@ export class DecisionsService {
   }
 
   async createDecision(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     projectId: number,
     input: CreateDecisionInput,
   ) {
-    await this.assertProject(orgId, projectId);
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const [decision] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
         .select({ maxNum: sql<number>`COALESCE(MAX(${projectDecisions.decisionNumber}), 0)` })
         .from(projectDecisions)
-        .where(and(eq(projectDecisions.projectId, projectId), eq(projectDecisions.orgId, orgId)));
+        .where(and(eq(projectDecisions.projectId, projectId), eq(projectDecisions.orgId, u.orgId)));
       const nextNumber = (maxRow?.maxNum ?? 0) + 1;
       return tx
         .insert(projectDecisions)
         .values({
-          orgId,
+          orgId: u.orgId,
           projectId,
           decisionNumber: nextNumber,
           title: input.title,
@@ -99,15 +94,15 @@ export class DecisionsService {
           decidedAt: input.decidedAt ?? null,
           revisitAt: input.revisitAt ?? null,
           linkedTicketId: input.linkedTicketId ?? null,
-          createdBy: userId,
+          createdBy: u.userId,
         })
         .returning();
     });
     if (!decision) throw new NotFoundException("Failed to create decision");
     this.audit.log({
       action: "decision.created",
-      userId,
-      orgId,
+      userId: u.userId,
+      orgId: u.orgId,
       resourceType: "project_decision",
       resourceId: String(decision.id),
       metadata: { projectId, decisionId: decision.id, title: decision.title },

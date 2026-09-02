@@ -468,7 +468,8 @@
                 "required": [
                   "moduleKey",
                   "enabled"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -9752,6 +9753,7 @@
                     "minLength": 1
                   },
                   "offsets": {
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
                       "type": "integer",
@@ -9843,6 +9845,7 @@
                     "minLength": 1
                   },
                   "offsets": {
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
                       "type": "integer",
@@ -20172,7 +20175,8 @@
                 },
                 "required": [
                   "token"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -20229,7 +20233,8 @@
                 },
                 "required": [
                   "userId"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -20348,7 +20353,8 @@
                     },
                     "required": [
                       "token"
-                    ]
+                    ],
+                    "additionalProperties": false
                   },
                   {
                     "type": "object",
@@ -20360,7 +20366,8 @@
                     },
                     "required": [
                       "backupCode"
-                    ]
+                    ],
+                    "additionalProperties": false
                   }
                 ]
               }
@@ -20439,7 +20446,8 @@
                   "firstName",
                   "email",
                   "companyName"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -20758,18 +20766,20 @@
                 "properties": {
                   "addonId": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 100
                   },
                   "quantity": {
                     "default": 1,
                     "type": "integer",
                     "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
+                    "maximum": 10000
                   }
                 },
                 "required": [
                   "addonId"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -20985,12 +20995,14 @@
                   },
                   "threshold": {
                     "type": "number",
-                    "minimum": 0
+                    "minimum": 0,
+                    "maximum": 100000
                   }
                 },
                 "required": [
                   "enabled"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -21050,18 +21062,22 @@
                     "maximum": 9007199254740991
                   },
                   "paymentId": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 255
                   },
                   "orderId": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 255
                   },
                   "signature": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 512
                   }
                 },
                 "required": [
                   "packId"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -21282,7 +21298,8 @@
                 },
                 "required": [
                   "plan"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -21477,12 +21494,18 @@
                   "maxUses": {
                     "type": "integer",
                     "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
+                    "maximum": 1000000
                   },
                   "applicablePlans": {
+                    "maxItems": 3,
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "string",
+                      "enum": [
+                        "STARTER",
+                        "PROFESSIONAL",
+                        "ENTERPRISE"
+                      ]
                     }
                   },
                   "expiresAt": {
@@ -21495,7 +21518,8 @@
                   "code",
                   "type",
                   "value"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -21578,12 +21602,18 @@
                   "maxUses": {
                     "type": "integer",
                     "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
+                    "maximum": 1000000
                   },
                   "applicablePlans": {
+                    "maxItems": 3,
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "string",
+                      "enum": [
+                        "STARTER",
+                        "PROFESSIONAL",
+                        "ENTERPRISE"
+                      ]
                     }
                   },
                   "expiresAt": {
@@ -21594,7 +21624,8 @@
                   "isActive": {
                     "type": "boolean"
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -21819,22 +21850,23 @@
                 "properties": {
                   "subject": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 255
                   },
                   "requestedSeats": {
                     "type": "integer",
                     "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
+                    "maximum": 1000000
                   },
                   "negotiatedSeats": {
                     "type": "integer",
                     "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
+                    "maximum": 1000000
                   },
                   "pricePerSeatInPaise": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 9007199254740991
+                    "maximum": 100000000
                   },
                   "contractTermMonths": {
                     "anyOf": [
@@ -21853,7 +21885,8 @@
                     ]
                   },
                   "contractTerms": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 10000
                   },
                   "validUntil": {
                     "type": "string",
@@ -21861,7 +21894,8 @@
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
                   },
                   "notes": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 10000
                   },
                   "dealId": {
                     "type": "integer",
@@ -21881,7 +21915,8 @@
                   "pricePerSeatInPaise",
                   "contractTermMonths",
                   "validUntil"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -22053,9 +22088,11 @@
                 "type": "object",
                 "properties": {
                   "notes": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 10000
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -22126,12 +22163,14 @@
                 "properties": {
                   "reason": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 10000
                   }
                 },
                 "required": [
                   "reason"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -22660,7 +22699,8 @@
                   "addressLine1": {
                     "anyOf": [
                       {
-                        "type": "string"
+                        "type": "string",
+                        "maxLength": 255
                       },
                       {
                         "type": "null"
@@ -22670,7 +22710,8 @@
                   "addressLine2": {
                     "anyOf": [
                       {
-                        "type": "string"
+                        "type": "string",
+                        "maxLength": 255
                       },
                       {
                         "type": "null"
@@ -22710,10 +22751,23 @@
                       }
                     ]
                   },
+                  "country": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 2,
+                        "maxLength": 2
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "isTaxExempt": {
                     "type": "boolean"
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -22801,13 +22855,15 @@
                 "properties": {
                   "email": {
                     "type": "string",
+                    "maxLength": 255,
                     "format": "email",
                     "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
                   }
                 },
                 "required": [
                   "email"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -47393,6 +47449,533 @@
         "description": "Exposure: permission — build:workspace:manage"
       }
     },
+    "/build/whiteboards": {
+      "get": {
+        "operationId": "WhiteboardsHubController_listAllWhiteboards",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "WhiteboardsHub"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "build:view",
+        "description": "Exposure: permission — build:view"
+      }
+    },
+    "/build/workspaces": {
+      "get": {
+        "operationId": "PmWorkspacesController_listWorkspaces",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "archived"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "PmWorkspaces"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "build:workspaces:view",
+        "description": "Exposure: permission — build:workspaces:view"
+      },
+      "post": {
+        "operationId": "PmWorkspacesController_createWorkspace",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "PmWorkspaces"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "build:workspaces:create",
+        "description": "Exposure: permission — build:workspaces:create",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "slug": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60,
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  }
+                },
+                "required": [
+                  "name",
+                  "slug"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/build/workspaces/{pmWorkspaceId}": {
+      "get": {
+        "operationId": "PmWorkspacesController_getWorkspace",
+        "parameters": [
+          {
+            "name": "pmWorkspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "PmWorkspaces"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "build:workspaces:view",
+        "description": "Exposure: permission — build:workspaces:view"
+      },
+      "patch": {
+        "operationId": "PmWorkspacesController_updateWorkspace",
+        "parameters": [
+          {
+            "name": "pmWorkspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "PmWorkspaces"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "build:workspaces:update",
+        "description": "Exposure: permission — build:workspaces:update",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "archived"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "PmWorkspacesController_deleteWorkspace",
+        "parameters": [
+          {
+            "name": "pmWorkspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "PmWorkspaces"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "build:workspaces:delete",
+        "description": "Exposure: permission — build:workspaces:delete"
+      }
+    },
+    "/build/workspaces/{pmWorkspaceId}/members": {
+      "get": {
+        "operationId": "PmWorkspacesController_listMembers",
+        "parameters": [
+          {
+            "name": "pmWorkspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "PmWorkspaces"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "build:workspaces:members:view",
+        "description": "Exposure: permission — build:workspaces:members:view"
+      },
+      "post": {
+        "operationId": "PmWorkspacesController_addMember",
+        "parameters": [
+          {
+            "name": "pmWorkspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "PmWorkspaces"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "build:workspaces:members:manage",
+        "description": "Exposure: permission — build:workspaces:members:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "userId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "role": {
+                    "default": "member",
+                    "type": "string",
+                    "enum": [
+                      "member",
+                      "admin"
+                    ]
+                  }
+                },
+                "required": [
+                  "userId"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/build/workspaces/{pmWorkspaceId}/members/{pmWorkspaceMembershipId}": {
+      "delete": {
+        "operationId": "PmWorkspacesController_removeMember",
+        "parameters": [
+          {
+            "name": "pmWorkspaceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "pmWorkspaceMembershipId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "PmWorkspaces"
+        ],
+        "x-exposure": "permissioned",
+        "x-permission": "build:workspaces:members:manage",
+        "description": "Exposure: permission — build:workspaces:members:manage"
+      }
+    },
     "/calendar/admin/settings": {
       "get": {
         "operationId": "CalendarAdminSettingsController_getSettings",
@@ -48657,10 +49240,21 @@
         "parameters": [
           {
             "name": "cursor",
-            "required": false,
             "in": "query",
+            "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
             }
           }
         ],
@@ -51669,10 +52263,21 @@
         "parameters": [
           {
             "name": "cursor",
-            "required": false,
             "in": "query",
+            "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
             }
           }
         ],
@@ -51773,7 +52378,27 @@
     "/chat/channels/public": {
       "get": {
         "operationId": "ChatChannelsController_listPublic",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK"
@@ -53649,6 +54274,17 @@
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
             }
           },
           {
@@ -73292,6 +73928,79 @@
         "x-bodyless": true
       }
     },
+    "/cron/provider-webhook-redrive": {
+      "get": {
+        "operationId": "CronBillingController_getProviderWebhookRedrive",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronBilling"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated"
+      },
+      "post": {
+        "operationId": "CronBillingController_postProviderWebhookRedrive",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronBilling"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
+      }
+    },
     "/cron/retention-delete-sweep": {
       "post": {
         "operationId": "CronHrController_postRetentionDeleteSweep",
@@ -78249,6 +78958,9 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
           },
@@ -78259,8 +78971,9 @@
         "tags": [
           "EmploymentFacts"
         ],
-        "x-exposure": "universal",
-        "description": "Exposure: universal — any authenticated member, subject from the token"
+        "x-exposure": "permissioned",
+        "x-permission": "settings:view",
+        "description": "Exposure: permission — settings:view"
       }
     },
     "/directory/engagements/{workerEngagementId}": {
@@ -161083,8 +161796,7 @@
                     "enum": [
                       "ISSUED",
                       "PAID",
-                      "FAILED",
-                      "VOIDED"
+                      "FAILED"
                     ]
                   }
                 }
@@ -171954,7 +172666,11 @@
     "/mail/reply": {
       "post": {
         "operationId": "MailController_replyMail",
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -172032,13 +172748,19 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "mail.reply",
+        "x-idempotent": true
       }
     },
     "/mail/send": {
       "post": {
         "operationId": "MailController_sendMail",
-        "parameters": [],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKeyHeader"
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -172131,7 +172853,9 @@
               }
             }
           }
-        }
+        },
+        "x-idempotency-command": "mail.send",
+        "x-idempotent": true
       }
     },
     "/mail/threads/{threadId}": {
@@ -174545,7 +175269,8 @@
                 },
                 "required": [
                   "name"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -174625,7 +175350,8 @@
                 },
                 "required": [
                   "name"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -174814,7 +175540,8 @@
                 },
                 "required": [
                   "userId"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -174991,7 +175718,8 @@
                 "required": [
                   "version",
                   "items"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -175285,7 +176013,8 @@
                 "required": [
                   "userId",
                   "groupIds"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -175593,7 +176322,8 @@
                 },
                 "required": [
                   "groupIds"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -175766,7 +176496,8 @@
                 },
                 "required": [
                   "toUserId"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -175973,7 +176704,8 @@
                 "required": [
                   "version",
                   "items"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -176250,7 +176982,8 @@
                 },
                 "required": [
                   "toMembershipId"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -185888,10 +186621,12 @@
                     "type": "boolean"
                   },
                   "allowedEmailDomains": {
+                    "maxItems": 100,
                     "type": "array",
                     "items": {
                       "type": "string",
-                      "minLength": 1
+                      "minLength": 1,
+                      "maxLength": 253
                     }
                   },
                   "maxConcurrentSessions": {
@@ -185915,7 +186650,8 @@
                       "maxLength": 128
                     }
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -186041,16 +186777,6 @@
                   "directoryPublic": {
                     "type": "boolean"
                   },
-                  "mfaEnforced": {
-                    "type": "boolean"
-                  },
-                  "allowedEmailDomains": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    }
-                  },
                   "primaryColor": {
                     "anyOf": [
                       {
@@ -186072,13 +186798,6 @@
                         "type": "null"
                       }
                     ]
-                  },
-                  "ipAllowlist": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "minLength": 1
-                    }
                   },
                   "industry": {
                     "anyOf": [
@@ -186267,7 +186986,8 @@
                       }
                     ]
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -186468,7 +187188,8 @@
                 },
                 "required": [
                   "ownerMembershipId"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -186552,7 +187273,8 @@
                 },
                 "required": [
                   "toMembershipId"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -186626,7 +187348,8 @@
                 },
                 "required": [
                   "toMembershipId"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -186890,7 +187613,8 @@
                     "type": "string",
                     "maxLength": 500
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -189328,28 +190052,36 @@
                   },
                   "displayName": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 255
                   },
                   "instructions": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 5000
                   },
                   "bankName": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 255
                   },
                   "accountHolder": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 255
                   },
                   "maskedAccountNumber": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 64
                   },
                   "ifscSwiftIban": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 64
                   },
                   "upiId": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 255
                   },
                   "paymentReferenceInstructions": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 5000
                   },
                   "requireManualApproval": {
                     "default": true,
@@ -189359,7 +190091,8 @@
                 "required": [
                   "methodType",
                   "displayName"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -189425,34 +190158,43 @@
                 "properties": {
                   "displayName": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 255
                   },
                   "instructions": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 5000
                   },
                   "bankName": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 255
                   },
                   "accountHolder": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 255
                   },
                   "maskedAccountNumber": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 64
                   },
                   "ifscSwiftIban": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 64
                   },
                   "upiId": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 255
                   },
                   "paymentReferenceInstructions": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 5000
                   },
                   "requireManualApproval": {
                     "default": true,
                     "type": "boolean"
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -189587,12 +190329,14 @@
                 "properties": {
                   "providerKey": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 50
                   }
                 },
                 "required": [
                   "providerKey"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -189702,18 +190446,25 @@
                     "type": "boolean"
                   },
                   "supportedCurrencies": {
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "string",
+                      "minLength": 3,
+                      "maxLength": 3
                     }
                   },
                   "supportedPaymentMethods": {
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 50
                     }
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -189882,105 +190633,24 @@
                   },
                   "keyId": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 255
                   },
                   "secret": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 1024
                   },
                   "webhookSecret": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 1024
                   }
                 },
                 "required": [
                   "environment"
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    "/payments/providers/{providerKey}/credentials/rotate": {
-      "post": {
-        "operationId": "PaymentsController_rotateCredentials",
-        "parameters": [
-          {
-            "name": "providerKey",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "Payments"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "payments:credentials:manage",
-        "description": "Exposure: permission — payments:credentials:manage",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "environment": {
-                    "type": "string",
-                    "enum": [
-                      "test",
-                      "live"
-                    ]
-                  },
-                  "keyId": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "secret": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "webhookSecret": {
-                    "type": "string",
-                    "minLength": 1
-                  }
-                },
-                "required": [
-                  "environment"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -190105,7 +190775,8 @@
                 },
                 "required": [
                   "environment"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -190258,6 +190929,7 @@
                 "properties": {
                   "amount": {
                     "type": "string",
+                    "maxLength": 12,
                     "pattern": "^\\d+(\\.\\d{1,2})?$"
                   },
                   "currency": {
@@ -190269,7 +190941,8 @@
                 },
                 "required": [
                   "amount"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -190344,17 +191017,20 @@
                 "properties": {
                   "providerPaymentId": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 255
                   },
                   "signature": {
                     "type": "string",
-                    "minLength": 1
+                    "minLength": 1,
+                    "maxLength": 512
                   }
                 },
                 "required": [
                   "providerPaymentId",
                   "signature"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -192484,6 +193160,7 @@
                   },
                   "components": {
                     "default": [],
+                    "maxItems": 200,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -192637,6 +193314,7 @@
                   },
                   "components": {
                     "default": [],
+                    "maxItems": 200,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -201259,6 +201937,7 @@
                   },
                   "components": {
                     "default": [],
+                    "maxItems": 200,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -201412,6 +202091,7 @@
                   },
                   "components": {
                     "default": [],
+                    "maxItems": 200,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -203353,501 +204033,6 @@
         "x-exposure": "permissioned",
         "x-permission": "settings:rbac:manage",
         "description": "Exposure: permission — settings:rbac:manage"
-      }
-    },
-    "/product-management/workspaces": {
-      "get": {
-        "operationId": "PmWorkspacesController_listWorkspaces",
-        "parameters": [
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 20,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "active",
-                "archived"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "PmWorkspaces"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "build:workspaces:view",
-        "description": "Exposure: permission — build:workspaces:view"
-      },
-      "post": {
-        "operationId": "PmWorkspacesController_createWorkspace",
-        "parameters": [],
-        "responses": {
-          "201": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "PmWorkspaces"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "build:workspaces:create",
-        "description": "Exposure: permission — build:workspaces:create",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 120
-                  },
-                  "slug": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 60,
-                    "pattern": "^[a-z][a-z0-9-]*$"
-                  }
-                },
-                "required": [
-                  "name",
-                  "slug"
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    "/product-management/workspaces/{pmWorkspaceId}": {
-      "get": {
-        "operationId": "PmWorkspacesController_getWorkspace",
-        "parameters": [
-          {
-            "name": "pmWorkspaceId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "PmWorkspaces"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "build:workspaces:view",
-        "description": "Exposure: permission — build:workspaces:view"
-      },
-      "patch": {
-        "operationId": "PmWorkspacesController_updateWorkspace",
-        "parameters": [
-          {
-            "name": "pmWorkspaceId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "PmWorkspaces"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "build:workspaces:update",
-        "description": "Exposure: permission — build:workspaces:update",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 120
-                  },
-                  "status": {
-                    "type": "string",
-                    "enum": [
-                      "active",
-                      "archived"
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        }
-      },
-      "delete": {
-        "operationId": "PmWorkspacesController_deleteWorkspace",
-        "parameters": [
-          {
-            "name": "pmWorkspaceId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "PmWorkspaces"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "build:workspaces:delete",
-        "description": "Exposure: permission — build:workspaces:delete"
-      }
-    },
-    "/product-management/workspaces/{pmWorkspaceId}/members": {
-      "get": {
-        "operationId": "PmWorkspacesController_listMembers",
-        "parameters": [
-          {
-            "name": "pmWorkspaceId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "cursor",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "default": 20,
-              "type": "integer",
-              "minimum": 1,
-              "maximum": 100
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "PmWorkspaces"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "build:workspaces:members:view",
-        "description": "Exposure: permission — build:workspaces:members:view"
-      },
-      "post": {
-        "operationId": "PmWorkspacesController_addMember",
-        "parameters": [
-          {
-            "name": "pmWorkspaceId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "201": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "PmWorkspaces"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "build:workspaces:members:manage",
-        "description": "Exposure: permission — build:workspaces:members:manage",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "userId": {
-                    "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                  },
-                  "role": {
-                    "default": "member",
-                    "type": "string",
-                    "enum": [
-                      "member",
-                      "admin"
-                    ]
-                  }
-                },
-                "required": [
-                  "userId"
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    "/product-management/workspaces/{pmWorkspaceId}/members/{pmWorkspaceMembershipId}": {
-      "delete": {
-        "operationId": "PmWorkspacesController_removeMember",
-        "parameters": [
-          {
-            "name": "pmWorkspaceId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "pmWorkspaceMembershipId",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "404": {
-            "$ref": "#/components/responses/NotFound"
-          },
-          "409": {
-            "$ref": "#/components/responses/Conflict"
-          },
-          "422": {
-            "$ref": "#/components/responses/UnprocessableEntity"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "PmWorkspaces"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "build:workspaces:members:manage",
-        "description": "Exposure: permission — build:workspaces:members:manage"
       }
     },
     "/public/application-status/{token}": {
@@ -208574,7 +208759,8 @@
                 "required": [
                   "roleId",
                   "permissionKey"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -208636,7 +208822,8 @@
                 "required": [
                   "roleId",
                   "permissionKey"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -209124,7 +209311,8 @@
                       "maxLength": 120
                     }
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -209294,7 +209482,8 @@
                     "required": [
                       "principalType",
                       "principalId"
-                    ]
+                    ],
+                    "additionalProperties": false
                   },
                   {
                     "type": "object",
@@ -209312,7 +209501,8 @@
                     "required": [
                       "principalType",
                       "principalId"
-                    ]
+                    ],
+                    "additionalProperties": false
                   }
                 ]
               }
@@ -209390,7 +209580,8 @@
                     "required": [
                       "principalType",
                       "principalId"
-                    ]
+                    ],
+                    "additionalProperties": false
                   },
                   {
                     "type": "object",
@@ -209408,7 +209599,8 @@
                     "required": [
                       "principalType",
                       "principalId"
-                    ]
+                    ],
+                    "additionalProperties": false
                   }
                 ]
               }
@@ -209545,14 +209737,16 @@
                       },
                       "required": [
                         "permissionKey"
-                      ]
+                      ],
+                      "additionalProperties": false
                     }
                   }
                 },
                 "required": [
                   "version",
                   "items"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -211291,9 +211485,12 @@
                   },
                   "scopes": {
                     "default": [],
+                    "maxItems": 100,
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
                     }
                   },
                   "expiresAt": {
@@ -211304,7 +211501,8 @@
                 },
                 "required": [
                   "name"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -211519,6 +211717,7 @@
                   },
                   "conditions": {
                     "default": [],
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -211560,6 +211759,7 @@
                   },
                   "actions": {
                     "minItems": 1,
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
                       "oneOf": [
@@ -211845,7 +212045,8 @@
                   "name",
                   "triggerEvent",
                   "actions"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -212023,6 +212224,7 @@
                     ]
                   },
                   "conditions": {
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
                       "type": "object",
@@ -212064,6 +212266,7 @@
                   },
                   "actions": {
                     "minItems": 1,
+                    "maxItems": 50,
                     "type": "array",
                     "items": {
                       "oneOf": [
@@ -212343,7 +212546,8 @@
                   "isEnabled": {
                     "type": "boolean"
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -212663,7 +212867,8 @@
                   "entityType",
                   "name",
                   "label"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -213018,7 +213223,8 @@
                 "required": [
                   "flag",
                   "enabled"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -213131,7 +213337,8 @@
                 "required": [
                   "provider",
                   "repoUrl"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -213226,7 +213433,8 @@
                       }
                     ]
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -213445,7 +213653,8 @@
                 },
                 "required": [
                   "role"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -217951,7 +218160,8 @@
         "x-permission": "storage:quarantine:manage",
         "description": "Exposure: permission — storage:quarantine:manage",
         "x-idempotency-command": "storage.quarantine.release",
-        "x-idempotent": true
+        "x-idempotent": true,
+        "x-bodyless": true
       }
     },
     "/storage/upload": {
@@ -224843,18 +225053,23 @@
         "parameters": [
           {
             "name": "cursor",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
             }
           },
           {
             "name": "limit",
-            "required": true,
             "in": "query",
+            "required": false,
             "schema": {
-              "type": "string"
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
             }
           }
         ],
@@ -237063,7 +237278,8 @@
                 },
                 "required": [
                   "email"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -237285,7 +237501,8 @@
                       "phone"
                     ]
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -237752,7 +237969,8 @@
                       }
                     ]
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -237909,7 +238127,8 @@
                     },
                     "additionalProperties": {}
                   }
-                }
+                },
+                "additionalProperties": false
               }
             }
           }
@@ -238197,7 +238416,8 @@
                 },
                 "required": [
                   "status"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -238345,7 +238565,8 @@
                 },
                 "required": [
                   "userIds"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -238423,7 +238644,8 @@
                 },
                 "required": [
                   "emails"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -238489,7 +238711,8 @@
                 },
                 "required": [
                   "userIds"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -238553,7 +238776,8 @@
                 },
                 "required": [
                   "userIds"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -238662,7 +238886,8 @@
                 },
                 "required": [
                   "userIds"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -238784,7 +239009,8 @@
                       },
                       "required": [
                         "email"
-                      ]
+                      ],
+                      "additionalProperties": false
                     }
                   }
                 },
@@ -239063,7 +239289,8 @@
                 },
                 "required": [
                   "role"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -239136,7 +239363,8 @@
                 },
                 "required": [
                   "email"
-                ]
+                ],
+                "additionalProperties": false
               }
             }
           }
@@ -239809,38 +240037,6 @@
         "x-bodyless": true
       }
     },
-    "/whiteboards": {
-      "get": {
-        "operationId": "WhiteboardsHubController_listAllWhiteboards",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": ""
-          },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          },
-          "429": {
-            "$ref": "#/components/responses/TooManyRequests"
-          },
-          "503": {
-            "$ref": "#/components/responses/ServiceUnavailable"
-          }
-        },
-        "tags": [
-          "WhiteboardsHub"
-        ],
-        "x-exposure": "permissioned",
-        "x-permission": "build:view",
-        "description": "Exposure: permission — build:view"
-      }
-    },
     "/workflows": {
       "get": {
         "operationId": "WorkflowsController_listWorkflows",
@@ -240111,7 +240307,6 @@
                     "type": "string",
                     "enum": [
                       "draft",
-                      "published",
                       "disabled",
                       "archived"
                     ]

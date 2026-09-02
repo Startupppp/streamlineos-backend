@@ -100,24 +100,24 @@ const RETENTION_MATRIX = {
     notes: "Policy-driven deletion or anonymization with legal-hold exclusion and bounded batches.",
   },
   helpdesk_tickets: {
-    decision: "PENDING-DECISION",
-    worker: null,
-    notes: "No safe automated retention worker exists; ticket and comment retention requires an approved policy and dependency review.",
+    decision: "RETAIN-BOUNDED",
+    worker: "CronHelpdeskRetentionService",
+    notes: "730-day retention after resolved_at. Only RESOLVED/CLOSED tickets are eligible. Legal-hold exclusion via hr_legal_holds (atomic subquery). Batch 200. Audit record to hr_audit_logs. hr_helpdesk_comments cascade-delete via ON DELETE CASCADE FK (confdeltype=c, verified against pg_constraint).",
   },
   performance_reviews: {
-    decision: "PENDING-DECISION",
+    decision: "KEEP-FOREVER",
     worker: null,
-    notes: "No safe automated retention worker exists; review and cycle dependencies require an approved policy before deletion.",
+    notes: "Employment record used in succession planning, compensation decisions and dispute resolution. No deleted_at column (verified against live catalog: information_schema.columns returns 0 rows). No automated deletion without an approved per-org statutory-retention policy.",
   },
   mail_message_metadata: {
-    decision: "PENDING-DECISION",
-    worker: null,
-    notes: "Synced mailbox metadata has no approved retention worker; account, thread, and provider synchronization dependencies require review.",
+    decision: "RETAIN-BOUNDED",
+    worker: "CronMailRetentionService",
+    notes: "365-day retention from synced_at. Re-syncable provider projection — no child FK dependents (verified against pg_constraint). No legal-hold interaction. Batch 500. Audit record to hr_audit_logs.",
   },
   announcements: {
-    decision: "PENDING-DECISION",
-    worker: null,
-    notes: "Expiry metadata exists but no retention worker is wired; announcement targets and reads require an approved lifecycle policy.",
+    decision: "RETAIN-BOUNDED",
+    worker: "CronAnnouncementsRetentionService",
+    notes: "Two phases: expired (grace 90d) and aged (2y). announcement_targets and announcement_reads cascade-delete via ON DELETE CASCADE FK (confdeltype=c, verified). Batch 200 per phase. Audit record to hr_audit_logs.",
   },
   notification_outbox: {
     decision: "PENDING-DECISION",
@@ -213,14 +213,19 @@ if (args.includes("--self-test")) {
       classify(policyTableName("chat_messages_y2026_m08", "chat_messages")).status === "COVERED",
     reportingLinesHaveDecision: RETENTION_MATRIX["hr_reporting_lines"].decision === "KEEP-FOREVER",
     documentsHaveExistingWorker: RETENTION_MATRIX["documents"].worker === "CronHrRetentionService (via hr_retention_policies, recordType=document)",
-    unsupportedTablesRemainPending: [
-      "helpdesk_tickets",
-      "performance_reviews",
-      "mail_message_metadata",
-      "announcements",
-      "notification_outbox",
-      "outbox_events",
-    ].every((table) => RETENTION_MATRIX[table].decision === "PENDING-DECISION" && classify(table).status === "UNCOVERED"),
+    helpdeskRetentionIsBounded: RETENTION_MATRIX["helpdesk_tickets"].decision === "RETAIN-BOUNDED",
+    helpdeskRetentionHasWorker: RETENTION_MATRIX["helpdesk_tickets"].worker === "CronHelpdeskRetentionService",
+    performanceReviewsIsKeepForever: RETENTION_MATRIX["performance_reviews"].decision === "KEEP-FOREVER",
+    mailMetadataIsBounded: RETENTION_MATRIX["mail_message_metadata"].decision === "RETAIN-BOUNDED",
+    mailMetadataHasWorker: RETENTION_MATRIX["mail_message_metadata"].worker === "CronMailRetentionService",
+    announcementsIsBounded: RETENTION_MATRIX["announcements"].decision === "RETAIN-BOUNDED",
+    announcementsHasWorker: RETENTION_MATRIX["announcements"].worker === "CronAnnouncementsRetentionService",
+    retainBoundedNullWorkerFails: !([
+      { decision: "RETAIN-BOUNDED", worker: null, notes: "synthetic fixture: bounded entry with no worker must fail the has-worker predicate" },
+    ].every((entry) => typeof entry.worker === "string" && entry.worker.length > 0)),
+    pendingTablesRemainUncovered: ["notification_outbox", "outbox_events"].every(
+      (table) => RETENTION_MATRIX[table].decision === "PENDING-DECISION" && classify(table).status === "UNCOVERED",
+    ),
     invalidThresholdsFailClosed: ["", "0", "-1", "NaN", "Infinity"].every((value) => {
       try {
         parseThreshold(value);

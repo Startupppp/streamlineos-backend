@@ -26,9 +26,17 @@
  * PAGE_SIZE_CAP = 100   (backend CLAUDE.md §2: "hard cap 100/page, public included")
  * MAX_IDS_CAP = 500     (reasonable bulk cap before a streaming alternative is warranted)
  *
+ * SCOPE
+ * CRM and Inventory are outside this release scope, so their violations are
+ * reported separately and do not fail the gate. They are counted and printed
+ * rather than dropped: a silently filtered path reads as "covered" when it is
+ * not. The exclusion is a prefix match on the OpenAPI path, matching the
+ * EXCLUDED_MODULE_PREFIXES convention in check-unbounded-reads.mjs.
+ *
  * SELF-TEST (--self-test)
  * Proves each violation category fires on a known-bad fixture and does not fire
- * on a known-good fixture.
+ * on a known-good fixture, and that the scope filter excludes a CRM/Inventory
+ * path without swallowing an in-scope one.
  *
  * Usage:
  *   node src/scripts/check-bounded-contracts.mjs [--self-test]
@@ -49,6 +57,22 @@ const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../.
 const OPENAPI_PATH = join(BACKEND_ROOT, "openapi.json");
 
 const PAGE_SIZE_CAP = 100;
+
+const EXCLUDED_PATH_PREFIXES = ["/crm/", "/inventory/"];
+
+export function isExcludedPath(pathTemplate) {
+  return EXCLUDED_PATH_PREFIXES.some((prefix) => String(pathTemplate).startsWith(prefix));
+}
+
+export function partitionByScope(violations) {
+  const inScope = [];
+  const excluded = [];
+  for (const violation of violations) {
+    if (isExcludedPath(violation.path)) excluded.push(violation);
+    else inScope.push(violation);
+  }
+  return { inScope, excluded };
+}
 
 function isCollectionGet(method, operation) {
   if (method !== "get") return false;
@@ -254,6 +278,23 @@ if (SELF_TEST) {
     fail("body-ids-without-maxItems-bites", "expected 1 violation for body ids without maxItems");
   else pass("body-ids-without-maxItems-bites — body ids array without maxItems is flagged");
 
+  const scopeMixed = partitionByScope([
+    { method: "GET", path: "/crm/deals", issue: "x" },
+    { method: "POST", path: "/inventory/loads", issue: "x" },
+    { method: "GET", path: "/chat/channels", issue: "x" },
+  ]);
+  if (scopeMixed.excluded.length !== 2 || scopeMixed.inScope.length !== 1)
+    fail("scope-partition-splits", `expected 2 excluded / 1 in-scope, got ${scopeMixed.excluded.length}/${scopeMixed.inScope.length}`);
+  else pass("scope-partition-splits — CRM/Inventory paths are excluded and an in-scope path is not");
+
+  const scopeLookalike = partitionByScope([
+    { method: "GET", path: "/build/crm-export", issue: "x" },
+    { method: "GET", path: "/hr/inventory-assets", issue: "x" },
+  ]);
+  if (scopeLookalike.excluded.length !== 0)
+    fail("scope-partition-anchors", `a path merely containing crm/inventory must stay in scope, got ${scopeLookalike.excluded.length} excluded`);
+  else pass("scope-partition-anchors — a path containing but not prefixed by crm/inventory stays in scope");
+
   if (failed) {
     process.stderr.write("\nSELF-TEST FAILED\n");
     process.exit(1);
@@ -275,9 +316,14 @@ try {
   process.exit(2);
 }
 
-const cursorViolations = findCursorViolations(document);
-const sortViolations = findSortViolations(document);
-const bulkIdViolations = findBulkIdViolations(document);
+const allCursor = partitionByScope(findCursorViolations(document));
+const allSort = partitionByScope(findSortViolations(document));
+const allBulkId = partitionByScope(findBulkIdViolations(document));
+
+const cursorViolations = allCursor.inScope;
+const sortViolations = allSort.inScope;
+const bulkIdViolations = allBulkId.inScope;
+const excluded = [...allCursor.excluded, ...allSort.excluded, ...allBulkId.excluded];
 const total = cursorViolations.length + sortViolations.length + bulkIdViolations.length;
 
 process.stdout.write(`check-bounded-contracts: bounded contract analysis\n`);
@@ -313,7 +359,15 @@ if (bulkIdViolations.length > 0) {
   process.stdout.write(`  bulk id param bounds: OK\n`);
 }
 
-process.stdout.write(`\n  Total violations: ${String(total)}\n`);
+if (excluded.length > 0) {
+  process.stdout.write(`\n  OUT OF SCOPE — CRM/Inventory (${String(excluded.length)}, reported not enforced):\n`);
+  for (const { method, path, param, issue } of excluded) {
+    const where = param ? `  ?${param}` : "";
+    process.stdout.write(`    ${method.padEnd(6)} ${path}${where}: ${issue}\n`);
+  }
+}
+
+process.stdout.write(`\n  Total in-scope violations: ${String(total)}\n`);
 
 if (total > 0) {
   process.stderr.write(

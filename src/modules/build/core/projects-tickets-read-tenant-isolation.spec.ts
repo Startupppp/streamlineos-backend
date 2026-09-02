@@ -1,6 +1,22 @@
 import type { Db } from "../../../db/drizzle.module";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 
+function memberThenTeamChain(memberRows: unknown[], teamRows: unknown[]): jest.Mock {
+  const memberChain = {
+    innerJoin: jest.fn(() => ({
+      where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue(memberRows) })),
+    })),
+  };
+  const teamChain = {
+    innerJoin: jest.fn(() => ({
+      innerJoin: jest.fn(() => ({
+        where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue(teamRows) })),
+      })),
+    })),
+  };
+  return jest.fn().mockReturnValueOnce(memberChain).mockReturnValue(teamChain);
+}
+
 describe("ProjectsTicketsReadService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
   const ATTACKER_ORG = "org-attacker";
@@ -8,16 +24,10 @@ describe("ProjectsTicketsReadService — cross-tenant isolation", () => {
   const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])) } as never;
 
   function makeDb(projectRow: unknown | null, memberRows: unknown[]) {
-    const memberLimit = jest.fn().mockResolvedValue(memberRows);
-    const memberWhere = jest.fn().mockReturnValue({ limit: memberLimit });
-    const teamLimit = jest.fn().mockResolvedValue([]);
-    const teamWhere = jest.fn().mockReturnValue({ limit: teamLimit });
-    const teamInnerJoin = jest.fn().mockReturnValue({ where: teamWhere });
-    const from = jest.fn().mockReturnValue({ where: memberWhere, innerJoin: teamInnerJoin });
     return {
       db: {
         query: { projects: { findFirst: jest.fn().mockResolvedValue(projectRow) } },
-        select: jest.fn().mockReturnValue({ from }),
+        select: jest.fn().mockReturnValue({ from: memberThenTeamChain(memberRows, []) }),
       } as unknown as Db,
     };
   }
@@ -44,22 +54,13 @@ describe("checkProjectAccess — direct-member org-status gate", () => {
   const PROJECT_ID = 5;
 
   function makeDbForMemberPath(memberRows: unknown[], teamRows: unknown[] = []) {
-    const memberLimit = jest.fn().mockResolvedValue(memberRows);
-    const memberWhere = jest.fn().mockReturnValue({ limit: memberLimit });
-    const memberInnerJoin = jest.fn().mockReturnValue({ where: memberWhere });
-    const teamLimit = jest.fn().mockResolvedValue(teamRows);
-    const teamWhere = jest.fn().mockReturnValue({ limit: teamLimit });
-    const teamInnerJoin = jest.fn().mockReturnValue({ where: teamWhere });
-    const from = jest.fn()
-      .mockReturnValueOnce({ innerJoin: memberInnerJoin })
-      .mockReturnValue({ innerJoin: teamInnerJoin });
     return {
       access: { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) } as never,
       db: {
         query: {
           projects: { findFirst: jest.fn().mockResolvedValue({ managerId: "other-manager" }) },
         },
-        select: jest.fn().mockReturnValue({ from }),
+        select: jest.fn().mockReturnValue({ from: memberThenTeamChain(memberRows, teamRows) }),
       } as unknown as Db,
     };
   }

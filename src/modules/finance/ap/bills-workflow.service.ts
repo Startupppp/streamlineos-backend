@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -138,6 +139,9 @@ export class BillsWorkflowService {
     const approvalReq = await getApprovalRequest(this.db, orgId, "PURCHASE_BILL", billId);
     if (approvalReq && approvalReq.status !== "PENDING" && approvalReq.status !== "APPROVED") {
       throw new ConflictException("Approval request is not in a state that allows approval");
+    }
+    if (approvalReq?.requestedBy === userId) {
+      throw new ForbiddenException("You cannot approve a purchase bill you submitted for approval");
     }
 
     await this.journalPosting.seedChartOfAccountsForOrg(orgId);

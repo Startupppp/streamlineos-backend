@@ -62,6 +62,7 @@
     "db:check-build-reads": "node src/scripts/check-build-read-cost.mjs",
     "db:check-hr-reads": "node src/scripts/check-hr-list-read-cost.mjs",
     "seed:scratch-e2e": "node src/scripts/seed-scratch-e2e.mjs",
+    "seed:scratch-e2e:self-test": "node src/scripts/seed-scratch-e2e.mjs --self-test",
     "seed:scratch-e2e:purge": "node src/scripts/seed-scratch-e2e.mjs --purge",
     "db:check-read-budgets": "node src/scripts/run-read-cost-budgets.mjs",
     "db:check-read-budgets:self-test": "node src/scripts/run-read-cost-budgets.mjs --self-test",
@@ -271,6 +272,7 @@
     "check:fire-and-forget": "node src/scripts/check-fire-and-forget.mjs",
     "check:fire-and-forget:self-test": "node src/scripts/check-fire-and-forget.mjs --self-test",
     "registry:generate": "node src/scripts/generate-api-contract-registry.mjs",
+    "registry:generate:self-test": "node src/scripts/generate-api-contract-registry.mjs --self-test",
     "check:contract-registry": "node src/scripts/check-api-contract-registry.mjs",
     "check:contract-registry:self-test": "node src/scripts/check-api-contract-registry.mjs --self-test",
     "check:contract-breaking-change": "node src/scripts/check-contract-breaking-change.mjs",
@@ -286,7 +288,9 @@
     "check:route-budgets": "node src/scripts/check-route-budgets.mjs",
     "check:route-budgets:self-test": "node src/scripts/check-route-budgets.mjs --self-test",
     "check:bulk-id-limits": "node src/scripts/check-bulk-id-limits.mjs",
-    "check:bulk-id-limits:self-test": "node src/scripts/check-bulk-id-limits.mjs --self-test"
+    "check:bulk-id-limits:self-test": "node src/scripts/check-bulk-id-limits.mjs --self-test",
+    "check:unjoined-table-refs": "node src/scripts/check-unjoined-table-refs.mjs",
+    "check:unjoined-table-refs:self-test": "node src/scripts/check-unjoined-table-refs.mjs --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

@@ -17,6 +17,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AuditService } from "../../common/audit/audit.service";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { FileQuarantineService } from "./file-quarantine.service";
 import {
   quarantineListQuerySchema,
@@ -71,6 +72,7 @@ export class StorageQuarantineController {
   }
 
   @Post(":quarantineId/release")
+  @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("storage:quarantine:manage")
   @Idempotent("storage.quarantine.release")

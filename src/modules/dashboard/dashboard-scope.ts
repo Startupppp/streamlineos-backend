@@ -34,10 +34,11 @@ export async function resolvePersonalDashboardModules(
   u: CurrentUserContext,
 ): Promise<PersonalDashboardModules> {
   const moduleSections = DASHBOARD_HOME_SECTIONS.filter(isModuleSection) as ModuleSection[];
+  const moduleKeys = [...new Set(moduleSections.map((s) => s.module))];
   const results = await Promise.all(
-    moduleSections.map((s) => access.moduleAvailability(u, s.module)),
+    moduleKeys.map((key) => access.moduleAvailability(u, key)),
   );
-  const available = new Map(moduleSections.map((s, i) => [s.module, results[i].available]));
+  const available = new Map(moduleKeys.map((key, i) => [key, results[i]?.available ?? false]));
   return {
     build: available.get("build") ?? false,
     timesheets: available.get("timesheets") ?? false,

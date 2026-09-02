@@ -47,7 +47,7 @@ export class IncidentsController {
     @Query() query: ListIncidentsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listIncidents(u.orgId, projectId, query);
+    return this.svc.listIncidents(u, projectId, query);
   }
 
   @Get(":incidentId")
@@ -70,7 +70,7 @@ export class IncidentsController {
     @Body() body: CreateIncidentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createIncident(u.orgId, u.userId, projectId, body);
+    return this.svc.createIncident(u, projectId, body);
   }
 
   @Patch(":incidentId")

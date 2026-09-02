@@ -1,35 +1,55 @@
+/**
+ * db-verify-rls.mjs — scope-aware RLS coverage gate
+ *
+ * 1. Runtime behavioral probes: tenant isolation, cross-tenant write blocking,
+ *    nullable-tenant path (0380 regression), tenant-id isolation after COMMIT.
+ *
+ * 2. Scope-aware catalog scan — every tenant table (org_id column) lands in
+ *    exactly one named bucket:
+ *
+ *      IN-SCOPE COVERED    — RLS + org-predicate policy          → pass
+ *      IN-SCOPE MISSING    — no RLS, or RLS with no org policy   → hard FAIL
+ *      EXCLUDED: CRM       — crm_* prefix or CRM_TABLE_NAMES     → reported, not a fail
+ *      EXCLUDED: INVENTORY — inv_* prefix or INV_TABLE_NAMES     → reported, not a fail
+ *      PLATFORM-GLOBAL     — PLATFORM_GLOBAL_TABLES registry     → reported, not a fail
+ *
+ *    Unregistered tables default to IN-SCOPE — deny by default.
+ *    CRM and Inventory are excluded from this release's scope (PRD §11).
+ *
+ * isCrmTable/isInvTable/CRM_TABLE_NAMES are copied from check-tenant-relationships.mjs
+ * rather than imported because that script executes main() and a SELF_TEST block at the
+ * module level. Extracting a shared module would require editing a file outside this
+ * script's exclusive ownership during concurrent sessions. Keep both copies in sync.
+ *
+ * Usage: node --env-file-if-exists=.env src/scripts/db-verify-rls.mjs [--self-test]
+ * Exit:  0 verified · 1 failures found
+ */
+
 import { resolve } from "node:path";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
 
 dotenv.config({ path: resolve(process.cwd(), ".env") });
 
-const poolerUrl = process.env.DATABASE_URL;
-if (!poolerUrl) {
-  console.error("DATABASE_URL is required in .env");
-  process.exit(1);
+const CRM_TABLE_NAMES = new Set([
+  "clients", "leads", "deals", "contacts", "quotes", "pipelines", "pipeline_stages",
+  "activities", "campaigns", "campaign_recipients", "quote_items", "contact_notes",
+  "contact_tags", "deal_activities", "deal_approvals", "deal_meetings",
+  "lead_activities", "lead_emails", "lead_notes", "lead_tasks",
+  "enterprise_quotes", "client_accounts", "client_onboarding_items",
+  "client_opportunities", "commissions", "csat_surveys", "quote_line_items",
+  "vendor_credits", "credit_notes",
+]);
+
+const INV_TABLE_NAMES = new Set(["inv_items"]);
+
+function isCrmTable(name) {
+  return name.startsWith("crm_") || CRM_TABLE_NAMES.has(name);
 }
 
-// SET ROLE needs a session-mode connection; Neon encodes that in the host
-const adminUrl =
-  process.env.DIRECT_DATABASE_URL ||
-  (/-pooler\..*\.neon\.tech/i.test(poolerUrl) ? poolerUrl.replace("-pooler.", ".") : poolerUrl);
-
-const PROBE_ROLE = "rls_probe_role";
-const PROBE_TABLE = "rls_probe";
-// Second probe with a NULLABLE tenant column. Platform-level rows (sign-in OTP
-// -> email_outbox) are written with no org and no tenant context, and that path
-// was broken for every nullable-tenant table until 0380 because WITH CHECK
-// called the raising helper unconditionally. Probing only a NOT NULL table is
-// what let that ship.
-const PROBE_TABLE_NULLABLE = "rls_probe_nullable";
-
-const sql = postgres(adminUrl, { prepare: false, max: 1, onnotice: () => {} });
-let failures = 0;
-const check = (label, ok, detail = "") => {
-  if (!ok) failures++;
-  console.log(`${ok ? "PASS" : "FAIL"}  ${label}${detail ? `  — ${detail}` : ""}`);
-};
+function isInvTable(name) {
+  return name.startsWith("inv_") || INV_TABLE_NAMES.has(name);
+}
 
 // Tables that intentionally carry an org_id column without per-tenant RLS.
 // Each entry must be justified: if the table is a legitimate platform-global
@@ -76,6 +96,63 @@ const PLATFORM_GLOBAL_TABLES = new Set([
   "public.noisy_neighbour_reviews",
 ]);
 
+function classifyTable(qualifiedName) {
+  if (PLATFORM_GLOBAL_TABLES.has(qualifiedName)) return "PLATFORM-GLOBAL";
+  const bare = qualifiedName.includes(".") ? qualifiedName.split(".").pop() : qualifiedName;
+  if (isCrmTable(bare)) return "EXCLUDED: CRM";
+  if (isInvTable(bare)) return "EXCLUDED: INVENTORY";
+  return "IN-SCOPE";
+}
+
+if (process.argv.includes("--self-test")) {
+  const gateExcludes = (tbl) => classifyTable(tbl) !== "IN-SCOPE";
+
+  const ST = {
+    in_scope_no_rls_is_not_excluded: !gateExcludes("public.some_new_business_table"),
+    in_scope_rls_no_policy_is_not_excluded: !gateExcludes("public.another_in_scope_table"),
+    unrecognised_table_is_not_excluded: !gateExcludes("public.brand_new_undeclared_xyz"),
+    inv_prefix_is_excluded: gateExcludes("public.inv_projects"),
+    inv_project_requirements_is_excluded: gateExcludes("public.inv_project_requirements"),
+    leads_is_excluded_as_crm: gateExcludes("public.leads"),
+    deals_is_excluded_as_crm: gateExcludes("public.deals"),
+    crm_prefix_is_excluded: classifyTable("public.crm_contacts") === "EXCLUDED: CRM",
+    inv_named_is_excluded: classifyTable("public.inv_items") === "EXCLUDED: INVENTORY",
+    platform_global_is_excluded: classifyTable("public.organization_placement") === "PLATFORM-GLOBAL",
+    in_scope_schema_build: classifyTable("build.tickets") === "IN-SCOPE",
+    hr_table_is_in_scope: classifyTable("public.hr_employees") === "IN-SCOPE",
+  };
+
+  const pass = Object.values(ST).every(Boolean);
+  process.stdout.write(JSON.stringify({ selfTest: true, pass, checks: ST }, null, 2) + "\n");
+  process.exit(pass ? 0 : 1);
+}
+
+const poolerUrl = process.env.DATABASE_URL;
+if (!poolerUrl) {
+  console.error("DATABASE_URL is required in .env");
+  process.exit(1);
+}
+
+// SET ROLE needs a session-mode connection; Neon encodes that in the host
+const adminUrl =
+  process.env.DIRECT_DATABASE_URL ||
+  (/-pooler\..*\.neon\.tech/i.test(poolerUrl) ? poolerUrl.replace("-pooler.", ".") : poolerUrl);
+
+const PROBE_ROLE = "rls_probe_role";
+const PROBE_TABLE = "rls_probe";
+// Second probe with a NULLABLE tenant column. Platform-level rows (sign-in OTP
+// -> email_outbox) are written with no org and no tenant context, and that path
+// was broken for every nullable-tenant table until 0380 because WITH CHECK
+// called the raising helper unconditionally. Probing only a NOT NULL table is
+// what let that ship.
+const PROBE_TABLE_NULLABLE = "rls_probe_nullable";
+
+const sql = postgres(adminUrl, { prepare: false, max: 1, onnotice: () => {} });
+let failures = 0;
+const check = (label, ok, detail = "") => {
+  if (!ok) failures++;
+  console.log(`${ok ? "PASS" : "FAIL"}  ${label}${detail ? `  — ${detail}` : ""}`);
+};
 
 const teardown = `
   DROP TABLE IF EXISTS public.${PROBE_TABLE};
@@ -235,27 +312,20 @@ try {
     failures++;
     console.error(`teardown incomplete: role=${roleLeft} table=${tableLeft}`);
   }
-  const [coverage] = await sql`
-    SELECT
-      (SELECT count(DISTINCT c.oid)::int FROM pg_class c
-        JOIN pg_namespace n2 ON n2.oid = c.relnamespace
-        JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
-        WHERE n2.nspname IN ('public','build','build_events') AND c.relkind='r'
-          AND a.attname IN ('org_id','organization_id')
-          AND format_type(a.atttypid, NULL)='text') AS tenant_columns,
-      (SELECT count(*)::int FROM pg_class c
-        JOIN pg_namespace n ON n.oid=c.relnamespace
-        WHERE n.nspname IN ('public','build','build_events') AND c.relrowsecurity) AS rls_enabled`;
-  console.log(
-    `
-coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped tables have RLS enabled`,
-  );
 
-  // 1. Tables with an org_id column that have no RLS enabled at all.
-  //    Every such table is a potential cross-tenant read hole because ALTER DEFAULT
-  //    PRIVILEGES grants SELECT to the app role on every new table.
-  const unprotected = await sql`
-    SELECT DISTINCT n.nspname || '.' || c.relname AS tbl
+  const tenantTables = await sql`
+    SELECT DISTINCT n.nspname || '.' || c.relname AS tbl,
+      c.relrowsecurity AS has_rls,
+      EXISTS(
+        SELECT 1 FROM pg_policies p
+        WHERE p.schemaname = n.nspname AND p.tablename = c.relname
+          AND (
+            COALESCE(p.qual, '')        ILIKE '%org_id%'
+            OR COALESCE(p.qual, '')        ILIKE '%organization_id%'
+            OR COALESCE(p.with_check, '') ILIKE '%org_id%'
+            OR COALESCE(p.with_check, '') ILIKE '%organization_id%'
+          )
+      ) AS has_org_policy
     FROM pg_class c
     JOIN pg_namespace n ON n.oid = c.relnamespace
     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
@@ -263,49 +333,65 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
       AND c.relkind = 'r'
       AND a.attname IN ('org_id','organization_id')
       AND format_type(a.atttypid, NULL) = 'text'
-      AND NOT c.relrowsecurity
     ORDER BY tbl`;
 
-  for (const { tbl } of unprotected) {
-    if (!PLATFORM_GLOBAL_TABLES.has(tbl))
-      check(`RLS enabled on ${tbl}`, false, "tenant table has no RLS — add a policy or register in PLATFORM_GLOBAL_TABLES");
-    else
-      console.log(`SKIP  ${tbl} — registered as platform-global`);
+  const buckets = {
+    inScopeCovered: [],
+    inScopeMissing: [],
+    platformGlobal: [],
+    excludedCrm: [],
+    excludedInv: [],
+  };
+
+  for (const { tbl, has_rls, has_org_policy } of tenantTables) {
+    const bucket = classifyTable(tbl);
+    if (bucket === "PLATFORM-GLOBAL") {
+      buckets.platformGlobal.push(tbl);
+    } else if (bucket === "EXCLUDED: CRM") {
+      buckets.excludedCrm.push(tbl);
+    } else if (bucket === "EXCLUDED: INVENTORY") {
+      buckets.excludedInv.push(tbl);
+    } else if (has_rls && has_org_policy) {
+      buckets.inScopeCovered.push(tbl);
+    } else if (has_rls) {
+      buckets.inScopeMissing.push(tbl);
+      check(
+        `Tenant predicate in RLS policy on ${tbl}`,
+        false,
+        "in-scope: RLS is enabled but no policy references org_id — implicitly deny-all or mis-predicated",
+      );
+    } else {
+      buckets.inScopeMissing.push(tbl);
+      check(
+        `RLS enabled on ${tbl}`,
+        false,
+        "in-scope tenant table has no RLS — add a policy or register in PLATFORM_GLOBAL_TABLES",
+      );
+    }
   }
 
-  // 2. Tables that have RLS enabled and an org_id column but lack any policy that
-  //    references the org column.  An empty policy set leaves the table readable by
-  //    no one (deny-by-default), which is safe but almost certainly wrong for a
-  //    business table; a policy with the wrong predicate (e.g. no org_id condition)
-  //    is a tenant-isolation failure.
-  const missingTenantPredicate = await sql`
-    SELECT DISTINCT n.nspname || '.' || c.relname AS tbl
-    FROM pg_class c
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE n.nspname IN ('public','build','build_events')
-      AND c.relkind = 'r'
-      AND c.relrowsecurity
-      AND EXISTS (
-        SELECT 1 FROM pg_attribute a
-        WHERE a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
-          AND a.attname IN ('org_id','organization_id')
-          AND format_type(a.atttypid, NULL) = 'text'
-      )
-      AND NOT EXISTS (
-        SELECT 1 FROM pg_policies p
-        WHERE p.schemaname = n.nspname
-          AND p.tablename = c.relname
-          AND (
-            COALESCE(p.qual, '') ILIKE '%org_id%'
-            OR COALESCE(p.qual, '') ILIKE '%organization_id%'
-            OR COALESCE(p.with_check, '') ILIKE '%org_id%'
-            OR COALESCE(p.with_check, '') ILIKE '%organization_id%'
-          )
-      )
-    ORDER BY tbl`;
+  const total = tenantTables.length;
+  const SHOW_MAX = 20;
 
-  for (const { tbl } of missingTenantPredicate)
-    check(`Tenant predicate in RLS policy on ${tbl}`, false, "RLS is enabled but no policy references org_id — the table is implicitly deny-all or mis-predicated");
+  console.log(`\nBUCKET SUMMARY  (${total} tenant-scoped tables scanned)`);
+  console.log(`  IN-SCOPE COVERED:     ${String(buckets.inScopeCovered.length).padStart(4)}`);
+  console.log(`  IN-SCOPE MISSING:     ${String(buckets.inScopeMissing.length).padStart(4)}${buckets.inScopeMissing.length > 0 ? "  ← hard FAIL" : ""}`);
+  console.log(`  PLATFORM-GLOBAL:      ${String(buckets.platformGlobal.length).padStart(4)}`);
+  console.log(`  EXCLUDED: CRM:        ${String(buckets.excludedCrm.length).padStart(4)}`);
+  console.log(`  EXCLUDED: INVENTORY:  ${String(buckets.excludedInv.length).padStart(4)}`);
+
+  if (buckets.excludedInv.length > 0) {
+    console.log(`\nEXCLUDED: INVENTORY — CRM and Inventory are out of this release's scope (not a failure)`);
+    for (const tbl of buckets.excludedInv) console.log(`  excluded  ${tbl}`);
+  }
+
+  if (buckets.excludedCrm.length > 0) {
+    const shown = buckets.excludedCrm.slice(0, SHOW_MAX);
+    const extra = buckets.excludedCrm.length - shown.length;
+    console.log(`\nEXCLUDED: CRM — CRM and Inventory are out of this release's scope (not a failure)`);
+    for (const tbl of shown) console.log(`  excluded  ${tbl}`);
+    if (extra > 0) console.log(`  … and ${extra} more`);
+  }
 
   // 3. Tables that carry no tenant column at all but are tenant data by 0320's own rule:
   //    a NOT NULL single-column foreign key to an org-bearing parent. Checks 1 and 2 cannot
@@ -337,8 +423,13 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
 
   for (const { tbl, parent } of missingTenantColumn) {
     if (parent === null) continue;
-    if (PLATFORM_GLOBAL_TABLES.has(tbl)) {
+    const bucket = classifyTable(tbl);
+    if (bucket === "PLATFORM-GLOBAL") {
       console.log(`SKIP  ${tbl} — registered as platform-global`);
+      continue;
+    }
+    if (bucket === "EXCLUDED: CRM" || bucket === "EXCLUDED: INVENTORY") {
+      console.log(`excluded  ${tbl} — ${bucket} (no tenant column, child of ${parent})`);
       continue;
     }
     check(
@@ -362,9 +453,12 @@ coverage: ${coverage.rls_enabled} of ${coverage.tenant_columns} tenant-scoped ta
       AND format_type(a.atttypid, NULL) = 'text'
     ORDER BY tbl`;
 
-  const notForcedTenant = notForced.filter(({ tbl }) => !PLATFORM_GLOBAL_TABLES.has(tbl));
+  const notForcedTenant = notForced.filter(({ tbl }) => {
+    const bucket = classifyTable(tbl);
+    return bucket !== "PLATFORM-GLOBAL" && bucket !== "EXCLUDED: CRM" && bucket !== "EXCLUDED: INVENTORY";
+  });
+
   if (notForcedTenant.length > 0) {
-    const SHOW_MAX = 20;
     const shown = notForcedTenant.slice(0, SHOW_MAX).map(({ tbl }) => tbl);
     const extra = notForcedTenant.length - shown.length;
     console.log(

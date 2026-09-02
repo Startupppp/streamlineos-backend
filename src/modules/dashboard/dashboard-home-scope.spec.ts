@@ -94,11 +94,17 @@ describe("leave approval scope predicate isolation", () => {
     expect(toSql(leaveApprovalScope("team", 1))).not.toBe("true");
   });
 
-  it("each scope produces a distinct SQL predicate", () => {
-    const sqls = (["all", "own", "team", "none"] as const).map((scope) =>
+  it("separates unrestricted, denied and approver-bound predicates", () => {
+    const sqls = (["all", "own", "none"] as const).map((scope) =>
       toSql(leaveApprovalScope(scope, 1)),
     );
-    expect(new Set(sqls).size).toBe(4);
+    expect(new Set(sqls).size).toBe(3);
+  });
+
+  it("binds own and team alike, because the derived approver is the boundary for both", () => {
+    expect(toSql(leaveApprovalScope("team", 1))).toBe(
+      toSql(leaveApprovalScope("own", 1)),
+    );
   });
 });
 
@@ -213,16 +219,19 @@ describe("getLeavesToday scope application", () => {
   it("(e) a viewer holding no approval scope collapses to own, never to the whole org", async () => {
     const { DashboardLeaveService } = await import("./dashboard-leave.service");
 
-    let capturedWhere: SQL | undefined;
+    const capturedWheres: SQL[] = [];
     const builder = {
       select: () => builder,
       from: () => builder,
       innerJoin: () => builder,
       leftJoin: () => builder,
       where: (condition: SQL) => {
-        capturedWhere = condition;
-        return Promise.resolve([]);
+        capturedWheres.push(condition);
+        return builder;
       },
+      orderBy: () => builder,
+      limit: () => Promise.resolve([]),
+      then: (resolve: (rows: unknown[]) => unknown) => resolve([]),
     };
     const accessMock = {
       getPermissionsVersion: async () => 1,
@@ -236,11 +245,56 @@ describe("getLeavesToday scope application", () => {
     );
     await service.getLeavesToday(makeUser(ACTOR, ORG));
 
-    expect(capturedWhere).toBeDefined();
-    const query = dialect.sqlToQuery(capturedWhere as SQL);
-    expect(query.sql).toContain('"leave_requests"."user_id" = ');
-    expect(query.params).toContain(ACTOR);
-    expect(query.sql).not.toContain("scope_teammate");
+    expect(capturedWheres.length).toBeGreaterThan(0);
+    for (const captured of capturedWheres) {
+      const query = dialect.sqlToQuery(captured);
+      expect(query.sql).toContain('"leave_requests"."user_id" = ');
+      expect(query.params).toContain(ACTOR);
+      expect(query.sql).not.toContain("scope_teammate");
+    }
+  });
+
+  it("(e) bounds the leaves-today read and reports the untruncated total", async () => {
+    const { DashboardLeaveService } = await import("./dashboard-leave.service");
+    const { DASHBOARD_LIST_CAP } = await import("./dashboard-read-limits");
+
+    const rows = Array.from({ length: DASHBOARD_LIST_CAP }, (_v, i) => ({ id: i }));
+    let limitArg: number | undefined;
+    let call = 0;
+    const builder = {
+      select: () => builder,
+      from: () => builder,
+      innerJoin: () => builder,
+      leftJoin: () => builder,
+      where: () => {
+        call += 1;
+        return call === 2
+          ? Promise.resolve([{ count: DASHBOARD_LIST_CAP + 37 }])
+          : builder;
+      },
+      orderBy: () => builder,
+      limit: (n: number) => {
+        limitArg = n;
+        return Promise.resolve(rows);
+      },
+    };
+    const accessMock = {
+      getPermissionsVersion: async () => 1,
+      resolveUserPermissions: async () =>
+        new Map<string, DataScope>([["hr:leaves:approve", "all"]]),
+    } as unknown as AccessService;
+
+    const service = new DashboardLeaveService(
+      builder as never,
+      { cached: async (_k: string, f: () => Promise<unknown>) => f() } as never,
+      accessMock,
+    );
+    const result = await service.getLeavesToday(makeUser(ACTOR, ORG));
+
+    expect(limitArg).toBe(DASHBOARD_LIST_CAP);
+    expect(result.data).toHaveLength(DASHBOARD_LIST_CAP);
+    expect(result.total).toBe(DASHBOARD_LIST_CAP + 37);
+    expect(result.hasMore).toBe(true);
   });
 });
 

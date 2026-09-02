@@ -24,6 +24,7 @@ import {
   type UpdateExpenseDetailsInput,
 } from "./dto/expense.schemas";
 import { ExpensesService } from "./expenses.service";
+import { SELF_ONLY_SCOPE } from "./expenses-scope";
 import { ExpensesWriteService } from "./expenses-write.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -48,7 +49,7 @@ export class EmployeeExpensesController {
     return this.expenses.getPageData(
       user.orgId,
       user.userId,
-      false,
+      SELF_ONLY_SCOPE,
       filters,
     );
   }

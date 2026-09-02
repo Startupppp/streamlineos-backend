@@ -83,7 +83,10 @@ export class LoansController {
       throw new ForbiddenException("Only admins can process loan status changes.");
     }
     const result = await this.loans.updateLoan(u.orgId, u.userId, loanId, body);
-    if (!result.ok) throw new NotFoundException("Loan not found.");
+    if (!result.ok) {
+      if (result.reason === "not_found") throw new NotFoundException("Loan not found.");
+      throw new ForbiddenException("You cannot approve or reject your own loan request.");
+    }
     return { success: true };
   }
 }

@@ -91,6 +91,10 @@ describe("EmployeesService.listEmployees — DataScope wiring", () => {
       cached: jest.fn().mockImplementation(
         async (_key: string, fn: () => Promise<unknown>) => fn(),
       ),
+      cachedVersioned: jest.fn().mockImplementation(
+        async (_ns: string, _key: string, fn: () => Promise<unknown>) => fn(),
+      ),
+      invalidateNamespace: jest.fn(),
     };
     const employment = {
       getFactsBatch: jest.fn().mockResolvedValue(new Map()),

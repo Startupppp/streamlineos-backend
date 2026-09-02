@@ -22,7 +22,6 @@ export const calendarEventExceptions = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     eventId: integer("event_id")
-      .references(() => calendarEvents.id, { onDelete: "cascade" })
       .notNull(),
     occurrenceStart: timestamp("occurrence_start", { withTimezone: true }).notNull(),
     isCancelled: boolean("is_cancelled").notNull().default(false),

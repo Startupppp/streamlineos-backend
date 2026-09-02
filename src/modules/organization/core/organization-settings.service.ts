@@ -7,6 +7,8 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { MfaPolicyService } from "../../access/mfa-policy.service";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import type { TenantTx } from "../../../common/tenant/with-tenant";
 import {
   orgCustomDomains,
   orgHolidays,
@@ -27,7 +29,6 @@ type OrgSettingsUpdate = {
   timezone?: string;
   currency?: string;
   fiscalYearStart?: number;
-  mfaEnforced?: boolean;
   settings?: Record<string, unknown>;
   industry?: string | null;
   website?: string | null;
@@ -88,7 +89,6 @@ export class OrganizationSettingsService {
     if (input.currency !== undefined) updateData.currency = input.currency;
     if (input.fiscalYearStart !== undefined) updateData.fiscalYearStart = input.fiscalYearStart;
     if (input.logo !== undefined) updateData.logo = input.logo;
-    if (input.mfaEnforced !== undefined) updateData.mfaEnforced = input.mfaEnforced;
     if (input.industry !== undefined) updateData.industry = input.industry;
     if (input.website !== undefined) updateData.website = input.website;
     if (input.legalName !== undefined) updateData.legalName = input.legalName;
@@ -108,7 +108,6 @@ export class OrganizationSettingsService {
       input.directoryPublic !== undefined ||
       input.primaryColor !== undefined ||
       input.loginBgUrl !== undefined ||
-      input.ipAllowlist !== undefined ||
       input.language !== undefined ||
       input.dateFormat !== undefined ||
       input.timeFormat !== undefined ||
@@ -137,18 +136,6 @@ export class OrganizationSettingsService {
           currentSettings.loginBgUrl = input.loginBgUrl;
         }
       }
-      if (input.ipAllowlist !== undefined) {
-        currentSettings.ipAllowlist = input.ipAllowlist;
-        if (input.ipAllowlist.length === 0) {
-          await this.cache.invalidateForOrg(orgId, "org:ip-allowlist");
-        } else {
-          await this.cache.set(
-            `${orgId}:org:ip-allowlist`,
-            JSON.stringify(input.ipAllowlist),
-            3600,
-          );
-        }
-      }
       if (input.language !== undefined) currentSettings.language = input.language;
       if (input.dateFormat !== undefined) currentSettings.dateFormat = input.dateFormat;
       if (input.timeFormat !== undefined) currentSettings.timeFormat = input.timeFormat;
@@ -159,10 +146,6 @@ export class OrganizationSettingsService {
 
     if (Object.keys(updateData).length > 0) {
       await this.db.update(organizations).set(updateData).where(eq(organizations.id, orgId));
-    }
-
-    if (input.allowedEmailDomains !== undefined) {
-      await this.replaceAllowedDomains(orgId, input.allowedEmailDomains);
     }
 
     await this.invalidateSettingsCache(orgId);
@@ -204,15 +187,16 @@ export class OrganizationSettingsService {
 
     if (!hasOrgUpdate && !hasDomainsUpdate) return { success: true };
 
-    const ops: Promise<unknown>[] = [];
-
-    if (hasOrgUpdate) {
-      ops.push(this.db.update(organizations).set(updateData).where(eq(organizations.id, orgId)));
-    }
-    if (hasDomainsUpdate) {
-      ops.push(this.replaceAllowedDomains(orgId, input.allowedEmailDomains!));
-    }
-    await Promise.all(ops);
+    const domains = input.allowedEmailDomains;
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        if (hasOrgUpdate)
+          await tx.update(organizations).set(updateData).where(eq(organizations.id, orgId));
+        if (domains !== undefined) await this.replaceAllowedDomains(tx, orgId, domains);
+      },
+      { orgId },
+    );
 
     this.audit.log({
       action: "security_settings.updated",
@@ -250,17 +234,19 @@ export class OrganizationSettingsService {
     return { success: true };
   }
 
-  private async replaceAllowedDomains(orgId: string, domains: string[]): Promise<void> {
-    await this.db.transaction(async (tx) => {
-      await tx
-        .delete(organizationAllowedEmailDomains)
-        .where(eq(organizationAllowedEmailDomains.orgId, orgId));
-      if (domains.length > 0) {
-        await tx.insert(organizationAllowedEmailDomains).values(
-          domains.map((domain) => ({ orgId, domain: domain.toLowerCase() })),
-        );
-      }
-    });
+  private async replaceAllowedDomains(
+    tx: TenantTx,
+    orgId: string,
+    domains: string[],
+  ): Promise<void> {
+    await tx
+      .delete(organizationAllowedEmailDomains)
+      .where(eq(organizationAllowedEmailDomains.orgId, orgId));
+    if (domains.length > 0) {
+      await tx.insert(organizationAllowedEmailDomains).values(
+        domains.map((domain) => ({ orgId, domain: domain.toLowerCase() })),
+      );
+    }
   }
 
   async getSettings(orgId: string) {

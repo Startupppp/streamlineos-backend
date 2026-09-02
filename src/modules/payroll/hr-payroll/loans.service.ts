@@ -5,6 +5,10 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateLoanInput, UpdateLoanInput } from "./dto/payroll.schemas";
 
+export type UpdateLoanResult =
+  | { ok: false; reason: "not_found" | "own_request" }
+  | { ok: true };
+
 @Injectable()
 export class LoansService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -58,11 +62,12 @@ export class LoansService {
     return loan;
   }
 
-  async updateLoan(orgId: string, userId: string, loanId: number, body: UpdateLoanInput): Promise<{ ok: boolean }> {
+  async updateLoan(orgId: string, userId: string, loanId: number, body: UpdateLoanInput): Promise<UpdateLoanResult> {
     const existing = await this.db.query.salaryLoans.findFirst({
       where: and(eq(salaryLoans.id, loanId), eq(salaryLoans.orgId, orgId)),
     });
-    if (!existing) return { ok: false };
+    if (!existing) return { ok: false, reason: "not_found" };
+    if (existing.userId === userId) return { ok: false, reason: "own_request" };
 
     const patch = {
       ...(body.status && { status: body.status }),

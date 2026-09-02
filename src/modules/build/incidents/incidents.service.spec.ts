@@ -1,13 +1,47 @@
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { IncidentsService } from "./incidents.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
+import type { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 const mockAudit = { log: jest.fn() } as unknown as AuditService;
 
 beforeEach(() => {
   jest.resetAllMocks();
 });
+
+function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
+  return {
+    userId: "user-1",
+    orgId: "org-1",
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "sess-1",
+    tokenScopes: null,
+    principal: { kind: "human-session", membershipId: 100, isOrgOwner: false },
+    ...overrides,
+  };
+}
+
+function makeSelectChain(resolved: unknown[]) {
+  const chain: Record<string, jest.Mock> = {
+    from: jest.fn(),
+    innerJoin: jest.fn(),
+    where: jest.fn(),
+    orderBy: jest.fn(),
+    limit: jest.fn().mockResolvedValue(resolved),
+  };
+  chain.from.mockReturnValue(chain);
+  chain.innerJoin.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
+  chain.orderBy.mockReturnValue(chain);
+  return chain;
+}
+
+const mockAccessNoPerms = {
+  resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
+} as unknown as AccessService;
 
 const BASE_INCIDENT = {
   id: 1,
@@ -57,7 +91,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
       update: jest.fn().mockReturnValue(updateChain),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, mockAudit);
+    const svc = new IncidentsService(mockDb, mockAudit, mockAccessNoPerms);
     await svc.updateIncident("org-1", "user-1", 1, 1, { status: "investigating" });
 
     const patch = (updateChain.set.mock.calls[0] as [Record<string, unknown>])[0];
@@ -77,7 +111,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
       update: jest.fn().mockReturnValue(updateChain),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, mockAudit);
+    const svc = new IncidentsService(mockDb, mockAudit, mockAccessNoPerms);
     await svc.updateIncident("org-1", "user-1", 1, 1, { status: "mitigating" });
 
     const patch = (updateChain.set.mock.calls[0] as [Record<string, unknown>])[0];
@@ -98,7 +132,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
       update: jest.fn().mockReturnValue(updateChain),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, mockAudit);
+    const svc = new IncidentsService(mockDb, mockAudit, mockAccessNoPerms);
     await svc.updateIncident("org-1", "user-1", 1, 1, { status: "resolved" });
 
     const patch = (updateChain.set.mock.calls[0] as [Record<string, unknown>])[0];
@@ -118,7 +152,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
       update: jest.fn().mockReturnValue(updateChain),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, mockAudit);
+    const svc = new IncidentsService(mockDb, mockAudit, mockAccessNoPerms);
     await svc.updateIncident("org-1", "user-1", 1, 1, { status: "postmortem" });
 
     const patch = (updateChain.set.mock.calls[0] as [Record<string, unknown>])[0];
@@ -140,7 +174,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
       update: jest.fn().mockReturnValue(updateChain),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, mockAudit);
+    const svc = new IncidentsService(mockDb, mockAudit, mockAccessNoPerms);
     await svc.updateIncident("org-1", "user-1", 1, 1, { status: "resolved" });
 
     const patch = (updateChain.set.mock.calls[0] as [Record<string, unknown>])[0];
@@ -158,7 +192,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
       update: jest.fn().mockReturnValue(updateChain),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, mockAudit);
+    const svc = new IncidentsService(mockDb, mockAudit, mockAccessNoPerms);
     await svc.updateIncident("org-1", "user-1", 1, 1, { status: "detected" });
 
     const patch = (updateChain.set.mock.calls[0] as [Record<string, unknown>])[0];
@@ -192,7 +226,7 @@ describe("IncidentsService.getIncident — flat response structure", () => {
       select: jest.fn().mockReturnValue(selectChain),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, mockAudit);
+    const svc = new IncidentsService(mockDb, mockAudit, mockAccessNoPerms);
     const result = await svc.getIncident("org-1", 1, 1);
 
     expect(result).toMatchObject({ ...BASE_INCIDENT, updates });
@@ -218,7 +252,7 @@ describe("IncidentsService.getIncident — flat response structure", () => {
       select: jest.fn().mockReturnValue(selectChain),
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, mockAudit);
+    const svc = new IncidentsService(mockDb, mockAudit, mockAccessNoPerms);
     const result = await svc.getIncident("org-1", 1, 1);
 
     expect(result.updates).toEqual([]);
@@ -232,7 +266,50 @@ describe("IncidentsService.getIncident — flat response structure", () => {
       },
     } as unknown as Db;
 
-    const svc = new IncidentsService(mockDb, mockAudit);
+    const svc = new IncidentsService(mockDb, mockAudit, mockAccessNoPerms);
     await expect(svc.getIncident("org-1", 1, 999)).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe("IncidentsService — assertProjectAccess gate BITES", () => {
+  it("rejects a non-member caller with ForbiddenException", async () => {
+    const project = { id: 1, orgId: "org-1", managerMembershipId: 999 };
+    const mockAccess = {
+      resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
+    } as unknown as AccessService;
+    const mockDb = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue(project) } },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([])),
+      transaction: jest.fn(),
+    } as unknown as Db;
+
+    const svc = new IncidentsService(mockDb, mockAudit, mockAccess);
+    await expect(
+      svc.listIncidents(makeUser({ isOrgOwner: false, orgId: "org-1", userId: "user-1" }), 1, {}),
+    ).rejects.toThrow(ForbiddenException);
+    expect((mockDb as unknown as { transaction: jest.Mock }).transaction).not.toHaveBeenCalled();
+  });
+
+  it("allows a direct project member to list incidents", async () => {
+    const project = { id: 1, orgId: "org-1", managerMembershipId: 999 };
+    const mockAccess = {
+      resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
+    } as unknown as AccessService;
+    const mockDb = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue(project) } },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+        .mockReturnValueOnce(makeSelectChain([])),
+    } as unknown as Db;
+
+    const svc = new IncidentsService(mockDb, mockAudit, mockAccess);
+    const result = await svc.listIncidents(
+      makeUser({ isOrgOwner: false, orgId: "org-1", userId: "user-1" }),
+      1,
+      {},
+    );
+    expect(Array.isArray(result)).toBe(true);
   });
 });

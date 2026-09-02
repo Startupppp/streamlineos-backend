@@ -114,7 +114,7 @@ export class DashboardController {
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:analytics:read")
   executive(@CurrentUser() u: CurrentUserContext) {
-    return this.crm.getExecutiveDashboard(u.orgId);
+    return this.crm.getExecutiveDashboard(u);
   }
 
   @Get("leaves-today")

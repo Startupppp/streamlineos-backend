@@ -35,13 +35,9 @@ export const tickets = build.table(
     type: ticketTypeEnum("type").default("TASK").notNull(),
     status: text("status").notNull().default("TODO"),
     priority: ticketPriorityEnum("priority").default("MEDIUM").notNull(),
-    projectId: integer("project_id").references(() => projects.id, {
-      onDelete: "cascade",
-    }),
+    projectId: integer("project_id"),
     ticketNumber: integer("ticket_number").notNull(),
-    sprintId: integer("sprint_id").references(() => sprints.id, {
-      onDelete: "set null",
-    }),
+    sprintId: integer("sprint_id"),
     epicId: integer("epic_id"),
     assigneeMembershipId: integer("assignee_membership_id"),
     reporterId: text("reporter_id").references(() => users.id, {
@@ -59,12 +55,8 @@ export const tickets = build.table(
       .notNull(),
     startDate: date("start_date"),
     dueDate: date("due_date"),
-    moduleId: integer("module_id").references(() => modules.id, {
-      onDelete: "set null",
-    }),
-    cycleId: integer("cycle_id").references(() => cycles.id, {
-      onDelete: "set null",
-    }),
+    moduleId: integer("module_id"),
+    cycleId: integer("cycle_id"),
     sequenceId: text("sequence_id"),
     estimate: integer("estimate"),
     completionPercentage: integer("completion_percentage").default(0).notNull(),
@@ -90,6 +82,9 @@ export const tickets = build.table(
       .$onUpdate(() => new Date()),
   },
   (t) => [
+  foreignKey({ columns: [t.orgId, t.cycleId], foreignColumns: [cycles.orgId, cycles.id], name: "fk_tickets_org_cycle" }).onDelete("set null"),
+  foreignKey({ columns: [t.orgId, t.moduleId], foreignColumns: [modules.orgId, modules.id], name: "fk_tickets_org_module" }).onDelete("set null"),
+  foreignKey({ columns: [t.orgId, t.sprintId], foreignColumns: [sprints.orgId, sprints.id], name: "fk_tickets_org_sprint" }).onDelete("set null"),
     foreignKey({ columns: [t.orgId, t.epicId], foreignColumns: [t.orgId, t.id], name: "fk_tickets_org_epic" }),
     foreignKey({ columns: [t.orgId, t.parentTicketId], foreignColumns: [t.orgId, t.id], name: "fk_tickets_org_parent" }),
     foreignKey({ columns: [t.orgId, t.recurrenceParentId], foreignColumns: [t.orgId, t.id], name: "fk_tickets_org_recurrence_parent" }),
@@ -160,15 +155,15 @@ export const workItemRelations = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     workItemId: integer("work_item_id")
-      .references(() => tickets.id, { onDelete: "cascade" })
       .notNull(),
     relatedWorkItemId: integer("related_work_item_id")
-      .references(() => tickets.id, { onDelete: "cascade" })
       .notNull(),
     relationType: workItemRelationTypeEnum("relation_type").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.relatedWorkItemId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_work_item_relations_org_related" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.workItemId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_work_item_relations_org_item" }).onDelete("cascade"),
     uniqueIndex("uniq_work_item_relation").on(
       table.workItemId,
       table.relatedWorkItemId,

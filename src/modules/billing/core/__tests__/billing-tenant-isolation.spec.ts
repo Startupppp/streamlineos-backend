@@ -8,6 +8,7 @@ jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
 
 import { AiCreditsPacksService } from "../ai-credits-packs.service";
 import { EnterpriseQuotesService } from "../enterprise-quotes.service";
+import type { PlanLimitsService } from "../plan-limits.service";
 import { MarketplaceService } from "../marketplace.service";
 import { ReferralService } from "../referral.service";
 import { InvoiceSnapshotService } from "../invoice-snapshot.service";
@@ -37,6 +38,10 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
 
 const ATTACKER_ORG = "org-attacker";
 const OWNER_ORG = "org-owner";
+
+function planLimitsStub() {
+  return { bust: jest.fn().mockResolvedValue(undefined) } as unknown as PlanLimitsService;
+}
 
 describe("AiCreditsPacksService — cross-tenant isolation", () => {
   it("listTransactions returns empty results and scopes WHERE to the requesting org (cross-tenant isolation)", async () => {
@@ -198,7 +203,7 @@ describe("EnterpriseQuotesService — cross-tenant isolation", () => {
         limit: jest.fn().mockResolvedValue([]),
       }),
     } as unknown as Db;
-    const svc = new EnterpriseQuotesService(db);
+    const svc = new EnterpriseQuotesService(db, planLimitsStub());
 
     await expect(svc.findOne(ATTACKER_ORG, 999)).rejects.toThrow(NotFoundException);
   });
@@ -223,7 +228,7 @@ describe("EnterpriseQuotesService — cross-tenant isolation", () => {
         limit: jest.fn().mockResolvedValue([fakeRow]),
       }),
     } as unknown as Db;
-    const svc = new EnterpriseQuotesService(db);
+    const svc = new EnterpriseQuotesService(db, planLimitsStub());
 
     const result = await svc.findOne(OWNER_ORG, 1);
     expect(result.orgId).toBe(OWNER_ORG);

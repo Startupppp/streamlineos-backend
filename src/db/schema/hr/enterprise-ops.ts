@@ -1,15 +1,4 @@
-import {
-  integer,
-  pgTable,
-  pgEnum,
-  text,
-  uuid,
-  timestamp,
-  date,
-  jsonb,
-  index,
-  unique,
-} from "drizzle-orm/pg-core";
+import { date, foreignKey, index, integer, jsonb, pgEnum, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 
@@ -105,7 +94,7 @@ export const hrAccommodationRequests = pgTable("hr_accommodation_requests", {
 export const hrAccommodationTasks = pgTable("hr_accommodation_tasks", {
   id: uuid("id").defaultRandom().primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  requestId: uuid("request_id").references(() => hrAccommodationRequests.id, { onDelete: "cascade" }).notNull(),
+  requestId: uuid("request_id").notNull(),
   title: text("title").notNull(),
   assigneeUserId: text("assignee_user_id"),
   assigneeMembershipId: integer("assignee_membership_id"),
@@ -114,6 +103,7 @@ export const hrAccommodationTasks = pgTable("hr_accommodation_tasks", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
+  foreignKey({ columns: [t.orgId, t.requestId], foreignColumns: [hrAccommodationRequests.orgId, hrAccommodationRequests.id], name: "fk_hr_accommodation_tasks_org_request" }).onDelete("cascade"),
   unique("uniq_hr_accommodation_tasks_org_id").on(t.orgId, t.id),
   index("idx_hr_acc_task_org").on(t.orgId),
   index("idx_hr_acc_task_request").on(t.requestId),
@@ -140,7 +130,7 @@ export const hrEmergencyEvents = pgTable("hr_emergency_events", {
 export const hrEmergencyResponses = pgTable("hr_emergency_responses", {
   id: uuid("id").defaultRandom().primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  eventId: uuid("event_id").references(() => hrEmergencyEvents.id, { onDelete: "cascade" }).notNull(),
+  eventId: uuid("event_id").notNull(),
   userId: text("user_id").notNull(),
   userMembershipId: integer("user_membership_id"),
   status: hrEmergencyResponseStatusEnum("status").notNull().default("no_response"),
@@ -149,6 +139,7 @@ export const hrEmergencyResponses = pgTable("hr_emergency_responses", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (t) => [
+  foreignKey({ columns: [t.orgId, t.eventId], foreignColumns: [hrEmergencyEvents.orgId, hrEmergencyEvents.id], name: "fk_hr_emergency_responses_org_event" }).onDelete("cascade"),
   unique("uniq_hr_emergency_responses_org_id").on(t.orgId, t.id),
   index("idx_hr_emerg_resp_event").on(t.eventId),
   index("idx_hr_emerg_resp_user").on(t.orgId, t.userId),

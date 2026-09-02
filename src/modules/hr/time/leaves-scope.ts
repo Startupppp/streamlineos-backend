@@ -33,10 +33,6 @@ export function leaveApprovalScope(
     case "all":
       return sql`true`;
     case "team":
-      return and(
-        approverMatch,
-        employeeOwnerPredicate(actorMembershipId),
-      )!;
     case "own":
       return approverMatch;
     case "none":

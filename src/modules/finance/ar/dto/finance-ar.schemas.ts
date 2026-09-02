@@ -66,7 +66,7 @@ export const listReminderPoliciesSchema = z.object({
 
 export const createReminderPolicySchema = z.object({
   name: z.string().min(1),
-  offsets: z.array(z.number().int()),
+  offsets: z.array(z.number().int()).max(50),
   channel: z.enum(["EMAIL", "WHATSAPP"]).default("EMAIL"),
   template: z.string().optional(),
 });

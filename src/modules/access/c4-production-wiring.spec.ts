@@ -8,6 +8,10 @@ import { AccessSnapshotResolver } from "./access-snapshot.resolver";
 import { CATALOG_MODULES } from "./access-policy";
 import { moduleAvailability, moduleAvailabilityResolver } from "../../common/rbac/module-availability";
 import { resolvePersonalDashboardModules } from "../dashboard/dashboard-scope";
+import {
+  DASHBOARD_HOME_SECTIONS,
+  isModuleSection,
+} from "../dashboard/dashboard-section-registry";
 import { CalendarSourceRegistry } from "../calendar/calendar-source.registry";
 import type { CalendarEventSource } from "../calendar/calendar-event-source";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -199,7 +203,15 @@ describe("c4 production access wiring", () => {
     });
 
     expect(sourceLoad).toHaveBeenCalledTimes(1);
-    expect(wiring.buildModuleAvailabilityResolver).toHaveBeenCalledTimes(8);
+    // Home asks once per distinct module, not once per section, plus the
+    // calendar source. Pinning the section count would make deduplicating the
+    // lookup read as a regression.
+    const distinctHomeModules = new Set(
+      DASHBOARD_HOME_SECTIONS.filter(isModuleSection).map((s) => s.module),
+    ).size;
+    expect(wiring.buildModuleAvailabilityResolver).toHaveBeenCalledTimes(
+      distinctHomeModules + 1,
+    );
     expect(wiring.getModuleMap).toHaveBeenCalledWith("org-1");
   });
 });

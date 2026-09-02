@@ -16,6 +16,11 @@ const outlookAttachmentsResponseSchema = z.object({
   value: z.array(z.unknown()).optional(),
 });
 
+const outlookAttachmentDownloadSchema = z.object({
+  url: z.string().optional(),
+  downloadUrl: z.string().optional(),
+}).nullable();
+
 const outlookSearchResponseSchema = z.object({
   value: z.array(z.unknown()).optional(),
 });
@@ -52,7 +57,8 @@ export interface OutlookMessageWithLabels extends MailMessageSummary {
 
 function readCategories(item: unknown): string[] | null {
   if (item === null || typeof item !== "object") return null;
-  const categories = (item as Record<string, unknown>).categories;
+  if (!("categories" in item)) return null;
+  const { categories } = item;
   if (!Array.isArray(categories)) return null;
   return categories.filter((category): category is string => typeof category === "string");
 }
@@ -306,7 +312,8 @@ export class OutlookMailProvider {
       { user_id: "me", message_id: messageId, attachment_id: attachmentId, file_name: fileName },
       conn.composioAccountId,
     );
-    const data = unwrapComposioData(raw) as Record<string, unknown> | null;
+    const parsed = outlookAttachmentDownloadSchema.safeParse(unwrapComposioData(raw));
+    const data = parsed.success ? parsed.data : null;
     const downloadUrl = typeof data?.url === "string" ? data.url : (typeof data?.downloadUrl === "string" ? data.downloadUrl : "");
     return { downloadUrl, fileName };
   }

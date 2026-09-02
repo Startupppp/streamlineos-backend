@@ -16,6 +16,7 @@ import type { AgedReceivablesQuery, ListVendorsQuery } from "./dto/accounting.sc
 
 const AP_ACCOUNT_CODE = "2000";
 const OUTSTANDING_BILL_STATUSES = ["POSTED", "PARTIALLY_PAID", "PAID"] as const;
+const OUTSTANDING_EPSILON = 0.005;
 
 function escapeLike(value: string): string {
   return value.replaceAll("%", "\\%");
@@ -198,7 +199,14 @@ export class AccountingVendorQueryService {
       })
       .from(purchaseBills)
       .leftJoin(clients, eq(clients.id, purchaseBills.vendorId))
-      .where(and(eq(purchaseBills.orgId, orgId), inArray(purchaseBills.status, [...OUTSTANDING_BILL_STATUSES])));
+      .where(
+        and(
+          eq(purchaseBills.orgId, orgId),
+          inArray(purchaseBills.status, [...OUTSTANDING_BILL_STATUSES]),
+          sql`${purchaseBills.vendorId} is not null`,
+          sql`${purchaseBills.total} - ${purchaseBills.amountPaid} > ${OUTSTANDING_EPSILON}`,
+        ),
+      );
 
     const byVendor = new Map<number, AgedPayablesRow>();
     for (const bill of bills) {
@@ -206,7 +214,6 @@ export class AccountingVendorQueryService {
       const total = Number(bill.total ?? 0);
       const paid = Number(bill.amountPaid ?? 0);
       const outstanding = total - paid;
-      if (outstanding <= 0.005) continue;
 
       const referenceDate = bill.dueDate
         ? new Date(`${bill.dueDate}T23:59:59.999Z`)

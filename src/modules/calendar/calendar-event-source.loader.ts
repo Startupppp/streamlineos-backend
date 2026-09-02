@@ -1,6 +1,8 @@
-import { aliasedTable, and, asc, eq, gt, inArray, isNotNull, lt, or } from "drizzle-orm";
+import { aliasedTable, and, asc, eq, gt, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { calendarEvents, eventAttendees, organizationMembers, projects, tickets, users } from "../../db/schema";
+import { loadExceptionsByEvent } from "./calendar-exception-loader";
+import type { CalendarEventException } from "./calendar-occurrence.service";
 import type { LinkedTicket } from "./calendar.types";
 
 const creatorMember = aliasedTable(organizationMembers, "creator_member");
@@ -18,6 +20,7 @@ export class CalendarEventSourceLoader {
   ): Promise<{
     eventsData: Awaited<ReturnType<CalendarEventSourceLoader["queryVisibleEvents"]>>;
     linkedTicketMap: Map<number, LinkedTicket>;
+    exceptionsByEvent: Map<number, CalendarEventException[]>;
   }> {
     const membership = await this.database.query.organizationMembers.findFirst({
       columns: { id: true },
@@ -30,7 +33,7 @@ export class CalendarEventSourceLoader {
 
     const callerMembershipId = membership?.id ?? 0;
 
-    const eventsData = await this.queryVisibleEvents(orgId, userId, callerMembershipId, start, end);
+    const eventsData = await this.queryVisibleEvents(orgId, callerMembershipId, start, end);
 
     const ticketEntityIds: number[] = [];
     for (const e of eventsData) {
@@ -64,12 +67,14 @@ export class CalendarEventSourceLoader {
         });
     }
 
-    return { eventsData, linkedTicketMap };
+    const recurringIds = eventsData.filter((e) => e.rrule !== null).map((e) => e.id);
+    const exceptionsByEvent = await loadExceptionsByEvent(this.database, orgId, recurringIds, start, end);
+
+    return { eventsData, linkedTicketMap, exceptionsByEvent };
   }
 
   private async queryVisibleEvents(
     orgId: string,
-    userId: string,
     callerMembershipId: number,
     start: Date,
     end: Date,
@@ -82,19 +87,21 @@ export class CalendarEventSourceLoader {
       meetingUrl: string | null;
       startDate: Date;
       endDate: Date;
-      allDay: boolean | null;
+      allDay: boolean;
+      timezone: string;
       color: string | null;
-      category: string | null;
+      category: string;
       entityType: string | null;
       entityId: string | null;
       visibility: string;
+      rrule: string | null;
+      recurrenceEnd: Date | null;
       creatorName: string | null;
       rsvpStatus: string | null;
     }> = [];
     let after: { startDate: Date; id: number } | null = null;
     const batchSize = 500;
     for (;;) {
-      // .limit(batchSize) below is intentional: the keyset loop consumes every batch.
       const batch: typeof events = await this.database
         .select({
           id: calendarEvents.id,
@@ -105,11 +112,14 @@ export class CalendarEventSourceLoader {
           startDate: calendarEvents.startDate,
           endDate: calendarEvents.endDate,
           allDay: calendarEvents.allDay,
+          timezone: calendarEvents.timezone,
           color: calendarEvents.color,
           category: calendarEvents.category,
           entityType: calendarEvents.entityType,
           entityId: calendarEvents.entityId,
           visibility: calendarEvents.visibility,
+          rrule: calendarEvents.rrule,
+          recurrenceEnd: calendarEvents.recurrenceEnd,
           creatorName: users.name,
           rsvpStatus: callerAtt.status,
         })
@@ -128,23 +138,36 @@ export class CalendarEventSourceLoader {
           ),
         )
         .where(
-        and(
-          eq(calendarEvents.orgId, orgId),
-          lt(calendarEvents.startDate, end),
-          gt(calendarEvents.endDate, start),
-          or(
-            eq(calendarEvents.visibility, "org"),
-            eq(calendarEvents.createdByMembershipId, callerMembershipId),
-            isNotNull(callerAtt.id),
-          ),
-          after === null
-            ? undefined
-            : or(
-                gt(calendarEvents.startDate, after.startDate),
-                and(eq(calendarEvents.startDate, after.startDate), gt(calendarEvents.id, after.id)),
+          and(
+            eq(calendarEvents.orgId, orgId),
+            or(
+              and(
+                isNull(calendarEvents.rrule),
+                lt(calendarEvents.startDate, end),
+                gt(calendarEvents.endDate, start),
               ),
-        ),
-      )
+              and(
+                isNotNull(calendarEvents.rrule),
+                lt(calendarEvents.startDate, end),
+                or(
+                  isNull(calendarEvents.recurrenceEnd),
+                  gt(calendarEvents.recurrenceEnd, start),
+                ),
+              ),
+            ),
+            or(
+              eq(calendarEvents.visibility, "org"),
+              eq(calendarEvents.createdByMembershipId, callerMembershipId),
+              isNotNull(callerAtt.id),
+            ),
+            after === null
+              ? undefined
+              : or(
+                  gt(calendarEvents.startDate, after.startDate),
+                  and(eq(calendarEvents.startDate, after.startDate), gt(calendarEvents.id, after.id)),
+                ),
+          ),
+        )
         .orderBy(asc(calendarEvents.startDate), asc(calendarEvents.id))
         .limit(batchSize);
       events.push(...batch);

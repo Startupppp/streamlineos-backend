@@ -166,8 +166,8 @@ export class BillingController {
   @Get("coupons")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:coupons:manage")
-  listCoupons() {
-    return this.billing.listCoupons();
+  listCoupons(@CurrentUser() u: CurrentUserContext) {
+    return this.billing.listCoupons(u.orgId);
   }
 
   @Post("coupons")
@@ -175,8 +175,8 @@ export class BillingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:coupons:manage")
   @Validate({ body: createCouponSchema })
-  createCoupon(@Body() body: CreateCouponInput) {
-    return this.billing.createCoupon(body);
+  createCoupon(@Body() body: CreateCouponInput, @CurrentUser() u: CurrentUserContext) {
+    return this.billing.createCoupon(u.orgId, body);
   }
 
   @Patch("coupons/:couponId")
@@ -186,15 +186,19 @@ export class BillingController {
   updateCoupon(
     @Param("couponId", ParseIntPipe) couponId: number,
     @Body() body: UpdateCouponInput,
+    @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.billing.updateCoupon(couponId, body);
+    return this.billing.updateCoupon(u.orgId, couponId, body);
   }
 
   @Delete("coupons/:couponId")
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:coupons:manage")
   @Validate({ params: couponIdParams })
-  deleteCoupon(@Param("couponId", ParseIntPipe) couponId: number) {
-    return this.billing.deleteCoupon(couponId);
+  deleteCoupon(
+    @Param("couponId", ParseIntPipe) couponId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.billing.deleteCoupon(u.orgId, couponId);
   }
 }

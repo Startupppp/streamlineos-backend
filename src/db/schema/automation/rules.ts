@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
 import type { AutomationCondition, AutomationAction } from "../../../modules/automation/dto/automation.schemas";
@@ -89,7 +89,7 @@ export const automationRules = pgTable("automation_rules", {
 export const automationRuns = pgTable("automation_runs", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  ruleId: integer("rule_id").references(() => automationRules.id, { onDelete: "cascade" }).notNull(),
+  ruleId: integer("rule_id").notNull(),
   triggerEvent: text("trigger_event").notNull(),
   status: text("status").notNull(),
   payload: jsonb("payload").$type<Record<string, unknown>>(),
@@ -97,6 +97,7 @@ export const automationRuns = pgTable("automation_runs", {
   error: text("error"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.ruleId], foreignColumns: [automationRules.orgId, automationRules.id], name: "fk_automation_runs_rule_id_org" }).onDelete("cascade"),
   index("idx_automation_runs_rule").on(table.ruleId),
   unique("uniq_automation_runs_org_id").on(table.orgId, table.id),
 ]);

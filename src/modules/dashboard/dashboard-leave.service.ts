@@ -31,6 +31,10 @@ import {
 } from "../hr/time/leaves-scope";
 import { applyScope } from "../access/apply-scope";
 import { buildOrgDashboardCacheKey } from "./dashboard-cache-key";
+import {
+  boundedDashboardList,
+  DASHBOARD_LIST_CAP,
+} from "./dashboard-read-limits";
 
 @Injectable()
 export class DashboardLeaveService {
@@ -45,31 +49,41 @@ export class DashboardLeaveService {
     const approvalScope = await resolveLeavesViewScope(this.access, u);
     const scope = approvalScope === "none" ? "own" : approvalScope;
     const today = getTodayString();
-    return this.db
-      .select({
-        id: leaveRequests.id,
-        startDate: leaveRequests.startDate,
-        endDate: leaveRequests.endDate,
-        leaveTypeId: leaveRequests.leaveTypeId,
-        employeeName: users.name,
-        employeeDesignation: hrEmployments.designation,
-        employeeImage: users.image,
-      })
-      .from(leaveRequests)
-      .innerJoin(users, eq(leaveRequests.userId, users.id))
-      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
-      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-      .where(
-        and(
-          eq(leaveRequests.orgId, orgId),
-          eq(leaveRequests.status, "APPROVED"),
-          lte(leaveRequests.startDate, today),
-          gte(leaveRequests.endDate, today),
-          applyScope(scope, orgId, u.userId, {
-            ownerColumn: leaveRequests.userId,
-          }),
-        ),
-      );
+    const visible = and(
+      eq(leaveRequests.orgId, orgId),
+      eq(leaveRequests.status, "APPROVED"),
+      lte(leaveRequests.startDate, today),
+      gte(leaveRequests.endDate, today),
+      applyScope(scope, orgId, u.userId, {
+        ownerColumn: leaveRequests.userId,
+      }),
+    );
+
+    const [rows, totalRows] = await Promise.all([
+      this.db
+        .select({
+          id: leaveRequests.id,
+          startDate: leaveRequests.startDate,
+          endDate: leaveRequests.endDate,
+          leaveTypeId: leaveRequests.leaveTypeId,
+          employeeName: users.name,
+          employeeDesignation: hrEmployments.designation,
+          employeeImage: users.image,
+        })
+        .from(leaveRequests)
+        .innerJoin(users, eq(leaveRequests.userId, users.id))
+        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+        .where(visible)
+        .orderBy(asc(leaveRequests.startDate), asc(leaveRequests.id))
+        .limit(DASHBOARD_LIST_CAP),
+      this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(leaveRequests)
+        .where(visible),
+    ]);
+
+    return boundedDashboardList(rows, totalRows[0]?.count ?? rows.length);
   }
 
   getMyLeaveBalance(orgId: string, userId: string) {

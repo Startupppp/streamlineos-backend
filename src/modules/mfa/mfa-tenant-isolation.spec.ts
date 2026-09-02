@@ -1,38 +1,136 @@
 import { NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
+import type { NotificationDispatchService } from "../notifications/notification-dispatch.service";
+import type { MfaPolicyService } from "../access/mfa-policy.service";
 import { MfaService } from "./mfa.service";
 
-describe("MfaService — cross-tenant isolation", () => {
-  const USER_ID = "user-abc";
-  const OTHER_USER_ID = "user-xyz";
+jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: jest.fn(
+    (db: unknown, work: (tx: unknown) => Promise<unknown>) => work(db),
+  ),
+}));
 
-  function makeDb(userRow: unknown): Db {
-    const findFirst = jest.fn().mockResolvedValue(userRow);
-    return {
-      query: { users: { findFirst }, mfaBackupCodes: { findMany: jest.fn().mockResolvedValue([]) } },
-      transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) =>
-        fn({
-          update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
-          delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
-        }),
-      ),
-    } as unknown as Db;
-  }
+const dialect = new PgDialect();
 
-  it("throws NotFoundException for a non-existent user id (isolation — no cross-user totp access)", async () => {
-    const db = makeDb(null);
-    const mockDispatch = { emit: jest.fn() } as any;
-    const mockMfaPolicy = { resolve: jest.fn(), invalidateUser: jest.fn() } as any;
-    const svc = new MfaService(db, mockDispatch, mockMfaPolicy);
-    await expect(svc.status(OTHER_USER_ID)).rejects.toThrow(NotFoundException);
+const HOME_ORG = "org-home";
+const FOREIGN_ORG = "org-foreign";
+const HOME_MEMBER = "user-home";
+const FOREIGN_MEMBER = "user-foreign";
+
+const MEMBERSHIPS = [
+  { orgId: HOME_ORG, userId: HOME_MEMBER },
+  { orgId: FOREIGN_ORG, userId: FOREIGN_MEMBER },
+];
+
+interface Harness {
+  db: Db;
+  updatedUserIds: string[];
+  deletedBackupCodeCalls: number;
+  invalidateUser: jest.Mock;
+}
+
+function makeHarness(): Harness {
+  const updatedUserIds: string[] = [];
+  let deletedBackupCodeCalls = 0;
+  const invalidateUser = jest.fn();
+
+  const membershipFindFirst = jest.fn(({ where }: { where: SQL }) => {
+    const params = dialect.sqlToQuery(where).params;
+    const [orgId, userId] = params;
+    const row = MEMBERSHIPS.find(
+      (m) => m.orgId === orgId && m.userId === userId,
+    );
+    return Promise.resolve(row ? { userId: row.userId } : undefined);
   });
 
-  it("returns status for a valid user id (control — correct user)", async () => {
-    const db = makeDb({ id: USER_ID, totpEnabled: false });
-    const mockDispatch = { emit: jest.fn() } as any;
-    const mockMfaPolicy = { resolve: jest.fn(), invalidateUser: jest.fn() } as any;
-    const svc = new MfaService(db, mockDispatch, mockMfaPolicy);
-    const result = await svc.status(USER_ID);
-    expect(result).toHaveProperty("enabled", false);
+  const db = {
+    query: {
+      organizationMembers: { findFirst: membershipFindFirst },
+      users: { findFirst: jest.fn() },
+    },
+    transaction: (work: (tx: unknown) => Promise<unknown>) =>
+      work({
+        update: () => ({
+          set: () => ({
+            where: (predicate: SQL) => {
+              const [userId] = dialect.sqlToQuery(predicate).params;
+              if (typeof userId === "string") updatedUserIds.push(userId);
+              return Promise.resolve([]);
+            },
+          }),
+        }),
+        delete: () => ({
+          where: () => {
+            deletedBackupCodeCalls += 1;
+            return Promise.resolve([]);
+          },
+        }),
+      }),
+  };
+
+  return {
+    db: db as unknown as Db,
+    updatedUserIds,
+    get deletedBackupCodeCalls() {
+      return deletedBackupCodeCalls;
+    },
+    invalidateUser,
+  };
+}
+
+function makeService(harness: Harness): MfaService {
+  const dispatch = { emit: jest.fn() } as unknown as NotificationDispatchService;
+  const policy = {
+    invalidateUser: harness.invalidateUser,
+  } as unknown as MfaPolicyService;
+  return new MfaService(harness.db, dispatch, policy);
+}
+
+describe("MfaService.reset — cross-tenant isolation", () => {
+  it("resets a member of the caller's own organization (same-tenant control)", async () => {
+    const harness = makeHarness();
+
+    await expect(
+      makeService(harness).reset(HOME_MEMBER, HOME_ORG),
+    ).resolves.toEqual({ reset: true });
+    expect(harness.updatedUserIds).toEqual([HOME_MEMBER]);
+    expect(harness.deletedBackupCodeCalls).toBe(1);
+    expect(harness.invalidateUser).toHaveBeenCalledWith(HOME_MEMBER);
+  });
+
+  it("refuses to reset a user who belongs to another organization", async () => {
+    const harness = makeHarness();
+
+    await expect(
+      makeService(harness).reset(FOREIGN_MEMBER, HOME_ORG),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(harness.updatedUserIds).toEqual([]);
+    expect(harness.deletedBackupCodeCalls).toBe(0);
+    expect(harness.invalidateUser).not.toHaveBeenCalled();
+  });
+
+  it("refuses to reset a user id that belongs to no organization", async () => {
+    const harness = makeHarness();
+
+    await expect(
+      makeService(harness).reset("user-nowhere", HOME_ORG),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(harness.updatedUserIds).toEqual([]);
+  });
+
+  it("scopes the membership lookup by organization and user together", async () => {
+    const harness = makeHarness();
+    await makeService(harness).reset(HOME_MEMBER, HOME_ORG).catch(() => undefined);
+
+    const findFirst = harness.db.query.organizationMembers
+      .findFirst as unknown as jest.Mock;
+    const { sql, params } = dialect.sqlToQuery(
+      findFirst.mock.calls[0][0].where as SQL,
+    );
+    expect(sql).toContain('"organization_members"."org_id"');
+    expect(sql).toContain('"organization_members"."user_id"');
+    expect(params).toEqual([HOME_ORG, HOME_MEMBER]);
   });
 });

@@ -17,6 +17,11 @@ const TIERS: Record<string, Tier> = {
   "auth:magic-link-verify": { limit: 60, windowSecs: 60 },
   "auth:email-otp": { limit: 3, windowSecs: 600 },
   "auth:email-otp-verify": { limit: 10, windowSecs: 600 },
+  // TOTP has a 30s step and otplib accepts one step either side, so a code stays
+  // valid long enough for an unthrottled loop to walk a meaningful slice of the
+  // 10^6 space. Keyed per user, not per IP.
+  "auth:mfa-verify": { limit: 10, windowSecs: 300 },
+  "auth:mfa-disable": { limit: 10, windowSecs: 300 },
   // Provider bounce/complaint callbacks. Generous — a real provider can burst — but
   // bounded so an attacker who obtains the signing secret cannot flood the write path.
   "webhook:email": { limit: 600, windowSecs: 60 },

@@ -42,6 +42,9 @@ export const updateChannelSchema = z.object({
 export const sendMessageSchema = z.object({
   content: z.string().optional(),
   replyToId: z.number().optional(),
+  // Optional so existing callers are unaffected; when present, a retried send
+  // returns the original message instead of creating a second one.
+  clientKey: z.string().min(1).max(100).optional(),
   mentionedUserIds: z.array(z.string().min(1)).max(200).optional(),
   attachments: z
     .array(

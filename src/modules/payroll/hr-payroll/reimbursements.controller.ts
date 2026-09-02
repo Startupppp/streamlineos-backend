@@ -22,6 +22,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { ReimbursementsService } from "./reimbursements.service";
 import { resolveReimbursementsScope } from "./reimbursements-scope";
+import { HR_PAYROLL_LIST_PERMISSION } from "./hr-payroll-permissions";
 import { AccessService } from "../../access/access.service";
 import {
   createReimbursementSchema,
@@ -46,7 +47,7 @@ export class HrPayrollReimbursementsController {
   ) {}
 
   @Get()
-  @RequirePermission("hr:payroll:view")
+  @RequirePermission(HR_PAYROLL_LIST_PERMISSION)
   @Validate({ query: listPageQuerySchema })
   async list(
     @CurrentUser() u: CurrentUserContext,
@@ -58,7 +59,7 @@ export class HrPayrollReimbursementsController {
 
   @Post()
   @HttpCode(201)
-  @RequirePermission("hr:payroll:view")
+  @RequirePermission(HR_PAYROLL_LIST_PERMISSION)
   @Validate({ body: createReimbursementSchema })
   create(
     @Body() body: CreateReimbursementInput,
@@ -68,7 +69,7 @@ export class HrPayrollReimbursementsController {
   }
 
   @Patch(":reimbursementId")
-  @RequirePermission("hr:payroll:view")
+  @RequirePermission(HR_PAYROLL_LIST_PERMISSION)
   @Validate({ params: reimbursementIdParams, body: patchReimbursementSchema })
   async update(
     @Param("reimbursementId", ParseIntPipe) reimbursementId: number,

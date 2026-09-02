@@ -50,7 +50,7 @@ export class TestRunsController {
     @Query() query: TestRunListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listRuns(u.orgId, projectId, query);
+    return this.svc.listRuns(u, projectId, query);
   }
 
   @Get(":runId")
@@ -73,7 +73,7 @@ export class TestRunsController {
     @Body() body: CreateTestRunInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createRun(u.orgId, u.userId, projectId, body);
+    return this.svc.createRun(u, projectId, body);
   }
 
   @Patch(":runId")

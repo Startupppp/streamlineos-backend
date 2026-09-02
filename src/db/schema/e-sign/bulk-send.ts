@@ -10,7 +10,7 @@ export const signBulkSendJobs = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    templateId: integer("template_id").references(() => signTemplates.id, { onDelete: "cascade" }).notNull(),
+    templateId: integer("template_id").notNull(),
     senderMembershipId: integer("sender_membership_id"),
     status: signBulkJobStatusEnum("status").default("pending").notNull(),
     columnMappingJson: jsonb("column_mapping_json").$type<Record<string, string>>().default({}).notNull(),
@@ -23,6 +23,7 @@ export const signBulkSendJobs = pgTable(
     completedAt: timestamp("completed_at"),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.templateId], foreignColumns: [signTemplates.orgId, signTemplates.id], name: "fk_sign_bulk_send_jobs_template_id_org" }).onDelete("cascade"),
     index("idx_sign_bulk_send_jobs_org_status").on(table.orgId, table.status),
     unique("uniq_sign_bulk_send_jobs_org_id").on(table.orgId, table.id),
     foreignKey({

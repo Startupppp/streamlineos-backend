@@ -9,7 +9,7 @@ export const signRecipients = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    envelopeId: integer("envelope_id").references(() => signEnvelopes.id, { onDelete: "cascade" }).notNull(),
+    envelopeId: integer("envelope_id").notNull(),
     roleName: text("role_name").notNull(),
     recipientType: signRecipientTypeEnum("recipient_type").default("signer").notNull(),
     name: text("name").notNull(),
@@ -48,6 +48,7 @@ export const signRecipients = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.envelopeId], foreignColumns: [signEnvelopes.orgId, signEnvelopes.id], name: "fk_sign_recipients_envelope_id_org" }).onDelete("cascade"),
     index("idx_sign_recipients_org_envelope").on(table.orgId, table.envelopeId),
     index("idx_sign_recipients_envelope_order").on(table.envelopeId, table.routingOrder),
     uniqueIndex("uniq_sign_recipients_token_hash").on(table.signingTokenHash),

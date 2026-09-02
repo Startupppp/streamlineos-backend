@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -282,6 +283,10 @@ export class ExpenseLifecycleService {
     });
 
     if (!expense) throw new NotFoundException("Expense not found");
+
+    if (expense.userId === u.userId) {
+      throw new ForbiddenException("You cannot approve your own expense");
+    }
 
     const approvableStatuses: string[] = ["PENDING", "SUBMITTED"];
     if (!approvableStatuses.includes(expense.status ?? "")) {

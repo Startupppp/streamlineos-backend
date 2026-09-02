@@ -2,7 +2,7 @@
  * check-tenant-relationships.mjs  (AR-02 gate, pg_catalog-backed)
  *
  * WHAT IT CHECKS
- * Every FK where BOTH child and parent are tenant-owned (carry org_id) must use a
+ * Every FK where BOTH child and parent are tenant-owned (carry org_id or organization_id) must use a
  * COMPOSITE (org_id, child_id) → (org_id, id) constraint.  A single-column FK lets
  * a row in org A reference a parent in org B.
  *
@@ -18,17 +18,37 @@
  *   Fails CLOSED (exit 2) if the parser sees fewer than 50 tenant tables — a broken
  *   parser must not be mistaken for a clean schema.
  *
- * CLASSIFICATION (pg_catalog mode)
- *   Every FK lands in exactly one bucket — none are silently absent:
- *   • ACTIONABLE   — needs (org_id, child_id) → (org_id, id) composite FK
- *   • EXCL:CRM     — child or parent is a CRM table (explicitly excluded by AR-02 scope)
- *   • EXCL:INV     — child or parent is an Inventory table (explicitly excluded)
- *   • EXCL:MIGRATED — covered by pending 0934–0937 migrations, not yet applied here
+ * CLASSIFICATION (both modes)
+ *   Every FK lands in exactly one named bucket — none are silently absent:
+ *   • Actionable            — needs (org_id, child_id) → (org_id, id) composite FK
+ *   • EXCL: CRM             — child or parent is a CRM table (AR-02 scope exclusion)
+ *   • EXCL: Inventory       — child or parent is Inventory (AR-02 scope exclusion)
+ *   • EXCL: PLATFORM   — child or parent is a registered platform-global table
+ *   • EXCL: global-catalog  — parent has no org_id column in Drizzle (global/non-tenant table)
+ *   • EXCL: trigger-managed — parent org_id is DB-trigger-managed; composite FK exists in catalog
+ *
+ * TENANT-TABLE DEFINITION (static mode)
+ *   A table is "tenant-owned" when its Drizzle pgTable() body defines a column whose
+ *   SQL name is "org_id" or "organization_id" — the pattern `propName: typeFn("org_id"`.
+ *   This aligns with the pg_catalog mode, which queries
+ *   pg_attribute.attname IN ('org_id', 'organization_id'). Matching only "org_id" hid 81 tables
+ *   and 4 real single-column tenant relationships from both modes.
+ *
+ * TRIGGER_MANAGED_TENANT_TABLES
+ *   SQL table names whose org_id is populated by a DB trigger, intentionally absent from
+ *   the Drizzle model.  Composite FKs verified in pg_catalog (scratch_boot_a):
+ *     fk_onboarding_tasks_template_step_id_org
+ *     fk_support_message_mentions_message_id_org
+ *     fk_support_ticket_attachments_message_id_org
+ *   Do not extend this set without catalog confirmation from scratch_boot_a.
  *
  * EXCLUSION POLICY
  *   CRM and Inventory are excluded from AR-02 scope (PRD-IN-SCOPE.md §4) — this is
  *   explicit, named, never a silent global ignore.  A FK between non-CRM/Inv tables
- *   cannot be silently excluded: add it to APPROVED_GLOBALS with a rationale, or fix it.
+ *   cannot be silently excluded: add it to GLOBAL_CATALOG_SYMBOLS with a rationale, or fix it.
+ *   GLOBAL_CATALOG_SYMBOLS is reserved for symbols that cannot be resolved via the schema
+ *   symbol map (e.g. external imports).  Prefer "parent not in allTenantTables" over new
+ *   entries here — a new global table is handled automatically by the rule.
  *
  * Usage:  node src/scripts/check-tenant-relationships.mjs [--db-only|--static-only|--self-test]
  * Exit:   0 clean · 1 violations found · 2 parser/connection error
@@ -51,8 +71,6 @@ const SCHEMA_DIR = join(BACKEND_ROOT, "src", "db", "schema");
 // Exclusion sets — all explicit, none silent
 // ---------------------------------------------------------------------------
 
-// CRM tables: name prefix OR tables identified from schema/crm/ source.
-// Tables whose SQL name does NOT start with crm_ but live in the CRM module.
 const CRM_TABLE_NAMES = new Set([
   "clients", "leads", "deals", "contacts", "quotes", "pipelines", "pipeline_stages",
   "activities", "campaigns", "campaign_recipients", "quote_items", "contact_notes",
@@ -63,8 +81,7 @@ const CRM_TABLE_NAMES = new Set([
   "vendor_credits", "credit_notes",
 ]);
 
-// Inventory tables: name prefix inv_ or items from schema/inventory/
-const INV_TABLE_NAMES = new Set(["inv_items"]); // extended by inv_ prefix check below
+const INV_TABLE_NAMES = new Set(["inv_items"]);
 
 function isCrmTable(name) {
   return name.startsWith("crm_") || CRM_TABLE_NAMES.has(name);
@@ -76,40 +93,32 @@ function isExcluded(name) {
   return isCrmTable(name) || isInvTable(name);
 }
 
-// FKs covered by pending 0934–0937 migrations (constraint names as they exist in DB
-// before those migrations are applied).
-const MIGRATED_CONSTRAINT_NAMES = new Set([
-  // 0934 — build schema self-refs
-  "tickets_epic_id_tickets_id_fk",
-  "tickets_parent_ticket_id_tickets_id_fk",
-  "tickets_recurrence_parent_id_tickets_id_fk",
-  "okr_goals_parent_goal_id_okr_goals_id_fk",
-  "pages_parent_page_id_pages_id_fk",
-  "ticket_comments_parent_comment_id_ticket_comments_id_fk",
-  // 0935 — billing
-  "billing_invoice_snapshots_subscription_id_subscriptions_id_fk",
-  "billing_invoice_line_snapshots_snapshot_id_billing_invoice_snapshots_id_fk",
-  "billing_invoice_line_snapshots_proration_line_id_billing_proration_lines_id_fk",
-  "billing_invoice_line_snapshots_usage_rollup_id_billing_usage_rollups_id_fk",
-  "billing_credit_notes_original_snapshot_id_billing_invoice_snapshots_id_fk",
-  "billing_credit_note_lines_credit_note_id_billing_credit_notes_id_fk",
-  "subscription_items_subscription_id_subscriptions_id_fk",
-  "billing_proration_lines_subscription_id_subscriptions_id_fk",
-  "subscription_payments_subscription_id_subscriptions_id_fk",
-  // 0936 — misc
-  "ledger_accounts_parent_account_id_ledger_accounts_id_fk",
-  "journal_entries_reversed_entry_id_journal_entries_id_fk",
-  "documents_parent_document_id_documents_id_fk",
-  "goals_parent_goal_id_goals_id_fk",
-  "fk_kb_article_comments_parent",
-  // 0937 — drop redundant single-col FKs (composite already exists)
-  "fk_kb_pages_parent",
-  "fk_kb_page_comments_parent",
-  "chat_messages_reply_to_id_chat_messages_id_fk",
-  "fk_kb_categories_parent",
-  // tickets.customerId -> clients.id was not in migrations (CRM parent, excluded above)
-  "fk_tickets_customer",
-  "fk_business_parties_acquisition_campaign",
+// Platform-global tables: not tenant-scoped in the RBAC sense even though they carry an
+// organization identifier. Registered here with the same names the RLS verifier uses so the two
+// gates cannot disagree about what is tenant-owned.
+const PLATFORM_GLOBAL_TABLES = new Set([
+  "organization_lifecycle_sagas", "organization_placement", "organization_reservations",
+  "organization_relocations", "placement_decisions", "noisy_neighbour_reviews",
+  "organization_relocation_checksums", "organization_saga_steps",
+]);
+function isPlatformGlobal(name) {
+  return PLATFORM_GLOBAL_TABLES.has(name);
+}
+
+// SQL table names whose org_id is populated by a DB trigger, intentionally absent
+// from the Drizzle model by design.  Composite FKs verified in pg_catalog mode.
+// Do not extend without querying scratch_boot_a to confirm the composite FK exists.
+const TRIGGER_MANAGED_TENANT_TABLES = new Set([
+  "onboarding_template_steps",
+  "support_ticket_messages",
+]);
+
+// Drizzle symbol names for tables that cannot be resolved via the schema symbol map
+// (e.g. external imports).  Prefer "parent not in allTenantTables" over new entries
+// here — it handles new global tables automatically.
+const GLOBAL_CATALOG_SYMBOLS = new Set([
+  "organizations", "users", "billingProducts", "billingPlans",
+  "billingPriceVersions", "billingPlanEntitlements", "modulesCatalog", "systemRoles",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -135,7 +144,6 @@ async function runCatalogMode() {
   if (!rawUrl) return null;
 
   const cleanUrl = rawUrl.replace(/'/g, "");
-  // Safety: never touch neondb or cell2
   if (/\/neondb(\?|$)/.test(cleanUrl) || /\/cell2(\?|$)/.test(cleanUrl)) {
     if (SELF_TEST) return null;
     const scratchUrl = cleanUrl.replace(/\/neondb(\?|$)/, "/scratch_boot_a$1");
@@ -156,7 +164,7 @@ async function runQuery(postgres, url) {
           AND EXISTS (
             SELECT 1 FROM pg_attribute a
             WHERE a.attrelid = c.oid
-              AND a.attname = 'org_id'
+              AND a.attname IN ('org_id', 'organization_id')
               AND a.attnum > 0
               AND NOT a.attisdropped
           )
@@ -179,7 +187,7 @@ async function runQuery(postgres, url) {
 
     const result = { total: rows.length, actionable: [], excl_crm: [], excl_inv: [], excl_migrated: [] };
     for (const r of rows) {
-      if (MIGRATED_CONSTRAINT_NAMES.has(r.constraint_name)) { result.excl_migrated.push(r); continue; }
+      if (isPlatformGlobal(r.child) || isPlatformGlobal(r.parent)) { result.excl_migrated.push(r); continue; }
       if (isExcluded(r.child) || isExcluded(r.parent)) {
         if (isCrmTable(r.child) || isCrmTable(r.parent)) result.excl_crm.push(r);
         else result.excl_inv.push(r);
@@ -219,21 +227,34 @@ function parseTenantTableNames(src) {
     if (!body) continue;
     const nameMatch = body.match(/^\(\s*["']([^"']+)["']/s);
     if (!nameMatch) continue;
-    if (/["']org_id["']|["']organization_id["']/.test(body))
+    // Only count a table as tenant-owned when its body DEFINES a tenant column — the pattern
+    // propName: typeFn("org_id"). Both spellings count, matching the pg_catalog mode's
+    // attname IN ('org_id', 'organization_id'). A table whose tenant column appears only as a
+    // constraint name, an index name or a foreignKey foreignColumns reference is not tenant-owned.
+    if (/\w+\s*:\s*\w+\s*\(\s*["'](?:org_id|organization_id)["']/.test(body))
       names.add(nameMatch[1]);
   }
   return names;
+}
+
+// Build a map: Drizzle symbol name → SQL table name, scanning all schema files.
+// Used to resolve parent symbols in static mode for CRM/INV/global/trigger classification.
+function buildSymbolToSqlMap(files) {
+  const map = new Map();
+  for (const f of files) {
+    const src = readFileSync(f, "utf8");
+    const re = /\bconst\s+(\w+)\s*=\s*(?:pgTable|\w+\.table)\s*\(\s*["']([^"']+)["']/g;
+    for (const m of src.matchAll(re)) {
+      if (!map.has(m[1])) map.set(m[1], m[2]);
+    }
+  }
+  return map;
 }
 
 function isExcludedFilePath(filePath) {
   const n = filePath.replace(/\\/g, "/");
   return n.includes("/schema/crm/") || n.includes("/schema/inventory/");
 }
-
-const GLOBAL_CATALOG_SYMBOLS = new Set([
-  "organizations", "users", "billingProducts", "billingPlans",
-  "billingPriceVersions", "billingPlanEntitlements", "modulesCatalog", "systemRoles",
-]);
 
 function parseCrmInventoryImports(src) {
   const excluded = new Set();
@@ -266,16 +287,11 @@ function extractForeignKeyBlocks(src) {
   return blocks;
 }
 
-// Detect inline .references(() => table.col) calls
 function extractInlineReferences(src) {
   const blocks = [];
-  // Match: columnName: type("col_name").notNull()...references(() => table.field, {...})
   const re = /\b(\w+)\s*:\s*\w+\s*\([^)]*\)[^,;]*\.references\s*\(\s*\(\s*\)\s*=>\s*(\w+)\.(\w+)/g;
   for (const m of src.matchAll(re)) {
-    const propName = m[1];
-    const targetTable = m[2];
-    const targetField = m[3];
-    blocks.push({ propName, targetTable, targetField, bodyStart: m.index, kind: "inline" });
+    blocks.push({ propName: m[1], targetTable: m[2], targetField: m[3], bodyStart: m.index, kind: "inline" });
   }
   return blocks;
 }
@@ -301,13 +317,31 @@ function foreignColOwnerSymbol(colExpr) {
   return i >= 0 ? colExpr.slice(0, i).trim() : colExpr.trim();
 }
 
-function parseStaticViolations(src, filePath, allTenantTables) {
-  if (isExcludedFilePath(filePath)) return [];
-  const violations = [];
+// Classify a parent symbol into exactly one named bucket.
+// Resolution order: GLOBAL_CATALOG_SYMBOLS → import-path CRM/INV → SQL-name CRM/INV/trigger/global → actionable.
+// An unresolvable symbol (not in symbolToSqlMap and not in GLOBAL_CATALOG_SYMBOLS) is treated as
+// actionable — deny by default.
+function classifyParent(parentSym, parentSqlName, crmImports, allTenantTables) {
+  if (GLOBAL_CATALOG_SYMBOLS.has(parentSym)) return "excl_global";
+  if (crmImports.has(parentSym)) return "excl_crm";
+  if (!parentSqlName) return "actionable";
+  if (isPlatformGlobal(parentSqlName)) return "excl_global";
+  if (isCrmTable(parentSqlName)) return "excl_crm";
+  if (isInvTable(parentSqlName)) return "excl_inv";
+  if (TRIGGER_MANAGED_TENANT_TABLES.has(parentSqlName)) return "excl_trigger";
+  if (!allTenantTables.has(parentSqlName)) return "excl_global";
+  return "actionable";
+}
+
+// Returns named buckets: { actionable, excl_crm, excl_inv, excl_global, excl_trigger }.
+// Every FK from a tenant-owned child lands in exactly one bucket — none are silently absent.
+// symbolToSqlMap: Drizzle symbol name → SQL table name (from buildSymbolToSqlMap).
+function parseStaticViolations(src, filePath, allTenantTables, symbolToSqlMap) {
+  const result = { actionable: [], excl_crm: [], excl_inv: [], excl_global: [], excl_trigger: [] };
+  if (isExcludedFilePath(filePath)) return result;
   const tenantTablesHere = parseTenantTableNames(src);
   const crmImports = parseCrmInventoryImports(src);
 
-  // Explicit foreignKey({}) blocks
   for (const { columns, foreignCols, name, bodyStart } of extractForeignKeyBlocks(src)) {
     if (columns.length !== 1) continue;
     if (colContainsTenantKey(columns)) continue;
@@ -315,27 +349,26 @@ function parseStaticViolations(src, filePath, allTenantTables) {
     if (!tableName) continue;
     if (!tenantTablesHere.has(tableName) && !allTenantTables.has(tableName)) continue;
     const parentSym = foreignColOwnerSymbol(foreignCols[0] ?? "");
-    if (GLOBAL_CATALOG_SYMBOLS.has(parentSym) || crmImports.has(parentSym)) continue;
-    violations.push({ tableName, constraintName: name ?? "(auto-named)", filePath, kind: "explicit" });
+    const parentSqlName = symbolToSqlMap?.get(parentSym) ?? null;
+    const bucket = classifyParent(parentSym, parentSqlName, crmImports, allTenantTables);
+    result[bucket].push({ tableName, constraintName: name ?? "(auto-named)", filePath, kind: "explicit" });
   }
 
-  // Inline .references() calls
-  for (const { propName, targetTable, targetField, bodyStart } of extractInlineReferences(src)) {
+  for (const { propName, targetTable, bodyStart } of extractInlineReferences(src)) {
     if (propName === "orgId" || propName === "organizationId") continue;
     const tableName = findEnclosingTableName(src, bodyStart);
     if (!tableName) continue;
     if (!tenantTablesHere.has(tableName) && !allTenantTables.has(tableName)) continue;
-    if (GLOBAL_CATALOG_SYMBOLS.has(targetTable) || crmImports.has(targetTable)) continue;
-    // Only flag if the target table is also tenant-owned
-    if (!allTenantTables.has(targetTable) && targetField !== "id") continue;
-    violations.push({
+    const parentSqlName = symbolToSqlMap?.get(targetTable) ?? null;
+    const bucket = classifyParent(targetTable, parentSqlName, crmImports, allTenantTables);
+    result[bucket].push({
       tableName,
       constraintName: `(inline .references on ${propName})`,
       filePath,
       kind: "inline",
     });
   }
-  return violations;
+  return result;
 }
 
 function walkTs(dir) {
@@ -354,18 +387,69 @@ function walkTs(dir) {
 // ---------------------------------------------------------------------------
 
 if (SELF_TEST) {
-  const allTenant = new Set(["bad_table", "good_table", "ok_global_ref", "parent_tbl", "child_tbl", "inline_child"]);
+  // ── parseTenantTableNames checks ──────────────────────────────────────────
 
+  const tnHasOrgIdColDef = parseTenantTableNames(`
+export const tbl = pgTable("has_org_id_col", {
+  id: integer("id").primaryKey(),
+  orgId: text("org_id").notNull(),
+}, () => []);
+`);
+
+  const tnOrgIdInFkRef = parseTenantTableNames(`
+export const tbl = pgTable("org_id_in_fk_ref", {
+  id: integer("id").primaryKey(),
+  fid: integer("fid"),
+}, (t) => [
+  foreignKey({ columns: [t.fid], foreignColumns: [parent["org_id"], parent.id] }),
+]);
+`);
+
+  const tnOrgIdAsConstraintName = parseTenantTableNames(`
+export const tbl = pgTable("org_id_as_constraint_name", {
+  id: integer("id").primaryKey(),
+}, (t) => [
+  unique("org_id").on(t.id),
+]);
+`);
+
+  const tnOrganizationIdColDef = parseTenantTableNames(`
+export const tbl = pgTable("has_organization_id", {
+  organizationId: text("organization_id").notNull(),
+}, () => []);
+`);
+
+  // ── parseStaticViolations fixtures ───────────────────────────────────────
+
+  // allTenant: SQL table names the static mode considers tenant-owned
+  const allTenant = new Set([
+    "bad_table", "good_table", "ok_global_ref", "parent_tbl", "child_tbl",
+    "inline_child", "real_tenant_child", "real_tenant_parent",
+    "crm_non_crm_path_child", "global_parent_child", "trigger_child",
+  ]);
+
+  // symbolMap: Drizzle symbol → SQL name (covers all parent symbols used in fixtures)
+  const symbolMap = new Map([
+    ["parentTbl", "parent_tbl"],
+    ["realTenantParent", "real_tenant_parent"],
+    ["deals", "deals"],
+    ["creditNotes", "credit_notes"],
+    ["marketplaceApps", "marketplace_apps"],
+    ["onboardingTemplateSteps", "onboarding_template_steps"],
+  ]);
+
+  // Existing fixture: explicit single-col FK from a tenant table → ACTIONABLE
   const fixtureExplicitBad = `
 export const badTable = pgTable("bad_table", {
   orgId: text("org_id").notNull(),
   parentId: integer("parent_id"),
 }, (table) => [
-  foreignKey({ columns: [table.parentId], foreignColumns: [table.id] }).onDelete("set null"),
+  foreignKey({ columns: [table.parentId], foreignColumns: [parentTbl.id] }).onDelete("set null"),
   unique("uniq_bad_org_id").on(table.orgId, table.id),
 ]);
 `;
 
+  // Existing fixture: inline .references() from tenant → tenant → ACTIONABLE
   const fixtureInlineRef = `
 export const inlineChild = pgTable("inline_child", {
   orgId: text("org_id").notNull(),
@@ -375,6 +459,7 @@ export const inlineChild = pgTable("inline_child", {
 ]);
 `;
 
+  // Existing fixture: composite FK → NOT actionable
   const fixtureGoodComposite = `
 export const goodTable = pgTable("good_table", {
   orgId: text("org_id").notNull(),
@@ -385,6 +470,7 @@ export const goodTable = pgTable("good_table", {
 ]);
 `;
 
+  // Existing fixture: ref to users (GLOBAL_CATALOG_SYMBOLS) → EXCL: global-catalog
   const fixtureGlobalRef = `
 export const okGlobalRef = pgTable("ok_global_ref", {
   orgId: text("org_id").notNull(),
@@ -394,6 +480,7 @@ export const okGlobalRef = pgTable("ok_global_ref", {
 ]);
 `;
 
+  // Existing fixture: CRM file path → excluded entirely
   const fixtureCrmFile = `
 export const crmTable = pgTable("crm_excluded", {
   orgId: text("org_id").notNull(),
@@ -404,20 +491,99 @@ export const crmTable = pgTable("crm_excluded", {
 ]);
 `;
 
-  const badExplicit = parseStaticViolations(fixtureExplicitBad, "fixture/bad.ts", allTenant);
-  const badInline = parseStaticViolations(fixtureInlineRef, "fixture/inline.ts", allTenant);
-  const good = parseStaticViolations(fixtureGoodComposite, "fixture/good.ts", allTenant);
-  const globalRef = parseStaticViolations(fixtureGlobalRef, "fixture/global.ts", allTenant);
-  const crmFile = parseStaticViolations(fixtureCrmFile, "src/db/schema/crm/excluded.ts", allTenant);
+  // NEW: child has no org_id column (only "org_id" in a foreignKey foreignColumns ref)
+  // → child not tenant-owned → NOT actionable (regression test for Class 3 fix)
+  const fixtureChildNoOrgIdCol = `
+export const orgIdInFkRef = pgTable("org_id_in_fk_ref", {
+  id: integer("id").primaryKey(),
+  fid: integer("fid"),
+}, (t) => [
+  foreignKey({ columns: [t.fid], foreignColumns: [parentTbl["org_id"], parentTbl.id] }),
+]);
+`;
+
+  // NEW: both child and parent have org_id as column defs → ACTIONABLE (regression safety)
+  const fixtureBothTenantActionable = `
+export const realTenantChild = pgTable("real_tenant_child", {
+  orgId: text("org_id").notNull(),
+  parentId: integer("parent_id").references(() => realTenantParent.id),
+}, () => []);
+`;
+
+  // NEW: CRM parent imported from non-CRM barrel path → EXCL: CRM (Class 2 fix)
+  const fixtureCrmParentNonCrmPath = `
+import { creditNotes } from "../../accounting";
+export const crm_non_crm_path_child_tbl = pgTable("crm_non_crm_path_child", {
+  orgId: text("org_id").notNull(),
+  creditNoteId: integer("credit_note_id").references(() => creditNotes.id),
+}, () => []);
+`;
+
+  // NEW: parent has no org_id in Drizzle → EXCL: global-catalog (Class 1 fix)
+  const fixtureGlobalParentNoOrgId = `
+export const globalParentChild = pgTable("global_parent_child", {
+  orgId: text("org_id").notNull(),
+  appId: integer("app_id").references(() => marketplaceApps.id),
+}, () => []);
+`;
+
+  // NEW: parent is trigger-managed (not in Drizzle, but has org_id in DB) → EXCL: trigger-managed (Class 4)
+  const fixtureTriggerManagedParent = `
+export const triggerChild = pgTable("trigger_child", {
+  orgId: text("org_id").notNull(),
+  stepId: integer("step_id").references(() => onboardingTemplateSteps.id),
+}, () => []);
+`;
+
+  const badExplicit = parseStaticViolations(fixtureExplicitBad, "fixture/bad.ts", allTenant, symbolMap);
+  const badInline = parseStaticViolations(fixtureInlineRef, "fixture/inline.ts", allTenant, symbolMap);
+  const good = parseStaticViolations(fixtureGoodComposite, "fixture/good.ts", allTenant, symbolMap);
+  const globalRef = parseStaticViolations(fixtureGlobalRef, "fixture/global.ts", allTenant, symbolMap);
+  const crmFile = parseStaticViolations(fixtureCrmFile, "src/db/schema/crm/excluded.ts", allTenant, symbolMap);
+  const childNoOrgId = parseStaticViolations(fixtureChildNoOrgIdCol, "fixture/no_org_id.ts", allTenant, symbolMap);
+  const bothTenant = parseStaticViolations(fixtureBothTenantActionable, "fixture/both_tenant.ts", allTenant, symbolMap);
+  const crmNonPath = parseStaticViolations(fixtureCrmParentNonCrmPath, "fixture/crm_non_path.ts", allTenant, symbolMap);
+  const globalNoOrg = parseStaticViolations(fixtureGlobalParentNoOrgId, "fixture/global_no_org.ts", allTenant, symbolMap);
+  const triggerManaged = parseStaticViolations(fixtureTriggerManagedParent, "fixture/trigger.ts", allTenant, symbolMap);
 
   const checks = {
-    detects_explicit_single_col_violation: badExplicit.length === 1,
-    explicit_violation_table_name_correct: badExplicit[0]?.tableName === "bad_table",
-    detects_inline_references_violation: badInline.length === 1,
-    inline_violation_table_name_correct: badInline[0]?.tableName === "inline_child",
-    ignores_composite_fk: good.length === 0,
-    ignores_global_user_ref: globalRef.length === 0,
-    crm_file_path_excluded: crmFile.length === 0,
+    // ── parseTenantTableNames ────────────────────────────────────────────
+    tenant_names_org_id_col_def_detected:
+      tnHasOrgIdColDef.has("has_org_id_col"),
+    tenant_names_org_id_in_fk_ref_not_detected:
+      !tnOrgIdInFkRef.has("org_id_in_fk_ref"),
+    tenant_names_org_id_as_constraint_name_not_detected:
+      !tnOrgIdAsConstraintName.has("org_id_as_constraint_name"),
+    tenant_names_organization_id_col_def_detected:
+      tnOrganizationIdColDef.has("has_organization_id"),
+
+    // ── parseStaticViolations — existing checks ──────────────────────────
+    detects_explicit_single_col_violation:
+      badExplicit.actionable.length === 1,
+    explicit_violation_table_name_correct:
+      badExplicit.actionable[0]?.tableName === "bad_table",
+    detects_inline_references_violation:
+      badInline.actionable.length === 1,
+    inline_violation_table_name_correct:
+      badInline.actionable[0]?.tableName === "inline_child",
+    ignores_composite_fk:
+      good.actionable.length === 0,
+    ignores_global_user_ref:
+      globalRef.actionable.length === 0 && globalRef.excl_global.length === 1,
+    crm_file_path_excluded:
+      Object.values(crmFile).every((a) => a.length === 0),
+
+    // ── parseStaticViolations — new checks ───────────────────────────────
+    child_no_org_id_col_not_actionable:
+      childNoOrgId.actionable.length === 0 && Object.values(childNoOrgId).every((a) => a.length === 0),
+    both_tenant_tables_still_actionable:
+      bothTenant.actionable.length === 1 && bothTenant.actionable[0]?.tableName === "real_tenant_child",
+    crm_parent_from_non_crm_path_excl_crm:
+      crmNonPath.excl_crm.length === 1 && crmNonPath.actionable.length === 0,
+    global_parent_no_org_id_excl_global:
+      globalNoOrg.excl_global.length === 1 && globalNoOrg.actionable.length === 0,
+    trigger_managed_parent_excl_trigger:
+      triggerManaged.excl_trigger.length === 1 && triggerManaged.actionable.length === 0,
   };
 
   const pass = Object.values(checks).every(Boolean);
@@ -444,13 +610,12 @@ async function main() {
 
   if (catalogResult) {
     const { total, actionable, excl_crm, excl_inv, excl_migrated } = catalogResult;
-    const excl_total = excl_crm.length + excl_inv.length + excl_migrated.length;
 
     console.log(`Mode                   pg_catalog (scratch_boot_a)`);
     console.log(`Total single-col FKs   ${total}`);
     console.log(`EXCL: CRM              ${excl_crm.length} (child or parent is a CRM table — AR-02 scope exclusion)`);
     console.log(`EXCL: Inventory        ${excl_inv.length} (child or parent is Inventory — AR-02 scope exclusion)`);
-    console.log(`EXCL: In-migration     ${excl_migrated.length} (covered by 0934–0937, pending apply)`);
+    console.log(`EXCL: platform-global  ${excl_migrated.length} (child or parent is a platform-global table registered above)`);
     console.log(`Actionable             ${actionable.length}`);
     console.log("");
 
@@ -463,7 +628,7 @@ async function main() {
     for (const r of actionable)
       console.error(`  ${r.child_schema}.${r.child} → ${r.parent_schema}.${r.parent}  (${r.constraint_name})`);
     console.error("");
-    console.error(`Run these against scratch_boot_a — CRM/Inventory and 0934–0937-covered FKs are named above.`);
+    console.error(`Run these against scratch_boot_a — CRM, Inventory and platform-global relationships are named above.`);
     process.exit(1);
   }
 
@@ -473,7 +638,9 @@ async function main() {
     process.exit(2);
   }
 
-  const files = walkTs(SCHEMA_DIR).filter((f) => !isExcludedFilePath(f));
+  const allFiles = walkTs(SCHEMA_DIR);
+  const files = allFiles.filter((f) => !isExcludedFilePath(f));
+
   if (files.length < 20) {
     process.stderr.write(`Only ${files.length} schema files found — wrong directory.\n`);
     process.exit(2);
@@ -489,34 +656,45 @@ async function main() {
     process.exit(2);
   }
 
-  const violations = [];
-  for (const f of files)
-    violations.push(...parseStaticViolations(readFileSync(f, "utf8"), f, allTenantTables));
+  // Build symbol map from ALL files (including CRM/INV) to resolve parent symbols.
+  const symbolToSqlMap = buildSymbolToSqlMap(allFiles);
+
+  const totals = { actionable: [], excl_crm: [], excl_inv: [], excl_global: [], excl_trigger: [] };
+  for (const f of files) {
+    const r = parseStaticViolations(readFileSync(f, "utf8"), f, allTenantTables, symbolToSqlMap);
+    for (const key of Object.keys(totals))
+      totals[key].push(...r[key]);
+  }
+
+  const { actionable, excl_crm, excl_inv, excl_global, excl_trigger } = totals;
 
   console.log(`Mode                   static (no DB — inline .references() violations MAY be missed)`);
   console.log(`Schema files           ${files.length}`);
   console.log(`Tenant tables          ${allTenantTables.size}`);
-  console.log(`CRM excluded           explicitly — schema/crm/ path`);
-  console.log(`Inventory excluded     explicitly — schema/inventory/ path`);
-  console.log(`Actionable (explicit+inline)  ${violations.length}`);
+  console.log(`EXCL: CRM              ${excl_crm.length} (child or parent is a CRM table — AR-02 scope exclusion)`);
+  console.log(`EXCL: Inventory        ${excl_inv.length} (child or parent is Inventory — AR-02 scope exclusion)`);
+  console.log(`EXCL: global-catalog   ${excl_global.length} (parent has no org_id column in Drizzle)`);
+  console.log(`EXCL: trigger-managed  ${excl_trigger.length} (parent org_id is DB-trigger-managed; composite FK verified in catalog)`);
+  console.log(`Actionable             ${actionable.length}`);
   console.log("");
 
-  if (violations.length === 0) {
-    if (!DB_ONLY) {
-      console.log("WARN — static analysis shows 0 violations, but pg_catalog was unreachable.");
-      console.log("       Run with a DB connection to get the authoritative result.");
+  if (actionable.length === 0) {
+    if (!DB_ONLY && !STATIC_ONLY) {
+      console.log("WARN — static analysis: zero actionable violations, but pg_catalog was unreachable.");
+      console.log("       Run with a DB connection to get the authoritative count.");
       process.exit(2);
     }
+    console.log("OK — static analysis: zero actionable single-column tenant FKs.");
     process.exit(0);
   }
 
   console.error("FAIL — single-column tenant FKs between tenant-owned tables:");
-  for (const v of violations.sort((a, b) => a.tableName.localeCompare(b.tableName))) {
+  for (const v of actionable.sort((a, b) => a.tableName.localeCompare(b.tableName))) {
     console.error(`  FAIL  table=${v.tableName}  (${v.kind})  ${v.constraintName}`);
     console.error(`        file: ${relative(BACKEND_ROOT, v.filePath)}`);
   }
   console.error("");
-  console.error(`FAIL — ${violations.length} violation(s). Connect to scratch_boot_a for authoritative count.`);
+  console.error(`FAIL — ${actionable.length} violation(s). Connect to scratch_boot_a for authoritative count.`);
   process.exit(1);
 }
 

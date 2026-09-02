@@ -82,6 +82,7 @@ export async function getApprovalRequest(
     .select({
       id: finApprovalRequests.id,
       status: finApprovalRequests.status,
+      requestedBy: finApprovalRequests.requestedBy,
     })
     .from(finApprovalRequests)
     .where(

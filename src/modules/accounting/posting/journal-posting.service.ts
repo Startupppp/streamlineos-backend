@@ -18,6 +18,8 @@ import {
   INPUT_SGST,
   INPUT_IGST,
   DEFAULT_COA,
+  INVOICE_SOURCE_TYPE,
+  INVOICE_SEND_SOURCE_EVENT,
 } from "./journal-posting.data";
 
 export type { DbOrTx, DraftLine, DraftEntry, PersistedEntry, PostInvoiceInput, PostPaymentInput, PostPurchaseBillInput, PostVendorPaymentInput };
@@ -193,9 +195,9 @@ export class JournalPostingService {
         orgId: input.orgId,
         entryDate: input.invoiceDate,
         description: `Invoice ${input.invoiceNumber} sent`,
-        sourceType: "invoice",
+        sourceType: INVOICE_SOURCE_TYPE,
         sourceId: String(input.invoiceId),
-        sourceEvent: "send",
+        sourceEvent: INVOICE_SEND_SOURCE_EVENT,
         createdBy: input.createdBy,
         lines,
       },

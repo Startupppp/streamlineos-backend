@@ -65,7 +65,7 @@ export class BuildApprovalsController {
     @Query() query: ListApprovalsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listApprovals(u.orgId, projectId, query);
+    return this.svc.listApprovals(u, projectId, query);
   }
 
   @Get(":approvalId")
@@ -89,7 +89,7 @@ export class BuildApprovalsController {
     @Body() body: CreateApprovalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createApproval(u.orgId, u.userId, projectId, body);
+    return this.svc.createApproval(u, projectId, body);
   }
 
   @Patch(":approvalId/decide")

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, asc, countDistinct, desc, eq, sql } from "drizzle-orm";
 import {
   attendance,
   hrEmployments,
@@ -24,6 +24,7 @@ import {
   livePersonOfUser,
   primaryEmploymentOfPerson,
 } from "../directory/employment-query";
+import { DASHBOARD_ATTENDANCE_ROW_CAP } from "./dashboard-read-limits";
 
 @Injectable()
 export class DashboardAvailabilityService {
@@ -76,7 +77,9 @@ export class DashboardAvailabilityService {
               eq(attendance.date, today),
               scopePredicate,
             ),
-          );
+          )
+          .orderBy(asc(attendance.userId), desc(attendance.createdAt))
+          .limit(DASHBOARD_ATTENDANCE_ROW_CAP);
 
         const byUser = new Map<string, (typeof todayAttendance)[number]>();
         for (const record of todayAttendance) {
@@ -123,7 +126,14 @@ export class DashboardAvailabilityService {
     const { orgId } = u;
     const scope = await resolveAttendanceReadScope(this.access, u);
     if (scope === "none")
-      return { total: 0, present: 0, clockedIn: 0, absent: 0, records: [] };
+      return {
+        total: 0,
+        present: 0,
+        clockedIn: 0,
+        absent: 0,
+        records: [],
+        hasMore: false,
+      };
     const today = getTodayString();
     const key = await buildScopedDashboardCacheKey(
       this.access,
@@ -153,40 +163,50 @@ export class DashboardAvailabilityService {
       ownerColumn: attendance.userId,
     });
 
-    const [totalMembersResult, todayAttendance] = await Promise.all([
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.status, "ACTIVE"),
-            memberScopePredicate,
+    const presentToday = and(
+      eq(attendance.orgId, orgId),
+      eq(attendance.date, today),
+      attendanceScopePredicate,
+    );
+
+    const [totalMembersResult, todayAttendance, presenceCounts] =
+      await Promise.all([
+        this.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.status, "ACTIVE"),
+              memberScopePredicate,
+            ),
           ),
-        ),
-      this.db
-        .select({
-          userId: attendance.userId,
-          userName: users.name,
-          userImage: users.image,
-          userDesignation: hrEmployments.designation,
-          checkIn: attendance.checkIn,
-          checkOut: attendance.checkOut,
-          status: attendance.status,
-          createdAt: attendance.createdAt,
-        })
-        .from(attendance)
-        .innerJoin(users, eq(attendance.userId, users.id))
-        .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
-        .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-        .where(
-          and(
-            eq(attendance.orgId, orgId),
-            eq(attendance.date, today),
-            attendanceScopePredicate,
-          ),
-        ),
-    ]);
+        this.db
+          .select({
+            userId: attendance.userId,
+            userName: users.name,
+            userImage: users.image,
+            userDesignation: hrEmployments.designation,
+            checkIn: attendance.checkIn,
+            checkOut: attendance.checkOut,
+            status: attendance.status,
+            createdAt: attendance.createdAt,
+          })
+          .from(attendance)
+          .innerJoin(users, eq(attendance.userId, users.id))
+          .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+          .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+          .where(presentToday)
+          .orderBy(asc(attendance.userId), desc(attendance.createdAt))
+          .limit(DASHBOARD_ATTENDANCE_ROW_CAP),
+        this.db
+          .select({
+            present: countDistinct(attendance.userId),
+            clockedIn: sql<number>`count(distinct ${attendance.userId}) filter (where ${attendance.checkIn} is not null and ${attendance.checkOut} is null)::int`,
+          })
+          .from(attendance)
+          .where(presentToday),
+      ]);
 
     const byUser = new Map<string, (typeof todayAttendance)[number]>();
     for (const record of todayAttendance) {
@@ -221,17 +241,17 @@ export class DashboardAvailabilityService {
       checkOut: record.checkOut,
       status: record.status,
     }));
-    const clockedIn = latestRecords.filter(
-      (a) => a.checkIn && !a.checkOut,
-    ).length;
     const total = totalMembersResult[0]?.count ?? 0;
+    const present = Number(presenceCounts[0]?.present ?? latestRecords.length);
+    const clockedIn = Number(presenceCounts[0]?.clockedIn ?? 0);
 
     return {
       total,
-      present: latestRecords.length,
+      present,
       clockedIn,
-      absent: total - latestRecords.length,
+      absent: total - present,
       records: latestRecords,
+      hasMore: present > latestRecords.length,
     };
   }
 }

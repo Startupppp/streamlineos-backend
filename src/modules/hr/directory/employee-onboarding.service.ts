@@ -19,6 +19,7 @@ import { hashToken } from "../../../common/security/token.util";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import { logger } from "../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -431,6 +432,7 @@ export class EmployeeOnboardingService {
       this.cache.invalidate(`hr:celebrations:${orgId}`),
       this.cache.invalidate(`hr:salary-bands:${orgId}`),
       this.cache.invalidate(`hr:dashboard:payroll-summary:${orgId}`),
+      this.cache.invalidateNamespace(CACHE_KEYS.hrEmployeesListNamespace(orgId)),
     ]);
   }
 }

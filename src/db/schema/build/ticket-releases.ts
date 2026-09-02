@@ -1,13 +1,4 @@
-import {
-  text,
-  timestamp,
-  date,
-  integer,
-  index,
-  unique,
-  uniqueIndex,
-  check,
-} from "drizzle-orm/pg-core";
+import { check, date, foreignKey, index, integer, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
@@ -22,7 +13,6 @@ export const projectReleases = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     projectId: integer("project_id")
-      .references(() => projects.id, { onDelete: "cascade" })
       .notNull(),
     name: text("name").notNull(),
     version: text("version").notNull(),
@@ -40,6 +30,7 @@ export const projectReleases = build.table(
       .$onUpdate(() => new Date()),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_releases_org_project" }).onDelete("cascade"),
     index("idx_project_releases_project").on(table.projectId).where(sql`deleted_at IS NULL`),
     index("idx_project_releases_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
     unique("uniq_project_releases_org_id").on(table.orgId, table.id),
@@ -58,14 +49,14 @@ export const releaseTickets = build.table(
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
     releaseId: integer("release_id")
-      .references(() => projectReleases.id, { onDelete: "cascade" })
       .notNull(),
     ticketId: integer("ticket_id")
-      .references(() => tickets.id, { onDelete: "cascade" })
       .notNull(),
     addedAt: timestamp("added_at").defaultNow().notNull(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.releaseId], foreignColumns: [projectReleases.orgId, projectReleases.id], name: "fk_release_tickets_org_release" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_release_tickets_org_ticket" }).onDelete("cascade"),
     uniqueIndex("uniq_release_tickets").on(table.releaseId, table.ticketId),
     index("idx_release_tickets_release").on(table.releaseId),
   ],

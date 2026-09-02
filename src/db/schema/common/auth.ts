@@ -189,6 +189,9 @@ export const invitations = pgTable("invitations", {
   revokedByMembershipId: integer("revoked_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.acceptedMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_invitations_accepted_membership_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.inviterMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_invitations_inviter_membership_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.revokedByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_invitations_revoked_by_membership_id_org" }).onDelete("set null"),
   index("idx_invitations_org_email").on(table.orgId, table.email),
   index("idx_invitations_org_inviter_membership").on(table.orgId, table.inviterMembershipId),
   index("idx_invitations_org_accepted_membership").on(table.orgId, table.acceptedMembershipId),

@@ -212,7 +212,13 @@ export class PaymentWebhookHealthService {
         processedAt: new Date(),
         errorMessage: null,
       })
-      .where(eq(paymentWebhookEvents.id, eventId))
+      .where(
+        and(
+          eq(paymentWebhookEvents.id, eventId),
+          eq(paymentWebhookEvents.orgId, orgId),
+          eq(paymentWebhookEvents.providerId, provider.id),
+        ),
+      )
       .returning();
 
     await this.audit.log({

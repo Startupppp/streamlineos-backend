@@ -28,8 +28,8 @@ import {
 } from "../payroll.types";
 import { PayrollNotificationsService } from "../insights/payroll-notifications.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { GenerateService } from "../runs/generate.service";
 import { PayrollApproverResolverService } from "./payroll-approver-resolver.service";
+import { LockingService } from "./locking.service";
 
 @Injectable()
 export class ApprovalActionsService {
@@ -38,8 +38,8 @@ export class ApprovalActionsService {
     private readonly access: AccessService,
     private readonly notifications: PayrollNotificationsService,
     private readonly audit: AuditService,
-    private readonly generate: GenerateService,
     private readonly resolver: PayrollApproverResolverService,
+    private readonly locking: LockingService,
   ) {}
 
   async approveStage(
@@ -147,24 +147,22 @@ export class ApprovalActionsService {
 
       if (isLastStage) {
         if (lockAfterApproval) {
-          await tx
-            .update(payrollRuns)
-            .set({
-              status: "LOCKED",
-              lockedAt: new Date(),
-              lockedBy: userId,
-              lockedByMembershipId: stageActor.membershipId,
-              approvedAt: new Date(),
-              approvedByMembershipId: stageActor.membershipId,
-            })
-            .where(and(eq(payrollRuns.id, runId), eq(payrollRuns.orgId, orgId)));
-
-          await tx.insert(payrollRunEvents).values([
-            { orgId, runId, type: "APPROVED", actorId: userId },
-            { orgId, runId, type: "LOCKED", actorId: userId },
-          ]);
-
-          await this.generate.postPayrollLock(orgId, runId, tx);
+          await this.locking.commitLock(tx, {
+            orgId,
+            userId,
+            runId,
+            run: {
+              month: run.month,
+              status: run.status,
+              grossTotal: run.grossTotal,
+              deductionTotal: run.deductionTotal,
+              netTotal: run.netTotal,
+              employerCostTotal: run.employerCostTotal,
+            },
+            membershipId: stageActor.membershipId,
+            now: new Date(),
+            alsoMarkApproved: true,
+          });
         } else {
           await tx
             .update(payrollRuns)

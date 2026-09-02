@@ -102,13 +102,14 @@ export const hrLegalHoldItems = pgTable(
       .references(() => organizations.id, { onDelete: "cascade" }),
     holdId: integer("hold_id")
       .notNull()
-      .references(() => hrLegalHolds.id, { onDelete: "cascade" }),
+      ,
     itemType: hrLegalHoldItemTypeEnum("item_type").notNull(),
     itemRef: text("item_ref").notNull(),
     locked: boolean("locked").notNull().default(true),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.holdId], foreignColumns: [hrLegalHolds.orgId, hrLegalHolds.id], name: "fk_hr_legal_hold_items_org_hold" }).onDelete("cascade"),
     unique("uniq_hr_legal_hold_items_org_id").on(table.orgId, table.id),
     index("idx_hr_legal_hold_items_hold").on(table.holdId),
     index("idx_hr_legal_hold_items_org_subject").on(table.orgId, table.itemType, table.itemRef),
@@ -221,8 +222,8 @@ export const hrPositions = pgTable(
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
-    departmentId: text("department_id").references(() => orgUnits.id, { onDelete: "set null" }),
-    jobLevelId: integer("job_level_id").references(() => hrJobLevels.id, { onDelete: "set null" }),
+    departmentId: text("department_id"),
+    jobLevelId: integer("job_level_id"),
     status: text("status").notNull().default("open"),
     budgetedCostCents: integer("budgeted_cost_cents"),
     effectiveFrom: timestamp("effective_from").notNull(),
@@ -233,6 +234,8 @@ export const hrPositions = pgTable(
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.jobLevelId], foreignColumns: [hrJobLevels.orgId, hrJobLevels.id], name: "fk_hr_positions_job_level_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.departmentId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_hr_positions_org_department" }).onDelete("set null"),
     unique("uniq_hr_positions_org_id").on(table.orgId, table.id),
     index("idx_hr_positions_org_status").on(table.orgId, table.status),
     index("idx_hr_positions_org_dept").on(table.orgId, table.departmentId),

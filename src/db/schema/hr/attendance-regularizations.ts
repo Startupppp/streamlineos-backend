@@ -30,11 +30,12 @@ export const hrAttendanceRegularizations = pgTable("hr_attendance_regularization
   rejectedByMembershipId: integer("rejected_by_membership_id"),
   rejectedAt: timestamp("rejected_at"),
   rejectionReason: text("rejection_reason"),
-  attendanceId: integer("attendance_id").references(() => attendance.id, { onDelete: "set null" }),
+  attendanceId: integer("attendance_id"),
   userMembershipId: integer("user_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.attendanceId], foreignColumns: [attendance.orgId, attendance.id], name: "fk_hr_attendance_regularizations_attendance_id_org" }).onDelete("set null"),
   unique("uniq_hr_attendance_regularizations_org_id").on(table.orgId, table.id),
   index("idx_att_reg_org_user").on(table.orgId, table.userId),
   index("idx_att_reg_org_date").on(table.orgId, table.attendanceDate),

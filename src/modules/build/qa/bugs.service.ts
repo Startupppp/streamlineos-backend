@@ -1,9 +1,12 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, ilike, isNull, sql } from "drizzle-orm";
-import { bugs, organizationMembers, projects } from "../../../db/schema";
+import { bugs, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { AccessService } from "../../access/access.service";
+import { assertProjectAccess } from "../core/project-access";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { BugListQuery, CreateBugInput, UpdateBugInput } from "./dto/bugs.schemas";
 
 @Injectable()
@@ -11,27 +14,19 @@ export class BugsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly access: AccessService,
   ) {}
 
-  private async assertProject(orgId: string, projectId: number): Promise<void> {
-    const [row] = await this.db
-      .select({ id: projects.id })
-      .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
-      .limit(1);
-    if (!row) throw new NotFoundException("Project not found");
-  }
-
-  async listBugs(orgId: string, projectId: number, query: BugListQuery) {
-    await this.assertProject(orgId, projectId);
+  async listBugs(u: CurrentUserContext, projectId: number, query: BugListQuery) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const conditions = [
-      eq(bugs.orgId, orgId),
+      eq(bugs.orgId, u.orgId),
       eq(bugs.projectId, projectId),
       isNull(bugs.deletedAt),
     ];
     if (query.status) conditions.push(eq(bugs.status, query.status));
     if (query.severity) conditions.push(eq(bugs.severity, query.severity));
-    if (query.assigneeId) conditions.push(sql`${bugs.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${query.assigneeId} AND status = 'ACTIVE')`);
+    if (query.assigneeId) conditions.push(sql`${bugs.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${query.assigneeId} AND status = 'ACTIVE')`);
     if (query.q) conditions.push(ilike(bugs.title, `%${query.q}%`));
     return this.db
       .select()
@@ -54,25 +49,25 @@ export class BugsService {
     return bug;
   }
 
-  async createBug(orgId: string, userId: string, projectId: number, input: CreateBugInput) {
-    await this.assertProject(orgId, projectId);
+  async createBug(u: CurrentUserContext, projectId: number, input: CreateBugInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const [bug] = await this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
         .select({ maxNum: sql<number>`COALESCE(MAX(${bugs.bugNumber}), 0)` })
         .from(bugs)
-        .where(and(eq(bugs.projectId, projectId), eq(bugs.orgId, orgId)));
+        .where(and(eq(bugs.projectId, projectId), eq(bugs.orgId, u.orgId)));
       const nextNumber = (maxRow?.maxNum ?? 0) + 1;
       const assigneeMembershipId = input.assigneeId
         ? (await tx.query.organizationMembers.findFirst({
-            where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, input.assigneeId), eq(organizationMembers.status, "ACTIVE")),
+            where: and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, input.assigneeId), eq(organizationMembers.status, "ACTIVE")),
             columns: { id: true },
           }))?.id ?? null
         : null;
       return tx
         .insert(bugs)
         .values({
-          orgId,
+          orgId: u.orgId,
           projectId,
           bugNumber: nextNumber,
           title: input.title,
@@ -91,15 +86,15 @@ export class BugsService {
           qaOwnerId: input.qaOwnerId ?? null,
           linkedTicketId: input.linkedTicketId ?? null,
           linkedTestCaseId: input.linkedTestCaseId ?? null,
-          reporterId: userId,
-          createdBy: userId,
+          reporterId: u.userId,
+          createdBy: u.userId,
         })
         .returning();
     });
     this.audit.log({
       action: "bug.created",
-      userId,
-      orgId,
+      userId: u.userId,
+      orgId: u.orgId,
       resourceType: "bug",
       resourceId: String(bug.id),
       metadata: { bugId: bug.id, projectId, title: bug.title },

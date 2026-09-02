@@ -24,6 +24,7 @@ import { AiJobsService } from "../../ai/jobs/ai-jobs.service";
 import { SupportKbGapService } from "./support-kb-gap.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { listGapsQuerySchema, type ListGapsQuery } from "./dto/support-kb-gap.schemas";
 
 const gapIdParams = z.object({ gapId: z.coerce.number().int().positive() }).strict();
 
@@ -41,14 +42,12 @@ export class SupportKbGapController {
 
   @Get()
   @RequirePermission("support:knowledge-gaps:view")
+  @Validate({ query: listGapsQuerySchema })
   listGaps(
     @CurrentUser() u: CurrentUserContext,
-    @Query("cursor") cursor?: string,
-    @Query("limit") limit?: string,
+    @Query() query: ListGapsQuery,
   ) {
-    const parsedCursor = cursor ? parseInt(cursor, 10) : undefined;
-    const parsedLimit = limit ? Math.min(parseInt(limit, 10), 100) : 50;
-    return this.service.listGaps(u.orgId, parsedCursor, parsedLimit);
+    return this.service.listGaps(u.orgId, query.cursor, query.limit);
   }
 
   @Post("detect")

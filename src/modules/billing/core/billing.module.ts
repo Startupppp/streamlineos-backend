@@ -26,6 +26,6 @@ import { NotificationsModule } from "../../notifications/notifications.module";
   imports: [AiCreditsModule, PaymentsModule, OutboxModule, NotificationsModule],
   controllers: [BillingController, BillingMarketplaceController, BillingEnterpriseController, RazorpayWebhookController],
   providers: [BillingService, BillingProfileService, MarketplaceService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, UsageMeteringService, InvoiceSnapshotService],
-  exports: [AiCreditsModule, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, UsageMeteringService, InvoiceSnapshotService],
+  exports: [AiCreditsModule, BillingService, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, UsageMeteringService, InvoiceSnapshotService],
 })
 export class BillingModule {}

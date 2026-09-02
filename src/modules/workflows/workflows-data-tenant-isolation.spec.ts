@@ -52,27 +52,26 @@ describe("WorkflowsSchedulesService — cross-tenant isolation", () => {
 
   describe("deleteSchedule", () => {
     it("throws NotFoundException when schedule belongs to a different org (cross-tenant isolation)", async () => {
-      const findFirst = jest.fn().mockResolvedValue(null);
+      const deleteWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) });
       const db = {
         query: {
           workflows: { findFirst: jest.fn().mockResolvedValue({ id: WORKFLOW_ID }) },
-          workflowSchedules: { findFirst },
         },
+        delete: jest.fn().mockReturnValue({ where: deleteWhere }),
       } as unknown as Db;
 
       const svc = new WorkflowsSchedulesService(db);
       await expect(svc.deleteSchedule(ATTACKER_ORG, WORKFLOW_ID, SCHEDULE_ID)).rejects.toThrow(NotFoundException);
+      expect(deleteWhere).toHaveBeenCalledTimes(1);
     });
 
     it("deletes schedule for the owning org (control)", async () => {
       const workflowFindFirst = jest.fn().mockResolvedValue({ id: WORKFLOW_ID });
-      const scheduleFindFirst = jest.fn().mockResolvedValue({ id: SCHEDULE_ID });
-      const deleteWhere = jest.fn().mockResolvedValue([]);
+      const deleteWhere = jest
+        .fn()
+        .mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: SCHEDULE_ID }]) });
       const db = {
-        query: {
-          workflows: { findFirst: workflowFindFirst },
-          workflowSchedules: { findFirst: scheduleFindFirst },
-        },
+        query: { workflows: { findFirst: workflowFindFirst } },
         delete: jest.fn().mockReturnValue({ where: deleteWhere }),
       } as unknown as Db;
 
@@ -171,20 +170,21 @@ describe("WorkflowsSecretsService — cross-tenant isolation and secret redactio
 
   describe("deleteGlobalSecret", () => {
     it("throws NotFoundException when secret belongs to a different org (cross-tenant isolation)", async () => {
-      const findFirst = jest.fn().mockResolvedValue(null);
+      const deleteWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) });
       const db = {
-        query: { workflowSecrets: { findFirst } },
+        delete: jest.fn().mockReturnValue({ where: deleteWhere }),
       } as unknown as Db;
 
       const svc = new WorkflowsSecretsService(db);
       await expect(svc.deleteGlobalSecret(ATTACKER_ORG, SECRET_ID)).rejects.toThrow(NotFoundException);
+      expect(deleteWhere).toHaveBeenCalledTimes(1);
     });
 
     it("deletes secret for the owning org (control)", async () => {
-      const findFirst = jest.fn().mockResolvedValue({ id: SECRET_ID });
-      const deleteWhere = jest.fn().mockResolvedValue([]);
+      const deleteWhere = jest
+        .fn()
+        .mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: SECRET_ID }]) });
       const db = {
-        query: { workflowSecrets: { findFirst } },
         delete: jest.fn().mockReturnValue({ where: deleteWhere }),
       } as unknown as Db;
 

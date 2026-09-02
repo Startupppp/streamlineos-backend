@@ -45,7 +45,7 @@ export class RisksController {
     @Query() query: ListRisksQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listRisks(u.orgId, projectId, query);
+    return this.svc.listRisks(u, projectId, query);
   }
 
   @Get(":riskId")
@@ -68,7 +68,7 @@ export class RisksController {
     @Body() body: CreateRiskInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createRisk(u.orgId, u.userId, projectId, body);
+    return this.svc.createRisk(u, projectId, body);
   }
 
   @Patch(":riskId")

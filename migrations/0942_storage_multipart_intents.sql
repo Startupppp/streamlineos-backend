@@ -1,3 +1,5 @@
+SET lock_timeout = '5s';
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS multipart_upload_intents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id TEXT NOT NULL,

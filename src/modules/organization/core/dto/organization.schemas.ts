@@ -48,15 +48,12 @@ export const updateOrgSettingsSchema = z.object({
     .optional(),
   fiscalYearStart: z.number().int().min(1).max(12).optional(),
   directoryPublic: z.boolean().optional(),
-  mfaEnforced: z.boolean().optional(),
-  allowedEmailDomains: z.array(z.string().min(1)).optional(),
   primaryColor: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
     .nullable()
     .optional(),
   loginBgUrl: z.string().url().nullable().optional(),
-  ipAllowlist: z.array(z.string().min(1)).optional(),
   industry: z.string().min(1).nullable().optional(),
   website: z.string().url().nullable().optional(),
   legalName: z.string().min(1).nullable().optional(),
@@ -84,14 +81,14 @@ export const updateOrgSettingsSchema = z.object({
     .optional(),
   companySize: z.string().min(1).nullable().optional(),
   country: z.string().min(1).nullable().optional(),
-});
+}).strict();
 
 export const securitySettingsSchema = z.object({
   mfaEnforced: z.boolean().optional(),
-  allowedEmailDomains: z.array(z.string().min(1)).optional(),
+  allowedEmailDomains: z.array(z.string().min(1).max(253)).max(100).optional(),
   maxConcurrentSessions: z.number().int().min(1).max(100).nullable().optional(),
   ipAllowlist: z.array(z.string().min(1).max(128)).max(100).optional(),
-});
+}).strict();
 
 export const updateMemberRoleSchema = z.object({
   role: z.enum(ORG_MEMBER_ROLE_VALUES),

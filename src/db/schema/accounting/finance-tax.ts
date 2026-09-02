@@ -1,4 +1,4 @@
-import { boolean, date, decimal, index, integer, pgEnum, pgTable, serial, text, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { boolean, date, decimal, foreignKey, index, integer, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { ledgerAccounts, journalEntries } from "./accounting";
@@ -13,12 +13,14 @@ export const accTaxCodes = pgTable("acc_tax_codes", {
   rate: decimal("rate", { precision: 5, scale: 2 }).notNull(),
   taxType: accTaxTypeEnum("tax_type").notNull(),
   isReverseCharge: boolean("is_reverse_charge").default(false).notNull(),
-  collectedAccountId: integer("collected_account_id").references(() => ledgerAccounts.id),
-  paidAccountId: integer("paid_account_id").references(() => ledgerAccounts.id),
+  collectedAccountId: integer("collected_account_id"),
+  paidAccountId: integer("paid_account_id"),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.collectedAccountId], foreignColumns: [ledgerAccounts.orgId, ledgerAccounts.id], name: "fk_acc_tax_codes_collected_account_id_org" }),
+  foreignKey({ columns: [table.orgId, table.paidAccountId], foreignColumns: [ledgerAccounts.orgId, ledgerAccounts.id], name: "fk_acc_tax_codes_paid_account_id_org" }),
   unique("uniq_acc_tax_codes_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_acc_tax_codes_org_code").on(table.orgId, table.code),
   index("idx_acc_tax_codes_org_type").on(table.orgId, table.taxType),
@@ -33,12 +35,13 @@ export const accTaxPayments = pgTable("acc_tax_payments", {
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   paidDate: date("paid_date"),
   reference: text("reference"),
-  journalEntryId: integer("journal_entry_id").references(() => journalEntries.id),
+  journalEntryId: integer("journal_entry_id"),
   notes: text("notes"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   archivedAt: timestamp("archived_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.journalEntryId], foreignColumns: [journalEntries.orgId, journalEntries.id], name: "fk_acc_tax_payments_journal_entry_id_org" }),
   unique("uniq_acc_tax_payments_org_id").on(table.orgId, table.id),
   index("idx_acc_tax_payments_org_type").on(table.orgId, table.taxType),
   index("idx_acc_tax_payments_org_period").on(table.orgId, table.periodStart, table.periodEnd),

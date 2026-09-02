@@ -1,6 +1,41 @@
 import type { Db } from "../../../db/drizzle.module";
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { MilestonesService, IntakeService, ViewsService } from "./workspace.service";
+import type { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+
+function makeUser(orgId: string): CurrentUserContext {
+  return {
+    userId: "user-1",
+    orgId,
+    role: "EMPLOYEE",
+    isOrgOwner: false,
+    sessionId: "s",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(7, true),
+  };
+}
+
+function makeAccess(permissions: string[]): AccessService {
+  return {
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Set(permissions)),
+  } as unknown as AccessService;
+}
+
+function membershipSelect(rows: unknown[][]): jest.Mock {
+  let call = 0;
+  return jest.fn(() => {
+    const index = call;
+    call++;
+    const chain: Record<string, unknown> = {};
+    chain["from"] = jest.fn(() => chain);
+    chain["innerJoin"] = jest.fn(() => chain);
+    chain["where"] = jest.fn(() => chain);
+    chain["limit"] = jest.fn(() => Promise.resolve(rows[index] ?? []));
+    return chain;
+  });
+}
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -27,9 +62,9 @@ describe("MilestonesService — cross-tenant isolation", () => {
         projectMilestones: { findMany: milestoneFindMany },
       },
     } as unknown as Db;
-    const svc = new MilestonesService(db);
+    const svc = new MilestonesService(db, makeAccess(["build:manage"]));
 
-    const result = await svc.listMilestones(ATTACKER_ORG, 1);
+    const result = await svc.listMilestones(makeUser(ATTACKER_ORG), 1);
 
     expect(milestoneFindMany).toHaveBeenCalled();
     const opts = milestoneFindMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -46,9 +81,9 @@ describe("MilestonesService — cross-tenant isolation", () => {
         projectMilestones: { findMany: jest.fn().mockResolvedValue([fakeMilestone]) },
       },
     } as unknown as Db;
-    const svc = new MilestonesService(db);
+    const svc = new MilestonesService(db, makeAccess(["build:manage"]));
 
-    const result = await svc.listMilestones(OWNER_ORG, 1);
+    const result = await svc.listMilestones(makeUser(OWNER_ORG), 1);
     expect(result).toHaveLength(1);
   });
 
@@ -59,9 +94,39 @@ describe("MilestonesService — cross-tenant isolation", () => {
         projectMilestones: { findMany: jest.fn().mockResolvedValue([]) },
       },
     } as unknown as Db;
-    const svc = new MilestonesService(db);
+    const svc = new MilestonesService(db, makeAccess(["build:manage"]));
 
-    await expect(svc.listMilestones(ATTACKER_ORG, 9999)).rejects.toThrow(NotFoundException);
+    await expect(svc.listMilestones(makeUser(ATTACKER_ORG), 9999)).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it("denies a same-org non-member without build:manage (project membership gate)", async () => {
+    const db = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
+        projectMilestones: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: membershipSelect([[], []]),
+    } as unknown as Db;
+    const svc = new MilestonesService(db, makeAccess(["build:view"]));
+
+    await expect(svc.listMilestones(makeUser(OWNER_ORG), 1)).rejects.toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it("allows a direct project member without build:manage", async () => {
+    const db = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
+        projectMilestones: { findMany: jest.fn().mockResolvedValue([{ id: 1 }]) },
+      },
+      select: membershipSelect([[{ role: "MEMBER" }], []]),
+    } as unknown as Db;
+    const svc = new MilestonesService(db, makeAccess(["build:view"]));
+
+    await expect(svc.listMilestones(makeUser(OWNER_ORG), 1)).resolves.toHaveLength(1);
   });
 });
 

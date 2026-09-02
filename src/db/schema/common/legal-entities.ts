@@ -1,15 +1,4 @@
-import {
-  pgTable,
-  text,
-  date,
-  boolean,
-  timestamp,
-  jsonb,
-  index,
-  uniqueIndex,
-  unique,
-  type AnyPgColumn,
-} from "drizzle-orm/pg-core";
+import { boolean, date, foreignKey, index, jsonb, pgTable, text, timestamp, type AnyPgColumn, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql, relations } from "drizzle-orm";
 import { organizations, users } from "./auth";
 import { orgUnits } from "./organization";
@@ -65,14 +54,9 @@ export const legalEntities = pgTable(
       .notNull()
       .default(sql`'infinity'::date`),
 
-    parentLegalEntityId: text("parent_legal_entity_id").references(
-      (): AnyPgColumn => legalEntities.id,
-      { onDelete: "set null" },
-    ),
+    parentLegalEntityId: text("parent_legal_entity_id"),
 
-    orgUnitId: text("org_unit_id").references(() => orgUnits.id, {
-      onDelete: "set null",
-    }),
+    orgUnitId: text("org_unit_id"),
 
     createdBy: text("created_by").references(() => users.id, {
       onDelete: "set null",
@@ -86,6 +70,8 @@ export const legalEntities = pgTable(
     deletedAt: timestamp("deleted_at"),
   },
   (table) => [
+  foreignKey({ columns: [table.orgId, table.orgUnitId], foreignColumns: [orgUnits.orgId, orgUnits.id], name: "fk_legal_entities_org_unit_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.parentLegalEntityId], foreignColumns: [table.orgId, table.id], name: "fk_legal_entities_parent_legal_entity_id_org" }).onDelete("set null"),
     unique("uniq_legal_entities_org_id").on(table.orgId, table.id),
     index("idx_legal_entities_org_status").on(table.orgId, table.status),
     index("idx_legal_entities_org_country").on(table.orgId, table.countryCode),

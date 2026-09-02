@@ -207,7 +207,17 @@ export class SettingsService {
 
   async listGitConnections(orgId: string) {
     const rows = await this.db
-      .select()
+      .select({
+        id: gitConnections.id,
+        provider: gitConnections.provider,
+        projectId: gitConnections.projectId,
+        repoUrl: gitConnections.repoUrl,
+        repoName: gitConnections.repoName,
+        isActive: gitConnections.isActive,
+        webhookSecret: gitConnections.webhookSecret,
+        createdAt: gitConnections.createdAt,
+        updatedAt: gitConnections.updatedAt,
+      })
       .from(gitConnections)
       .where(eq(gitConnections.orgId, orgId))
       .orderBy(desc(gitConnections.id));

@@ -36,8 +36,8 @@ export const surveyParticipantStatusEnum = pgEnum("survey_participant_status", [
 export const surveyCollectors = pgTable("survey_collectors", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  surveyId: integer("survey_id").references(() => surveyForms.id, { onDelete: "cascade" }).notNull(),
-  versionId: integer("version_id").references(() => surveyVersions.id, { onDelete: "set null" }),
+  surveyId: integer("survey_id").notNull(),
+  versionId: integer("version_id"),
   collectorType: surveyCollectorTypeEnum("collector_type").notNull(),
   name: text("name").notNull(),
   token: text("token").notNull(),
@@ -52,6 +52,8 @@ export const surveyCollectors = pgTable("survey_collectors", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.surveyId], foreignColumns: [surveyForms.orgId, surveyForms.id], name: "fk_survey_collectors_survey_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.versionId], foreignColumns: [surveyVersions.orgId, surveyVersions.id], name: "fk_survey_collectors_version_id_org" }).onDelete("set null"),
   unique("uq_survey_collectors_token").on(table.token),
   index("idx_survey_collectors_survey_status").on(table.surveyId, table.status),
   unique("uniq_survey_collectors_org_id").on(table.orgId, table.id),
@@ -60,8 +62,8 @@ export const surveyCollectors = pgTable("survey_collectors", {
 export const surveyParticipants = pgTable("survey_participants", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  surveyId: integer("survey_id").references(() => surveyForms.id, { onDelete: "cascade" }).notNull(),
-  collectorId: integer("collector_id").references(() => surveyCollectors.id, { onDelete: "set null" }),
+  surveyId: integer("survey_id").notNull(),
+  collectorId: integer("collector_id"),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
   userMembershipId: integer("user_membership_id"),
   contactId: integer("contact_id").references(() => contacts.id, { onDelete: "set null" }),
@@ -79,6 +81,8 @@ export const surveyParticipants = pgTable("survey_participants", {
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.collectorId], foreignColumns: [surveyCollectors.orgId, surveyCollectors.id], name: "fk_survey_participants_collector_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.surveyId], foreignColumns: [surveyForms.orgId, surveyForms.id], name: "fk_survey_participants_survey_id_org" }).onDelete("cascade"),
   index("idx_survey_participants_org_survey_status").on(table.orgId, table.surveyId, table.status),
   unique("uq_survey_participants_access_token_hash").on(table.accessTokenHash),
   unique("uniq_survey_participants_org_id").on(table.orgId, table.id),

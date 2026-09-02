@@ -13,7 +13,7 @@ import { hrPayrollInputPeriods } from "./input-capture";
 export const payrollRuns = pgTable("payroll_runs", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  policyVersionId: integer("policy_version_id").references(() => payrollPolicyVersions.id, { onDelete: "set null" }),
+  policyVersionId: integer("policy_version_id"),
   month: text("month").notNull(),
   /** REGULAR | BONUS | OFF_CYCLE | CORRECTION | FINAL_SETTLEMENT */
   runType: text("run_type").default("REGULAR").notNull(),
@@ -21,7 +21,7 @@ export const payrollRuns = pgTable("payroll_runs", {
   sourcePeriodKey: text("source_period_key"),
   sourceRunId: integer("source_run_id").references((): AnyPgColumn => payrollRuns.id, { onDelete: "set null" }),
   entityId: integer("entity_id"),
-  periodId: integer("period_id").references(() => hrPayrollInputPeriods.id, { onDelete: "set null" }),
+  periodId: integer("period_id"),
   calculationVersion: text("calculation_version").default("1.0.0"),
   statutoryRuleVersion: text("statutory_rule_version"),
   inputSnapshotHash: text("input_snapshot_hash"),
@@ -60,6 +60,8 @@ export const payrollRuns = pgTable("payroll_runs", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.periodId], foreignColumns: [hrPayrollInputPeriods.orgId, hrPayrollInputPeriods.id], name: "fk_payroll_runs_period_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.policyVersionId], foreignColumns: [payrollPolicyVersions.orgId, payrollPolicyVersions.id], name: "fk_payroll_runs_policy_version_id_org" }).onDelete("set null"),
   unique("uniq_payroll_runs_org_id").on(table.orgId, table.id),
   // One run per (org, month, runType, entity). NULL entity → COALESCE 0 (org-level bucket).
   // Migration 0298 replaces uniq_payroll_runs_org_month_type.
@@ -120,7 +122,7 @@ export const payrollRuns = pgTable("payroll_runs", {
 export const payrollRunEmployees = pgTable("payroll_run_employees", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  runId: integer("run_id").references(() => payrollRuns.id, { onDelete: "cascade" }).notNull(),
+  runId: integer("run_id").notNull(),
   userId: text("user_id"),
   userMembershipId: integer("user_membership_id"),
   workerId: text("worker_id"),
@@ -145,6 +147,7 @@ export const payrollRunEmployees = pgTable("payroll_run_employees", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.runId], foreignColumns: [payrollRuns.orgId, payrollRuns.id], name: "fk_payroll_run_employees_org_run" }).onDelete("cascade"),
   unique("uniq_payroll_run_employees_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_payroll_run_employees_run_user").on(table.runId, table.userId),
   uniqueIndex("uniq_payroll_run_employees_run_worker")
@@ -172,8 +175,8 @@ export const payrollRunEmployees = pgTable("payroll_run_employees", {
 export const payrollLineItems = pgTable("payroll_line_items", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  runId: integer("run_id").references(() => payrollRuns.id, { onDelete: "cascade" }).notNull(),
-  runEmployeeId: integer("run_employee_id").references(() => payrollRunEmployees.id, { onDelete: "cascade" }).notNull(),
+  runId: integer("run_id").notNull(),
+  runEmployeeId: integer("run_employee_id").notNull(),
   componentId: integer("component_id"),
   code: text("code").notNull(),
   name: text("name").notNull(),
@@ -185,6 +188,8 @@ export const payrollLineItems = pgTable("payroll_line_items", {
   sortOrder: integer("sort_order").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.runEmployeeId], foreignColumns: [payrollRunEmployees.orgId, payrollRunEmployees.id], name: "fk_payroll_line_items_run_employee_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.runId], foreignColumns: [payrollRuns.orgId, payrollRuns.id], name: "fk_payroll_line_items_run_id_org" }).onDelete("cascade"),
   unique("uniq_payroll_line_items_org_id").on(table.orgId, table.id),
   index("idx_payroll_line_items_run_employee").on(table.runEmployeeId),
   index("idx_payroll_line_items_org_run").on(table.orgId, table.runId),
@@ -193,8 +198,8 @@ export const payrollLineItems = pgTable("payroll_line_items", {
 export const payrollExceptions = pgTable("payroll_exceptions", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  runId: integer("run_id").references(() => payrollRuns.id, { onDelete: "cascade" }).notNull(),
-  runEmployeeId: integer("run_employee_id").references(() => payrollRunEmployees.id, { onDelete: "cascade" }),
+  runId: integer("run_id").notNull(),
+  runEmployeeId: integer("run_employee_id"),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
   code: text("code").notNull(),
   severity: payrollExceptionSeverityEnum("severity").notNull(),
@@ -207,6 +212,8 @@ export const payrollExceptions = pgTable("payroll_exceptions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.runEmployeeId], foreignColumns: [payrollRunEmployees.orgId, payrollRunEmployees.id], name: "fk_payroll_exceptions_run_employee_id_org" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.runId], foreignColumns: [payrollRuns.orgId, payrollRuns.id], name: "fk_payroll_exceptions_run_id_org" }).onDelete("cascade"),
   unique("uniq_payroll_exceptions_org_id").on(table.orgId, table.id),
   index("idx_payroll_exceptions_org_run_status").on(table.orgId, table.runId, table.status),
 ]);
@@ -214,7 +221,7 @@ export const payrollExceptions = pgTable("payroll_exceptions", {
 export const payrollApprovals = pgTable("payroll_approvals", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  runId: integer("run_id").references(() => payrollRuns.id, { onDelete: "cascade" }).notNull(),
+  runId: integer("run_id").notNull(),
   stage: integer("stage").notNull(),
   stageName: text("stage_name").notNull(),
   requiredPermission: text("required_permission").notNull(),
@@ -225,6 +232,7 @@ export const payrollApprovals = pgTable("payroll_approvals", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.runId], foreignColumns: [payrollRuns.orgId, payrollRuns.id], name: "fk_payroll_approvals_run_id_org" }).onDelete("cascade"),
   unique("uniq_payroll_approvals_org_id").on(table.orgId, table.id),
   uniqueIndex("uniq_payroll_approvals_run_stage").on(table.runId, table.stage),
   index("idx_payroll_approvals_org_run").on(table.orgId, table.runId),

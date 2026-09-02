@@ -16,6 +16,7 @@ import { CalendarProviderSyncSweepService } from "./calendar-provider-sync-sweep
 import { CalendarAttendeesService } from "./calendar-attendees.service";
 import { CalendarRecurrenceService } from "./calendar-recurrence.service";
 import { CalendarExportService } from "./calendar-export.service";
+import { CalendarSyncStatusService } from "./calendar-sync-status.service";
 
 @Module({
   imports: [IntegrationsModule, NotificationsModule],
@@ -23,6 +24,7 @@ import { CalendarExportService } from "./calendar-export.service";
   providers: [
     CalendarEventsAggregateService,
     CalendarAttendeesService,
+    CalendarSyncStatusService,
     CalendarRecurrenceService,
     CalendarExportService,
     CalendarService,

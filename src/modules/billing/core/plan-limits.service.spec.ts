@@ -99,6 +99,24 @@ describe("PlanLimitsService", () => {
       expect(result).toEqual({ tier: "PAID", plan: "STARTER" });
     });
 
+    it("keeps the paid tier while PAST_DUE, because dunning downgrades by cancelling at D+14", async () => {
+      mockDb = makeDb({
+        execute: jest.fn().mockResolvedValue([{ plan: "STARTER", status: "PAST_DUE", trial_ends_at: null }]),
+      });
+      service = await build(mockDb);
+      const result = await service.resolveTier("org1");
+      expect(result).toEqual({ tier: "PAID", plan: "STARTER" });
+    });
+
+    it("drops to FREE once dunning cancels the subscription, which is what ends the grace period", async () => {
+      mockDb = makeDb({
+        execute: jest.fn().mockResolvedValue([{ plan: "STARTER", status: "CANCELLED", trial_ends_at: null }]),
+      });
+      service = await build(mockDb);
+      const result = await service.resolveTier("org1");
+      expect(result).toEqual({ tier: "FREE", plan: "FREE" });
+    });
+
     it("returns ENTERPRISE for active ENTERPRISE subscription", async () => {
       mockDb = makeDb({
         execute: jest.fn().mockResolvedValue([{ plan: "ENTERPRISE", status: "ACTIVE", trial_ends_at: null }]),
@@ -152,6 +170,23 @@ describe("PlanLimitsService", () => {
       });
       service = await build(mockDb);
       await expect(service.assertWithinLimit("org1", "projects", 1)).resolves.toBeUndefined();
+    });
+
+    it("counts through the caller's executor for a non-member key, so a quota lock still covers the read", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }]),
+      });
+      const txExecute = jest.fn().mockResolvedValue([{ count: 1 }]);
+      service = await build(mockDb);
+
+      await expect(
+        service.assertWithinLimit("org1", "projects", 1, { execute: txExecute } as never),
+      ).resolves.toBeUndefined();
+
+      expect(txExecute).toHaveBeenCalledTimes(1);
+      expect(mockDb.execute).toHaveBeenCalledTimes(1);
     });
 
     it("error message includes plan name and human label", async () => {

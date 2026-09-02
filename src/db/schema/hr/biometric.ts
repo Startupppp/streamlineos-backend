@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, integer, index, jsonb, unique } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { organizations, users } from "../common/auth";
 
 export const biometricDevices = pgTable("biometric_devices", {
@@ -20,7 +20,7 @@ export const biometricDevices = pgTable("biometric_devices", {
 export const biometricLogs = pgTable("biometric_logs", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  deviceId: integer("device_id").references(() => biometricDevices.id).notNull(),
+  deviceId: integer("device_id").notNull(),
   userId: text("user_id"),
   userMembershipId: integer("user_membership_id"),
   biometricUserId: text("biometric_user_id"),
@@ -30,6 +30,7 @@ export const biometricLogs = pgTable("biometric_logs", {
   processed: boolean("processed").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.deviceId], foreignColumns: [biometricDevices.orgId, biometricDevices.id], name: "fk_biometric_logs_device_id_org" }),
   unique("uniq_biometric_logs_org_id").on(table.orgId, table.id),
   index("idx_biometric_logs_org_device").on(table.orgId, table.deviceId),
   index("idx_biometric_logs_user_time").on(table.userId, table.punchTime),

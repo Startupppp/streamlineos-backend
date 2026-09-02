@@ -2,8 +2,9 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { DataScope } from "../../access/access.types";
 import { AccessService } from "../../access/access.service";
 import { isScopable } from "../../rbac/permissions";
+import { HR_PAYROLL_LIST_PERMISSION } from "./hr-payroll-permissions";
 
-export const REIMBURSEMENTS_PERMISSION = "hr:expenses:approve";
+export const REIMBURSEMENTS_PERMISSION = HR_PAYROLL_LIST_PERMISSION;
 
 export async function resolveReimbursementsScope(
   access: AccessService,

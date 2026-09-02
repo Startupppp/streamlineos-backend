@@ -60,7 +60,8 @@ export const CACHE_KEYS = {
   leadBoard: (orgId: string, hash: string) => `leads:board:${orgId}:${hash}`,
   leadStats: (orgId: string, hash: string) => `leads:stats:${orgId}:${hash}`,
 
-  executiveDashboard: (orgId: string) => `dashboard:executive:${orgId}`,
+  executiveDashboard: (orgId: string, projection: string) =>
+    `dashboard:executive:${orgId}:${projection}`,
   announcementsList: (orgId: string) => `dashboard:announcements:${orgId}`,
 
   invoicesList: (orgId: string, hash: string) =>
@@ -159,6 +160,7 @@ export const CACHE_KEYS = {
   orgHierarchyNamespace: (orgId: string) => `org:hierarchy:${orgId}`,
   hrHeadcountNamespace: (orgId: string) => `hr:headcount:${orgId}`,
   leaveAnalyticsNamespace: (orgId: string) => `hr:leave-analytics:${orgId}`,
+  hrEmployeesListNamespace: (orgId: string) => `hr:employees:list:${orgId}`,
 
   supportReportsOverview: (orgId: string) =>
     `support:reports:overview:${orgId}`,

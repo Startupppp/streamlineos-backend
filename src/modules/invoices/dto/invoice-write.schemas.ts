@@ -74,7 +74,7 @@ export const updateInvoiceSchema = z.object({
   currency: z.string().optional(),
   dueDate: z.string().optional(),
   notes: z.string().optional(),
-  status: z.enum(["ISSUED", "PAID", "FAILED", "VOIDED"]).optional(),
+  status: z.enum(["ISSUED", "PAID", "FAILED"]).optional(),
 });
 
 export const recordPaymentSchema = z.object({

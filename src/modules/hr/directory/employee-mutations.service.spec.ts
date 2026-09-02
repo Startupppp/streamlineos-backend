@@ -88,7 +88,7 @@ function buildService(scope: DataScope, targetMember: object | null = { userId: 
   };
   const service = new EmployeeMutationsService(
     db as never,
-    { invalidate: jest.fn() } as never,
+    { invalidate: jest.fn(), invalidateNamespace: jest.fn() } as never,
     { logCritical: jest.fn() } as never,
     { emit: jest.fn().mockResolvedValue(undefined) } as never,
     access as never,
@@ -231,7 +231,7 @@ describe("EmployeeMutationsService base response boundary", () => {
     };
     const service = new EmployeeMutationsService(
       db as never,
-      { invalidate: jest.fn() } as never,
+      { invalidate: jest.fn(), invalidateNamespace: jest.fn() } as never,
       { logCritical: jest.fn() } as never,
       { emit: jest.fn() } as never,
       {} as never,

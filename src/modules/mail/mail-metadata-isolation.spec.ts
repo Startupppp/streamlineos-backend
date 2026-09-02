@@ -1,9 +1,15 @@
-import type { MailMetadataService } from "./mail-metadata.service";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+import type { Db } from "../../db/drizzle.module";
+import { MailMetadataService } from "./mail-metadata.service";
 import type { MailMessageSummary } from "./dto/mail-schemas";
 
+const dialect = new PgDialect();
+
+const ATTACKER = "org-attacker";
+const OWNER = "org-owner";
 const ALICE = 101;
 const BOB = 202;
-const ORG = "org-1";
 const ACCOUNT_ID = 42;
 
 function makeMessage(id: string): MailMessageSummary {
@@ -23,61 +29,117 @@ function makeMessage(id: string): MailMessageSummary {
   };
 }
 
-describe("MailMetadataService — per-user isolation", () => {
-  let service: MailMetadataService;
-
-  const upsertBatch = jest.fn().mockResolvedValue(undefined);
-  const listCached = jest.fn();
-  const updateState = jest.fn().mockResolvedValue(undefined);
-
-  beforeEach(() => {
-    service = {
-      upsertBatch,
-      listCached,
-      updateState,
-    } as unknown as MailMetadataService;
-    jest.clearAllMocks();
-  });
-
-  it("listCached is always called with the requesting user's membershipId", async () => {
-    listCached.mockResolvedValue({ messages: [], hasData: false, isFresh: false });
-    await service.listCached(ALICE, ORG, ACCOUNT_ID, "inbox", 25);
-    expect(listCached).toHaveBeenCalledWith(ALICE, ORG, ACCOUNT_ID, "inbox", 25);
-  });
-
-  it("upsertBatch tags messages with the owner's membershipId, not the recipient's", async () => {
-    const messages = [makeMessage("msg-1"), makeMessage("msg-2")];
-    await service.upsertBatch(ACCOUNT_ID, BOB, ORG, "inbox", messages);
-    expect(upsertBatch).toHaveBeenCalledWith(ACCOUNT_ID, BOB, ORG, "inbox", messages);
-    const [, calledMembershipId] = upsertBatch.mock.calls[0] as [number, number, string, string, MailMessageSummary[]];
-    expect(calledMembershipId).toBe(BOB);
-    expect(calledMembershipId).not.toBe(ALICE);
-  });
-
-  it("updateState includes membershipId so cross-user writes are rejected", async () => {
-    await service.updateState(ACCOUNT_ID, ALICE, ORG, "msg-1", { isRead: true });
-    expect(updateState).toHaveBeenCalledWith(ACCOUNT_ID, ALICE, ORG, "msg-1", { isRead: true });
-    const [, calledMembershipId] = updateState.mock.calls[0] as [number, number, string, string, object];
-    expect(calledMembershipId).toBe(ALICE);
-  });
-
-  it("Alice's data is never included when Bob's inbox is listed", async () => {
-    listCached.mockImplementation(async (membershipId: number) => {
-      if (membershipId === BOB) {
-        return {
-          messages: [{ messageId: "bob-msg", folder: "inbox", isRead: false, isStarred: false, hasAttachment: false, labels: null, accountId: ACCOUNT_ID, senderEmail: "s@x.com", senderName: null, subject: "For Bob", date: new Date().toISOString(), threadId: null }],
-          hasData: true,
-          isFresh: true,
-        };
-      }
-      return { messages: [], hasData: false, isFresh: false };
+describe("MailMetadataService.listCached — tenant isolation", () => {
+  function makeDb() {
+    let capturedWhere: SQL | undefined;
+    const limit = jest.fn().mockResolvedValue([]);
+    const orderBy = jest.fn().mockReturnValue({ limit });
+    const where = jest.fn().mockImplementation((pred: SQL) => {
+      capturedWhere = pred;
+      return { orderBy };
     });
+    const from = jest.fn().mockReturnValue({ where });
+    const db = { select: jest.fn().mockReturnValue({ from }) } as unknown as Db;
+    return { db, getWhere: () => capturedWhere };
+  }
 
-    const aliceResult = await service.listCached(ALICE, ORG, ACCOUNT_ID, "inbox", 25);
-    const bobResult = await service.listCached(BOB, ORG, ACCOUNT_ID, "inbox", 25);
+  it("DENY: predicate binds ATTACKER org and membership, owner org absent", async () => {
+    const { db, getWhere } = makeDb();
+    const service = new MailMetadataService(db);
+    await service.listCached(ALICE, ATTACKER, ACCOUNT_ID, "inbox", 25);
 
-    expect(aliceResult.messages).toHaveLength(0);
-    expect(bobResult.messages).toHaveLength(1);
-    expect(bobResult.messages[0]?.messageId).toBe("bob-msg");
+    const { sql, params } = dialect.sqlToQuery(getWhere() as SQL);
+    expect(sql).toContain("org_id");
+    expect(sql).toContain("user_membership_id");
+    expect(params).toContain(ATTACKER);
+    expect(params).not.toContain(OWNER);
+  });
+
+  it("CONTROL: predicate binds OWNER org and correct membership", async () => {
+    const { db, getWhere } = makeDb();
+    const service = new MailMetadataService(db);
+    await service.listCached(BOB, OWNER, ACCOUNT_ID, "inbox", 25);
+
+    const { sql, params } = dialect.sqlToQuery(getWhere() as SQL);
+    expect(sql).toContain("org_id");
+    expect(sql).toContain("user_membership_id");
+    expect(params).toContain(OWNER);
+    expect(params).toContain(BOB);
+    expect(params).not.toContain(ATTACKER);
+  });
+});
+
+describe("MailMetadataService.upsertBatch — tenant isolation", () => {
+  function makeDb() {
+    let capturedValues: Array<{ orgId: string; userMembershipId: number }> = [];
+    const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
+    const values = jest.fn().mockImplementation((rows: typeof capturedValues) => {
+      capturedValues = rows;
+      return { onConflictDoUpdate };
+    });
+    const db = { insert: jest.fn().mockReturnValue({ values }) } as unknown as Db;
+    return { db, getValues: () => capturedValues };
+  }
+
+  it("DENY: all inserted rows carry ATTACKER org, owner org absent", async () => {
+    const { db, getValues } = makeDb();
+    const service = new MailMetadataService(db);
+    await service.upsertBatch(ACCOUNT_ID, ALICE, ATTACKER, "inbox", [makeMessage("m1"), makeMessage("m2")]);
+
+    const rows = getValues();
+    expect(rows.length).toBe(2);
+    expect(rows.every((r) => r.orgId === ATTACKER)).toBe(true);
+    expect(rows.every((r) => r.orgId !== OWNER)).toBe(true);
+    expect(rows.every((r) => r.userMembershipId === ALICE)).toBe(true);
+  });
+
+  it("CONTROL: all inserted rows carry OWNER org and correct membership", async () => {
+    const { db, getValues } = makeDb();
+    const service = new MailMetadataService(db);
+    await service.upsertBatch(ACCOUNT_ID, BOB, OWNER, "inbox", [makeMessage("m3")]);
+
+    const rows = getValues();
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.orgId).toBe(OWNER);
+    expect(rows[0]?.userMembershipId).toBe(BOB);
+    expect(rows[0]?.orgId).not.toBe(ATTACKER);
+  });
+});
+
+describe("MailMetadataService.updateState — tenant isolation", () => {
+  function makeDb() {
+    let capturedWhere: SQL | undefined;
+    const where = jest.fn().mockImplementation((pred: SQL) => {
+      capturedWhere = pred;
+      return undefined;
+    });
+    const set = jest.fn().mockReturnValue({ where });
+    const db = { update: jest.fn().mockReturnValue({ set }) } as unknown as Db;
+    return { db, getWhere: () => capturedWhere };
+  }
+
+  it("DENY: predicate binds ATTACKER org and membership, owner org absent", async () => {
+    const { db, getWhere } = makeDb();
+    const service = new MailMetadataService(db);
+    await service.updateState(ACCOUNT_ID, ALICE, ATTACKER, "msg-1", { isRead: true });
+
+    const { sql, params } = dialect.sqlToQuery(getWhere() as SQL);
+    expect(sql).toContain("org_id");
+    expect(sql).toContain("user_membership_id");
+    expect(params).toContain(ATTACKER);
+    expect(params).not.toContain(OWNER);
+  });
+
+  it("CONTROL: predicate binds OWNER org and correct membership", async () => {
+    const { db, getWhere } = makeDb();
+    const service = new MailMetadataService(db);
+    await service.updateState(ACCOUNT_ID, BOB, OWNER, "msg-2", { isStarred: false });
+
+    const { sql, params } = dialect.sqlToQuery(getWhere() as SQL);
+    expect(sql).toContain("org_id");
+    expect(sql).toContain("user_membership_id");
+    expect(params).toContain(OWNER);
+    expect(params).toContain(BOB);
+    expect(params).not.toContain(ATTACKER);
   });
 });

@@ -26,11 +26,64 @@ import { createHash, randomUUID } from "node:crypto";
 
 dotenv.config({ path: resolve(process.cwd(), ".env") });
 
+/**
+ * Requiring a distinct env var is advice, not a guard: SCRATCH_DATABASE_URL set to
+ * the live URL writes 25,000 rows into production, and `--purge` deletes there.
+ * The database name is checked, and the URL is compared against the live ones, so
+ * a copy-paste cannot be the only thing standing between the seed and real data.
+ */
+export function assertScratchTarget(scratchUrl, liveUrls) {
+  let database;
+  try {
+    database = new URL(scratchUrl).pathname.replace(/^\//, "").split("?")[0];
+  } catch {
+    return { ok: false, reason: "SCRATCH_DATABASE_URL is not a parseable URL" };
+  }
+  if (!/scratch/i.test(database))
+    return {
+      ok: false,
+      reason: `refusing to seed database "${database}" — SCRATCH_DATABASE_URL must name a scratch database (its name must contain "scratch")`,
+    };
+  for (const live of liveUrls) {
+    if (live && live === scratchUrl)
+      return { ok: false, reason: "SCRATCH_DATABASE_URL is identical to a live database URL" };
+  }
+  return { ok: true, database };
+}
+
+if (process.argv.includes("--self-test")) {
+  const cases = [
+    ["rejects the live database name", assertScratchTarget("postgres://u:p@h/neondb", []).ok, false],
+    ["accepts a scratch database name", assertScratchTarget("postgres://u:p@h/scratch_e2e", []).ok, true],
+    ["rejects a url identical to DATABASE_URL", assertScratchTarget("postgres://u:p@h/scratch_e2e", ["postgres://u:p@h/scratch_e2e"]).ok, false],
+    ["rejects an unparseable url", assertScratchTarget("not a url", []).ok, false],
+  ];
+  let failed = false;
+  for (const [label, actual, wanted] of cases) {
+    if (actual === wanted) console.log(`  [pass] ${label}`);
+    else {
+      console.error(`  [FAIL] ${label}: expected ${wanted}, got ${actual}`);
+      failed = true;
+    }
+  }
+  console.log(failed ? "\nSELF-TEST FAILED" : "\nSELF-TEST PASSED");
+  process.exit(failed ? 1 : 0);
+}
+
 const SCRATCH_URL = process.env.SCRATCH_DATABASE_URL;
 if (!SCRATCH_URL) {
   console.error(
     "SCRATCH_DATABASE_URL is required. Build it from DATABASE_URL by replacing the database name with scratch_e2e.",
   );
+  process.exit(1);
+}
+
+const target = assertScratchTarget(SCRATCH_URL, [
+  process.env.DATABASE_URL,
+  process.env.APP_DATABASE_URL,
+]);
+if (!target.ok) {
+  console.error(`seed-scratch-e2e: ${target.reason}`);
   process.exit(1);
 }
 
@@ -975,10 +1028,10 @@ async function seedMail() {
 
   for (let i = 1; i <= 15; i++) {
     await sql.unsafe(
-      `INSERT INTO mail_message_metadata (org_id, account_id, user_id, message_id, thread_id, subject, sender_email, sender_name, date, is_read, is_starred, has_attachment, labels, folder, synced_at)
+      `INSERT INTO mail_message_metadata (org_id, account_id, user_membership_id, message_id, thread_id, subject, sender_email, sender_name, date, is_read, is_starred, has_attachment, labels, folder, synced_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now() - interval '${i} hours', false, false, false, '{}', 'inbox', now())
        ON CONFLICT DO NOTHING`,
-      [LARGE_ORG, newAcc, memRow.user_id,
+      [LARGE_ORG, newAcc, memRow.id,
         `msg-scratch-${i}-${LARGE_ORG.slice(0, 8)}`,
         `thread-${Math.ceil(i / 3)}`,
         `Subject ${i}`, `sender${i}@example.com`, `Sender ${i}`,

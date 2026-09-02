@@ -1,6 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { EmploymentFactsService } from "./employment-facts.service";
+import { DIRECT_REPORT_ID_CAP, EmploymentFactsService } from "./employment-facts.service";
 import type { Db } from "../../db/drizzle.module";
 import { sealSensitive } from "../../common/security/sensitive-field";
 import { sealBankDetails } from "../../common/hr/canonical-bank-details";
@@ -15,6 +15,7 @@ function render(condition: unknown): string {
 class QueryRecorder {
   readonly joins: unknown[] = [];
   readonly filters: unknown[] = [];
+  readonly limits: number[] = [];
   ordered = false;
 
   constructor(private readonly rows: unknown[]) {}
@@ -43,6 +44,10 @@ class QueryRecorder {
   orderBy(): this {
     this.ordered = true;
     return this;
+  }
+  limit(n: number): Promise<unknown[]> {
+    this.limits.push(n);
+    return Promise.resolve(this.rows);
   }
   then(resolve: (rows: unknown[]) => unknown): unknown {
     return resolve(this.rows);
@@ -121,6 +126,31 @@ describe("EmploymentFactsService", () => {
         .map(render)
         .filter((sql) => sql.includes('"org_id" = $'));
       expect(orgPredicates.length).toBeGreaterThanOrEqual(5);
+    });
+
+    it("re-enters the tenant through organization_members because users is global", async () => {
+      const { service, recorder } = serviceOver([]);
+      await service.getFactsBatch(ORG, ["u1"]);
+      const sql = recorder.allSql();
+
+      expect(sql).toContain('"organization_members"."org_id" = $');
+      expect(sql).toContain('"organization_members"."user_id" = "users"."id"');
+    });
+
+    it("bounds the direct-report id list that feeds the org-chart IN clause", async () => {
+      const { service, recorder } = serviceOver([]);
+      await service.getDirectReportUserIds(ORG, "manager-1");
+      expect(recorder.limits).toContain(DIRECT_REPORT_ID_CAP);
+      expect(recorder.ordered).toBe(true);
+    });
+
+    it("re-enters the tenant on the sensitive batch as well", async () => {
+      const { service, recorder } = serviceOver([]);
+      await service.getSensitiveFactsBatch(ORG, ["u1"]);
+      const sql = recorder.allSql();
+
+      expect(sql).toContain('"organization_members"."org_id" = $');
+      expect(sql).toContain('"organization_members"."user_id" = "users"."id"');
     });
 
     it("orders by employment id so a duplicate primary employment resolves deterministically", async () => {

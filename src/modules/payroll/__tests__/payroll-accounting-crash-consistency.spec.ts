@@ -83,9 +83,10 @@ function makeLockingDb(run: object, txBehavior: (tx: object) => Promise<void> = 
   });
   const txInsert = jest.fn().mockReturnValue({ values: txValuesMock });
 
-  const txUpdate = jest.fn().mockReturnValue({
-    set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+  const txSetMock = jest.fn().mockReturnValue({
+    where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: RUN_ID }]) }),
   });
+  const txUpdate = jest.fn().mockReturnValue({ set: txSetMock });
   const txSelect = jest.fn().mockReturnValue({
     from: jest.fn().mockReturnValue({
       where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
@@ -275,5 +276,59 @@ describe("AR-07 — replay/duplicate-delivery cannot duplicate a journal", () =>
     consumer.onModuleInit();
 
     await expect(consumer.handle(makeOutboxEvent())).rejects.toThrow("accounting-period-closed");
+  });
+});
+
+describe("AR-07 — a run whose posting never lands is observable, not silently pending", () => {
+  function failedStates(db: ReturnType<typeof makeConsumerDb>): unknown[] {
+    return (db._setMock.mock.calls as Array<[Record<string, unknown>]>)
+      .map((args) => args[0]?.postingState)
+      .filter((state) => state === "failed");
+  }
+
+  it("marks posting_state failed when the payload can never be parsed", async () => {
+    const db = makeConsumerDb();
+    const payrollPosting = { postFinalized: jest.fn() } as never;
+    const consumer = new PayrollPostingIntentConsumer(db as never, payrollPosting, new OutboxConsumerRegistry());
+    consumer.onModuleInit();
+
+    await consumer.handle(makeOutboxEvent({ payload: { bad: "data" } }));
+
+    expect(failedStates(db)).toEqual(["failed"]);
+  });
+
+  it("marks posting_state failed when the payload targets another tenant", async () => {
+    const db = makeConsumerDb();
+    const payrollPosting = { postFinalized: jest.fn() } as never;
+    const consumer = new PayrollPostingIntentConsumer(db as never, payrollPosting, new OutboxConsumerRegistry());
+    consumer.onModuleInit();
+
+    await consumer.handle(
+      makeOutboxEvent({
+        payload: {
+          runId: RUN_ID,
+          month: MONTH,
+          gross: GROSS,
+          deductions: DEDUCTIONS,
+          net: NET,
+          employerCost: EMPLOYER_COST,
+          actorUserId: ACTOR_USER_ID,
+          orgId: "org-different-tenant",
+        },
+      }),
+    );
+
+    expect(failedStates(db)).toEqual(["failed"]);
+  });
+
+  it("marks posting_state failed when posting throws, and still re-throws for retry", async () => {
+    const db = makeConsumerDb();
+    const payrollPosting = { postFinalized: jest.fn().mockRejectedValue(new Error("boom")) } as never;
+    const consumer = new PayrollPostingIntentConsumer(db as never, payrollPosting, new OutboxConsumerRegistry());
+    consumer.onModuleInit();
+
+    await expect(consumer.handle(makeOutboxEvent())).rejects.toThrow("boom");
+
+    expect(failedStates(db)).toEqual(["failed"]);
   });
 });

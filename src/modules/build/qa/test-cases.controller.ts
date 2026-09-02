@@ -45,7 +45,7 @@ export class TestCasesController {
     @Query() query: TestCaseListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listCases(u.orgId, projectId, query);
+    return this.svc.listCases(u, projectId, query);
   }
 
   @Get(":caseId")
@@ -68,7 +68,7 @@ export class TestCasesController {
     @Body() body: CreateTestCaseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createCase(u.orgId, u.userId, projectId, body);
+    return this.svc.createCase(u, projectId, body);
   }
 
   @Patch(":caseId")

@@ -59,7 +59,7 @@ describe("SupportWorkspaceService", () => {
     it("forbids editing another user's personal view", async () => {
       mockDb.query.supportSavedViews.findFirst.mockResolvedValueOnce({
         id: 1,
-        ownerId: "other-user",
+        ownerMembershipId: 99,
         visibility: "personal",
       });
 
@@ -71,7 +71,7 @@ describe("SupportWorkspaceService", () => {
     it("allows editing your own personal view", async () => {
       mockDb.query.supportSavedViews.findFirst.mockResolvedValueOnce({
         id: 1,
-        ownerId: "me",
+        ownerMembershipId: 1,
         visibility: "personal",
       });
       mockDb.returning.mockResolvedValueOnce([{ id: 1, name: "renamed" }]);
@@ -84,13 +84,13 @@ describe("SupportWorkspaceService", () => {
     it("allows editing a team/global view regardless of ownerId", async () => {
       mockDb.query.supportSavedViews.findFirst.mockResolvedValueOnce({
         id: 1,
-        ownerId: null,
+        ownerMembershipId: null,
         visibility: "team",
       });
       mockDb.returning.mockResolvedValueOnce([{ id: 1, name: "renamed" }]);
 
       await expect(
-        service.updateSavedView("org1", "me", null, 1, { name: "renamed" } as never),
+        service.updateSavedView("org1", "me", 2, 1, { name: "renamed" } as never),
       ).resolves.toMatchObject({ id: 1, name: "renamed" });
     });
   });
