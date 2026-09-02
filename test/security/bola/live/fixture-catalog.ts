@@ -19,8 +19,18 @@ export interface Catalog {
   readonly ids: ReadonlyMap<string, readonly string[]>;
 }
 
+/**
+ * The tenant column is not spelled one way in this schema.
+ *
+ * 767 tables call it `org_id` and 81 call it `organization_id` — `workers`, `subjects`,
+ * `business_parties`, `issue_records`, `workflow_runs` and the whole `crm_*`/`party_*` family
+ * among them. A catalog that looks only for `org_id` cannot produce an id for any route addressing
+ * those, and their ~100 routes drop out of the sweep as "no table resolves this parameter" — an
+ * absence that reads like a naming miss rather than the coverage hole it is. So the column name is
+ * discovered per table and carried on the reference.
+ */
 const ORG_SCOPED_TABLES = `
-SELECT n.nspname AS schema, c.relname AS name, pk.attname AS pk
+SELECT n.nspname AS schema, c.relname AS name, pk.attname AS pk, o.attname AS org_column
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 JOIN LATERAL (
@@ -30,12 +40,15 @@ JOIN LATERAL (
   WHERE i.indrelid = c.oid AND i.indisprimary AND array_length(i.indkey, 1) = 1
   LIMIT 1
 ) pk ON true
+JOIN LATERAL (
+  SELECT a.attname
+  FROM pg_attribute a
+  WHERE a.attrelid = c.oid AND NOT a.attisdropped AND a.attname IN ('org_id', 'organization_id')
+  ORDER BY CASE a.attname WHEN 'org_id' THEN 0 ELSE 1 END
+  LIMIT 1
+) o ON true
 WHERE c.relkind IN ('r', 'p')
   AND n.nspname IN ('public', 'build')
-  AND EXISTS (
-    SELECT 1 FROM pg_attribute o
-    WHERE o.attrelid = c.oid AND o.attname = 'org_id' AND NOT o.attisdropped
-  )
 ORDER BY 1, 2`;
 
 function quoted(table: TableRef): string {
@@ -54,9 +67,17 @@ export async function loadCatalog(
   perTable = 24,
   batchSize = 60,
 ): Promise<Catalog> {
-  const rows = await sql.unsafe<{ schema: string; name: string; pk: string }[]>(ORG_SCOPED_TABLES);
+  const rows = await sql.unsafe<{ schema: string; name: string; pk: string; org_column: string }[]>(
+    ORG_SCOPED_TABLES,
+  );
   const tables = new Map<string, TableRef>();
-  for (const row of rows) tables.set(`${row.schema}.${row.name}`, { schema: row.schema, name: row.name, pk: row.pk });
+  for (const row of rows)
+    tables.set(`${row.schema}.${row.name}`, {
+      schema: row.schema,
+      name: row.name,
+      pk: row.pk,
+      orgColumn: row.org_column,
+    });
 
   const ids = new Map<string, readonly string[]>();
   const populated = new Set<string>();
@@ -69,7 +90,7 @@ export async function loadCatalog(
           `SELECT '${t.schema}.${t.name}' AS t, (
              SELECT array_agg(v::text) FROM (
                SELECT "${t.pk}" AS v FROM ${quoted(t)}
-               WHERE org_id = $1 ORDER BY "${t.pk}" LIMIT ${String(perTable)}
+               WHERE "${t.orgColumn}" = $1 ORDER BY "${t.pk}" LIMIT ${String(perTable)}
              ) z
            ) AS vals`,
       )

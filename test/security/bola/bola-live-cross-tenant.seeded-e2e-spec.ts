@@ -54,6 +54,8 @@ const SOURCE_ORG = process.env.BOLA_SOURCE_ORG_ID ?? "";
 const PROBER_ORG = process.env.BOLA_PROBER_ORG_ID ?? "";
 const ARTIFACT = process.env.BOLA_LIVE_ARTIFACT ?? "";
 const ONLY = process.env.BOLA_LIVE_ONLY ?? "";
+/** Pins the probing user. Empty means the prober organization's owner, the widest caller it has. */
+const PROBER_USER = process.env.BOLA_PROBER_USER_ID ?? "";
 const LIMIT = Number(process.env.BOLA_LIVE_LIMIT ?? "0");
 const MIN_SCORED = Number(process.env.BOLA_LIVE_MIN_SCORED ?? "200");
 const REQUEST_TIMEOUT_MS = Number(process.env.BOLA_LIVE_TIMEOUT_MS ?? "15000");
@@ -236,32 +238,42 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
     owner = postgres(OWNER_URL, { max: 2, prepare: false, ssl: false, onnotice: () => {} });
     sourceCatalog = await loadCatalog(owner, SOURCE_ORG);
     sourceUser = await resolveOwnerUser(SOURCE_ORG);
-    proberUser = await resolveOwnerUser(PROBER_ORG);
+    proberUser = PROBER_USER.length > 0 ? PROBER_USER : await resolveOwnerUser(PROBER_ORG);
     await refreshTokens();
   });
 
+  /**
+   * Written every 50 routes, not only at the end.
+   *
+   * A sweep of this size runs for over an hour, and a run killed at minute 80 with the artifact
+   * still in memory has proved nothing it can show. Flushing as it goes costs one file write per
+   * fifty routes and means a killed run is still evidence for everything it reached.
+   */
+  const writeArtifact = (): void => {
+    if (!ARTIFACT || outcomes.length === 0) return;
+    mkdirSync(dirname(ARTIFACT), { recursive: true });
+    writeFileSync(
+      ARTIFACT,
+      `${JSON.stringify(
+        {
+          method: "live-http-cross-tenant",
+          generatedAt: new Date().toISOString(),
+          commit: commit(),
+          sourceOrg: SOURCE_ORG,
+          proberOrg: PROBER_ORG,
+          sourceUser,
+          proberUser,
+          harnessProofs,
+          outcomes,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  };
+
   afterAll(async () => {
-    if (ARTIFACT && outcomes.length > 0) {
-      mkdirSync(dirname(ARTIFACT), { recursive: true });
-      writeFileSync(
-        ARTIFACT,
-        `${JSON.stringify(
-          {
-            method: "live-http-cross-tenant",
-            generatedAt: new Date().toISOString(),
-            commit: commit(),
-            sourceOrg: SOURCE_ORG,
-            proberOrg: PROBER_ORG,
-            sourceUser,
-            proberUser,
-            harnessProofs,
-            outcomes,
-          },
-          null,
-          2,
-        )}\n`,
-      );
-    }
+    writeArtifact();
     if (owner) await owner.end({ timeout: 5 });
     if (seeded) await seeded.close();
   });
@@ -454,6 +466,7 @@ describeIfSeeded("BOLA — live cross-tenant probe of every object-addressable r
         detail: scored.detail,
         probeBody: isFinding(scored.verdict) ? probeResult.body : undefined,
       });
+      if (outcomes.length % 50 === 0) writeArtifact();
     }
 
     const tally = new Map<Verdict, number>();

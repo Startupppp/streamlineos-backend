@@ -15,6 +15,8 @@ export interface TableRef {
   readonly schema: string;
   readonly name: string;
   readonly pk: string;
+  /** `org_id` on most tables, `organization_id` on 81 of them. */
+  readonly orgColumn: string;
 }
 
 const SUFFIX_STRIP = /(Id|Key|Slug|Token)$/;
@@ -183,6 +185,43 @@ export const PARAM_ALIASES: Readonly<Record<string, readonly string[]>> = {
   exceptionId: ["calendar_event_exceptions"],
   grantId: ["role_permission_grants", "user_permission_grants"],
   assignmentId: ["role_assignments"],
+
+  // The organization hierarchy is one table with a `kind`, so five route nouns share it.
+  branchId: ["org_units"],
+  departmentId: ["org_units"],
+  businessUnitId: ["org_units"],
+  costCenterId: ["org_units"],
+  unitId: ["org_units"],
+  divisionId: ["org_units"],
+
+  workerId: ["workers"],
+  subjectId: ["subjects"],
+  subjectTypeId: ["subject_types"],
+  subjectPartyLinkId: ["subject_party_links"],
+  workerEngagementId: ["worker_engagements"],
+  findingId: ["data_quality_findings"],
+  crmMailboxSyncId: ["crm_mailbox_sync"],
+  crmConnectorSyncId: ["crm_connector_syncs"],
+  issueRecordId: ["issue_records"],
+  threadId: ["relationship_threads", "mail_threads"],
+  notificationId: ["notifications"],
+  leaveId: ["leave_requests"],
+  blackoutId: ["leave_blackout_dates"],
+  timerId: ["timer_sessions"],
+  quarantineId: ["file_quarantine_records"],
+  accommodationId: ["hr_accommodation_requests"],
+  successionId: ["hr_succession_plans"],
+  handbookId: ["handbook_versions"],
+  kpiId: ["kpi_definitions"],
+  docId: ["documents"],
+  epicId: ["tickets"],
+  zoneId: ["geofence_zones", "hr_geofence_zones"],
+  shiftId: ["shift_templates"],
+  recallId: ["inv_recalls", "inv_recall_events"],
+  variableId: ["workflow_variables"],
+  serialId: ["inv_serial_numbers"],
+  snapshotId: ["crm_forecast_snapshots"],
+  appId: ["marketplace_apps", "apps"],
 };
 
 export function candidateTableNames(route: HandlerRoute, param: string): string[] {

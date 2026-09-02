@@ -10,11 +10,11 @@ import { bindParam, buildPath, disambiguate, isDisclosure, isFinding, planRoutes
  */
 
 const KNOWN = new Map<string, TableRef>([
-  ["public.inv_products", { schema: "public", name: "inv_products", pk: "id" }],
-  ["public.kb_articles", { schema: "public", name: "kb_articles", pk: "id" }],
-  ["public.hr_people", { schema: "public", name: "hr_people", pk: "id" }],
-  ["build.projects", { schema: "build", name: "projects", pk: "id" }],
-  ["build.tickets", { schema: "build", name: "tickets", pk: "id" }],
+  ["public.inv_products", { schema: "public", name: "inv_products", pk: "id", orgColumn: "org_id" }],
+  ["public.kb_articles", { schema: "public", name: "kb_articles", pk: "id", orgColumn: "org_id" }],
+  ["public.hr_people", { schema: "public", name: "hr_people", pk: "id", orgColumn: "org_id" }],
+  ["build.projects", { schema: "build", name: "projects", pk: "id", orgColumn: "org_id" }],
+  ["build.tickets", { schema: "build", name: "tickets", pk: "id", orgColumn: "org_id" }],
 ]);
 const POPULATED = new Set(["public.inv_products", "build.projects", "build.tickets", "public.hr_people"]);
 
