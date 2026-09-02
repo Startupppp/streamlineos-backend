@@ -93,8 +93,11 @@ const sql = postgres(SCRATCH_URL, { max: 1, prepare: false, ssl, onnotice: () =>
 
 const started = Date.now();
 const log = (msg) => console.log(`[${((Date.now() - started) / 1000).toFixed(1)}s] ${msg}`);
-const warn = (label, e) =>
-  console.warn(`[${((Date.now() - started) / 1000).toFixed(1)}s] WARN ${label}: ${e?.message ?? e}`);
+const warn = (label, e) => {
+  const message = e?.message ?? String(e);
+  console.warn(`[${((Date.now() - started) / 1000).toFixed(1)}s] WARN ${label}: ${message}`);
+  errors.push({ label, message });
+};
 
 const LARGE_ORG = "aaaaaaaa-1111-0000-0000-000000000001";
 const SMALL_ORG = "aaaaaaaa-1111-0000-0000-000000000002";
@@ -598,7 +601,6 @@ async function seedChat() {
     [LARGE_ORG],
   );
   const senderMemberId = memberRows[0]?.id;
-  const senderUserId = memberRows[0]?.user_id ?? ownerId;
 
   const chanId = await sql.unsafe(
     `INSERT INTO chat_channels (org_id, name, type, is_private, is_archived, last_message_at, created_at, updated_at)
@@ -671,10 +673,10 @@ async function seedChat() {
   );
   for (const msg of msgRows) {
     await sql.unsafe(
-      `INSERT INTO chat_saved_messages (org_id, user_id, membership_id, message_id, saved_at)
-       VALUES ($1, $2, $3, $4, now())
+      `INSERT INTO chat_saved_messages (org_id, membership_id, message_id, saved_at)
+       VALUES ($1, $2, $3, now())
        ON CONFLICT DO NOTHING`,
-      [LARGE_ORG, senderUserId, senderMemberId, msg.id],
+      [LARGE_ORG, senderMemberId, msg.id],
     ).catch((e) => warn("saved_message", e));
   }
 }
@@ -943,7 +945,7 @@ async function seedSupport() {
        SELECT $1, 'Support Ticket ' || s,
          (CASE WHEN s % 3 = 0 THEN 'OPEN' WHEN s % 3 = 1 THEN 'IN_PROGRESS' ELSE 'WAITING' END)::support_ticket_status,
          (CASE WHEN s % 4 = 0 THEN 'URGENT' WHEN s % 4 = 1 THEN 'HIGH' WHEN s % 4 = 2 THEN 'MEDIUM' ELSE 'LOW' END)::support_ticket_priority,
-         $2::int, 'web'::support_source_channel, $3::int, 0, 0, now() - (s || ' hours')::interval, now()
+         $2::int, 'web', $3::int, 0, 0, now() - (s || ' hours')::interval, now()
        FROM generate_series(${from}, ${SUPPORT_TICKET_COUNT}) s`,
       [LARGE_ORG, assigneeMembershipId, creatorMembershipId],
     ).catch((e) => warn("support_tickets batch", e));
@@ -982,8 +984,8 @@ async function seedPayroll() {
         ).then((r) => r[0]?.id).catch(() => null);
         if (empRow) {
           await sql.unsafe(
-            `INSERT INTO payroll_line_items (org_id, run_id, run_employee_id, code, name, category, calc_method, amount, sort_order, created_at)
-             VALUES ($1, $2, $3, 'BASIC', 'Basic Salary', 'EARNING', 'FIXED', 500000, 1, now())
+            `INSERT INTO payroll_line_items (org_id, run_id, run_employee_id, code, name, category, calc_method, amount, sort_order, calc_explain, created_at)
+             VALUES ($1, $2, $3, 'BASIC', 'Basic Salary', 'EARNING', 'FIXED', 500000, 1, '{"source":"seed","formula":"FIXED"}'::jsonb, now())
              ON CONFLICT DO NOTHING`,
             [LARGE_ORG, runRow, empRow],
           ).catch((e) => warn("payroll_line_item", e));
@@ -1205,8 +1207,14 @@ async function reportCounts() {
   console.log(`  LARGE_ORG  = ${LARGE_ORG}`);
   console.log(`  SMALL_ORG  = ${SMALL_ORG}`);
   if (errors.length > 0) {
-    console.log(`\n  WARNING: ${errors.length} section(s) had errors:`);
-    for (const e of errors) console.log(`    [${e.label}] ${e.message.slice(0, 120)}`);
+    const grouped = new Map();
+    for (const e of errors) {
+      const key = `${e.label}: ${e.message.slice(0, 160)}`;
+      grouped.set(key, (grouped.get(key) ?? 0) + 1);
+    }
+    console.log(`\n  WARNING: ${errors.length} error(s) in ${grouped.size} distinct failure(s):`);
+    for (const [key, n] of grouped) console.log(`    (x${n}) ${key}`);
+    process.exitCode = 1;
   } else {
     console.log("\n  All sections completed without errors.");
   }
