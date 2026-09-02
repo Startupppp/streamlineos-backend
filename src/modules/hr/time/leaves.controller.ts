@@ -263,6 +263,7 @@ export class LeavesController {
   }
 }
 
+@RequireModule("hr")
 @Controller("hr/leave-calendar")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class LeaveCalendarController {

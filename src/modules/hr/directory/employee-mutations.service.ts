@@ -367,6 +367,10 @@ export class EmployeeMutationsService {
       await this.cache.invalidate(CACHE_KEYS.userSession(targetUserId));
     }
 
+    await this.cache.invalidateNamespace(
+      CACHE_KEYS.hrEmployeesListNamespace(actor.orgId),
+    );
+
     void this.hrAutomation
       .emit(actor.orgId, "employee.updated", {
         employeeId: targetUserId,

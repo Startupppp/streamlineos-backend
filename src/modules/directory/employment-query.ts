@@ -4,6 +4,7 @@ import {
   hrEmployments,
   hrPeople,
   hrReportingLines,
+  organizationMembers,
   orgUnits,
 } from "../../db/schema";
 
@@ -36,6 +37,16 @@ type ReportingLinesTable = {
   employmentId: PgColumn;
   managerEmploymentId: PgColumn;
 };
+
+/** `users` is global, so any read that starts there must re-enter the tenant. */
+export function memberOfOrg(orgId: string, userId: UserIdRef): SQL {
+  const condition = and(
+    eq(organizationMembers.orgId, orgId),
+    eq(organizationMembers.userId, userId),
+  );
+  if (!condition) throw new Error("memberOfOrg produced no condition");
+  return condition;
+}
 
 export function livePersonOfUser(
   orgId: string,

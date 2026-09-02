@@ -149,9 +149,29 @@ describe("the schema keeps the audit row alive", () => {
     .split("\n")
     .find((line) => line.includes("vaultDocumentId:"));
 
+  /**
+   * The tenant relationship may be declared inline on the column or as a
+   * composite `foreignKey({ columns: [orgId, vaultDocumentId] })`; the scan has
+   * to see both, or a migration to the composite form reads as a lost rule.
+   */
+  const documentForeignKey = block
+    .split("\n")
+    .find(
+      (line) =>
+        line.includes("foreignKey(") && line.includes("table.vaultDocumentId"),
+    );
+
   it("nulls the document reference on delete instead of cascading the audit row away", () => {
-    expect(documentReference).toContain('onDelete: "set null"');
-    expect(documentReference).not.toContain("cascade");
+    const declaration = documentForeignKey ?? documentReference;
+    expect(declaration).toBeDefined();
+    expect(declaration).toMatch(/onDelete(:\s*|\(\s*)"set null"/);
+    expect(declaration).not.toContain("cascade");
+  });
+
+  it("keeps the document reference tenant-scoped when it is declared as a composite", () => {
+    if (!documentForeignKey) return;
+    expect(documentForeignKey).toContain("table.orgId");
+    expect(documentForeignKey).toContain("candidateDocumentsVault.orgId");
   });
 
   it("leaves the document reference nullable, so a nulled one is representable", () => {

@@ -15,11 +15,6 @@ export type DirectoryPersonAccountAccess =
     }
   | { state: "NONE" };
 
-export type DirectoryPersonWithAccess =
-  typeof organizationPeople.$inferSelect & {
-    accountAccess: DirectoryPersonAccountAccess;
-  };
-
 export const LINKABLE_MEMBERSHIP_STATUSES = [
   "INVITED",
   "ACTIVE",

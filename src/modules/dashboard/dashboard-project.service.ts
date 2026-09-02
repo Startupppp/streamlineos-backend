@@ -6,6 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
 import { resolveBuildDashboardScope } from "./dashboard-scope";
+import { DASHBOARD_PROJECT_ID_CAP } from "./dashboard-read-limits";
 
 @Injectable()
 export class DashboardProjectService {
@@ -23,6 +24,8 @@ export class DashboardProjectService {
       const allProjects = await this.db.query.projects.findMany({
         where: and(eq(projects.orgId, orgId), isNull(projects.deletedAt)),
         columns: { id: true },
+        orderBy: [desc(projects.id)],
+        limit: DASHBOARD_PROJECT_ID_CAP,
       });
       return allProjects.map((p) => p.id);
     }
@@ -30,7 +33,9 @@ export class DashboardProjectService {
       .select({ projectId: projectMembers.projectId })
       .from(projectMembers)
       .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
-      .where(and(eq(projectMembers.orgId, orgId), eq(organizationMembers.userId, userId)));
+      .where(and(eq(projectMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .orderBy(desc(projectMembers.projectId))
+      .limit(DASHBOARD_PROJECT_ID_CAP);
     return memberOf.map((m) => m.projectId);
   }
 

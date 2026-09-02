@@ -35,11 +35,7 @@ import {
   type IdentitySelector,
   type MemberIdentity,
 } from "./directory-identity-helpers";
-
-export type {
-  DirectoryPersonAccountAccess,
-  DirectoryPersonWithAccess,
-} from "./directory-identity-helpers";
+import type { DirectoryPerson } from "./directory-person-projection";
 
 type PersonRow = typeof organizationPeople.$inferSelect;
 
@@ -142,7 +138,7 @@ export class DirectoryIdentityService {
 
   async resolvePersonAccess(
     organizationId: string,
-    person: PersonRow,
+    person: DirectoryPerson,
   ) {
     const [withAccess] = await this.resolvePeopleAccess(organizationId, [person]);
     if (!withAccess) throw new Error("Failed to resolve person access");
@@ -151,7 +147,7 @@ export class DirectoryIdentityService {
 
   async resolvePeopleAccess(
     organizationId: string,
-    people: PersonRow[],
+    people: DirectoryPerson[],
   ) {
     if (people.length === 0) return [];
 

@@ -3,6 +3,8 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { AccessService } from "../../access/access.service";
 import type { DataScope } from "../../access/access.types";
 import { PgDialect } from "drizzle-orm/pg-core";
+import { eq } from "drizzle-orm";
+import { leaveRequests } from "../../../db/schema";
 
 jest.mock("../../rbac/permissions", () => ({
   ...jest.requireActual("../../rbac/permissions"),
@@ -83,10 +85,27 @@ describe("resolveLeavesViewScope", () => {
     expect(compiled.params).toEqual([7]);
   });
 
-  it("requires approver assignment and falls back to own when no team members are resolved", () => {
-    const compiled = new PgDialect().sqlToQuery(
-      leaveApprovalScope("team", 7),
+  it("lets a team-scope approver decide the requests assigned to them", () => {
+    const compiled = new PgDialect().sqlToQuery(leaveApprovalScope("team", 7));
+    expect(compiled.sql).toContain('"approver_membership_id" = ');
+    expect(compiled.params).toEqual([7]);
+  });
+
+  it("never additionally requires the approver to be the requester, which the self-approval guard would always deny", () => {
+    for (const scope of ["own", "team"] as const) {
+      const compiled = new PgDialect().sqlToQuery(leaveApprovalScope(scope, 7));
+      expect(compiled.sql).not.toContain('"user_membership_id"');
+    }
+  });
+
+  it("matches the predicate the pending-approvals roster lists, so a listed request is decidable", () => {
+    const listed = new PgDialect().sqlToQuery(
+      eq(leaveRequests.approverMembershipId, 7),
     );
-    expect(compiled.params).toEqual([7, 7]);
+    for (const scope of ["own", "team"] as const) {
+      const decidable = new PgDialect().sqlToQuery(leaveApprovalScope(scope, 7));
+      expect(decidable.sql).toBe(listed.sql);
+      expect(decidable.params).toEqual(listed.params);
+    }
   });
 });

@@ -26,7 +26,7 @@ import { orgUnits } from "../../../db/schema/common/organization";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import {
@@ -66,8 +66,9 @@ export class EmployeesService {
     const departmentId = opts.departmentId;
     const role = opts.role?.trim() || undefined;
 
-    const key = `hr:employees:cursor:${orgId}:${userId}:${scope}:${opts.cursor ?? ""}:${limitN}:${search ?? ""}:${departmentId ?? ""}:${isActive}:${role ?? ""}`;
-    return this.cache.cached(
+    const key = `cursor:${userId}:${scope}:${opts.cursor ?? ""}:${limitN}:${search ?? ""}:${departmentId ?? ""}:${isActive}:${role ?? ""}`;
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.hrEmployeesListNamespace(orgId),
       key,
       () =>
         this.getEmployeesPaginated(
