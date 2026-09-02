@@ -328,9 +328,11 @@ BUCKET SUMMARY  (${coverage.tenant_columns} tenant-scoped tables scanned)` +
   // A scope exclusion is a statement about who fixes it, never about whether the exposure is
   // real. Grants arrive through ALTER DEFAULT PRIVILEGES, so an excluded table with no policy
   // is still readable org-wide by anything reaching raw SQL as the app role. Name that here
-  // rather than let a release exclusion read as an all-clear.
+  // rather than let a release exclusion read as an all-clear — and fail on it, because printing
+  // the exposure under RESULT: RLS VERIFIED is that same all-clear by another route.
   const excludedNoPolicy = [...buckets.inventory, ...buckets.crm];
   if (excludedNoPolicy.length > 0) {
+    failures++;
     const appRole = process.env.APP_DB_ROLE || "streamline_app";
     const [{ present }] = await sql`
       SELECT count(*)::int AS present FROM pg_roles WHERE rolname = ${appRole}`;
