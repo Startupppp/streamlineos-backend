@@ -18,9 +18,8 @@ if (process.env.NODE_ENV === "production") {
   process.exit(1);
 }
 
-const OWNER_URL =
-  process.env.DATABASE_URL ??
-  "postgresql://neondb_owner:npg_uHztXRn51MdW@ep-orange-mode-azxn5hbr.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require";
+const OWNER_URL = process.env.DATABASE_URL;
+if (!OWNER_URL) throw new Error("DATABASE_URL is required");
 
 const db = postgres(OWNER_URL, { max: 1, prepare: false, onnotice: () => {} });
 

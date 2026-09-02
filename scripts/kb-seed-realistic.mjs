@@ -25,10 +25,10 @@
 
 import postgres from "../node_modules/postgres/cjs/src/index.js";
 
-const DATABASE_URL =
-  "postgresql://neondb_owner:npg_uHztXRn51MdW@ep-orange-mode-azxn5hbr-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require";
-const APP_DATABASE_URL =
-  "postgresql://streamline_app:WSg4RkClGehOF5sRez12R_XSjyhO_2pa@ep-orange-mode-azxn5hbr-pooler.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require";
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) throw new Error("DATABASE_URL is required");
+const APP_DATABASE_URL = process.env.APP_DATABASE_URL;
+if (!APP_DATABASE_URL) throw new Error("APP_DATABASE_URL is required");
 
 const DIMS = 1536;
 const MAJORITY_ORG = "73e5076a-225f-4b4c-b93e-9bc66a548bfe";

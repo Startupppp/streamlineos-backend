@@ -299,7 +299,9 @@
     "check:import-direction": "node src/scripts/check-import-direction.mjs",
     "check:import-direction:self-test": "node src/scripts/check-import-direction.mjs --self-test",
     "check:module-registration": "node src/scripts/check-module-registration.mjs",
-    "check:module-registration:self-test": "node src/scripts/check-module-registration.mjs --self-test"
+    "check:module-registration:self-test": "node src/scripts/check-module-registration.mjs --self-test",
+    "check:hardcoded-secrets": "node src/scripts/check-hardcoded-secrets.mjs",
+    "check:hardcoded-secrets:self-test": "node src/scripts/check-hardcoded-secrets.mjs --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

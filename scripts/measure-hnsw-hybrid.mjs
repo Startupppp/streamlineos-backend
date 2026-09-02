@@ -13,8 +13,10 @@
  */
 import postgres from "postgres";
 
-const OWNER_URL = "postgresql://neondb_owner:npg_uHztXRn51MdW@ep-orange-mode-azxn5hbr.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require";
-const APP_URL   = "postgresql://streamline_app:npg_eKlEfHtbMg93@ep-orange-mode-azxn5hbr.c-3.ap-southeast-1.aws.neon.tech/neondb?sslmode=require";
+const OWNER_URL = process.env.DATABASE_URL;
+if (!OWNER_URL) throw new Error("DATABASE_URL is required");
+const APP_URL = process.env.APP_DATABASE_URL;
+if (!APP_URL) throw new Error("APP_DATABASE_URL is required");
 
 const SEED_ORG = "73e5076a-225f-4b4c-b93e-9bc66a548bfe";
 const ORG_B    = "c5b82e53-e69e-4937-ace8-1126ae3c0c7f";
