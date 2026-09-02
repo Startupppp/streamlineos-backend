@@ -1,6 +1,6 @@
 jest.mock("sharp", () => ({ __esModule: true, default: jest.fn() }));
 
-import { BadRequestException, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { KbMediaService } from "./kb-media.service";
 import type { StorageService, UploadResult } from "../../storage/storage.service";
 import type { AuditService } from "../../../common/audit/audit.service";
@@ -9,6 +9,46 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { validateEnv } from "../../../config/env.validation";
 import type { AvScanner } from "../../../common/security/av-scan";
+import type { Db } from "../../../db/drizzle.module";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
+
+const dialect = new PgDialect();
+
+interface AttachmentRow {
+  orgId: string;
+  pageId: number | null;
+  fileKey: string;
+  fileName: string;
+  mimeType: string;
+  fileSize: number;
+  sha256: string | null;
+  uploadedById: string | null;
+}
+
+interface MockDb {
+  findFirst: jest.Mock;
+  values: jest.Mock;
+  onConflictDoNothing: jest.Mock;
+  db: Db;
+}
+
+/**
+ * The insert is a three-link chain (`insert().values().onConflictDoNothing()`)
+ * and the page lookup is a relational `query.kbPages.findFirst`. Both are real
+ * jest mocks rather than a permissive proxy, so a test can assert the row that
+ * was actually written and a missing await shows up as an unresolved promise.
+ */
+function makeDb(): MockDb {
+  const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
+  const values = jest.fn().mockReturnValue({ onConflictDoNothing });
+  const findFirst = jest.fn().mockResolvedValue({ id: 7 });
+  const db = {
+    query: { kbPages: { findFirst } },
+    insert: jest.fn().mockReturnValue({ values }),
+  } as unknown as Db;
+  return { findFirst, values, onConflictDoNothing, db };
+}
 
 const kbConfig = validateEnv({
   DATABASE_URL: "postgres://test",
@@ -69,6 +109,7 @@ describe("KbMediaService", () => {
   let mockSharp: jest.Mock;
   let mockChain: MockChain;
   let mockScanner: { scan: jest.Mock };
+  let mockDb: MockDb;
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -95,7 +136,10 @@ describe("KbMediaService", () => {
 
     const mockAttachmentIndexing = {} as unknown as KbAttachmentIndexingService;
 
+    mockDb = makeDb();
+
     service = new KbMediaService(
+      mockDb.db,
       mockStorage as unknown as StorageService,
       mockAudit as unknown as AuditService,
       mockAttachmentIndexing,
@@ -368,6 +412,80 @@ describe("KbMediaService", () => {
       expect(resultA.key).toContain("org-a");
       expect(resultB.key).toContain("org-b");
       expect(resultA.key).not.toBe(resultB.key);
+    });
+  });
+
+  describe("attachment ledger — the row that gives the object an org", () => {
+    function writtenRow(): AttachmentRow {
+      const [row] = mockDb.values.mock.calls[0] as [AttachmentRow];
+      return row;
+    }
+
+    it("records the upload with its org, storage key and measured bytes", async () => {
+      await service.upload(makeFile("image/jpeg", JPEG_BUF, "photo.jpg"), makeUser("org-42"), 7);
+
+      expect(mockDb.values).toHaveBeenCalledTimes(1);
+      expect(writtenRow()).toEqual({
+        orgId: "org-42",
+        pageId: 7,
+        fileKey: MOCK_RESULT.key,
+        fileName: "photo.jpg",
+        mimeType: MOCK_RESULT.mimeType,
+        fileSize: MOCK_RESULT.size,
+        sha256: MOCK_RESULT.sha256,
+        uploadedById: "user-1",
+      });
+    });
+
+    it("an upload with no page records page_id null and never looks a page up", async () => {
+      await service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser("org-42"));
+
+      expect(mockDb.findFirst).not.toHaveBeenCalled();
+      expect(writtenRow().pageId).toBeNull();
+    });
+
+    it("BITE — a page id the caller's org does not own is 404, and nothing is uploaded or recorded", async () => {
+      mockDb.findFirst.mockResolvedValue(undefined);
+
+      await expect(
+        service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser("org-a"), 999),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(mockStorage.uploadFile).not.toHaveBeenCalled();
+      expect(mockDb.values).not.toHaveBeenCalled();
+    });
+
+    it("BITE — the miss is 404 and never 403, so it cannot confirm the page exists", async () => {
+      mockDb.findFirst.mockResolvedValue(undefined);
+
+      await expect(
+        service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser("org-a"), 999),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+
+    it("the page lookup binds the caller org and excludes soft-deleted pages", async () => {
+      await service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser("org-42"), 7);
+
+      const [args] = mockDb.findFirst.mock.calls[0] as [{ where: SQL }];
+      const query = dialect.sqlToQuery(args.where);
+      expect(query.sql).toContain('"org_id"');
+      expect(query.sql).toContain('"deleted_at" is null');
+      expect(query.params).toContain("org-42");
+      expect(query.params).toContain(7);
+    });
+
+    it("re-recording the same object key is a no-op, not a second row", async () => {
+      await service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser("org-42"), 7);
+      expect(mockDb.onConflictDoNothing).toHaveBeenCalledTimes(1);
+      const [conflict] = mockDb.onConflictDoNothing.mock.calls[0] as [{ target: unknown[] }];
+      expect(conflict.target).toHaveLength(2);
+    });
+
+    it("the row is written before the response, so a failed insert fails the upload", async () => {
+      mockDb.onConflictDoNothing.mockRejectedValue(new Error("insert failed"));
+      await expect(
+        service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser("org-42"), 7),
+      ).rejects.toThrow("insert failed");
     });
   });
 });
