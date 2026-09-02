@@ -11,6 +11,8 @@ const SCHEDULE_ID = "sched-uuid-1";
 const SECRET_ID = "secret-uuid-1";
 const VARIABLE_ID = "var-uuid-1";
 
+const LIST_QUERY = { cursor: undefined, limit: 50 } as const;
+
 describe("WorkflowsSchedulesService — cross-tenant isolation", () => {
   describe("listSchedules", () => {
     it("throws NotFoundException when workflow belongs to a different org (cross-tenant isolation)", async () => {
@@ -18,14 +20,15 @@ describe("WorkflowsSchedulesService — cross-tenant isolation", () => {
       const db = { query: { workflows: { findFirst } } } as unknown as Db;
 
       const svc = new WorkflowsSchedulesService(db);
-      await expect(svc.listSchedules(ATTACKER_ORG, WORKFLOW_ID)).rejects.toThrow(NotFoundException);
+      await expect(svc.listSchedules(ATTACKER_ORG, WORKFLOW_ID, LIST_QUERY)).rejects.toThrow(NotFoundException);
     });
 
     it("returns schedules for the owning org (control — same-tenant access works)", async () => {
       const scheduleRow = { id: SCHEDULE_ID, orgId: OWNER_ORG, workflowId: WORKFLOW_ID };
       const findFirst = jest.fn().mockResolvedValue({ id: WORKFLOW_ID });
       const limit = jest.fn().mockResolvedValue([scheduleRow]);
-      const where = jest.fn().mockReturnValue({ limit });
+      const orderBy = jest.fn().mockReturnValue({ limit });
+      const where = jest.fn().mockReturnValue({ orderBy });
       const from = jest.fn().mockReturnValue({ where });
       const db = {
         query: { workflows: { findFirst } },
@@ -33,8 +36,8 @@ describe("WorkflowsSchedulesService — cross-tenant isolation", () => {
       } as unknown as Db;
 
       const svc = new WorkflowsSchedulesService(db);
-      const result = await svc.listSchedules(OWNER_ORG, WORKFLOW_ID);
-      expect(result).toEqual([scheduleRow]);
+      const result = await svc.listSchedules(OWNER_ORG, WORKFLOW_ID, LIST_QUERY);
+      expect(result.data).toEqual([scheduleRow]);
     });
   });
 
@@ -89,7 +92,7 @@ describe("WorkflowsSecretsService — cross-tenant isolation and secret redactio
       const db = { query: { workflows: { findFirst } } } as unknown as Db;
 
       const svc = new WorkflowsSecretsService(db);
-      await expect(svc.listSecrets(ATTACKER_ORG, WORKFLOW_ID)).rejects.toThrow(NotFoundException);
+      await expect(svc.listSecrets(ATTACKER_ORG, WORKFLOW_ID, LIST_QUERY)).rejects.toThrow(NotFoundException);
     });
 
     it("never includes encryptedValue in the returned rows (same-tenant control)", async () => {
@@ -103,7 +106,8 @@ describe("WorkflowsSecretsService — cross-tenant isolation and secret redactio
       };
       const findFirst = jest.fn().mockResolvedValue({ id: WORKFLOW_ID });
       const limit = jest.fn().mockResolvedValue([secretRow]);
-      const where = jest.fn().mockReturnValue({ limit });
+      const orderBy = jest.fn().mockReturnValue({ limit });
+      const where = jest.fn().mockReturnValue({ orderBy });
       const from = jest.fn().mockReturnValue({ where });
       const db = {
         query: { workflows: { findFirst } },
@@ -111,10 +115,10 @@ describe("WorkflowsSecretsService — cross-tenant isolation and secret redactio
       } as unknown as Db;
 
       const svc = new WorkflowsSecretsService(db);
-      const result = await svc.listSecrets(OWNER_ORG, WORKFLOW_ID);
+      const result = await svc.listSecrets(OWNER_ORG, WORKFLOW_ID, LIST_QUERY);
       expect(JSON.stringify(result)).not.toContain("encryptedValue");
       expect(JSON.stringify(result)).not.toContain("encrypted_value");
-      expect(result[0]).not.toHaveProperty("encryptedValue");
+      expect(result.data[0]).not.toHaveProperty("encryptedValue");
     });
   });
 
@@ -162,7 +166,7 @@ describe("WorkflowsSecretsService — cross-tenant isolation and secret redactio
       } as unknown as Db;
 
       const svc = new WorkflowsSecretsService(db);
-      const result = await svc.listGlobalSecrets(OWNER_ORG);
+      const result = await svc.listGlobalSecrets(OWNER_ORG, LIST_QUERY);
       expect(JSON.stringify(result)).not.toContain("encryptedValue");
       expect(JSON.stringify(result)).not.toContain("encrypted_value");
     });

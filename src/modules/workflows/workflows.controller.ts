@@ -17,6 +17,8 @@ import {
   CreateScheduleSchema,
   UpdateScheduleSchema,
   CreateSecretSchema,
+  ScheduleListQuerySchema,
+  SecretListQuerySchema,
   type CreateWorkflowDto,
   type UpdateWorkflowDto,
   type PublishWorkflowDto,
@@ -27,6 +29,8 @@ import {
   type CreateScheduleDto,
   type UpdateScheduleDto,
   type CreateSecretDto,
+  type ScheduleListQueryDto,
+  type SecretListQueryDto,
 } from "./dto/workflow.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
@@ -110,14 +114,16 @@ export class WorkflowsController {
 
   @Get("schedules")
   @RequirePermission("workflows:schedules:manage")
-  listAllSchedules(@CurrentUser() u: CurrentUserContext) {
-    return this.workflowsService.listAllSchedules(u.orgId);
+  @Validate({ query: ScheduleListQuerySchema })
+  listAllSchedules(@Query() query: ScheduleListQueryDto, @CurrentUser() u: CurrentUserContext) {
+    return this.workflowsService.listAllSchedules(u.orgId, query);
   }
 
   @Get("secrets")
   @RequirePermission("workflows:secrets:manage")
-  listGlobalSecrets(@CurrentUser() u: CurrentUserContext) {
-    return this.workflowsService.listGlobalSecrets(u.orgId);
+  @Validate({ query: SecretListQuerySchema })
+  listGlobalSecrets(@Query() query: SecretListQueryDto, @CurrentUser() u: CurrentUserContext) {
+    return this.workflowsService.listGlobalSecrets(u.orgId, query);
   }
 
   @Post("secrets")
@@ -271,9 +277,13 @@ export class WorkflowsController {
 
   @Get(":workflowId/schedules")
   @RequirePermission("workflows:schedules:manage")
-  @Validate({ params: workflowIdParams })
-  listSchedules(@Param("workflowId") workflowId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.workflowsService.listSchedules(u.orgId, workflowId);
+  @Validate({ params: workflowIdParams, query: ScheduleListQuerySchema })
+  listSchedules(
+    @Param("workflowId") workflowId: string,
+    @Query() query: ScheduleListQueryDto,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.workflowsService.listSchedules(u.orgId, workflowId, query);
   }
 
   @Post(":workflowId/schedules")
@@ -314,9 +324,13 @@ export class WorkflowsController {
 
   @Get(":workflowId/secrets")
   @RequirePermission("workflows:secrets:manage")
-  @Validate({ params: workflowIdParams })
-  listSecrets(@Param("workflowId") workflowId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.workflowsService.listSecrets(u.orgId, workflowId);
+  @Validate({ params: workflowIdParams, query: SecretListQuerySchema })
+  listSecrets(
+    @Param("workflowId") workflowId: string,
+    @Query() query: SecretListQueryDto,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.workflowsService.listSecrets(u.orgId, workflowId, query);
   }
 
   @Post(":workflowId/secrets")

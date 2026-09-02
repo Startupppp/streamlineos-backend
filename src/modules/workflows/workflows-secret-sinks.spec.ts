@@ -59,7 +59,7 @@ describe("Secret sink: error message — NotFoundException messages are static a
 
     let caught: unknown;
     try {
-      await svc.listSecrets("org-1", "wf-sentinel-id-that-should-not-appear");
+      await svc.listSecrets("org-1", "wf-sentinel-id-that-should-not-appear", { limit: 50 });
     } catch (e) {
       caught = e;
     }
@@ -102,8 +102,8 @@ describe("Secret sink: cache — WorkflowsSecretsService has no Redis/cache inje
     const db = { select: jest.fn().mockReturnValue({ from }) } as unknown as Db;
     const svc = new WorkflowsSecretsService(db);
 
-    const result = await svc.listGlobalSecrets("org-1");
-    expect(result).toEqual([]);
+    const result = await svc.listGlobalSecrets("org-1", { limit: 50 });
+    expect(result.data).toEqual([]);
     expect(from).toHaveBeenCalledTimes(1);
   });
 

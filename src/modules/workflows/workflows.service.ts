@@ -16,6 +16,8 @@ import type {
   CreateScheduleDto,
   UpdateScheduleDto,
   CreateSecretDto,
+  ScheduleListQueryDto,
+  SecretListQueryDto,
 } from "./dto/workflow.schemas";
 
 @Injectable()
@@ -101,12 +103,12 @@ export class WorkflowsService {
     return this.analytics.getAnalytics(orgId);
   }
 
-  listAllSchedules(orgId: string) {
-    return this.schedules.listAllSchedules(orgId);
+  listAllSchedules(orgId: string, query: ScheduleListQueryDto) {
+    return this.schedules.listAllSchedules(orgId, query);
   }
 
-  listSchedules(orgId: string, workflowId: string) {
-    return this.schedules.listSchedules(orgId, workflowId);
+  listSchedules(orgId: string, workflowId: string, query: ScheduleListQueryDto) {
+    return this.schedules.listSchedules(orgId, workflowId, query);
   }
 
   createSchedule(orgId: string, workflowId: string, dto: CreateScheduleDto) {
@@ -121,8 +123,8 @@ export class WorkflowsService {
     return this.schedules.deleteSchedule(orgId, workflowId, scheduleId);
   }
 
-  listSecrets(orgId: string, workflowId: string) {
-    return this.secrets.listSecrets(orgId, workflowId);
+  listSecrets(orgId: string, workflowId: string, query: SecretListQueryDto) {
+    return this.secrets.listSecrets(orgId, workflowId, query);
   }
 
   createSecret(orgId: string, workflowId: string, dto: CreateSecretDto) {
@@ -133,8 +135,8 @@ export class WorkflowsService {
     return this.secrets.deleteSecret(orgId, workflowId, secretId);
   }
 
-  listGlobalSecrets(orgId: string) {
-    return this.secrets.listGlobalSecrets(orgId);
+  listGlobalSecrets(orgId: string, query: SecretListQueryDto) {
+    return this.secrets.listGlobalSecrets(orgId, query);
   }
 
   createGlobalSecret(orgId: string, dto: CreateSecretDto) {

@@ -67,6 +67,16 @@ export const CreateSecretSchema = z.object({
   description: z.string().optional(),
 });
 
+export const ScheduleListQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(50),
+}).strict();
+
+export const SecretListQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: pageSizeField(50),
+}).strict();
+
 export type CreateWorkflowDto = z.infer<typeof CreateWorkflowSchema>;
 export type UpdateWorkflowDto = z.infer<typeof UpdateWorkflowSchema>;
 export type PublishWorkflowDto = z.infer<typeof PublishWorkflowSchema>;
@@ -77,3 +87,5 @@ export type ApprovalActionDto = z.infer<typeof ApprovalActionSchema>;
 export type CreateScheduleDto = z.infer<typeof CreateScheduleSchema>;
 export type UpdateScheduleDto = z.infer<typeof UpdateScheduleSchema>;
 export type CreateSecretDto = z.infer<typeof CreateSecretSchema>;
+export type ScheduleListQueryDto = z.infer<typeof ScheduleListQuerySchema>;
+export type SecretListQueryDto = z.infer<typeof SecretListQuerySchema>;

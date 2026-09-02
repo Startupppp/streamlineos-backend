@@ -98,6 +98,8 @@
     "alert:dispatch:self-test": "node src/scripts/alert-dispatch.mjs --self-test",
     "alert:cell-recovery": "node --env-file-if-exists=.env src/scripts/alert-cell-recovery.mjs",
     "alert:cell-recovery:self-test": "node src/scripts/alert-cell-recovery.mjs --self-test",
+    "alert:workflow-stranded": "node --env-file-if-exists=.env src/scripts/alert-workflow-stranded.mjs",
+    "alert:workflow-stranded:self-test": "node src/scripts/alert-workflow-stranded.mjs --self-test",
     "check:alert-system": "node src/scripts/check-alert-system.mjs",
     "check:alert-ack": "node --env-file-if-exists=.env src/scripts/check-alert-ack.mjs",
     "alert:test-event": "node --env-file-if-exists=.env src/scripts/alert-dispatch.mjs --test-event",
