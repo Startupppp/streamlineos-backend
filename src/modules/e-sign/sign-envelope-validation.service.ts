@@ -32,6 +32,7 @@ export class SignEnvelopeValidationService {
 
   async validate(orgId: string, envelopeId: number): Promise<EnvelopeValidationResult> {
     const envelope = await this.db.query.signEnvelopes.findFirst({
+      columns: { id: true, routingMode: true, expiresAt: true },
       where: and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)),
     });
     if (!envelope) throw new NotFoundException("Envelope not found");

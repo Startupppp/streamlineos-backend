@@ -43,6 +43,7 @@ export class ComplianceService {
 
   async sendAcknowledgments(orgId: string, input: SendAckInput) {
     const doc = await this.db.query.documents.findFirst({
+      columns: { id: true },
       where: and(eq(documents.id, input.documentId), eq(documents.orgId, orgId)),
     });
     if (!doc) throw new NotFoundException("Document not found.");

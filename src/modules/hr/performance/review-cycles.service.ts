@@ -107,6 +107,7 @@ export class ReviewCyclesService {
 
   async updateCycle(orgId: string, cycleId: number, input: UpdateReviewCycleInput) {
     const existing = await this.db.query.reviewCycles.findFirst({
+      columns: { id: true },
       where: and(eq(reviewCycles.id, cycleId), eq(reviewCycles.orgId, orgId)),
     });
     if (!existing) throw new NotFoundException("Review cycle not found.");

@@ -139,8 +139,8 @@ Score the candidate on technicalSkills, experience, communication, cultureFit an
     userId: string,
   ): Promise<CompositeScoreResult> {
     const candidate = await this.db.query.candidates.findFirst({
+      columns: { id: true, firstName: true, lastName: true, currentRole: true },
       where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
-      with: { resume: true },
     });
     if (!candidate) throw new NotFoundException("Candidate not found.");
 

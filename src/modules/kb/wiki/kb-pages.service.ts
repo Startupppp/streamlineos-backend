@@ -152,6 +152,7 @@ export class KbPagesService {
     await assertPageAccessible(this.db, user, pageId);
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
+      columns: { id: true, isLocked: true, trustState: true, content: true },
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
     });
     if (!current) throw new NotFoundException("Page not found");

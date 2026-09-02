@@ -71,7 +71,7 @@ export class RemindersService {
   }
 
   async deletePolicy(orgId: string, id: number) {
-    const existing = await this.db.query.finReminderPolicies.findFirst({ where: and(eq(finReminderPolicies.id, id), eq(finReminderPolicies.orgId, orgId)) });
+    const existing = await this.db.query.finReminderPolicies.findFirst({ columns: { id: true }, where: and(eq(finReminderPolicies.id, id), eq(finReminderPolicies.orgId, orgId)) });
     if (!existing) throw new NotFoundException("Reminder policy not found");
     await this.db.update(finReminderPolicies).set({ isActive: false, archivedAt: new Date(), updatedAt: new Date() }).where(and(eq(finReminderPolicies.id, id), eq(finReminderPolicies.orgId, orgId), isNull(finReminderPolicies.archivedAt)));
     this.audit.log({ action: "accounting.reminder_policy.deleted", userId: "system", orgId, resourceType: "fin_reminder_policy", resourceId: String(id), result: "SUCCESS" });

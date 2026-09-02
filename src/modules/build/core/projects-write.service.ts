@@ -251,6 +251,7 @@ export class ProjectsWriteService {
     const orgId = u.orgId;
 
     const project = await this.db.query.projects.findFirst({
+      columns: { id: true, name: true },
       where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
     });
     if (!project) throw new NotFoundException("Project not found");

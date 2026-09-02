@@ -91,6 +91,7 @@ export class ChatPinsService {
   async pin(channelId: number, messageId: number, actor: EntityActor) {
     await this.assertMember(channelId, actor);
     const message = await this.db.query.chatMessages.findFirst({
+      columns: { id: true },
       where: and(
         eq(chatMessages.orgId, actor.orgId),
         eq(chatMessages.id, messageId),

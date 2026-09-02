@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
+import { and, eq, getTableColumns, inArray, isNull, isNotNull, lt, sql, type SQL } from "drizzle-orm";
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { kbPages, kbPageLinks, kbArticleChunks } from "../../../db/schema";
@@ -22,6 +22,14 @@ import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 
 type PageRow = typeof kbPages.$inferSelect;
 type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+const {
+  content: _content,
+  contentText: _contentText,
+  fts: _fts,
+  ...KB_PAGE_LIST_COLUMNS
+} = getTableColumns(kbPages);
+type KbPageListItem = Omit<PageRow, "content" | "contentText" | "fts">;
 
 const MAX_TREE_NODES = 2000;
 const EXPIRED_PURGE_BATCH_SIZE = 500;
@@ -379,11 +387,11 @@ export class KbPageTreeService {
     });
   }
 
-  async getTrash(user: CurrentUserContext): Promise<PageRow[]> {
+  async getTrash(user: CurrentUserContext): Promise<KbPageListItem[]> {
     const orgId = user.orgId;
     const projectIds = await getAccessibleProjectIds(this.db, user);
     return this.db
-      .select()
+      .select(KB_PAGE_LIST_COLUMNS)
       .from(kbPages)
       .where(and(eq(kbPages.orgId, orgId), isNotNull(kbPages.deletedAt), pageVisibleTo(user, projectIds)))
       .orderBy(sql`${kbPages.deletedAt} desc`)

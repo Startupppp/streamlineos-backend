@@ -80,6 +80,7 @@ export class InvAiService {
 
   async updateInsightStatus(orgId: string, insightId: number, body: UpdateInsightStatusInput) {
     const insight = await this.db.query.invAiInsights.findFirst({
+      columns: { id: true },
       where: and(eq(invAiInsights.id, insightId), eq(invAiInsights.orgId, orgId)),
     });
     if (!insight) throw new NotFoundException("Insight not found");
