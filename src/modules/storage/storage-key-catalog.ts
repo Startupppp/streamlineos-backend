@@ -9,13 +9,16 @@ export interface FileKeyColumn {
   column: string;
 }
 
-export async function enumerateFileKeyColumns(db: Db): Promise<FileKeyColumn[]> {
-  // Drizzle expands a JS array into the row constructor `($1, $2, $3)`, which `= ANY()`
-  // rejects with 42809, so this must be an IN list rather than an ANY comparison.
-  const schemaList = sql.join(
-    APP_SCHEMAS.map((schema) => sql`${schema}`),
+/** Drizzle expands a JS array into the row constructor `($1, $2)`, which `= ANY()` rejects with 42809. */
+function inList(values: readonly string[]): SQL {
+  return sql.join(
+    values.map((value) => sql`${value}`),
     sql`, `,
   );
+}
+
+export async function enumerateFileKeyColumns(db: Db): Promise<FileKeyColumn[]> {
+  const schemaList = inList(APP_SCHEMAS);
   const rows = await db.execute(sql`
     SELECT
       n.nspname || '.' || c.relname AS "table",
@@ -44,20 +47,18 @@ export async function collectOrgFileKeys(
   orgId: string,
   columns: FileKeyColumn[],
 ): Promise<string[]> {
+  if (columns.length === 0) return [];
+  const parts: SQL[] = columns.map(({ table, column }) =>
+    sql`SELECT ${sql.raw(`"${column}"`)} AS k FROM ${sql.raw(table)} WHERE org_id = ${orgId} AND ${sql.raw(`"${column}"`)} IS NOT NULL`,
+  );
   const keys = new Set<string>();
-  for (const { table, column } of columns) {
-    try {
-      const colRef = sql.raw(`"${column}"`);
-      const tableRef = sql.raw(table);
-      const rows = await db.execute(
-        sql`SELECT ${colRef} AS k FROM ${tableRef} WHERE org_id = ${orgId} AND ${colRef} IS NOT NULL`,
-      );
-      for (const row of rows) {
-        const k = row["k"];
-        if (typeof k === "string" && k.length > 0) keys.add(k);
-      }
-    } catch {
+  try {
+    const rows = await db.execute(sql.join(parts, sql` UNION ALL `));
+    for (const row of rows) {
+      const k = row["k"];
+      if (typeof k === "string" && k.length > 0) keys.add(k);
     }
+  } catch {
   }
   return [...keys];
 }
@@ -67,23 +68,27 @@ export async function collectUserFileKeys(
   userId: string,
   columns: FileKeyColumn[],
 ): Promise<string[]> {
-  const keys = new Set<string>();
+  if (columns.length === 0) return [];
+  const schemas = [...new Set(columns.map((c) => c.table.split(".")[0]).filter(Boolean))];
+  const userFkMap = await discoverUserFkColumns(db, schemas);
+  const parts: SQL[] = [];
   for (const { table, column } of columns) {
-    for (const userCol of ["user_id", "created_by", "uploaded_by", "actor_id"]) {
-      try {
-        const colRef = sql.raw(`"${column}"`);
-        const tableRef = sql.raw(table);
-        const userColRef = sql.raw(`"${userCol}"`);
-        const rows = await db.execute(
-          sql`SELECT ${colRef} AS k FROM ${tableRef} WHERE ${userColRef} = ${userId} AND ${colRef} IS NOT NULL`,
-        );
-        for (const row of rows) {
-          const k = row["k"];
-          if (typeof k === "string" && k.length > 0) keys.add(k);
-        }
-      } catch {
-      }
+    const userCols = userFkMap.get(table) ?? [];
+    for (const userCol of userCols) {
+      parts.push(
+        sql`SELECT ${sql.raw(`"${column}"`)} AS k FROM ${sql.raw(table)} WHERE ${sql.raw(`"${userCol}"`)} = ${userId} AND ${sql.raw(`"${column}"`)} IS NOT NULL`,
+      );
     }
+  }
+  if (parts.length === 0) return [];
+  const keys = new Set<string>();
+  try {
+    const rows = await db.execute(sql.join(parts, sql` UNION ALL `));
+    for (const row of rows) {
+      const k = row["k"];
+      if (typeof k === "string" && k.length > 0) keys.add(k);
+    }
+  } catch {
   }
   return [...keys];
 }
@@ -114,7 +119,7 @@ export async function discoverUserFkColumns(
     JOIN LATERAL unnest(k.conkey) ck(attnum) ON true
     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ck.attnum
     WHERE k.contype = 'f'
-      AND n.nspname = ANY(${schemas})
+      AND n.nspname IN (${inList(schemas)})
       AND pn.nspname = 'public' AND p.relname = 'users'
       AND array_length(k.conkey, 1) = 1
   `);
@@ -135,7 +140,7 @@ async function discoverOrgIdTables(db: Db, schemas: string[]): Promise<Set<strin
     FROM   pg_class c
     JOIN   pg_namespace n ON n.oid = c.relnamespace
     JOIN   pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
-    WHERE  n.nspname = ANY(${schemas})
+    WHERE  n.nspname IN (${inList(schemas)})
       AND  c.relkind = 'r'
       ${sql.raw("AND  a.attname = 'org_id'")}
   `);
@@ -182,7 +187,7 @@ export function buildSubjectKeyQuery(
   return sql`
     SELECT ${colId} AS k${orgIdSelect}
     FROM   ${tableId}
-    WHERE  ${filterColId} = ANY(${filterValue as string[]})
+    WHERE  ${filterColId} IN (${inList(filterValue as string[])})
       AND  ${colId} IS NOT NULL
       ${afterClause}
       ${legalHoldBlock}

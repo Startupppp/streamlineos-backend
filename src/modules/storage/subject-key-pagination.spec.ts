@@ -66,15 +66,22 @@ describe("collectUserFileKeys — parameterized SQL (S5)", () => {
     const dialect = new PgDialect();
     let capturedQuery: { sql: string; params: unknown[] } | undefined;
 
+    // The first execute is FK discovery; it must return a row or the user query is never built.
+    let call = 0;
     const db = {
       execute: jest.fn((q: unknown) => {
+        call += 1;
         capturedQuery = dialect.sqlToQuery(q as Parameters<typeof dialect.sqlToQuery>[0]);
+        if (call === 1)
+          return Promise.resolve([{ table: "public.documents", col: "user_id" }]);
         return Promise.resolve([]);
       }),
     } as unknown as Db;
 
     const columns: FileKeyColumn[] = [{ table: "public.documents", column: "file_url" }];
     await collectUserFileKeys(db, "user-id'injected", columns);
+
+    expect(call).toBeGreaterThan(1);
 
     expect(capturedQuery).toBeDefined();
     expect(capturedQuery?.sql).toContain("$1");
