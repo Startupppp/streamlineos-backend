@@ -1,5 +1,5 @@
 import type { Db } from "../../../db/drizzle.module";
-import { ProjectsWorkQueryService } from "./projects-work-query.service";
+import { ProjectsSearchService } from "./projects-search.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -13,7 +13,7 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
-describe("ProjectsWorkQueryService — cross-tenant isolation", () => {
+describe("ProjectsSearchService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
   const ATTACKER_ORG = "org-attacker";
 
@@ -31,7 +31,7 @@ describe("ProjectsWorkQueryService — cross-tenant isolation", () => {
 
   it("scopes search to attacker's orgId — returns empty when org has no projects (cross-tenant isolation)", async () => {
     const { db, memberWhere, memberInnerJoin } = makeDb([], []);
-    const svc = new ProjectsWorkQueryService(db);
+    const svc = new ProjectsSearchService(db);
     const result = await svc.searchOrgTickets(ATTACKER_ORG, "u1", "query", 10);
     expect(result).toHaveLength(0);
     expect(sqlValues(memberWhere.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
@@ -52,7 +52,7 @@ describe("ProjectsWorkQueryService — cross-tenant isolation", () => {
       })
       .mockReturnValue({ from: jest.fn().mockReturnValue({ innerJoin }) });
     const db = { select } as unknown as Db;
-    const svc = new ProjectsWorkQueryService(db);
+    const svc = new ProjectsSearchService(db);
     const result = await svc.searchOrgTickets(OWNER_ORG, "u1", "T", 10);
     expect(result).toHaveLength(1);
   });

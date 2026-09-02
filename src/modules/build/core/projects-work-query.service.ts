@@ -32,14 +32,11 @@ import {
   readIds,
   resolveWorkSort,
   type WorkSort,
-  type WorkSortKey,
-  type SortDirection,
 } from "./work-scope-union";
 import {
   buildCursorPage,
   decodeCursor,
   encodeCursor,
-  type CursorPosition,
 } from "../../../common/pagination/cursor";
 import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import {
@@ -47,37 +44,7 @@ import {
   buildMineCursorPredicate,
   serializeSortValue,
 } from "./projects-work-query.cursor";
-
-const WORK_ROW_SELECTION = {
-  id: tickets.id,
-  title: tickets.title,
-  status: tickets.status,
-  priority: tickets.priority,
-  type: tickets.type,
-  dueDate: tickets.dueDate,
-  startDate: tickets.startDate,
-  ticketNumber: tickets.ticketNumber,
-  points: tickets.points,
-  estimate: tickets.estimate,
-  rank: tickets.rank,
-  createdAt: tickets.createdAt,
-  updatedAt: tickets.updatedAt,
-  assigneeId: sql<string | null>`(
-    SELECT user_id FROM organization_members
-    WHERE org_id = ${tickets.orgId} AND id = ${tickets.assigneeMembershipId}
-  )`,
-  sprintId: tickets.sprintId,
-  cycleId: tickets.cycleId,
-  epicId: tickets.epicId,
-  projectId: projects.id,
-  projectKey: projects.key,
-  projectName: projects.name,
-  assigneeName: users.name,
-  assigneeFirstName: users.firstName,
-  assigneeLastName: users.lastName,
-  assigneeEmail: users.email,
-  assigneeImage: users.image,
-} as const;
+import { WORK_ROW_SELECTION } from "./projects-work-query-helpers";
 
 @Injectable()
 export class ProjectsWorkQueryService {
@@ -89,62 +56,6 @@ export class ProjectsWorkQueryService {
       JOIN organization_members om ON om.org_id = tw.org_id AND om.id = tw.membership_id
       WHERE tw.org_id = ${orgId} AND om.user_id = ${userId} AND tw.ticket_id = ${tickets.id}
     )`;
-  }
-
-  async searchOrgTickets(
-    orgId: string,
-    userId: string,
-    q: string,
-    limit: number,
-  ) {
-    const memberProjectIds = await this.db
-      .select({ projectId: projectMembers.projectId })
-      .from(projectMembers)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.id, projectMembers.membershipId),
-          eq(organizationMembers.orgId, projectMembers.orgId),
-          eq(organizationMembers.userId, userId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      )
-      .where(eq(projectMembers.orgId, orgId));
-
-    const ids = memberProjectIds.map((r) => r.projectId);
-    if (ids.length === 0) return [];
-
-    const rows = await this.db
-      .select({
-        id: tickets.id,
-        title: tickets.title,
-        status: tickets.status,
-        priority: tickets.priority,
-        ticketNumber: tickets.ticketNumber,
-        projectId: tickets.projectId,
-        projectKey: projects.key,
-        projectName: projects.name,
-      })
-      .from(tickets)
-      .innerJoin(projects, eq(tickets.projectId, projects.id))
-      .where(
-        and(
-          eq(tickets.orgId, orgId),
-          inArray(tickets.projectId, ids),
-          isNull(tickets.deletedAt),
-          q.length > 0
-            ? or(
-                sql`${tickets.title} ILIKE ${"%" + q + "%"}`,
-                sql`CAST(${tickets.ticketNumber} AS TEXT) ILIKE ${"%" + q + "%"}`,
-                sql`CONCAT(${projects.key}, '-', CAST(${tickets.ticketNumber} AS TEXT)) ILIKE ${"%" + q + "%"}`,
-              )
-            : undefined,
-        ),
-      )
-      .orderBy(sql`${tickets.updatedAt} DESC`)
-      .limit(limit);
-
-    return rows;
   }
 
   async getAllWork(u: CurrentUserContext, query: AllWorkQuery) {

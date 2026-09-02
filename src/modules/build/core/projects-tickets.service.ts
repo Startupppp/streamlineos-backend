@@ -23,6 +23,7 @@ import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 import { ProjectsWorkQueryService } from "./projects-work-query.service";
+import { ProjectsSearchService } from "./projects-search.service";
 import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import { ProjectsTicketsDetailService } from "./projects-tickets-detail.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
@@ -45,6 +46,7 @@ export class ProjectsTicketsService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly query: ProjectsTicketsQueryService,
     private readonly workQuery: ProjectsWorkQueryService,
+    private readonly search: ProjectsSearchService,
     private readonly read: ProjectsTicketsReadService,
     private readonly detail: ProjectsTicketsDetailService,
     private readonly transfer: ProjectsTicketsTransferService,
@@ -221,7 +223,7 @@ export class ProjectsTicketsService {
     q: string,
     limit: number,
   ) {
-    return this.workQuery.searchOrgTickets(orgId, userId, q, limit);
+    return this.search.searchOrgTickets(orgId, userId, q, limit);
   }
 
   async getAllWork(u: CurrentUserContext, query: AllWorkQuery) {
