@@ -64,6 +64,7 @@ const mockDb = {
     tickets: { findFirst: jest.fn() },
     projectMembers: { findFirst: jest.fn() },
     projects: { findFirst: jest.fn() },
+    organizationMembers: { findFirst: jest.fn() },
   },
   transaction: jest.fn(),
 };
@@ -73,6 +74,7 @@ describe("BuildEntityActions", () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue({ id: 99 });
     mockTx = makeTx();
     mockDb.transaction.mockImplementation(
       async (cb: (tx: ReturnType<typeof makeTx>) => Promise<unknown>) => cb(mockTx),

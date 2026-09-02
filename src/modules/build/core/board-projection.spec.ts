@@ -28,9 +28,9 @@ describe("board list projection", () => {
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
             orderBy: jest.fn().mockReturnValue({
-              limit: jest.fn().mockReturnValue({
-                offset: jest.fn().mockResolvedValue([{ total: "0" }]),
-              }),
+              limit: jest.fn().mockResolvedValue([
+                { id: 1, cursorPrimary: "1000", rank: "1000", createdAt: new Date() },
+              ]),
             }),
           }),
         }),

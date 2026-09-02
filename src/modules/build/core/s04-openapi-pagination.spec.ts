@@ -11,7 +11,7 @@ interface OpenApiDocument {
 }
 
 const document = JSON.parse(
-  readFileSync(join(__dirname, "../../../../../../openapi.json"), "utf8"),
+  readFileSync(join(__dirname, "../../../../openapi.json"), "utf8"),
 ) as OpenApiDocument;
 
 describe("S04 OpenAPI cursor coverage", () => {
