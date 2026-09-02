@@ -27,6 +27,7 @@ import {
   anonymiseSubjectConversations,
   eraseSubjectKbContent,
 } from "./gdpr-subject-erasure-authored-content";
+import { purgeSubjectChatAttachments } from "./gdpr-subject-erasure-chat-attachments";
 
 export interface SubjectErasureStorageResult {
   manifestSize: number;
@@ -59,6 +60,7 @@ const DRY_RUN_TABLES = [
   "ai_chat_conversations",
   "ai_chat_messages",
   "chat_messages",
+  "chat_attachments",
   "support_tickets",
   "support_ticket_embeddings",
   "gdpr_export_jobs",
@@ -152,7 +154,20 @@ export class GdprSubjectErasureService {
 
     await this.db.transaction(async (tx) => {
       tablesAnonymised.push(...(await anonymiseSubjectProfile(tx, scope)));
-      tablesAnonymised.push(...(await anonymiseSubjectConversations(tx, scope)));
+      const conversations = await anonymiseSubjectConversations(tx, scope);
+      tablesAnonymised.push(...conversations.tables);
+
+      // `chat_attachments` hangs off `chat_messages.sender_membership_id` with no foreign
+      // key to `users`, so the file-key catalog classifies it org-scoped and the purge
+      // skips it. Deleted here with RETURNING, and the keys ride the manifest that is
+      // drained after this transaction commits.
+      const attachmentKeys = storageManifest.blocked
+        ? []
+        : await purgeSubjectChatAttachments(tx, { orgId }, conversations.chatMessageIds);
+      if (attachmentKeys.length > 0) {
+        tablesAnonymised.push("chat_attachments");
+        storageManifest.keys.push(...attachmentKeys);
+      }
 
       const artifactsRetired = await retireSubjectExportArtifacts(tx, {
         orgId,

@@ -23,6 +23,16 @@ export interface AuthoredContentScope {
   readonly membershipId: number;
 }
 
+export interface ConversationErasure {
+  readonly tables: string[];
+  /**
+   * Every chat message the redaction touched. `chat_attachments` has no foreign key to
+   * `users` and hangs off these ids alone, so the attachment sink is driven from here
+   * rather than from a second read of `chat_messages`.
+   */
+  readonly chatMessageIds: number[];
+}
+
 /**
  * Conversation text the subject wrote inside shared threads. The rows carry other
  * participants' context, so the body is redacted in place rather than deleted.
@@ -30,7 +40,7 @@ export interface AuthoredContentScope {
 export async function anonymiseSubjectConversations(
   tx: TenantTx,
   { orgId, subjectUserId, membershipId }: AuthoredContentScope,
-): Promise<string[]> {
+): Promise<ConversationErasure> {
   const tables: string[] = [];
 
   const aiConvResult = await tx
@@ -69,7 +79,7 @@ export async function anonymiseSubjectConversations(
     .returning({ id: chatMessages.id });
   if (chatMsgResult.length > 0) tables.push("chat_messages");
 
-  return tables;
+  return { tables, chatMessageIds: chatMsgResult.map((row) => row.id) };
 }
 
 async function clearCheckpoints(

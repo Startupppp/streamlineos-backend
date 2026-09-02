@@ -2,7 +2,7 @@ import type { Db } from "../../db/drizzle.module";
 import type { SessionsService } from "../sessions/sessions.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
-import { gdprExportJobs, users } from "../../db/schema";
+import { chatAttachments, gdprExportJobs, users } from "../../db/schema";
 
 jest.mock("../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
@@ -101,7 +101,10 @@ function makeKbDb(opts: KbDbOpts = {}) {
       table === gdprExportJobs ? chain([]) : chain([{ id: 99 }]),
     ),
     insert: jest.fn().mockReturnValue(chain([])),
-    delete: jest.fn().mockImplementation(() => {
+    delete: jest.fn().mockImplementation((table: unknown) => {
+      // The chat-attachment sink deletes before the KB path and is not one of the
+      // positional KB deletes, so it must not consume the counter.
+      if (table === chatAttachments) return chain([]);
       txDeleteCount++;
       if (txDeleteCount === 1) return kbMsgDeleteChain;
       if (txDeleteCount === 2) return kbConvDeleteChain;
@@ -157,6 +160,11 @@ function buildService(db: ReturnType<typeof makeKbDb>["db"]): GdprSubjectErasure
   );
 }
 
+/** `tx.delete` calls belonging to the KB path — the chat-attachment sink is not one. */
+function kbDeleteCalls(tx: { delete: jest.Mock }): number {
+  return tx.delete.mock.calls.filter((call) => call[0] !== chatAttachments).length;
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
 });
@@ -180,7 +188,7 @@ describe("GdprSubjectErasureService — kb_chat_messages hard-deletion", () => {
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
     expect(tx.delete).toHaveBeenCalled();
-    expect(tx.delete.mock.calls.length).toBeGreaterThanOrEqual(1);
+    expect(kbDeleteCalls(tx)).toBeGreaterThanOrEqual(1);
   });
 
   it("(bite proof) kb_chat_messages absent from tablesAnonymised when delete returns no rows", async () => {
@@ -250,7 +258,7 @@ describe("GdprSubjectErasureService — kb_article_chunks from pages", () => {
 
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
-    expect(tx.delete.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(kbDeleteCalls(tx)).toBeGreaterThanOrEqual(3);
   });
 
   it("(bite proof) kb_article_chunks absent from tablesAnonymised when no page chunks are deleted", async () => {
@@ -288,7 +296,7 @@ describe("GdprSubjectErasureService — kb_article_chunks from articles", () => 
 
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
-    expect(tx.delete.mock.calls.length).toBe(3);
+    expect(kbDeleteCalls(tx)).toBe(3);
   });
 
   it("(bite proof) kb_article_chunks absent when article chunk delete returns no rows and no page chunks", async () => {
@@ -326,7 +334,7 @@ describe("GdprSubjectErasureService — kb_article_chunks from sources", () => {
 
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
-    expect(tx.delete.mock.calls.length).toBe(3);
+    expect(kbDeleteCalls(tx)).toBe(3);
   });
 
   it("(bite proof) kb_article_chunks absent when source chunk delete returns no rows and no page chunks", async () => {
@@ -459,7 +467,7 @@ describe("GdprSubjectErasureService — kb_article_chunks from uploaded attachme
 
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
-    expect(tx.delete.mock.calls.length).toBe(4);
+    expect(kbDeleteCalls(tx)).toBe(4);
   });
 
   it("skips the attachment chunk delete when the subject has uploaded no attachments", async () => {
@@ -468,7 +476,7 @@ describe("GdprSubjectErasureService — kb_article_chunks from uploaded attachme
 
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
-    expect(tx.delete.mock.calls.length).toBe(3);
+    expect(kbDeleteCalls(tx)).toBe(3);
   });
 
   it("(bite proof) kb_article_chunks absent from tablesAnonymised when attachment chunk delete returns no rows", async () => {
