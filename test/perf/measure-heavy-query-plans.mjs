@@ -118,6 +118,11 @@ async function assertMeasuringUnderRls() {
   );
 }
 
+/** A 1536-dimension literal echoed into a plan is 20 kB of noise per occurrence. */
+function elideVectorLiterals(text) {
+  return text.replace(/'\[-?[\d.,\-e]{200,}\]'/g, "'[vector literal elided]'");
+}
+
 function randomUnitVector(dim) {
   const parts = new Array(dim);
   for (let i = 0; i < dim; i++) parts[i] = (Math.random() * 2 - 1).toFixed(6);
@@ -134,13 +139,19 @@ async function resolveFixtures() {
   const iso = (d) => d.toISOString().slice(0, 10);
 
   return inTenantTx(async (tx) => {
+    // Pick the member who actually has unread rows: a member with none turns every unread
+    // measurement into the empty case, which is not the case anyone waits on.
     const [member] = await tx.unsafe(
-      `SELECT m.id, m.user_id, count(n.id)::int AS notifications
+      `SELECT m.id, m.user_id,
+              count(n.id) FILTER (WHERE n.is_read = false
+                                    AND n.deleted_at IS NULL
+                                    AND n.archived_at IS NULL)::int AS unread,
+              count(n.id)::int AS notifications
        FROM organization_members m
        LEFT JOIN notifications n ON n.org_id = m.org_id AND n.membership_id = m.id
        WHERE m.org_id = $1 AND m.status = 'ACTIVE'
        GROUP BY m.id, m.user_id
-       ORDER BY 3 DESC LIMIT 1`,
+       ORDER BY 3 DESC, 4 DESC LIMIT 1`,
       [ORG],
     );
     const [wm] = await tx.unsafe(
@@ -159,6 +170,14 @@ async function resolveFixtures() {
        ORDER BY id LIMIT 200`,
       [ORG],
     );
+    // The seeded 20-minute reminder window expires in wall-clock time; without a fallback the
+    // fan-out page silently skips and the category reports nothing.
+    const dueEvents = due.length > 0
+      ? due
+      : await tx.unsafe(
+          `SELECT id FROM calendar_events WHERE org_id = $1 ORDER BY id DESC LIMIT 200`,
+          [ORG],
+        );
     const roles = await tx.unsafe(
       `SELECT id FROM roles WHERE org_id = $1 AND slug LIKE 'PERF_%' ORDER BY id LIMIT 3`,
       [ORG],
@@ -186,8 +205,9 @@ async function resolveFixtures() {
       membershipId: member?.id ?? 0,
       userId: member?.user_id ?? null,
       watermarkId: Number(wm?.last_read_notification_id ?? 0),
+      unreadForMember: Number(member?.unread ?? 0),
       recurringIds: recurring.map((r) => r.id),
-      dueEventIds: due.map((r) => r.id),
+      dueEventIds: dueEvents.map((r) => r.id),
       roleIds: roles.map((r) => r.id),
       attendeeUserIds: attendees.map((r) => r.user_id),
       projectIds: projects.map((r) => r.id),
@@ -235,7 +255,7 @@ async function measure(query, fixtures) {
         status: "measured",
         cold: runs[0],
         warm: runs[1],
-        planText: text.map((r) => r["QUERY PLAN"]).join("\n"),
+        planText: elideVectorLiterals(text.map((r) => r["QUERY PLAN"]).join("\n")),
       };
     });
   } catch (e) {
@@ -249,8 +269,8 @@ async function main() {
   const fixtures = await resolveFixtures();
   console.log(
     `org ${orgLabel} (${ORG.slice(0, 8)}) · membership ${fixtures.membershipId}` +
-      ` · watermark ${fixtures.watermarkId} · recurring ${fixtures.recurringIds.length}` +
-      ` · due-now ${fixtures.dueEventIds.length} · roles ${fixtures.roleIds.length}`,
+      ` · unread ${fixtures.unreadForMember} · watermark ${fixtures.watermarkId} · recurring ${fixtures.recurringIds.length}` +
+      ` · fanout-events ${fixtures.dueEventIds.length} · roles ${fixtures.roleIds.length}`,
   );
 
   const selected = QUERIES.filter(

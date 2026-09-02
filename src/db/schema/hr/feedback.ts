@@ -1,5 +1,5 @@
 import { boolean, foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
-import { organizations, users } from "../common/auth";
+import { organizations } from "../common/auth";
 
 export const feedbackCycles = pgTable("feedback_cycles", {
   id: serial("id").primaryKey(),

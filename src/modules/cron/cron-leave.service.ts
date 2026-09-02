@@ -36,6 +36,9 @@ export class CronLeaveService {
     monthlyAccrual: { accruedCount: number };
     monthlyExpiry: { expiredCount: number };
     yearlyReset: { resetCount: number } | null;
+    organizationsFailed: number;
+    /** An org held more active MONTHLY policies than the cap; the remainder did not accrue. */
+    policiesTruncated: boolean;
   }> {
     const now = new Date();
     const currentMonth = now.getMonth() + 1;
@@ -43,12 +46,14 @@ export class CronLeaveService {
     let totalAccruedCount = 0;
     let totalExpiredCount = 0;
     let totalYearlyResetCount: number | null = null;
+    let policiesTruncated = false;
 
-    await forEachOrg(this.db, "monthly-leave-reset", async (tx, orgId) => {
+    const sweepResult = await forEachOrg(this.db, "monthly-leave-reset", async (tx, orgId) => {
       const sweepStart = Date.now();
 
       const accrual = await this.accrueMonthlyLeaves(now, orgId);
       totalAccruedCount += accrual.accruedCount;
+      if (accrual.policiesTruncated) policiesTruncated = true;
 
       const expiry = await this.expireUnusedMonthlyLeaves(orgId);
       totalExpiredCount += expiry.expiredCount;
@@ -74,10 +79,15 @@ export class CronLeaveService {
       monthlyAccrual: { accruedCount: totalAccruedCount },
       monthlyExpiry: { expiredCount: totalExpiredCount },
       yearlyReset: totalYearlyResetCount !== null ? { resetCount: totalYearlyResetCount } : null,
+      organizationsFailed: sweepResult.failed,
+      policiesTruncated,
     };
   }
 
-  async accrueMonthlyLeaves(now: Date, orgId: string): Promise<{ accruedCount: number }> {
+  async accrueMonthlyLeaves(
+    now: Date,
+    orgId: string,
+  ): Promise<{ accruedCount: number; policiesTruncated: boolean }> {
     const year = now.getFullYear();
     const monthIdx = now.getMonth();
     const periodLabel = buildPeriodLabel(year, monthIdx);
@@ -97,9 +107,21 @@ export class CronLeaveService {
           eq(leavePolicies.isActive, true),
         ),
       )
-      .limit(POLICY_LIMIT);
+      .limit(POLICY_LIMIT + 1);
 
-    if (monthlyPolicies.length === 0) return { accruedCount: 0 };
+    if (monthlyPolicies.length === 0) return { accruedCount: 0, policiesTruncated: false };
+
+    // POLICY_LIMIT + 1 so an org past the cap is reported rather than silently
+    // accruing for its first hundred policies only.
+    const policiesTruncated = monthlyPolicies.length > POLICY_LIMIT;
+    if (policiesTruncated) {
+      monthlyPolicies.length = POLICY_LIMIT;
+      logger.warn(
+        `[cron-leave] org has more than ${POLICY_LIMIT} active MONTHLY accrual policies; ` +
+          "the remainder did not accrue this run",
+        { orgId },
+      );
+    }
 
     const leaveTypeIds = monthlyPolicies.map((p) => p.leaveTypeId);
 
@@ -253,7 +275,7 @@ export class CronLeaveService {
       if (activeMembers.length < ACCRUAL_BATCH_SIZE) break;
     }
 
-    return { accruedCount };
+    return { accruedCount, policiesTruncated };
   }
 
   private async expireUnusedMonthlyLeaves(orgId: string): Promise<{ expiredCount: number }> {
@@ -279,9 +301,18 @@ export class CronLeaveService {
           eq(leavePolicies.isActive, true),
         ),
       )
-      .limit(POLICY_LIMIT);
+      .limit(POLICY_LIMIT + 1);
 
     if (monthlyPolicies.length === 0) return { expiredCount: 0 };
+
+    if (monthlyPolicies.length > POLICY_LIMIT) {
+      monthlyPolicies.length = POLICY_LIMIT;
+      logger.warn(
+        `[cron-leave] org has more than ${POLICY_LIMIT} active MONTHLY accrual policies; ` +
+          "balances under the remainder did not expire this run",
+        { orgId },
+      );
+    }
 
     const monthlyLeaveTypeIds = monthlyPolicies.map((p) => p.leaveTypeId);
     const policyByTypeId = new Map(monthlyPolicies.map((p) => [p.leaveTypeId, p]));

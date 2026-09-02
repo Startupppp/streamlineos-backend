@@ -17,6 +17,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { PrincipalGroupsService } from "./principal-groups.service";
 import {
   addGroupMemberSchema,
@@ -52,6 +53,7 @@ export class PrincipalGroupsController {
 
   @Post()
   @HttpCode(201)
+  @Idempotent("rbac.principalGroup.create")
   @Validate({ body: createGroupSchema })
   create(@Body() body: CreateGroupInput, @CurrentUser() u: CurrentUserContext) {
     return this.groups.create(u, body);
@@ -78,6 +80,7 @@ export class PrincipalGroupsController {
 
   @Post(":groupId/members")
   @HttpCode(201)
+  @Idempotent("rbac.principalGroup.addMember")
   @Validate({ body: addGroupMemberSchema, params: groupIdParams })
   addMember(
     @Param("groupId") groupId: string,
@@ -112,6 +115,7 @@ export class PrincipalGroupsController {
 
   @Post(":groupId/roles")
   @HttpCode(201)
+  @Idempotent("rbac.principalGroup.assignRole")
   @Validate({ body: assignGroupRoleSchema, params: groupIdParams })
   assignRole(
     @Param("groupId") groupId: string,

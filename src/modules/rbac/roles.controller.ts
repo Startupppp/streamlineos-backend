@@ -39,6 +39,7 @@ import {
   type UpdateRoleInput,
 } from "./dto/rbac.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
@@ -130,6 +131,7 @@ export class RolesController {
   @Post("seed-defaults")
   @BodylessAction()
   @HttpCode(200)
+  @Idempotent("rbac.roles.seedDefaults")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   seedDefaults(@CurrentUser() u: CurrentUserContext) {
@@ -138,6 +140,7 @@ export class RolesController {
 
   @Post("templates")
   @HttpCode(201)
+  @Idempotent("rbac.role.materializeTemplate")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   @Validate({ body: materializeTemplateSchema })
@@ -229,6 +232,7 @@ export class RolesController {
 
   @Post(":roleId/members")
   @HttpCode(201)
+  @Idempotent("rbac.role.addMember")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   @Validate({ params: roleIdParams, body: roleMemberSchema })

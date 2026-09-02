@@ -52,9 +52,6 @@ function makeEmbeddings(overrides: Partial<{ embedQueryRaw: jest.Mock; embedBatc
     embedBatchRaw:
       overrides.embedBatchRaw ??
       jest.fn().mockImplementation((texts: string[]) => Promise.resolve(texts.map(() => [0.1, 0.2, 0.3]))),
-    embedQuery: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
-    embedBatch: jest.fn().mockResolvedValue([[0.1]]),
-    embedQueryDeduped: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
     toVectorLiteral: jest.fn().mockReturnValue("[0.1,0.2,0.3]"),
   };
 }
@@ -268,7 +265,7 @@ describe("AiGatewayService", () => {
         providers: [
           AiGatewayService,
           { provide: LlmService, useValue: llm },
-          { provide: EmbeddingsService, useValue: { isConfigured: jest.fn().mockReturnValue(false), embedQuery: jest.fn(), toVectorLiteral: jest.fn() } },
+          { provide: EmbeddingsService, useValue: { isConfigured: jest.fn().mockReturnValue(false), embedQueryRaw: jest.fn(), embedBatchRaw: jest.fn(), toVectorLiteral: jest.fn() } },
           { provide: AiUsageService, useValue: mockUsage },
           { provide: AuditService, useValue: mockAudit },
           { provide: AI_CREDIT_LEDGER, useValue: makeLedger() },
@@ -344,7 +341,7 @@ describe("AiGatewayService", () => {
         providers: [
           AiGatewayService,
           { provide: LlmService, useValue: llm },
-          { provide: EmbeddingsService, useValue: { isConfigured: jest.fn().mockReturnValue(false), embedQuery: jest.fn(), toVectorLiteral: jest.fn() } },
+          { provide: EmbeddingsService, useValue: { isConfigured: jest.fn().mockReturnValue(false), embedQueryRaw: jest.fn(), embedBatchRaw: jest.fn(), toVectorLiteral: jest.fn() } },
           { provide: AiUsageService, useValue: mockUsage },
           { provide: AuditService, useValue: mockAudit },
           { provide: AI_CREDIT_LEDGER, useValue: ledger },
@@ -373,7 +370,7 @@ describe("AiGatewayService", () => {
         providers: [
           AiGatewayService,
           { provide: LlmService, useValue: llm },
-          { provide: EmbeddingsService, useValue: { isConfigured: jest.fn().mockReturnValue(false), embedQuery: jest.fn(), toVectorLiteral: jest.fn() } },
+          { provide: EmbeddingsService, useValue: { isConfigured: jest.fn().mockReturnValue(false), embedQueryRaw: jest.fn(), embedBatchRaw: jest.fn(), toVectorLiteral: jest.fn() } },
           { provide: AiUsageService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
           { provide: AuditService, useValue: { log: jest.fn() } },
           { provide: AI_CREDIT_LEDGER, useValue: makeLedger() },

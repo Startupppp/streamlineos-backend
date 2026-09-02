@@ -1,16 +1,5 @@
 import { sql } from "drizzle-orm";
-import {
-  bigint,
-  check,
-  foreignKey,
-  index,
-  integer,
-  pgTable,
-  primaryKey,
-  text,
-  timestamp,
-  unique,
-} from "drizzle-orm/pg-core";
+import { bigint, check, foreignKey, integer, pgTable, primaryKey, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
 import { terminations } from "./offboarding";
 

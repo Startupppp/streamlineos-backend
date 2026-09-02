@@ -46,6 +46,7 @@ import {
   type SettingsProvenanceQuery,
 } from "./dto/settings.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { z } from "zod";
 
 const keyIdParams = z.object({ keyId: z.string().min(1) }).strict();
@@ -94,6 +95,7 @@ export class SettingsController {
   @RequirePermission("settings:api-tokens:write")
   @Post("api-keys")
   @HttpCode(201)
+  @Idempotent("settings.apiKey.create")
   @Validate({ body: createApiKeySchema })
   createApiKey(
     @Body() body: CreateApiKeyInput,
@@ -124,6 +126,7 @@ export class SettingsController {
 
   @Post("automations")
   @HttpCode(201)
+  @Idempotent("settings.automation.create")
   @RequirePermission("settings:automations:manage")
   @Validate({ body: createAutomationSchema })
   createAutomation(
@@ -186,6 +189,7 @@ export class SettingsController {
 
   @Post("custom-fields")
   @HttpCode(201)
+  @Idempotent("settings.customField.create")
   @RequirePermission("settings:custom-fields:manage")
   @Validate({ body: createCustomFieldSchema })
   createCustomField(
@@ -240,6 +244,7 @@ export class SettingsController {
 
   @Post("integrations/git")
   @HttpCode(201)
+  @Idempotent("settings.gitConnection.create")
   @RequirePermission("settings:manage")
   @Validate({ body: createGitConnectionSchema })
   createGitConnection(

@@ -1,6 +1,6 @@
 import { decimal, foreignKey, index, integer, pgTable, serial, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations } from "../common/auth";
 import { jobPostings } from "./hiring-core";
 
 export const jobBoardPostings = pgTable("job_board_postings", {

@@ -1,5 +1,5 @@
 import { bigint, date, foreignKey, index, integer, jsonb, numeric, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
-import { organizations, users } from "../common/auth";
+import { organizations } from "../common/auth";
 import { orgUnits } from "../common/organization";
 
 // ─── Pack 1: Time Clock Devices ─────────────────────────────────────────────

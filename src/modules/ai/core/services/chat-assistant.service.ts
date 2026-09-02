@@ -17,6 +17,8 @@ import {
 } from "../gateway/credit-ledger.interface";
 import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
 import { settleStream } from "../gateway/ai-gateway-credit.helper";
+import { AiCallMetrics } from "../telemetry/ai-call-metrics";
+import { AiConcurrencyLimitException } from "./ai-service-exceptions";
 import { AiUsageService } from "./ai-usage.service";
 import { ProjectsAiService } from "./projects-ai.service";
 import { ChatHistoryService } from "./chat-history.service";
@@ -95,15 +97,17 @@ export class ChatAssistantService {
     persona?: string,
     signal?: AbortSignal,
   ) {
-    const appOverheadStart = Date.now();
     const { userId, orgId } = actor;
+    const call = AiCallMetrics.begin({ feature: CHAT_FEATURE, tier: "chat", orgId });
     const membershipId = actingMembershipId(actor.principal) ?? 0;
 
     await this.breaker.assertClosed();
 
-    const acquired = await this.concurrencyLimiter.acquire(orgId);
-    if (!acquired)
-      throw new ServiceUnavailableException("Too many concurrent AI requests for this organization");
+    const acquired = await call.queue(() => this.concurrencyLimiter.acquire(orgId));
+    if (!acquired) {
+      call.finish("concurrency_exceeded");
+      throw new AiConcurrencyLimitException();
+    }
 
     let concurrencyReleased = false;
     const releaseConcurrency = () => {
@@ -124,6 +128,7 @@ export class ChatAssistantService {
       reservationId = reserved.reservationId;
     } catch (error) {
       releaseConcurrency();
+      call.finish("quota_exceeded");
       throw error;
     }
 
@@ -194,12 +199,8 @@ export class ChatAssistantService {
         orgId,
       );
 
-      const appOverheadMs = Date.now() - appOverheadStart;
-      let ttftMs: number | undefined;
-      let streamTextCallTime: number;
-
       const buildStream = () => {
-        streamTextCallTime = Date.now();
+        call.providerOpened();
         return streamText({
           model: resolveChatModel(),
           messages: modelMessages,
@@ -209,9 +210,7 @@ export class ChatAssistantService {
           maxRetries: resolveLlmRetryPolicy().maxRetriesPerModel,
           stopWhen: stepCountIs(10),
           ...(signal !== undefined ? { abortSignal: signal } : {}),
-          onChunk: () => {
-            if (ttftMs === undefined) ttftMs = Date.now() - streamTextCallTime;
-          },
+          onChunk: () => call.firstToken(),
           onError: ({ error }) => {
             if (signal?.aborted === true || isAbortError(error)) return;
             this.breaker.recordFailure();
@@ -227,6 +226,11 @@ export class ChatAssistantService {
             const promptTokens = usage?.inputTokens ?? 0;
             const completionTokens = usage?.outputTokens ?? 0;
             this.breaker.recordSuccess();
+            const timings = call.finish("ok", {
+              model: modelId,
+              promptTokens,
+              completionTokens,
+            });
             try {
               await runInNewTenantTransaction(this.db, orgId, async () => {
                 await settleStream(this.ledger, this.usageSvc, {
@@ -237,8 +241,9 @@ export class ChatAssistantService {
                   orgId,
                   userId,
                   feature: CHAT_FEATURE,
-                  ttftMs,
-                  appOverheadMs,
+                  ttftMs: timings.ttftMs,
+                  appOverheadMs: timings.overheadMs,
+                  timings,
                 });
                 if (conversationId !== undefined) {
                   await this.history.appendToConversation(
@@ -273,17 +278,20 @@ export class ChatAssistantService {
         void Promise.resolve(stream.finishReason).catch(() => {
           releaseConcurrency();
           releaseReservation("stream_aborted_no_settle");
+          call.finish(signal?.aborted === true ? "cancelled" : "provider_unavailable");
         });
         return stream;
       } catch (error) {
         this.breaker.recordFailure();
         releaseConcurrency();
         releaseReservation("stream_setup_error");
+        call.finish("error");
         throw error;
       }
     } catch (error) {
       releaseConcurrency();
       releaseReservation("chat_setup_error");
+      call.finish("error");
       throw error;
     }
   }

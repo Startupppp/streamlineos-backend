@@ -34,6 +34,7 @@ type AccessSelectChain = {
   from: jest.Mock;
   where: jest.Mock;
   innerJoin: jest.Mock;
+  orderBy: jest.Mock;
   limit: jest.Mock;
 };
 
@@ -42,10 +43,12 @@ function makeSelectChain(result: unknown[]): AccessSelectChain {
     from: jest.fn(),
     where: jest.fn(),
     innerJoin: jest.fn(),
+    orderBy: jest.fn(),
     limit: jest.fn().mockResolvedValue(result),
   };
   chain.from.mockReturnValue(chain);
   chain.innerJoin.mockReturnValue(chain);
+  chain.orderBy.mockReturnValue(chain);
   chain.where.mockReturnValue(chain);
   return chain;
 }
@@ -199,6 +202,57 @@ describe("AccessService.resolveUserPermissions — org owner receives every cata
     expect(PLATFORM_ONLY_PERMISSION_KEYS.size).toBeGreaterThan(0);
     for (const key of PLATFORM_ONLY_PERMISSION_KEYS)
       expect(result.has(key)).toBe(false);
+  });
+
+  it("grants the platform-only keys to a deployment platform admin, so the surface is not merely dead", async () => {
+    const previous = process.env.PLATFORM_ADMIN_USER_IDS;
+    process.env.PLATFORM_ADMIN_USER_IDS = `someone-else, ${USER}`;
+    try {
+      const db = {
+        query: {
+          accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+          organizationMembers: {
+            findFirst: jest.fn().mockResolvedValue({ isOwner: true, status: "ACTIVE", id: 1 }),
+          },
+        },
+        select: jest.fn().mockReturnValue(makeSelectChain([])),
+      };
+
+      const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
+
+      for (const key of PLATFORM_ONLY_PERMISSION_KEYS)
+        expect(result.get(key)).toBe("all");
+    } finally {
+      if (previous === undefined) delete process.env.PLATFORM_ADMIN_USER_IDS;
+      else process.env.PLATFORM_ADMIN_USER_IDS = previous;
+    }
+  });
+
+  it("grants them to a plain member on the allowlist too — the standing is the deployment's, not the org's", async () => {
+    const previous = process.env.PLATFORM_ADMIN_USER_IDS;
+    process.env.PLATFORM_ADMIN_USER_IDS = USER;
+    try {
+      const db = {
+        query: {
+          accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+          organizationMembers: {
+            findFirst: jest
+              .fn()
+              .mockResolvedValue({ isOwner: false, status: "ACTIVE", id: 3, role: "MEMBER" }),
+          },
+        },
+        select: jest.fn().mockReturnValue(makeSelectChain([])),
+      };
+
+      const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
+
+      for (const key of PLATFORM_ONLY_PERMISSION_KEYS)
+        expect(result.get(key)).toBe("all");
+      expect(result.has("crm:leads:view")).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.PLATFORM_ADMIN_USER_IDS;
+      else process.env.PLATFORM_ADMIN_USER_IDS = previous;
+    }
   });
 });
 

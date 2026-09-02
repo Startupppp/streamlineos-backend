@@ -1,6 +1,6 @@
 import { date, foreignKey, index, integer, jsonb, pgEnum, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations } from "../common/auth";
 
 export const hrAccommodationTypeEnum = pgEnum("hr_accommodation_type", [
   "equipment",

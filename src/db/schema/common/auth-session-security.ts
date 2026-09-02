@@ -1,16 +1,6 @@
-import {
-  pgTable,
-  text,
-  serial,
-  integer,
-  timestamp,
-  boolean,
-  index,
-  uniqueIndex,
-  unique,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users, organizationMembers } from "./auth";
+import { organizations, users } from "./auth";
 
 export const userSessions = pgTable("user_sessions", {
   id: text("id").primaryKey(),

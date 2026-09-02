@@ -95,19 +95,23 @@ export function buildOrgMemberPermissionKeys(dbCatalog: Set<string>): string[] {
   return (ROLE_DEFAULT_PERMISSIONS["MEMBER"] ?? []).filter((key) => dbCatalog.has(key));
 }
 
-export async function seedSystemRolesForOrg(
-  db: Db,
-  orgId: string,
-): Promise<{ created: number }> {
-  const dbCatalog = await resolveDbPermissionSet(db);
+export interface SeededRoleSpec {
+  slug: string;
+  name: string;
+  rank: number;
+  moduleKey: string | null;
+  permissionKeys: string[];
+}
 
-  const specs: Array<{
-    slug: string;
-    name: string;
-    rank: number;
-    moduleKey: string | null;
-    permissionKeys: string[];
-  }> = [
+/**
+ * The rungs a newly seeded organisation receives, and the only definition of
+ * what each seeded slug is supposed to hold. `RoleGrantReconcilerService` reads
+ * the same function so an organisation seeded before a rung was widened
+ * converges on what a fresh one gets — the invariant `MODULE_ADMIN_EXTRA_KEYS`
+ * states and that migration 0226 exists because it was broken once.
+ */
+export function buildSeededRoleSpecs(dbCatalog: Set<string>): SeededRoleSpec[] {
+  return [
     {
       slug: "ORG_ADMIN",
       name: "Org Admin",
@@ -146,6 +150,27 @@ export async function seedSystemRolesForOrg(
       },
     ]),
   ];
+}
+
+/**
+ * `MODULE_MEMBER_KEY_SCOPE_OVERRIDE` applies only to the member rung, so the
+ * scope a grant is seeded at is a function of the slug and the key. Exported so
+ * the reconciler seats a backfilled grant at the same scope the seeder would.
+ */
+export function seededGrantScope(
+  slug: string,
+  permissionKey: string,
+): "all" | "own" | "team" {
+  if (!slug.endsWith("_MODULE_MEMBER")) return "all";
+  return MODULE_MEMBER_KEY_SCOPE_OVERRIDE[permissionKey] ?? "all";
+}
+
+export async function seedSystemRolesForOrg(
+  db: Db,
+  orgId: string,
+): Promise<{ created: number }> {
+  const dbCatalog = await resolveDbPermissionSet(db);
+  const specs = buildSeededRoleSpecs(dbCatalog);
 
   let created = 0;
   for (const spec of specs) {
@@ -167,7 +192,6 @@ export async function seedSystemRolesForOrg(
         created += 1;
         const row = inserted[0];
         if (row && spec.permissionKeys.length > 0) {
-          const isMemberRole = spec.slug.endsWith("_MODULE_MEMBER");
           await tx
             .insert(rolePermissionGrants)
             .values(
@@ -175,9 +199,7 @@ export async function seedSystemRolesForOrg(
                 orgId,
                 roleId: row.id,
                 permissionKey,
-                scope: isMemberRole
-                  ? (MODULE_MEMBER_KEY_SCOPE_OVERRIDE[permissionKey] ?? ("all" as const))
-                  : ("all" as const),
+                scope: seededGrantScope(spec.slug, permissionKey),
               })),
             )
             .onConflictDoNothing();

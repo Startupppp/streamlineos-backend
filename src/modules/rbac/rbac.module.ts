@@ -12,6 +12,7 @@ import { RolePermissionService } from "./role-permission.service";
 import { RoleMemberService } from "./role-member.service";
 import { PrincipalGroupsService } from "./principal-groups.service";
 import { PermissionCatalogSyncService } from "./permission-catalog-sync.service";
+import { RoleGrantReconcilerService } from "./role-grant-reconciler.service";
 
 @Module({
   imports: [AccessModule, NotificationsModule],
@@ -25,6 +26,7 @@ import { PermissionCatalogSyncService } from "./permission-catalog-sync.service"
     RolePermissionService,
     PrincipalGroupsService,
     PermissionCatalogSyncService,
+    RoleGrantReconcilerService,
   ],
 })
 export class RbacModule {}

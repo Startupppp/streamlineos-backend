@@ -4495,6 +4495,27 @@
       "when": 1803000010092,
       "tag": "0996_s08_leading_tenant_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 774,
+      "version": "7",
+      "when": 1803000010093,
+      "tag": "0997_s08_read_path_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 775,
+      "version": "7",
+      "when": 1803000010094,
+      "tag": "0998_s08_drop_orphan_enum_types",
+      "breakpoints": true
+    },
+    {
+      "idx": 776,
+      "version": "7",
+      "when": 1803000010095,
+      "tag": "0999_s08_drop_redundant_indexes",
+      "breakpoints": true
     }
   ]
 }

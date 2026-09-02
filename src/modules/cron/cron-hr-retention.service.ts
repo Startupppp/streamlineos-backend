@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
+import { drainPages } from "./drain";
 import { StorageService } from "../storage/storage.service";
 import type { TenantTx } from "../../common/tenant";
 import {
@@ -17,6 +18,19 @@ import {
 } from "../../db/schema";
 
 const BATCH_SIZE = 200;
+/**
+ * The drain stops here rather than holding one tenant's transaction open indefinitely.
+ * Hitting it sets `truncated`, so a backlog above the cap is stated instead of silently
+ * carried to the next tick — which is how a one-batch-per-tick sweep reported a clean
+ * result while deleting 200 of 200,000 rows.
+ */
+const MAX_BATCHES = 100;
+
+const drain = (batch: () => Promise<number>) =>
+  drainPages(BATCH_SIZE, MAX_BATCHES, async () => {
+    const processed = await batch();
+    return { selected: processed, processed };
+  });
 
 const NON_OBJECT_FILE_REFERENCES = new Set(["retention://redacted", ""]);
 
@@ -37,6 +51,9 @@ function collectRetiredKeys(
 
 export interface HrRetentionSweepResult {
   organizations: number;
+  organizationsFailed: number;
+  /** True when any drain hit MAX_BATCHES or stalled with rows still eligible. */
+  truncated: boolean;
   employeeSoftDeleted: number;
   caseSoftDeleted: number;
   attendanceDeleted: number;
@@ -64,6 +81,8 @@ export class CronHrRetentionService {
   async sweep(): Promise<HrRetentionSweepResult> {
     const result: HrRetentionSweepResult = {
       organizations: 0,
+      organizationsFailed: 0,
+      truncated: false,
       employeeSoftDeleted: 0,
       caseSoftDeleted: 0,
       attendanceDeleted: 0,
@@ -103,8 +122,14 @@ export class CronHrRetentionService {
     await this.deleteRetiredObjects(retiredKeys, result);
 
     result.organizations = sweepResult.organizations;
+    result.organizationsFailed = sweepResult.failed;
+    if (result.truncated)
+      this.logger.warn(
+        "[hr-retention] a drain hit its batch cap or stalled with rows still eligible — the next tick resumes",
+      );
     this.logger.log(
-      `[hr-retention] sweep complete: ${result.organizations} orgs, ` +
+      `[hr-retention] sweep complete: ${result.organizations} orgs ` +
+        `(${result.organizationsFailed} failed, truncated=${result.truncated}), ` +
         `${result.employeeSoftDeleted} employees soft-deleted, ` +
         `${result.caseSoftDeleted} cases soft-deleted, ` +
         `${result.attendanceDeleted} attendance rows deleted, ` +
@@ -129,24 +154,27 @@ export class CronHrRetentionService {
     retiredKeys: Map<string, string[]>,
   ): Promise<void> {
     if (recordType === "employee") {
-      const count = await this.sweepEmployees(tx, orgId, cutoff);
-      result.employeeSoftDeleted += count;
-      if (count > 0)
-        await this.auditLog(tx, orgId, "hr_person_batch", "retention_sweep.employee", action, policyId, count, cutoff);
+      const outcome = await drain(() => this.sweepEmployees(tx, orgId, cutoff));
+      result.employeeSoftDeleted += outcome.processed;
+      if (outcome.truncated) result.truncated = true;
+      if (outcome.processed > 0)
+        await this.auditLog(tx, orgId, "hr_person_batch", "retention_sweep.employee", action, policyId, outcome.processed, cutoff, outcome.truncated);
       return;
     }
     if (recordType === "case") {
-      const count = await this.sweepCases(tx, orgId, cutoff);
-      result.caseSoftDeleted += count;
-      if (count > 0)
-        await this.auditLog(tx, orgId, "hr_case_batch", "retention_sweep.case", action, policyId, count, cutoff);
+      const outcome = await drain(() => this.sweepCases(tx, orgId, cutoff));
+      result.caseSoftDeleted += outcome.processed;
+      if (outcome.truncated) result.truncated = true;
+      if (outcome.processed > 0)
+        await this.auditLog(tx, orgId, "hr_case_batch", "retention_sweep.case", action, policyId, outcome.processed, cutoff, outcome.truncated);
       return;
     }
     if (recordType === "attendance") {
-      const count = await this.sweepAttendance(tx, orgId, cutoff);
-      result.attendanceDeleted += count;
-      if (count > 0)
-        await this.auditLog(tx, orgId, "attendance_batch", "retention_sweep.attendance", "delete", policyId, count, cutoff);
+      const outcome = await drain(() => this.sweepAttendance(tx, orgId, cutoff));
+      result.attendanceDeleted += outcome.processed;
+      if (outcome.truncated) result.truncated = true;
+      if (outcome.processed > 0)
+        await this.auditLog(tx, orgId, "attendance_batch", "retention_sweep.attendance", "delete", policyId, outcome.processed, cutoff, outcome.truncated);
       return;
     }
     if (recordType === "document") {
@@ -159,12 +187,13 @@ export class CronHrRetentionService {
       result.documentsDeleted += counts.deleted;
       result.onboardingDocumentsRedacted += counts.redacted;
       result.protectedDocumentRecords += counts.protected;
-      await this.auditLog(tx, orgId, "hr_document_batch", "retention_sweep.document", action, policyId, counts.deleted + counts.redacted, cutoff);
+      if (counts.truncated) result.truncated = true;
+      await this.auditLog(tx, orgId, "hr_document_batch", "retention_sweep.document", action, policyId, counts.deleted + counts.redacted, cutoff, counts.truncated, counts.scanned);
       return;
     }
     if (recordType === "payroll") {
       result.protectedPayrollPolicies += 1;
-      await this.auditLog(tx, orgId, "hr_payroll_retention_policy", "retention_sweep.payroll_protected", action, policyId, 0, cutoff);
+      await this.auditLog(tx, orgId, "hr_payroll_retention_policy", "retention_sweep.payroll_protected", action, policyId, 0, cutoff, false);
       this.logger.warn(
         "[hr-retention] payroll retention policy requires operator action — payroll_runs has FK children and no deleted_at; run manual DELETE with dependency check",
         { orgId, policyId },
@@ -270,6 +299,13 @@ export class CronHrRetentionService {
     }
   }
 
+  /**
+   * Drains BOTH document tables rather than taking one page of each per tick.
+   *
+   * `scanned` is the number of rows the predicate matched, so a run that scanned 200 and
+   * processed 0 is visible: that is the stall shape a policy whose `action` is neither
+   * "delete" nor "anonymize" produces, and a naive loop would spin on it for ever.
+   */
   private async sweepDocuments(
     tx: TenantTx,
     orgId: string,
@@ -279,14 +315,53 @@ export class CronHrRetentionService {
     deleted: number;
     redacted: number;
     protected: number;
+    scanned: number;
+    truncated: boolean;
     retiredKeys: string[];
   }> {
-    // A single batch per table keeps each invocation bounded. Processed rows
-    // stop matching, so the next invocation resumes without a cursor and a
-    // retry cannot delete or redact the same row twice.
-    let redacted = 0;
     const retiredKeys: string[] = [];
-    const genericRows = await tx
+    let deleted = 0;
+    let redacted = 0;
+    let protectedCount = 0;
+    let scanned: number;
+
+    const generic = await drainPages(BATCH_SIZE, MAX_BATCHES, async () => {
+      const rows = await this.selectGenericDocuments(tx, orgId, cutoff);
+      if (rows.length === 0) return { selected: 0, processed: 0 };
+      const processed = await this.processGenericDocuments(tx, orgId, action, rows, retiredKeys);
+      deleted += processed.deleted;
+      redacted += processed.redacted;
+      return { selected: rows.length, processed: processed.deleted + processed.redacted };
+    });
+
+    const onboarding = await drainPages(BATCH_SIZE, MAX_BATCHES, async () => {
+      const rows = await this.selectOnboardingDocuments(tx, orgId, cutoff);
+      if (rows.length === 0) return { selected: 0, processed: 0 };
+      const processed = await this.processOnboardingDocuments(tx, orgId, action, rows, retiredKeys);
+      deleted += processed.deleted;
+      redacted += processed.redacted;
+      protectedCount += processed.protected;
+      return { selected: rows.length, processed: processed.deleted + processed.redacted };
+    });
+
+    scanned = generic.scanned + onboarding.scanned;
+
+    return {
+      deleted,
+      redacted,
+      protected: protectedCount,
+      scanned,
+      truncated: generic.truncated || onboarding.truncated,
+      retiredKeys,
+    };
+  }
+
+  private async selectGenericDocuments(
+    tx: TenantTx,
+    orgId: string,
+    cutoff: Date,
+  ): Promise<Array<{ id: number; fileUrl: string | null }>> {
+    return tx
       .select({ id: documents.id, fileUrl: documents.fileUrl })
       .from(documents)
       .where(sql`${documents.orgId} = ${orgId}
@@ -300,26 +375,45 @@ export class CronHrRetentionService {
             AND hli.locked = true
         )`)
       .limit(BATCH_SIZE);
+  }
 
-    let deleted = 0;
-    if (action === "delete" && genericRows.length > 0) {
+  private async processGenericDocuments(
+    tx: TenantTx,
+    orgId: string,
+    action: string,
+    genericRows: Array<{ id: number; fileUrl: string | null }>,
+    retiredKeys: string[],
+  ): Promise<{ deleted: number; redacted: number }> {
+    const ids = sql.join(
+      genericRows.map((row) => sql`${row.id}`),
+      sql`, `,
+    );
+    if (action === "delete") {
       const rows = await tx
         .delete(documents)
-        .where(sql`${documents.orgId} = ${orgId} AND ${documents.id} IN (${sql.join(genericRows.map((row) => sql`${row.id}`), sql`, `)})`)
+        .where(sql`${documents.orgId} = ${orgId} AND ${documents.id} IN (${ids})`)
         .returning({ id: documents.id });
-      deleted += rows.length;
       collectRetiredKeys(retiredKeys, genericRows, rows.map((row) => row.id));
-    } else if (action === "anonymize" && genericRows.length > 0) {
+      return { deleted: rows.length, redacted: 0 };
+    }
+    if (action === "anonymize") {
       const rows = await tx
         .update(documents)
         .set({ fileUrl: "retention://redacted", fileName: "redacted", description: null, metadata: null })
-        .where(sql`${documents.orgId} = ${orgId} AND ${documents.id} IN (${sql.join(genericRows.map((row) => sql`${row.id}`), sql`, `)})`)
+        .where(sql`${documents.orgId} = ${orgId} AND ${documents.id} IN (${ids})`)
         .returning({ id: documents.id });
-      redacted += rows.length;
       collectRetiredKeys(retiredKeys, genericRows, rows.map((row) => row.id));
+      return { deleted: 0, redacted: rows.length };
     }
+    return { deleted: 0, redacted: 0 };
+  }
 
-    const onboardingRows = await tx
+  private async selectOnboardingDocuments(
+    tx: TenantTx,
+    orgId: string,
+    cutoff: Date,
+  ): Promise<Array<{ id: number; fileUrl: string | null }>> {
+    return tx
       .select({ id: onboardingDocuments.id, fileUrl: onboardingDocuments.fileUrl })
       .from(onboardingDocuments)
       .where(sql`${onboardingDocuments.orgId} = ${orgId}
@@ -333,42 +427,50 @@ export class CronHrRetentionService {
             AND hli.locked = true
         )`)
       .limit(BATCH_SIZE);
+  }
 
-    let protectedCount = 0;
-    if (onboardingRows.length > 0) {
-      const auditRows = await tx
-        .select({ id: documentAuditLogs.onboardingDocumentId })
-        .from(documentAuditLogs)
-        .where(sql`${documentAuditLogs.orgId} = ${orgId}
-          AND ${documentAuditLogs.onboardingDocumentId} IN (${sql.join(onboardingRows.map((row) => sql`${row.id}`), sql`, `)})`);
-      const auditedIds = new Set(auditRows.map((row) => row.id));
-      const deletableIds = onboardingRows.map((row) => row.id).filter((id) => !auditedIds.has(id));
+  private async processOnboardingDocuments(
+    tx: TenantTx,
+    orgId: string,
+    action: string,
+    onboardingRows: Array<{ id: number; fileUrl: string | null }>,
+    retiredKeys: string[],
+  ): Promise<{ deleted: number; redacted: number; protected: number }> {
+    const auditRows = await tx
+      .select({ id: documentAuditLogs.onboardingDocumentId })
+      .from(documentAuditLogs)
+      .where(sql`${documentAuditLogs.orgId} = ${orgId}
+        AND ${documentAuditLogs.onboardingDocumentId} IN (${sql.join(onboardingRows.map((row) => sql`${row.id}`), sql`, `)})`);
+    const auditedIds = new Set(auditRows.map((row) => row.id));
 
-      if (action === "delete" && deletableIds.length > 0) {
-        const rows = await tx
-          .delete(onboardingDocuments)
-          .where(sql`${onboardingDocuments.orgId} = ${orgId} AND ${onboardingDocuments.id} IN (${sql.join(deletableIds.map((id) => sql`${id}`), sql`, `)})`)
-          .returning({ id: onboardingDocuments.id });
-        deleted += rows.length;
-        collectRetiredKeys(retiredKeys, onboardingRows, rows.map((row) => row.id));
-      }
-
-      const redactIds = onboardingRows
-        .map((row) => row.id)
-        .filter((id) => auditedIds.has(id) || action === "anonymize");
-      if (redactIds.length > 0) {
-        const rows = await tx
-          .update(onboardingDocuments)
-          .set({ fileUrl: "retention://redacted", fileName: "redacted", remarks: null })
-          .where(sql`${onboardingDocuments.orgId} = ${orgId} AND ${onboardingDocuments.id} IN (${sql.join(redactIds.map((id) => sql`${id}`), sql`, `)})`)
-          .returning({ id: onboardingDocuments.id });
-        redacted = rows.length;
-        collectRetiredKeys(retiredKeys, onboardingRows, rows.map((row) => row.id));
-      }
-      protectedCount = onboardingRows.length - deleted - redacted;
+    let deleted = 0;
+    const deletableIds = onboardingRows.map((row) => row.id).filter((id) => !auditedIds.has(id));
+    if (action === "delete" && deletableIds.length > 0) {
+      const rows = await tx
+        .delete(onboardingDocuments)
+        .where(sql`${onboardingDocuments.orgId} = ${orgId} AND ${onboardingDocuments.id} IN (${sql.join(deletableIds.map((id) => sql`${id}`), sql`, `)})`)
+        .returning({ id: onboardingDocuments.id });
+      deleted = rows.length;
+      collectRetiredKeys(retiredKeys, onboardingRows, rows.map((row) => row.id));
     }
 
-    return { deleted, redacted, protected: protectedCount, retiredKeys };
+    let redacted = 0;
+    const redactIds = onboardingRows
+      .map((row) => row.id)
+      .filter((id) => auditedIds.has(id) || action === "anonymize");
+    if (redactIds.length > 0) {
+      const rows = await tx
+        .update(onboardingDocuments)
+        .set({ fileUrl: "retention://redacted", fileName: "redacted", remarks: null })
+        .where(sql`${onboardingDocuments.orgId} = ${orgId} AND ${onboardingDocuments.id} IN (${sql.join(redactIds.map((id) => sql`${id}`), sql`, `)})`)
+        .returning({ id: onboardingDocuments.id });
+      redacted = rows.length;
+      collectRetiredKeys(retiredKeys, onboardingRows, rows.map((row) => row.id));
+    }
+
+    // Only this table's own rows: the count used to subtract the generic table's
+    // deletions too and could go negative.
+    return { deleted, redacted, protected: onboardingRows.length - deleted - redacted };
   }
 
   private async auditLog(
@@ -380,6 +482,8 @@ export class CronHrRetentionService {
     policyId: number,
     count: number,
     cutoff: Date,
+    truncated: boolean,
+    scanned?: number,
   ): Promise<void> {
     await tx.insert(hrAuditLogs).values({
       orgId,
@@ -387,7 +491,14 @@ export class CronHrRetentionService {
       entityType,
       entityId: `policy:${policyId}`,
       action,
-      after: { count, cutoff: cutoff.toISOString(), retentionAction, policyId } as Record<string, unknown>,
+      after: {
+        count,
+        truncated,
+        ...(scanned === undefined ? {} : { scanned }),
+        cutoff: cutoff.toISOString(),
+        retentionAction,
+        policyId,
+      } as Record<string, unknown>,
     });
   }
 }

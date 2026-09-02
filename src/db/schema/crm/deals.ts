@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { bigint, boolean, date, decimal, foreignKey, index, integer, jsonb, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, boolean, date, decimal, index, integer, jsonb, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { leads } from "./leads";

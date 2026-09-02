@@ -546,6 +546,168 @@ function runSelfTests() {
     detail: miResult2,
   });
 
+  // ── Bite proofs against the eight defects report 20b enumerates ───────────
+  // Each is reconstructed here in its PRE-FIX wiring. The old gate passed green
+  // over all eight; every one of these assertions fails without the shape rules.
+  const factories = parseCacheKeyFactories(
+    readFile(join(BACKEND_SRC, "common", "cache", "cache-keys.ts")),
+  );
+  const shapesOf = (source) => resolveFileSites(source, "fixture.ts", factories);
+  const check = (label, pass, detail) => results.push({ name: label, pass, detail });
+
+  // Defect 1 — hr:headcount read and bumped two different counters.
+  const headcountPreFix = shapesOf(`
+    class OrgStructureService {
+      getHeadcount(orgId, query) {
+        return this.cache.cachedVersioned(\`hr:headcount:\${orgId}\`, \`group:\${query.groupBy}\`, fn, TTL);
+      }
+    }
+    class OrgHierarchyCacheService {
+      async invalidateAfterMutation(orgId) {
+        await this.cache.invalidateNamespaceForOrg(orgId, "hr:headcount");
+      }
+    }
+  `);
+  const headcountMismatch = findNamespaceCounterMismatches(
+    headcountPreFix.writes,
+    headcountPreFix.invalidates,
+  );
+  check(
+    "defect 1: hr:headcount bump to <ORG>:hr:headcount while the read uses hr:headcount:* is a mismatch",
+    headcountMismatch.length === 1 && headcountMismatch[0].shape === "<ORG>:hr:headcount",
+    JSON.stringify(headcountMismatch.map((f) => f.shape)),
+  );
+  check(
+    "the <ORG>: prefix is NOT normalised away — that erasure is what hid defect 1",
+    headcountPreFix.writes[0]?.shape.startsWith("hr:headcount") === true &&
+      headcountPreFix.invalidates[0]?.shape.startsWith("<ORG>:") === true,
+    `${headcountPreFix.writes[0]?.shape} vs ${headcountPreFix.invalidates[0]?.shape}`,
+  );
+  const headcountFixed = shapesOf(`
+    getHeadcount(orgId, query) {
+      return this.cache.cachedVersionedForOrg(orgId, "hr:headcount", \`group:\${query.groupBy}\`, fn, TTL);
+    }
+    async invalidateAfterMutation(orgId) {
+      await this.cache.invalidateNamespaceForOrg(orgId, "hr:headcount");
+    }
+  `);
+  check(
+    "the shipped fix for defect 1 produces no finding",
+    findNamespaceCounterMismatches(headcountFixed.writes, headcountFixed.invalidates).length === 0,
+  );
+
+  // Defects 2-3 — hr:celebrations: delete of a stem nothing writes.
+  const celebrationsPreFix = shapesOf(`
+    list(orgId, actorId, scope, day) {
+      return this.cache.cached(\`hr:celebrations:\${orgId}:\${actorId}:\${scope}:\${day}\`, fn, TTL);
+    }
+    async onboard(orgId) {
+      await this.cache.invalidate(\`hr:celebrations:\${orgId}\`);
+    }
+    async terminate(orgId) {
+      await this.cache.invalidate(\`hr:celebrations:\${orgId}\`);
+    }
+  `);
+  const celebrationsFindings = findFalsePrefixDeletes(
+    celebrationsPreFix.writes,
+    celebrationsPreFix.invalidates,
+  );
+  check(
+    "defects 2-3: hr:celebrations stem delete cannot reach the 5-segment key it is meant to clear",
+    celebrationsFindings.length === 2 && celebrationsFindings[0].shape === "hr:celebrations:*",
+    JSON.stringify(celebrationsFindings.map((f) => f.shape)),
+  );
+
+  // Defects 4-5 — hr:analytics: stem delete reaches the overview key but silently
+  // misses its two siblings.
+  const analyticsPreFix = shapesOf(`
+    overview(orgId) { return this.cache.cached(\`hr:analytics:\${orgId}\`, fn, TTL); }
+    attendance(orgId, y, m) { return this.cache.cached(\`hr:analytics:attendance:\${orgId}:\${y}:\${m}\`, fn, TTL); }
+    attrition(orgId, y) { return this.cache.cached(\`hr:analytics:attrition:\${orgId}:\${y}\`, fn, TTL); }
+    async onboard(orgId) { await this.cache.invalidate(\`hr:analytics:\${orgId}\`); }
+    async terminate(orgId) { await this.cache.invalidate(\`hr:analytics:\${orgId}\`); }
+  `);
+  const analyticsFindings = findFalsePrefixDeletes(
+    analyticsPreFix.writes,
+    analyticsPreFix.invalidates,
+  );
+  check(
+    "defects 4-5: a delete that matches one key exactly and misses two siblings is still reported",
+    analyticsFindings.length === 2 && analyticsFindings[0].written.length === 2,
+    JSON.stringify(analyticsFindings.map((f) => f.written)),
+  );
+
+  // Defects 6-8 — ownership:transfers bumped on the wrong counter from three sites.
+  const ownershipPreFix = shapesOf(`
+    list(orgId, hash) {
+      return this.cache.cachedVersionedForOrg(orgId, "ownership:transfers", hash, fn, TTL);
+    }
+    async a(orgId) { await this.cache.invalidateNamespace(\`ownership:transfers:\${orgId}\`); }
+    async b(orgId) { await this.cache.invalidateNamespace(\`ownership:transfers:\${orgId}\`); }
+    async c(orgId) { await this.cache.invalidateNamespace(\`ownership:transfers:\${orgId}\`); }
+  `);
+  const ownershipFindings = findNamespaceCounterMismatches(
+    ownershipPreFix.writes,
+    ownershipPreFix.invalidates,
+  );
+  check(
+    "defects 6-8: three invalidateNamespace bumps on a counter the *ForOrg read never uses",
+    ownershipFindings.length === 3 && ownershipFindings.every((f) => f.shape === "ownership:transfers:*"),
+    JSON.stringify(ownershipFindings.map((f) => f.shape)),
+  );
+
+  // Negatives — the rules must not cry wolf.
+  const correct = shapesOf(`
+    list(orgId, hash) { return this.cache.cachedVersionedForOrg(orgId, "invoices:list", hash, fn, TTL); }
+    async write(orgId) { await this.cache.invalidateNamespaceForOrg(orgId, "invoices:list"); }
+    one(orgId, id) { return this.cache.cached(\`crm:contact:\${orgId}:\${id}\`, fn, TTL); }
+    async del(orgId, id) { await this.cache.invalidate(\`crm:contact:\${orgId}:\${id}\`); }
+  `);
+  check(
+    "a correctly paired namespace produces no finding",
+    findNamespaceCounterMismatches(correct.writes, correct.invalidates).length === 0,
+  );
+  check(
+    "an exact-key delete of exactly what was written produces no finding",
+    findFalsePrefixDeletes(correct.writes, correct.invalidates).length === 0,
+  );
+  check(
+    "a one-literal-segment shape is filtered as noise rather than reported",
+    findFalsePrefixDeletes(
+      shapesOf("this.cache.cached(`org:${id}:x`, fn);").writes,
+      shapesOf("this.cache.invalidate(`org:${id}`);").invalidates,
+    ).length === 0,
+  );
+
+  // segmentPrefix semantics.
+  check("segmentPrefix: strict prefix", segmentPrefix("a:b", "a:b:c") === true);
+  check("segmentPrefix: equal length is not a prefix", segmentPrefix("a:b", "a:b") === false);
+  check("segmentPrefix: divergent segment", segmentPrefix("a:b", "a:c:d") === false);
+  check("segmentPrefix: wildcard on either side matches", segmentPrefix("a:*", "a:b:c") === true);
+
+  // The rotted table map — the reason none of the 10 family checks ever ran.
+  check(
+    "snake_case table names are converted to the camelCase Drizzle identifier",
+    snakeToCamel("organization_members") === "organizationMembers" &&
+      snakeToCamel("org_units") === "orgUnits",
+  );
+  check(
+    "a camelCase Drizzle write is detected (it was invisible before)",
+    tableMatchCoverage(["organization_members"], ["await tx.insert(organizationMembers).values(x);"]).get(
+      "organization_members",
+    ) === 1,
+  );
+  check(
+    "a table entry matching nothing is reported as zero, not silently skipped",
+    tableMatchCoverage(["no_such_table"], ["await tx.insert(organizationMembers).values(x);"]).get(
+      "no_such_table",
+    ) === 0,
+  );
+  check(
+    "every declared table entry matches at least one identifier form",
+    TABLE_TO_CACHE_FAMILIES.every((e) => tableIdentifiers(e.table).length >= 1),
+  );
+
   const allPass = results.every((r) => r.pass);
   return { results, allPass };
 }

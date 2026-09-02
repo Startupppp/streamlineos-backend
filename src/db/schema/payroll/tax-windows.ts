@@ -1,6 +1,4 @@
-import {
-  pgTable, serial, text, timestamp, date, index, uniqueIndex, unique,
-} from "drizzle-orm/pg-core";
+import { pgTable, serial, text, timestamp, date, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
 import { payrollTaxWindowStatusEnum } from "./enums";

@@ -1,4 +1,4 @@
-import { pgTable, pgEnum, serial, text, boolean, jsonb, timestamp, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, serial, text, boolean, jsonb, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
 

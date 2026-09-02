@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, jsonb, integer, index, unique, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, jsonb, integer, index, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import {
   notificationTypeEnum,

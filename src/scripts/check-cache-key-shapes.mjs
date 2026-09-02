@@ -253,9 +253,13 @@ export function findFalsePrefixDeletes(writes, invalidates) {
     if (inv.kind !== "exact") continue;
     if (inv.shape.startsWith("*")) continue;
     if (!hasEnoughLiteralSegments(inv.shape)) continue;
-    if (writeShapes.has(inv.shape)) continue;
-    const reachable = [...writeShapes].filter((w) => segmentPrefix(inv.shape, w));
-    if (reachable.length > 0) findings.push({ ...inv, written: reachable.sort() });
+    const unreachable = [...writeShapes].filter((w) => segmentPrefix(inv.shape, w));
+    if (unreachable.length === 0) continue;
+    // A delete that also matches one write exactly is still a defect when other
+    // keys sit under the same stem: `hr:analytics:<org>` cleared the overview and
+    // silently missed `hr:analytics:attendance:…` and `…:attrition:…`.
+    const exactMatch = writeShapes.has(inv.shape);
+    findings.push({ ...inv, written: unreachable.sort(), exactMatch });
   }
   return findings;
 }

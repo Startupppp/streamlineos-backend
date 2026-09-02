@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex, numeric, primaryKey, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, integer, index, unique, uniqueIndex, numeric, foreignKey } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import {
   subscriptionStatusEnum,
@@ -66,6 +66,7 @@ export const coupons = pgTable("coupons", {
   // a code deny it to every other org and turn the 409 into an existence oracle.
   uniqueIndex("uniq_coupons_platform_code").on(table.code).where(sql`org_id IS NULL`),
   uniqueIndex("uniq_coupons_org_code").on(table.orgId, table.code).where(sql`org_id IS NOT NULL`),
+  index("idx_coupons_code").on(table.code),
   index("idx_coupons_is_active").on(table.isActive),
 ]);
 

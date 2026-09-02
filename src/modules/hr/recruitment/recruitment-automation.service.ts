@@ -317,15 +317,16 @@ export class RecruitmentAutomationService {
     // organisation's real id succeeded — one request per id enumerated the
     // global candidate table. The whole request fails unless every candidate is
     // this organisation's, and a miss is 404 rather than 403.
+    const requestedIds = [...new Set(input.candidateIds)];
     const owned = await this.db
       .select({ id: candidates.id })
       .from(candidates)
-      .where(and(eq(candidates.orgId, orgId), inArray(candidates.id, input.candidateIds)))
-      .limit(input.candidateIds.length);
-    if (owned.length !== new Set(input.candidateIds).size)
-      throw new NotFoundException("One or more candidates not found in this organization");
+      .where(and(eq(candidates.orgId, orgId), inArray(candidates.id, requestedIds)))
+      .limit(requestedIds.length);
+    if (owned.length !== requestedIds.length)
+      throw new NotFoundException("One or more candidate IDs not found in this organization");
 
-    const rows = input.candidateIds.map((candidateId) => ({
+    const rows = requestedIds.map((candidateId) => ({
       sequenceId,
       candidateId,
       currentStep: 0,

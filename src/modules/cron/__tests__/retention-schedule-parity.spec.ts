@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { RETENTION_JOBS } from "../retention-schedule";
+import { RETENTION_JOBS, UNSCHEDULED_PURGE_JOBS } from "../retention-schedule";
 
 const CRON_DIR = resolve(__dirname, "..");
 const SCRIPTS_DIR = resolve(__dirname, "..", "..", "..", "scripts");
@@ -42,9 +42,21 @@ describe("retention schedule — the declaration is the source of truth", () => 
       }
 
     expect(leased.size).toBeGreaterThanOrEqual(11);
-    const declared = new Set(RETENTION_JOBS.map((j) => j.jobKey));
-    const undeclared = [...leased].filter((key) => !declared.has(key));
-    expect(undeclared).toEqual([]);
+    const accounted = new Set([
+      ...RETENTION_JOBS.map((j) => j.jobKey),
+      ...UNSCHEDULED_PURGE_JOBS.map((j) => j.jobKey),
+    ]);
+    // A new leased purge route must be scheduled or explicitly excluded with a reason.
+    // Neither is the state that shipped: eleven correct drains that nothing ever called.
+    expect([...leased].filter((key) => !accounted.has(key))).toEqual([]);
+  });
+
+  it("gives every deliberately unscheduled purge job a stated reason", () => {
+    expect(UNSCHEDULED_PURGE_JOBS.length).toBeGreaterThan(0);
+    for (const job of UNSCHEDULED_PURGE_JOBS) {
+      expect(job.reason.length).toBeGreaterThan(20);
+      expect(RETENTION_JOBS.map((j) => j.jobKey)).not.toContain(job.jobKey);
+    }
   });
 
   it("declares each job key exactly once, with a positive cadence and lease window", () => {

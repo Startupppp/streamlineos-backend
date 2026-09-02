@@ -305,7 +305,11 @@
     "check:repo-paths:self-test": "node src/scripts/check-repo-paths.mjs --self-test",
     "check:alert-ack:self-test": "node src/scripts/check-alert-ack.mjs --self-test",
     "check:set-null-column-lists": "node --max-old-space-size=4096 -r ts-node/register/transpile-only src/scripts/check-set-null-column-lists.ts",
-    "check:set-null-column-lists:self-test": "node --max-old-space-size=4096 -r ts-node/register/transpile-only src/scripts/check-set-null-column-lists.ts --self-test"
+    "check:set-null-column-lists:self-test": "node --max-old-space-size=4096 -r ts-node/register/transpile-only src/scripts/check-set-null-column-lists.ts --self-test",
+    "check:lifecycle-predicates": "node src/scripts/check-lifecycle-predicates.mjs",
+    "check:lifecycle-predicates:self-test": "node src/scripts/check-lifecycle-predicates.mjs --self-test",
+    "check:evidence-seal": "node src/scripts/check-evidence-seal.mjs",
+    "check:evidence-seal:self-test": "node src/scripts/check-evidence-seal.mjs --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

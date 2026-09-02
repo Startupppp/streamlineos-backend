@@ -10,11 +10,17 @@ import type { Db } from "../../../db/drizzle.module";
 
 const ORG_COUNT = 250;
 
+interface SelectChain {
+  from: jest.Mock<SelectChain, []>;
+  where: jest.Mock<SelectChain, [unknown]>;
+  orderBy: jest.Mock<Promise<{ id: string }[]>, []>;
+}
+
 function makeMockDb(orgIds: string[]): Db {
   const rows = orgIds.map((id) => ({ id }));
-  const chain = {
-    from: jest.fn(() => chain),
-    where: jest.fn(() => chain),
+  const chain: SelectChain = {
+    from: jest.fn((): SelectChain => chain),
+    where: jest.fn((_condition: unknown): SelectChain => chain),
     orderBy: jest.fn(() => Promise.resolve(rows)),
   };
   const db = {

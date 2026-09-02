@@ -17,6 +17,8 @@ import {
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { AccessService } from "../access/access.service";
+import { resolveTasksViewScope } from "./tasks-scope";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { TasksService } from "./tasks.service";
@@ -53,6 +55,7 @@ export class TasksController {
     private readonly tasks: TasksService,
     private readonly sequences: TaskSequencesService,
     private readonly analytics: TaskAnalyticsService,
+    private readonly access: AccessService,
   ) {}
 
   @Get()
@@ -81,11 +84,12 @@ export class TasksController {
   @Get("analytics")
   @RequirePermission("tasks:read")
   @Validate({ query: analyticsSchema })
-  getAnalytics(
+  async getAnalytics(
     @Query() query: AnalyticsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.analytics.analytics(u.orgId, query);
+    const scope = await resolveTasksViewScope(this.access, u);
+    return this.analytics.analytics(u.orgId, u.userId, scope, query);
   }
 
   @Get("sequences")

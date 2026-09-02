@@ -124,6 +124,38 @@ export const RETENTION_JOBS: readonly RetentionJobDeclaration[] = [
   },
 ];
 
+/**
+ * Leased `/cron/*` jobs whose key reads like retention work but which are deliberately
+ * NOT on this schedule. Each is still reachable only by an external POST that nothing
+ * sends, so each is an open finding — not a closed decision — and is listed here so the
+ * omission is reviewable rather than an accident of a regex.
+ *
+ * They sit outside `RETENTION-POLICY.md`'s per-table inventory, so scheduling them is a
+ * product decision rather than a mechanical one: `org-purge-worker` performs irreversible
+ * organisation deletion, and the other three drain lifecycle state that the policy
+ * document has never classified.
+ */
+export const UNSCHEDULED_PURGE_JOBS: readonly { jobKey: string; reason: string }[] = [
+  {
+    jobKey: "org-purge-worker",
+    reason:
+      "irreversible organisation deletion; enabling it on a timer is an operator decision, not a retention cadence",
+  },
+  {
+    jobKey: "retention-delete-sweep",
+    reason:
+      "fulfils HR data-subject delete requests; belongs to the GDPR erasure path, not to hr_retention_policies",
+  },
+  {
+    jobKey: "kb-trash-purge",
+    reason: "KB trash lifecycle; no entry in RETENTION-POLICY.md's per-table inventory",
+  },
+  {
+    jobKey: "session-revocation-prune",
+    reason: "session revocation tombstones; no entry in RETENTION-POLICY.md's per-table inventory",
+  },
+];
+
 export const RETENTION_JOB_KEYS: readonly string[] = RETENTION_JOBS.map((j) => j.jobKey);
 
 export function retentionJob(jobKey: string): RetentionJobDeclaration | undefined {

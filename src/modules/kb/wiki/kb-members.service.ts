@@ -6,12 +6,11 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq, sql, isNull } from "drizzle-orm";
-import { kbSpaces, kbSpaceMembers, kbPages, kbArticles, users, organizationMembers } from "../../../db/schema";
+import { kbSpaces, kbSpaceMembers, users, organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbIndexingService } from "../retrieval/kb-indexing.service";
-import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import type { AddMemberInput } from "./dto/kb-members.schemas";
 
 type MemberRow = typeof kbSpaceMembers.$inferSelect;
@@ -119,32 +118,9 @@ export class KbMembersService {
         spaceRole: input.spaceRole,
       })
       .returning();
-    await this.bumpSpaceAclRevision(orgId, spaceId);
+    await this.indexing.bumpSpaceAclRevision(orgId, spaceId);
     await this.access.invalidateAccessibleSpaceIds(orgId);
-    await this.scheduleAclReindex(orgId, spaceId);
     return { ...member, userId: input.userId ?? null };
-  }
-
-  private async scheduleAclReindex(orgId: string, spaceId: number): Promise<void> {
-    const registered = registerAfterCommit(async () => {
-      await this.indexing.syncAclRevisionForSpace(orgId, spaceId);
-    });
-    if (!registered) {
-      await this.indexing.syncAclRevisionForSpace(orgId, spaceId);
-    }
-  }
-
-  private async bumpSpaceAclRevision(orgId: string, spaceId: number): Promise<void> {
-    await Promise.all([
-      this.db
-        .update(kbPages)
-        .set({ aclRevision: sql`acl_revision + 1` })
-        .where(and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId))),
-      this.db
-        .update(kbArticles)
-        .set({ aclRevision: sql`acl_revision + 1` })
-        .where(and(eq(kbArticles.orgId, orgId), eq(kbArticles.spaceId, spaceId))),
-    ]);
   }
 
   async remove(orgId: string, spaceId: number, memberId: number): Promise<{ success: boolean }> {
@@ -178,9 +154,8 @@ export class KbMembersService {
           eq(kbSpaceMembers.orgId, orgId),
         ),
       );
-    await this.bumpSpaceAclRevision(orgId, spaceId);
+    await this.indexing.bumpSpaceAclRevision(orgId, spaceId);
     await this.access.invalidateAccessibleSpaceIds(orgId);
-    await this.scheduleAclReindex(orgId, spaceId);
     return { success: true };
   }
 }

@@ -13,6 +13,7 @@ import { AuthorizedInService } from "../../common/auth/authorized-in-service.dec
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Validate } from "../../common/validation/validate.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { AccessService } from "../access/access.service";
@@ -41,6 +42,7 @@ export class RbacController {
 
   @Post("role-permissions")
   @HttpCode(200)
+  @Idempotent("rbac.rolePermission.assign")
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   @Validate({ body: assignRolePermissionSchema })

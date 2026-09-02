@@ -9,12 +9,12 @@ import {
   kbSpaces,
   kbSpaceMembers,
   kbArticles,
-  kbPages,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KbAccessService } from "../core/kb-access.service";
+import { KbIndexingService } from "../retrieval/kb-indexing.service";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { DataScope } from "../../access/access.types";
 import { kbSlugify } from "../core/kb.util";
@@ -43,6 +43,7 @@ export class KbSpacesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: KbAccessService,
+    private readonly indexing: KbIndexingService,
   ) {}
 
   async list(
@@ -183,20 +184,7 @@ export class KbSpacesService {
       .where(and(eq(kbSpaces.id, spaceId), eq(kbSpaces.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Space not found");
-    if (aclChanged) {
-      await Promise.all([
-        this.db
-          .update(kbPages)
-          .set({ aclRevision: sql`acl_revision + 1` })
-          .where(and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId))),
-        this.db
-          .update(kbArticles)
-          .set({ aclRevision: sql`acl_revision + 1` })
-          .where(
-            and(eq(kbArticles.orgId, orgId), eq(kbArticles.spaceId, spaceId)),
-          ),
-      ]);
-    }
+    if (aclChanged) await this.indexing.bumpSpaceAclRevision(orgId, spaceId);
     await this.access.invalidateAccessibleSpaceIds(orgId);
     return updated;
   }

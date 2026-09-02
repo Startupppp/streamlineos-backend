@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, isNotNull, lte, lt, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, lte, lt, ne, sql } from "drizzle-orm";
+import { Redis } from "@upstash/redis";
 import { goals, reviewCycles, hrBenefitEnrollmentWindows, assets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -13,6 +14,25 @@ import { ComplianceRequirementsService } from "../hr/global/compliance-requireme
 import { WorkAuthorizationsService } from "../hr/global/work-authorizations.service";
 import { ContractsService } from "../hr/global/contracts.service";
 import { forEachOrg } from "../../common/tenant";
+import { REDIS } from "../../common/cache/cache.service";
+import { RotatingCursor, drainWithCursor } from "./drain";
+
+const GOAL_PAGE = 200;
+const REVIEW_PAGE = 100;
+const ASSET_PAGE = 200;
+/**
+ * The per-tick budget. These sweeps emit an automation event and mark nothing, so
+ * without a resumable cursor the same first page matched every tick and everything
+ * past it was never emitted at all. The budget keeps one tick bounded; the cursor
+ * makes the coverage complete across ticks.
+ */
+const MAX_PAGES_PER_TICK = 5;
+
+export interface EmitSweepResult {
+  swept: number;
+  /** The per-tick budget was spent with rows still eligible; the next tick resumes. */
+  truncated: boolean;
+}
 
 interface SweepResult {
   orgId: string;
@@ -30,8 +50,13 @@ interface RunAllResult {
 
 @Injectable()
 export class CronHrEnginesService {
+  private readonly goalCursor: RotatingCursor;
+  private readonly reviewCursor: RotatingCursor;
+  private readonly assetCursor: RotatingCursor;
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(REDIS) redis: Redis | null,
     private readonly workflowEngine: HrWorkflowEngineService,
     private readonly effectiveChanges: HrEffectiveChangesService,
     private readonly hrAutomation: HrAutomationEngineService,
@@ -40,7 +65,11 @@ export class CronHrEnginesService {
     private readonly compliance: ComplianceRequirementsService,
     private readonly workAuths: WorkAuthorizationsService,
     private readonly contracts: ContractsService,
-  ) {}
+  ) {
+    this.goalCursor = new RotatingCursor(redis, "hr-engines-overdue-goals");
+    this.reviewCursor = new RotatingCursor(redis, "hr-engines-reviews-due");
+    this.assetCursor = new RotatingCursor(redis, "hr-engines-asset-returns");
+  }
 
   async sweepWorkflowSlaEscalations(): Promise<{ swept: number }> {
     return this.workflowEngine.sweepOverdueSteps();
@@ -50,96 +79,132 @@ export class CronHrEnginesService {
     return this.effectiveChanges.applyDueChanges(orgId, null, { limit: 50 });
   }
 
-  async sweepOverdueGoals(orgId: string): Promise<{ swept: number }> {
+  async sweepOverdueGoals(orgId: string): Promise<EmitSweepResult> {
     const today = new Date().toISOString().slice(0, 10);
-    const overdueGoals = await this.db
-      .select({ id: goals.id, userId: goals.userId, endDate: goals.endDate })
-      .from(goals)
-      .where(and(eq(goals.orgId, orgId), eq(goals.status, "IN_PROGRESS"), lt(goals.endDate, today)))
-      .limit(200);
+    const outcome = await drainWithCursor(
+      this.goalCursor,
+      orgId,
+      GOAL_PAGE,
+      MAX_PAGES_PER_TICK,
+      (after, limit) =>
+        this.db
+          .select({ id: goals.id, userId: goals.userId, endDate: goals.endDate })
+          .from(goals)
+          .where(
+            and(
+              eq(goals.orgId, orgId),
+              eq(goals.status, "IN_PROGRESS"),
+              lt(goals.endDate, today),
+              gt(goals.id, after),
+            ),
+          )
+          .orderBy(asc(goals.id))
+          .limit(limit),
+      async (rows) => {
+        for (const goal of rows) {
+          const daysPastDue = Math.ceil(
+            (Date.now() - new Date(goal.endDate).getTime()) / 86_400_000,
+          );
+          await this.hrAutomation.emit(orgId, "goal.overdue", {
+            employeeId: goal.userId,
+            goalId: goal.id,
+            daysPastDue,
+          });
+        }
+      },
+    );
 
-    for (const goal of overdueGoals) {
-      const daysPastDue = Math.ceil(
-        (Date.now() - new Date(goal.endDate).getTime()) / 86_400_000,
-      );
-      await this.hrAutomation.emit(orgId, "goal.overdue", {
-        employeeId: goal.userId,
-        goalId: goal.id,
-        daysPastDue,
-      });
-    }
-
-    return { swept: overdueGoals.length };
+    return { swept: outcome.emitted, truncated: outcome.truncated };
   }
 
-  async sweepReviewsDue(orgId: string): Promise<{ swept: number }> {
+  async sweepReviewsDue(orgId: string): Promise<EmitSweepResult> {
     const horizonDate = new Date();
     horizonDate.setDate(horizonDate.getDate() + 7);
     const horizon = horizonDate.toISOString().slice(0, 10);
     const today = new Date().toISOString().slice(0, 10);
 
-    const dueCycles = await this.db
-      .select({ id: reviewCycles.id, name: reviewCycles.name, deadline: reviewCycles.deadline })
-      .from(reviewCycles)
-      .where(
-        and(
-          eq(reviewCycles.orgId, orgId),
-          ne(reviewCycles.status, "COMPLETED"),
-          ne(reviewCycles.status, "CANCELLED"),
-          sql`${reviewCycles.deadline} IS NOT NULL`,
-          lte(reviewCycles.deadline, horizon),
-          sql`${reviewCycles.deadline} >= ${today}`,
-        ),
-      )
-      .limit(100);
+    const outcome = await drainWithCursor(
+      this.reviewCursor,
+      orgId,
+      REVIEW_PAGE,
+      MAX_PAGES_PER_TICK,
+      (after, limit) =>
+        this.db
+          .select({ id: reviewCycles.id, name: reviewCycles.name, deadline: reviewCycles.deadline })
+          .from(reviewCycles)
+          .where(
+            and(
+              eq(reviewCycles.orgId, orgId),
+              ne(reviewCycles.status, "COMPLETED"),
+              ne(reviewCycles.status, "CANCELLED"),
+              sql`${reviewCycles.deadline} IS NOT NULL`,
+              lte(reviewCycles.deadline, horizon),
+              sql`${reviewCycles.deadline} >= ${today}`,
+              gt(reviewCycles.id, after),
+            ),
+          )
+          .orderBy(asc(reviewCycles.id))
+          .limit(limit),
+      async (rows) => {
+        for (const cycle of rows) {
+          await this.hrAutomation.emit(orgId, "review.due", {
+            cycleId: cycle.id,
+            cycleName: cycle.name,
+            deadline: cycle.deadline,
+          });
+        }
+      },
+    );
 
-    for (const cycle of dueCycles) {
-      await this.hrAutomation.emit(orgId, "review.due", {
-        cycleId: cycle.id,
-        cycleName: cycle.name,
-        deadline: cycle.deadline,
-      });
-    }
-
-    return { swept: dueCycles.length };
+    return { swept: outcome.emitted, truncated: outcome.truncated };
   }
 
-  async sweepAssetReturnsDue(orgId: string): Promise<{ swept: number }> {
+  async sweepAssetReturnsDue(orgId: string): Promise<EmitSweepResult> {
     const horizonDate = new Date();
     horizonDate.setDate(horizonDate.getDate() + 3);
     const horizon = horizonDate.toISOString().slice(0, 10);
 
-    const dueAssets = await this.db
-      .select({
-        id: assets.id,
-        type: assets.type,
-        assignedTo: assets.assignedTo,
-        expectedReturnDate: assets.expectedReturnDate,
-      })
-      .from(assets)
-      .where(
-        and(
-          eq(assets.orgId, orgId),
-          inArray(assets.status, ["ASSIGNED", "MAINTENANCE"]),
-          isNotNull(assets.expectedReturnDate),
-          lte(assets.expectedReturnDate, horizon),
-        ),
-      )
-      .limit(200);
+    const outcome = await drainWithCursor(
+      this.assetCursor,
+      orgId,
+      ASSET_PAGE,
+      MAX_PAGES_PER_TICK,
+      (after, limit) =>
+        this.db
+          .select({
+            id: assets.id,
+            type: assets.type,
+            assignedTo: assets.assignedTo,
+            expectedReturnDate: assets.expectedReturnDate,
+          })
+          .from(assets)
+          .where(
+            and(
+              eq(assets.orgId, orgId),
+              inArray(assets.status, ["ASSIGNED", "MAINTENANCE"]),
+              isNotNull(assets.expectedReturnDate),
+              lte(assets.expectedReturnDate, horizon),
+              gt(assets.id, after),
+            ),
+          )
+          .orderBy(asc(assets.id))
+          .limit(limit),
+      async (rows) => {
+        for (const asset of rows) {
+          if (!asset.assignedTo || !asset.expectedReturnDate) continue;
+          const daysUntilDue = Math.ceil(
+            (new Date(asset.expectedReturnDate).getTime() - Date.now()) / 86_400_000,
+          );
+          await this.hrAutomation.emit(orgId, "asset.return_due", {
+            employeeId: asset.assignedTo,
+            assetType: asset.type,
+            daysUntilDue,
+          });
+        }
+      },
+    );
 
-    for (const asset of dueAssets) {
-      if (!asset.assignedTo || !asset.expectedReturnDate) continue;
-      const daysUntilDue = Math.ceil(
-        (new Date(asset.expectedReturnDate).getTime() - Date.now()) / 86_400_000,
-      );
-      await this.hrAutomation.emit(orgId, "asset.return_due", {
-        employeeId: asset.assignedTo,
-        assetType: asset.type,
-        daysUntilDue,
-      });
-    }
-
-    return { swept: dueAssets.length };
+    return { swept: outcome.emitted, truncated: outcome.truncated };
   }
 
   async sweepEnrollmentWindows(orgId: string): Promise<{ closed: number }> {

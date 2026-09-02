@@ -85,16 +85,19 @@ function makeSelectChain(result: unknown[]): {
   from: jest.Mock;
   where: jest.Mock;
   innerJoin: jest.Mock;
+  orderBy: jest.Mock;
   limit: jest.Mock;
 } {
   const chain = {
     from: jest.fn(),
     where: jest.fn(),
     innerJoin: jest.fn(),
+    orderBy: jest.fn(),
     limit: jest.fn().mockResolvedValue(result),
   };
   chain.from.mockReturnValue(chain);
   chain.innerJoin.mockReturnValue(chain);
+  chain.orderBy.mockReturnValue(chain);
   chain.where.mockReturnValue(chain);
   return chain;
 }

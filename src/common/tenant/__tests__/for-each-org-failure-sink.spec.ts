@@ -29,7 +29,7 @@ function makeMockDb(orgIds: string[]): Db {
   const rows = orgIds.map((id) => ({ id }));
   const chain: SelectChain = {
     from: jest.fn((): SelectChain => chain),
-    where: jest.fn((): SelectChain => chain),
+    where: jest.fn((_condition: SQL): SelectChain => chain),
     orderBy: jest.fn(() => Promise.resolve(rows)),
   };
   const db = {

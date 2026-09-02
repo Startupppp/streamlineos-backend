@@ -1,6 +1,6 @@
 import { foreignKey, index, integer, pgTable, serial, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
-import { organizations, users } from "../common/auth";
+import { organizations } from "../common/auth";
 import { candidates } from "./hiring-candidates";
 
 export const talentPools = pgTable("talent_pools", {

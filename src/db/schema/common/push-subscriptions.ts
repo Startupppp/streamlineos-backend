@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, index, unique, primaryKey, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, index, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, organizationMembers } from "./auth";
 

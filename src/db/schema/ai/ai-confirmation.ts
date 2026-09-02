@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { index, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, unique, uniqueIndex, varchar, foreignKey } from "drizzle-orm/pg-core";
-import { organizations, users, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers } from "../common/auth";
 
 export const aiProposalStatusEnum = pgEnum("ai_proposal_status", [
   "PROPOSED",

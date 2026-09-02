@@ -14,6 +14,8 @@ import { AiConcurrencyLimiter } from "../gateway/ai-concurrency-limiter";
 import { REDIS } from "../../../../common/cache/cache.service";
 import { AiStreamBreaker } from "../streaming/ai-stream-breaker";
 import { resolveLlmRetryPolicy } from "../providers/llm-retry";
+import { AiCallMetrics } from "../telemetry/ai-call-metrics";
+import { AiConcurrencyLimitException, AiProviderUnavailableException } from "./ai-service-exceptions";
 
 const KB_RAG_STREAM_FEATURE = "kb.public-ask";
 const KB_BREAKER_MESSAGE = "AI assistant is temporarily unavailable";
@@ -88,7 +90,7 @@ export class KbRagService {
       if (gatewayResult.kind === "quota_exceeded")
         throw new InsufficientAiCreditsException({ message: gatewayResult.message });
       if (gatewayResult.kind === "provider_unavailable") this.breaker.recordFailure();
-      throw new ServiceUnavailableException("AI provider is temporarily unavailable");
+      throw new AiProviderUnavailableException();
     }
 
     this.breaker.recordSuccess();
@@ -115,26 +117,34 @@ export class KbRagService {
   }
 
   async streamAnswer(opts: AnswerOptions, signal?: AbortSignal): Promise<KbStreamAnswer> {
-    const appOverheadStart = Date.now();
+    const call = AiCallMetrics.begin({
+      feature: KB_RAG_STREAM_FEATURE,
+      tier: "chat",
+      orgId: opts.orgId,
+    });
     await this.breaker.assertClosed();
     const hasArticles = await this.retrieval.hasPublishedPublicArticles(opts.orgId);
     if (!hasArticles) {
       this.retrieval.recordNoContext(opts.orgId, opts.question);
+      call.finish("ok", { promptTokens: 0, completionTokens: 0, creditsMilli: 0 });
       return { hasContext: false, answer: KB_NO_CONTEXT_ANSWER, sources: [] };
     }
 
     const ctx = await this.retrieval.retrieveContext(opts.orgId, opts.question, opts.articleId);
     if (!ctx) {
       this.retrieval.recordNoContext(opts.orgId, opts.question);
+      call.finish("ok", { promptTokens: 0, completionTokens: 0, creditsMilli: 0 });
       return { hasContext: false, answer: KB_NO_CONTEXT_ANSWER, sources: [] };
     }
 
     const { sources, system, userContext } = ctx;
     const userMessage = `${userContext}\n\nQuestion: ${opts.question}`;
 
-    const acquired = await this.concurrencyLimiter.acquire(opts.orgId);
-    if (!acquired)
-      throw new ServiceUnavailableException("Too many concurrent AI requests for this organization");
+    const acquired = await call.queue(() => this.concurrencyLimiter.acquire(opts.orgId));
+    if (!acquired) {
+      call.finish("concurrency_exceeded");
+      throw new AiConcurrencyLimitException();
+    }
 
     let concurrencyReleased = false;
     const releaseConcurrency = () => {
@@ -155,6 +165,7 @@ export class KbRagService {
       reservationId = reserved.reservationId;
     } catch (error) {
       releaseConcurrency();
+      call.finish("quota_exceeded");
       throw error;
     }
 
@@ -165,12 +176,9 @@ export class KbRagService {
       void this.ledger.release(reservationId, reason, opts.orgId).catch(() => undefined);
     };
 
-    const appOverheadMs = Date.now() - appOverheadStart;
-    let ttftMs: number | undefined;
-    const streamTextCallTime = Date.now();
-
     try {
       const modelId = resolveChatModelId();
+      call.providerOpened();
       const stream = streamText({
         model: resolveChatModel(),
         messages: [{ role: "user", content: userMessage }],
@@ -178,9 +186,7 @@ export class KbRagService {
         maxOutputTokens: 1024,
         maxRetries: resolveLlmRetryPolicy().maxRetriesPerModel,
         ...(signal !== undefined ? { abortSignal: signal } : {}),
-        onChunk: () => {
-          if (ttftMs === undefined) ttftMs = Date.now() - streamTextCallTime;
-        },
+        onChunk: () => call.firstToken(),
         onError: ({ error }) => {
           if (signal?.aborted === true || isAbortError(error)) return;
           this.breaker.recordFailure();
@@ -196,6 +202,11 @@ export class KbRagService {
           this.breaker.recordSuccess();
           const promptTokens = usage?.inputTokens ?? 0;
           const completionTokens = usage?.outputTokens ?? 0;
+          const timings = call.finish("ok", {
+            model: modelId,
+            promptTokens,
+            completionTokens,
+          });
           try {
             await settleStream(this.ledger, this.usageSvc, {
               reservationId,
@@ -205,8 +216,9 @@ export class KbRagService {
               orgId: opts.orgId,
               userId: null,
               feature: KB_RAG_STREAM_FEATURE,
-              ...(ttftMs !== undefined ? { ttftMs } : {}),
-              appOverheadMs,
+              ...(timings.ttftMs !== undefined ? { ttftMs: timings.ttftMs } : {}),
+              appOverheadMs: timings.overheadMs,
+              timings,
             });
           } catch (err) {
             logger.error("Failed to settle KB RAG stream", {
@@ -221,6 +233,7 @@ export class KbRagService {
       void Promise.resolve(stream.finishReason).catch(() => {
         releaseConcurrency();
         releaseReservation("stream_aborted_no_settle");
+        call.finish(signal?.aborted === true ? "cancelled" : "provider_unavailable");
       });
 
       return { stream, sources, hasContext: true };
@@ -228,6 +241,7 @@ export class KbRagService {
       this.breaker.recordFailure();
       releaseConcurrency();
       releaseReservation("stream_setup_error");
+      call.finish("error");
       throw error;
     }
   }

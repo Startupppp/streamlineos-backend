@@ -1,14 +1,4 @@
-import {
-  pgTable,
-  bigint,
-  integer,
-  text,
-  boolean,
-  timestamp,
-  index,
-  uniqueIndex,
-  foreignKey,
-} from "drizzle-orm/pg-core";
+import { pgTable, bigint, integer, text, boolean, timestamp, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { organizations, organizationMembers } from "../common/auth";
 
 export const calendarSourcePreferences = pgTable(

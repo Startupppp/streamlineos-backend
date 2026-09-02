@@ -1,13 +1,4 @@
-import {
-  pgTable,
-  text,
-  integer,
-  boolean,
-  timestamp,
-  index,
-  uniqueIndex,
-  foreignKey,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, index, foreignKey } from "drizzle-orm/pg-core";
 import { randomUUID } from "node:crypto";
 import { organizations } from "../common/auth";
 import { partyContacts } from "../party/party-contacts";

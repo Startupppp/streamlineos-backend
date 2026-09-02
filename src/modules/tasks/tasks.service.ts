@@ -10,7 +10,7 @@ import { TaskNotificationsService } from "./task-notifications.service";
 import { AccessService } from "../access/access.service";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import type { DataScope } from "../access/access.types";
+import { resolveTasksViewScope } from "./tasks-scope";
 import type { ListInput, CreateInput, UpdateInput, CompleteInput } from "./dto/task.schemas";
 import { addDays, addWeeks, addMonths } from "./task-date-utils";
 
@@ -24,24 +24,9 @@ export class TasksService {
     private readonly access: AccessService,
   ) {}
 
-  /**
-   * `crm:tasks:view` IS scopable, so testing it for mere presence collapsed
-   * `own` and `team` into `all`: the owner predicate was dropped entirely and
-   * `?assigneeId=<anyone>` returned that person's tasks. The gate is the
-   * resolved DataScope, not the key.
-   */
-  private async resolveTasksViewScope(actor: CurrentUserContext): Promise<DataScope> {
-    if (actor.isOrgOwner) return "all";
-    const resolved = await this.access.resolveUserPermissions(
-      actor.orgId,
-      actor.userId,
-    );
-    return resolved.get("crm:tasks:view") ?? "none";
-  }
-
   async list(actor: CurrentUserContext, filters: ListInput) {
     const { orgId, userId } = actor;
-    const scope = await this.resolveTasksViewScope(actor);
+    const scope = await resolveTasksViewScope(this.access, actor);
     const canViewAll = scope === "all";
     const resolvedAssigneeId = filters.assigneeId === "me" ? userId : filters.assigneeId;
     const limit = filters.limit;

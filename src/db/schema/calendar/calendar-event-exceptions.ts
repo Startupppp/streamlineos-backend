@@ -1,14 +1,4 @@
-import {
-  pgTable,
-  bigint,
-  text,
-  integer,
-  boolean,
-  timestamp,
-  uniqueIndex,
-  index,
-  foreignKey,
-} from "drizzle-orm/pg-core";
+import { pgTable, bigint, text, integer, boolean, timestamp, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
 import { calendarEvents } from "../common/calendar-events";
 

@@ -8,6 +8,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { EMBEDDING_MODEL } from "../../ai/core/providers/embeddings.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
@@ -413,6 +414,22 @@ export class KbIndexingService {
           ),
         ),
     { orgId });
+  }
+
+  async bumpSpaceAclRevision(orgId: string, spaceId: number): Promise<void> {
+    await Promise.all([
+      this.db
+        .update(kbPages)
+        .set({ aclRevision: sql`acl_revision + 1` })
+        .where(and(eq(kbPages.orgId, orgId), eq(kbPages.spaceId, spaceId))),
+      this.db
+        .update(kbArticles)
+        .set({ aclRevision: sql`acl_revision + 1` })
+        .where(and(eq(kbArticles.orgId, orgId), eq(kbArticles.spaceId, spaceId))),
+    ]);
+
+    const deferred = registerAfterCommit(() => this.syncAclRevisionForSpace(orgId, spaceId));
+    if (!deferred) await this.syncAclRevisionForSpace(orgId, spaceId);
   }
 
   async syncAclRevisionForSpace(orgId: string, spaceId: number): Promise<void> {

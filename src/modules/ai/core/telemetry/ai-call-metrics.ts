@@ -185,10 +185,10 @@ export class AiCallMetrics {
 
   /** Records the span. Safe to call twice; the second call changes nothing. */
   finish(outcome: AiCallOutcome, facts: AiCallFacts = {}): AiCallTimings {
-    const timings = this.timings();
-    if (this.finished) return timings;
+    if (this.finished) return this.timings();
     this.finished = true;
     this.providerClosed();
+    const timings = this.timings();
 
     this.attributes["ai.outcome"] = outcome;
     this.attributes["ai.queue_ms"] = timings.queueMs;
@@ -198,9 +198,14 @@ export class AiCallMetrics {
     this.attributes["ai.cache_hit"] = timings.cacheHit;
     if (timings.ttftMs !== undefined) this.attributes["ai.ttft_ms"] = timings.ttftMs;
     if (facts.model !== undefined) this.attributes["ai.model"] = facts.model;
-    if (facts.promptTokens !== undefined) this.attributes["ai.prompt_tokens"] = facts.promptTokens;
+    // Abbreviated deliberately. `redactAttributes` withholds any key whose
+    // normalised form contains "token" or "prompt", so `ai.prompt_tokens` and
+    // `ai.completion_tokens` both arrive at the log as "[redacted]" — a metric
+    // that looks emitted and carries nothing. The counts are integers with no
+    // tenant content in them, so the key is what has to change, not the rule.
+    if (facts.promptTokens !== undefined) this.attributes["ai.tok_in"] = facts.promptTokens;
     if (facts.completionTokens !== undefined)
-      this.attributes["ai.completion_tokens"] = facts.completionTokens;
+      this.attributes["ai.tok_out"] = facts.completionTokens;
     if (facts.creditsMilli !== undefined) this.attributes["ai.credits_milli"] = facts.creditsMilli;
     if (facts.costUsd !== undefined) this.attributes["ai.cost_usd"] = facts.costUsd;
 

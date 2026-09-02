@@ -1,0 +1,237 @@
+import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
+import * as schema from "../../../db/schema";
+import {
+  MEMBERSHIP_ARTIFACTS,
+  type RemovalAction,
+} from "./membership-artifacts";
+import { departureBlockMessage } from "./org-member-departure.service";
+
+interface MembershipForeignKey {
+  readonly table: string;
+  readonly column: string;
+  readonly constraint: string;
+  readonly onDelete: string;
+  readonly notNull: boolean;
+}
+
+const MEMBER_TABLE = "organization_members";
+
+function discoverMembershipForeignKeys(): MembershipForeignKey[] {
+  const found: MembershipForeignKey[] = [];
+  for (const exported of Object.values(schema)) {
+    if (!(exported instanceof PgTable)) continue;
+    const config = getTableConfig(exported);
+    const notNullByName = new Map<string, boolean>(
+      config.columns.map((column) => [column.name, column.notNull]),
+    );
+    for (const foreignKey of config.foreignKeys) {
+      const reference = foreignKey.reference();
+      const target = reference.foreignTable;
+      if (!(target instanceof PgTable)) continue;
+      if (getTableConfig(target).name !== MEMBER_TABLE) continue;
+
+      const local = reference.columns.map((column) => column.name);
+      const foreign = reference.foreignColumns.map((column) => column.name);
+      const position = foreign.indexOf("id");
+      const column = position === -1 ? undefined : local[position];
+      if (column === undefined) continue;
+
+      found.push({
+        table: config.name,
+        column,
+        constraint: foreignKey.getName(),
+        onDelete: foreignKey.onDelete ?? "no action",
+        notNull: notNullByName.get(column) === true,
+      });
+    }
+  }
+  return found.sort((a, b) =>
+    `${a.table}.${a.column}`.localeCompare(`${b.table}.${b.column}`),
+  );
+}
+
+function rulingImpliedByForeignKey(onDelete: string): RemovalAction {
+  if (onDelete === "cascade") return "cascade";
+  if (onDelete === "set null") return "set-null";
+  return "blocks-removal";
+}
+
+function isDatabaseDelivered(ruling: RemovalAction): boolean {
+  return (
+    ruling === "cascade" || ruling === "set-null" || ruling === "blocks-removal"
+  );
+}
+
+function rulingsFor(table: string, column: string): RemovalAction[] {
+  return MEMBERSHIP_ARTIFACTS.filter(
+    (artifact) =>
+      artifact.table === table &&
+      artifact.keyedBy
+        .split("/")
+        .map((key) => key.trim())
+        .includes(column),
+  ).map((artifact) => artifact.onRemoval);
+}
+
+/**
+ * Pairs where the ruling and the Drizzle table's declared referential action
+ * disagree. Each was adjudicated against a scratch database bootstrapped from
+ * the migration chain: some are stale rulings, some are stale Drizzle
+ * declarations, and six name a foreign key the migrated schema does not have.
+ * Pinned so the set cannot grow unnoticed while it is worked through.
+ */
+const RULING_DISAGREES_WITH_DRIZZLE: readonly string[] = [
+  "audit_logs.actor_membership_id",
+  "broadcast_read_receipts.membership_id",
+  "calendar_events.created_by_membership_id",
+  "chat_channel_members.membership_id",
+  "chat_message_reactions.membership_id",
+  "comment_drafts.membership_id",
+  "helpdesk_tickets.assignee_membership_id",
+  "hr_employments.archived_by_membership_id",
+  "hr_employments.updated_by_membership_id",
+  "hr_mood_checkins.user_membership_id",
+  "hr_people.archived_by_membership_id",
+  "hr_people.updated_by_membership_id",
+  "kb_article_restrictions.membership_id",
+  "kb_chat_conversations.user_membership_id",
+  "kb_chat_messages.user_membership_id",
+  "kb_page_favorites.membership_id",
+  "kb_page_visits.membership_id",
+  "kb_pages.created_by_membership_id",
+  "kb_pages.deleted_by_membership_id",
+  "kb_pages.last_edited_by_membership_id",
+  "kb_pages.owner_membership_id",
+  "kb_pages.verified_by_membership_id",
+  "kb_research_briefs.user_membership_id",
+  "kb_space_members.membership_id",
+  "leave_requests.approver_membership_id",
+  "leave_requests.created_by_membership_id",
+  "leave_requests.updated_by_membership_id",
+  "meeting_attendees.membership_id",
+  "meeting_standup_entries.membership_id",
+  "notification_consents.membership_id",
+  "notification_deliveries.membership_id",
+  "notification_digest_items.membership_id",
+  "notification_preference_rules.membership_id",
+  "notification_preferences.membership_id",
+  "onboarding_documents.updated_by_membership_id",
+  "onboarding_flow_sessions.membership_id",
+  "onboarding_tasks.created_by_membership_id",
+  "onboarding_tasks.updated_by_membership_id",
+  "org_unit_members.membership_id",
+  "org_units.archived_by_membership_id",
+  "org_units.updated_by_membership_id",
+  "organization_people.archived_by_membership_id",
+  "organization_people.updated_by_membership_id",
+  "performance_reviews.reviewer_membership_id",
+  "project_approvals.approver_membership_id",
+  "project_members.membership_id",
+  "project_team_members.membership_id",
+  "project_whiteboard_shares.membership_id",
+  "project_workspace_members.membership_id",
+  "push_subscriptions.membership_id",
+  "role_assignments.assigned_by_membership_id",
+  "support_agent_availability.user_membership_id",
+  "support_agent_skills.user_membership_id",
+  "support_message_mentions.mentioned_user_membership_id",
+  "support_saved_views.owner_membership_id",
+  "support_ticket_drafts.user_membership_id",
+  "support_ticket_watchers.user_membership_id",
+  "ticket_activity_log.user_membership_id",
+  "ticket_assignees.membership_id",
+  "ticket_comment_mentions.mentioned_user_membership_id",
+  "ticket_comment_reactions.membership_id",
+  "ticket_watchers.membership_id",
+  "tickets.assignee_membership_id",
+  "tickets.reporter_membership_id",
+  "user_permission_grants.granted_by_membership_id",
+  "user_tour_progress.membership_id",
+  "wfh_requests.approver_membership_id",
+  "worker_engagements.archived_by_membership_id",
+  "worker_engagements.updated_by_membership_id",
+  "workers.archived_by_membership_id",
+  "workers.created_by_membership_id",
+  "workers.updated_by_membership_id",
+];
+
+const NOT_NULL_BLOCKERS: readonly string[] = [
+  "calendar_events.created_by_membership_id",
+  "chat_channel_members.membership_id",
+  "chat_message_reactions.membership_id",
+  "module_ownerships.owner_membership_id",
+  "ownership_transfers.from_membership_id",
+  "ownership_transfers.initiated_by_membership_id",
+  "ownership_transfers.to_membership_id",
+  "project_members.membership_id",
+  "support_tickets.created_by_membership_id",
+  "ticket_assignees.membership_id",
+];
+
+describe("every membership foreign key is ruled in MEMBERSHIP_ARTIFACTS", () => {
+  const foreignKeys = discoverMembershipForeignKeys();
+
+  it("finds membership foreign keys at all — an empty scan is broken, not clean", () => {
+    expect(foreignKeys.length).toBeGreaterThan(100);
+  });
+
+  it("rules the column each foreign key actually keys on, not merely its table", () => {
+    const unruled = foreignKeys
+      .filter((fk) => rulingsFor(fk.table, fk.column).length === 0)
+      .map(
+        (fk) => `${fk.table}.${fk.column} (${fk.onDelete}, ${fk.constraint})`,
+      );
+
+    expect(unruled).toEqual([]);
+  });
+
+  it("names every ruling that disagrees with the declared referential action", () => {
+    const disagreements = foreignKeys
+      .filter((fk) => {
+        const rulings = rulingsFor(fk.table, fk.column).filter(
+          isDatabaseDelivered,
+        );
+        if (rulings.length === 0) return false;
+        return !rulings.includes(rulingImpliedByForeignKey(fk.onDelete));
+      })
+      .map((fk) => `${fk.table}.${fk.column}`);
+
+    expect([...new Set(disagreements)].sort()).toEqual(
+      RULING_DISAGREES_WITH_DRIZZLE,
+    );
+  });
+
+  it("pins every blocking foreign key whose column cannot be nulled", () => {
+    const notNullBlockers = foreignKeys
+      .filter(
+        (fk) =>
+          fk.notNull &&
+          rulingImpliedByForeignKey(fk.onDelete) === "blocks-removal",
+      )
+      .map((fk) => `${fk.table}.${fk.column}`);
+
+    expect([...new Set(notNullBlockers)].sort()).toEqual(NOT_NULL_BLOCKERS);
+  });
+});
+
+describe("a blocked departure is classified, not surfaced as a 500", () => {
+  it("names the constraint behind the support-ticket authorship block", () => {
+    const message = departureBlockMessage({
+      code: "23503",
+      table: "support_tickets",
+      constraint: "fk_support_tickets_created_actor",
+    });
+
+    expect(message).toContain("fk_support_tickets_created_actor");
+  });
+
+  it("names the column behind an unreachable SET NULL", () => {
+    const message = departureBlockMessage({
+      code: "23502",
+      table: "support_tickets",
+      column: "created_by_membership_id",
+    });
+
+    expect(message).toContain("support_tickets.created_by_membership_id");
+  });
+});

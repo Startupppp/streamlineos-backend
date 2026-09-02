@@ -1,4 +1,4 @@
-import { ServiceUnavailableException } from "@nestjs/common";
+import { AiProviderUnavailableException } from "../services/ai-service-exceptions";
 
 export interface AiStreamBreakerRedis {
   get<T>(key: string): Promise<T | null>;
@@ -62,7 +62,7 @@ export class AiStreamBreaker {
 
   async assertClosed(): Promise<void> {
     if (await this.isOpen())
-      throw new ServiceUnavailableException(this.unavailableMessage);
+      throw new AiProviderUnavailableException(this.unavailableMessage);
   }
 
   recordSuccess(): void {

@@ -74,6 +74,9 @@ describe('settleStream — shared streaming settlement seam', () => {
         promptTokens: PROMPT_TOKENS,
         completionTokens: COMPLETION_TOKENS,
         creditsMilli: milliCredits,
+        ttftMs: undefined,
+        appOverheadMs: undefined,
+        outcome: "ok",
       });
     });
 

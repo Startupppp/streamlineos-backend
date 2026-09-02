@@ -37,10 +37,12 @@ export class CronOrgPurgeWorkerService {
     private readonly storage: StorageService,
   ) {}
 
-  async run(): Promise<{ processed: number; skipped: number }> {
+  async run(): Promise<{ processed: number; skipped: number; moreRemaining: boolean }> {
     const now = new Date();
 
-    const candidates = await this.db
+    // BATCH_SIZE + 1 so the overflow is counted rather than inferred: the sweep is
+    // self-resuming, but a caller could not tell a cleared queue from a capped one.
+    const probed = await this.db
       .select({ id: organizations.id })
       .from(organizations)
       .where(
@@ -50,9 +52,12 @@ export class CronOrgPurgeWorkerService {
           lte(organizations.purgeScheduledAt, now),
         ),
       )
-      .limit(BATCH_SIZE);
+      .limit(BATCH_SIZE + 1);
 
-    if (candidates.length === 0) return { processed: 0, skipped: 0 };
+    const moreRemaining = probed.length > BATCH_SIZE;
+    const candidates = moreRemaining ? probed.slice(0, BATCH_SIZE) : probed;
+
+    if (candidates.length === 0) return { processed: 0, skipped: 0, moreRemaining: false };
 
     let processed = 0;
     let skipped = 0;
@@ -74,7 +79,7 @@ export class CronOrgPurgeWorkerService {
       }
     }
 
-    return { processed, skipped };
+    return { processed, skipped, moreRemaining };
   }
 
   private logSkip(orgId: string, outcome: Exclude<PurgeOutcome, { kind: "purged" }>): void {

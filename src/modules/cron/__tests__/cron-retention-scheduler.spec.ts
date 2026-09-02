@@ -26,6 +26,29 @@ function stub(): Stub & Record<string, jest.Mock> {
   };
 }
 
+function buildScheduler(
+  redis: never | null,
+  lease: CronLeaseService,
+  s: ReturnType<typeof stub>[],
+): CronRetentionSchedulerService {
+  return new CronRetentionSchedulerService(
+    redis,
+    lease,
+    s[0] as never,
+    s[1] as never,
+    s[2] as never,
+    s[3] as never,
+    s[4] as never,
+    s[5] as never,
+    s[6] as never,
+    s[7] as never,
+    s[8] as never,
+    s[9] as never,
+    s[10] as never,
+    s[11] as never,
+  );
+}
+
 interface Harness {
   service: CronRetentionSchedulerService;
   lease: { withLease: jest.Mock };
@@ -47,11 +70,7 @@ function makeHarness(options: { heartbeats?: Record<string, string> } = {}): Har
     ),
   };
   const services = Array.from({ length: 12 }, () => stub());
-  const service = new CronRetentionSchedulerService(
-    redis as never,
-    lease as unknown as CronLeaseService,
-    ...(services as never[]),
-  );
+  const service = buildScheduler(redis as never, lease as unknown as CronLeaseService, services);
   return { service, lease, redis, services };
 }
 
@@ -156,11 +175,7 @@ describe("CronRetentionSchedulerService — the heartbeat decides, so an externa
       ),
     };
     const services = Array.from({ length: 12 }, () => stub());
-    const service = new CronRetentionSchedulerService(
-      null,
-      lease as unknown as CronLeaseService,
-      ...(services as never[]),
-    );
+    const service = buildScheduler(null, lease as unknown as CronLeaseService, services);
 
     const first = await service.tick();
     const second = await service.tick();

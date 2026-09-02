@@ -12,6 +12,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { markRoleAdministered } from "./mark-role-administered";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
   assertPermissionsGrantable,
@@ -114,6 +115,7 @@ export class RbacService {
           ],
           set: { scope: input.scope },
         });
+      await markRoleAdministered(tx, actor.orgId, input.roleId);
       await bumpPermissionsVersion(tx, actor.orgId);
     }, { orgId: actor.orgId });
 
@@ -143,6 +145,7 @@ export class RbacService {
             eq(rolePermissionGrants.permissionKey, input.permissionKey),
           ),
         );
+      await markRoleAdministered(tx, actor.orgId, input.roleId);
       await bumpPermissionsVersion(tx, actor.orgId);
     }, { orgId: actor.orgId });
 

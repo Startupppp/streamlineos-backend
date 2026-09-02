@@ -346,7 +346,7 @@ export class StorageController {
 
     const stream = await this.openStream(u.orgId, keyParam, "Not found");
     res.setHeader("Content-Type", stream.contentType || this.storage.getMimeType(keyParam));
-    res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+    res.setHeader("Cache-Control", "private, max-age=86400, immutable");
     this.pipe(stream.body, res);
   }
 

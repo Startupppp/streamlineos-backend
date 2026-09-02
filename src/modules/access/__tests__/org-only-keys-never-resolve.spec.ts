@@ -40,6 +40,7 @@ function buildResolver(options: Options) {
     link["from"] = () => link;
     link["innerJoin"] = () => link;
     link["where"] = () => link;
+    link["orderBy"] = () => link;
     link["limit"] = () => Promise.resolve(queue[cursor++] ?? []);
     return link;
   };

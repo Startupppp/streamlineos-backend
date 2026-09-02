@@ -20,7 +20,7 @@ import {
   workItemRelationTypeEnum,
 } from "../common/enums";
 import { organizations, users, organizationMembers } from "../common/auth";
-import { projects, sprints, projectStatuses, modules, cycles } from "./core";
+import { sprints, projectStatuses, modules, cycles } from "./core";
 import { clients } from "../crm/contacts";
 
 export const tickets = build.table(

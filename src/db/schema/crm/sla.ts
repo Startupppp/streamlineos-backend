@@ -1,14 +1,4 @@
-import {
-  pgTable,
-  text,
-  serial,
-  timestamp,
-  boolean,
-  integer,
-  index,
-  jsonb,
-  unique,
-} from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, integer, jsonb, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { slaAppliesToEnum, slaPriorityEnum } from "../common/enums";
 import { organizations } from "../common/auth";

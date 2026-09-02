@@ -32,7 +32,7 @@ describe("TaskAnalyticsService — cross-tenant isolation", () => {
       [],
     ]);
     const svc = new TaskAnalyticsService(db);
-    const result = await svc.analytics(ATTACKER, { days: 7 });
+    const result = await svc.analytics(ATTACKER, "user-attacker", "all", { days: 7 });
     expect(result.total).toBe(0);
   });
 
@@ -44,7 +44,7 @@ describe("TaskAnalyticsService — cross-tenant isolation", () => {
       [{ assigneeId: "u1", firstName: "Alice", lastName: "Smith", name: null, total: 5, completed: 3, overdue: 1 }],
     ]);
     const svc = new TaskAnalyticsService(db);
-    const result = await svc.analytics(OWNER, { days: 7 });
+    const result = await svc.analytics(OWNER, "user-owner", "all", { days: 7 });
     expect(result).toHaveProperty("period");
     expect(result.total).toBe(5);
   });
