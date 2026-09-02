@@ -230,7 +230,7 @@ export class OrgStructureService {
         })
         .from(orgUnits)
         .leftJoin(organizationMembers, eq(organizationMembers.id, orgUnits.headMembershipId))
-        .where(and(eq(orgUnits.id, teamId), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT")))
+        .where(and(eq(orgUnits.id, teamId), eq(orgUnits.orgId, orgId), eq(orgUnits.kind, "DEPARTMENT"), isNull(orgUnits.deletedAt)))
         .limit(1),
       this.db
         .select({

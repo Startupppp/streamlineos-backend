@@ -7,7 +7,7 @@ import { KbAccessService } from "../core/kb-access.service";
 import { KbEventsService } from "../core/kb-events.service";
 import { chunkVisibleTo } from "./kb-chunk-visibility";
 import { pageVisibleTo } from "./kb-page-visibility";
-import { EmbeddingsService } from "../../ai/core/providers/embeddings.service";
+import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { SearchInput } from "./dto/kb-ai.schemas";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
@@ -25,7 +25,7 @@ export class KbSearchService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: KbAccessService,
-    private readonly embeddings: EmbeddingsService,
+    private readonly aiGateway: AiGatewayService,
     private readonly events: KbEventsService,
     private readonly candidates: KbCandidateService,
   ) {}
@@ -138,12 +138,19 @@ export class KbSearchService {
     const hasSpaces = ids.length > 0;
 
     let vectorLiteral: string | null = null;
-    if (this.embeddings.isConfigured() && (await this.candidates.hasEmbeddedChunks(user.orgId))) {
-      try {
-        vectorLiteral = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(q, user.orgId, "kb.search"));
-      } catch (err: unknown) {
-        vectorLiteral = null;
-        logSideEffectFailure("kb semantic search embedding", { orgId: user.orgId })(err);
+    if (await this.candidates.hasEmbeddedChunks(user.orgId)) {
+      const embedResult = await this.aiGateway.embedQueryWithCredit({
+        text: q,
+        orgId: user.orgId,
+        feature: "kb.search",
+        charge: true,
+      });
+      if (embedResult.ok) {
+        vectorLiteral = embedResult.vectorLiteral;
+      } else if (embedResult.kind !== "quota_exceeded" && embedResult.kind !== "not_configured") {
+        logSideEffectFailure("kb semantic search embedding", { orgId: user.orgId })(
+          new Error(embedResult.message),
+        );
       }
     }
 
@@ -244,11 +251,16 @@ export class KbSearchService {
     articleIds: number[],
     pageIds: number[] = [],
   ): Promise<string> {
-    if (!this.embeddings.isConfigured() || (articleIds.length === 0 && pageIds.length === 0)) {
-      return "";
-    }
+    if (articleIds.length === 0 && pageIds.length === 0) return "";
     try {
-      const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query, user.orgId, "kb.search"));
+      const embedResult = await this.aiGateway.embedQueryWithCredit({
+        text: query,
+        orgId: user.orgId,
+        feature: "kb.search",
+        charge: true,
+      });
+      if (!embedResult.ok) return "";
+      const vector = embedResult.vectorLiteral;
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const scope: SQL[] = [];
       if (articleIds.length > 0)
@@ -291,11 +303,18 @@ export class KbSearchService {
     query: string,
     limit: number,
   ): Promise<Array<{ sourceId: number; title: string; spaceId: number | null; snippet: string; updatedAt: Date }>> {
-    if (!this.embeddings.isConfigured() || !query.trim()) return [];
+    if (!query.trim()) return [];
     if (!(await this.candidates.hasEmbeddedChunks(user.orgId))) return [];
     try {
       const accessibleSpaceIds = await this.access.getAccessibleSpaceIds(user);
-      const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query, user.orgId, "kb.search"));
+      const embedResult = await this.aiGateway.embedQueryWithCredit({
+        text: query,
+        orgId: user.orgId,
+        feature: "kb.search",
+        charge: true,
+      });
+      if (!embedResult.ok) return [];
+      const vector = embedResult.vectorLiteral;
 
       const cap = limit * 4;
       const chunkIds = await this.candidates.vectorChunkIds(vector, cap);

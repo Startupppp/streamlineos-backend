@@ -1,5 +1,5 @@
 import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, foreignKey, unique } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   clientAccountStatusEnum, orgSizeEnum, crmHealthEnum,
 } from "../common/enums";
@@ -106,8 +106,8 @@ export const crmOrganizations = pgTable("crm_organizations", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_crm_organizations_org").on(table.orgId),
-  index("idx_crm_organizations_parent").on(table.orgId, table.parentId),
+  index("idx_crm_organizations_org_live").on(table.orgId).where(sql`deleted_at IS NULL`),
+  index("idx_crm_organizations_parent").on(table.orgId, table.parentId).where(sql`deleted_at IS NULL`),
   foreignKey({ columns: [table.parentId], foreignColumns: [table.id] }).onDelete("set null"),
   foreignKey({ columns: [table.mergedIntoId], foreignColumns: [table.id] }).onDelete("set null"),
   unique("uniq_crm_organizations_org_id").on(table.orgId, table.id),
@@ -136,9 +136,9 @@ export const contacts = pgTable("contacts", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  index("idx_contacts_org").on(table.orgId),
+  index("idx_contacts_org_live").on(table.orgId, table.createdAt).where(sql`deleted_at IS NULL`),
   index("idx_contacts_organization").on(table.organizationId),
-  index("idx_contacts_name_email").on(table.orgId, table.name, table.email),
+  index("idx_contacts_name_email").on(table.orgId, table.name, table.email).where(sql`deleted_at IS NULL`),
   unique("uniq_contacts_org_id").on(table.orgId, table.id),
   foreignKey({ columns: [table.mergedIntoId], foreignColumns: [table.id] }).onDelete("set null"),
 ]);

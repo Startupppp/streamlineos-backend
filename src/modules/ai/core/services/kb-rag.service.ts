@@ -112,6 +112,8 @@ export class KbRagService {
     const { sources, system, userContext } = ctx;
     const userMessage = `${userContext}\n\nQuestion: ${opts.question}`;
 
+    const appStart = Date.now();
+
     const acquired = await this.concurrencyLimiter.acquire(opts.orgId);
     if (!acquired)
       throw new ServiceUnavailableException("Too many concurrent AI requests for this organization");
@@ -139,6 +141,10 @@ export class KbRagService {
     };
 
     const modelId = resolveChatModelId();
+    const streamStart = Date.now();
+    const appOverheadMs = streamStart - appStart;
+    let ttftMs = 0;
+    let firstChunk = true;
 
     try {
       const stream = streamText({
@@ -148,6 +154,11 @@ export class KbRagService {
         maxOutputTokens: 1024,
         maxRetries: 0,
         ...(signal !== undefined ? { abortSignal: signal } : {}),
+        onChunk: () => {
+          if (!firstChunk) return;
+          firstChunk = false;
+          ttftMs = Date.now() - streamStart;
+        },
         onError: ({ error }) => {
           if (signal?.aborted === true || isAbortError(error)) return;
           logger.warn("KB RAG stream failed", {
@@ -170,6 +181,8 @@ export class KbRagService {
               orgId: opts.orgId,
               userId: null,
               feature: KB_RAG_STREAM_FEATURE,
+              ttftMs,
+              appOverheadMs,
             });
           } catch (err) {
             logger.error("Failed to settle KB RAG stream", {

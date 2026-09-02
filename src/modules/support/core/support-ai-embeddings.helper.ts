@@ -3,10 +3,8 @@ import { and, eq, ne, or, sql, type SQL } from "drizzle-orm";
 import { supportTicketEmbeddings, supportTickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import {
-  EmbeddingsService,
-  EMBEDDING_MODEL,
-} from "../../ai/core/providers/embeddings.service";
+import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import { EMBEDDING_MODEL } from "../../ai/core/providers/embeddings.service";
 import { redactSensitiveData } from "../../ai/core/redaction.util";
 
 const DUPLICATE_SIMILARITY_THRESHOLD = 0.86;
@@ -22,7 +20,7 @@ export type EmbeddingCandidate = {
 export class SupportAiEmbeddingsHelper {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly embeddings: EmbeddingsService,
+    private readonly aiGateway: AiGatewayService,
   ) {}
 
   async upsertAndSearchSimilar(
@@ -33,12 +31,15 @@ export class SupportAiEmbeddingsHelper {
     limit: number,
   ): Promise<EmbeddingCandidate[]> {
     const text = redactSensitiveData(`${title}\n${description ?? ""}`.trim());
-    const vector = await this.embeddings.embedQuery(
+    const embedResult = await this.aiGateway.embedQueryWithCredit({
       text,
       orgId,
-      "support.embedding",
-    );
-    const vectorLiteral = this.embeddings.toVectorLiteral(vector);
+      feature: "support.embedding",
+      charge: true,
+    });
+    if (!embedResult.ok) return [];
+    const vector = embedResult.vector;
+    const vectorLiteral = embedResult.vectorLiteral;
 
     await this.db
       .insert(supportTicketEmbeddings)

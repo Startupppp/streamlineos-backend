@@ -137,7 +137,7 @@ export class HrDashboardReportsService {
       const rows = await this.db
         .select({ id: orgUnits.id, name: orgUnits.name })
         .from(orgUnits)
-        .where(inArray(orgUnits.id, deptIds))
+        .where(and(inArray(orgUnits.id, deptIds), eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt)))
         .limit(Math.max(deptIds.length, 1));
       deptNames = Object.fromEntries(rows.map((r) => [r.id, r.name]));
     }

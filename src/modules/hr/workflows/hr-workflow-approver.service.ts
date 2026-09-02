@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, lte } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrWorkflowDelegations } from "../../../db/schema/hr/workflow-engine";
@@ -43,7 +43,7 @@ export class HrWorkflowApproverService {
           .select({ headUserId: organizationMembers.userId })
           .from(orgUnits)
           .leftJoin(organizationMembers, eq(organizationMembers.id, orgUnits.headMembershipId))
-          .where(eq(orgUnits.id, facts.departmentId))
+          .where(and(eq(orgUnits.id, facts.departmentId), eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt)))
           .limit(1);
         return dept?.headUserId ? [dept.headUserId] : [];
       }
