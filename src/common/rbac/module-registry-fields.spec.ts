@@ -1,13 +1,16 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { MODULE_MANIFEST_VERSION, MODULE_REGISTRY } from "./module-registry";
+import { frontendPath } from "../testing/repo-paths";
 
 const RBAC_DIR = join(__dirname);
 const MODULES_BASE = join(__dirname, "../../modules");
 const SCHEMA_BASE = join(__dirname, "../../db/schema");
-const FRONTEND_NAV_TYPES = join(
-  __dirname,
-  "../../../../frontend/components/layout/sidebar/sidebar-nav-types.ts",
+const FRONTEND_NAV_TYPES = frontendPath(
+  "components",
+  "layout",
+  "sidebar",
+  "sidebar-nav-types.ts",
 );
 
 function parseProductKeyUnion(source: string): Set<string> {

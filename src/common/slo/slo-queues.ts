@@ -111,6 +111,14 @@ export const QUEUE_SUBJECTS: readonly QueueSubject[] = [
     channel: "outbox",
   },
   {
+    id: "payroll-payout-posting-intent",
+    sourceFile:
+      "src/modules/payroll/payout/payroll-payout-posting-intent.consumer.ts",
+    drains: "outbox_events",
+    owner: "finance-team",
+    channel: "outbox",
+  },
+  {
     id: "expense-export",
     sourceFile: "src/modules/expenses/expense-export-worker.service.ts",
     drains: "expense_export_jobs",

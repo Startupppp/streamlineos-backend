@@ -4,9 +4,10 @@ import { execSync } from "node:child_process";
 import { MODULE_REGISTRY } from "../rbac/module-registry";
 import { SEAM_BUDGETS } from "../observability/seam-budgets";
 import { SLO_CATALOGUE, MODULE_SLOS, QUEUE_SLOS, QUEUE_SUBJECTS, SLO_OWNERS } from "./index";
+import { workspaceRoot } from "../testing/repo-paths";
 
 const BACKEND_ROOT = join(__dirname, "..", "..", "..");
-const REPO_ROOT = join(BACKEND_ROOT, "..");
+const REPO_ROOT = workspaceRoot();
 const SRC_ROOT = join(BACKEND_ROOT, "src");
 
 const EXCLUDED_MODULES = ["crm", "inventory"];
