@@ -4397,6 +4397,34 @@
       "when": 1803000010076,
       "tag": "0981_chat_channel_privacy_invariant",
       "breakpoints": true
+    },
+    {
+      "idx": 760,
+      "version": "7",
+      "when": 1803000010079,
+      "tag": "0985_s02_declared_actor_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 761,
+      "version": "7",
+      "when": 1803000010080,
+      "tag": "0986_ar02_resolve_conflicting_actor_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 762,
+      "version": "7",
+      "when": 1803000010081,
+      "tag": "0983_s12_gdpr_partial_export_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 763,
+      "version": "7",
+      "when": 1803000010082,
+      "tag": "0984_s12_git_webhook_seen_deliveries",
+      "breakpoints": true
     }
   ]
 }
