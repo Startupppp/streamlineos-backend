@@ -114,6 +114,7 @@ const SUPPORT_TICKET_COUNT = 60;
 const INVOICE_COUNT = 25;
 const BILL_COUNT = 25;
 const JOURNAL_COUNT = 35;
+const MAIL_MSG_COUNT = 4000;
 const CLIENT_COUNT = 25;
 
 const userIds = Array.from({ length: MEMBER_COUNT }, (_, i) =>
@@ -839,31 +840,45 @@ async function seedAccounting() {
     ).catch((e) => warn(`bill ${i}`, e));
   }
 
-  const existingPeriod = await sql.unsafe(
-    `SELECT id FROM accounting_periods WHERE org_id = $1 LIMIT 1`,
-    [LARGE_ORG],
-  ).then((r) => r[0]?.id).catch(() => null);
+  // The ledger chain is gl_books -> gl_fiscal_years -> gl_periods -> gl_journals,
+  // all text ids the caller supplies. An earlier version wrote to
+  // `accounting_books` and hung gl_journals off `accounting_periods`; neither is
+  // the journal's parent -- accounting_books does not exist under that name at
+  // all, and gl_journals.period_id references gl_periods, not the integer-keyed
+  // accounting_periods. Both lookups were wrapped in .catch(() => null), so the
+  // 42P01 was swallowed, bookId stayed null and every journal was skipped with a
+  // log line that read like a legitimate precondition.
+  const BOOK_ID = `book-scratch-${LARGE_ORG.slice(0, 8)}`;
+  const FY_ID = `fy-scratch-${LARGE_ORG.slice(0, 8)}`;
+  const PERIOD_ID = `period-scratch-${LARGE_ORG.slice(0, 8)}`;
 
-  const periodId = existingPeriod ?? await sql.unsafe(
-    `INSERT INTO accounting_periods (org_id, name, start_date, end_date, status, created_at, updated_at)
-     VALUES ($1, 'FY 2026 Q1', '2026-01-01', '2026-03-31', 'OPEN', now(), now())
-     ON CONFLICT DO NOTHING RETURNING id`,
-    [LARGE_ORG],
-  ).then((r) => r[0]?.id).catch(() => null);
+  await sql.unsafe(
+    `INSERT INTO gl_books (id, org_id, name, country_code, base_currency, localization_pack)
+     VALUES ($1, $2, 'Main Ledger', 'IN', 'INR', 'IN')
+     ON CONFLICT (id) DO NOTHING`,
+    [BOOK_ID, LARGE_ORG],
+  ).catch((e) => warn("gl_books", e));
 
-  const existingBook = await sql.unsafe(
-    `SELECT id FROM accounting_books WHERE org_id = $1 LIMIT 1`,
-    [LARGE_ORG],
-  ).then((r) => r[0]?.id).catch(() => null);
+  await sql.unsafe(
+    `INSERT INTO gl_fiscal_years (id, org_id, book_id, name, starts_on, ends_on, status, created_at, updated_at)
+     VALUES ($1, $2, $3, 'FY 2026', '2026-01-01', '2026-12-31', 'OPEN', now(), now())
+     ON CONFLICT (id) DO NOTHING`,
+    [FY_ID, LARGE_ORG, BOOK_ID],
+  ).catch((e) => warn("gl_fiscal_years", e));
 
-  const bookId = existingBook ?? await sql.unsafe(
-    `INSERT INTO accounting_books (org_id, name, currency, created_at, updated_at)
-     VALUES ($1, 'Main Ledger', 'INR', now(), now())
-     ON CONFLICT DO NOTHING RETURNING id`,
-    [LARGE_ORG],
-  ).then((r) => r[0]?.id).catch(() => null);
+  await sql.unsafe(
+    `INSERT INTO gl_periods (id, org_id, book_id, fiscal_year_id, name, starts_on, ends_on, sequence, status, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, '2026-01', '2026-01-01', '2026-01-31', 1, 'OPEN', now(), now())
+     ON CONFLICT (id) DO NOTHING`,
+    [PERIOD_ID, LARGE_ORG, BOOK_ID, FY_ID],
+  ).catch((e) => warn("gl_periods", e));
 
-  if (bookId && periodId) {
+  const bookReady = await sql.unsafe(
+    `SELECT 1 FROM gl_periods WHERE id = $1 AND org_id = $2 LIMIT 1`,
+    [PERIOD_ID, LARGE_ORG],
+  ).then((r) => r.length > 0).catch(() => false);
+
+  if (bookReady) {
     const existingJournals = await sql.unsafe(
       `SELECT count(*)::int n FROM gl_journals WHERE org_id = $1`,
       [LARGE_ORG],
@@ -871,16 +886,17 @@ async function seedAccounting() {
 
     if (existingJournals < JOURNAL_COUNT) {
       for (let i = existingJournals + 1; i <= JOURNAL_COUNT; i++) {
+        const num = String(i).padStart(4, "0");
         await sql.unsafe(
-          `INSERT INTO gl_journals (org_id, book_id, period_id, journal_number, journal_date, memo, source_type)
-           VALUES ($1, $2, $3, $4, CURRENT_DATE - interval '${i} days', 'Seed journal', 'MANUAL')
+          `INSERT INTO gl_journals (id, org_id, book_id, period_id, journal_number, journal_date, memo, source_type, idempotency_key)
+           VALUES ($1, $2, $3, $4, $5, CURRENT_DATE - interval '${i} days', 'Seed journal', 'manual', $6)
            ON CONFLICT DO NOTHING`,
-          [LARGE_ORG, bookId, periodId, `JNL-${String(i).padStart(4, "0")}`],
+          [`jnl-scratch-${num}`, LARGE_ORG, BOOK_ID, PERIOD_ID, `JNL-${num}`, `seed-jnl-${num}`],
         ).catch((e) => warn(`journal ${i}`, e));
       }
     }
   } else {
-    log("  no accounting book or period — gl_journals skipped");
+    log("  gl_periods row missing — gl_journals skipped");
   }
 
   const authorId = await sql.unsafe(
@@ -1006,37 +1022,48 @@ async function seedCalendarAndAnnouncements() {
 
 async function seedMail() {
   log("Seeding mail metadata...");
-  const memRow = await sql.unsafe(
-    `SELECT id, user_id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' LIMIT 1`,
+  const memRows = await sql.unsafe(
+    `SELECT id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 20`,
     [LARGE_ORG],
-  ).then((r) => r[0]);
+  );
+  const memRow = memRows[0];
   if (!memRow) return;
 
-  const existingAcc = await sql.unsafe(
-    `SELECT id FROM mail_accounts WHERE org_id = $1 AND user_id = $2 LIMIT 1`,
-    [LARGE_ORG, memRow.user_id],
-  ).then((r) => r[0]?.id).catch(() => null);
+  // There is no `mail_accounts` table — provider connections live in
+  // `user_integration_connections` via Composio — and `account_id` carries no
+  // foreign key, so a synthetic id is enough. The previous version selected and
+  // inserted into `mail_accounts` behind `.catch(() => null)`, so the 42P01 was
+  // swallowed and the function returned "no mail account — skipping mail data",
+  // a log line that reads like a legitimate precondition rather than a missing
+  // table. That is why `mail-inbox-cached` had nothing to measure.
+  const SEED_ACCOUNT_ID = 1;
 
-  const newAcc = existingAcc ?? await sql.unsafe(
-    `INSERT INTO mail_accounts (org_id, user_id, provider, email, status, created_at, updated_at)
-     VALUES ($1, $2, 'GMAIL', 'seed@scratch-seed.test', 'ACTIVE', now(), now())
-     ON CONFLICT DO NOTHING RETURNING id`,
-    [LARGE_ORG, memRow.user_id],
-  ).then((r) => r[0]?.id).catch(() => null);
+  // 15 rows fit on one page, so the planner would always pick a Seq Scan and the
+  // budget's forbid-seq-scan assertion could only ever fail. Spread MAIL_MSG_COUNT
+  // across several mailboxes so the (org_id, user_membership_id, folder, date)
+  // index is the cheaper plan for a single mailbox's inbox page.
+  const existing = await sql.unsafe(
+    `SELECT count(*)::int n FROM mail_message_metadata WHERE org_id = $1`,
+    [LARGE_ORG],
+  ).then((r) => r[0].n);
 
-  if (!newAcc) { log("  no mail account — skipping mail data"); return; }
-
-  for (let i = 1; i <= 15; i++) {
-    await sql.unsafe(
-      `INSERT INTO mail_message_metadata (org_id, account_id, user_membership_id, message_id, thread_id, subject, sender_email, sender_name, date, is_read, is_starred, has_attachment, labels, folder, synced_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now() - interval '${i} hours', false, false, false, '{}', 'inbox', now())
-       ON CONFLICT DO NOTHING`,
-      [LARGE_ORG, newAcc, memRow.id,
-        `msg-scratch-${i}-${LARGE_ORG.slice(0, 8)}`,
-        `thread-${Math.ceil(i / 3)}`,
-        `Subject ${i}`, `sender${i}@example.com`, `Sender ${i}`,
-      ],
-    ).catch((e) => warn(`mail_message ${i}`, e));
+  if (existing < MAIL_MSG_COUNT) {
+    const values = [];
+    for (let i = existing + 1; i <= MAIL_MSG_COUNT; i++) {
+      const owner = memRows[i % memRows.length] ?? memRow;
+      values.push(
+        `('${LARGE_ORG}', ${SEED_ACCOUNT_ID}, ${owner.id}, 'msg-scratch-${i}-${LARGE_ORG.slice(0, 8)}',` +
+        ` 'thread-${Math.ceil(i / 3)}', 'Subject ${i}', 'sender${i}@example.com', 'Sender ${i}',` +
+        ` now() - interval '${i} minutes', false, false, false, '{}', 'inbox', now())`,
+      );
+    }
+    for (let start = 0; start < values.length; start += 500) {
+      const chunk = values.slice(start, start + 500).join(",");
+      await sql.unsafe(
+        `INSERT INTO mail_message_metadata (org_id, account_id, user_membership_id, message_id, thread_id, subject, sender_email, sender_name, date, is_read, is_starred, has_attachment, labels, folder, synced_at)
+         VALUES ${chunk} ON CONFLICT DO NOTHING`,
+      ).catch((e) => warn(`mail_message chunk ${start}`, e));
+    }
   }
 }
 

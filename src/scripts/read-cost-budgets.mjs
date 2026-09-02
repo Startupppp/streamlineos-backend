@@ -507,7 +507,6 @@ export const BUDGETS = [
   },
   {
     id: "gl-journals-list",
-    excluded: "accounting_books table not present in scratch_e2e",
     ceiling: 8_000,
     minRows: 30,
     rowCountSql: `SELECT count(*)::int FROM gl_journals WHERE org_id = $1`,
@@ -853,7 +852,11 @@ export const BUDGETS = [
     // PROVISIONAL ceiling — measure with actual mail seed; mail is not seeded by default.
     id: "mail-inbox-cached",
     ceiling: 5_000,
-    minRows: 10,
+    // 10 rows satisfied the floor while guaranteeing a Seq Scan: on a single-page
+    // table the planner will never prefer an index, so forbid-seq-scan could only
+    // ever fail. A floor that lets a budget "measure" a plan the data cannot
+    // produce is worse than no budget.
+    minRows: 2_000,
     rowCountSql: `SELECT count(*)::int FROM mail_message_metadata WHERE org_id = $1`,
     params: (f) => (f.hasMailMessages && f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
