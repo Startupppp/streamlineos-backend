@@ -80,7 +80,7 @@ export function truncateForLog(value: string): string {
 }
 
 function describeError(error: Error): Record<string, unknown> {
-  const record = error as unknown as Record<string, unknown>;
+  const record = error as Error & Record<string, unknown>;
   const code = record["code"];
   return {
     name: error.name,

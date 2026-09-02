@@ -94,7 +94,7 @@ export class InboxConsumer {
 
     if (typeof this.db.execute !== "function") return false;
 
-    const latest = await this.db.execute(sql`
+    const rows = await this.db.execute(sql`
       select aggregate_version as "aggregateVersion"
       from ${inboxRecords}
       where organization_id = ${event.organizationId}
@@ -104,10 +104,11 @@ export class InboxConsumer {
         and status = 'COMPLETED'
       order by aggregate_version desc
       limit 1
-    `) as unknown as Array<{ aggregateVersion: number }>;
+    `);
+    const latest = rows[0];
 
     return Boolean(
-      latest[0] && !shouldProcessVersion(latest[0].aggregateVersion, event.aggregateVersion),
+      latest && !shouldProcessVersion(Number(latest.aggregateVersion), event.aggregateVersion),
     );
   }
 
@@ -117,14 +118,18 @@ export class InboxConsumer {
   ): Promise<Array<{ status: string; aggregateVersion: number }>> {
     if (typeof this.db.execute !== "function") return [];
 
-    return await this.db.execute(sql`
+    const rows = await this.db.execute(sql`
       select status, aggregate_version as "aggregateVersion"
       from ${inboxRecords}
       where producer_event_id = ${event.eventId}
         and consumer_name = ${consumerName}
         and organization_id = ${event.organizationId}
       limit 1
-    `) as unknown as Array<{ status: string; aggregateVersion: number }>;
+    `);
+    return rows.map((row) => ({
+      status: String(row.status),
+      aggregateVersion: Number(row.aggregateVersion),
+    }));
   }
 
   private async markSkipped(consumerName: string, event: InboxEvent): Promise<void> {

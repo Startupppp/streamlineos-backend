@@ -8,9 +8,10 @@ import { GdprExportRequestedConsumer } from "./gdpr-export-outbox.consumer";
 import { GdprStoragePurgeService } from "./gdpr-storage-purge.service";
 import { GdprRectificationService } from "./gdpr-rectification.service";
 import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
+import { SessionsModule } from "../sessions/sessions.module";
 
 @Module({
-  imports: [OutboxModule],
+  imports: [OutboxModule, SessionsModule],
   controllers: [GdprController],
   providers: [
     GdprService,

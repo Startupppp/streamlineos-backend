@@ -93,7 +93,7 @@ function bodyParserFailure(exception: unknown): (ApiErrorEnvelope & { status: nu
 
 function describeUnhandled(exception: unknown): Record<string, unknown> {
   if (!(exception instanceof Error)) return { message: String(exception) };
-  const record = exception as unknown as Record<string, unknown>;
+  const record = exception as Error & Record<string, unknown>;
   const detail = record["detail"];
   const hint = record["hint"];
   const query = record["query"];

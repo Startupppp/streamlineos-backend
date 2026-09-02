@@ -17,7 +17,7 @@ export function createTenantAwareDb(db: DbWithClient): DbWithClient {
       if (prop === "__client") return target.__client;
 
       const context = getTenantContext();
-      const source: object = context ? (context.tx as unknown as object) : target;
+      const source: object = context ? (context.tx as object) : target;
       const value: unknown = Reflect.get(source, prop, source);
       return typeof value === "function" ? value.bind(source) : value;
     },

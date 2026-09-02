@@ -1,4 +1,5 @@
 import type { Db } from "../../db/drizzle.module";
+import type { SessionsService } from "../sessions/sessions.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { GdprSubjectErasureService } from "./gdpr-subject-erasure.service";
 
@@ -36,8 +37,10 @@ interface KbDbOpts {
   kbPageChunkDeleted?: unknown[];
   kbArticleChunkDeleted?: unknown[];
   kbSourceChunkDeleted?: unknown[];
+  kbAttachmentChunkDeleted?: unknown[];
   authoredArticleIds?: Array<{ id: number }>;
   ownedSourceIds?: Array<{ id: number }>;
+  uploadedAttachmentIds?: Array<{ id: number }>;
 }
 
 /**
@@ -45,7 +48,8 @@ interface KbDbOpts {
  *
  * The service always deletes kbArticleChunks at least once (for page-authored chunks),
  * then conditionally once more for article-authored chunks (when authoredArticleIds is
- * non-empty) and once more for source-uploaded chunks (when ownedSourceIds is non-empty).
+ * non-empty), once more for source-uploaded chunks (when ownedSourceIds is non-empty),
+ * and once more for attachment-uploaded chunks (when uploadedAttachmentIds is non-empty).
  * The round-robin here mirrors that same conditional to stay in sync.
  */
 function makeKbDb(opts: KbDbOpts = {}) {
@@ -55,18 +59,21 @@ function makeKbDb(opts: KbDbOpts = {}) {
     kbPageChunkDeleted = [],
     kbArticleChunkDeleted = [],
     kbSourceChunkDeleted = [],
+    kbAttachmentChunkDeleted = [],
     authoredArticleIds = [],
     ownedSourceIds = [],
+    uploadedAttachmentIds = [],
   } = opts;
 
   const kbMsgDeleteChain = chain(kbMsgDeleted);
   const kbConvDeleteChain = chain(kbConvDeleted);
 
   // Mirror the service's conditional: page is always first, then article (if any),
-  // then source (if any). This matches the exact call order the service produces.
+  // then source (if any), then attachment (if any). Matches the exact call order.
   const kbChunkChains: ReturnType<typeof chain>[] = [chain(kbPageChunkDeleted)];
   if (authoredArticleIds.length > 0) kbChunkChains.push(chain(kbArticleChunkDeleted));
   if (ownedSourceIds.length > 0) kbChunkChains.push(chain(kbSourceChunkDeleted));
+  if (uploadedAttachmentIds.length > 0) kbChunkChains.push(chain(kbAttachmentChunkDeleted));
 
   let txDeleteCount = 0;
   let kbChunkCallIdx = 0;
@@ -80,6 +87,7 @@ function makeKbDb(opts: KbDbOpts = {}) {
       if (txSelectCount === 3) return chain([]);
       if (txSelectCount === 4) return chain(authoredArticleIds);
       if (txSelectCount === 5) return chain(ownedSourceIds);
+      if (txSelectCount === 6) return chain(uploadedAttachmentIds);
       return chain([]);
     }),
     update: jest.fn().mockReturnValue(chain([{ id: 99 }])),
@@ -120,7 +128,8 @@ function makeKbDb(opts: KbDbOpts = {}) {
 
 function buildService(db: ReturnType<typeof makeKbDb>["db"]): GdprSubjectErasureService {
   const cache = {} as CacheService;
-  return new GdprSubjectErasureService(db as unknown as Db, cache);
+  const sessions = { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 0 }) } as unknown as SessionsService;
+  return new GdprSubjectErasureService(db as unknown as Db, cache, sessions);
 }
 
 beforeEach(() => {
@@ -388,6 +397,73 @@ describe("GdprSubjectErasureService — KB erasure idempotency", () => {
       kbMsgDeleted: [],
       kbConvDeleted: [],
       kbPageChunkDeleted: [],
+    });
+    const svc = buildService(db);
+
+    await expect(
+      svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false }),
+    ).resolves.toMatchObject({ blocked: false, dryRun: false });
+  });
+});
+
+// ─── KB article chunks (attachment-uploaded) ──────────────────────────────────
+//
+// A subject may upload a file as an attachment to an article they did NOT author.
+// Those attachment-sourced chunks reference the subject via kbArticleAttachments.uploadedBy
+// and are NOT covered by the article-authored deletion. They must be erased separately.
+
+describe("GdprSubjectErasureService — kb_article_chunks from uploaded attachments", () => {
+  it("deletes attachment chunks when the subject has uploaded attachments to any article", async () => {
+    const { db } = makeKbDb({
+      uploadedAttachmentIds: [{ id: 11 }],
+      kbAttachmentChunkDeleted: [{ id: 500 }],
+    });
+    const svc = buildService(db);
+
+    const result = await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    expect(result.tablesAnonymised).toContain("kb_article_chunks");
+  });
+
+  it("calls tx.delete 4 times when the subject has uploaded attachments (msgs + convs + page-chunks + attachment-chunks)", async () => {
+    const { db, tx } = makeKbDb({
+      uploadedAttachmentIds: [{ id: 11 }],
+      kbAttachmentChunkDeleted: [{ id: 500 }],
+    });
+    const svc = buildService(db);
+
+    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    expect(tx.delete.mock.calls.length).toBe(4);
+  });
+
+  it("skips the attachment chunk delete when the subject has uploaded no attachments", async () => {
+    const { db, tx } = makeKbDb({ uploadedAttachmentIds: [] });
+    const svc = buildService(db);
+
+    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    expect(tx.delete.mock.calls.length).toBe(3);
+  });
+
+  it("(bite proof) kb_article_chunks absent from tablesAnonymised when attachment chunk delete returns no rows", async () => {
+    // Mechanism: kbAttachmentChunkDeleted = [] → returning([]) → NOT pushed.
+    // Neuter: swap to [{ id: 1 }] → IS pushed → "not.toContain" FAILS.
+    const { db } = makeKbDb({
+      uploadedAttachmentIds: [{ id: 11 }],
+      kbAttachmentChunkDeleted: [],
+    });
+    const svc = buildService(db);
+
+    const result = await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    expect(result.tablesAnonymised).not.toContain("kb_article_chunks");
+  });
+
+  it("is idempotent when all attachment chunk deletes return no rows on a second run", async () => {
+    const { db } = makeKbDb({
+      uploadedAttachmentIds: [{ id: 11 }],
+      kbAttachmentChunkDeleted: [],
     });
     const svc = buildService(db);
 

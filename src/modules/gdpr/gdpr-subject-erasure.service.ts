@@ -12,6 +12,7 @@ import {
   hrEmployments,
   hrLegalHolds,
   hrPeople,
+  kbArticleAttachments,
   kbArticleChunks,
   kbArticles,
   kbChatConversations,
@@ -26,6 +27,7 @@ import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { SessionsService } from "../sessions/sessions.service";
 
 const ERASED_NAME = "ERASED";
 const ERASED_CONTENT = "[ERASED]";
@@ -71,6 +73,7 @@ export class GdprSubjectErasureService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly sessionsService: SessionsService,
   ) {}
 
   async eraseSubject(
@@ -388,6 +391,30 @@ export class GdprSubjectErasureService {
           tablesAnonymised.push("kb_article_chunks");
       }
 
+      const uploadedAttachments = await tx
+        .select({ id: kbArticleAttachments.id })
+        .from(kbArticleAttachments)
+        .where(
+          and(
+            eq(kbArticleAttachments.orgId, orgId),
+            eq(kbArticleAttachments.uploadedBy, subjectUserId),
+          ),
+        );
+      if (uploadedAttachments.length > 0) {
+        const attachmentIds = uploadedAttachments.map((a) => a.id);
+        const attachmentChunkResult = await tx
+          .delete(kbArticleChunks)
+          .where(
+            and(
+              eq(kbArticleChunks.orgId, orgId),
+              inArray(kbArticleChunks.attachmentId, attachmentIds),
+            ),
+          )
+          .returning({ id: kbArticleChunks.id });
+        if (attachmentChunkResult.length > 0 && !tablesAnonymised.includes("kb_article_chunks"))
+          tablesAnonymised.push("kb_article_chunks");
+      }
+
       await tx.insert(hrDataRequests).values({
         orgId,
         subjectUserId,
@@ -415,6 +442,7 @@ export class GdprSubjectErasureService {
     });
 
     await bustMembershipStatusCache(this.cache, subjectUserId);
+    await this.sessionsService.revokeAllForUser(subjectUserId);
 
     return {
       blocked: false,
