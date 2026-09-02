@@ -19,10 +19,9 @@ const selfTest = process.argv.includes("--self-test");
 export function evaluatePrivilegeRow(row) {
   return {
     role: String(row.role),
+    isAppRole: String(row.role) === "streamline_app",
     updateRevoked: row.canUpdate === false,
     deleteRevoked: row.canDelete === false,
-    // `triggerPresent` is deliberately narrow: an unrelated enabled trigger
-    // must not be mistaken for the append-only control.
     triggerPresent: row.triggerPresent === true,
   };
 }
@@ -36,13 +35,21 @@ if (selfTest) {
     canDelete: false,
     triggerPresent: false,
   });
+  const wrongRole = evaluatePrivilegeRow({
+    role: "neon_superuser",
+    canUpdate: false,
+    canDelete: false,
+    triggerPresent: true,
+  });
   const pass =
+    safe.isAppRole &&
     safe.updateRevoked &&
     safe.deleteRevoked &&
     safe.triggerPresent &&
     !unsafe.updateRevoked &&
-    !missingNamedTrigger.triggerPresent;
-  process.stdout.write(JSON.stringify({ selfTest: true, pass, safe, unsafe }) + "\n");
+    !missingNamedTrigger.triggerPresent &&
+    !wrongRole.isAppRole;
+  process.stdout.write(JSON.stringify({ selfTest: true, pass, safe, unsafe, wrongRole }) + "\n");
   process.exit(pass ? 0 : 1);
 }
 
@@ -86,7 +93,7 @@ try {
     triggerPresent: row.trigger_present,
   });
   process.stdout.write(JSON.stringify(result) + "\n");
-  if (!result.updateRevoked || !result.deleteRevoked || !result.triggerPresent) process.exitCode = 1;
+  if (!result.isAppRole || !result.updateRevoked || !result.deleteRevoked || !result.triggerPresent) process.exitCode = 1;
 } catch (error) {
   process.stderr.write(`AUDIT PRIVILEGE QUERY FAILED: ${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 2;

@@ -1,5 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import { SupportKbService } from "./support-kb.service";
+import { SupportKbEngagementService } from "./support-kb-engagement.service";
 import type { Db } from "../../../db/drizzle.module";
 
 describe("SupportKbService — cross-tenant isolation", () => {
@@ -24,7 +25,6 @@ describe("SupportKbService — cross-tenant isolation", () => {
   function makeDb(categoriesRows: unknown[], articleRow: unknown): Db {
     const findManyCategories = jest.fn().mockResolvedValue(categoriesRows);
     const findFirstArticle = jest.fn().mockResolvedValue(articleRow);
-    const indexing = { indexAttachment: jest.fn().mockResolvedValue(undefined) };
     return {
       query: {
         kbCategories: { findMany: findManyCategories, findFirst: jest.fn().mockResolvedValue(null) },
@@ -38,21 +38,21 @@ describe("SupportKbService — cross-tenant isolation", () => {
 
   it("returns empty categories for a different org (cross-tenant isolation)", async () => {
     const db = makeDb([], null);
-    const svc = new SupportKbService(db, { indexAttachment: jest.fn() } as never, {} as never);
+    const svc = new SupportKbService(db, { indexAttachment: jest.fn() } as never);
     const result = await svc.listCategories(ATTACKER_ORG);
     expect(result).toHaveLength(0);
   });
 
   it("returns categories for the owning org (control — same-tenant access works)", async () => {
     const db = makeDb([{ id: 1, orgId: OWNER_ORG, name: "General" }], null);
-    const svc = new SupportKbService(db, { indexAttachment: jest.fn() } as never, {} as never);
+    const svc = new SupportKbService(db, { indexAttachment: jest.fn() } as never);
     const result = await svc.listCategories(OWNER_ORG);
     expect(result).toHaveLength(1);
   });
 
   it("throws NotFoundException when fetching article belonging to a different org (tenant isolation)", async () => {
     const db = makeDb([], null);
-    const svc = new SupportKbService(db, { indexAttachment: jest.fn() } as never, {} as never);
+    const svc = new SupportKbService(db, { indexAttachment: jest.fn() } as never);
     await expect(svc.getArticle(ATTACKER_ORG, 42)).rejects.toThrow(NotFoundException);
   });
 
@@ -61,7 +61,7 @@ describe("SupportKbService — cross-tenant isolation", () => {
       builder.limit.mockResolvedValue([]);
       const db = makeDb([], null);
       const storage = { getFileUrl: jest.fn().mockResolvedValue("https://signed.example.com/file.pdf") };
-      const svc = new SupportKbService(db, { indexAttachment: jest.fn() } as never, storage as never);
+      const svc = new SupportKbEngagementService(db, storage as never);
 
       await expect(svc.getAttachmentDownloadUrl(ATTACKER_ORG, 10, 1)).rejects.toThrow(NotFoundException);
     });
@@ -74,7 +74,7 @@ describe("SupportKbService — cross-tenant isolation", () => {
       }]);
       const db = makeDb([], null);
       const storage = { getFileUrl: jest.fn().mockResolvedValue("https://signed.example.com/file.pdf?X-Expires=3600") };
-      const svc = new SupportKbService(db, { indexAttachment: jest.fn() } as never, storage as never);
+      const svc = new SupportKbEngagementService(db, storage as never);
 
       const result = await svc.getAttachmentDownloadUrl(OWNER_ORG, 10, 1);
       expect(result.downloadUrl).toBe("https://signed.example.com/file.pdf?X-Expires=3600");

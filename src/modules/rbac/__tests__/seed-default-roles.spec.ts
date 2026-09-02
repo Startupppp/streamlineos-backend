@@ -1,4 +1,4 @@
-import { RolesService } from "../roles.service";
+import { RoleSeedService } from "../role-seed.service";
 
 jest.mock("../seed-system-roles", () => ({
   seedSystemRolesForOrg: jest.fn().mockResolvedValue(undefined),
@@ -19,7 +19,7 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 }));
 
 function createService(existingSlugs: string[]) {
-  const service = Object.create(RolesService.prototype) as RolesService;
+  const service = Object.create(RoleSeedService.prototype) as RoleSeedService;
 
   const dbMock = {
     select: jest.fn().mockReturnValue({
@@ -33,7 +33,7 @@ function createService(existingSlugs: string[]) {
   return service;
 }
 
-describe("RolesService.seedDefaultRoles", () => {
+describe("RoleSeedService.seedDefaultRoles", () => {
   it("creates the starter roles that are missing and skips existing ones", async () => {
     const service = createService(["ENGINEERING", "HR_ADMIN"]);
 

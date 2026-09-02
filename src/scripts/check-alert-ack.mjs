@@ -145,7 +145,18 @@ if (SELF_TEST) {
     }
   })();
 
-  const pass = case1 && case2 && case3 && case4 && case5 && case6;
+  const case7 = (() => {
+    const state = {
+      delivered: false,
+      acked: true,
+      nonce: "pqr678",
+      sentAt: new Date(now - 60_000).toISOString(),
+    };
+    const r = classifyAckState(state, maxAgeMs);
+    return r.pass === false && r.reason.includes("UNACKNOWLEDGED");
+  })();
+
+  const pass = case1 && case2 && case3 && case4 && case5 && case6 && case7;
   process.stdout.write(
     JSON.stringify({
       selfTest: true,
@@ -157,6 +168,7 @@ if (SELF_TEST) {
         case4NullAckedFails: case4,
         case5StaleAckFails: case5,
         case6RoundTripStateFile: case6,
+        case7UndeliveredFails: case7,
       },
     }) + "\n",
   );

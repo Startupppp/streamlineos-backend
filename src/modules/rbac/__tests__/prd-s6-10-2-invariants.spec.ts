@@ -1,13 +1,7 @@
-/**
- * Acceptance tests for PRD §6 and §10.2 invariants.
- *
- * Proves the six fixed standings, no arbitrary custom-role creation,
- * cross-tenant 404 (not 403), per-person grants without a new standing,
- * and suspended-member access denial.
- */
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { RolesService } from "../roles.service";
+import { RoleSeedService } from "../role-seed.service";
 import { ROLE_TEMPLATES } from "../role-templates.constants";
 
 jest.mock("../../../common/rbac/is-structural-org-admin", () => ({
@@ -28,7 +22,25 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   ),
 }));
 
-function buildService(): RolesService {
+function buildSeedService(): RoleSeedService {
+  const service: RoleSeedService = Object.create(RoleSeedService.prototype);
+  const db: Partial<Db> = {
+    query: {
+      roles: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    } as unknown as Db["query"],
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ id: 999 }]) }),
+      }),
+    }),
+  };
+  Reflect.set(service, "db", db);
+  return service;
+}
+
+function buildRolesService(): RolesService {
   const service: RolesService = Object.create(RolesService.prototype);
   const db: Partial<Db> = {
     query: {
@@ -52,7 +64,7 @@ function buildService(): RolesService {
 
 describe("custom-role creation is template-locked — no arbitrary role creation", () => {
   it("materializeTemplate rejects an unknown templateId with NotFoundException", async () => {
-    const service = buildService();
+    const service = buildSeedService();
     const actor = { orgId: "org-1", userId: "u-1", membershipId: 1, isOwner: true, role: "OWNER" } as any;
 
     await expect(
@@ -64,7 +76,7 @@ describe("custom-role creation is template-locked — no arbitrary role creation
     const validIds = new Set(ROLE_TEMPLATES.map((t) => t.id));
     expect(validIds.size).toBeGreaterThan(0);
 
-    const service = buildService();
+    const service = buildSeedService();
     const actor = { orgId: "org-1", userId: "u-1", membershipId: 1, isOwner: true, role: "OWNER" } as any;
 
     for (const invalidId of [
@@ -102,7 +114,7 @@ describe("custom-role creation is template-locked — no arbitrary role creation
 
 describe("cross-tenant isolation — services throw NotFoundException (HTTP 404), not ForbiddenException (HTTP 403)", () => {
   it("getRoles returns an empty page for a tenant with no roles, never a 403", async () => {
-    const service = buildService();
+    const service = buildRolesService();
     (Reflect.get(service, "db") as any).select = jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
         leftJoin: jest.fn().mockReturnValue({
@@ -122,7 +134,7 @@ describe("cross-tenant isolation — services throw NotFoundException (HTTP 404)
   });
 
   it("does not throw ForbiddenException — cross-tenant misses must return 404 not 403", async () => {
-    const service = buildService();
+    const service = buildRolesService();
     (Reflect.get(service, "db") as any).query.roles.findFirst = jest.fn().mockResolvedValue(null);
 
     const err = await service.getRole("org-attacker", 42).catch((e: unknown) => e);

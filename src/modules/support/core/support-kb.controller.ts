@@ -17,6 +17,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { SupportKbService } from "./support-kb.service";
+import { SupportKbEngagementService } from "./support-kb-engagement.service";
 import { KbAskService } from "../../kb/retrieval/kb-ask.service";
 import { KbArticleReindexService } from "../../kb/retrieval/kb-article-reindex.service";
 import {
@@ -57,6 +58,7 @@ const articleAndAttachmentIdParams = z
 export class SupportKbController {
   constructor(
     private readonly kb: SupportKbService,
+    private readonly kbEngagement: SupportKbEngagementService,
     private readonly ask: KbAskService,
     private readonly reindex: KbArticleReindexService,
   ) {}
@@ -164,7 +166,7 @@ export class SupportKbController {
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.kb.listFeedback(u.orgId, articleId);
+    return this.kbEngagement.listFeedback(u.orgId, articleId);
   }
 
   @Get("articles/:articleId/comments")
@@ -174,7 +176,7 @@ export class SupportKbController {
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.kb.listComments(u.orgId, articleId);
+    return this.kbEngagement.listComments(u.orgId, articleId);
   }
 
   @Post("articles/:articleId/comments")
@@ -187,7 +189,7 @@ export class SupportKbController {
     @Body() body: CreateKbCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.kb.createComment(u.orgId, articleId, u.userId, body);
+    return this.kbEngagement.createComment(u.orgId, articleId, u.userId, body);
   }
 
   @Delete("articles/:articleId/comments/:commentId")
@@ -198,7 +200,7 @@ export class SupportKbController {
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.kb.deleteComment(u.orgId, articleId, commentId);
+    return this.kbEngagement.deleteComment(u.orgId, articleId, commentId);
   }
 
   @Get("articles/:articleId/attachments")
@@ -208,7 +210,7 @@ export class SupportKbController {
     @Param("articleId", ParseIntPipe) articleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.kb.listAttachments(u.orgId, articleId);
+    return this.kbEngagement.listAttachments(u.orgId, articleId);
   }
 
   @Post("articles/:articleId/attachments")
@@ -221,7 +223,7 @@ export class SupportKbController {
     @Body() body: CreateKbAttachmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.kb.createAttachment(u.orgId, articleId, u.userId, body);
+    return this.kbEngagement.createAttachment(u.orgId, articleId, u.userId, body);
   }
 
   @Delete("articles/:articleId/attachments/:attachmentId")
@@ -233,7 +235,7 @@ export class SupportKbController {
     @Param("attachmentId", ParseIntPipe) attachmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.kb.deleteAttachment(u.orgId, articleId, attachmentId);
+    return this.kbEngagement.deleteAttachment(u.orgId, articleId, attachmentId);
   }
 
   @Get("articles/:articleId/attachments/:attachmentId/download")
@@ -245,7 +247,7 @@ export class SupportKbController {
     @Param("attachmentId", ParseIntPipe) attachmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.kb.getAttachmentDownloadUrl(u.orgId, articleId, attachmentId);
+    return this.kbEngagement.getAttachmentDownloadUrl(u.orgId, articleId, attachmentId);
   }
 
   @Post("ask")

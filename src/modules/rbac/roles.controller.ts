@@ -22,6 +22,7 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { AccessService } from "../access/access.service";
 import type { DataScope } from "../access/access.types";
 import { RolesService } from "./roles.service";
+import { RoleSeedService } from "./role-seed.service";
 import { RolesQueryService } from "./roles-query.service";
 import {
   materializeTemplateSchema,
@@ -56,6 +57,7 @@ interface SimulateAccessResponse {
 export class RolesController {
   constructor(
     private readonly roles: RolesService,
+    private readonly seed: RoleSeedService,
     private readonly query: RolesQueryService,
     private readonly access: AccessService,
   ) {}
@@ -131,7 +133,7 @@ export class RolesController {
   @UseGuards(PermissionGuard)
   @RequirePermission("settings:rbac:manage")
   seedDefaults(@CurrentUser() u: CurrentUserContext) {
-    return this.roles.seedDefaultRoles(u.orgId);
+    return this.seed.seedDefaultRoles(u.orgId);
   }
 
   @Post("templates")
@@ -143,14 +145,14 @@ export class RolesController {
     @Body() body: MaterializeTemplateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roles.materializeTemplate(u, body.templateId);
+    return this.seed.materializeTemplate(u, body.templateId);
   }
 
   // ROLE_TEMPLATES is a product constant, no actor and no tenant data; materializing one is the gated action.
   @Get("templates")
   @Universal()
   templates() {
-    return this.roles.listTemplates();
+    return this.seed.listTemplates();
   }
 
   @Get("departments")

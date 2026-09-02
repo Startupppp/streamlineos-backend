@@ -20,6 +20,7 @@ import { SupportReportsController } from "./support-reports.controller";
 import { SupportCustomFieldsController } from "./support-custom-fields.controller";
 import { SupportTicketsController } from "./support-tickets.controller";
 import { SupportKbService } from "./support-kb.service";
+import { SupportKbEngagementService } from "./support-kb-engagement.service";
 import { SupportMacrosService } from "./support-macros.service";
 import { SupportWorkspaceService } from "./support-workspace.service";
 import { SupportRealtimeService } from "./support-realtime.service";
@@ -67,6 +68,7 @@ import { SupportTicketResolvedConsumer } from "./support-ticket-resolved-consume
   ],
   providers: [
     SupportKbService,
+    SupportKbEngagementService,
     SupportMacrosService,
     SupportWorkspaceService,
     SupportRealtimeService,
