@@ -4516,6 +4516,13 @@
       "when": 1803000010095,
       "tag": "0999_s08_drop_redundant_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 777,
+      "version": "7",
+      "when": 1803000010096,
+      "tag": "1000_s08_plan_measured_indexes_and_kb_ann",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,254 @@
+/**
+ * Measures the KB retrieval legs against a realistic corpus, as the application
+ * role, with the tenant GUC set, for tenants of very different sizes.
+ *
+ * Three rules this obeys, each of which is easy to break in a way that produces
+ * a number nobody should trust:
+ *
+ * - **Never as the owner.** `neondb_owner` has BYPASSRLS, so its plan omits the
+ *   `org_id = app.current_org_id()` qual entirely — which is the cost being
+ *   measured. Everything below runs on a `streamline_app` connection inside a
+ *   transaction that sets `app.organization_id` and is then rolled back.
+ * - **Buffers, not just milliseconds.** Wall clock on a warm cache flatters
+ *   everything; shared block counts do not move with the page cache.
+ * - **No per-call CPU percentile.** The CPU clock ticks far too coarsely to
+ *   measure one query, so a p95 of per-call CPU is noise wearing a statistic's
+ *   clothes. Where CPU matters it is aggregated over the whole run, once.
+ *
+ * Usage:
+ *   PERF_DATABASE_URL=postgresql://neondb_owner:...@127.0.0.1:5432/scratch_ai_latency \
+ *   PERF_APP_DATABASE_URL=postgresql://streamline_app:...@127.0.0.1:5432/scratch_ai_latency \
+ *     node test/perf/ai/measure-kb-retrieval-latency.mjs [--runs=25] [--json=out.json]
+ */
+import { writeFileSync } from "node:fs";
+import postgres from "postgres";
+import { CORPUS, TOTAL_CHUNKS } from "./kb-retrieval-corpus.mjs";
+
+const ownerUrl = process.env.PERF_DATABASE_URL;
+const appUrl = process.env.PERF_APP_DATABASE_URL;
+if (!ownerUrl || !appUrl) {
+  console.error("PERF_DATABASE_URL and PERF_APP_DATABASE_URL are both required.");
+  process.exit(2);
+}
+for (const [name, url] of [
+  ["PERF_DATABASE_URL", ownerUrl],
+  ["PERF_APP_DATABASE_URL", appUrl],
+])
+  if (!/\/scratch_/.test(url)) {
+    console.error(`Refusing to run: ${name} must name a scratch_* database.`);
+    process.exit(2);
+  }
+
+const args = process.argv.slice(2);
+const runs = Math.max(5, Number.parseInt(args.find((a) => a.startsWith("--runs="))?.slice(7) ?? "25", 10));
+const jsonOut = args.find((a) => a.startsWith("--json="))?.slice(7);
+
+const owner = postgres(ownerUrl, { max: 1, onnotice: () => {} });
+const app = postgres(appUrl, { max: 1, onnotice: () => {} });
+
+/**
+ * `KbCandidateService.vectorChunkIds` verbatim, and the fence it falls back to.
+ * Caps come from the real call sites: `articleVectorCandidates` uses
+ * `pool * 4` where `pool = max(limit * 3, limit)`, and `KbRagRetrievalService`
+ * uses `DEFAULT_TOP_K * 4` = 24.
+ */
+const SCENARIOS = [
+  {
+    key: "ann.cap24",
+    label: "ANN, cap 24 (kb-rag public ask pool)",
+    iterativeScan: "relaxed_order",
+    sql: "SELECT id FROM public.kb_article_chunks ORDER BY embedding <=> $1::vector LIMIT 24",
+  },
+  {
+    key: "ann.cap120",
+    label: "ANN, cap 120 (kb search, limit 10)",
+    iterativeScan: "relaxed_order",
+    sql: "SELECT id FROM public.kb_article_chunks ORDER BY embedding <=> $1::vector LIMIT 120",
+  },
+  {
+    key: "ann.cap120.noiter",
+    label: "ANN, cap 120, iterative scan OFF",
+    iterativeScan: "off",
+    sql: "SELECT id FROM public.kb_article_chunks ORDER BY embedding <=> $1::vector LIMIT 120",
+  },
+  {
+    key: "fence.cap120",
+    label: "app.search_kb_chunk_ids fence, cap 120",
+    iterativeScan: "relaxed_order",
+    sql: "SELECT app.search_kb_chunk_ids($1::vector, 120) AS id",
+  },
+];
+
+function percentile(sortedAscending, fraction) {
+  if (sortedAscending.length === 0) return 0;
+  const index = Math.min(
+    sortedAscending.length - 1,
+    Math.max(0, Math.ceil(fraction * sortedAscending.length) - 1),
+  );
+  return sortedAscending[index];
+}
+
+function sumBuffers(node, acc = { hit: 0, read: 0 }) {
+  acc.hit += node["Shared Hit Blocks"] ?? 0;
+  acc.read += node["Shared Read Blocks"] ?? 0;
+  for (const child of node.Plans ?? []) sumBuffers(child, acc);
+  return acc;
+}
+
+function describePlan(node) {
+  const names = [];
+  const walk = (n) => {
+    names.push(n["Node Type"] === "Index Scan" ? `Index Scan(${n["Index Name"]})` : n["Node Type"]);
+    for (const c of n.Plans ?? []) walk(c);
+  };
+  walk(node);
+  return names.join(" > ");
+}
+
+async function queryVectors(count) {
+  const rows = await owner`
+    SELECT emb::text AS emb FROM perf_topic_pool ORDER BY id LIMIT ${count}`;
+  if (rows.length === 0) throw new Error("perf_topic_pool is empty — run the seeder first");
+  return rows.map((r) => r.emb);
+}
+
+async function assertAppRoleIsNotPrivileged() {
+  const [role] = await app`
+    SELECT current_user AS name, rolbypassrls, rolsuper
+    FROM pg_roles WHERE rolname = current_user`;
+  if (role.rolbypassrls || role.rolsuper)
+    throw new Error(
+      `Refusing to measure as ${role.name}: it bypasses RLS, so the tenant qual would not be planned.`,
+    );
+  return role.name;
+}
+
+/** Proves the GUC really gates the table, so a silent BYPASSRLS cannot pass unnoticed. */
+async function assertRlsBites() {
+  let raised = null;
+  try {
+    await app.begin(async (tx) => {
+      await tx.unsafe(`SELECT count(*) FROM public.kb_article_chunks`);
+      throw new Error("ROLLBACK");
+    });
+  } catch (error) {
+    raised = error;
+  }
+  const message = raised instanceof Error ? raised.message : String(raised);
+  if (!/no tenant context|42501/.test(message))
+    throw new Error(`Expected 42501 with no tenant GUC, got: ${message}`);
+}
+
+async function measure(scenario, orgId, vectors) {
+  const durations = [];
+  const buffers = [];
+  let plan = "";
+  let rowsReturned = 0;
+
+  for (let i = 0; i < runs + 3; i += 1) {
+    const vector = vectors[i % vectors.length];
+    let sample = null;
+    await app
+      .begin(async (tx) => {
+        await tx.unsafe(`SET LOCAL app.organization_id = '${orgId}'`);
+        await tx.unsafe(`SET LOCAL hnsw.iterative_scan = ${scenario.iterativeScan}`);
+        const explained = await tx.unsafe(
+          `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${scenario.sql}`,
+          [vector],
+        );
+        sample = explained[0]["QUERY PLAN"][0];
+        throw new Error("__rollback__");
+      })
+      .catch((error) => {
+        if (!(error instanceof Error) || error.message !== "__rollback__") throw error;
+      });
+
+    // The first three are warm-up: a cold page cache and a cold HNSW entry point
+    // would otherwise dominate the first sample and skew the median.
+    if (i < 3 || sample === null) continue;
+    durations.push(sample["Execution Time"]);
+    const b = sumBuffers(sample.Plan);
+    buffers.push(b.hit + b.read);
+    plan = describePlan(sample.Plan);
+    rowsReturned = sample.Plan["Actual Rows"];
+  }
+
+  durations.sort((a, b) => a - b);
+  buffers.sort((a, b) => a - b);
+  return {
+    scenario: scenario.key,
+    orgId,
+    runs: durations.length,
+    p50Ms: Number(percentile(durations, 0.5).toFixed(2)),
+    p95Ms: Number(percentile(durations, 0.95).toFixed(2)),
+    medianBuffers: percentile(buffers, 0.5),
+    rowsReturned,
+    plan,
+  };
+}
+
+async function main() {
+  const [{ current_database: db }] = await owner`SELECT current_database()`;
+  const roleName = await assertAppRoleIsNotPrivileged();
+  await assertRlsBites();
+
+  const counts = await owner`
+    SELECT org_id, count(*)::int AS chunks
+    FROM kb_article_chunks WHERE org_id LIKE 'perf_kb_%'
+    GROUP BY org_id`;
+  const byOrg = new Map(counts.map((r) => [r.org_id, r.chunks]));
+  const total = counts.reduce((s, r) => s + r.chunks, 0);
+
+  console.log(`Target ${db} · measured as ${roleName} (no BYPASSRLS, tenant GUC set)`);
+  console.log(`Corpus ${total.toLocaleString()} chunks (declared ${TOTAL_CHUNKS.toLocaleString()})`);
+  for (const { orgId, label } of CORPUS)
+    console.log(
+      `  ${orgId.padEnd(16)} ${String(byOrg.get(orgId) ?? 0).padStart(7)}  ${(((byOrg.get(orgId) ?? 0) / total) * 100).toFixed(1)}%  ${label}`,
+    );
+
+  const vectors = await queryVectors(12);
+  const results = [];
+  const cpuStart = process.cpuUsage();
+  const wallStart = Date.now();
+
+  for (const scenario of SCENARIOS) {
+    console.log(`\n${scenario.label}`);
+    console.log(
+      `  ${"org".padEnd(16)} ${"share".padStart(7)} ${"p50 ms".padStart(9)} ${"p95 ms".padStart(9)} ${"buffers".padStart(9)} ${"rows".padStart(6)}  plan`,
+    );
+    for (const { orgId } of CORPUS) {
+      const row = await measure(scenario, orgId, vectors);
+      results.push({ ...row, chunks: byOrg.get(orgId) ?? 0 });
+      const share = (((byOrg.get(orgId) ?? 0) / total) * 100).toFixed(1) + "%";
+      console.log(
+        `  ${orgId.padEnd(16)} ${share.padStart(7)} ${String(row.p50Ms).padStart(9)} ${String(row.p95Ms).padStart(9)} ${String(row.medianBuffers).padStart(9)} ${String(row.rowsReturned).padStart(6)}  ${row.plan}`,
+      );
+    }
+  }
+
+  // Aggregated once over the entire run. A per-call CPU percentile would be a
+  // fabrication: the process clock's granularity is coarser than a single query.
+  const cpu = process.cpuUsage(cpuStart);
+  const wallMs = Date.now() - wallStart;
+  const totalQueries = results.length * (runs + 3);
+  console.log(
+    `\nAggregate over the whole run (never per call): ${totalQueries} queries, ` +
+      `${(wallMs / 1000).toFixed(1)}s wall, ` +
+      `${((cpu.user + cpu.system) / 1000).toFixed(0)}ms client CPU`,
+  );
+
+  if (jsonOut) {
+    writeFileSync(jsonOut, JSON.stringify({ db, role: roleName, runs, results }, null, 2));
+    console.log(`\nWrote ${jsonOut}`);
+  }
+
+  await owner.end();
+  await app.end();
+}
+
+main().catch(async (error) => {
+  console.error(error);
+  await owner.end().catch(() => undefined);
+  await app.end().catch(() => undefined);
+  process.exit(1);
+});

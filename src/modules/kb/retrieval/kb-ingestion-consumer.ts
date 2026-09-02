@@ -12,7 +12,7 @@ import {
   type OutboxEventConsumer,
   type OutboxEventRow,
 } from "../../../common/outbox/outbox-consumer.registry";
-import { KbIngestionLeaseService } from "./kb-ingestion-lease.service";
+import { KbIngestionLeaseService, KB_LEASE_UNAVAILABLE_CODE } from "./kb-ingestion-lease.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -91,7 +91,9 @@ export class KbIngestionConsumer implements OutboxEventConsumer, OnModuleInit {
 
     try {
       const lease = await this.leaseService.acquire(orgId, payload.contentType, payload.contentId);
-      if (!lease.acquired)
+      if (lease.status === "unavailable")
+        throw new Error(`${KB_LEASE_UNAVAILABLE_CODE}: ${lease.reason}`);
+      if (lease.status === "contended")
         throw new Error("KB_INGESTION_LEASE_CONTENTION");
 
       leaseToken = lease.token;

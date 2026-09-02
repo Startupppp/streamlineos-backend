@@ -18,10 +18,14 @@ import { CalendarRecurrenceService } from "./calendar-recurrence.service";
 import { CalendarExportService } from "./calendar-export.service";
 import { CalendarSyncStatusService } from "./calendar-sync-status.service";
 import { CalendarProviderWebhookService } from "./calendar-provider-webhook.service";
+import { CalendarProviderWebhookController } from "./calendar-provider-webhook.controller";
 
 @Module({
   imports: [IntegrationsModule, NotificationsModule],
-  controllers: [CalendarController, CalendarAdminSettingsController],
+  controllers: [
+    CalendarController,
+    CalendarAdminSettingsController,
+  ],
   providers: [
     CalendarEventsAggregateService,
     CalendarAttendeesService,

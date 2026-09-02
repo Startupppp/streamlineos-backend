@@ -1,5 +1,5 @@
 import { KbIngestionConsumer } from "./kb-ingestion-consumer";
-import { KbIngestionLeaseService } from "./kb-ingestion-lease.service";
+import { KbIngestionLeaseService, type KbIngestionLease } from "./kb-ingestion-lease.service";
 import { KbContentAdapterRegistry, KbPageAdapter, KbArticleAdapter, KbSourceAdapter, KbAttachmentAdapter } from "./kb-content-adapter";
 import { OutboxConsumerRegistry, type OutboxEventRow } from "../../../common/outbox/outbox-consumer.registry";
 import { OUTBOX_MAX_RETRIES } from "../../../common/outbox/outbox-envelope";
@@ -46,8 +46,11 @@ function makeEvent(overrides: Partial<OutboxEventRow> = {}): OutboxEventRow {
 }
 
 function makeLease(acquired = true): jest.Mocked<KbIngestionLeaseService> {
+  const outcome: KbIngestionLease = acquired
+    ? { status: "acquired", token: "tok-1" }
+    : { status: "contended" };
   return {
-    acquire: jest.fn().mockResolvedValue({ token: "tok-1", acquired }),
+    acquire: jest.fn().mockResolvedValue(outcome),
     release: jest.fn().mockResolvedValue(undefined),
   } as unknown as jest.Mocked<KbIngestionLeaseService>;
 }
