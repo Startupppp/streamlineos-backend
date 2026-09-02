@@ -1116,23 +1116,30 @@ export const BUDGETS = [
   {
     id: "dashboard-personal-my-tasks",
     // The status list mirrors DEFAULT_PROJECT_STATUSES / ACTIVE_TICKET_STATUSES, which the
-    // application writes in UPPER_SNAKE. The perf seed used to write title-case ('Todo',
-    // 'In Progress'), so this predicate matched zero rows and the budget reported VACUOUS; the
-    // seed was the deviant side and it was the seed that was corrected. Do NOT retune the
-    // predicate to a fixture's vocabulary — that makes the budget measure a query the application
-    // never runs.
+    // application writes in UPPER_SNAKE. Do NOT retune it to a fixture's vocabulary — that makes
+    // the budget measure a query the application never runs.
     //
-    // KNOWN BREACH, deliberately left failing. The moment the fixture stopped being empty this
-    // scanned 1,801 rows against maxScanRows 1,000 on the majority tenant: the planner takes
-    // idx_tickets_org_updated_live (org_id, updated_at DESC) to satisfy the ORDER BY and declines
-    // idx_tickets_org_assignee_status (org_id, assignee_membership_id, status), which cannot order.
-    // The breach is real and pre-existing — it was invisible only because the budget was vacuous —
-    // and the remedy is an index, (org_id, assignee_membership_id, updated_at DESC) WHERE
-    // deleted_at IS NULL, which lives in migrations/ and src/db/schema/**, not here. The ceiling
-    // stays at 1,000: raising it to 1,801 would record the defect as the contract.
+    // If this budget reports VACUOUS on your database, the database is stale, not the predicate.
+    // seed-perf-scratch.mjs used to write title-case ('Todo', 'In Progress'); it writes UPPER_SNAKE
+    // at head and carries LEGACY_STATUS_NAMES to rename an existing database's rows in place (the
+    // composite FK is ON UPDATE CASCADE, so the tickets follow). Rebuild or re-run the seed. A
+    // database built before that fix — `scratch_perf_seed` is one — still holds title-case rows,
+    // and every ceiling here reads as satisfied over an empty result set. That is what the
+    // vacuous-result guard exists to catch, and it does: measured on a seed at head this budget
+    // returns 10 rows on all three measurable tenants, `vacuous: false`.
+    //
+    // The scan-rows ceiling is 200, tightened from 1,000. While the covering index was missing this
+    // walked 1,801 rows to return 10, because the planner took idx_tickets_org_updated_live
+    // (org_id, updated_at DESC) for the ORDER BY and declined idx_tickets_org_assignee_status,
+    // which cannot order. Migration 1027 added
+    // (org_id, assignee_membership_id, updated_at DESC) WHERE deleted_at IS NULL and it now scans
+    // 19 / 21 / 22 rows on the 89.93 / 9.00 / 0.90 percent tenants — 45x below the ceiling that was
+    // meant to bound it, which is a guard that has stopped guarding. 200 keeps 9x headroom over the
+    // worst measured tenant and still trips an order of magnitude below the 1,801 a declined index
+    // costs. Tightened, never raised.
     ceiling: 2_000,
     minRows: 50,
-    maxScanRows: 1_000,
+    maxScanRows: 200,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
     params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
@@ -1150,8 +1157,16 @@ export const BUDGETS = [
   },
   {
     id: "dashboard-my-issues",
+    // Declares a scan-rows ceiling now, which it did not. This is
+    // dashboard-personal-my-tasks without the status filter — the same tenant+assignee read on the
+    // same index — and while the covering index was missing it walked 1,801 rows to return 10 and
+    // reported PASS on buffers alone, because a budget with no maxScanRows cannot see a plan
+    // regression that stays inside its block ceiling. 200 is the ceiling: measured post-1027 it
+    // scans 10 / 21 / 22 rows on the 89.93 / 9.00 / 0.90 percent tenants, so 200 leaves 9x headroom
+    // and still trips at an order of magnitude below the 1,801 the declined index cost.
     ceiling: 2_000,
     minRows: 50,
+    maxScanRows: 200,
     rowCountSql: `SELECT count(*)::int FROM build.tickets WHERE org_id = $1 AND deleted_at IS NULL`,
     params: (f) => (f.membershipId ? [f.orgId, f.membershipId] : null),
     sql: `
