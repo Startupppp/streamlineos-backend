@@ -139,26 +139,33 @@ export const emailSequences = pgTable("email_sequences", {
 
 export const emailSequenceSteps = pgTable("email_sequence_steps", {
   id: serial("id").primaryKey(),
-  sequenceId: integer("sequence_id").references(() => emailSequences.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  sequenceId: integer("sequence_id").notNull(),
   stepOrder: integer("step_order").notNull(),
   delayDays: integer("delay_days").notNull().default(0),
   subject: text("subject").notNull(),
   htmlBody: text("html_body").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.sequenceId], foreignColumns: [emailSequences.orgId, emailSequences.id], name: "fk_email_sequence_steps_sequence_id_org" }).onDelete("cascade"),
+  unique("uniq_email_sequence_steps_org_id").on(table.orgId, table.id),
   index("idx_email_sequence_steps_sequence").on(table.sequenceId),
 ]);
 
 export const emailSequenceEnrollments = pgTable("email_sequence_enrollments", {
   id: serial("id").primaryKey(),
-  sequenceId: integer("sequence_id").references(() => emailSequences.id, { onDelete: "cascade" }).notNull(),
-  candidateId: integer("candidate_id").references(() => candidates.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  sequenceId: integer("sequence_id").notNull(),
+  candidateId: integer("candidate_id").notNull(),
   currentStep: integer("current_step").notNull().default(0),
   status: text("status").$type<EmailSequenceEnrollmentStatus>().notNull().default("ACTIVE"),
   enrolledAt: timestamp("enrolled_at").defaultNow().notNull(),
   nextSendAt: timestamp("next_send_at"),
   completedAt: timestamp("completed_at"),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.sequenceId], foreignColumns: [emailSequences.orgId, emailSequences.id], name: "fk_email_sequence_enrollments_org_sequence" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_email_sequence_enrollments_org_candidate" }).onDelete("cascade"),
+  unique("uniq_email_sequence_enrollments_org_id").on(table.orgId, table.id),
   index("idx_email_sequence_enrollments_sequence").on(table.sequenceId),
   index("idx_email_sequence_enrollments_candidate").on(table.candidateId),
   index("idx_email_sequence_enrollments_next_send").on(table.nextSendAt),
@@ -194,9 +201,10 @@ export const recruitmentVendors = pgTable("recruitment_vendors", {
 
 export const vendorCandidateSubmissions = pgTable("vendor_candidate_submissions", {
   id: serial("id").primaryKey(),
-  vendorId: integer("vendor_id").references(() => recruitmentVendors.id, { onDelete: "cascade" }).notNull(),
-  candidateId: integer("candidate_id").references(() => candidates.id, { onDelete: "cascade" }).notNull(),
-  jobPostingId: integer("job_posting_id").references(() => jobPostings.id, { onDelete: "set null" }),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  vendorId: integer("vendor_id").notNull(),
+  candidateId: integer("candidate_id").notNull(),
+  jobPostingId: integer("job_posting_id"),
   submittedAt: timestamp("submitted_at").defaultNow().notNull(),
   placementStatus: text("placement_status").$type<VendorPlacementStatus>().notNull().default("SUBMITTED"),
   invoiceStatus: text("invoice_status").$type<VendorInvoiceStatus>().notNull().default("NOT_INVOICED"),
@@ -209,6 +217,10 @@ export const vendorCandidateSubmissions = pgTable("vendor_candidate_submissions"
   contractEndDate: date("contract_end_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.vendorId], foreignColumns: [recruitmentVendors.orgId, recruitmentVendors.id], name: "fk_vendor_candidate_submissions_org_vendor" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.candidateId], foreignColumns: [candidates.orgId, candidates.id], name: "fk_vendor_candidate_submissions_org_candidate" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.jobPostingId], foreignColumns: [jobPostings.orgId, jobPostings.id], name: "fk_vendor_candidate_submissions_org_job_posting" }).onDelete("set null"),
+  unique("uniq_vendor_candidate_submissions_org_id").on(table.orgId, table.id),
   index("idx_vendor_submissions_vendor").on(table.vendorId),
   index("idx_vendor_submissions_candidate").on(table.candidateId),
 ]);

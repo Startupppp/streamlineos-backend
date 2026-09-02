@@ -101,6 +101,7 @@ export class OnboardingTemplateService {
       if (input.steps.length > 0) {
         await tx.insert(onboardingTemplateSteps).values(
           input.steps.map((step, i) => ({
+            orgId,
             templateId: template.id,
             title: step.title,
             description: step.description ?? null,

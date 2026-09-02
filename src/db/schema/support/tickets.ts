@@ -7,7 +7,7 @@ import { clients } from "../crm/contacts";
 export const supportTickets = pgTable("support_tickets", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  clientId: integer("client_id").references(() => clients.id),
+  clientId: integer("client_id"),
   assigneeMembershipId: integer("assignee_membership_id"),
   title: text("title").notNull(),
   category: text("category"),
@@ -49,6 +49,11 @@ export const supportTickets = pgTable("support_tickets", {
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_support_tickets_created_actor",
   }),
+  foreignKey({
+    columns: [table.orgId, table.clientId],
+    foreignColumns: [clients.orgId, clients.id],
+    name: "fk_support_tickets_client_id_org",
+  }),
   // Queue view: filter by org + queue + open statuses, order by priority then SLA deadline.
   index("idx_support_tickets_org_queue_status_priority").on(table.orgId, table.queueId, table.status, table.priority, table.createdAt),
   index("idx_support_tickets_client").on(table.clientId),
@@ -61,7 +66,8 @@ export const supportTickets = pgTable("support_tickets", {
 
 export const supportTicketMessages = pgTable("support_ticket_messages", {
   id: serial("id").primaryKey(),
-  ticketId: integer("ticket_id").references(() => supportTickets.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  ticketId: integer("ticket_id").notNull(),
   authorId: text("author_id").references(() => users.id),
   body: text("body").notNull(),
   isInternal: boolean("is_internal").default(false).notNull(),
@@ -71,6 +77,8 @@ export const supportTicketMessages = pgTable("support_ticket_messages", {
   sourceContactName: text("source_contact_name"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.ticketId], foreignColumns: [supportTickets.orgId, supportTickets.id], name: "fk_support_ticket_messages_ticket_id_org" }).onDelete("cascade"),
+  unique("uniq_support_ticket_messages_org_id").on(table.orgId, table.id),
   index("idx_support_ticket_messages_ticket").on(table.ticketId),
   index("idx_support_ticket_messages_author").on(table.authorId),
   index("idx_support_ticket_messages_source_message").on(table.sourceMessageId),
@@ -79,13 +87,14 @@ export const supportTicketMessages = pgTable("support_ticket_messages", {
 export const supportTicketAttachments = pgTable("support_ticket_attachments", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  messageId: integer("message_id").references(() => supportTicketMessages.id, { onDelete: "cascade" }).notNull(),
+  messageId: integer("message_id").notNull(),
   fileName: text("file_name").notNull(),
   fileUrl: text("file_url").notNull(),
   fileSize: integer("file_size"),
   mimeType: text("mime_type"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.messageId], foreignColumns: [supportTicketMessages.orgId, supportTicketMessages.id], name: "fk_support_ticket_attachments_message_id_org" }).onDelete("cascade"),
   index("idx_support_ticket_attachments_message").on(table.messageId),
   unique("uniq_support_ticket_attachments_org_id").on(table.orgId, table.id),
 ]);

@@ -62,6 +62,7 @@ export class HrImportService {
 
     const allResults = [
       ...validRows.map((r) => ({
+        orgId,
         jobId: job.id,
         rowNumber: r.rowNumber,
         payload: r.payload,
@@ -69,6 +70,7 @@ export class HrImportService {
         error: null,
       })),
       ...errorRows.map((r) => ({
+        orgId,
         jobId: job.id,
         rowNumber: r.rowNumber,
         payload: r.payload,

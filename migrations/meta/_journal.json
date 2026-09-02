@@ -4558,6 +4558,13 @@
       "when": 1803000010101,
       "tag": "1005_s08_feedbucket_modules_catalog_row",
       "breakpoints": true
+    },
+    {
+      "idx": 783,
+      "version": "7",
+      "when": 1803000010102,
+      "tag": "1006_s09_drop_redundant_single_column_tenant_fks",
+      "breakpoints": true
     }
   ]
 }

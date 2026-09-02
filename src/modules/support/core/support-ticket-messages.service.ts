@@ -101,6 +101,7 @@ export class SupportTicketMessagesService {
       const [created] = await tx
         .insert(supportTicketMessages)
         .values({
+          orgId,
           ticketId,
           authorId: userId,
           body: input.body,

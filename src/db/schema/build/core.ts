@@ -41,9 +41,7 @@ export const projects = build.table(
     endDate: timestamp("end_date"),
     status: projectStatusEnum("status").default("ACTIVE").notNull(),
     priority: text("priority"),
-    dealId: integer("deal_id").references(() => deals.id, {
-      onDelete: "set null",
-    }),
+    dealId: integer("deal_id"),
     managedProductId: integer("managed_product_id"),
     pmWorkspaceId: text("pm_workspace_id").notNull(),
     budget: decimal("budget", { precision: 15, scale: 2 }),
@@ -69,6 +67,7 @@ export const projects = build.table(
   },
   (table) => [
   foreignKey({ columns: [table.orgId, table.managedProductId], foreignColumns: [managedProducts.orgId, managedProducts.id], name: "fk_projects_org_product" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.dealId], foreignColumns: [deals.orgId, deals.id], name: "fk_projects_deal_id_org" }).onDelete("set null"),
     uniqueIndex("uniq_projects_org_key").on(table.orgId, table.key).where(sql`deleted_at IS NULL`),
     index("idx_projects_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
     index("idx_projects_manager").on(table.orgId, table.managerMembershipId),

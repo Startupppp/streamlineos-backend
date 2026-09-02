@@ -90,6 +90,7 @@ export class SignBulkSendService {
 
     await this.db.insert(signBulkSendRows).values(
       mapped.map((row) => ({
+        orgId,
         jobId: job.id,
         rowNumber: row.rowNumber,
         rawDataJson: row.raw,

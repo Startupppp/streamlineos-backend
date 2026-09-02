@@ -220,6 +220,7 @@ export class AutomationService {
         case "support_internal_note": {
           const ticketId = this.requireTicketId(payload);
           await this.db.insert(supportTicketMessages).values({
+            orgId,
             ticketId,
             authorId: null,
             body: action.config.body,

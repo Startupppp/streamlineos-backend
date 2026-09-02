@@ -49,10 +49,15 @@ export const supportVipClients = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+    clientId: integer("client_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
+    foreignKey({
+      columns: [table.orgId, table.clientId],
+      foreignColumns: [clients.orgId, clients.id],
+      name: "fk_support_vip_clients_client_id_org",
+    }).onDelete("cascade"),
     uniqueIndex("uniq_support_vip_clients_org_client").on(table.orgId, table.clientId),
     unique("uniq_support_vip_clients_org_id").on(table.orgId, table.id),
   ],

@@ -470,6 +470,7 @@ async function seed(db: Db): Promise<Record<string, unknown>> {
 
   if (wfDef && leaveTypeId) {
     const [step] = await db.insert(hrWorkflowSteps).values({
+      orgId: ORG_ID,
       definitionId: wfDef.id,
       stepOrder: 1,
       name: "Manager Approval",

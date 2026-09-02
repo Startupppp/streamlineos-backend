@@ -85,7 +85,8 @@ export const hrWorkflowDefinitions = pgTable("hr_workflow_definitions", {
 
 export const hrWorkflowSteps = pgTable("hr_workflow_steps", {
   id: serial("id").primaryKey(),
-  definitionId: integer("definition_id").references(() => hrWorkflowDefinitions.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  definitionId: integer("definition_id").notNull(),
   stepOrder: integer("step_order").notNull(),
   name: text("name").notNull(),
   approverType: hrWorkflowApproverTypeEnum("approver_type").notNull(),
@@ -96,6 +97,8 @@ export const hrWorkflowSteps = pgTable("hr_workflow_steps", {
   escalationApproverValue: text("escalation_approver_value"),
   condition: jsonb("condition").$type<{ field: string; operator: string; value: unknown } | null>(),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.definitionId], foreignColumns: [hrWorkflowDefinitions.orgId, hrWorkflowDefinitions.id], name: "fk_hr_workflow_steps_org_definition" }).onDelete("cascade"),
+  unique("uniq_hr_workflow_steps_org_id").on(table.orgId, table.id),
   index("idx_hr_wf_steps_def_order").on(table.definitionId, table.stepOrder),
 ]);
 

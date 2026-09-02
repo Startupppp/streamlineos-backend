@@ -30,9 +30,7 @@ export const chatChannels = pgTable(
     entityId: text("entity_id"),
     isPinned: boolean("is_pinned").default(false).notNull(),
     isPrivate: boolean("is_private").default(false).notNull(),
-    linkedDealId: integer("linked_deal_id").references(() => deals.id, {
-      onDelete: "set null",
-    }),
+    linkedDealId: integer("linked_deal_id"),
     messageCount: bigint("message_count", { mode: "number" }).notNull().default(0),
     lastMessageAt: timestamp("last_message_at").defaultNow().notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -50,6 +48,7 @@ export const chatChannels = pgTable(
     ),
     unique("uniq_chat_channels_org_id").on(table.orgId, table.id),
     foreignKey({ columns: [table.orgId, table.createdByMembershipId], foreignColumns: [organizationMembers.orgId, organizationMembers.id], name: "fk_chat_channels_org_created_by_membership" }).onDelete("set null"),
+    foreignKey({ columns: [table.orgId, table.linkedDealId], foreignColumns: [deals.orgId, deals.id], name: "fk_chat_channels_linked_deal_id_org" }).onDelete("set null"),
   ],
 );
 

@@ -158,6 +158,7 @@ export class RecruitmentVendorSourcingService {
     const [row] = await this.db
       .insert(vendorCandidateSubmissions)
       .values({
+        orgId,
         vendorId,
         candidateId: input.candidateId,
         jobPostingId: input.jobPostingId,

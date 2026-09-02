@@ -88,7 +88,8 @@ export const onboardingTemplates = pgTable("onboarding_templates", {
 
 export const onboardingTemplateSteps = pgTable("onboarding_template_steps", {
   id: serial("id").primaryKey(),
-  templateId: integer("template_id").notNull().references(() => onboardingTemplates.id, { onDelete: "cascade" }),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  templateId: integer("template_id").notNull(),
   title: text("title").notNull(),
   description: text("description"),
   ownerRole: text("owner_role").$type<OnboardingTaskOwnerRole>().notNull().default("NEW_HIRE"),
@@ -97,6 +98,8 @@ export const onboardingTemplateSteps = pgTable("onboarding_template_steps", {
   isComplianceItem: boolean("is_compliance_item").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.templateId], foreignColumns: [onboardingTemplates.orgId, onboardingTemplates.id], name: "fk_onboarding_template_steps_template_id_org" }).onDelete("cascade"),
+  unique("uniq_onboarding_template_steps_org_id").on(table.orgId, table.id),
   check(
     "chk_onboarding_template_steps_owner_role",
     sql`${table.ownerRole} IN ('NEW_HIRE', 'HR', 'MANAGER', 'IT')`,
@@ -108,7 +111,7 @@ export const onboardingTasks = pgTable("onboarding_tasks", {
   userId: text("user_id").notNull(),
   userMembershipId: integer("user_membership_id"),
   orgId: text("org_id").notNull().references(() => organizations.id),
-  templateStepId: integer("template_step_id").references(() => onboardingTemplateSteps.id),
+  templateStepId: integer("template_step_id"),
   title: text("title").notNull(),
   description: text("description"),
   ownerRole: text("owner_role").$type<OnboardingTaskOwnerRole>().notNull().default("NEW_HIRE"),
@@ -123,6 +126,11 @@ export const onboardingTasks = pgTable("onboarding_tasks", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
+  foreignKey({
+    columns: [table.orgId, table.templateStepId],
+    foreignColumns: [onboardingTemplateSteps.orgId, onboardingTemplateSteps.id],
+    name: "fk_onboarding_tasks_template_step_id_org",
+  }),
   unique("uniq_onboarding_tasks_org_id").on(table.orgId, table.id),
   index("idx_onboarding_tasks_user").on(table.userId, table.orgId),
   index("idx_onboarding_tasks_status").on(table.orgId, table.status),

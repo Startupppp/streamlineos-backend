@@ -7,7 +7,7 @@ export const supportMessageMentions = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    messageId: integer("message_id").references(() => supportTicketMessages.id, { onDelete: "cascade" }).notNull(),
+    messageId: integer("message_id").notNull(),
     mentionedUserMembershipId: integer("mentioned_user_membership_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -19,6 +19,11 @@ export const supportMessageMentions = pgTable(
       columns: [table.orgId, table.mentionedUserMembershipId],
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_support_message_mentions_mentioned_actor",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.orgId, table.messageId],
+      foreignColumns: [supportTicketMessages.orgId, supportTicketMessages.id],
+      name: "fk_support_message_mentions_message_id_org",
     }).onDelete("cascade"),
   ],
 );

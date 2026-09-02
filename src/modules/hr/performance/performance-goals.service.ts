@@ -157,6 +157,7 @@ export class PerformanceGoalsService {
     const [kr] = await this.db
       .insert(keyResults)
       .values({
+        orgId,
         goalId: input.goalId,
         title: input.title,
         targetValue: input.targetValue?.toString(),

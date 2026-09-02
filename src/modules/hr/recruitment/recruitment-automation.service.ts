@@ -221,6 +221,7 @@ export class RecruitmentAutomationService {
       if (input.steps.length > 0) {
         await tx.insert(emailSequenceSteps).values(
           input.steps.map((step) => ({
+            orgId,
             sequenceId: sequence.id,
             stepOrder: step.stepOrder,
             delayDays: step.delayDays,
@@ -267,10 +268,13 @@ export class RecruitmentAutomationService {
       if (!updated) throw new NotFoundException("Sequence not found");
 
       if (input.steps !== undefined) {
-        await tx.delete(emailSequenceSteps).where(eq(emailSequenceSteps.sequenceId, sequenceId));
+        await tx
+          .delete(emailSequenceSteps)
+          .where(and(eq(emailSequenceSteps.orgId, orgId), eq(emailSequenceSteps.sequenceId, sequenceId)));
         if (input.steps.length > 0) {
           await tx.insert(emailSequenceSteps).values(
             input.steps.map((step) => ({
+              orgId,
               sequenceId,
               stepOrder: step.stepOrder,
               delayDays: step.delayDays,
@@ -312,11 +316,10 @@ export class RecruitmentAutomationService {
 
     const nextSendAt = firstStep ? new Date(Date.now() + firstStep.delayDays * 86_400_000) : null;
 
-    // `email_sequence_enrollments` has no `org_id`, and `candidate_id` is a
-    // foreign key, so an unknown id used to raise an FK violation while another
-    // organisation's real id succeeded — one request per id enumerated the
-    // global candidate table. The whole request fails unless every candidate is
-    // this organisation's, and a miss is 404 rather than 403.
+    // `candidate_id` is a foreign key, so an unknown id used to raise an FK
+    // violation while another organisation's real id succeeded — one request per
+    // id enumerated the global candidate table. The whole request fails unless
+    // every candidate is this organisation's, and a miss is 404 rather than 403.
     const requestedIds = [...new Set(input.candidateIds)];
     const owned = await this.db
       .select({ id: candidates.id })
@@ -327,6 +330,7 @@ export class RecruitmentAutomationService {
       throw new NotFoundException("One or more candidate IDs not found in this organization");
 
     const rows = requestedIds.map((candidateId) => ({
+      orgId,
       sequenceId,
       candidateId,
       currentStep: 0,

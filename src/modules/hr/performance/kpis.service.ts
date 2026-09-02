@@ -186,7 +186,7 @@ export class KpisService {
       throw new NotFoundException("Framework not found.");
     return this.db
       .insert(competencies)
-      .values({ frameworkId, ...data })
+      .values({ orgId, frameworkId, ...data })
       .returning();
   }
 }

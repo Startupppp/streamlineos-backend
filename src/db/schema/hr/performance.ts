@@ -117,7 +117,8 @@ export const goals = pgTable("goals", {
 
 export const keyResults = pgTable("key_results", {
   id: serial("id").primaryKey(),
-  goalId: integer("goal_id").references(() => goals.id, { onDelete: "cascade" }).notNull(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  goalId: integer("goal_id").notNull(),
   title: text("title").notNull(),
   targetValue: decimal("target_value", { precision: 15, scale: 2 }),
   currentValue: decimal("current_value", { precision: 15, scale: 2 }).default("0").notNull(),
@@ -126,6 +127,8 @@ export const keyResults = pgTable("key_results", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  foreignKey({ columns: [table.orgId, table.goalId], foreignColumns: [goals.orgId, goals.id], name: "fk_key_results_goal_id_org" }).onDelete("cascade"),
+  unique("uniq_key_results_org_id").on(table.orgId, table.id),
   index("idx_key_results_goal").on(table.goalId),
 ]);
 

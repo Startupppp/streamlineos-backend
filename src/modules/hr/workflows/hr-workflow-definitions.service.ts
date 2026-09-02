@@ -163,7 +163,7 @@ export class HrWorkflowDefinitionsService {
         await this.clearOtherDefaults(orgId, dto.objectType, definition.id);
       }
 
-      await this.upsertSteps(definition.id, dto.steps);
+      await this.upsertSteps(orgId, definition.id, dto.steps);
       return this.get(orgId, definition.id);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -207,7 +207,7 @@ export class HrWorkflowDefinitionsService {
     }
 
     if (dto.steps) {
-      await this.upsertSteps(id, dto.steps);
+      await this.upsertSteps(orgId, id, dto.steps);
     }
 
     return this.get(orgId, id);
@@ -268,6 +268,7 @@ export class HrWorkflowDefinitionsService {
     if (!newDef) throw new Error("Duplicate failed");
 
     await this.upsertSteps(
+      orgId,
       newDef.id,
       source.steps.map(
         (s): StepInput => ({
@@ -421,14 +422,15 @@ export class HrWorkflowDefinitionsService {
       );
   }
 
-  private async upsertSteps(definitionId: number, steps: StepInput[]) {
+  private async upsertSteps(orgId: string, definitionId: number, steps: StepInput[]) {
     await this.db
       .delete(hrWorkflowSteps)
-      .where(eq(hrWorkflowSteps.definitionId, definitionId));
+      .where(and(eq(hrWorkflowSteps.orgId, orgId), eq(hrWorkflowSteps.definitionId, definitionId)));
 
     if (steps.length > 0) {
       await this.db.insert(hrWorkflowSteps).values(
         steps.map((s) => ({
+          orgId,
           definitionId,
           stepOrder: s.stepOrder,
           name: s.name,
