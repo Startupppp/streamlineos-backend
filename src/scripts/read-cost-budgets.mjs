@@ -19,6 +19,18 @@
  * params(fixtures) returns null to skip a budget when a required fixture is absent
  * (e.g. no payroll runs exist in the seed). A skipped budget is reported as SKIP,
  * never PASS.
+ *
+ * VACUOUS BUDGETS. The runner also fails a budget whose query returns zero rows. A budget over an
+ * empty result set satisfies every ceiling trivially and no plan assertion it declares can ever
+ * fire, so reporting it as PASS is the exact failure this catalog exists to prevent — it measures
+ * nothing while reading as measured. Six budgets were doing this when the guard was added.
+ * `allowEmptyResult: true` waives it and REQUIRES `allowEmptyReason` alongside; use it only where
+ * an empty result is the correct steady state, never to silence a fixture that stopped matching.
+ *
+ * EXCLUSIONS. `excluded: "<reason>"` skips a budget entirely and is reported as EXCL, which proves
+ * nothing at all. Ten entries carried "CRM/Inventory module not seeded on scratch_e2e"; the perf
+ * seed populates both across four tenants, so the exclusions were removed rather than renewed. An
+ * exclusion is a claim about the database, and a stale claim is indistinguishable from coverage.
  */
 
 export const BUDGETS = [
@@ -404,7 +416,6 @@ export const BUDGETS = [
   },
   {
     id: "contacts-list",
-    excluded: "CRM module not seeded on scratch_e2e",
     ceiling: 8_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM contacts WHERE org_id = $1 AND deleted_at IS NULL`,
@@ -419,7 +430,6 @@ export const BUDGETS = [
   },
   {
     id: "leads-active",
-    excluded: "CRM module not seeded on scratch_e2e",
     ceiling: 10_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM leads WHERE org_id = $1 AND deleted_at IS NULL`,
@@ -435,7 +445,6 @@ export const BUDGETS = [
   },
   {
     id: "leads-assigned-to-me",
-    excluded: "CRM module not seeded on scratch_e2e",
     ceiling: 8_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM leads WHERE org_id = $1 AND deleted_at IS NULL`,
@@ -450,7 +459,6 @@ export const BUDGETS = [
   },
   {
     id: "deals-pipeline",
-    excluded: "CRM module not seeded on scratch_e2e",
     ceiling: 10_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM deals WHERE org_id = $1 AND deleted_at IS NULL`,
@@ -563,7 +571,6 @@ export const BUDGETS = [
   },
   {
     id: "inv-products-list",
-    excluded: "Inventory module not seeded on scratch_e2e",
     ceiling: 10_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM inv_products WHERE org_id = $1`,
@@ -578,7 +585,6 @@ export const BUDGETS = [
   },
   {
     id: "inv-stock-levels",
-    excluded: "Inventory module not seeded on scratch_e2e",
     ceiling: 10_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM inv_stock_levels WHERE org_id = $1`,
@@ -593,7 +599,6 @@ export const BUDGETS = [
   },
   {
     id: "inv-stock-transactions",
-    excluded: "Inventory module not seeded on scratch_e2e",
     ceiling: 15_000,
     minRows: 100,
     rowCountSql: `SELECT count(*)::int FROM inv_stock_transactions WHERE org_id = $1`,
@@ -608,7 +613,6 @@ export const BUDGETS = [
   },
   {
     id: "inv-purchase-orders",
-    excluded: "Inventory module not seeded on scratch_e2e",
     ceiling: 8_000,
     minRows: 20,
     rowCountSql: `SELECT count(*)::int FROM inv_purchase_orders WHERE org_id = $1`,
@@ -623,7 +627,6 @@ export const BUDGETS = [
   },
   {
     id: "inv-vendors-list",
-    excluded: "Inventory module not seeded on scratch_e2e",
     ceiling: 5_000,
     minRows: 10,
     rowCountSql: `SELECT count(*)::int FROM inv_vendors WHERE org_id = $1`,
@@ -656,7 +659,6 @@ export const BUDGETS = [
   },
   {
     id: "search-deal-sdf",
-    excluded: "CRM module not seeded on scratch_e2e",
     ceiling: 30_000,
     minRows: 50,
     rowCountSql: `SELECT count(*)::int FROM deals WHERE org_id = $1 AND deleted_at IS NULL`,
@@ -1039,6 +1041,11 @@ export const BUDGETS = [
   },
   {
     id: "dashboard-personal-my-tasks",
+    // The status list mirrors DEFAULT_PROJECT_STATUSES / ACTIVE_TICKET_STATUSES, which the
+    // application writes in UPPER_SNAKE. The perf seed writes title-case ('Todo', 'In Progress'),
+    // so this predicate matches zero rows there and the budget reports VACUOUS. The seed is the
+    // side that deviates; do NOT retune the predicate to the seed's vocabulary — that would make
+    // the budget measure a query the application never runs.
     ceiling: 2_000,
     minRows: 50,
     maxScanRows: 1_000,
