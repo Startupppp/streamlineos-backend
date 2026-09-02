@@ -171,9 +171,8 @@ export class KbRagService {
   }
 
   private async runAnswer(opts: AnswerOptions): Promise<KbAnswer> {
-    // Embedding call is outside any transaction — it is slow and must not pin a pooled connection.
     const vector = this.embeddings.toVectorLiteral(
-      await this.embeddings.embedQuery(opts.question),
+      await this.embeddings.embedQuery(opts.question, opts.orgId, "kb.public-rag"),
     );
 
     const results = await this.fetchChunks(opts.orgId, vector, opts.articleId);

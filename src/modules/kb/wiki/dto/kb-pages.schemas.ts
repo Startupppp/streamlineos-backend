@@ -1,4 +1,5 @@
 ﻿import { z } from "zod";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const documentNode = z.record(z.string(), z.unknown());
 const documentContent = z.union([z.array(documentNode), documentNode]);
@@ -20,20 +21,23 @@ export const updatePageSchema = z.object({
   content: documentContent.optional(),
   contentText: z.string().max(200000).optional(),
   status: z.enum(["draft", "in_review", "published", "archived"]).optional(),
-  contentType: z.enum([
-    "note",
-    "sop",
-    "policy",
-    "support_article",
-    "troubleshooting",
-    "decision_record",
-    "meeting_notes",
-    "runbook",
-    "project_brief",
-    "playbook",
-  ]).optional(),
+  contentType: z
+    .enum([
+      "note",
+      "sop",
+      "policy",
+      "support_article",
+      "troubleshooting",
+      "decision_record",
+      "meeting_notes",
+      "runbook",
+      "project_brief",
+      "playbook",
+    ])
+    .optional(),
   ownerUserId: z.string().nullable().optional(),
   changeSummary: z.string().max(500).optional(),
+  expectedContentRevision: z.coerce.number().int().positive().optional(),
 });
 export type UpdatePageInput = z.infer<typeof updatePageSchema>;
 
@@ -67,3 +71,8 @@ export const setVisibilitySchema = z.object({
   visibility: z.enum(["private", "org", "public"]),
 });
 export type SetVisibilityInput = z.infer<typeof setVisibilitySchema>;
+
+export const listVersionsQuerySchema = z
+  .object({ cursor: z.string().optional(), pageSize: pageSizeField(50, 100) })
+  .strict();
+export type ListVersionsQuery = z.infer<typeof listVersionsQuerySchema>;

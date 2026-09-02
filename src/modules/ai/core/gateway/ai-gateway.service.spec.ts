@@ -9,6 +9,7 @@ import { LlmService } from "../providers/llm.service";
 import { AiUsageService } from "../services/ai-usage.service";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { AiResponseCacheService } from "./ai-response-cache.service";
+import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
 
 const GreetingSchema = z.object({ message: z.string() });
 
@@ -54,6 +55,8 @@ async function buildModule(llmOverride?: ReturnType<typeof makeLlm>, ledgerOverr
     invalidate: jest.fn().mockResolvedValue(undefined),
   };
 
+  const mockConcurrencyLimiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       AiGatewayService,
@@ -62,6 +65,7 @@ async function buildModule(llmOverride?: ReturnType<typeof makeLlm>, ledgerOverr
       { provide: AuditService, useValue: mockAudit },
       { provide: AI_CREDIT_LEDGER, useValue: ledger },
       { provide: AiResponseCacheService, useValue: mockResponseCache },
+      { provide: AiConcurrencyLimiter, useValue: mockConcurrencyLimiter },
     ],
   }).compile();
 
@@ -220,6 +224,39 @@ describe("AiGatewayService", () => {
     });
   });
 
+  describe("dedupe+cache ordering — warm cache never calls runner (item 3)", () => {
+    it("with dedupe+cache both set and warm cache, runner is invoked zero times", async () => {
+      const llm = makeLlm();
+      const cachedValue = { ok: true as const, data: "cached", model: "m", latencyMs: 1, correlationId: "x", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 } };
+      const warmCache = {
+        cachedInvoke: jest.fn().mockResolvedValue(cachedValue),
+        invalidate: jest.fn().mockResolvedValue(undefined),
+      };
+      const mockUsage = { track: jest.fn().mockResolvedValue(undefined) };
+      const mockAudit = { log: jest.fn() };
+      const limiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+
+      const warmModule: TestingModule = await Test.createTestingModule({
+        providers: [
+          AiGatewayService,
+          { provide: LlmService, useValue: llm },
+          { provide: AiUsageService, useValue: mockUsage },
+          { provide: AuditService, useValue: mockAudit },
+          { provide: AI_CREDIT_LEDGER, useValue: makeLedger() },
+          { provide: AiResponseCacheService, useValue: warmCache },
+          { provide: AiConcurrencyLimiter, useValue: limiter },
+        ],
+      }).compile();
+
+      const svc = warmModule.get(AiGatewayService);
+      const result = await svc.invokeText({ actor: ACTOR, feature: FEATURE, prompt: PROMPT, dedupe: true, cache: { aclVersion: "v1" } });
+
+      expect(llm.invokeTextWithUsage).not.toHaveBeenCalled();
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.data).toBe("cached");
+    });
+  });
+
   describe("dedupe", () => {
     it("shares in-flight promise for identical dedupe calls", async () => {
       let resolveCall!: (v: string) => void;
@@ -259,6 +296,65 @@ describe("AiGatewayService", () => {
 
       expect(ledger.settle).not.toHaveBeenCalled();
       expect(ledger.release).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("concurrency_exceeded (item 3)", () => {
+    it("returns concurrency_exceeded and does not call LLM when limiter denies", async () => {
+      const llm = makeLlm();
+      const ledger = makeLedger();
+      const mockUsage = { track: jest.fn().mockResolvedValue(undefined) };
+      const mockAudit = { log: jest.fn() };
+      const mockResponseCache = {
+        cachedInvoke: jest.fn().mockImplementation((_o: string, _p: unknown, f: () => unknown) => f()),
+        invalidate: jest.fn().mockResolvedValue(undefined),
+      };
+      const denyingLimiter = { acquire: jest.fn().mockResolvedValue(false), release: jest.fn() };
+
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          AiGatewayService,
+          { provide: LlmService, useValue: llm },
+          { provide: AiUsageService, useValue: mockUsage },
+          { provide: AuditService, useValue: mockAudit },
+          { provide: AI_CREDIT_LEDGER, useValue: ledger },
+          { provide: AiResponseCacheService, useValue: mockResponseCache },
+          { provide: AiConcurrencyLimiter, useValue: denyingLimiter },
+        ],
+      }).compile();
+
+      const svc = module.get(AiGatewayService);
+      const result = await svc.invokeText({ actor: ACTOR, feature: FEATURE, prompt: PROMPT });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.kind).toBe("concurrency_exceeded");
+      expect(llm.invokeTextWithUsage).not.toHaveBeenCalled();
+    });
+
+    it("releases the concurrency slot even when the runner throws", async () => {
+      const llm = makeLlm({
+        invokeTextWithUsage: jest.fn().mockRejectedValue(new ServiceUnavailableException("provider down")),
+      });
+      const { svc } = await buildModule(llm);
+      await svc.invokeText({ actor: ACTOR, feature: FEATURE, prompt: PROMPT });
+
+      const module2: TestingModule = await Test.createTestingModule({
+        providers: [
+          AiGatewayService,
+          { provide: LlmService, useValue: llm },
+          { provide: AiUsageService, useValue: { track: jest.fn().mockResolvedValue(undefined) } },
+          { provide: AuditService, useValue: { log: jest.fn() } },
+          { provide: AI_CREDIT_LEDGER, useValue: makeLedger() },
+          { provide: AiResponseCacheService, useValue: { cachedInvoke: jest.fn(), invalidate: jest.fn() } },
+          { provide: AiConcurrencyLimiter, useValue: { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() } },
+        ],
+      }).compile();
+
+      const svc2 = module2.get(AiGatewayService);
+      const limiter2 = module2.get(AiConcurrencyLimiter) as jest.Mocked<AiConcurrencyLimiter>;
+      await svc2.invokeText({ actor: ACTOR, feature: FEATURE, prompt: PROMPT });
+      expect(limiter2.release).toHaveBeenCalledWith(ACTOR.orgId);
     });
   });
 });

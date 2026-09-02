@@ -206,7 +206,13 @@ export class KbPagesService {
       values.trustState = "unverified";
     }
 
+    const revisionGuard = input.expectedContentRevision;
+
     const result = await this.db.transaction(async (tx) => {
+      const updateWhere = revisionGuard !== undefined
+        ? and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), eq(kbPages.contentRevision, revisionGuard))
+        : and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId));
+
       const [updated] = await tx
         .update(kbPages)
         .set({
@@ -214,9 +220,17 @@ export class KbPagesService {
           ...(contentChanged ? { contentRevision: sql`content_revision + 1` } : {}),
           ...(aclChanged ? { aclRevision: sql`acl_revision + 1` } : {}),
         })
-        .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
+        .where(updateWhere)
         .returning();
-      if (!updated) throw new NotFoundException("Page not found");
+      if (!updated) {
+        if (revisionGuard !== undefined) {
+          throw new HttpException(
+            { message: "Page was modified by another editor. Reload to see the latest version.", code: "STALE_REVISION" },
+            HttpStatus.CONFLICT,
+          );
+        }
+        throw new NotFoundException("Page not found");
+      }
 
       if (contentChanged && input.content !== undefined) {
         await snapshotIfNeeded(tx, orgId, updated, user.userId, input.changeSummary ?? null, false, this.membershipId(user));

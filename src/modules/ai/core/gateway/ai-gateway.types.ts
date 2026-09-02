@@ -26,7 +26,7 @@ export interface AiInvokeSuccess<T> {
 
 export interface AiInvokeFailure {
   ok: false;
-  kind: "not_configured" | "provider_unavailable" | "quota_exceeded" | "invalid_output" | "context_too_large";
+  kind: "not_configured" | "provider_unavailable" | "quota_exceeded" | "invalid_output" | "context_too_large" | "concurrency_exceeded";
   message: string;
   correlationId: string;
 }
@@ -54,7 +54,7 @@ export interface AiInvokePrompt {
 }
 
 export interface AiResponseCacheOpts {
-  aclVersion?: string;
+  aclVersion: string;
   sourceRevision?: string;
   policy?: string;
 }
@@ -69,7 +69,8 @@ export interface AiInvokeBaseOpts {
   charge?: boolean;
   redact?: boolean;
   dedupe?: boolean;
-  cache?: boolean | AiResponseCacheOpts;
+  signal?: AbortSignal;
+  cache?: AiResponseCacheOpts;
 }
 
 export interface InvokeStructuredOpts<T> extends AiInvokeBaseOpts {

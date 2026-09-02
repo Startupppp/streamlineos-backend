@@ -19,9 +19,13 @@ import { KbPageReviewsService } from "./kb-page-reviews.service";
 import {
   approveReviewSchema,
   createPageReviewSchema,
+  listDueReviewsQuerySchema,
+  listReviewsQuerySchema,
   rejectReviewSchema,
   type ApproveReviewInput,
   type CreatePageReviewInput,
+  type ListDueReviewsQuery,
+  type ListReviewsQuery,
   type RejectReviewInput,
 } from "./dto/kb-page-reviews.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -39,22 +43,25 @@ export class KbPageReviewsController {
 
   @Get("page-reviews")
   @RequirePermission("kb:reviews:view")
+  @Validate({ query: listReviewsQuerySchema })
   async list(
-    @Query("status") status: string | undefined,
-    @Query("type") type: string | undefined,
+    @Query() query: ListReviewsQuery,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.reviews.list(u, status, type);
+    return this.reviews.list(u, query.status, query.type);
   }
 
   @Get("page-reviews/due")
   @RequirePermission("kb:reviews:view")
+  @Validate({ query: listDueReviewsQuerySchema })
   async listDue(
-    @Query("afterDueAt") afterDueAt: string | undefined,
-    @Query("afterId") afterId: string | undefined,
+    @Query() query: ListDueReviewsQuery,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    const cursor = afterDueAt && afterId ? { sortValue: afterDueAt, id: afterId } : undefined;
+    const cursor =
+      query.afterDueAt && query.afterId
+        ? { sortValue: query.afterDueAt, id: query.afterId }
+        : undefined;
     return this.reviews.listDue(u, cursor);
   }
 

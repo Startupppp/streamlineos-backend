@@ -83,6 +83,12 @@ interface Attempted<R> {
   model: string;
 }
 
+type CallOptions = { signal?: AbortSignal };
+
+function callConfig(signal: AbortSignal | undefined): CallOptions {
+  return signal === undefined ? {} : { signal };
+}
+
 const FAST_TIMEOUT_MS = 30_000;
 const STANDARD_TIMEOUT_MS = 60_000;
 
@@ -151,17 +157,20 @@ export class LlmService {
     tier: ModelTier | undefined,
     invoke: (model: ChatOpenAI, modelId: string) => Promise<R>,
     spec: ModelSpec,
+    signal?: AbortSignal,
   ): Promise<Attempted<R>> {
     const chain = this.chainFor(tier);
     let lastError: unknown = new Error("AI provider produced no result");
 
     for (const modelId of chain) {
       for (let attempt = 0; attempt <= this.policy.maxRetriesPerModel; attempt += 1) {
+        signal?.throwIfAborted();
         try {
           const result = await invoke(this.model(modelId, spec), modelId);
           return { result, model: modelId };
         } catch (error: unknown) {
           lastError = error;
+          if (signal?.aborted) throw error;
           const kind = classifyLlmError(error);
 
           if (kind === "fatal") throw this.toServiceError(error);
@@ -264,18 +273,24 @@ export class LlmService {
     return JSON.parse(cleaned) as T;
   }
 
-  async invokeTextWithUsage(opts: TextOptions & { maxTokens?: number }): Promise<LlmTextResult> {
+  async invokeTextWithUsage(
+    opts: TextOptions & { maxTokens?: number; signal?: AbortSignal },
+  ): Promise<LlmTextResult> {
     const { result, model } = await this.attempt(
       opts.model,
       (client) =>
-        client.invoke([
-          { role: "system", content: opts.system },
-          { role: "user", content: opts.user },
-        ]),
+        client.invoke(
+          [
+            { role: "system", content: opts.system },
+            { role: "user", content: opts.user },
+          ],
+          callConfig(opts.signal),
+        ),
       this.specFor(opts.model, {
         temperature: opts.temperature ?? 0.3,
         ...(opts.maxTokens !== undefined ? { maxTokens: opts.maxTokens } : {}),
       }),
+      opts.signal,
     );
 
     const text = typeof result.content === "string" ? result.content : JSON.stringify(result.content);
@@ -283,16 +298,20 @@ export class LlmService {
   }
 
   async invokeStructuredWithUsage<T extends z.ZodTypeAny>(
-    opts: InvokeOptions<T> & { maxTokens?: number },
+    opts: InvokeOptions<T> & { maxTokens?: number; signal?: AbortSignal },
   ): Promise<LlmStructuredResult<z.infer<T>>> {
     const { result, model } = await this.attempt(
       opts.model,
       (client) =>
-        this.structured(client, opts, true).invoke([
-          { role: "system", content: opts.system },
-          { role: "user", content: opts.user },
-        ]),
+        this.structured(client, opts, true).invoke(
+          [
+            { role: "system", content: opts.system },
+            { role: "user", content: opts.user },
+          ],
+          callConfig(opts.signal),
+        ),
       this.specFor(opts.model, opts.maxTokens !== undefined ? { maxTokens: opts.maxTokens } : {}),
+      opts.signal,
     );
 
     const parsed: z.infer<T> = opts.schema.parse(result.parsed);
@@ -301,7 +320,7 @@ export class LlmService {
   }
 
   async invokeStructuredWithImageWithUsage<T extends z.ZodTypeAny>(
-    opts: InvokeWithImageOptions<T> & { maxTokens?: number },
+    opts: InvokeWithImageOptions<T> & { maxTokens?: number; signal?: AbortSignal },
   ): Promise<LlmStructuredResult<z.infer<T>>> {
     if (opts.images.length === 0) return this.invokeStructuredWithUsage(opts);
 
@@ -309,11 +328,15 @@ export class LlmService {
     const { result, model } = await this.attempt(
       opts.model,
       (client) =>
-        this.structured(client, opts, true).invoke([
-          new SystemMessage(opts.system),
-          new HumanMessage({ content: humanContent }),
-        ]),
+        this.structured(client, opts, true).invoke(
+          [
+            new SystemMessage(opts.system),
+            new HumanMessage({ content: humanContent }),
+          ],
+          callConfig(opts.signal),
+        ),
       this.specFor(opts.model, opts.maxTokens !== undefined ? { maxTokens: opts.maxTokens } : {}),
+      opts.signal,
     );
 
     const parsed: z.infer<T> = opts.schema.parse(result.parsed);

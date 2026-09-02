@@ -265,7 +265,7 @@ describe("WorkflowAiNodeHandler", () => {
       });
 
       expect(result).toMatchObject({ ok: true });
-      expect(mockJobs.complete).toHaveBeenCalledWith(JOB_ID, expect.any(Object));
+      expect(mockJobs.complete).toHaveBeenCalledWith(ORG_ID, JOB_ID, expect.any(Object));
     });
   });
 
@@ -287,7 +287,7 @@ describe("WorkflowAiNodeHandler", () => {
       });
 
       expect(result).toMatchObject({ ok: false });
-      expect(mockJobs.fail).toHaveBeenCalledWith(JOB_ID, expect.any(String));
+      expect(mockJobs.fail).toHaveBeenCalledWith(ORG_ID, JOB_ID, expect.any(String));
     });
 
     it("passes the error message to jobs.fail() so the job is retried or dead-lettered", async () => {
@@ -305,7 +305,7 @@ describe("WorkflowAiNodeHandler", () => {
       });
 
       expect(result).toMatchObject({ ok: false });
-      expect(mockJobs.fail).toHaveBeenCalledWith(JOB_ID, "gateway unavailable");
+      expect(mockJobs.fail).toHaveBeenCalledWith(ORG_ID, JOB_ID, "gateway unavailable");
     });
   });
 

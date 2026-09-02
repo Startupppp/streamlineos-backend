@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Inject } from "@nestjs/common";
-import { and, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, gt } from "drizzle-orm";
 import { kbArticles, kbArticleChunks, kbArticleAttachments } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -8,6 +8,7 @@ import { sql } from "drizzle-orm";
 import { KbIndexingService } from "./kb-indexing.service";
 import { KbAttachmentIndexingService } from "./kb-attachment-indexing.service";
 
+const REINDEX_BATCH_SIZE = 100;
 const REINDEX_CONCURRENCY = 4;
 
 @Injectable()
@@ -18,23 +19,35 @@ export class KbArticleReindexService {
     private readonly attachmentIndexing: KbAttachmentIndexingService,
   ) {}
 
-  async reindexAll(orgId: string): Promise<{
+  async reindexAll(orgId: string, afterArticleId = 0): Promise<{
     total: number;
     indexed: number;
     totalChunks: number;
     failures: { articleId: number; error: string }[];
+    nextArticleId: number | null;
   }> {
-    const articles = await this.db.query.kbArticles.findMany({
-      where: and(eq(kbArticles.orgId, orgId), eq(kbArticles.status, "published")),
-      columns: { id: true },
-    });
+    const articles = await this.db
+      .select({ id: kbArticles.id })
+      .from(kbArticles)
+      .where(
+        and(
+          eq(kbArticles.orgId, orgId),
+          eq(kbArticles.status, "published"),
+          gt(kbArticles.id, afterArticleId),
+        ),
+      )
+      .orderBy(asc(kbArticles.id))
+      .limit(REINDEX_BATCH_SIZE + 1);
+
+    const batch = articles.slice(0, REINDEX_BATCH_SIZE);
+    const nextArticleId = articles.length > REINDEX_BATCH_SIZE ? (batch.at(-1)?.id ?? null) : null;
 
     const failures: { articleId: number; error: string }[] = [];
     let indexed = 0;
-    for (let i = 0; i < articles.length; i += REINDEX_CONCURRENCY) {
-      const batch = articles.slice(i, i + REINDEX_CONCURRENCY);
+    for (let i = 0; i < batch.length; i += REINDEX_CONCURRENCY) {
+      const chunk = batch.slice(i, i + REINDEX_CONCURRENCY);
       const results = await Promise.all(
-        batch.map(async (article) => {
+        chunk.map(async (article) => {
           try {
             await this.reindexArticle(orgId, article.id);
             return { ok: true as const };
@@ -58,7 +71,7 @@ export class KbArticleReindexService {
       .from(kbArticleChunks)
       .where(eq(kbArticleChunks.orgId, orgId));
 
-    return { total: articles.length, indexed, totalChunks: row?.chunks ?? 0, failures };
+    return { total: batch.length, indexed, totalChunks: row?.chunks ?? 0, failures, nextArticleId };
   }
 
   async reindexArticle(

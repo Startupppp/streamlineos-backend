@@ -3,7 +3,8 @@ import { KbSearchService } from "./kb-search.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { eq, type SQL } from "drizzle-orm";
+import { kbArticleChunks, kbArticles } from "../../../db/schema";
 
 const dialect = new PgDialect();
 
@@ -84,17 +85,11 @@ describe("KB ACL revision gate — null revision is fail-closed", () => {
     expect(sqlNullEqualsNonNull).toBe(false);
   });
 
-  it("a chunk with null aclRevision cannot match an article with null aclRevision — both NULL does NOT pass innerJoin (NULL=NULL is NULL in SQL)", () => {
-    const chunkRevision: number | null = null;
-    const articleRevision: number | null = null;
-    const strictEquality = chunkRevision === articleRevision;
-    expect(strictEquality).toBe(true);
-  });
-
-  it("innerJoin excludes NULL=NULL at the DB level so stale unindexed chunks with null revision are denied — spec proves intent", () => {
-    const revision: number | null = null;
-    const isUnindexed = revision === null;
-    expect(isUnindexed).toBe(true);
+  it("aclRevision join predicate emits '=' not 'IS NOT DISTINCT FROM' — NULL=NULL yields SQL-NULL so the innerJoin denies stale chunks", () => {
+    const cond = eq(kbArticleChunks.aclRevision, kbArticles.aclRevision);
+    const rendered = renderSql(cond);
+    expect(rendered).toContain("acl_revision");
+    expect(rendered).not.toMatch(/IS NOT DISTINCT FROM/i);
   });
 });
 

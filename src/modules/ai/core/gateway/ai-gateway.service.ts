@@ -14,6 +14,7 @@ import {
 import { AiGatewayCreditHelper } from "./ai-gateway-credit.helper";
 import { AiGatewayRunnerHelper } from "./ai-gateway-runner.helper";
 import { AiResponseCacheService } from "./ai-response-cache.service";
+import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
 import type {
   AiInvokeResult,
   AiInvokeWithUsageResult,
@@ -31,10 +32,10 @@ export type {
   InvokeTextOpts,
 };
 
-function resolveCacheOpts(cache: boolean | AiResponseCacheOpts | undefined): AiResponseCacheOpts | null {
-  if (!cache) return null;
-  if (cache === true) return {};
-  return cache;
+const CONCURRENCY_EXCEEDED_MESSAGE = "Too many concurrent AI requests for this organization";
+
+function resolveCacheOpts(cache: AiResponseCacheOpts | undefined): AiResponseCacheOpts | null {
+  return cache ?? null;
 }
 
 @Injectable()
@@ -51,6 +52,7 @@ export class AiGatewayService {
     private readonly audit: AuditService,
     @Inject(AI_CREDIT_LEDGER) private readonly ledger: AiCreditLedger,
     private readonly responseCache: AiResponseCacheService,
+    private readonly concurrencyLimiter: AiConcurrencyLimiter,
   ) {
     const credit = new AiGatewayCreditHelper(ledger, usageSvc, audit);
     this.runner = new AiGatewayRunnerHelper(llm, credit);
@@ -68,68 +70,100 @@ export class AiGatewayService {
       if (inflight) return inflight as Promise<AiInvokeResult<T>>;
     }
 
-    const invoke = () => {
-      const promise = this.runner.runStructured(opts, correlationId);
-      if (dedupeKey) {
-        this.inflightMap.set(dedupeKey, promise as Promise<AiInvokeResult<unknown>>);
-        promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
+    const runLimited = async (): Promise<AiInvokeResult<T>> => {
+      const allowed = await this.concurrencyLimiter.acquire(opts.actor.orgId);
+      if (!allowed) return { ok: false, kind: "concurrency_exceeded", message: CONCURRENCY_EXCEEDED_MESSAGE, correlationId };
+      try {
+        return await this.runner.runStructured(opts, correlationId);
+      } finally {
+        this.concurrencyLimiter.release(opts.actor.orgId);
       }
-      return promise;
     };
+
+    if (dedupeKey && cacheOpts) {
+      return this.responseCache.cachedInvoke<T>(opts.actor.orgId, {
+        feature: opts.feature, tier: opts.tier,
+        promptSystem: opts.prompt.system, promptUser: opts.prompt.user, ...cacheOpts,
+      }, async () => {
+        const promise = runLimited();
+        this.inflightMap.set(dedupeKey, promise as Promise<AiInvokeResult<unknown>>);
+        promise.finally(() => this.inflightMap.delete(dedupeKey!)).catch(() => undefined);
+        return promise;
+      });
+    }
+
+    if (dedupeKey) {
+      const promise = runLimited();
+      this.inflightMap.set(dedupeKey, promise as Promise<AiInvokeResult<unknown>>);
+      promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
+      return promise;
+    }
 
     if (cacheOpts) {
       return this.responseCache.cachedInvoke<T>(opts.actor.orgId, {
-        feature: opts.feature,
-        tier: opts.tier,
-        promptSystem: opts.prompt.system,
-        promptUser: opts.prompt.user,
-        ...cacheOpts,
-      }, invoke);
+        feature: opts.feature, tier: opts.tier,
+        promptSystem: opts.prompt.system, promptUser: opts.prompt.user, ...cacheOpts,
+      }, runLimited);
     }
 
-    return invoke();
+    return runLimited();
   }
 
   async invokeStructuredWithUsage<T>(
     opts: InvokeStructuredOpts<T>,
   ): Promise<AiInvokeWithUsageResult<T>> {
     const correlationId = randomUUID();
-    return this.runner.runStructuredWithUsage(opts, correlationId);
+    const allowed = await this.concurrencyLimiter.acquire(opts.actor.orgId);
+    if (!allowed) return { ok: false, kind: "concurrency_exceeded", message: CONCURRENCY_EXCEEDED_MESSAGE, correlationId };
+    try {
+      return await this.runner.runStructuredWithUsage(opts, correlationId);
+    } finally {
+      this.concurrencyLimiter.release(opts.actor.orgId);
+    }
   }
 
   async invokeStructuredWithImage<T>(
     opts: InvokeStructuredWithImageOpts<T>,
   ): Promise<AiInvokeResult<T>> {
     const correlationId = randomUUID();
-    return this.runner.runStructuredWithImage(opts, correlationId);
+    const allowed = await this.concurrencyLimiter.acquire(opts.actor.orgId);
+    if (!allowed) return { ok: false, kind: "concurrency_exceeded", message: CONCURRENCY_EXCEEDED_MESSAGE, correlationId };
+    try {
+      return await this.runner.runStructuredWithImage(opts, correlationId);
+    } finally {
+      this.concurrencyLimiter.release(opts.actor.orgId);
+    }
   }
 
   async invokeStructuredWithImageWithUsage<T>(
     opts: InvokeStructuredWithImageOpts<T>,
   ): Promise<AiInvokeWithUsageResult<T>> {
     const correlationId = randomUUID();
-    const result = await this.runner.runStructuredWithImage(
-      opts,
-      correlationId,
-    );
-    if (!result.ok) return result;
+    const allowed = await this.concurrencyLimiter.acquire(opts.actor.orgId);
+    if (!allowed) return { ok: false, kind: "concurrency_exceeded", message: CONCURRENCY_EXCEEDED_MESSAGE, correlationId };
+    try {
+      const result = await this.runner.runStructuredWithImage(opts, correlationId);
+      if (!result.ok) return result;
 
-    const { costUsd, milliCredits } = computeTokenCharge(
-      result.model,
-      result.usage.promptTokens ?? 0,
-      result.usage.completionTokens ?? 0,
-    );
+      const { costUsd, milliCredits } = computeTokenCharge(
+        result.model,
+        result.usage.promptTokens ?? 0,
+        result.usage.completionTokens ?? 0,
+      );
 
-    const aiUsage: AiUsageMeta = {
-      model: result.model,
-      promptTokens: result.usage.promptTokens ?? 0,
-      completionTokens: result.usage.completionTokens ?? 0,
-      totalTokens: result.usage.totalTokens ?? 0,
-      credits: milliToCredits(milliCredits),
-      costUsd,
-    };
+      const aiUsage: AiUsageMeta = {
+        model: result.model,
+        promptTokens: result.usage.promptTokens ?? 0,
+        completionTokens: result.usage.completionTokens ?? 0,
+        totalTokens: result.usage.totalTokens ?? 0,
+        credits: milliToCredits(milliCredits),
+        costUsd,
+      };
 
-    return { ok: true, data: result.data, aiUsage };
+      return { ok: true, data: result.data, aiUsage };
+    } finally {
+      this.concurrencyLimiter.release(opts.actor.orgId);
+    }
   }
 
   async invokeText(opts: InvokeTextOpts): Promise<AiInvokeResult<string>> {
@@ -142,33 +176,56 @@ export class AiGatewayService {
       if (inflight) return inflight as Promise<AiInvokeResult<string>>;
     }
 
-    const invoke = () => {
-      const promise = this.runner.runText(opts, correlationId);
-      if (dedupeKey) {
-        this.inflightMap.set(dedupeKey, promise as Promise<AiInvokeResult<unknown>>);
-        promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
+    const runLimited = async (): Promise<AiInvokeResult<string>> => {
+      const allowed = await this.concurrencyLimiter.acquire(opts.actor.orgId);
+      if (!allowed) return { ok: false, kind: "concurrency_exceeded", message: CONCURRENCY_EXCEEDED_MESSAGE, correlationId };
+      try {
+        return await this.runner.runText(opts, correlationId);
+      } finally {
+        this.concurrencyLimiter.release(opts.actor.orgId);
       }
-      return promise;
     };
+
+    if (dedupeKey && cacheOpts) {
+      return this.responseCache.cachedInvoke<string>(opts.actor.orgId, {
+        feature: opts.feature, tier: opts.tier,
+        promptSystem: opts.prompt.system, promptUser: opts.prompt.user, ...cacheOpts,
+      }, async () => {
+        const promise = runLimited();
+        this.inflightMap.set(dedupeKey, promise as Promise<AiInvokeResult<unknown>>);
+        promise.finally(() => this.inflightMap.delete(dedupeKey!)).catch(() => undefined);
+        return promise;
+      });
+    }
+
+    if (dedupeKey) {
+      const promise = runLimited();
+      this.inflightMap.set(dedupeKey, promise as Promise<AiInvokeResult<unknown>>);
+      promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
+      return promise;
+    }
 
     if (cacheOpts) {
       return this.responseCache.cachedInvoke<string>(opts.actor.orgId, {
-        feature: opts.feature,
-        tier: opts.tier,
-        promptSystem: opts.prompt.system,
-        promptUser: opts.prompt.user,
-        ...cacheOpts,
-      }, invoke);
+        feature: opts.feature, tier: opts.tier,
+        promptSystem: opts.prompt.system, promptUser: opts.prompt.user, ...cacheOpts,
+      }, runLimited);
     }
 
-    return invoke();
+    return runLimited();
   }
 
   async invokeTextWithUsage(
     opts: InvokeTextOpts,
   ): Promise<AiInvokeWithUsageResult<string>> {
     const correlationId = randomUUID();
-    return this.runner.runTextWithUsage(opts, correlationId);
+    const allowed = await this.concurrencyLimiter.acquire(opts.actor.orgId);
+    if (!allowed) return { ok: false, kind: "concurrency_exceeded", message: CONCURRENCY_EXCEEDED_MESSAGE, correlationId };
+    try {
+      return await this.runner.runTextWithUsage(opts, correlationId);
+    } finally {
+      this.concurrencyLimiter.release(opts.actor.orgId);
+    }
   }
 }
 

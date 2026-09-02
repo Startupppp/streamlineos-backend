@@ -19,7 +19,7 @@ import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { AccessService } from "../../access/access.service";
 
 const KB_MANAGE_SPACES = "kb:spaces:manage";
-const KB_SPACE_VIEWER_PERMISSION = "kb:space:viewer";
+const KB_SPACE_VIEWER_PERMISSION = "kb:spaces:view";
 
 @Injectable()
 export class KbAccessService {

@@ -6,12 +6,18 @@ import type { AiInvokeResult } from "./ai-gateway.types";
 const AI_RESPONSE_NAMESPACE = "ai:responses:v1";
 const CACHE_TTL_SECONDS = 3_600;
 
+class UncacheableAiFailure extends Error {
+  constructor(readonly outcome: AiInvokeResult<unknown>) {
+    super("ai invoke failed");
+  }
+}
+
 export interface AiCacheParams {
   feature: string;
   tier?: string;
   promptSystem: string;
   promptUser: string;
-  aclVersion?: string;
+  aclVersion: string;
   sourceRevision?: string;
   policy?: string;
 }
@@ -25,8 +31,12 @@ export class AiResponseCacheService {
       .update(params.promptSystem)
       .update(params.promptUser)
       .digest("hex");
-    const parts = [params.feature, params.tier ?? "fast", promptHash];
-    if (params.aclVersion) parts.push(`acl:${params.aclVersion}`);
+    const parts = [
+      params.feature,
+      params.tier ?? "fast",
+      promptHash,
+      `acl:${params.aclVersion}`,
+    ];
     if (params.sourceRevision) parts.push(`src:${params.sourceRevision}`);
     if (params.policy) parts.push(`pol:${params.policy}`);
     return parts.join(":");
@@ -37,14 +47,30 @@ export class AiResponseCacheService {
     params: AiCacheParams,
     fetcher: () => Promise<AiInvokeResult<T>>,
   ): Promise<AiInvokeResult<T>> {
+    if (!params.aclVersion)
+      throw new Error(
+        "AI response caching requires an aclVersion — an ACL-blind key serves restricted content to the next reader",
+      );
+
     const localKey = this.buildLocalKey(params);
-    return this.cache.cachedVersionedForOrg<AiInvokeResult<T>>(
-      orgId,
-      AI_RESPONSE_NAMESPACE,
-      localKey,
-      fetcher,
-      CACHE_TTL_SECONDS,
-    );
+
+    try {
+      return await this.cache.cachedVersionedForOrg<AiInvokeResult<T>>(
+        orgId,
+        AI_RESPONSE_NAMESPACE,
+        localKey,
+        async () => {
+          const outcome = await fetcher();
+          if (!outcome.ok) throw new UncacheableAiFailure(outcome);
+          return outcome;
+        },
+        CACHE_TTL_SECONDS,
+      );
+    } catch (error) {
+      if (error instanceof UncacheableAiFailure)
+        return error.outcome as AiInvokeResult<T>;
+      throw error;
+    }
   }
 
   async invalidate(orgId: string): Promise<void> {

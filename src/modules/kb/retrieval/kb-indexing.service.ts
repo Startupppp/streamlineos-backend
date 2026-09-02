@@ -104,7 +104,7 @@ export class KbIndexingService {
         embeddings.push(hit);
         continue;
       }
-      const emb = await this.embeddings.embedQuery(chunks[i]);
+      const emb = await this.embeddings.embedQuery(chunks[i], orgId, "kb.indexing");
       if (signal?.aborted) throw new DOMException("KB ingestion cancelled", "AbortError");
       await this.checkpoint.saveCheckpoint(
         orgId,

@@ -34,6 +34,7 @@ import {
   listPagesSchema,
   setVisibilitySchema,
   verifyPageSchema,
+  listVersionsQuerySchema,
   type CreatePageInput,
   type UpdatePageInput,
   type MovePageInput,
@@ -42,13 +43,21 @@ import {
   type ListPagesInput,
   type SetVisibilityInput,
   type VerifyPageInput,
+  type ListVersionsQuery,
 } from "./dto/kb-pages.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
-const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
-const pageIdversionNumberParams = z.object({ pageId: z.coerce.number().int().positive(), versionNumber: z.coerce.number().int().positive() }).strict();
+const pageIdParams = z
+  .object({ pageId: z.coerce.number().int().positive() })
+  .strict();
+const pageIdversionNumberParams = z
+  .object({
+    pageId: z.coerce.number().int().positive(),
+    versionNumber: z.coerce.number().int().positive(),
+  })
+  .strict();
 
 @Controller("kb")
 @RequireModule("kb")
@@ -246,12 +255,13 @@ export class KbPagesController {
 
   @Get("pages/:pageId/versions")
   @RequirePermission("kb:pages:view")
-  @Validate({ params: pageIdParams })
+  @Validate({ params: pageIdParams, query: listVersionsQuerySchema })
   async listVersions(
     @Param("pageId", ParseIntPipe) pageId: number,
+    @Query() query: ListVersionsQuery,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<unknown> {
-    return this.versions.listVersions(u, pageId);
+    return this.versions.listVersions(u, pageId, query.cursor, query.pageSize);
   }
 
   @Get("pages/:pageId/versions/:versionNumber")

@@ -104,16 +104,16 @@ export class AiJobsService {
     }));
   }
 
-  async complete(jobId: number, result: Record<string, unknown>): Promise<void> {
+  async complete(orgId: string, jobId: number, result: Record<string, unknown>): Promise<void> {
     await this.db
       .update(aiJobs)
       .set({ status: "COMPLETED", result, lockedBy: null, lockedAt: null })
-      .where(eq(aiJobs.id, jobId));
+      .where(and(eq(aiJobs.id, jobId), eq(aiJobs.orgId, orgId)));
   }
 
-  async fail(jobId: number, error: string): Promise<void> {
+  async fail(orgId: string, jobId: number, error: string): Promise<void> {
     const job = await this.db.query.aiJobs.findFirst({
-      where: eq(aiJobs.id, jobId),
+      where: and(eq(aiJobs.id, jobId), eq(aiJobs.orgId, orgId)),
     });
     if (!job) return;
 
@@ -122,7 +122,7 @@ export class AiJobsService {
       await this.db
         .update(aiJobs)
         .set({ status: "DEAD", attempts: nextAttempts, lastError: error, lockedBy: null, lockedAt: null })
-        .where(eq(aiJobs.id, jobId));
+        .where(and(eq(aiJobs.id, jobId), eq(aiJobs.orgId, orgId)));
       return;
     }
 
@@ -138,7 +138,7 @@ export class AiJobsService {
         lockedBy: null,
         lockedAt: null,
       })
-      .where(eq(aiJobs.id, jobId));
+      .where(and(eq(aiJobs.id, jobId), eq(aiJobs.orgId, orgId)));
   }
 
   async cancel(orgId: string, jobId: number): Promise<void> {

@@ -15,6 +15,11 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import { resyncPageLinks, snapshotIfNeeded } from "./kb-page-edit.util";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { keysetBeforeValue } from "../../../common/pagination/keyset";
+
+const PAGE_SIZE = 50;
+const PAGE_SIZE_CAP = 100;
 
 type PageRow = typeof kbPages.$inferSelect;
 
@@ -37,16 +42,30 @@ const VERSION_COLUMNS = {
 export class KbPageVersionsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async listVersions(user: CurrentUserContext, pageId: number) {
+  async listVersions(user: CurrentUserContext, pageId: number, cursor?: string, pageSize = PAGE_SIZE) {
     const orgId = user.orgId;
+    const limit = Math.min(Math.max(pageSize, 1), PAGE_SIZE_CAP);
     await assertPageAccessible(this.db, user, pageId);
-    return this.db
+    const position = decodeCursor(cursor);
+    const rows = await this.db
       .select(VERSION_COLUMNS)
       .from(kbPageVersions)
       .leftJoin(users, eq(kbPageVersions.authorId, users.id))
-      .where(and(eq(kbPageVersions.pageId, pageId), eq(kbPageVersions.orgId, orgId)))
-      .orderBy(desc(kbPageVersions.versionNumber))
-      .limit(100);
+      .where(
+        position
+          ? and(
+              eq(kbPageVersions.pageId, pageId),
+              eq(kbPageVersions.orgId, orgId),
+              keysetBeforeValue(kbPageVersions.versionNumber, kbPageVersions.id, position),
+            )
+          : and(eq(kbPageVersions.pageId, pageId), eq(kbPageVersions.orgId, orgId)),
+      )
+      .orderBy(desc(kbPageVersions.versionNumber), desc(kbPageVersions.id))
+      .limit(limit + 1);
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: String(row.versionNumber),
+      id: String(row.id),
+    }));
   }
 
   async getVersion(user: CurrentUserContext, pageId: number, versionNumber: number) {

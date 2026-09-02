@@ -15,7 +15,11 @@ import { kbSources } from "../../../db/schema";
 import { StorageService } from "../../storage/storage.service";
 import { validateMagicBytes } from "../../storage/file-signatures";
 import { KbAttachmentIndexingService } from "../retrieval/kb-attachment-indexing.service";
-import { isExtractableMime, extractAttachmentText } from "../retrieval/kb-attachment-extract.util";
+import {
+  isExtractableMime,
+  extractAttachmentText,
+} from "../retrieval/kb-attachment-extract.util";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import type { CreateKbSourceNoteInput } from "./dto/kb-sources.schemas";
 import { APP_CONFIG } from "../../../config/config.module";
 import type { AppConfig } from "../../../config/env.validation";
@@ -77,7 +81,10 @@ export class KbSourcesService {
     if (!row) {
       throw new InternalServerErrorException("Insert failed");
     }
-    void this.processText(user.orgId, row.id, input.text);
+    const textDeferred = registerAfterCommit(async () => {
+      await this.processText(user.orgId, row.id, input.text);
+    });
+    if (!textDeferred) await this.processText(user.orgId, row.id, input.text);
     return row;
   }
 
@@ -107,7 +114,10 @@ export class KbSourcesService {
       throw new BadRequestException("File exceeds the 25 MB limit");
     }
 
-    if (!mimetype.startsWith("text/") && !validateMagicBytes(buffer, mimetype)) {
+    if (
+      !mimetype.startsWith("text/") &&
+      !validateMagicBytes(buffer, mimetype)
+    ) {
       throw new BadRequestException(
         "File content does not match declared type",
       );
@@ -145,7 +155,11 @@ export class KbSourcesService {
     if (!row) {
       throw new InternalServerErrorException("Insert failed");
     }
-    void this.processFile(user.orgId, row.id, buffer, mimetype);
+    const fileDeferred = registerAfterCommit(async () => {
+      await this.processFile(user.orgId, row.id, buffer, mimetype);
+    });
+    if (!fileDeferred)
+      await this.processFile(user.orgId, row.id, buffer, mimetype);
     return row;
   }
 
@@ -184,7 +198,11 @@ export class KbSourcesService {
     text: string,
   ): Promise<void> {
     try {
-      const count = await this.attachmentIndexing.indexSource(orgId, sourceId, text);
+      const count = await this.attachmentIndexing.indexSource(
+        orgId,
+        sourceId,
+        text,
+      );
       await this.db
         .update(kbSources)
         .set({
@@ -192,19 +210,13 @@ export class KbSourcesService {
           chunkCount: count,
           errorMessage: count > 0 ? null : "No indexable text",
         })
-        .where(
-          and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)),
-        );
+        .where(and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)));
     } catch (err) {
-      this.logger.error(
-        `Failed to index source ${sourceId}: ${String(err)}`,
-      );
+      this.logger.error(`Failed to index source ${sourceId}: ${String(err)}`);
       await this.db
         .update(kbSources)
         .set({ status: "failed", errorMessage: "Indexing failed" })
-        .where(
-          and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)),
-        )
+        .where(and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)))
         .catch(() => undefined);
     }
   }
@@ -219,9 +231,7 @@ export class KbSourcesService {
       await this.db
         .update(kbSources)
         .set({ status: "failed", errorMessage: "Unsupported file type" })
-        .where(
-          and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)),
-        )
+        .where(and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)))
         .catch(() => undefined);
       return;
     }
@@ -235,9 +245,7 @@ export class KbSourcesService {
       await this.db
         .update(kbSources)
         .set({ status: "failed", errorMessage: "Could not read file" })
-        .where(
-          and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)),
-        )
+        .where(and(eq(kbSources.id, sourceId), eq(kbSources.orgId, orgId)))
         .catch(() => undefined);
     }
   }

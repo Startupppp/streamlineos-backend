@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { kbArticleChunks, kbArticleAttachments } from "../../../db/schema";
+import { kbArticleChunks, kbArticleAttachments, kbPages } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -14,6 +14,8 @@ import {
 } from "./kb-attachment-extract.util";
 import { chunkText, streamToBuffer } from "./kb-chunk-utils";
 
+const EMBED_BATCH_SIZE = 64;
+
 @Injectable()
 export class KbAttachmentIndexingService {
   private readonly logger = new Logger(KbAttachmentIndexingService.name);
@@ -23,6 +25,15 @@ export class KbAttachmentIndexingService {
     private readonly embeddings: EmbeddingsService,
     private readonly storage: StorageService,
   ) {}
+
+  private async embedInBatches(orgId: string, chunks: string[], feature = "kb.indexing"): Promise<number[][]> {
+    const result: number[][] = [];
+    for (let i = 0; i < chunks.length; i += EMBED_BATCH_SIZE) {
+      const batchEmbeddings = await this.embeddings.embedBatch(chunks.slice(i, i + EMBED_BATCH_SIZE), orgId, feature);
+      result.push(...batchEmbeddings);
+    }
+    return result;
+  }
 
   async indexSource(
     orgId: string,
@@ -37,9 +48,7 @@ export class KbAttachmentIndexingService {
       return 0;
     }
 
-    const embeddings = await Promise.all(
-      chunks.map((c) => this.embeddings.embedQuery(c)),
-    );
+    const embeddings = await this.embedInBatches(orgId, chunks);
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -134,9 +143,7 @@ export class KbAttachmentIndexingService {
       return { chunks: 0, warning: `${attachment.fileName}: no extractable text` };
     }
 
-    const embeddings = await Promise.all(
-      chunks.map((c) => this.embeddings.embedQuery(c)),
-    );
+    const embeddings = await this.embedInBatches(orgId, chunks);
 
     await this.db.transaction(async (tx) => {
       await tx
@@ -192,6 +199,19 @@ export class KbAttachmentIndexingService {
     if (!this.embeddings.isConfigured() || !isExtractableMime(mimeType))
       return { chunks: 0, warning: null };
 
+    const page = await this.db.query.kbPages.findFirst({
+      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)),
+      columns: {
+        visibility: true,
+        projectId: true,
+        createdById: true,
+        createdByMembershipId: true,
+        aclRevision: true,
+      },
+    });
+
+    if (!page) return { chunks: 0, warning: null };
+
     let text: string;
     try {
       text = await extractAttachmentText(buffer, mimeType);
@@ -206,24 +226,39 @@ export class KbAttachmentIndexingService {
     if (chunks.length === 0)
       return { chunks: 0, warning: `${fileName}: no extractable text` };
 
-    const embeddings = await Promise.all(
-      chunks.map((c) => this.embeddings.embedQuery(c)),
-    );
+    const embeddings = await this.embedInBatches(orgId, chunks);
 
-    const valuesToInsert = chunks.map((chunk, index) => ({
-      orgId,
-      articleId: null,
-      pageId,
-      attachmentId: null,
-      source: "attachment" as const,
-      chunkIndex: index,
-      content: chunk,
-      tokens: Math.ceil(chunk.length / 4),
-      embedding: embeddings[index],
-      embeddingModel: EMBEDDING_MODEL,
-    }));
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(kbArticleChunks)
+        .where(
+          and(
+            eq(kbArticleChunks.pageId, pageId),
+            eq(kbArticleChunks.orgId, orgId),
+            eq(kbArticleChunks.source, "attachment"),
+          ),
+        );
 
-    await this.db.insert(kbArticleChunks).values(valuesToInsert);
+      await tx.insert(kbArticleChunks).values(
+        chunks.map((chunk, index) => ({
+          orgId,
+          articleId: null,
+          pageId,
+          attachmentId: null,
+          source: "attachment" as const,
+          chunkIndex: index,
+          content: chunk,
+          tokens: Math.ceil(chunk.length / 4),
+          embedding: embeddings[index],
+          embeddingModel: EMBEDDING_MODEL,
+          pageVisibility: page.visibility,
+          pageProjectId: page.projectId,
+          pageCreatedById: page.createdById,
+          pageCreatedByMembershipId: page.createdByMembershipId,
+          aclRevision: page.aclRevision,
+        })),
+      );
+    });
 
     return { chunks: chunks.length, warning: null };
   }

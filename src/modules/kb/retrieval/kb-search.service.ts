@@ -140,7 +140,7 @@ export class KbSearchService {
     let vectorLiteral: string | null = null;
     if (this.embeddings.isConfigured() && (await this.candidates.hasEmbeddedChunks(user.orgId))) {
       try {
-        vectorLiteral = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(q));
+        vectorLiteral = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(q, user.orgId, "kb.search"));
       } catch (err: unknown) {
         vectorLiteral = null;
         logSideEffectFailure("kb semantic search embedding", { orgId: user.orgId })(err);
@@ -248,7 +248,7 @@ export class KbSearchService {
       return "";
     }
     try {
-      const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
+      const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query, user.orgId, "kb.search"));
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const scope: SQL[] = [];
       if (articleIds.length > 0)
@@ -295,7 +295,7 @@ export class KbSearchService {
     if (!(await this.candidates.hasEmbeddedChunks(user.orgId))) return [];
     try {
       const accessibleSpaceIds = await this.access.getAccessibleSpaceIds(user);
-      const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query));
+      const vector = this.embeddings.toVectorLiteral(await this.embeddings.embedQuery(query, user.orgId, "kb.search"));
 
       const cap = limit * 4;
       const chunkIds = await this.candidates.vectorChunkIds(vector, cap);
@@ -320,6 +320,7 @@ export class KbSearchService {
         .where(
           and(
             inArray(kbArticleChunks.id, chunkIds),
+            eq(kbArticleChunks.orgId, user.orgId),
             eq(kbArticleChunks.source, "source"),
             isNull(kbSources.deletedAt),
             eq(kbSources.status, "ready"),

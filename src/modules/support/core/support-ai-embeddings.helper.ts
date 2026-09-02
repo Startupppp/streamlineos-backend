@@ -3,7 +3,10 @@ import { and, eq, ne, or, sql, type SQL } from "drizzle-orm";
 import { supportTicketEmbeddings, supportTickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { EmbeddingsService, EMBEDDING_MODEL } from "../../ai/core/providers/embeddings.service";
+import {
+  EmbeddingsService,
+  EMBEDDING_MODEL,
+} from "../../ai/core/providers/embeddings.service";
 import { redactSensitiveData } from "../../ai/core/redaction.util";
 
 const DUPLICATE_SIMILARITY_THRESHOLD = 0.86;
@@ -30,22 +33,38 @@ export class SupportAiEmbeddingsHelper {
     limit: number,
   ): Promise<EmbeddingCandidate[]> {
     const text = redactSensitiveData(`${title}\n${description ?? ""}`.trim());
-    const vector = await this.embeddings.embedQuery(text);
+    const vector = await this.embeddings.embedQuery(
+      text,
+      orgId,
+      "support.embedding",
+    );
     const vectorLiteral = this.embeddings.toVectorLiteral(vector);
 
     await this.db
       .insert(supportTicketEmbeddings)
-      .values({ orgId, ticketId, embedding: vector, embeddingModel: EMBEDDING_MODEL })
+      .values({
+        orgId,
+        ticketId,
+        embedding: vector,
+        embeddingModel: EMBEDDING_MODEL,
+      })
       .onConflictDoUpdate({
         target: supportTicketEmbeddings.ticketId,
-        set: { embedding: vector, embeddingModel: EMBEDDING_MODEL, updatedAt: new Date() },
+        set: {
+          embedding: vector,
+          embeddingModel: EMBEDDING_MODEL,
+          updatedAt: new Date(),
+        },
       });
 
     const distance = sql`${supportTicketEmbeddings.embedding} <=> ${vectorLiteral}::vector`;
     const conditions: SQL[] = [
       eq(supportTicketEmbeddings.orgId, orgId),
       ne(supportTicketEmbeddings.ticketId, ticketId),
-      or(eq(supportTickets.status, "OPEN"), eq(supportTickets.status, "IN_PROGRESS"))!,
+      or(
+        eq(supportTickets.status, "OPEN"),
+        eq(supportTickets.status, "IN_PROGRESS"),
+      )!,
     ];
 
     return this.db
@@ -55,7 +74,10 @@ export class SupportAiEmbeddingsHelper {
         similarity: sql<number>`(1 - (${distance}))::float8`,
       })
       .from(supportTicketEmbeddings)
-      .innerJoin(supportTickets, eq(supportTickets.id, supportTicketEmbeddings.ticketId))
+      .innerJoin(
+        supportTickets,
+        eq(supportTickets.id, supportTicketEmbeddings.ticketId),
+      )
       .where(and(...conditions))
       .orderBy(distance)
       .limit(limit);

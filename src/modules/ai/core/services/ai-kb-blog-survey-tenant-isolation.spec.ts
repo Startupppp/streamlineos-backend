@@ -143,7 +143,7 @@ describe("KbRagService tenant isolation", () => {
     const result = await svc.answerQuestion({ orgId: OWNER_ORG, question: "What is X?" });
 
     expect(result.hasContext).toBe(true);
-    expect(mockEmbeddings.embedQuery).toHaveBeenCalledWith("What is X?");
+    expect(mockEmbeddings.embedQuery).toHaveBeenCalledWith("What is X?", OWNER_ORG, "kb.public-rag");
 
     // The chunk query's where predicate must scope to OWNER_ORG.
     const whereArg = fetchChunksChain.where.mock.calls[0]?.[0];

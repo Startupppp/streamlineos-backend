@@ -372,3 +372,65 @@ describe("ChatAssistantService — streaming transaction isolation", () => {
     );
   });
 });
+
+describe("ChatAssistantService — settle/release determinism (item 1)", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it("finishReason resolving BEFORE onFinish does not release — only onFinish settles", async () => {
+    const ledger = makeLedger();
+    let capturedOnFinish:
+      | ((opts: { text: string; usage?: { inputTokens?: number; outputTokens?: number } }) => Promise<void>)
+      | undefined;
+    let finishResolve!: (v: string) => void;
+    const finishReason = new Promise<string>((resolve) => { finishResolve = resolve; });
+
+    (streamText as jest.Mock).mockImplementation((opts: { onFinish?: typeof capturedOnFinish }) => {
+      capturedOnFinish = opts.onFinish;
+      return { finishReason };
+    });
+
+    const { svc } = buildService(ledger);
+    await svc.processChat([{ role: "user", content: "hi" }], ACTOR);
+
+    finishResolve("stop");
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(ledger.settle).not.toHaveBeenCalled();
+    expect(ledger.release).not.toHaveBeenCalled();
+
+    await capturedOnFinish?.({ text: "reply", usage: { inputTokens: 10, outputTokens: 5 } });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(ledger.settle).toHaveBeenCalledTimes(1);
+    expect(ledger.release).not.toHaveBeenCalled();
+  });
+
+  it("finishReason resolving AFTER onFinish does not double-charge — settle exactly once", async () => {
+    const ledger = makeLedger();
+    let capturedOnFinish:
+      | ((opts: { text: string; usage?: { inputTokens?: number; outputTokens?: number } }) => Promise<void>)
+      | undefined;
+    let finishResolve!: (v: string) => void;
+    const finishReason = new Promise<string>((resolve) => { finishResolve = resolve; });
+
+    (streamText as jest.Mock).mockImplementation((opts: { onFinish?: typeof capturedOnFinish }) => {
+      capturedOnFinish = opts.onFinish;
+      return { finishReason };
+    });
+
+    const { svc } = buildService(ledger);
+    await svc.processChat([{ role: "user", content: "hi" }], ACTOR);
+
+    await capturedOnFinish?.({ text: "reply", usage: { inputTokens: 10, outputTokens: 5 } });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(ledger.settle).toHaveBeenCalledTimes(1);
+    expect(ledger.release).not.toHaveBeenCalled();
+
+    finishResolve("stop");
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(ledger.settle).toHaveBeenCalledTimes(1);
+    expect(ledger.release).not.toHaveBeenCalled();
+  });
+});

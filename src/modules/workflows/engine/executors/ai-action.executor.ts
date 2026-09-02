@@ -60,6 +60,8 @@ function failureToMessage(
       return "AI returned an unexpected or malformed response";
     case "context_too_large":
       return "The workflow context is too large for the AI provider — reduce prompt size or variable payload";
+    case "concurrency_exceeded":
+      return "Too many AI requests are already running for this organisation — retry shortly";
   }
 }
 

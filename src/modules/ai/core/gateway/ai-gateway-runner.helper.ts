@@ -16,9 +16,15 @@ import type {
 } from "./ai-gateway.types";
 
 const MAX_CONTEXT_CHARS_DEFAULT = 200_000;
+const MAX_OUTPUT_TOKENS_DEFAULT = 4_096;
 
 function contextExceedsLimit(prompt: { system: string; user: string }, max: number): boolean {
   return prompt.system.length + prompt.user.length > max;
+}
+
+function boundedMaxTokens(requested: number | undefined): number {
+  if (requested === undefined) return MAX_OUTPUT_TOKENS_DEFAULT;
+  return Math.min(requested, MAX_OUTPUT_TOKENS_DEFAULT);
 }
 
 export class AiGatewayRunnerHelper {
@@ -77,7 +83,8 @@ export class AiGatewayRunnerHelper {
         schemaName: feature.replace(/[^a-z0-9]/gi, "_"),
         system: prompt.system,
         user: prompt.user,
-        ...(maxTokens !== undefined ? { maxTokens } : {}),
+        maxTokens: boundedMaxTokens(maxTokens),
+        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
       });
 
       const latencyMs = Date.now() - start;
@@ -208,7 +215,8 @@ export class AiGatewayRunnerHelper {
         system: prompt.system,
         user: prompt.user,
         images: opts.images,
-        ...(maxTokens !== undefined ? { maxTokens } : {}),
+        maxTokens: boundedMaxTokens(maxTokens),
+        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
       });
 
       const latencyMs = Date.now() - start;
@@ -311,7 +319,8 @@ export class AiGatewayRunnerHelper {
         model: tier ?? "fast",
         system: prompt.system,
         user: prompt.user,
-        ...(maxTokens !== undefined ? { maxTokens } : {}),
+        maxTokens: boundedMaxTokens(maxTokens),
+        ...(opts.signal !== undefined ? { signal: opts.signal } : {}),
       });
 
       const latencyMs = Date.now() - start;

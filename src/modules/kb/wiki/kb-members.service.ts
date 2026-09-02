@@ -100,7 +100,11 @@ export class KbMembersService {
     }
     if (input.role) {
       const existing = await this.db.query.kbSpaceMembers.findFirst({
-        where: and(eq(kbSpaceMembers.spaceId, spaceId), eq(kbSpaceMembers.role, input.role)),
+        where: and(
+          eq(kbSpaceMembers.orgId, orgId),
+          eq(kbSpaceMembers.spaceId, spaceId),
+          eq(kbSpaceMembers.role, input.role),
+        ),
         columns: { id: true },
       });
       if (existing) throw new ConflictException("Role already granted");

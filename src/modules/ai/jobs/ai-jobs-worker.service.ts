@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, Optional } from "@nestjs/common";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { aiJobs } from "../../../db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { AiJobsService } from "./ai-jobs.service";
 import { AiJobHandlerRegistry, AI_JOB_HANDLERS, type AiJobHandler } from "./ai-job-handler";
 
@@ -40,7 +40,7 @@ export class AiJobsWorkerService {
         await this.db
           .update(aiJobs)
           .set({ status: "DEAD", attempts: job.maxAttempts, lastError: errMsg, lockedBy: null, lockedAt: null })
-          .where(eq(aiJobs.id, job.id));
+          .where(and(eq(aiJobs.id, job.id), eq(aiJobs.orgId, job.orgId)));
         result.failed += 1;
         continue;
       }
@@ -52,12 +52,12 @@ export class AiJobsWorkerService {
           userId: job.userId,
           payload: job.payload,
         });
-        await this.jobs.complete(job.id, output);
+        await this.jobs.complete(job.orgId, job.id, output);
         result.completed += 1;
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         this.logger.error(`AI job ${job.id} (${job.type}) failed: ${errMsg}`);
-        await this.jobs.fail(job.id, errMsg);
+        await this.jobs.fail(job.orgId, job.id, errMsg);
         result.failed += 1;
       }
     }

@@ -346,6 +346,7 @@ export class KbArticlesService {
           content: version.content,
           excerpt: version.excerpt,
           contentText: this.extractPlainText(version.content),
+          contentRevision: sql`content_revision + 1`,
         })
         .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
         .returning();

@@ -81,6 +81,6 @@ describe("KbPageVersionsService — cross-tenant isolation", () => {
 
     const result = await svc.listVersions(makeUser(OWNER), PAGE_ID);
 
-    expect(Array.isArray(result)).toBe(true);
+    expect(Array.isArray(result.data)).toBe(true);
   });
 });

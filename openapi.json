@@ -74350,6 +74350,79 @@
         "x-bodyless": true
       }
     },
+    "/cron/storage-sweep": {
+      "get": {
+        "operationId": "CronStorageController_getStorageSweep",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronStorage"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated"
+      },
+      "post": {
+        "operationId": "CronStorageController_postStorageSweep",
+        "parameters": [
+          {
+            "name": "authorization",
+            "required": true,
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "422": {
+            "$ref": "#/components/responses/UnprocessableEntity"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "tags": [
+          "CronStorage"
+        ],
+        "x-exposure": "public",
+        "description": "Exposure: public — unauthenticated",
+        "x-bodyless": true
+      }
+    },
     "/cron/support-kb-gap-detect": {
       "get": {
         "operationId": "CronSupportController_getSupportKbGapDetect",
@@ -96267,7 +96340,8 @@
                     "maxLength": 100
                   },
                   "designation": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 200
                   },
                   "departmentId": {
                     "type": "string"
@@ -96280,9 +96354,6 @@
                   },
                   "isActive": {
                     "type": "boolean"
-                  },
-                  "role": {
-                    "type": "string"
                   },
                   "gender": {
                     "type": "string",
@@ -167923,6 +167994,25 @@
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
             }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
           }
         ],
         "responses": {
@@ -193519,12 +193609,12 @@
                           "type": "string",
                           "enum": [
                             "FIXED",
+                            "MANUAL",
+                            "FORMULA",
+                            "TIMESHEET_BASED",
                             "PERCENT_OF_BASIC",
                             "PERCENT_OF_GROSS",
-                            "FORMULA",
-                            "ATTENDANCE_BASED",
-                            "TIMESHEET_BASED",
-                            "MANUAL"
+                            "ATTENDANCE_BASED"
                           ]
                         },
                         "amount": {
@@ -193673,12 +193763,12 @@
                           "type": "string",
                           "enum": [
                             "FIXED",
+                            "MANUAL",
+                            "FORMULA",
+                            "TIMESHEET_BASED",
                             "PERCENT_OF_BASIC",
                             "PERCENT_OF_GROSS",
-                            "FORMULA",
-                            "ATTENDANCE_BASED",
-                            "TIMESHEET_BASED",
-                            "MANUAL"
+                            "ATTENDANCE_BASED"
                           ]
                         },
                         "amount": {
@@ -202296,12 +202386,12 @@
                           "type": "string",
                           "enum": [
                             "FIXED",
+                            "MANUAL",
+                            "FORMULA",
+                            "TIMESHEET_BASED",
                             "PERCENT_OF_BASIC",
                             "PERCENT_OF_GROSS",
-                            "FORMULA",
-                            "ATTENDANCE_BASED",
-                            "TIMESHEET_BASED",
-                            "MANUAL"
+                            "ATTENDANCE_BASED"
                           ]
                         },
                         "amount": {
@@ -202450,12 +202540,12 @@
                           "type": "string",
                           "enum": [
                             "FIXED",
+                            "MANUAL",
+                            "FORMULA",
+                            "TIMESHEET_BASED",
                             "PERCENT_OF_BASIC",
                             "PERCENT_OF_GROSS",
-                            "FORMULA",
-                            "ATTENDANCE_BASED",
-                            "TIMESHEET_BASED",
-                            "MANUAL"
+                            "ATTENDANCE_BASED"
                           ]
                         },
                         "amount": {
@@ -241169,6 +241259,25 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
           }
         ],
         "responses": {
@@ -241429,6 +241538,25 @@
             "schema": {
               "type": "string",
               "minLength": 1
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
             }
           }
         ],
@@ -241896,7 +242024,27 @@
     "/workflows/schedules": {
       "get": {
         "operationId": "WorkflowsController_listAllSchedules",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""
@@ -241928,7 +242076,27 @@
     "/workflows/secrets": {
       "get": {
         "operationId": "WorkflowsController_listGlobalSecrets",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": ""

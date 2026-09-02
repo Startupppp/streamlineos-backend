@@ -229,7 +229,7 @@ describe("AiResponseCacheService — persistent response cache (criterion 10)", 
     };
 
     const svc = new AiResponseCacheService(mockCache as never);
-    const params = { feature: "crm.score", tier: "fast", promptSystem: "sys", promptUser: "user" };
+    const params = { feature: "crm.score", tier: "fast", promptSystem: "sys", promptUser: "user", aclVersion: "acl-7" };
     const fetcher = jest.fn().mockResolvedValue({ ok: true, data: "response", model: "gpt-4o-mini", latencyMs: 100, correlationId: "c", usage: {} });
 
     const first = await svc.cachedInvoke("org_1", params, fetcher);
@@ -260,12 +260,89 @@ describe("AiResponseCacheService — persistent response cache (criterion 10)", 
     const fetcherA = jest.fn().mockResolvedValue({ ok: true, data: "A" });
     const fetcherB = jest.fn().mockResolvedValue({ ok: true, data: "B" });
 
-    await svc.cachedInvoke("org_1", { feature: "f", tier: "fast", promptSystem: "sys", promptUser: "user-A" }, fetcherA);
-    await svc.cachedInvoke("org_1", { feature: "f", tier: "fast", promptSystem: "sys", promptUser: "user-B" }, fetcherB);
+    await svc.cachedInvoke("org_1", { feature: "f", tier: "fast", promptSystem: "sys", promptUser: "user-A", aclVersion: "acl-1" }, fetcherA);
+    await svc.cachedInvoke("org_1", { feature: "f", tier: "fast", promptSystem: "sys", promptUser: "user-B", aclVersion: "acl-1" }, fetcherB);
 
     expect(fetcherA).toHaveBeenCalledTimes(1);
     expect(fetcherB).toHaveBeenCalledTimes(1);
     expect(stored.size).toBe(2);
+  });
+
+  it("two readers with the same prompt but different ACL versions never share a cache entry", async () => {
+    const { AiResponseCacheService } = await import("../ai-response-cache.service");
+
+    const stored = new Map<string, unknown>();
+    const mockCache = {
+      cachedVersionedForOrg: jest.fn().mockImplementation(
+        async (_orgId: string, _ns: string, localKey: string, fetcher: () => Promise<unknown>) => {
+          const hit = stored.get(localKey);
+          if (hit !== undefined) return hit;
+          const result = await fetcher();
+          stored.set(localKey, result);
+          return result;
+        },
+      ),
+      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const svc = new AiResponseCacheService(mockCache as never);
+    const prompt = { feature: "kb.ask", tier: "fast", promptSystem: "sys", promptUser: "what is our leave policy" };
+    const privileged = jest.fn().mockResolvedValue({ ok: true, data: "HR-only answer" });
+    const ordinary = jest.fn().mockResolvedValue({ ok: true, data: "public answer" });
+
+    const a = await svc.cachedInvoke("org_1", { ...prompt, aclVersion: "hr-admin" }, privileged);
+    const b = await svc.cachedInvoke("org_1", { ...prompt, aclVersion: "member" }, ordinary);
+
+    expect(stored.size).toBe(2);
+    expect(a).not.toEqual(b);
+    expect(ordinary).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses to cache without an aclVersion rather than building an ACL-blind key", async () => {
+    const { AiResponseCacheService } = await import("../ai-response-cache.service");
+    const mockCache = {
+      cachedVersionedForOrg: jest.fn(),
+      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const svc = new AiResponseCacheService(mockCache as never);
+    const params = { feature: "kb.ask", promptSystem: "sys", promptUser: "u", aclVersion: "" };
+
+    await expect(svc.cachedInvoke("org_1", params, jest.fn())).rejects.toThrow("aclVersion");
+    expect(mockCache.cachedVersionedForOrg).not.toHaveBeenCalled();
+  });
+
+  it("a failed invocation is never written to the cache, so a provider blip is not served for an hour", async () => {
+    const { AiResponseCacheService } = await import("../ai-response-cache.service");
+
+    const stored = new Map<string, unknown>();
+    const mockCache = {
+      cachedVersionedForOrg: jest.fn().mockImplementation(
+        async (_orgId: string, _ns: string, localKey: string, fetcher: () => Promise<unknown>) => {
+          const hit = stored.get(localKey);
+          if (hit !== undefined) return hit;
+          const result = await fetcher();
+          stored.set(localKey, result);
+          return result;
+        },
+      ),
+      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const svc = new AiResponseCacheService(mockCache as never);
+    const params = { feature: "kb.ask", promptSystem: "sys", promptUser: "u", aclVersion: "acl-1" };
+    const failing = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: false, kind: "provider_unavailable", message: "down", correlationId: "c1" })
+      .mockResolvedValueOnce({ ok: true, data: "recovered", model: "m", latencyMs: 1, correlationId: "c2", usage: {} });
+
+    const first = await svc.cachedInvoke("org_1", params, failing);
+    const second = await svc.cachedInvoke("org_1", params, failing);
+
+    expect(first.ok).toBe(false);
+    expect(second.ok).toBe(true);
+    expect(failing).toHaveBeenCalledTimes(2);
+    expect(stored.size).toBe(1);
   });
 
   it("invalidate bumps the namespace version so stale entries are never served", async () => {

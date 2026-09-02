@@ -1,10 +1,9 @@
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { kbPages, kbPageLinks, kbPageVersions } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { extractPageLinkIds } from "./kb-page-content.util";
 
 const VERSION_WINDOW_MS = 10 * 60 * 1000;
-const MAX_VERSIONS = 100;
 
 export type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -34,23 +33,6 @@ export async function snapshotIfNeeded(
     force || !newest || Date.now() - newest.createdAt.getTime() > VERSION_WINDOW_MS;
 
   if (!windowPassed) return;
-
-  const [countRow] = await tx
-    .select({ count: sql<number>`count(*)::int` })
-    .from(kbPageVersions)
-    .where(and(eq(kbPageVersions.pageId, page.id), eq(kbPageVersions.orgId, orgId)));
-  const total = countRow?.count ?? 0;
-
-  if (total >= MAX_VERSIONS) {
-    const oldest = await tx.query.kbPageVersions.findFirst({
-      where: and(eq(kbPageVersions.pageId, page.id), eq(kbPageVersions.orgId, orgId)),
-      orderBy: [asc(kbPageVersions.versionNumber)],
-      columns: { id: true },
-    });
-    if (oldest) {
-      await tx.delete(kbPageVersions).where(eq(kbPageVersions.id, oldest.id));
-    }
-  }
 
   const nextVer = (newest?.versionNumber ?? 0) + 1;
   await tx.insert(kbPageVersions).values({

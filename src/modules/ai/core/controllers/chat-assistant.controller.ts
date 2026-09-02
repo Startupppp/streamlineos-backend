@@ -35,6 +35,7 @@ import { ProjectsTicketsService } from "../../../build/core/projects-tickets.ser
 import { ProjectsTicketCommentsService } from "../../../build/core/projects-ticket-comments.service";
 import { CalendarService } from "../../../calendar/calendar.service";
 import { EmailOutboxService } from "../../../email/email-outbox.service";
+import { escapeHtml } from "../../../email/templates/base";
 import { ChatMessagesService } from "../../../chat/chat-messages.service";
 import { EngagementService } from "../../../hr/performance/engagement.service";
 import { BonusesService } from "../../../payroll/hr-payroll/bonuses.service";
@@ -334,7 +335,7 @@ export class ChatAssistantController {
         await emailSvc.enqueueAndTry({
           to: String(payload["toEmail"]),
           subject: String(payload["subject"]),
-          html: `<p>${bodyText}</p>`,
+          html: `<p>${escapeHtml(bodyText)}</p>`,
           text: bodyText,
         });
         result = { queued: true };
@@ -404,7 +405,7 @@ export class ChatAssistantController {
           mailPayload.accountId,
           [mailPayload.toEmail],
           mailPayload.subject,
-          `<p>${mailPayload.body}</p>`,
+          `<p>${escapeHtml(mailPayload.body)}</p>`,
         );
         result = { sent: true };
         summary = `Email sent to ${mailPayload.toEmail}`;

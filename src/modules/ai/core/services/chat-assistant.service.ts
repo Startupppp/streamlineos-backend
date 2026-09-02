@@ -1,4 +1,5 @@
-import { Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, Optional, ServiceUnavailableException } from "@nestjs/common";
+import { Redis } from "@upstash/redis";
 import { filterToolsByPersona, getPersona } from "../persona-registry";
 import { ModuleRef } from "@nestjs/core";
 import { stepCountIs, streamText, type ModelMessage } from "ai";
@@ -38,13 +39,21 @@ import {
 import { buildContextPrompt } from "./chat-assistant-prompt";
 import { fetchChatContext } from "./chat-assistant-context";
 import { buildInlineTools } from "./chat-assistant-inline-tools";
+import { REDIS } from "../../../../common/cache/cache.service";
 
 const CB_FAILURE_THRESHOLD = 5;
 const CB_OPEN_DURATION_MS = 30_000;
+const CB_REDIS_OPENED_AT_KEY = "ai:cb:chat:opened_at";
+const CB_REDIS_FAILURES_KEY = "ai:cb:chat:failures";
+const CB_REDIS_OPENED_AT_TTL_S = Math.ceil(CB_OPEN_DURATION_MS / 1000);
 
 interface CircuitBreakerState {
   failures: number;
   openedAt: number;
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
 }
 
 @Injectable()
@@ -67,19 +76,43 @@ export class ChatAssistantService {
     private readonly moduleRef: ModuleRef,
     private readonly usageSvc: AiUsageService,
     @Inject(AI_CREDIT_LEDGER) private readonly ledger: AiCreditLedger,
+    @Optional() @Inject(REDIS) private readonly redis: Redis | null = null,
   ) {}
 
-  private isCbOpen(): boolean {
+  private async isCbOpen(): Promise<boolean> {
+    if (this.redis) {
+      try {
+        const openedAt = await this.redis.get<number>(CB_REDIS_OPENED_AT_KEY);
+        if (openedAt !== null) return true;
+      } catch {
+        // Redis unavailable — fall through to local state
+      }
+    }
     return this.cb.failures >= CB_FAILURE_THRESHOLD && Date.now() - this.cb.openedAt < CB_OPEN_DURATION_MS;
   }
 
   private recordCbSuccess(): void {
     this.cb.failures = 0;
+    if (this.redis) {
+      void Promise.all([
+        this.redis.del(CB_REDIS_FAILURES_KEY),
+        this.redis.del(CB_REDIS_OPENED_AT_KEY),
+      ]).catch(() => undefined);
+    }
   }
 
   private recordCbFailure(): void {
     this.cb.failures += 1;
     if (this.cb.failures === CB_FAILURE_THRESHOLD) this.cb.openedAt = Date.now();
+    if (this.redis) {
+      const r = this.redis;
+      void r.incr(CB_REDIS_FAILURES_KEY)
+        .then((count) => {
+          if (count === CB_FAILURE_THRESHOLD)
+            void r.set(CB_REDIS_OPENED_AT_KEY, Date.now(), { ex: CB_REDIS_OPENED_AT_TTL_S }).catch(() => undefined);
+        })
+        .catch(() => undefined);
+    }
   }
 
   private async fetchContext(
@@ -100,7 +133,7 @@ export class ChatAssistantService {
     const { userId, orgId } = actor;
     const membershipId = actingMembershipId(actor.principal) ?? 0;
 
-    if (this.isCbOpen()) {
+    if (await this.isCbOpen()) {
       throw new ServiceUnavailableException("AI chat provider is temporarily unavailable");
     }
 
@@ -197,6 +230,16 @@ export class ChatAssistantService {
         onChunk: () => {
           if (ttftMs === undefined) ttftMs = Date.now() - streamTextCallTime;
         },
+        onError: ({ error }) => {
+          // streamText resolves synchronously, so provider faults surface here
+          // rather than in the setup catch — without this the breaker never opens.
+          if (signal?.aborted === true || isAbortError(error)) return;
+          this.recordCbFailure();
+          logger.warn("AI chat stream failed", {
+            error: error instanceof Error ? error.message : String(error),
+            orgId,
+          });
+        },
         onFinish: async ({ text, usage }) => {
           if (resolved) return;
           resolved = true;
@@ -247,8 +290,7 @@ export class ChatAssistantService {
     try {
       const stream = buildStream();
       void (stream.finishReason as Promise<string> | undefined)
-        ?.then(() => releaseReservation("stream_terminated_no_settle"))
-        .catch(() => releaseReservation("stream_aborted_no_settle"));
+        ?.catch(() => releaseReservation("stream_aborted_no_settle"));
       return stream;
     } catch (error) {
       this.recordCbFailure();

@@ -133,7 +133,13 @@ export class KbChatHistoryService {
           id: kbChatConversations.id,
         })
         .from(kbChatConversations)
-        .where(eq(kbChatConversations.id, opts.cursor))
+        .where(
+          and(
+            eq(kbChatConversations.id, opts.cursor),
+            eq(kbChatConversations.orgId, orgId),
+            eq(kbChatConversations.userMembershipId, membershipId),
+          ),
+        )
         .limit(1);
       cursorRow = found;
     }

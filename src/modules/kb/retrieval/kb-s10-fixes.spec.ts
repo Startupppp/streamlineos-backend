@@ -1,0 +1,388 @@
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+import type { Db } from "../../../db/drizzle.module";
+import { KbSearchService } from "./kb-search.service";
+import { KbArticleReindexService } from "./kb-article-reindex.service";
+import { KbAttachmentIndexingService } from "./kb-attachment-indexing.service";
+import { KbChatHistoryService } from "./kb-chat-history.service";
+import { KbCandidateService } from "./kb-candidate.service";
+
+jest.mock("./kb-attachment-extract.util", () => ({
+  isExtractableMime: jest.fn().mockReturnValue(true),
+  extractAttachmentText: jest.fn().mockResolvedValue(""),
+}));
+
+const extractMocks = jest.requireMock("./kb-attachment-extract.util") as {
+  isExtractableMime: jest.Mock;
+  extractAttachmentText: jest.Mock;
+};
+
+function collectStrings(root: unknown, seen = new WeakSet<object>()): string[] {
+  if (typeof root === "string") return [root];
+  if (root === null || typeof root !== "object") return [];
+  if (seen.has(root)) return [];
+  seen.add(root);
+  return Object.values(root).flatMap((v) => collectStrings(v, seen));
+}
+
+function sqlToQuery(cond: unknown): { sql: string; params: unknown[] } {
+  const dialect = new PgDialect();
+  return dialect.sqlToQuery(cond as SQL);
+}
+
+describe("Fix 1 — retrieveTopSources carries chunk-side orgId predicate", () => {
+  it("WHERE clause includes an org_id = orgId predicate scoped to kbArticleChunks", async () => {
+    const capturedConditions: unknown[] = [];
+    const chain: Record<string, jest.Mock> = {
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      where: jest.fn((cond: unknown) => {
+        capturedConditions.push(cond);
+        return chain;
+      }),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([{ id: 1 }]),
+    };
+    const db = {
+      select: jest.fn().mockReturnValue(chain),
+      execute: jest.fn().mockResolvedValue([]),
+    };
+    const access = {
+      getAccessibleSpaceIds: jest.fn().mockResolvedValue([1]),
+      getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
+      isAdmin: jest.fn().mockReturnValue(false),
+      getPrincipalIds: jest.fn().mockResolvedValue({ userId: "u1", roleSlugs: [] }),
+    };
+    const embeddings = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      embedQuery: jest.fn().mockResolvedValue([0.1]),
+      toVectorLiteral: jest.fn().mockReturnValue("[0.1]"),
+    };
+
+    const svc = new KbSearchService(
+      db as never,
+      access as never,
+      embeddings as never,
+      { record: jest.fn().mockResolvedValue(undefined) } as never,
+      new KbCandidateService(db as never),
+    );
+
+    await svc.retrieveTopSources({ userId: "u1", orgId: "org-fix1", isOrgOwner: false, role: "member", sessionId: "s1", tokenScopes: null, principal: undefined } as never, "query", 4);
+
+    expect(capturedConditions.length).toBeGreaterThan(0);
+
+    const chunkOrgIdPredicates = capturedConditions.flatMap((cond) => {
+      const { sql: text, params } = sqlToQuery(cond);
+      const matches: Array<{ text: string; params: unknown[] }> = [];
+      const re = /"kb_article_chunks"\."org_id"\s*=\s*\$(\d+)/gi;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text)) !== null)
+        matches.push({ text, params });
+      return matches;
+    });
+
+    expect(chunkOrgIdPredicates.length).toBeGreaterThan(0);
+    for (const { text, params } of chunkOrgIdPredicates) {
+      const slot = /"kb_article_chunks"\."org_id"\s*=\s*\$(\d+)/i.exec(text);
+      expect(params[Number(slot?.[1]) - 1]).toBe("org-fix1");
+    }
+  });
+});
+
+describe("Fix 2 — reindexAll uses keyset pagination", () => {
+  function makeThenable(rows: unknown[]) {
+    const p = Promise.resolve(rows);
+    const chain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue(rows),
+      groupBy: jest.fn().mockReturnThis(),
+      then: p.then.bind(p),
+      catch: p.catch.bind(p),
+      finally: p.finally.bind(p),
+    };
+    return chain;
+  }
+
+  function makeDb(articleRows: unknown[], countRow: unknown[] = [{ chunks: 0 }]) {
+    let selectCall = 0;
+    return {
+      select: jest.fn(() => makeThenable(selectCall++ === 0 ? articleRows : countRow)),
+    } as unknown as Db;
+  }
+
+  it("returns nextArticleId when batch overflows", async () => {
+    const firstBatch = Array.from({ length: 101 }, (_, i) => ({ id: i + 1 }));
+    const db = makeDb(firstBatch);
+    const svc = new KbArticleReindexService(db, {} as never, {} as never);
+    svc.reindexArticle = jest.fn().mockResolvedValue({ chunks: 0, warnings: [] });
+
+    const result = await svc.reindexAll("org-1");
+    expect(result.total).toBe(100);
+    expect(result.nextArticleId).toBe(100);
+  });
+
+  it("returns nextArticleId: null when fewer articles than batch size", async () => {
+    const fewArticles = Array.from({ length: 5 }, (_, i) => ({ id: i + 1 }));
+    const db = makeDb(fewArticles);
+    const svc = new KbArticleReindexService(db, {} as never, {} as never);
+    svc.reindexArticle = jest.fn().mockResolvedValue({ chunks: 0, warnings: [] });
+
+    const result = await svc.reindexAll("org-1");
+    expect(result.nextArticleId).toBeNull();
+    expect(result.total).toBe(5);
+  });
+
+  it("resumes from cursor on second call (nextArticleId: null at end)", async () => {
+    const overflowBatch = Array.from({ length: 101 }, (_, i) => ({ id: i + 1 }));
+    const db1 = makeDb(overflowBatch);
+    const svc1 = new KbArticleReindexService(db1, {} as never, {} as never);
+    svc1.reindexArticle = jest.fn().mockResolvedValue({ chunks: 0, warnings: [] });
+    const first = await svc1.reindexAll("org-1");
+    expect(first.nextArticleId).toBe(100);
+
+    const remainingBatch = [{ id: 101 }];
+    const db2 = makeDb(remainingBatch);
+    const svc2 = new KbArticleReindexService(db2, {} as never, {} as never);
+    svc2.reindexArticle = jest.fn().mockResolvedValue({ chunks: 0, warnings: [] });
+    const second = await svc2.reindexAll("org-1", first.nextArticleId ?? 0);
+    expect(second.nextArticleId).toBeNull();
+    expect(second.total).toBe(1);
+  });
+
+  it("requests BATCH_SIZE + 1 rows to detect overflow", async () => {
+    const limits: number[] = [];
+    let selectCall = 0;
+    const db = {
+      select: jest.fn(() => {
+        const p = selectCall++ === 0 ? Promise.resolve([]) : Promise.resolve([{ chunks: 0 }]);
+        return {
+          from: jest.fn().mockReturnThis(),
+          where: jest.fn().mockReturnThis(),
+          orderBy: jest.fn().mockReturnThis(),
+          limit: jest.fn((n: number) => { limits.push(n); return p; }),
+          then: (p as Promise<unknown>).then.bind(p),
+          catch: (p as Promise<unknown>).catch.bind(p),
+          finally: (p as Promise<unknown>).finally.bind(p),
+        };
+      }),
+    } as unknown as Db;
+
+    const svc = new KbArticleReindexService(db, {} as never, {} as never);
+    await svc.reindexAll("org-1");
+    expect(limits[0]).toBe(101);
+  });
+});
+
+describe("Fix 3 — embedInBatches: batched calls, order preserved across boundary", () => {
+  it("uses embedBatch instead of per-chunk embedQuery and preserves order across batch boundary", async () => {
+    const CHUNKS_COUNT = 65;
+    const text = "word ".repeat(20000);
+
+    const capturedInsertValues: Array<Array<{ chunkIndex: number; embedding: number[] }>> = [];
+    let batchStart = 0;
+    const embedBatch = jest.fn().mockImplementation((texts: string[]) => {
+      const result = texts.map((_, i) => [batchStart + i]);
+      batchStart += texts.length;
+      return Promise.resolve(result);
+    });
+    const embedQuery = jest.fn();
+
+    const deleteWhere = jest.fn().mockResolvedValue([]);
+    const insertValues = jest.fn().mockImplementation((vals: unknown) => {
+      capturedInsertValues.push(vals as Array<{ chunkIndex: number; embedding: number[] }>);
+      return Promise.resolve([]);
+    });
+    const tx = {
+      delete: jest.fn().mockReturnValue({ where: deleteWhere }),
+      insert: jest.fn().mockReturnValue({ values: insertValues }),
+    };
+    const db = {
+      transaction: jest.fn().mockImplementation(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+      query: {
+        kbArticleAttachments: { findFirst: jest.fn() },
+      },
+    } as unknown as Db;
+
+    extractMocks.extractAttachmentText.mockResolvedValue(text);
+    extractMocks.isExtractableMime.mockReturnValue(true);
+
+    const storage = { getFileStream: jest.fn().mockResolvedValue({ body: {} }) } as never;
+    const embeddings = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      embedBatch,
+      embedQuery,
+    } as never;
+    const svc = new KbAttachmentIndexingService(db, embeddings, storage);
+
+    await svc.indexSource("org-1", 1, text);
+
+    expect(embedQuery).not.toHaveBeenCalled();
+    expect(embedBatch).toHaveBeenCalled();
+
+    const allCalls = embedBatch.mock.calls as string[][];
+    for (const call of allCalls)
+      expect(call[0].length).toBeLessThanOrEqual(64);
+
+    const rows = capturedInsertValues[0];
+    if (rows && rows.length >= 65) {
+      expect(rows[63]?.embedding).toEqual([63]);
+      expect(rows[64]?.embedding).toEqual([64]);
+    } else if (rows) {
+      const lastIdx = rows.length - 1;
+      expect(rows[lastIdx]?.embedding).toEqual([lastIdx]);
+    }
+    expect(rows?.length).toBeGreaterThan(0);
+  });
+});
+
+describe("Fix 4 — indexPageDocument: delete-before-insert in transaction, ACL columns populated", () => {
+  it("runs delete and insert inside one transaction and populates pageVisibility and aclRevision", async () => {
+    const callOrder: string[] = [];
+    const deleteWhere = jest.fn().mockImplementation(() => { callOrder.push("delete"); return Promise.resolve([]); });
+    const capturedInsertValues: unknown[] = [];
+    const insertValues = jest.fn().mockImplementation((vals: unknown) => {
+      callOrder.push("insert");
+      capturedInsertValues.push(vals);
+      return Promise.resolve([]);
+    });
+    const tx = {
+      delete: jest.fn().mockReturnValue({ where: deleteWhere }),
+      insert: jest.fn().mockReturnValue({ values: insertValues }),
+    };
+    const pageRow = {
+      visibility: "org",
+      projectId: null,
+      createdById: "user-42",
+      createdByMembershipId: 10,
+      aclRevision: 3,
+    };
+    const db = {
+      transaction: jest.fn().mockImplementation(async (fn: (client: typeof tx) => unknown) => fn(tx)),
+      query: {
+        kbPages: { findFirst: jest.fn().mockResolvedValue(pageRow) },
+      },
+    } as unknown as Db;
+
+    const shortText = "hello world sentence";
+    extractMocks.extractAttachmentText.mockResolvedValue(shortText);
+    extractMocks.isExtractableMime.mockReturnValue(true);
+
+    const embedBatch = jest.fn().mockImplementation((texts: string[]) =>
+      Promise.resolve(texts.map(() => [0.5])),
+    );
+    const embeddings = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      embedBatch,
+    } as never;
+
+    const svc = new KbAttachmentIndexingService(db, embeddings, {} as never);
+    const result = await svc.indexPageDocument("org-1", 7, Buffer.from("pdf"), "application/pdf", "doc.pdf");
+
+    expect(result.chunks).toBeGreaterThan(0);
+    expect(db.transaction).toHaveBeenCalled();
+    expect(callOrder).toEqual(["delete", "insert"]);
+
+    const rows = capturedInsertValues[0] as Array<{
+      pageVisibility: string;
+      pageCreatedById: string;
+      pageCreatedByMembershipId: number;
+      aclRevision: number;
+    }>;
+    expect(rows).toBeDefined();
+    expect(rows[0]?.pageVisibility).toBe("org");
+    expect(rows[0]?.pageCreatedById).toBe("user-42");
+    expect(rows[0]?.pageCreatedByMembershipId).toBe(10);
+    expect(rows[0]?.aclRevision).toBe(3);
+  });
+
+  it("does not insert when page is not found for the given orgId", async () => {
+    const db = {
+      transaction: jest.fn(),
+      query: {
+        kbPages: { findFirst: jest.fn().mockResolvedValue(undefined) },
+      },
+    } as unknown as Db;
+
+    extractMocks.isExtractableMime.mockReturnValue(true);
+
+    const embeddings = { isConfigured: jest.fn().mockReturnValue(true) } as never;
+    const svc = new KbAttachmentIndexingService(db, embeddings, {} as never);
+    const result = await svc.indexPageDocument("org-1", 99, Buffer.from(""), "application/pdf", "f.pdf");
+
+    expect(result.chunks).toBe(0);
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("Fix 5 — listConversations cursor is tenant-scoped", () => {
+  function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
+    if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
+    if (Array.isArray(v)) return v.flatMap((i) => sqlValues(i, seen));
+    if (typeof v !== "object" || seen.has(v)) return [];
+    seen.add(v);
+    const r = v as { queryChunks?: unknown[]; value?: unknown };
+    return [
+      ...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []),
+      ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : []),
+    ];
+  }
+
+  it("cursor resolution query carries orgId and membershipId predicates", async () => {
+    const capturedWheres: unknown[] = [];
+
+    const makeChain = () => {
+      const chain: Record<string, jest.Mock> = {
+        where: jest.fn((w: unknown) => { capturedWheres.push(w); return chain; }),
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue([]),
+      };
+      return chain;
+    };
+
+    const db = {
+      select: jest.fn(() => ({ from: jest.fn(() => makeChain()) })),
+    } as unknown as Db;
+
+    const svc = new KbChatHistoryService(db);
+    await svc.listConversations("org-cursor", "user-1", 55, { cursor: 42, limit: 10 });
+
+    expect(capturedWheres.length).toBeGreaterThan(0);
+
+    const allValues = capturedWheres.flatMap((w) => sqlValues(w));
+    expect(allValues).toContain("org-cursor");
+    expect(allValues).toContain(55);
+    expect(allValues).not.toContain("org-other");
+
+    const cursorWhere = capturedWheres[0];
+    const cursorVals = sqlValues(cursorWhere);
+    expect(cursorVals).toContain(42);
+    expect(cursorVals).toContain("org-cursor");
+    expect(cursorVals).toContain(55);
+  });
+
+  it("without cursor the list query still carries orgId and membershipId (control)", async () => {
+    const capturedWheres: unknown[] = [];
+
+    const makeChain = () => {
+      const chain: Record<string, jest.Mock> = {
+        where: jest.fn((w: unknown) => { capturedWheres.push(w); return chain; }),
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue([]),
+      };
+      return chain;
+    };
+
+    const db = {
+      select: jest.fn(() => ({ from: jest.fn(() => makeChain()) })),
+    } as unknown as Db;
+
+    const svc = new KbChatHistoryService(db);
+    await svc.listConversations("org-control", "user-1", 77, { limit: 10 });
+
+    const allValues = capturedWheres.flatMap((w) => sqlValues(w));
+    expect(allValues).toContain("org-control");
+    expect(allValues).toContain(77);
+  });
+});
