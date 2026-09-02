@@ -52,6 +52,7 @@ import {
   type UpsertOccurrenceExceptionInput,
 } from "./dto/occurrence-exception.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
+import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
 
 const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
@@ -225,6 +226,7 @@ export class CalendarController {
   }
 
   @Post("events/:eventId/sync-retry")
+  @BodylessAction()
   @Universal()
   @HttpCode(200)
   @Validate({ params: eventIdParams })

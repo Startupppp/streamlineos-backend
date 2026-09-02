@@ -286,3 +286,61 @@ describe("expandToOccurrences", () => {
     expect(expandToOccurrences(event, window7.start, window7.end)).toHaveLength(1);
   });
 });
+
+describe("expandToOccurrences — exception modifiedEnd anchor (Bug 2 regression gate)", () => {
+  const WEEKLY_MON = "FREQ=WEEKLY;BYDAY=MO";
+  const recurringEvent: CalendarEventLike = {
+    id: 10,
+    title: "Mon standup",
+    startDate: new Date("2024-02-05T09:00:00Z"),
+    endDate: new Date("2024-02-05T09:30:00Z"),
+    allDay: false,
+    timezone: "UTC",
+    orgId: "org-bug2",
+    rrule: WEEKLY_MON,
+    recurrenceEnd: null,
+  };
+  const windowStart = new Date("2024-03-04T00:00:00Z");
+  const windowEnd = new Date("2024-03-04T23:59:59Z");
+  const nominalStart = new Date("2024-03-04T09:00:00Z");
+  const modifiedStart = new Date("2024-03-04T15:00:00Z");
+
+  it("exception with modifiedStart but NO modifiedEnd: endDate is modifiedStart + original duration (fails if nominal-anchored)", () => {
+    const exception = {
+      occurrenceStart: nominalStart,
+      isCancelled: false,
+      modifiedTitle: null,
+      modifiedStart,
+      modifiedEnd: null,
+    };
+    const result = expandToOccurrences(recurringEvent, windowStart, windowEnd, [exception]);
+    expect(result).toHaveLength(1);
+    const occ = result[0]!;
+    expect(occ.startDate.toISOString()).toBe(modifiedStart.toISOString());
+    expect(occ.endDate.getTime()).toBeGreaterThan(occ.startDate.getTime());
+    const originalDurationMs = recurringEvent.endDate.getTime() - recurringEvent.startDate.getTime();
+    expect(occ.endDate.getTime() - occ.startDate.getTime()).toBe(originalDurationMs);
+  });
+
+  it("exception with explicit modifiedEnd still uses that exact value (existing behaviour preserved)", () => {
+    const explicitEnd = new Date("2024-03-04T16:00:00Z");
+    const exception = {
+      occurrenceStart: nominalStart,
+      isCancelled: false,
+      modifiedTitle: null,
+      modifiedStart,
+      modifiedEnd: explicitEnd,
+    };
+    const result = expandToOccurrences(recurringEvent, windowStart, windowEnd, [exception]);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.endDate.toISOString()).toBe(explicitEnd.toISOString());
+  });
+
+  it("unmodified occurrence uses nominal end derived from nominal start (no exception: not affected by fix)", () => {
+    const result = expandToOccurrences(recurringEvent, windowStart, windowEnd, []);
+    expect(result).toHaveLength(1);
+    const occ = result[0]!;
+    const originalDurationMs = recurringEvent.endDate.getTime() - recurringEvent.startDate.getTime();
+    expect(occ.endDate.getTime() - occ.startDate.getTime()).toBe(originalDurationMs);
+  });
+});
