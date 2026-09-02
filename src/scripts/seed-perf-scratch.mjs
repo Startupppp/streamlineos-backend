@@ -119,6 +119,10 @@ export function numberedPool(name, table, where) {
   return `${name} AS (SELECT *, (row_number() OVER ()) - 1 AS rn FROM (SELECT * FROM ${table} WHERE ${where}) q)`;
 }
 
+/** Three of the tables here name the tenant column `organization_id`, not `org_id`. */
+const ORG_COLUMN_TABLES = new Set(["business_parties", "lead_party_map", "contact_party_map"]);
+const tenantColumn = (table) => (ORG_COLUMN_TABLES.has(table) ? "organization_id" : "org_id");
+
 if (process.argv.includes("--self-test")) {
   const cases = [
     ["rejects the live database name", assertScratchTarget("postgres://u:p@h/neondb", []).ok, false],
@@ -133,6 +137,11 @@ if (process.argv.includes("--self-test")) {
       PERF_ORGS[0].weight / PERF_ORGS.reduce((s, o) => s + o.weight, 0) < 0.9, true],
     ["the smallest tenant is a real fraction, not zero",
       PERF_ORGS[3].weight > 0, true],
+    ["every tenant has enough parties to map both legacy sides",
+      PERF_ORGS.every((o) =>
+        scaled(BASE.leads, o.weight, 1) + scaled(BASE.contacts, o.weight, 1) <= scaled(BASE.businessParties, o.weight, 1)), true],
+    ["the party-map tables are read on organization_id, not org_id",
+      ["lead_party_map", "contact_party_map", "business_parties"].every((t) => tenantColumn(t) === "organization_id"), true],
     ["the numbered pool carries a zero-based row number",
       numberedPool("p", "t", "org_id = $1").includes("(row_number() OVER ()) - 1 AS rn"), true],
   ];
@@ -349,6 +358,106 @@ async function seedCrm(ctx) {
       [ctx.org, have, need, parties, ctx.membership],
     );
   });
+}
+
+/**
+ * The Party seam — the canonical side of the CRM read path.
+ *
+ * Ticket 02 made `business_parties` canonical and left `leads` and `contacts` as derived
+ * mirrors, so `LeadsReadService.list` and `queryContacts` select from
+ * `lead_party_map INNER JOIN business_parties` and `contact_party_map INNER JOIN
+ * business_parties` (`src/modules/crm/crm-party-reads.ts`), not from the mirrors. Seeding only
+ * the mirrors left both maps at zero rows and `owner_user_id` NULL on all 22,240 parties, so
+ * every one of those reads matched nothing. That is why report 22c could not re-point
+ * `leads-active`, `leads-assigned-to-me` and `contacts-list` at the tables their modules
+ * actually read: the move would have traded a budget on the wrong table for a budget on an
+ * empty join, which is the failure that ticket exists to remove.
+ *
+ * Leads take parties from the front of the org's parties and contacts from the back, so the
+ * two never collide while `leads + contacts <= parties` and the pairing is stable across
+ * re-runs. One party per legacy id: several legacy ids answering to one party is what a merge
+ * produces, and nothing here is merged.
+ *
+ * The projection columns the reads coalesce over — `lifecycle_stage`, `priority`,
+ * `acquisition_source`, `qualification_score`, `owner_user_id` — are filled from the mirror
+ * row, so a predicate on the canonical side selects the rows the mirror-side predicate
+ * selected. `next_follow_up_at` is set on a quarter of the lead parties in the past and a
+ * quarter in the future, because the CRM inbox reads filter on it and a column that is NULL
+ * everywhere makes that filter free.
+ */
+async function seedPartySeam(ctx) {
+  const parties = await count("business_parties", "organization_id = $1", [ctx.org]);
+  const leadRows = await count("leads", "org_id = $1", [ctx.org]);
+  const contactRows = await count("contacts", "org_id = $1", [ctx.org]);
+  if (leadRows + contactRows > parties)
+    throw new Error(
+      `not enough parties to map: ${leadRows} leads + ${contactRows} contacts > ${parties} business_parties`,
+    );
+
+  await topUp(`${ctx.label} lead_party_map`, "lead_party_map", "organization_id = $1", [ctx.org], leadRows, async () => {
+    await sql.unsafe(
+      `WITH l AS (SELECT id, row_number() OVER (ORDER BY id) rn FROM leads WHERE org_id = $1),
+            p AS (SELECT party_id, row_number() OVER (ORDER BY party_id) rn
+                    FROM business_parties WHERE organization_id = $1)
+       INSERT INTO lead_party_map (organization_id, lead_id, party_id, linked_by, created_at)
+       SELECT $1, l.id, p.party_id, 'seed:perf-scratch', now()
+       FROM l JOIN p ON p.rn = l.rn
+       ON CONFLICT DO NOTHING`,
+      [ctx.org],
+    );
+  });
+
+  await topUp(`${ctx.label} contact_party_map`, "contact_party_map", "organization_id = $1", [ctx.org], contactRows, async () => {
+    await sql.unsafe(
+      `WITH c AS (SELECT id, row_number() OVER (ORDER BY id) rn FROM contacts WHERE org_id = $1),
+            p AS (SELECT party_id, row_number() OVER (ORDER BY party_id DESC) rn
+                    FROM business_parties WHERE organization_id = $1)
+       INSERT INTO contact_party_map (organization_id, contact_id, party_id, linked_by, created_at)
+       SELECT $1, c.id, p.party_id, 'seed:perf-scratch', now()
+       FROM c JOIN p ON p.rn = c.rn
+       ON CONFLICT DO NOTHING`,
+      [ctx.org],
+    );
+  });
+
+  const lead = await sql.unsafe(
+    `UPDATE business_parties bp
+        SET owner_user_id = l.assigned_to_id,
+            lifecycle_stage = l.status,
+            qualification_score = coalesce(l.score, l.id % 100),
+            priority = coalesce(l.priority, (ARRAY['HOT','WARM','COLD'])[1 + (l.id % 3)]),
+            acquisition_source = coalesce(l.source, (ARRAY['web','referral','event','outbound'])[1 + (l.id % 4)]),
+            next_follow_up_at = CASE l.id % 4
+              WHEN 0 THEN now() - ((l.id % 72) || ' hours')::interval
+              WHEN 1 THEN now() + ((l.id % 72) || ' hours')::interval
+              ELSE NULL END,
+            updated_at = now()
+       FROM lead_party_map m
+       JOIN leads l ON l.org_id = m.organization_id AND l.id = m.lead_id
+      WHERE m.organization_id = $1 AND bp.organization_id = $1 AND bp.party_id = m.party_id
+        AND (bp.lifecycle_stage IS DISTINCT FROM l.status
+             OR bp.owner_user_id IS DISTINCT FROM l.assigned_to_id)`,
+    [ctx.org],
+  );
+  if (lead.count > 0) log(`  ${ctx.label} business_parties (lead side): ${lead.count} projected`);
+
+  const contact = await sql.unsafe(
+    `WITH mem AS (SELECT user_id, (row_number() OVER (ORDER BY id)) - 1 AS rn
+                    FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE')
+     UPDATE business_parties bp
+        SET owner_user_id = mem.user_id,
+            party_kind = 'PERSON'::party_kind,
+            job_title = coalesce(bp.job_title, c.title),
+            department = coalesce(bp.department, c.department),
+            updated_at = now()
+       FROM contact_party_map m
+       JOIN contacts c ON c.org_id = m.organization_id AND c.id = m.contact_id
+       JOIN mem ON mem.rn = c.id % $2::int
+      WHERE m.organization_id = $1 AND bp.organization_id = $1 AND bp.party_id = m.party_id
+        AND bp.owner_user_id IS NULL`,
+    [ctx.org, ctx.memberCount],
+  );
+  if (contact.count > 0) log(`  ${ctx.label} business_parties (contact side): ${contact.count} projected`);
 }
 
 // ---------------------------------------------------------------------------
@@ -811,7 +920,7 @@ async function seedMail(ctx) {
 
 const TOUCHED = [
   "organizations", "users", "organization_members",
-  "business_parties", "contacts", "leads", "deals",
+  "business_parties", "contacts", "leads", "deals", "lead_party_map", "contact_party_map",
   "inv_vendors", "inv_warehouses", "inv_locations", "inv_products", "inv_product_variants",
   "inv_stock_levels", "inv_stock_transactions", "inv_purchase_orders",
   "build.pm_workspaces", "build.projects", "build.project_statuses", "build.sprints",
@@ -837,7 +946,7 @@ async function vacuumAnalyze() {
 const PURGEABLE = [
   "inv_stock_transactions", "inv_stock_levels", "inv_product_variants", "inv_products",
   "inv_purchase_orders", "inv_locations", "inv_warehouses", "inv_vendors",
-  "deals", "leads", "contacts", "business_parties",
+  "lead_party_map", "contact_party_map", "deals", "leads", "contacts", "business_parties",
   "acc_tax_payments", "fin_reminder_policies", "support_tickets", "mail_message_metadata",
 ];
 
@@ -845,14 +954,14 @@ async function purge() {
   log("Purging perf-layer rows for the four seed orgs...");
   for (const o of PERF_ORGS)
     for (const t of PURGEABLE) {
-      const col = t === "business_parties" ? "organization_id" : "org_id";
-      await sql.unsafe(`DELETE FROM ${t} WHERE ${col} = $1`, [o.id]).catch(() => {});
+      await sql.unsafe(`DELETE FROM ${t} WHERE ${tenantColumn(t)} = $1`, [o.id]).catch(() => {});
     }
 }
 
 const SHAPE_TABLES = [
   "build.tickets", "notifications", "calendar_events", "event_attendees", "chat_messages",
-  "contacts", "leads", "deals", "business_parties", "inv_stock_transactions", "inv_stock_levels",
+  "contacts", "leads", "deals", "business_parties", "lead_party_map", "contact_party_map",
+  "inv_stock_transactions", "inv_stock_levels",
   "inv_product_variants", "inv_products", "support_tickets", "attendance", "timesheets",
   "leave_requests", "mail_message_metadata", "hr_employments", "hr_people", "kb_pages",
   "kb_article_chunks", "organization_members",
@@ -868,7 +977,7 @@ async function reportShape() {
     "minority%".padStart(10),
   ].join(" "));
   for (const t of SHAPE_TABLES) {
-    const col = t === "business_parties" ? "organization_id" : "org_id";
+    const col = tenantColumn(t);
     const per = [];
     for (const o of PERF_ORGS) per.push(await count(t, `${col} = $1`, [o.id]).catch(() => 0));
     const all = Number((await sql.unsafe(`SELECT count(*)::bigint n FROM ${t}`))[0].n);
@@ -902,6 +1011,7 @@ async function main() {
       continue;
     }
     await section(`${ctx.label} crm`, () => seedCrm(ctx));
+    await section(`${ctx.label} party seam`, () => seedPartySeam(ctx));
     await section(`${ctx.label} inventory`, () => seedInventory(ctx));
     await section(`${ctx.label} build`, () => seedBuildProduct(ctx));
     await section(`${ctx.label} finance`, () => seedFinance(ctx));
