@@ -89,6 +89,7 @@ describe("Payments controller auth/RBAC (e2e)", () => {
     ["patch", "/payments/providers/razorpay"],
     ["post", "/payments/providers/razorpay/disable"],
     ["post", "/payments/providers/razorpay/credentials"],
+    ["post", "/payments/providers/razorpay/credentials/rotate"],
     ["post", "/payments/providers/razorpay/disconnect"],
     ["get", "/payments/providers/razorpay/test-transactions"],
     ["post", "/payments/providers/razorpay/test-transactions"],

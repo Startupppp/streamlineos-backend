@@ -163,6 +163,21 @@ export class PaymentsController {
     return this.providers.saveCredentials(u.orgId, providerKey, body, this.actorContext(u, req));
   }
 
+  // Published contract: same behaviour as /credentials, kept until a deprecation window runs.
+  @Post("providers/:providerKey/credentials/rotate")
+  @HttpCode(200)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("payments:credentials:manage")
+  @Validate({ params: providerKeyParams, body: saveCredentialsSchema })
+  rotateCredentials(
+    @Param("providerKey") providerKey: string,
+    @Body() body: SaveCredentialsInput,
+    @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request,
+  ) {
+    return this.providers.saveCredentials(u.orgId, providerKey, body, this.actorContext(u, req));
+  }
+
   @Post("providers/:providerKey/disconnect")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
