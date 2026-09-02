@@ -206,4 +206,53 @@ describe("tenant-aware wrappers", () => {
     }
     expect(new Set(captured).size).toBeGreaterThan(1);
   });
+
+  it("never serves a null fetch result from cache, so a denial cannot outlive the grant that ends it", async () => {
+    const values = new Map<string, unknown>();
+    const redis = buildRedis(values);
+    const cache = new CacheService(redis);
+
+    const fetcher = jest
+      .fn<Promise<{ ok: true } | null>, []>()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({ ok: true });
+
+    await expect(cache.cached("negative-key", fetcher)).resolves.toBeNull();
+    await expect(cache.cached("negative-key", fetcher)).resolves.toEqual({ ok: true });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a failing invalidation and records the drop instead of swallowing it", async () => {
+    const del = jest.fn(async () => {
+      throw new Error("redis down");
+    });
+    const redis = { del, get: jest.fn(async () => null) } as unknown as Redis;
+    const cache = new CacheService(redis);
+    const logged = jest
+      .spyOn(cache["logger"], "error")
+      .mockImplementation(() => undefined);
+
+    await cache.invalidate("stale-key");
+
+    expect(del).toHaveBeenCalledTimes(3);
+    expect(cache.droppedInvalidationCount).toBe(1);
+    expect(String(logged.mock.calls[0]?.[0])).toContain("cache.invalidation.dropped");
+    logged.mockRestore();
+  });
+
+  it("stops retrying an invalidation as soon as one attempt succeeds", async () => {
+    let attempts = 0;
+    const del = jest.fn(async () => {
+      attempts++;
+      if (attempts === 1) throw new Error("transient");
+      return 1;
+    });
+    const redis = { del, get: jest.fn(async () => null) } as unknown as Redis;
+    const cache = new CacheService(redis);
+
+    await cache.invalidate("flaky-key");
+
+    expect(del).toHaveBeenCalledTimes(2);
+    expect(cache.droppedInvalidationCount).toBe(0);
+  });
 });

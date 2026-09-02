@@ -16,7 +16,49 @@ export class CacheService {
   private static readonly FILL_WAIT_MS = 2_000;
   private static readonly FILL_POLL_MS = 50;
 
+  private static readonly INVALIDATE_ATTEMPTS = 3;
+  private static readonly INVALIDATE_BACKOFF_MS = 20;
+
+  /**
+   * A read that fails on a Redis error degrades to the database and is correct.
+   * An *invalidation* that fails leaves a stale entry serving, so it is the one
+   * operation that must not be dropped on the first error. Failures are retried,
+   * and a final failure is an error with a stable marker rather than a warning,
+   * because a silently swallowed invalidation makes the next outage invisible.
+   */
+  private static readonly DROPPED_MARKER = "cache.invalidation.dropped";
+
+  private droppedInvalidations = 0;
+
   constructor(@Inject(REDIS) private readonly redis: Redis | null) {}
+
+  /** Dropped invalidations since boot. A non-zero value means stale entries may be serving. */
+  get droppedInvalidationCount(): number {
+    return this.droppedInvalidations;
+  }
+
+  private async invalidateWithRetry(
+    label: string,
+    target: string,
+    operation: () => Promise<unknown>,
+  ): Promise<void> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= CacheService.INVALIDATE_ATTEMPTS; attempt++) {
+      try {
+        await this.timedRedis(operation);
+        return;
+      } catch (err) {
+        lastError = err;
+        if (attempt < CacheService.INVALIDATE_ATTEMPTS)
+          await this.delay(CacheService.INVALIDATE_BACKOFF_MS * attempt);
+      }
+    }
+    this.droppedInvalidations++;
+    this.logger.error(
+      `${CacheService.DROPPED_MARKER} ${label} target=${target} attempts=${String(CacheService.INVALIDATE_ATTEMPTS)}`,
+      lastError,
+    );
+  }
 
   async cached<T>(key: string, fetcher: () => Promise<T>, ttlSeconds = 300): Promise<T> {
     return this.cachedWithRedis(this.redis, key, fetcher, ttlSeconds);
@@ -57,12 +99,9 @@ export class CacheService {
   async invalidateNamespace(namespace: string): Promise<void> {
     const redis = this.redis;
     if (!redis) return;
-    try {
-      await this.timedRedis(() => redis.incr(this.namespaceVersionKey(namespace)));
-    } catch (err) {
-      this.logger.warn(`cache invalidateNamespace failed: ${namespace}`, err);
-      return;
-    }
+    await this.invalidateWithRetry("invalidateNamespace", namespace, () =>
+      redis.incr(this.namespaceVersionKey(namespace)),
+    );
   }
 
   private async loadOrFetch<T>(
@@ -170,12 +209,7 @@ export class CacheService {
   async invalidate(key: string): Promise<void> {
     const redis = this.redis;
     if (!redis) return;
-    try {
-      await this.timedRedis(() => redis.del(key));
-    } catch (err) {
-      this.logger.warn(`cache invalidate failed: ${key}`, err);
-      return;
-    }
+    await this.invalidateWithRetry("invalidate", key, () => redis.del(key));
   }
 
   async del(key: string): Promise<void> {
@@ -256,12 +290,9 @@ export class CacheService {
     const redis = await this.redisForOrg(orgId);
     const ns = await this.orgScopedKey(orgId, namespace);
     if (!redis) return;
-    try {
-      await this.timedRedis(() => redis.incr(this.namespaceVersionKey(ns)));
-    } catch (err) {
-      this.logger.warn(`cache invalidateNamespaceForOrg failed: ${ns}`, err);
-      return;
-    }
+    await this.invalidateWithRetry("invalidateNamespaceForOrg", ns, () =>
+      redis.incr(this.namespaceVersionKey(ns)),
+    );
   }
 
   async invalidateForOrg(orgId: string, localKey: string): Promise<void> {
@@ -269,12 +300,7 @@ export class CacheService {
     const prefix = await this.cellPrefixForOrg(orgId);
     const key = prefix ? `${prefix}:${orgId}:${localKey}` : `${orgId}:${localKey}`;
     if (!redis) return;
-    try {
-      await this.timedRedis(() => redis.del(key));
-    } catch (err) {
-      this.logger.warn(`cache invalidateForOrg failed: ${key}`, err);
-      return;
-    }
+    await this.invalidateWithRetry("invalidateForOrg", key, () => redis.del(key));
   }
 
 }
