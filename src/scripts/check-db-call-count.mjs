@@ -225,7 +225,42 @@ export function checkForStaleEntries(classification, root) {
   return stale;
 }
 
-const FIXED_VERDICTS = new Set(["N+1-FIXED", "BATCHED"]);
+/**
+ * Only a claim of REMOVAL can regress.
+ *
+ * `BATCHED` used to sit here beside `N+1-FIXED`, and that made the verdict
+ * unusable: `BATCHED` means "the loop is still there and still issues a call,
+ * but the call is batched/bounded and that is correct" — so the detector is
+ * SUPPOSED to keep matching it. Treating a still-detected `BATCHED` file as a
+ * regression meant the one verdict that says "I looked and this is fine" also
+ * guaranteed a red gate, which trains people to reclassify rather than to fix.
+ * The evidence is in the baseline: zero files carry `BATCHED` and 75 carry
+ * `FALSE-POSITIVE`, which is where the batched loops went — a batched loop is
+ * not a false positive of the detector, it is a true positive with an acceptable
+ * verdict, and calling it a miss is how a detector gets tuned blind.
+ *
+ * `N+1-FIXED` still means the loop no longer issues a call, so a still-detected
+ * `N+1-FIXED` file is a genuine regression and stays here.
+ */
+const FIXED_VERDICTS = new Set(["N+1-FIXED"]);
+
+/** Verdicts that assert the detector will keep matching the file. */
+const STILL_DETECTED_VERDICTS = new Set(["BATCHED", "FALSE-POSITIVE", "ACTIONABLE"]);
+
+/**
+ * Entries asserting "still detected" that the detector no longer matches.
+ * MEASURED 2 on 2026-09-02, both FALSE-POSITIVE and both owned elsewhere:
+ *   /cron/cron-hr-retention-documents.ts — a file ticket 37 CREATED by splitting
+ *     cron-hr-retention.service.ts, whose classification note records the re-key.
+ *     A split moves code into a filename the baseline has never seen, and this is
+ *     the second gate to trip on that one file (check:unbounded-reads is the other).
+ *   /hr/global/compliance-requirements.service.ts — classified by reading, and the
+ *     detector has since stopped matching it.
+ * Ratcheted rather than blocking so this check cannot red a gate that is green on
+ * everything else while ticket 21's second pass is live in the same baseline file.
+ * It may only go down.
+ */
+const UNDETECTED_CLAIM_BASELINE = 2;
 
 export function checkForRegressions(counts, classification) {
   const regressions = [];
@@ -235,6 +270,23 @@ export function checkForRegressions(counts, classification) {
       regressions.push({ file: relPath, verdict });
   }
   return regressions;
+}
+
+/**
+ * The other direction, and the reason removing BATCHED from FIXED_VERDICTS does
+ * not turn it into a permanent exemption: an entry that asserts the detector
+ * still matches it, which the detector no longer matches, is stale. Either the
+ * code was fixed (reclassify to N+1-FIXED) or the detector lost sight of it
+ * (a false negative, which is the failure shape this repository keeps producing).
+ * Both need a human; neither may pass silently.
+ */
+export function checkForUndetectedClaims(counts, classification) {
+  const undetected = [];
+  for (const [relPath, entry] of Object.entries(classification)) {
+    if (!STILL_DETECTED_VERDICTS.has(entry?.verdict)) continue;
+    if (counts[relPath] === undefined) undetected.push({ file: relPath, verdict: entry.verdict });
+  }
+  return undetected;
 }
 
 export function countActionable(counts, classification) {
@@ -409,6 +461,44 @@ function runSelfTests() {
   }
 
   {
+    // The BATCHED defect, pinned. A batched loop is SUPPOSED to keep matching the
+    // detector; calling that a regression made the one verdict that means "I read
+    // this and it is correct" also mean "this gate is now red", which is why the
+    // baseline holds zero BATCHED files and 75 FALSE-POSITIVE ones.
+    const regressions = checkForRegressions(
+      { "/some/batched.service.ts": 3 },
+      { "/some/batched.service.ts": { verdict: "BATCHED" } },
+    );
+    if (regressions.length > 0) {
+      console.error("SELF-TEST FAIL: a still-detected BATCHED file was reported as a regression");
+      process.exit(1);
+    }
+  }
+
+  {
+    // The other direction: BATCHED must not become a silent permanent exemption.
+    const undetected = checkForUndetectedClaims(
+      {},
+      { "/some/batched.service.ts": { verdict: "BATCHED" } },
+    );
+    if (undetected.length !== 1) {
+      console.error("SELF-TEST FAIL: a BATCHED file the detector no longer matches was not reported as stale");
+      process.exit(1);
+    }
+  }
+
+  {
+    const undetected = checkForUndetectedClaims(
+      {},
+      { "/some/fixed.service.ts": { verdict: "N+1-FIXED" }, "/some/x.service.ts": { verdict: "EXCLUDED-MODULE" } },
+    );
+    if (undetected.length > 0) {
+      console.error("SELF-TEST FAIL: N+1-FIXED / EXCLUDED-MODULE must not be reported as stale when undetected");
+      process.exit(1);
+    }
+  }
+
+  {
     // Regression fixtures taken from the two shapes this detector was blind to.
     // Both are the REAL code from payroll/runs/inputs.service.ts, not a synthetic
     // paraphrase: the gate reported ACTIONABLE 0 while sitting directly over them.
@@ -545,6 +635,7 @@ async function main() {
   const unclassified = checkForUnclassified(counts, classification);
   const stale = checkForStaleEntries(classification, ROOT);
   const regressions = checkForRegressions(counts, classification);
+  const undetectedClaims = checkForUndetectedClaims(counts, classification);
   const actionable = countActionable(counts, classification);
 
   const detectedTotal = Object.keys(counts).length;
@@ -573,13 +664,27 @@ async function main() {
   }
 
   if (regressions.length > 0) {
-    console.error(`\n${regressions.length} REGRESSION(s) — marked fixed/batched but still detected:`);
+    console.error(`\n${regressions.length} REGRESSION(s) — marked N+1-FIXED but still detected:`);
     for (const r of regressions) console.error(`  REGRESSED  ${r.file} (was ${r.verdict})`);
     failed = true;
   }
 
+  if (undetectedClaims.length > 0) {
+    const over = undetectedClaims.length > UNDETECTED_CLAIM_BASELINE;
+    const say = over ? console.error : console.log;
+    say(
+      `\n${undetectedClaims.length} STALE VERDICT(s) (ratchet ${UNDETECTED_CLAIM_BASELINE}) — the entry asserts the detector still matches this file, and it no longer does. Either the loop was fixed (reclassify N+1-FIXED) or the detector lost sight of it (a false negative):`,
+    );
+    for (const u of undetectedClaims) say(`  UNDETECTED  ${u.file} (marked ${u.verdict})`);
+    if (over) failed = true;
+  }
+
   if (!failed) {
-    console.log("\nAll N+1 patterns are classified. No regressions or stale entries.");
+    console.log(
+      undetectedClaims.length > 0
+        ? `\nEvery N+1 pattern is classified and nothing regressed. ${undetectedClaims.length} stale verdict(s) recorded above, at the ratchet of ${UNDETECTED_CLAIM_BASELINE}.`
+        : "\nAll N+1 patterns are classified. No regressions or stale entries.",
+    );
   }
 
   process.exitCode = failed ? 1 : 0;

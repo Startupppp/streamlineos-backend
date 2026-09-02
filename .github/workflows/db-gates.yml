@@ -79,6 +79,17 @@ jobs:
       - name: Retention coverage (live)
         run: pnpm check:retention-coverage
 
+      # The last gate script in the repository that no workflow named. BOTH its
+      # halves — the live check and its own self-test — exit 2 with
+      # "COLD_DATABASE_URL is required", so there is no hermetic half to put in
+      # ci.yml's `gates` job. This is the only place a cold database exists.
+      # UNPROVEN: like every job in this file it has never executed anywhere, so
+      # read the result before promoting it.
+      - name: Replay ledger
+        run: pnpm check:replay-ledger:self-test && pnpm check:replay-ledger
+        env:
+          COLD_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+
       - name: Controller E2E Tests
         run: pnpm test:e2e:ci
         env:

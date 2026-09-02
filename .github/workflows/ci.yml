@@ -52,19 +52,44 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      # Includes the eval acceptance gates. The heap is raised because the
-      # project's own typecheck needs it and jest transpiles the same tree.
-      - name: Test
-        run: pnpm test
-        env:
-          NODE_OPTIONS: --max-old-space-size=8192
-
       - name: Build
         run: pnpm build
 
       - name: Dead-code report
         run: pnpm exec knip --no-progress
         continue-on-error: true
+
+  # The unit suite, in its OWN job for exactly the reason `gates` is in its own
+  # job. 2026-09-02 (ticket 35): `Test` sat below `Lint` inside `verify`, and
+  # `Lint` is red, so `pnpm test` had never executed in CI either -- the same
+  # masking defect 35b found for the gates, one step lower down. A suite whose
+  # result is "-" is not a passing suite.
+  #
+  # Unfiltered on purpose. `jest --testPathPattern=<x>` reports green while
+  # every suite outside the filter is red, which is the false pass this job
+  # exists to make impossible.
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Includes the eval acceptance gates. The heap is raised because the
+      # project's own typecheck needs it and jest transpiles the same tree.
+      - name: Test
+        run: pnpm test
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
 
   # Every static gate in the repository. Hermetic: no database, no network
   # beyond the registry, no secrets. A step marked `continue-on-error` names the
@@ -88,6 +113,18 @@ jobs:
 
       - name: Import cycles
         run: pnpm check:cycles
+
+      # The FE half of this pair has been wired since 35b; the BE copy's self-test
+      # was the only gate script in this repo that no workflow named at all.
+      - name: Repo path resolvers still resolve
+        run: pnpm check:repo-paths:self-test
+
+      # NOT WIRED HERE ON PURPOSE. `check:dead-code` measures rc=0 today (knip 0
+      # unused files / 36 other findings, a 9,795-file importer graph, 35 verdicts
+      # with none stale) but src/scripts/check-dead-code.mjs is still UNTRACKED in
+      # this working tree — another ticket authored it during this run. A CI step
+      # naming a script that is not in the commit is a red pipeline, not a gate.
+      # Add the step in the same commit that lands the script.
 
       - name: Permission key catalog check
         run: pnpm check:permission-keys
@@ -267,6 +304,24 @@ jobs:
       - name: Mock surfaces match the class they double
         run: pnpm check:mock-surface:self-test && pnpm check:mock-surface
 
+      # BE/CLAUDE.md §8 has said "a db.transaction mock must invoke its callback"
+      # since before this gate existed, and nothing enforced it. A bare
+      # `jest.fn()` returns undefined and never runs what it was handed, so every
+      # insert, outbox emit and expect inside the callback disappears while the
+      # suite stays green. Measured 9 spec files whose every double is inert,
+      # after three false-positive classes were removed from the detector first
+      # (22 -> 11 -> 9). Ratcheted at 9; a new one fails immediately.
+      - name: Transaction doubles run their callback
+        run: pnpm check:transaction-callbacks:self-test && pnpm check:transaction-callbacks
+
+      # An honest skip names an infrastructure blocker; a quarantine hides live
+      # assertions. Both are the same string to a grep, so the registry records
+      # which is which and the gate fails on an unregistered skip, a stale entry,
+      # a declared class that does not match the measured one, and on any growth
+      # in the quarantine count.
+      - name: Skipped tests are declared, not hidden
+        run: pnpm check:test-suppressions:self-test && pnpm check:test-suppressions
+
       # Alert detection logic, exercised against fixtures. These do not touch a database or a
       # webhook; they prove each alert fires on a breaching input and stays quiet on a clean one.
       - name: Alert self-tests
@@ -283,6 +338,13 @@ jobs:
       # catalogue spec in the unit suite is what proves the runbook anchors resolve.
       - name: Alert system registry
         run: pnpm check:alert-system
+
+      # Self-test only, and this one can never be more. The live check exits 2
+      # without ALERT_WEBHOOK_URL *and* a nonce a human typed back from the alert
+      # channel -- proof that a person received the page, which no CI job can
+      # fabricate. Its seven-case self-test is hermetic and does run.
+      - name: Alert acknowledgement gate (self-test; live half needs an operator drill)
+        run: pnpm check:alert-ack:self-test
 
       # Every emitted event type has a registered consumer, and every RBAC grant row points
       # at a permission that still exists. Both were runbook-only until now.
@@ -358,17 +420,25 @@ jobs:
       # 2026-09-02. Delete the continue-on-error when the named number is zero.
       # ---------------------------------------------------------------------
 
-      # Measured rc=1, and the reason moved twice inside one hour while ticket 37
-      # worked the tree: the failure is now "a file at or below 500 lines must
-      # lose its row" — stale bookkeeping in file-size-exceptions.md, not a file
-      # over the ceiling. Ticket 37 owns both the splits and that list.
+      # Ticket 37 finished the splits and corrected the exception registry (7 of 12
+      # rows were wrong — five files had dropped below 500 and kept their
+      # exemption, one was recorded at 2496 while measuring 3216), and this gate
+      # measured rc=0 mid-session: 3,545 files, all within 500 lines.
+      # Re-measured ~40 minutes later at commit time: rc=1, ONE file over —
+      # src/modules/access/access-permission.resolver.ts at 507, which crossed
+      # during this run under another ticket's edits. It stays allow-failure
+      # because it is red right now and a gate wired to fail gets muted; the
+      # split is one file and the continue-on-error goes with it.
       - name: Files over 500 lines
         continue-on-error: true
         run: pnpm check:file-sizes:self-test && pnpm check:file-sizes
 
-      # Measured rc=1: 400 files exceed 300 lines, 6 above the baseline of 394.
-      # Ticket 37 owns the split; blocking it here would red the pipeline on work
-      # that is already ticketed.
+      # Measured rc=1 on 2026-09-02: 400 files exceed 300 lines, 6 above the
+      # baseline of 394 (the 401 recorded mid-run has since come down by one).
+      # The BASELINE IS DELIBERATELY NOT RAISED — this release forbids moving a
+      # ratchet to turn a regression green. The splits are ticket 37's; blocking
+      # here would red the pipeline on work that is already ticketed and outside
+      # this gate's territory.
       - name: Files over 300 lines do not increase
         continue-on-error: true
         run: pnpm check:over-300:self-test && pnpm check:over-300
@@ -383,12 +453,16 @@ jobs:
       - name: N+1 classification is current
         run: pnpm check:db-call-count:self-test && pnpm check:db-call-count
 
-      # Measured rc=1 on BOTH the gate and its self-test: 76 primary reads of a
-      # lifecycle table carry no predicate against a recorded baseline of 75. The
-      # self-test asserts the same live ratchet, so this is a genuine committed
-      # regression in application source, not a broken gate. Ticket 06.
+      # BLOCKING as of 2026-09-02. It was rc=1 on both the gate and its self-test
+      # at 76 against a baseline of 75. Bisected by running the CURRENT detector
+      # over each tree: the 76th was KbTagsService.setArticleTags, a primary read
+      # of kb_articles added by 42b3ed70 as a BOLA ownership assertion with no
+      # lifecycle predicate — so an ARCHIVED article still accepted a retag.
+      # Fixed at source with ne(kbArticles.status, "archived"): archived_at is a
+      # one-way stamp that publish() never clears, so status is the only sound
+      # liveness predicate on this table. 76 -> 75, rc=1 -> rc=0.
+      # PRIMARY_CANDIDATE_BASELINE was NOT raised.
       - name: Lifecycle predicates
-        continue-on-error: true
         run: pnpm check:lifecycle-predicates:self-test && pnpm check:lifecycle-predicates
 
       # Blocking. At HEAD this gate exits 0 while printing INCONCLUSIVE (declared

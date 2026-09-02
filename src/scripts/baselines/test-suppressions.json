@@ -1,0 +1,139 @@
+{
+  "note": "Every unconditional test suppression in this repository, with the blocker that justifies it. PLACEHOLDER = empty body, nothing was ever written. QUARANTINE = live assertions that do not run. check:test-suppressions fails on an unregistered site, a stale entry, a declared class that does not match the measured one, and on a quarantine count above its ratchet.",
+  "measured": "2026-09-02",
+  "entries": [
+    {
+      "file": "src/degradation/ai-provider.spec.ts",
+      "title": "integration: releasing a RESERVED reservation restores the org wallet balance — needs OutboxPublisherService / AiCreditsReservationService driven end to end; those services open their own transactions via runInNewTenantTransaction, so their writes cannot be rolled back on a database shared with concurrent sessions — asserting hand-written SQL state instead proves only that Postgres stores what was written",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "no isolable integration harness: the services under test open their own transactions via runInNewTenantTransaction, so their writes cannot be rolled back on the shared database. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/ai-provider.spec.ts",
+      "title": "integration: a sweep of expired reservations restores credits to all wallets atomically — same blocker as above",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "no isolable integration harness: the services under test open their own transactions via runInNewTenantTransaction, so their writes cannot be rolled back on the shared database. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/email-provider.spec.ts",
+      "title": "integration: a 503 from the provider increments retryCount and returns the event to PENDING — needs OutboxPublisherService / AiCreditsReservationService driven end to end; those services open their own transactions via runInNewTenantTransaction, so their writes cannot be rolled back on a database shared with concurrent sessions — asserting hand-written SQL state instead proves only that Postgres stores what was written",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "no isolable integration harness: the outbox publisher opens its own transaction via runInNewTenantTransaction and cannot be rolled back on the shared database. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/email-provider.spec.ts",
+      "title": "integration: reaching OUTBOX_MAX_RETRIES dead-letters the event while the request row stays committed — same blocker as above",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "no isolable integration harness: the outbox publisher opens its own transaction via runInNewTenantTransaction and cannot be rolled back on the shared database. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/email-provider.spec.ts",
+      "title": "integration: the request transaction commits before any delivery attempt — same blocker as above",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "no isolable integration harness: the outbox publisher opens its own transaction via runInNewTenantTransaction and cannot be rolled back on the shared database. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/object-storage.spec.ts",
+      "title": "unblocked by: a real S3/R2 storage endpoint configured in the test environment — once available, verify that an upload re-driven from the stored pre-generated key reaches the endpoint and the stored metadata row reflects completion without data loss",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "no S3/R2 endpoint is provisioned in this environment. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/object-storage.spec.ts",
+      "title": "unblocked by: a real storage endpoint and a virus-scanner seam (e.g. ClamAV sidecar) — verify the scan PENDING→CLEAN state machine under real conditions so that CLEAN is never set before the scanner confirms the result",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "no S3/R2 endpoint is provisioned in this environment. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/read-replica.spec.ts",
+      "title": "PHYSICAL REPLICA NOT PROVISIONED. The staleness behaviour below is proved against a REPEATABLE READ ",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "no physical read replica is provisioned; the staleness behaviour is proved against a REPEATABLE READ snapshot instead. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/degradation/realtime-adapter.spec.ts",
+      "title": "unblocked by: a real Ably account with a valid API key so a test client can subscribe to a channel and verify it receives messages from the DB lastReadAt watermark after reconnecting — the subscription and message history retrieval require Ably infrastructure that is not available in this environment",
+      "kind": "it.skip",
+      "class": "PLACEHOLDER",
+      "blocker": "no Ably account or API key is available, so no client can subscribe to a channel. Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
+      "title": "stalePipelineDigest",
+      "kind": "describe.skip",
+      "class": "QUARANTINE",
+      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
+    },
+    {
+      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
+      "title": "dataQualityCopilot",
+      "kind": "describe.skip",
+      "class": "QUARANTINE",
+      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
+    },
+    {
+      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
+      "title": "nextBestActionWithEvidence (CrmScoringService)",
+      "kind": "describe.skip",
+      "class": "QUARANTINE",
+      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
+    },
+    {
+      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
+      "title": "leadSummaryWithCitations",
+      "kind": "describe.skip",
+      "class": "QUARANTINE",
+      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
+    },
+    {
+      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
+      "title": "predictDeal (estimateDisclaimer)",
+      "kind": "describe.skip",
+      "class": "QUARANTINE",
+      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
+    },
+    {
+      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
+      "title": "meetingFollowUpDraft (CrmBriefService)",
+      "kind": "describe.skip",
+      "class": "QUARANTINE",
+      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
+    },
+    {
+      "file": "src/modules/ai/core/projects-ai.controller.e2e-spec.ts",
+      "title": "400 on non-numeric projectId (controller uses string param with no ParseIntPipe; NaN passes through to service; would need a pipe added to enforce this)",
+      "kind": "it.todo",
+      "class": "PLACEHOLDER",
+      "blocker": "the assertion needs a source change first (a ParseIntPipe on the route, or an LlmService override seam). Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/modules/ai/core/projects-ai.controller.e2e-spec.ts",
+      "title": "402 on plan gate fires before service (orgOwner bypass not needed — plan check is in controller)",
+      "kind": "it.todo",
+      "class": "PLACEHOLDER",
+      "blocker": "the assertion needs a source change first (a ParseIntPipe on the route, or an LlmService override seam). Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/modules/ai/core/projects-ai.controller.e2e-spec.ts",
+      "title": "503 on ensureLlm when LlmService.isConfigured() returns false (requires LlmService override)",
+      "kind": "it.todo",
+      "class": "PLACEHOLDER",
+      "blocker": "the assertion needs a source change first (a ParseIntPipe on the route, or an LlmService override seam). Empty body — nothing is switched off."
+    },
+    {
+      "file": "src/modules/crm/core/crm-attribution-report.service.spec.ts",
+      "title": "last-touch uses a subquery (.as()) to find max occurredAt per lead — mock chain depth makes this an integration-level test; cover in e2e",
+      "kind": "it.todo",
+      "class": "PLACEHOLDER",
+      "blocker": "CRM is excluded from the 10/10 release; the last-touch subquery needs an integration harness the mock chain cannot reach. Empty body — nothing is switched off."
+    }
+  ]
+}

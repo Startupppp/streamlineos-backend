@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { kbArticleTags, kbArticles, kbTags } from "../../../db/schema";
@@ -86,7 +86,13 @@ export class KbTagsService {
       const [article] = await tx
         .select({ id: kbArticles.id })
         .from(kbArticles)
-        .where(and(eq(kbArticles.id, articleId), eq(kbArticles.orgId, orgId)))
+        .where(
+          and(
+            eq(kbArticles.id, articleId),
+            eq(kbArticles.orgId, orgId),
+            ne(kbArticles.status, "archived"),
+          ),
+        )
         .limit(1);
       if (!article) throw new NotFoundException("Article not found");
 
