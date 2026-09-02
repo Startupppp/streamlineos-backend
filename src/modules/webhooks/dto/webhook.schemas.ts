@@ -35,11 +35,19 @@ export const logsSchema = z
   })
   .strict();
 
+const eventName = z
+  .string()
+  .min(1)
+  .max(100)
+  .regex(/^[\w.*:-]+$/, "Event name must contain only word characters, dots, hyphens, colons or *");
+
+const eventsField = z.array(eventName).max(50).default([]);
+
 export const createSchema = z
   .object({
     url: webhookUrl,
     description: z.string().optional(),
-    events: z.array(z.string()).default([]),
+    events: eventsField,
   })
   .strict();
 
@@ -47,7 +55,7 @@ export const updateSchema = z
   .object({
     url: webhookUrl.optional(),
     description: z.string().optional(),
-    events: z.array(z.string()).optional(),
+    events: z.array(eventName).max(50).optional(),
     isActive: z.boolean().optional(),
   })
   .strict();

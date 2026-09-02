@@ -1,5 +1,6 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
@@ -76,6 +77,8 @@ export class StorageQuarantineController {
   ) {
     const record = await this.quarantine.findById(u.orgId, params.quarantineId);
     if (!record) throw new NotFoundException("Quarantine record not found");
+    if (record.status !== "pending_scan")
+      throw new ConflictException("Only a pending_scan record can be released");
 
     await this.quarantine.markClean(record.id);
     this.audit.log({
@@ -99,6 +102,8 @@ export class StorageQuarantineController {
   ) {
     const record = await this.quarantine.findById(u.orgId, params.quarantineId);
     if (!record) throw new NotFoundException("Quarantine record not found");
+    if (record.status === "clean")
+      throw new ConflictException("A released file cannot be rejected");
 
     const threatName = body.reason ?? "manual-rejection";
     await this.quarantine.markInfected(record.id, threatName);

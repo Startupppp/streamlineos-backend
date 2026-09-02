@@ -10,6 +10,12 @@ export interface FileKeyColumn {
 }
 
 export async function enumerateFileKeyColumns(db: Db): Promise<FileKeyColumn[]> {
+  // Drizzle expands a JS array into the row constructor `($1, $2, $3)`, which `= ANY()`
+  // rejects with 42809, so this must be an IN list rather than an ANY comparison.
+  const schemaList = sql.join(
+    APP_SCHEMAS.map((schema) => sql`${schema}`),
+    sql`, `,
+  );
   const rows = await db.execute(sql`
     SELECT
       n.nspname || '.' || c.relname AS "table",
@@ -18,7 +24,7 @@ export async function enumerateFileKeyColumns(db: Db): Promise<FileKeyColumn[]> 
     JOIN pg_namespace n ON n.oid = c.relnamespace
     JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
     JOIN pg_type t ON t.oid = a.atttypid
-    WHERE n.nspname = ANY(${APP_SCHEMAS})
+    WHERE n.nspname IN (${schemaList})
       AND c.relkind = 'r'
       AND t.typname IN ('text', 'varchar', 'bpchar')
       AND (
@@ -41,10 +47,10 @@ export async function collectOrgFileKeys(
   const keys = new Set<string>();
   for (const { table, column } of columns) {
     try {
+      const colRef = sql.raw(`"${column}"`);
+      const tableRef = sql.raw(table);
       const rows = await db.execute(
-        sql.raw(
-          `SELECT "${column}" AS k FROM ${table} WHERE org_id = '${orgId.replace(/'/g, "''")}' AND "${column}" IS NOT NULL`,
-        ),
+        sql`SELECT ${colRef} AS k FROM ${tableRef} WHERE org_id = ${orgId} AND ${colRef} IS NOT NULL`,
       );
       for (const row of rows) {
         const k = row["k"];
@@ -65,10 +71,11 @@ export async function collectUserFileKeys(
   for (const { table, column } of columns) {
     for (const userCol of ["user_id", "created_by", "uploaded_by", "actor_id"]) {
       try {
+        const colRef = sql.raw(`"${column}"`);
+        const tableRef = sql.raw(table);
+        const userColRef = sql.raw(`"${userCol}"`);
         const rows = await db.execute(
-          sql.raw(
-            `SELECT "${column}" AS k FROM ${table} WHERE "${userCol}" = '${userId.replace(/'/g, "''")}' AND "${column}" IS NOT NULL`,
-          ),
+          sql`SELECT ${colRef} AS k FROM ${tableRef} WHERE ${userColRef} = ${userId} AND ${colRef} IS NOT NULL`,
         );
         for (const row of rows) {
           const k = row["k"];

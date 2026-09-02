@@ -1,9 +1,10 @@
 /**
- * Verifies that the webhook dispatcher uses callProvider for retry + circuit breaker.
+ * Verifies that the webhook dispatcher uses callProvider for retry + circuit breaker,
+ * postSafeWebhook (pinned DNS) instead of raw fetch, and logs dispatch errors.
  *
- * Bite proof strategy: mock callProvider at the module level so tests can choose between
- * the real implementation (which honours classify) and a neutered one (which ignores it).
- * The contrast proves the classify gate is load-bearing.
+ * Bite proof strategy:
+ *   I1 — neutering UnsafeWebhookTargetError classification reveals 5 retries instead of 1.
+ *   I3 — neutering the logger.error call proves the dispatch error is swallowed.
  */
 jest.mock("../../common/outbound/call-provider", () => {
   const actual = jest.requireActual<typeof import("../../common/outbound/call-provider")>(
@@ -20,6 +21,19 @@ jest.mock("../../common/outbound/call-provider", () => {
   };
 });
 
+jest.mock("../../common/outbound/safe-webhook-transport", () => {
+  class UnsafeWebhookTargetError extends Error {
+    constructor(readonly reason: string) {
+      super(`Blocked webhook target (${reason})`);
+      this.name = "UnsafeWebhookTargetError";
+    }
+  }
+  return {
+    postSafeWebhook: jest.fn(),
+    UnsafeWebhookTargetError,
+  };
+});
+
 jest.mock("../../common/security/ssrf-guard", () => ({
   checkWebhookUrl: jest.fn().mockResolvedValue({ allowed: true }),
 }));
@@ -29,8 +43,14 @@ jest.mock("../../common/security/secret-encryption.util", () => ({
   decryptSecret: jest.fn((s: string) => s),
 }));
 
+jest.mock("../../common/logger/logger.service", () => ({
+  logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+}));
+
 import { callProvider } from "../../common/outbound/call-provider";
 import type { ProviderDescriptor, ProviderCallResult } from "../../common/outbound/call-provider";
+import { postSafeWebhook, UnsafeWebhookTargetError } from "../../common/outbound/safe-webhook-transport";
+import { logger } from "../../common/logger/logger.service";
 import type { Db } from "../../db/drizzle.module";
 import {
   WebhooksDispatchService,
@@ -38,13 +58,8 @@ import {
   classifyWebhookError,
 } from "./webhooks-dispatch.service";
 
-const mockFetch = jest.fn();
-global.fetch = mockFetch;
-
-global.AbortSignal = {
-  ...global.AbortSignal,
-  timeout: jest.fn().mockReturnValue({}),
-} as unknown as typeof AbortSignal;
+const mockPostSafeWebhook = postSafeWebhook as jest.Mock;
+const callProviderSpy = callProvider as jest.Mock;
 
 const ORG = "org-123";
 const EVENT = "order.created";
@@ -85,8 +100,6 @@ function makeDb(): Db {
   } as unknown as Db;
 }
 
-const callProviderSpy = callProvider as jest.Mock;
-
 describe("WebhooksDispatchService — callProvider seam", () => {
   let svc: WebhooksDispatchService;
 
@@ -104,18 +117,14 @@ describe("WebhooksDispatchService — callProvider seam", () => {
     svc = new WebhooksDispatchService(makeDb());
   });
 
-  it("classifies 4xx as terminal — exactly 1 fetch attempt, log records attempt=1", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
-      status: 400,
-      text: async () => "Bad Request",
-    });
+  it("classifies 4xx as terminal — exactly 1 postSafeWebhook attempt, log records attempt=1", async () => {
+    mockPostSafeWebhook.mockResolvedValueOnce({ statusCode: 400, responseBody: "Bad Request" });
 
     await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
       ORG, EVENT, PAYLOAD,
     );
 
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockPostSafeWebhook).toHaveBeenCalledTimes(1);
     const log = insertedLogs[0];
     expect(log?.["success"]).toBe(false);
     expect(log?.["statusCode"]).toBe(400);
@@ -141,17 +150,13 @@ describe("WebhooksDispatchService — callProvider seam", () => {
       },
     );
 
-    mockFetch.mockResolvedValue({
-      ok: false,
-      status: 503,
-      text: async () => "Service Unavailable",
-    });
+    mockPostSafeWebhook.mockResolvedValue({ statusCode: 503, responseBody: "Service Unavailable" });
 
     await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
       ORG, EVENT, PAYLOAD,
     );
 
-    expect(mockFetch).toHaveBeenCalledTimes(5);
+    expect(mockPostSafeWebhook).toHaveBeenCalledTimes(5);
     const log = insertedLogs[0];
     expect(log?.["success"]).toBe(false);
     expect(log?.["attempt"]).toBe(5);
@@ -159,24 +164,20 @@ describe("WebhooksDispatchService — callProvider seam", () => {
   });
 
   it("succeeds and writes success=true when endpoint returns 2xx", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      text: async () => "OK",
-    });
+    mockPostSafeWebhook.mockResolvedValueOnce({ statusCode: 200, responseBody: "OK" });
 
     await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
       ORG, EVENT, PAYLOAD,
     );
 
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockPostSafeWebhook).toHaveBeenCalledTimes(1);
     const log = insertedLogs[0];
     expect(log?.["success"]).toBe(true);
     expect(log?.["statusCode"]).toBe(200);
     expect(log?.["attempt"]).toBe(1);
   });
 
-  it("bites: neutering callProvider to ignore classify causes 4xx to be retried 5 times", async () => {
+  it("bites: neutering callProvider classify causes 4xx to be retried 5 times", async () => {
     callProviderSpy.mockImplementation(
       async (desc: ProviderDescriptor, fn: () => Promise<unknown>): Promise<ProviderCallResult<unknown>> => {
         let last: Error = new Error("no attempts");
@@ -191,17 +192,64 @@ describe("WebhooksDispatchService — callProvider seam", () => {
       },
     );
 
-    let callCount = 0;
-    mockFetch.mockImplementation(async () => {
-      callCount++;
-      return { ok: false, status: 400, text: async () => "Bad Request" };
-    });
+    mockPostSafeWebhook.mockResolvedValue({ statusCode: 400, responseBody: "Bad Request" });
 
     await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
       ORG, EVENT, PAYLOAD,
     );
 
-    expect(callCount).toBe(5);
+    expect(mockPostSafeWebhook).toHaveBeenCalledTimes(5);
+  });
+
+  it("I1 — SSRF block from postSafeWebhook is classified terminal — exactly 1 attempt (bite: removes UnsafeWebhookTargetError from classifier → 5 attempts)", async () => {
+    callProviderSpy.mockImplementation(
+      async (desc: ProviderDescriptor, fn: () => Promise<unknown>): Promise<ProviderCallResult<unknown>> => {
+        let last: Error = new Error("no attempts");
+        for (let i = 1; i <= desc.maxAttempts; i++) {
+          try {
+            return { ok: true, value: await fn(), attempts: i };
+          } catch (e) {
+            const err = e instanceof Error ? e : new Error(String(e));
+            last = err;
+            if (desc.classify(e) === "terminal")
+              return { ok: false, kind: "terminal", error: err, attempts: i };
+          }
+        }
+        return { ok: false, kind: "dead-lettered", error: last, attempts: desc.maxAttempts };
+      },
+    );
+
+    mockPostSafeWebhook.mockRejectedValue(new UnsafeWebhookTargetError("blocked-address"));
+
+    await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
+      ORG, EVENT, PAYLOAD,
+    );
+
+    expect(mockPostSafeWebhook).toHaveBeenCalledTimes(1);
+    const log = insertedLogs[0];
+    expect(log?.["success"]).toBe(false);
+  });
+
+  it("I3 — dispatch logs errors rather than swallowing them silently", async () => {
+    const failingDb = {
+      query: {
+        webhookEndpoints: {
+          findMany: jest.fn().mockRejectedValue(new Error("DB down")),
+          findFirst: jest.fn().mockResolvedValue(undefined),
+        },
+        webhookLogs: { findFirst: jest.fn().mockResolvedValue(null) },
+      },
+      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+    } as unknown as Db;
+
+    const failingSvc = new WebhooksDispatchService(failingDb);
+    failingSvc.dispatch(ORG, EVENT, PAYLOAD);
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("dispatch run failed"),
+      expect.objectContaining({ orgId: ORG, eventName: EVENT }),
+    );
   });
 });
 
@@ -209,6 +257,11 @@ describe("classifyWebhookError — unit", () => {
   it("returns terminal for WebhookTerminalStatusError (4xx)", () => {
     expect(classifyWebhookError(new WebhookTerminalStatusError(422, "body"))).toBe("terminal");
     expect(classifyWebhookError(new WebhookTerminalStatusError(404, "not found"))).toBe("terminal");
+  });
+
+  it("returns terminal for UnsafeWebhookTargetError (SSRF block)", () => {
+    expect(classifyWebhookError(new UnsafeWebhookTargetError("blocked-address"))).toBe("terminal");
+    expect(classifyWebhookError(new UnsafeWebhookTargetError("private-ip"))).toBe("terminal");
   });
 
   it("returns retryable for generic Error (network, timeout)", () => {

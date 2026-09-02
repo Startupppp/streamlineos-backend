@@ -6,6 +6,7 @@ import {
   Inject,
   Post,
   ServiceUnavailableException,
+  UnprocessableEntityException,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -24,6 +25,7 @@ import { type Db } from "../../db/drizzle.module";
 import { documents, onboardingSteps } from "../../db/schema";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { StorageService } from "./storage.service";
+import { AvScanner } from "../../common/security/av-scan";
 import { validateMagicBytes } from "./file-signatures";
 import { onboardingDocTypeSchema } from "./dto/storage.schemas";
 
@@ -43,6 +45,7 @@ export class OnboardingDocumentsController {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly storage: StorageService,
+    private readonly avScanner: AvScanner,
   ) {}
 
   @Post("documents")
@@ -80,6 +83,12 @@ export class OnboardingDocumentsController {
     }
     if (file.size > MAX_SIZE)
       throw new BadRequestException("File size must be under 5MB");
+
+    const scanResult = await this.avScanner.scan(file.buffer, file.originalname, file.mimetype);
+    if (scanResult.status === "infected")
+      throw new UnprocessableEntityException(`Upload rejected: malware detected (${scanResult.threat})`);
+    if (scanResult.status === "error")
+      throw new ServiceUnavailableException("Malware scan unavailable — upload rejected");
 
     const { key, url, compressedBuffer, compressedMimeType, size } =
       await this.storage.compressAndPreGenerateKey(

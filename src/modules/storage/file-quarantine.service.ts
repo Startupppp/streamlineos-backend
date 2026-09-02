@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import {
   index,
   integer,
@@ -141,14 +141,19 @@ export class FileQuarantineService {
     await this.db
       .update(fileQuarantineRecords)
       .set({ status: "clean", scannedAt: new Date(), releasedAt: new Date() })
-      .where(eq(fileQuarantineRecords.id, id));
+      .where(and(eq(fileQuarantineRecords.id, id), eq(fileQuarantineRecords.status, "pending_scan")));
   }
 
   async markInfected(id: string, threatName: string): Promise<void> {
     await this.db
       .update(fileQuarantineRecords)
       .set({ status: "infected", threatName, scannedAt: new Date() })
-      .where(eq(fileQuarantineRecords.id, id));
+      .where(
+        and(
+          eq(fileQuarantineRecords.id, id),
+          inArray(fileQuarantineRecords.status, ["pending_scan", "error"]),
+        ),
+      );
   }
 
   async markError(id: string): Promise<void> {
@@ -163,6 +168,26 @@ export class FileQuarantineService {
       .update(fileQuarantineRecords)
       .set({ deletedAt: new Date() })
       .where(eq(fileQuarantineRecords.id, id));
+  }
+
+  async listForSweep(
+    orgId: string,
+    statuses: QuarantineStatus[],
+    olderThan: Date,
+    limit: number,
+  ): Promise<Array<{ id: string; storageKey: string }>> {
+    return this.db
+      .select({ id: fileQuarantineRecords.id, storageKey: fileQuarantineRecords.storageKey })
+      .from(fileQuarantineRecords)
+      .where(
+        and(
+          eq(fileQuarantineRecords.orgId, orgId),
+          inArray(fileQuarantineRecords.status, statuses),
+          isNull(fileQuarantineRecords.deletedAt),
+          lt(fileQuarantineRecords.createdAt, olderThan),
+        ),
+      )
+      .limit(limit);
   }
 
   async isKeyBlocked(orgId: string, storageKey: string): Promise<boolean> {

@@ -117,7 +117,6 @@ export class StorageMultipartController {
       sha256: "",
       uploadedBy: u.userId,
     });
-    await this.quarantine.markClean(quarantineId);
 
     this.audit.log({
       action: "file.multipart.complete",
@@ -126,7 +125,7 @@ export class StorageMultipartController {
       metadata: { key: body.key, uploadId: body.uploadId, quarantineId },
     });
 
-    return { quarantineId, key: body.key, status: "clean" };
+    return { quarantineId, key: body.key, status: "pending_scan" };
   }
 
   @Post("abort")

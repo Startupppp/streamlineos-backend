@@ -1,6 +1,11 @@
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
+} from "@nestjs/common";
 import { OnboardingDocumentsController } from "./storage-onboarding.controller";
 import type { StorageService } from "./storage.service";
+import type { AvScanner } from "../../common/security/av-scan";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import * as tenantContext from "../../common/tenant/tenant-context";
@@ -58,6 +63,7 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
   const callOrder: string[] = [];
 
   let mockStorage: jest.Mocked<Pick<StorageService, "isConfigured" | "compressAndPreGenerateKey" | "uploadToKey">>;
+  let mockAvScanner: jest.Mocked<Pick<AvScanner, "scan">>;
   let mockDb: { transaction: jest.Mock };
   let controller: OnboardingDocumentsController;
 
@@ -80,6 +86,10 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
       }),
     };
 
+    mockAvScanner = {
+      scan: jest.fn().mockResolvedValue({ status: "clean" }),
+    };
+
     const tx = buildTxMock();
     mockDb = {
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
@@ -92,6 +102,7 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
     controller = new OnboardingDocumentsController(
       mockDb as never,
       mockStorage as never,
+      mockAvScanner as never,
     );
   });
 
@@ -157,6 +168,88 @@ describe("OnboardingDocumentsController.upload — connection decoupling", () =>
     await expect(controller.upload(makeFile(), "NATIONAL_ID", makeUser())).rejects.toThrow(
       "Invalid document type",
     );
+    expect(mockDb.transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe("OnboardingDocumentsController.upload — AV scan gate", () => {
+  let mockStorage: jest.Mocked<Pick<StorageService, "isConfigured" | "compressAndPreGenerateKey" | "uploadToKey">>;
+  let mockAvScanner: jest.Mocked<Pick<AvScanner, "scan">>;
+  let mockDb: { transaction: jest.Mock };
+  let controller: OnboardingDocumentsController;
+
+  beforeEach(() => {
+    mockRegisterAfterCommit.mockClear();
+    mockRegisterAfterCommit.mockReturnValue(false);
+
+    mockStorage = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      compressAndPreGenerateKey: jest.fn().mockResolvedValue({
+        key: "onboarding/uuid-id-doc.pdf",
+        url: "https://cdn.example.com/onboarding/uuid-id-doc.pdf",
+        compressedBuffer: Buffer.from("compressed"),
+        compressedMimeType: "application/pdf",
+        size: 10,
+      }),
+      uploadToKey: jest.fn().mockResolvedValue(undefined),
+    };
+
+    mockAvScanner = { scan: jest.fn().mockResolvedValue({ status: "clean" }) };
+
+    const tx = buildTxMock();
+    mockDb = {
+      transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+    };
+
+    controller = new OnboardingDocumentsController(
+      mockDb as never,
+      mockStorage as never,
+      mockAvScanner as never,
+    );
+  });
+
+  it("scans the file buffer before any S3 write — clean file proceeds", async () => {
+    mockAvScanner.scan.mockResolvedValue({ status: "clean" });
+
+    await controller.upload(makeFile(), "ID_PROOF", makeUser());
+
+    expect(mockAvScanner.scan).toHaveBeenCalledWith(
+      expect.any(Buffer),
+      "id-doc.pdf",
+      "application/pdf",
+    );
+    expect(mockStorage.compressAndPreGenerateKey).toHaveBeenCalled();
+  });
+
+  it("rejects infected files with 422 and never writes to S3", async () => {
+    mockAvScanner.scan.mockResolvedValue({ status: "infected", threat: "Eicar-Test-Signature" });
+
+    await expect(controller.upload(makeFile(), "ID_PROOF", makeUser())).rejects.toBeInstanceOf(
+      UnprocessableEntityException,
+    );
+
+    expect(mockStorage.compressAndPreGenerateKey).not.toHaveBeenCalled();
+    expect(mockStorage.uploadToKey).not.toHaveBeenCalled();
+  });
+
+  it("rejects scanner errors with 503 and never writes to S3", async () => {
+    mockAvScanner.scan.mockResolvedValue({ status: "error", reason: "clamd-unreachable" });
+
+    await expect(controller.upload(makeFile(), "ID_PROOF", makeUser())).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+
+    expect(mockStorage.compressAndPreGenerateKey).not.toHaveBeenCalled();
+    expect(mockStorage.uploadToKey).not.toHaveBeenCalled();
+  });
+
+  it("scan happens before the DB transaction — no orphaned rows on infected files", async () => {
+    mockAvScanner.scan.mockResolvedValue({ status: "infected", threat: "Eicar-Test-Signature" });
+
+    await expect(controller.upload(makeFile(), "ID_PROOF", makeUser())).rejects.toBeInstanceOf(
+      UnprocessableEntityException,
+    );
+
     expect(mockDb.transaction).not.toHaveBeenCalled();
   });
 });

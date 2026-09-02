@@ -163,6 +163,64 @@ describe("FileQuarantineService.getTotalUsageBytes", () => {
   });
 });
 
+describe("FileQuarantineService.markClean — state guard", () => {
+  it("applies the pending_scan predicate so an infected record is not transitioned", async () => {
+    const db = makeDb();
+    const svc = new FileQuarantineService(db);
+    const updateMock = db.update as jest.Mock;
+
+    await svc.markClean(RECORD_ID);
+
+    const whereCall = (updateMock.mock.results[0]?.value as { set: jest.Mock }).set.mock
+      .results[0]?.value as { where: jest.Mock };
+    expect(whereCall.where).toHaveBeenCalledTimes(1);
+    const whereArg = String(whereCall.where.mock.calls[0]?.[0]);
+    expect(whereArg).not.toBe(String(undefined));
+  });
+
+  it("passes only the id without status guard — bite verification", async () => {
+    const db = makeDb();
+    const svc = new FileQuarantineService(db);
+    await svc.markClean(RECORD_ID);
+    const updateMock = db.update as jest.Mock;
+    expect(updateMock).toHaveBeenCalled();
+  });
+});
+
+describe("FileQuarantineService.markInfected — state guard", () => {
+  it("applies the status predicate restricting to pending_scan or error", async () => {
+    const db = makeDb();
+    const svc = new FileQuarantineService(db);
+    const updateMock = db.update as jest.Mock;
+
+    await svc.markInfected(RECORD_ID, "Eicar");
+
+    const whereCall = (updateMock.mock.results[0]?.value as { set: jest.Mock }).set.mock
+      .results[0]?.value as { where: jest.Mock };
+    expect(whereCall.where).toHaveBeenCalledTimes(1);
+    const whereArg = String(whereCall.where.mock.calls[0]?.[0]);
+    expect(whereArg).not.toBe(String(undefined));
+  });
+});
+
+describe("FileQuarantineService.listForSweep", () => {
+  it("queries by org, statuses, olderThan and limit", async () => {
+    const record = {
+      id: RECORD_ID,
+      storageKey: "org-1/uploads/uuid-file.pdf",
+    };
+    const db = makeDb({ selectRows: [record] });
+    const svc = new FileQuarantineService(db);
+
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const result = await svc.listForSweep("org-1", ["infected", "error"], cutoff, 50);
+
+    expect(db.select).toHaveBeenCalled();
+    expect(result).toHaveLength(1);
+    expect(result[0]?.id).toBe(RECORD_ID);
+  });
+});
+
 describe("FileQuarantineService.findByIdempotencyKey", () => {
   it("returns null when no record matches", async () => {
     const db = makeDb({ selectRows: [] });

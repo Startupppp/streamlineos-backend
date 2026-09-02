@@ -16,6 +16,11 @@ import {
   type ProviderCallResult,
 } from "../../common/outbound/call-provider";
 import { ProviderCircuitBreaker } from "../../common/outbound/provider-circuit-breaker";
+import {
+  postSafeWebhook,
+  UnsafeWebhookTargetError,
+} from "../../common/outbound/safe-webhook-transport";
+import { logger } from "../../common/logger/logger.service";
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 const WEBHOOK_MAX_ATTEMPTS = 5;
@@ -33,6 +38,7 @@ export class WebhookTerminalStatusError extends Error {
 
 export function classifyWebhookError(err: unknown): "terminal" | "retryable" {
   if (err instanceof WebhookTerminalStatusError) return "terminal";
+  if (err instanceof UnsafeWebhookTargetError) return "terminal";
   return "retryable";
 }
 
@@ -99,7 +105,9 @@ export class WebhooksDispatchService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   dispatch(orgId: string, eventName: string, payload: Record<string, unknown>): void {
-    void this.run(orgId, eventName, payload).catch(() => undefined);
+    void this.run(orgId, eventName, payload).catch((error) =>
+      logger.error("[webhooks] dispatch run failed", { orgId, eventName, error }),
+    );
   }
 
   private async run(orgId: string, eventName: string, payload: Record<string, unknown>): Promise<void> {
@@ -129,20 +137,6 @@ export class WebhooksDispatchService {
       .update(body)
       .digest("hex");
 
-    const urlCheck = await checkWebhookUrl(endpoint.url);
-    if (!urlCheck.allowed) {
-      await this.db.insert(webhookLogs).values({
-        endpointId: endpoint.id,
-        orgId,
-        event: eventName,
-        payload,
-        statusCode: null,
-        responseBody: `Blocked: ${urlCheck.reason}`,
-        success: false,
-      });
-      return;
-    }
-
     const descriptor: ProviderDescriptor = {
       provider: `webhook:${endpoint.id}`,
       timeoutMs: WEBHOOK_TIMEOUT_MS,
@@ -155,22 +149,22 @@ export class WebhooksDispatchService {
     const result = await callProvider(
       descriptor,
       async () => {
-        const response = await fetch(endpoint.url, {
-          method: "POST",
-          headers: {
+        const { statusCode, responseBody } = await postSafeWebhook(
+          endpoint.url,
+          body,
+          {
             "Content-Type": "application/json",
             "X-StreamlineOS-Signature": `sha256=${signature}`,
             "X-Webhook-Event": eventName,
           },
-          body,
-          redirect: "error",
-          signal: AbortSignal.timeout(WEBHOOK_TIMEOUT_MS),
-        });
-        const text = await response.text().catch(() => "");
-        if (response.status >= 400 && response.status < 500)
-          throw new WebhookTerminalStatusError(response.status, text);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return { status: response.status, body: text };
+          WEBHOOK_TIMEOUT_MS,
+          WEBHOOK_RESPONSE_BODY_LIMIT,
+        );
+        if (statusCode >= 400 && statusCode < 500)
+          throw new WebhookTerminalStatusError(statusCode, responseBody);
+        if (statusCode < 200 || statusCode >= 300)
+          throw new Error(`HTTP ${statusCode}`);
+        return { status: statusCode, body: responseBody };
       },
       this.breaker,
     );
