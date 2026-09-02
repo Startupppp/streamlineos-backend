@@ -33,6 +33,7 @@ import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { CHAT_MESSAGE_FANOUT_EVENT } from "./chat-fanout-outbox";
 import { MESSAGE_FANOUT_PROVIDER, type MessageFanoutProvider } from "./message-fanout.interface";
 import { isChannelMember, resolveMembershipId } from "./chat-membership-lookup";
+import { StorageService } from "../storage/storage.service";
 
 function strippedReferenceMetadata(
   metadata: Record<string, unknown> | null,
@@ -58,6 +59,7 @@ export class ChatMessagesService {
     private readonly replyReminders: ChatReplyRemindersService,
     private readonly orgSettings: ChatOrgSettingsService,
     private readonly entities: EntityReferenceService,
+    private readonly storage: StorageService,
     @Inject(MESSAGE_FANOUT_PROVIDER) private readonly fanout: MessageFanoutProvider,
   ) {}
 
@@ -101,6 +103,14 @@ export class ChatMessagesService {
         throw new BadRequestException(
           `Attachment "${oversized.fileName}" exceeds the ${maxAttachmentSizeMb}MB limit for this organization`,
         );
+
+      const orgPrefix = `${orgId}/`;
+      for (const a of body.attachments) {
+        if (!this.storage.isValidFileKey(a.fileKey) || !a.fileKey.startsWith(orgPrefix))
+          throw new BadRequestException(
+            `Attachment "${a.fileName}" has an invalid or cross-tenant key`,
+          );
+      }
     }
 
     const mentionedUserIds = await resolveMentionedUserIds(this.db, {

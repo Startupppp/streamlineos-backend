@@ -53,6 +53,7 @@ function makeService() {
     { scheduleForMessage: jest.fn().mockResolvedValue(undefined) } as never,
     { getSettings: jest.fn().mockResolvedValue({ maxAttachmentSizeMb: 10 }) } as never,
     { resolve: jest.fn().mockResolvedValue([]) } as never,
+    { isValidFileKey: jest.fn().mockReturnValue(true) } as never,
     fanout as never,
   ), db, fanout };
 }

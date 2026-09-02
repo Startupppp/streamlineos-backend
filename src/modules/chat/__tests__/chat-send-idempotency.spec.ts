@@ -7,6 +7,7 @@ import { ChatMessagesService } from "../chat-messages.service";
 import { ChatReplyRemindersService } from "../chat-reply-reminders.service";
 import { ChatOrgSettingsService } from "../chat-org-settings.service";
 import { MESSAGE_FANOUT_PROVIDER } from "../message-fanout.interface";
+import { StorageService } from "../../storage/storage.service";
 import { chatMessages } from "../../../db/schema";
 
 /**
@@ -60,6 +61,7 @@ async function build(db: Record<string, unknown>): Promise<ChatMessagesService> 
       { provide: ChatReplyRemindersService, useValue: { scheduleForMessage: jest.fn() } },
       { provide: ChatOrgSettingsService, useValue: { getSettings: jest.fn().mockResolvedValue({ maxAttachmentSizeMb: 25 }) } },
       { provide: EntityReferenceService, useValue: { resolve: jest.fn().mockResolvedValue([]), isKnownType: jest.fn().mockReturnValue(true) } },
+      { provide: StorageService, useValue: { isValidFileKey: jest.fn().mockReturnValue(true) } },
       {
         provide: MESSAGE_FANOUT_PROVIDER,
         useValue: {

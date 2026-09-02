@@ -73,14 +73,20 @@ async function processOrg(orgId) {
 
       if (apply) {
         const rows = await tx`
-          UPDATE chat_attachments
-          SET    file_url = file_key
-          WHERE  org_id   = ${orgId}
-            AND  file_url LIKE 'https%'
-            AND  id > ${afterId}
-          ORDER BY id
-          LIMIT  ${BATCH_SIZE}
-          RETURNING id
+          WITH batch AS (
+            SELECT id
+            FROM   chat_attachments
+            WHERE  org_id   = ${orgId}
+              AND  file_url LIKE 'https%'
+              AND  id > ${afterId}
+            ORDER BY id
+            LIMIT  ${BATCH_SIZE}
+          )
+          UPDATE chat_attachments ca
+          SET    file_url = ca.file_key
+          FROM   batch
+          WHERE  ca.id = batch.id
+          RETURNING ca.id
         `;
         if (rows.length > 0) afterId = rows[rows.length - 1].id;
         return rows.length;

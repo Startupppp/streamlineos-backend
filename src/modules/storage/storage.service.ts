@@ -70,13 +70,14 @@ const MIME_MAP: Record<string, string> = {
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
-const PRIVATE_HR_FOLDERS = new Set([
+const PRIVATE_FOLDERS = new Set([
   "documents",
   "hr-documents",
   "onboarding",
   "onboarding-docs",
   "resignations",
   "hr-exports",
+  "chat",
 ]);
 
 export function isMissingObjectError(error: unknown): boolean {
@@ -223,7 +224,7 @@ export class StorageService {
     override?: string,
   ): string {
     const folderRoot = folder.split("/", 1)[0] ?? folder;
-    if (PRIVATE_HR_FOLDERS.has(folderRoot)) return key;
+    if (PRIVATE_FOLDERS.has(folderRoot)) return key;
     const publicBase = override ?? regionPublicUrl;
     return publicBase ? `${publicBase}/${key}` : key;
   }

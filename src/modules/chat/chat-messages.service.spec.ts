@@ -9,6 +9,7 @@ import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
+import { StorageService } from "../storage/storage.service";
 
 const mockDb = {
   query: {
@@ -62,12 +63,17 @@ const mockFanout = {
   dispatchDeferred: jest.fn().mockResolvedValue(undefined),
 };
 
+const mockStorage = {
+  isValidFileKey: jest.fn().mockReturnValue(true),
+};
+
 describe("ChatMessagesService", () => {
   let service: ChatMessagesService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     mockOrgSettings.getSettings.mockResolvedValue({ maxAttachmentSizeMb: 25 });
+    mockStorage.isValidFileKey.mockReturnValue(true);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ChatMessagesService,
@@ -77,6 +83,7 @@ describe("ChatMessagesService", () => {
         { provide: ChatReplyRemindersService, useValue: mockReplyReminders },
         { provide: ChatOrgSettingsService, useValue: mockOrgSettings },
         { provide: EntityReferenceService, useValue: mockEntities },
+        { provide: StorageService, useValue: mockStorage },
         { provide: MESSAGE_FANOUT_PROVIDER, useValue: mockFanout },
       ],
     }).compile();
@@ -115,8 +122,8 @@ describe("ChatMessagesService", () => {
           attachments: [
             {
               fileName: "huge.zip",
-              fileUrl: "https://example.com/huge.zip",
-              fileKey: "huge.zip",
+              fileUrl: "",
+              fileKey: "org1/chat/uuid-huge.zip",
               fileSize: 2 * 1024 * 1024,
               mimeType: "application/zip",
             },
@@ -137,14 +144,55 @@ describe("ChatMessagesService", () => {
           attachments: [
             {
               fileName: "small.png",
-              fileUrl: "https://example.com/small.png",
-              fileKey: "small.png",
+              fileUrl: "",
+              fileKey: "org1/chat/uuid-small.png",
               fileSize: 1024,
               mimeType: "image/png",
             },
           ],
         }),
       ).resolves.toBeDefined();
+    });
+
+    it("DENY: rejects an attachment whose fileKey does not start with the caller's orgId", async () => {
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "user1" });
+      mockOrgSettings.getSettings.mockResolvedValue({ maxAttachmentSizeMb: 25 });
+
+      await expect(
+        service.send(1, "user1", "org1", {
+          content: undefined,
+          attachments: [
+            {
+              fileName: "stolen.pdf",
+              fileUrl: "",
+              fileKey: "org-other/chat/uuid-stolen.pdf",
+              fileSize: 1024,
+              mimeType: "application/pdf",
+            },
+          ],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it("DENY: rejects an attachment with a path-traversal fileKey", async () => {
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ userId: "user1" });
+      mockOrgSettings.getSettings.mockResolvedValue({ maxAttachmentSizeMb: 25 });
+      mockStorage.isValidFileKey.mockReturnValue(false);
+
+      await expect(
+        service.send(1, "user1", "org1", {
+          content: undefined,
+          attachments: [
+            {
+              fileName: "evil.pdf",
+              fileUrl: "",
+              fileKey: "org1/../secret/data.pdf",
+              fileSize: 1024,
+              mimeType: "application/pdf",
+            },
+          ],
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 
