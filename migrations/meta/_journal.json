@@ -4586,6 +4586,55 @@
       "when": 1803000010105,
       "tag": "1009_s09_inv_stock_transactions_single_column_fks",
       "breakpoints": true
+    },
+    {
+      "idx": 787,
+      "version": "7",
+      "when": 1803000010106,
+      "tag": "1020_t29_kb_space_grants_tenant_fk",
+      "breakpoints": true
+    },
+    {
+      "idx": 788,
+      "version": "7",
+      "when": 1803000010107,
+      "tag": "1021_t29_kb_page_links_record_unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 789,
+      "version": "7",
+      "when": 1803000010108,
+      "tag": "1022_t29_mail_metadata_search_and_keyset",
+      "breakpoints": true
+    },
+    {
+      "idx": 790,
+      "version": "7",
+      "when": 1803000010109,
+      "tag": "1030_t24_payroll_tds_ytd_immutability",
+      "breakpoints": true
+    },
+    {
+      "idx": 791,
+      "version": "7",
+      "when": 1803000010110,
+      "tag": "1023_t07b_billing_legacy_integer_id_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 792,
+      "version": "7",
+      "when": 1803000010111,
+      "tag": "1024_t07b_tenant_anchor_foreign_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 793,
+      "version": "7",
+      "when": 1803000010112,
+      "tag": "1025_t07b_composite_self_reference_foreign_keys",
+      "breakpoints": true
     }
   ]
 }
