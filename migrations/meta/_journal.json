@@ -4252,13 +4252,6 @@
       "breakpoints": true
     },
     {
-      "idx": 736,
-      "version": "7",
-      "when": 1803000010067,
-      "tag": "0982_calendar_recurrence_end_index",
-      "breakpoints": true
-    },
-    {
       "idx": 737,
       "version": "7",
       "when": 1803000010068,
