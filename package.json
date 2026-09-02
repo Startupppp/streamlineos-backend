@@ -127,7 +127,7 @@
     "seed:demo": "node --env-file=.env -r ts-node/register src/scripts/seed-demo.ts",
     "seed:permissions": "node --env-file=.env -r ts-node/register src/scripts/seed-permissions.ts",
     "mcp": "node scripts/mcp-server.mjs",
-    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\"",
+    "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" \"src/**/*.mjs\" \"scripts/**/*.mjs\"",
     "test": "jest",
     "test:e2e": "node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js --config ./jest-e2e.json",
     "test:e2e:ci": "node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js --config ./jest-e2e.json --runInBand --forceExit",

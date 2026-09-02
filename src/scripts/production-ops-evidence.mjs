@@ -78,7 +78,7 @@ function readJson(path) {
   try {
     return JSON.parse(readFileSync(path, "utf8"));
   } catch (error) {
-    throw new Error(`invalid JSON at ${path}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`invalid JSON at ${path}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 }
 

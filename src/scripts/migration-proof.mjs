@@ -147,7 +147,7 @@ async function applyEntries(url, entries, migrationsDir, label) {
             isPgClassDuplicate(err) ||
             (code === "42P16" && err.message.includes("multiple primary keys"))
           ) {
-            throw new Error(`${label} duplicate object at ${entry.tag} stmt ${i + 1}: ${err.message}`);
+            throw new Error(`${label} duplicate object at ${entry.tag} stmt ${i + 1}: ${err.message}`, { cause: err });
           }
           const MISSING_CODES = new Set(["42704", "42P01", "42703"]);
           // Missing objects are chain failures, never a successful migration. The

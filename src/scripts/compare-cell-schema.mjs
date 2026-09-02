@@ -95,7 +95,7 @@ function loadJournalHashes() {
   try {
     journal = JSON.parse(readFileSync(journalPath, "utf8"));
   } catch (e) {
-    throw new Error(`Cannot read migration journal: ${e instanceof Error ? e.message : e}`);
+    throw new Error(`Cannot read migration journal: ${e instanceof Error ? e.message : e}`, { cause: e });
   }
   return journal.entries.map((entry) => {
     const sqlPath = resolve(process.cwd(), "migrations", `${entry.tag}.sql`);
@@ -103,7 +103,7 @@ function loadJournalHashes() {
     try {
       content = readFileSync(sqlPath, "utf8");
     } catch (e) {
-      throw new Error(`Cannot read migration file ${entry.tag}.sql: ${e instanceof Error ? e.message : e}`);
+      throw new Error(`Cannot read migration file ${entry.tag}.sql: ${e instanceof Error ? e.message : e}`, { cause: e });
     }
     return createHash("sha256").update(content).digest("hex");
   });

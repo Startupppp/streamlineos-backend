@@ -7,6 +7,46 @@ export default tseslint.config(
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
+  /**
+   * The `.mjs` operational scripts run on Node, and nothing had ever told
+   * ESLint so. Every `process`, `console` and `fetch` in them resolved to
+   * `no-undef` — 3,730 errors across 235 files, none of them real. The reason
+   * nobody noticed is that the `lint` script globs only `*.ts`, so the scripts
+   * were never linted at all: the errors existed but were unreachable.
+   *
+   * Declared explicitly rather than via the `globals` package, which is not a
+   * dependency here and is not worth adding for fourteen names. The list is
+   * exactly what the tree references — measured, not guessed — so an unexpected
+   * global still fails rather than being waved through by a blanket env.
+   */
+  {
+    files: ["**/*.mjs"],
+    languageOptions: {
+      globals: {
+        AbortSignal: "readonly",
+        Blob: "readonly",
+        Buffer: "readonly",
+        clearTimeout: "readonly",
+        console: "readonly",
+        crypto: "readonly",
+        fetch: "readonly",
+        FormData: "readonly",
+        process: "readonly",
+        setTimeout: "readonly",
+        TextEncoder: "readonly",
+        URL: "readonly",
+        URLSearchParams: "readonly",
+        WebSocket: "readonly",
+      },
+    },
+    rules: {
+      // A few scripts import `process`/`URL` explicitly from `node:` modules,
+      // which is the better habit, not a redeclaration. Without this the global
+      // list above would punish them for it. Redeclarations within a file are
+      // still errors.
+      "no-redeclare": ["error", { builtinGlobals: false }],
+    },
+  },
   {
     /**
      * `evals/` is linted on the same terms as `src/`, and was not before.
@@ -21,7 +61,7 @@ export default tseslint.config(
      * They were invisible because the `lint` script did not glob the directory
      * either, so nothing ever reported them.
      */
-    files: ["src/**/*.ts", "test/**/*.ts", "evals/**/*.ts"],
+    files: ["src/**/*.ts", "test/**/*.ts", "evals/**/*.ts", "**/*.mjs"],
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
       "@typescript-eslint/no-unused-expressions": "warn",
