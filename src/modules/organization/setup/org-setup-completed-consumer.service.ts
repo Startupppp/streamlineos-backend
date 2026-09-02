@@ -120,6 +120,23 @@ export class OrgSetupCompletedConsumerService
     const { orgId, userId, moduleKeys, sessionAction, skipReason, sendWelcome } =
       parseResult.data;
 
+    // Every step below writes into `orgId` taken from the payload, while the inbox fence, the
+    // relay's lease and the audit trail are all bound to `event.organizationId`. The producer
+    // sets both from the same value, so a disagreement is never legitimate — and unchecked it
+    // would seed roles, provision checklists, close a session and send a welcome inside an
+    // organisation the event was never recorded against. FAILED then throw: the inbox row says
+    // why, and the publisher's retry ladder ends at the dead-letter the dead-outbox alert reads.
+    if (orgId !== event.organizationId) {
+      const message = `payload orgId does not match the event's organization (${event.organizationId})`;
+      this.logger.error(
+        `organization.setup.completed ${event.eventId}: ${message} — refusing to provision`,
+      );
+      await inbox.markProcessed(CONSUMER_NAME, event.eventId, "FAILED", message);
+      throw new Error(
+        `organization.setup.completed ${event.eventId}: ${message}`,
+      );
+    }
+
     // A throw here is deliberate: it leaves the inbox row reclaimable, propagates to
     // OutboxPublisherService, and the event is retried and finally dead-lettered where the
     // dead-outbox alert reports it. The failure is never swallowed.
