@@ -12,10 +12,8 @@ import {
   hrPeople,
   hrCases,
   attendance,
-  documents,
-  onboardingDocuments,
-  documentAuditLogs,
 } from "../../db/schema";
+import { sweepRetentionDocuments } from "./cron-hr-retention-documents";
 
 const BATCH_SIZE = 200;
 /**
@@ -31,23 +29,6 @@ const drain = (batch: () => Promise<number>) =>
     const processed = await batch();
     return { selected: processed, processed };
   });
-
-const NON_OBJECT_FILE_REFERENCES = new Set(["retention://redacted", ""]);
-
-function collectRetiredKeys(
-  into: string[],
-  candidates: ReadonlyArray<{ id: number; fileUrl: string | null }>,
-  affectedIds: ReadonlyArray<number>,
-): void {
-  const affected = new Set(affectedIds);
-  for (const candidate of candidates) {
-    if (!affected.has(candidate.id)) continue;
-    const reference = candidate.fileUrl;
-    if (!reference || NON_OBJECT_FILE_REFERENCES.has(reference)) continue;
-    if (/^https?:\/\//i.test(reference)) continue;
-    into.push(reference);
-  }
-}
 
 export interface HrRetentionSweepResult {
   organizations: number;
@@ -178,7 +159,13 @@ export class CronHrRetentionService {
       return;
     }
     if (recordType === "document") {
-      const counts = await this.sweepDocuments(tx, orgId, cutoff, action);
+      const counts = await sweepRetentionDocuments(tx, {
+        orgId,
+        cutoff,
+        action,
+        batchSize: BATCH_SIZE,
+        maxBatches: MAX_BATCHES,
+      });
       if (counts.retiredKeys.length > 0) {
         const pending = retiredKeys.get(orgId) ?? [];
         pending.push(...counts.retiredKeys);
@@ -297,180 +284,6 @@ export class CronHrRetentionService {
       }
       retiredKeys.set(orgId, []);
     }
-  }
-
-  /**
-   * Drains BOTH document tables rather than taking one page of each per tick.
-   *
-   * `scanned` is the number of rows the predicate matched, so a run that scanned 200 and
-   * processed 0 is visible: that is the stall shape a policy whose `action` is neither
-   * "delete" nor "anonymize" produces, and a naive loop would spin on it for ever.
-   */
-  private async sweepDocuments(
-    tx: TenantTx,
-    orgId: string,
-    cutoff: Date,
-    action: string,
-  ): Promise<{
-    deleted: number;
-    redacted: number;
-    protected: number;
-    scanned: number;
-    truncated: boolean;
-    retiredKeys: string[];
-  }> {
-    const retiredKeys: string[] = [];
-    let deleted = 0;
-    let redacted = 0;
-    let protectedCount = 0;
-    let scanned: number;
-
-    const generic = await drainPages(BATCH_SIZE, MAX_BATCHES, async () => {
-      const rows = await this.selectGenericDocuments(tx, orgId, cutoff);
-      if (rows.length === 0) return { selected: 0, processed: 0 };
-      const processed = await this.processGenericDocuments(tx, orgId, action, rows, retiredKeys);
-      deleted += processed.deleted;
-      redacted += processed.redacted;
-      return { selected: rows.length, processed: processed.deleted + processed.redacted };
-    });
-
-    const onboarding = await drainPages(BATCH_SIZE, MAX_BATCHES, async () => {
-      const rows = await this.selectOnboardingDocuments(tx, orgId, cutoff);
-      if (rows.length === 0) return { selected: 0, processed: 0 };
-      const processed = await this.processOnboardingDocuments(tx, orgId, action, rows, retiredKeys);
-      deleted += processed.deleted;
-      redacted += processed.redacted;
-      protectedCount += processed.protected;
-      return { selected: rows.length, processed: processed.deleted + processed.redacted };
-    });
-
-    scanned = generic.scanned + onboarding.scanned;
-
-    return {
-      deleted,
-      redacted,
-      protected: protectedCount,
-      scanned,
-      truncated: generic.truncated || onboarding.truncated,
-      retiredKeys,
-    };
-  }
-
-  private async selectGenericDocuments(
-    tx: TenantTx,
-    orgId: string,
-    cutoff: Date,
-  ): Promise<Array<{ id: number; fileUrl: string | null }>> {
-    return tx
-      .select({ id: documents.id, fileUrl: documents.fileUrl })
-      .from(documents)
-      .where(sql`${documents.orgId} = ${orgId}
-        AND ${documents.createdAt} < ${cutoff}
-        AND ${documents.fileUrl} <> 'retention://redacted'
-        AND NOT EXISTS (
-          SELECT 1 FROM hr_legal_hold_items hli
-          WHERE hli.org_id = ${orgId}
-            AND hli.item_type = 'document'
-            AND hli.item_ref = ${documents.id}::text
-            AND hli.locked = true
-        )`)
-      .limit(BATCH_SIZE);
-  }
-
-  private async processGenericDocuments(
-    tx: TenantTx,
-    orgId: string,
-    action: string,
-    genericRows: Array<{ id: number; fileUrl: string | null }>,
-    retiredKeys: string[],
-  ): Promise<{ deleted: number; redacted: number }> {
-    const ids = sql.join(
-      genericRows.map((row) => sql`${row.id}`),
-      sql`, `,
-    );
-    if (action === "delete") {
-      const rows = await tx
-        .delete(documents)
-        .where(sql`${documents.orgId} = ${orgId} AND ${documents.id} IN (${ids})`)
-        .returning({ id: documents.id });
-      collectRetiredKeys(retiredKeys, genericRows, rows.map((row) => row.id));
-      return { deleted: rows.length, redacted: 0 };
-    }
-    if (action === "anonymize") {
-      const rows = await tx
-        .update(documents)
-        .set({ fileUrl: "retention://redacted", fileName: "redacted", description: null, metadata: null })
-        .where(sql`${documents.orgId} = ${orgId} AND ${documents.id} IN (${ids})`)
-        .returning({ id: documents.id });
-      collectRetiredKeys(retiredKeys, genericRows, rows.map((row) => row.id));
-      return { deleted: 0, redacted: rows.length };
-    }
-    return { deleted: 0, redacted: 0 };
-  }
-
-  private async selectOnboardingDocuments(
-    tx: TenantTx,
-    orgId: string,
-    cutoff: Date,
-  ): Promise<Array<{ id: number; fileUrl: string | null }>> {
-    return tx
-      .select({ id: onboardingDocuments.id, fileUrl: onboardingDocuments.fileUrl })
-      .from(onboardingDocuments)
-      .where(sql`${onboardingDocuments.orgId} = ${orgId}
-        AND ${onboardingDocuments.createdAt} < ${cutoff}
-        AND ${onboardingDocuments.fileUrl} <> 'retention://redacted'
-        AND NOT EXISTS (
-          SELECT 1 FROM hr_legal_hold_items hli
-          WHERE hli.org_id = ${orgId}
-            AND hli.item_type = 'document'
-            AND hli.item_ref = ${onboardingDocuments.id}::text
-            AND hli.locked = true
-        )`)
-      .limit(BATCH_SIZE);
-  }
-
-  private async processOnboardingDocuments(
-    tx: TenantTx,
-    orgId: string,
-    action: string,
-    onboardingRows: Array<{ id: number; fileUrl: string | null }>,
-    retiredKeys: string[],
-  ): Promise<{ deleted: number; redacted: number; protected: number }> {
-    const auditRows = await tx
-      .select({ id: documentAuditLogs.onboardingDocumentId })
-      .from(documentAuditLogs)
-      .where(sql`${documentAuditLogs.orgId} = ${orgId}
-        AND ${documentAuditLogs.onboardingDocumentId} IN (${sql.join(onboardingRows.map((row) => sql`${row.id}`), sql`, `)})`);
-    const auditedIds = new Set(auditRows.map((row) => row.id));
-
-    let deleted = 0;
-    const deletableIds = onboardingRows.map((row) => row.id).filter((id) => !auditedIds.has(id));
-    if (action === "delete" && deletableIds.length > 0) {
-      const rows = await tx
-        .delete(onboardingDocuments)
-        .where(sql`${onboardingDocuments.orgId} = ${orgId} AND ${onboardingDocuments.id} IN (${sql.join(deletableIds.map((id) => sql`${id}`), sql`, `)})`)
-        .returning({ id: onboardingDocuments.id });
-      deleted = rows.length;
-      collectRetiredKeys(retiredKeys, onboardingRows, rows.map((row) => row.id));
-    }
-
-    let redacted = 0;
-    const redactIds = onboardingRows
-      .map((row) => row.id)
-      .filter((id) => auditedIds.has(id) || action === "anonymize");
-    if (redactIds.length > 0) {
-      const rows = await tx
-        .update(onboardingDocuments)
-        .set({ fileUrl: "retention://redacted", fileName: "redacted", remarks: null })
-        .where(sql`${onboardingDocuments.orgId} = ${orgId} AND ${onboardingDocuments.id} IN (${sql.join(redactIds.map((id) => sql`${id}`), sql`, `)})`)
-        .returning({ id: onboardingDocuments.id });
-      redacted = rows.length;
-      collectRetiredKeys(retiredKeys, onboardingRows, rows.map((row) => row.id));
-    }
-
-    // Only this table's own rows: the count used to subtract the generic table's
-    // deletions too and could go negative.
-    return { deleted, redacted, protected: onboardingRows.length - deleted - redacted };
   }
 
   private async auditLog(

@@ -114,9 +114,9 @@ const ACCEPTED = [
   { site: "modules/surveys/survey-automation.service.ts::surveyForms", reason: "an archived survey must stay inspectable to be restored (report 06)" },
   { site: "modules/surveys/survey-response-submitted-consumer.service.ts::surveyForms", reason: "a response to an archived survey must still be consumed (report 06)" },
   { site: "modules/ai/core/services/survey-ai.service.ts::surveyForms", reason: "reported by ticket 06, outside its territory" },
-  { site: "modules/gdpr/gdpr-subject-erasure.service.ts::kbSources", reason: "erasure deliberately sweeps deleted rows (report 06)" },
-  { site: "modules/gdpr/gdpr-subject-erasure.service.ts::kbPages", reason: "erasure deliberately sweeps deleted rows (report 06)" },
-  { site: "modules/gdpr/gdpr-subject-erasure.service.ts::kbArticles", reason: "erasure deliberately sweeps deleted rows" },
+  { site: "modules/gdpr/gdpr-subject-erasure-authored-content.ts::kbSources", reason: "erasure deliberately sweeps deleted rows (report 06)" },
+  { site: "modules/gdpr/gdpr-subject-erasure-authored-content.ts::kbPages", reason: "erasure deliberately sweeps deleted rows (report 06)" },
+  { site: "modules/gdpr/gdpr-subject-erasure-authored-content.ts::kbArticles", reason: "erasure deliberately sweeps deleted rows" },
 ];
 
 function snakeToCamel(name) {

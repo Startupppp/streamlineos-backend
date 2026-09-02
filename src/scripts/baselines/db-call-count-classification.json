@@ -27,17 +27,21 @@
       "verdict": "FALSE-POSITIVE",
       "note": "for(;;) keyset export page loop bounded by EXPORT_ROW_CAP \u2014 one query per page of EXPORT_PAGE_SIZE rows"
     },
+    "/autonomy/autonomy-hold.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "ticket 21: cancelInFlight issued one UPDATE per cancelled hold with an IDENTICAL SET. Now one chunked inArray UPDATE. Proved by db-call-count-contract.spec.ts \u2014 exactly 2 updates at both 1 and 50 cancelled rows"
+    },
     "/billing/core/ai-credits-packs.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "loop is over the DEFAULT_AI_CREDIT_PACKS module constant, so the call count is fixed at compile time and does not grow with data"
     },
     "/billing/core/ai-credits-reservation.service.ts": {
-      "verdict": "N+1-FIXED",
-      "note": "ticket 21: sweepExpiredReservations opened runInNewTenantTransaction per expired row (up to 500 nested borrows per org) and released via a read-modify-write wallet update. Now a bounded keyset drain inside forEachOrg's own transaction: one page select, one compare-and-set claim, one atomic `balance + refunded`. Proved by src/db/__tests__/db-call-count-contract.spec.ts \u2014 statement count identical at 1 and 50 rows"
+      "verdict": "FALSE-POSITIVE",
+      "note": "ticket 21 removed the N+1: sweepExpiredReservations opened runInNewTenantTransaction per expired row (up to 500 nested pooled borrows per org) and released each via a read-modify-write wallet update. It is now a bounded keyset drain inside forEachOrg's own transaction \u2014 one page select, one compare-and-set claim, one atomic `balance + refunded`. What the detector still sees is the for(;;) page stepper, which is the correct shape. Proved by src/db/__tests__/db-call-count-contract.spec.ts: statement count identical at 1 and 50 expired rows"
     },
     "/billing/core/usage-metering.service.ts": {
-      "verdict": "N+1-FIXED",
-      "note": "ticket 21: was one runInNewTenantTransaction per expired reservation. Now one advisory lock and one compare-and-set claim per DISTINCT METER inside the sweep's own transaction. Proved by db-call-count-contract.spec.ts \u2014 one execute and one update at both 1 and 50 rows"
+      "verdict": "FALSE-POSITIVE",
+      "note": "ticket 21 removed the N+1: was one runInNewTenantTransaction per expired reservation. Now one advisory lock and one compare-and-set claim per DISTINCT METER inside the sweep's own transaction. The detector sees the page stepper and the per-meter group loop, both bounded. Proved by db-call-count-contract.spec.ts: one execute and one update at both 1 and 50 rows"
     },
     "/blog/blog.service.ts": {
       "verdict": "N+1-FIXED",
@@ -68,8 +72,8 @@
       "note": "Was N+1-FIXED; the claim was false and its own note said so. The deliveries insert is batched, but `for (const delivery of deliveries) await OutboxWriter.emit(tx, ...)` at 177/178 is still one write per delivery. Needs a bulk emit on outbox-writer.ts."
     },
     "/build/core/projects-write.service.ts": {
-      "verdict": "BATCHED",
-      "note": "the loop is over byNewAssignee, one inArray UPDATE per distinct assignee; the call count tracks distinct assignees, not tickets"
+      "verdict": "FALSE-POSITIVE",
+      "note": "the loop is over byNewAssignee \u2014 one inArray UPDATE per distinct assignee, covering every ticket assigned to them. The call count tracks distinct assignees, not tickets"
     },
     "/build/forms/submissions.service.ts": {
       "verdict": "ACTIONABLE",
@@ -155,9 +159,9 @@
       "verdict": "FALSE-POSITIVE",
       "note": "bounded batch-delete loop \u2014 each iteration deletes BATCH_SIZE rows in one statement, capped by MAX_BATCHES"
     },
-    "/cron/cron-hr-retention.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Loop:262 \u2014 onboardingRows.map(r => sql`${r.id}`) builds a sql fragment list for a single IN clause WHERE; the sql` on line 269 is that same single batch query's WHERE, not a per-row call"
+    "/cron/cron-holiday.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "ticket 21: one UPDATE per upcoming holiday with an identical SET, now a single inArray UPDATE. Proved by db-call-count-contract.spec.ts, and mutation-tested \u2014 reverting the fix takes the assertion from 1 update to 50"
     },
     "/cron/cron-hr.service.ts": {
       "verdict": "ACTIONABLE",
@@ -251,6 +255,10 @@
       "verdict": "ACTIONABLE",
       "note": "the expiry branch writes an identical `isActive: false` per template and is one inArray UPDATE; the materialise branch is per row by nature"
     },
+    "/finance/ap/vendor-payments-allocations.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "ticket 21: was 3 statements per allocation (upsert, bill re-read, bill write) and a lost-update race on purchase_bills.amount_paid. Now one multi-row upsert plus one UPDATE ... FROM (VALUES ...) that moves the balance in SQL. Proved by db-call-count-contract.spec.ts"
+    },
     "/finance/ar/reminders.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "one fin_reminder_log upsert per candidate. The conflict target is (orgId, invoiceId, offsetDays), so the whole candidate set is one multi-row INSERT ... ON CONFLICT DO UPDATE"
@@ -264,8 +272,12 @@
       "note": "one UPDATE per asset with a distinct accumulated value \u2014 same UPDATE ... FROM (VALUES ...) fix as depreciation-reverse"
     },
     "/finance/banking/imports.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "ticket 21 removed the N+1: was one existence SELECT plus one INSERT per parsed row \u2014 up to 4,000 round trips for a MAX_IMPORT_ROWS file, and a lost-update race besides. Now one chunked multi-row INSERT ... ON CONFLICT DO NOTHING against uniq_fin_bank_txn_org_account_fp with the duplicate count derived from RETURNING. The detector sees the IMPORT_INSERT_CHUNK stepper"
+    },
+    "/finance/banking/reconciliation-workspace.service.ts": {
       "verdict": "N+1-FIXED",
-      "note": "ticket 21: was one existence SELECT plus one INSERT per parsed row \u2014 up to 4,000 round trips for a MAX_IMPORT_ROWS file, and a lost-update race besides. Now one chunked multi-row INSERT ... ON CONFLICT DO NOTHING against uniq_fin_bank_txn_org_account_fp, with the duplicate count derived from RETURNING. The remaining detected loop is the chunk stepper"
+      "note": "ticket 21: Promise.all fired one match SELECT per suggested transaction, up to 100 per page load. Now one inArray read grouped in memory, with the per-transaction cap preserved so nothing is truncated"
     },
     "/finance/planning/scenarios.service.ts": {
       "verdict": "N+1-FIXED",
@@ -440,11 +452,11 @@
       "note": "Promise.all over the fixed statusKeys set \u2014 one query per board column, a constant"
     },
     "/leads/leads-import.service.ts": {
-      "verdict": "BATCHED",
+      "verdict": "FALSE-POSITIVE",
       "note": "the loop is over the assignment map; each iteration is one updateMirroredLeads over that salesperson's whole id list"
     },
     "/leads/leads-ops.service.ts": {
-      "verdict": "BATCHED",
+      "verdict": "FALSE-POSITIVE",
       "note": "same shape \u2014 one batched updateMirroredLeads per salesperson, not per lead"
     },
     "/notifications/broadcasts-audience.queries.ts": {
@@ -470,6 +482,10 @@
     "/notifications/notification-preferences.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "one DELETE per preference write. The predicates differ only in (scopeType, scopeKey), so one DELETE with a tuple IN list covers the set"
+    },
+    "/organization/core/lifecycle/organization-purge-adapters.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "ticket 21: the object-storage adapter opened up to 3 runInNewTenantTransaction per storage key. Now one bulk pending-upsert before the deletes (preserving the write-before-delete ordering) and chunked bookkeeping flushes after"
     },
     "/organization/core/lifecycle/organization-saga.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -520,7 +536,7 @@
       "note": "the loop walks a merge chain bounded by MAX_MERGE_HOPS with an explicit cycle guard; it is a chain walk, not a per-row fan-out"
     },
     "/party/party-legacy-writer.ts": {
-      "verdict": "BATCHED",
+      "verdict": "FALSE-POSITIVE",
       "note": "the loop is over groupByPayload \u2014 one UPDATE per distinct payload shape, with an inArray over every party sharing it"
     },
     "/party/party-roles.service.ts": {
@@ -620,8 +636,8 @@
       "note": "create: bulk insert sections, then flatMap questions, bulk insert, then flatMap choices, bulk insert \u2014 3 queries instead of N+M+K"
     },
     "/surveys/survey-participant.service.ts": {
-      "verdict": "N+1-FIXED",
-      "note": "ticket 21: import wrote one INSERT ... RETURNING per participant. Now one multi-row insert per PARTICIPANT_INSERT_CHUNK, with the raw access tokens paired back by RETURNING order. Proved by db-call-count-contract.spec.ts \u2014 one insert at both 1 and 50 participants. The remaining detected loop is the chunk stepper"
+      "verdict": "FALSE-POSITIVE",
+      "note": "ticket 21 removed the N+1: import wrote one INSERT ... RETURNING per participant. Now one multi-row insert per PARTICIPANT_INSERT_CHUNK, raw access tokens paired back by RETURNING order. The detector sees the chunk stepper. Proved by db-call-count-contract.spec.ts: one insert at both 1 and 50 participants"
     },
     "/surveys/survey-version.service.ts": {
       "verdict": "N+1-FIXED",
@@ -632,7 +648,7 @@
       "note": "one audit.record per period id inside a BULK rejection \u2014 the exact shape the bulk endpoint exists to avoid. AuditService needs a multi-row record path"
     },
     "/timesheets/core/approvals.service.ts": {
-      "verdict": "BATCHED",
+      "verdict": "FALSE-POSITIVE",
       "note": "the loop is over rateGroups \u2014 one UPDATE per distinct rate shape, covering every timesheet in that group"
     },
     "/timesheets/core/exceptions-detector.service.ts": {
@@ -654,6 +670,14 @@
     "/workflows/engine/workflow-schedule-tick.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "each due schedule triggers a different workflow; the call in the loop is that schedule's own trigger, not a repeated lookup"
+    },
+    "/cron/cron-hr-retention-documents.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Loop \u2014 onboardingRows.map(r => sql`${r.id}`) builds a sql fragment list for a single IN clause WHERE; the sql` that follows is that same single batch query's WHERE, not a per-row call. Re-keyed 2026-09-02 (ticket 37) when the document sweep moved out of cron-hr-retention.service.ts."
+    },
+    "/cron/cron-hr-retention.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Loop:88 \u2014 `for (const policy of policies)` fans out over the org's active retention policies, at most one per record type (employee, case, attendance, document, payroll). Each iteration issues a different statement against a different table, so there is no single query the loop could collapse into. Split out from the document-sweep entry 2026-09-02 (ticket 37), which moved to cron-hr-retention-documents.ts."
     }
   }
 }

@@ -4,11 +4,10 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { createHash, randomUUID } from "crypto";
+import { createHash } from "crypto";
 import { Readable } from "stream";
 import { extname } from "path";
 import {
-  S3Client,
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
@@ -16,22 +15,15 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { MediaCompressionService } from "../../common/media/media-compression.service";
-import { sanitizeFileName } from "./storage-key";
 import { APP_CONFIG } from "../../config/config.module";
-import type { AppConfig } from "../../config/env.validation";
 import {
-  getRegionRegistry,
-  hasRegionRegistry,
-} from "../../common/region/region-registry";
-import type { RegionStorageConfig } from "../../common/region/region.config";
+  StoragePlacementResolver,
+  type R2Config,
+  type StorageConfig,
+  type StoragePlacement,
+} from "./storage-placement";
 
-interface R2Config {
-  region: string;
-  bucketName: string | undefined;
-  accessKeyId: string | undefined;
-  secretAccessKey: string | undefined;
-  endpoint: string | undefined;
-}
+export type { R2Config, StorageConfig, StoragePlacement };
 
 export interface UploadResult {
   key: string;
@@ -78,139 +70,27 @@ export function isMissingObjectError(error: unknown): boolean {
   return details.name === "NotFound" || details.name === "NoSuchKey" || details.$metadata?.httpStatusCode === 404;
 }
 
-export type StorageConfig = Pick<
-  AppConfig,
-  | "R2_REGION"
-  | "R2_BUCKET_NAME"
-  | "R2_ACCESS_KEY_ID"
-  | "R2_SECRET_ACCESS_KEY"
-  | "R2_ENDPOINT"
-  | "NEXT_PUBLIC_R2_PUBLIC_URL"
->;
-
-export interface StoragePlacement {
-  readonly client: S3Client;
-  readonly bucketName?: string;
-  readonly keyPrefix?: string;
-}
-
 @Injectable()
 export class StorageService {
-  private readonly clients = new Map<string, S3Client>();
+  private readonly placement: StoragePlacementResolver;
 
   constructor(
     private readonly compression: MediaCompressionService,
     @Inject(APP_CONFIG) private readonly config: StorageConfig,
-  ) {}
-
-  private clientFor(cfg: R2Config): S3Client {
-    const cacheKey = `${cfg.region}|${cfg.endpoint ?? ""}|${cfg.accessKeyId ?? ""}`;
-    const existing = this.clients.get(cacheKey);
-    if (existing) return existing;
-
-    const client = new S3Client({
-      region: cfg.region,
-      endpoint: cfg.endpoint,
-      credentials:
-        cfg.accessKeyId && cfg.secretAccessKey
-          ? {
-              accessKeyId: cfg.accessKeyId,
-              secretAccessKey: cfg.secretAccessKey,
-            }
-          : undefined,
-      requestHandler: {
-        connectionTimeout: 5_000,
-        requestTimeout: 120_000,
-        throwOnRequestTimeout: true,
-      },
-    });
-    this.clients.set(cacheKey, client);
-    return client;
-  }
-
-  private async placementFor(orgId: string): Promise<StoragePlacement> {
-    if (!hasRegionRegistry()) {
-      const cfg = this.getConfig();
-      return {
-        client: this.clientFor(cfg),
-        bucketName: cfg.bucketName,
-      };
-    }
-
-    const storage = await getRegionRegistry().storageForOrg(orgId);
-    const cfg = StorageService.toR2Config(storage);
-    return {
-      client: this.clientFor(cfg),
-      bucketName: cfg.bucketName,
-      keyPrefix: storage.keyPrefix,
-    };
+  ) {
+    this.placement = new StoragePlacementResolver(config);
   }
 
   async placementForOrg(orgId: string): Promise<StoragePlacement> {
-    return this.placementFor(orgId);
-  }
-
-  private static toR2Config(storage: RegionStorageConfig): R2Config {
-    return {
-      region: storage.region,
-      bucketName: storage.bucket,
-      accessKeyId: storage.accessKeyId,
-      secretAccessKey: storage.secretAccessKey,
-      endpoint: storage.endpoint,
-    };
-  }
-
-  private getConfig(): R2Config {
-    if (hasRegionRegistry()) {
-      const registry = getRegionRegistry();
-      return StorageService.toR2Config(
-        registry.bindingFor(registry.primary).definition.storage,
-      );
-    }
-
-    return {
-      region: this.config.R2_REGION ?? "auto",
-      bucketName: this.config.R2_BUCKET_NAME,
-      accessKeyId: this.config.R2_ACCESS_KEY_ID,
-      secretAccessKey: this.config.R2_SECRET_ACCESS_KEY,
-      endpoint: this.config.R2_ENDPOINT,
-    };
+    return this.placement.forOrg(orgId);
   }
 
   async configForOrg(orgId: string): Promise<R2Config> {
-    return StorageService.toR2Config(
-      await getRegionRegistry().storageForOrg(orgId),
-    );
+    return this.placement.configForOrg(orgId);
   }
 
   isConfigured(): boolean {
-    const config = this.getConfig();
-    return Boolean(
-      config.bucketName &&
-      config.accessKeyId &&
-      config.secretAccessKey &&
-      config.endpoint,
-    );
-  }
-
-  private requireBucketFrom(
-    placement: StoragePlacement,
-    override?: string,
-  ): string {
-    const bucket = override || placement.bucketName;
-    if (!bucket)
-      throw new ServiceUnavailableException("R2 bucket not configured");
-    return bucket;
-  }
-
-  private static objectKey(
-    placement: StoragePlacement,
-    orgId: string,
-    folder: string,
-    fileName: string,
-  ): string {
-    const rawKey = `${orgId}/${folder}/${randomUUID()}-${sanitizeFileName(fileName)}`;
-    return placement.keyPrefix ? `${placement.keyPrefix}/${rawKey}` : rawKey;
+    return this.placement.isConfigured();
   }
 
   async uploadFile(
@@ -221,9 +101,9 @@ export class StorageService {
     mimeType = "application/octet-stream",
     bucketOverride?: string,
   ): Promise<UploadResult> {
-    const placement = await this.placementFor(orgId);
-    const bucketName = this.requireBucketFrom(placement, bucketOverride);
-    const key = StorageService.objectKey(placement, orgId, folder, fileName);
+    const placement = await this.placement.forOrg(orgId);
+    const bucketName = this.placement.requireBucket(placement, bucketOverride);
+    const key = this.placement.objectKey(placement, orgId, folder, fileName);
 
     await placement.client.send(
       new PutObjectCommand({
@@ -252,9 +132,9 @@ export class StorageService {
     bucketOverride?: string,
     sha256 = "",
   ): Promise<UploadResult> {
-    const placement = await this.placementFor(orgId);
-    const bucketName = this.requireBucketFrom(placement, bucketOverride);
-    const key = StorageService.objectKey(placement, orgId, folder, fileName);
+    const placement = await this.placement.forOrg(orgId);
+    const bucketName = this.placement.requireBucket(placement, bucketOverride);
+    const key = this.placement.objectKey(placement, orgId, folder, fileName);
 
     await placement.client.send(
       new PutObjectCommand({
@@ -291,9 +171,9 @@ export class StorageService {
     mimeType: string,
   ): Promise<{ key: string; plannedMimeType: string }> {
     const planned = this.compression.planOutput(buffer, mimeType, fileName);
-    const placement = await this.placementFor(orgId);
+    const placement = await this.placement.forOrg(orgId);
     return {
-      key: StorageService.objectKey(placement, orgId, folder, planned.fileName),
+      key: this.placement.objectKey(placement, orgId, folder, planned.fileName),
       plannedMimeType: planned.mimeType,
     };
   }
@@ -333,8 +213,8 @@ export class StorageService {
     mimeType: string,
     bucketOverride?: string,
   ): Promise<void> {
-    const placement = await this.placementFor(orgId);
-    const bucketName = this.requireBucketFrom(placement, bucketOverride);
+    const placement = await this.placement.forOrg(orgId);
+    const bucketName = this.placement.requireBucket(placement, bucketOverride);
     await placement.client.send(
       new PutObjectCommand({
         Bucket: bucketName,
@@ -350,15 +230,15 @@ export class StorageService {
     key: string,
     expiresIn = 3600,
   ): Promise<string> {
-    const placement = await this.placementFor(orgId);
-    const bucketName = this.requireBucketFrom(placement);
+    const placement = await this.placement.forOrg(orgId);
+    const bucketName = this.placement.requireBucket(placement);
     const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
     return getSignedUrl(placement.client, command, { expiresIn });
   }
 
   async deleteFile(orgId: string, key: string): Promise<void> {
-    const placement = await this.placementFor(orgId);
-    const bucketName = this.requireBucketFrom(placement);
+    const placement = await this.placement.forOrg(orgId);
+    const bucketName = this.placement.requireBucket(placement);
     await placement.client.send(
       new DeleteObjectCommand({ Bucket: bucketName, Key: key }),
     );
@@ -383,8 +263,8 @@ export class StorageService {
     orgId: string,
     key: string,
   ): Promise<{ contentLength: number; contentType: string } | null> {
-    const placement = await this.placementFor(orgId);
-    const bucketName = this.requireBucketFrom(placement);
+    const placement = await this.placement.forOrg(orgId);
+    const bucketName = this.placement.requireBucket(placement);
     try {
       const response = await placement.client.send(
         new HeadObjectCommand({ Bucket: bucketName, Key: key }),
@@ -408,8 +288,8 @@ export class StorageService {
     key: string,
     byteCount: number,
   ): Promise<Buffer | null> {
-    const placement = await this.placementFor(orgId);
-    const bucketName = this.requireBucketFrom(placement);
+    const placement = await this.placement.forOrg(orgId);
+    const bucketName = this.placement.requireBucket(placement);
     try {
       const response = await placement.client.send(
         new GetObjectCommand({
@@ -433,7 +313,7 @@ export class StorageService {
   }
 
   async fileExists(orgId: string, key: string): Promise<boolean> {
-    const placement = await this.placementFor(orgId);
+    const placement = await this.placement.forOrg(orgId);
     const bucketName = placement.bucketName;
     if (!bucketName) throw new ServiceUnavailableException("R2 bucket not configured");
     try {
@@ -448,8 +328,8 @@ export class StorageService {
   }
 
   async getFileStream(orgId: string, key: string): Promise<FileStreamResult> {
-    const placement = await this.placementFor(orgId);
-    const bucketName = this.requireBucketFrom(placement);
+    const placement = await this.placement.forOrg(orgId);
+    const bucketName = this.placement.requireBucket(placement);
     const response = await placement.client.send(
       new GetObjectCommand({ Bucket: bucketName, Key: key }),
     );
