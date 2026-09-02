@@ -104,6 +104,7 @@ export class SurveyParticipantService {
   async remind(orgId: string, surveyId: number, participantIds: number[]) {
     const requestedIds = await this.assertOwnsAll(orgId, surveyId, participantIds);
     const rows = await this.db.query.surveyParticipants.findMany({
+      columns: { status: true },
       where: and(eq(surveyParticipants.orgId, orgId), eq(surveyParticipants.surveyId, surveyId), inArray(surveyParticipants.id, requestedIds)),
       limit: requestedIds.length,
     });

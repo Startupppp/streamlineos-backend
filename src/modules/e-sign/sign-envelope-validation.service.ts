@@ -40,10 +40,12 @@ export class SignEnvelopeValidationService {
     const errors: string[] = [];
 
     const documents = await this.db.query.signDocuments.findMany({
+      columns: { id: true },
       where: and(
         eq(signDocuments.orgId, orgId),
         eq(signDocuments.envelopeId, envelopeId),
       ),
+      limit: 1,
     });
     if (documents.length === 0) errors.push("Envelope has no document");
 

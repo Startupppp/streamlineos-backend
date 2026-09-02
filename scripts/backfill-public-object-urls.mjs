@@ -8,8 +8,12 @@
  * Background: `StorageService` used to return `<public base>/<key>` for any
  * folder that was not on a hard-coded private list, and callers persisted that
  * value. Ticket 33 removed the minting; this removes what was already written.
- * `chat_attachments.file_url` is NOT handled here — it has its own script,
- * `backfill-chat-attachment-file-url.mjs`, which must still be run.
+ * `chat_attachments.file_url` IS handled here when this runs as the database
+ * owner: discovery is catalog-driven, so the column is found like any other and
+ * the owner bypasses the row-level security policy that would otherwise hide it.
+ * `backfill-chat-attachment-file-url.mjs` is needed only when this must run as
+ * the application role, which cannot read through that policy — this script then
+ * reports the column UNVERIFIABLE and exits 2 rather than counting it as clean.
  *
  * Discovery is catalog-driven, so a column added after this was written is
  * still swept: every text/varchar column in `public`, `build` and

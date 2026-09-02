@@ -68,6 +68,7 @@ export class SignBulkSendService {
     }
 
     const activeJobs = await this.db.query.signBulkSendJobs.findMany({
+      columns: { id: true },
       where: and(eq(signBulkSendJobs.orgId, orgId), inArray(signBulkSendJobs.status, [...ACTIVE_JOB_STATUSES])),
     });
     if (activeJobs.length >= orgSettings.bulkSendMaxActiveJobs) {
