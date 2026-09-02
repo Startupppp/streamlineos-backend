@@ -282,6 +282,7 @@ describe("C — step history is bounded by the sweep pruning pass", () => {
     const deletedReturning = jest.fn().mockResolvedValue(deletedSteps);
     const selectLimit = jest.fn()
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce(oldExecIds.map((id) => ({ id })));
     return {
       update: jest.fn().mockReturnValue({ set: setMock }),
@@ -368,5 +369,137 @@ describe("C — step history is bounded by the sweep pruning pass", () => {
     await svc.sweep();
 
     expect(deleteSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Group D — Expired lease reclaim: expireStuck re-queues crashed workers
+//
+// Bite proof (test "below-budget stuck execution released to waiting"):
+//   Before implementing the SELECT+loop in expireStuck, the function issued a
+//   batch UPDATE to timed_out without reading any rows. The Group D tests were
+//   run against that old implementation:
+//     - "waitingCall" was undefined → expect(waitingCall).toBeDefined() FAILED.
+//     - "timedOutCall" was defined → expect(timedOutCall).toBeUndefined() FAILED.
+//   After rewriting expireStuck to SELECT rows then conditionally UPDATE to
+//   waiting/dead_lettered, all Group D tests pass.
+// ──────────────────────────────────────────────────────────────────────────────
+
+describe("D — expired lease reclaim: expireStuck re-queues crashed workers", () => {
+  type PrivateStuck = { expireStuck(tx: unknown, orgId: string): Promise<void> };
+
+  function makeTxWithStuck(rows: object[]): {
+    tx: unknown;
+    allSetCalls: Array<Record<string, unknown>>;
+  } {
+    const allSetCalls: Array<Record<string, unknown>> = [];
+    const tx = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue(rows),
+          }),
+        }),
+      }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockImplementation((vals: Record<string, unknown>) => {
+          allSetCalls.push(vals);
+          return { where: jest.fn().mockReturnValue(Promise.resolve()) };
+        }),
+      }),
+    };
+    return { tx, allSetCalls };
+  }
+
+  function makeMinimalService(): WorkflowRunnerService {
+    const db = {} as unknown as Db;
+    const dispatcher = { execute: jest.fn() } as unknown as NodeDispatchPort;
+    const access = { resolveUserPermissions: jest.fn() } as unknown as AccessService;
+    return new WorkflowRunnerService(db, dispatcher, access);
+  }
+
+  beforeEach(() => {
+    (deadLetterExecution as jest.Mock).mockResolvedValue(undefined);
+  });
+
+  it("a stuck running execution below budget is released to waiting with incremented infraAttempt", async () => {
+    const stuckCtx = { cursor: "node-a", resumeAt: null, variables: {}, steps: 3, infraAttempt: 1, dlqReason: null };
+    const { tx, allSetCalls } = makeTxWithStuck([{ id: "exec-stuck-1", context: stuckCtx }]);
+    const svc = makeMinimalService();
+
+    await (svc as unknown as PrivateStuck).expireStuck(tx, ORG);
+
+    const waitingCall = allSetCalls.find((c) => c["status"] === "waiting");
+    expect(waitingCall).toBeDefined();
+    const ctx = waitingCall?.["context"] as Record<string, unknown> | undefined;
+    expect(ctx?.["infraAttempt"]).toBe(2);
+    expect(ctx?.["resumeAt"]).toBeDefined();
+  });
+
+  it("the released execution has a future resumeAt (backoff is non-zero)", async () => {
+    const before = Date.now();
+    const stuckCtx = { cursor: "node-b", resumeAt: null, variables: {}, steps: 1, infraAttempt: 0, dlqReason: null };
+    const { tx, allSetCalls } = makeTxWithStuck([{ id: "exec-stuck-2", context: stuckCtx }]);
+    const svc = makeMinimalService();
+
+    await (svc as unknown as PrivateStuck).expireStuck(tx, ORG);
+
+    const waitingCall = allSetCalls.find((c) => c["status"] === "waiting");
+    const ctx = waitingCall?.["context"] as Record<string, unknown> | undefined;
+    const resumeAt = new Date(String(ctx?.["resumeAt"]));
+    expect(resumeAt.getTime()).toBeGreaterThan(before);
+  });
+
+  it("expireStuck does NOT set timed_out — crashed runs below budget are not permanently lost", async () => {
+    const stuckCtx = { cursor: "node-c", resumeAt: null, variables: {}, steps: 2, infraAttempt: 2, dlqReason: null };
+    const { tx, allSetCalls } = makeTxWithStuck([{ id: "exec-stuck-3", context: stuckCtx }]);
+    const svc = makeMinimalService();
+
+    await (svc as unknown as PrivateStuck).expireStuck(tx, ORG);
+
+    const timedOutCall = allSetCalls.find((c) => c["status"] === "timed_out");
+    expect(timedOutCall).toBeUndefined();
+  });
+
+  it("a stuck execution that has exhausted its infra budget is dead-lettered", async () => {
+    const exhaustedCtx = {
+      cursor: "node-d", resumeAt: null, variables: {}, steps: 5,
+      infraAttempt: OUTBOX_MAX_RETRIES, dlqReason: null,
+    };
+    const { tx } = makeTxWithStuck([{ id: "exec-stuck-4", context: exhaustedCtx }]);
+    const svc = makeMinimalService();
+
+    await (svc as unknown as PrivateStuck).expireStuck(tx, ORG);
+
+    expect(deadLetterExecution).toHaveBeenCalledWith(
+      tx,
+      "exec-stuck-4",
+      expect.stringContaining("timed out"),
+      expect.objectContaining({ infraAttempt: OUTBOX_MAX_RETRIES }),
+    );
+  });
+
+  it("an exhausted stuck run is NOT released to waiting — budget is the gate", async () => {
+    const exhaustedCtx = {
+      cursor: "node-e", resumeAt: null, variables: {}, steps: 5,
+      infraAttempt: OUTBOX_MAX_RETRIES, dlqReason: null,
+    };
+    const { tx, allSetCalls } = makeTxWithStuck([{ id: "exec-stuck-5", context: exhaustedCtx }]);
+    const svc = makeMinimalService();
+
+    await (svc as unknown as PrivateStuck).expireStuck(tx, ORG);
+
+    const waitingCall = allSetCalls.find((c) => c["status"] === "waiting");
+    expect(waitingCall).toBeUndefined();
+  });
+
+  it("no updates or DLQ calls are made when there are no stuck running executions", async () => {
+    const { tx, allSetCalls } = makeTxWithStuck([]);
+    const svc = makeMinimalService();
+
+    await (svc as unknown as PrivateStuck).expireStuck(tx, ORG);
+
+    expect(allSetCalls).toHaveLength(0);
+    expect(deadLetterExecution).not.toHaveBeenCalled();
   });
 });

@@ -95,6 +95,7 @@ function setup(definition: unknown, opts?: { claimed?: boolean; context?: unknow
   };
 
   claimRows = opts?.claimed === false ? [] : [execution];
+  rec.selects.push([]);
   rec.selects.push([{ id: "exec-1", status: "pending", context: execution.context }]);
   rec.selects.push([{ definitionJson: definition }]);
 

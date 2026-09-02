@@ -137,3 +137,97 @@ describe("CronNotificationOutboxRetentionService — failure isolation and idemp
     expect(second.rowsDeleted).toBe(0);
   });
 });
+
+describe("CronNotificationOutboxRetentionService — batching and resumability", () => {
+  let svc: CronNotificationOutboxRetentionService;
+
+  beforeEach(() => {
+    jest.resetAllMocks();
+    svc = new CronNotificationOutboxRetentionService({} as unknown as Db);
+  });
+
+  it("runs a second batch when the first returns exactly BATCH_SIZE (500) rows — resumable", async () => {
+    let callCount = 0;
+
+    mockedForEachOrg.mockImplementation(async (_db, _name, fn) => {
+      const returning = jest.fn().mockImplementation(() => {
+        callCount += 1;
+        return Promise.resolve(
+          callCount === 1 ? Array.from({ length: 500 }, (_, i) => ({ id: i })) : [],
+        );
+      });
+      const tx = {
+        delete: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ returning }),
+        }),
+      };
+      await fn(tx as never, ORG_A);
+      return { organizations: 1, succeeded: 1, failed: 0 } satisfies ForEachOrgResult;
+    });
+
+    const result = await svc.sweep();
+
+    expect(callCount).toBe(2);
+    expect(result.rowsDeleted).toBe(500);
+    expect(result.truncated).toBe(false);
+  });
+
+  it("sets truncated=true when MAX_BATCHES (50) all return full (500 rows each)", async () => {
+    mockedForEachOrg.mockImplementation(async (_db, _name, fn) => {
+      const returning = jest.fn().mockResolvedValue(
+        Array.from({ length: 500 }, (_, i) => ({ id: i })),
+      );
+      const tx = {
+        delete: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ returning }),
+        }),
+      };
+      await fn(tx as never, ORG_A);
+      return { organizations: 1, succeeded: 1, failed: 0 } satisfies ForEachOrgResult;
+    });
+
+    const result = await svc.sweep();
+
+    expect(result.truncated).toBe(true);
+    expect(result.rowsDeleted).toBe(25_000);
+  });
+
+  it("(bite proof) partial final batch → truncated=false; all-full batches → truncated=true", async () => {
+    let partialCalls = 0;
+    mockedForEachOrg.mockImplementationOnce(async (_db, _name, fn) => {
+      const returning = jest.fn().mockImplementation(() => {
+        partialCalls += 1;
+        return Promise.resolve(
+          partialCalls <= 1 ? Array.from({ length: 500 }, (_, i) => ({ id: i })) : [{ id: 999 }],
+        );
+      });
+      const tx = {
+        delete: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ returning }),
+        }),
+      };
+      await fn(tx as never, ORG_A);
+      return { organizations: 1, succeeded: 1, failed: 0 } satisfies ForEachOrgResult;
+    });
+    const partial = await svc.sweep();
+
+    jest.resetAllMocks();
+    svc = new CronNotificationOutboxRetentionService({} as unknown as Db);
+    mockedForEachOrg.mockImplementationOnce(async (_db, _name, fn) => {
+      const returning = jest.fn().mockResolvedValue(
+        Array.from({ length: 500 }, (_, i) => ({ id: i })),
+      );
+      const tx = {
+        delete: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ returning }),
+        }),
+      };
+      await fn(tx as never, ORG_A);
+      return { organizations: 1, succeeded: 1, failed: 0 } satisfies ForEachOrgResult;
+    });
+    const full = await svc.sweep();
+
+    expect(partial.truncated).toBe(false);
+    expect(full.truncated).toBe(true);
+  });
+});

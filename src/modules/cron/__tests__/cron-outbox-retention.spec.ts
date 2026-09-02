@@ -181,3 +181,66 @@ describe("CronOutboxRetentionService — SQL predicates and batching", () => {
     });
   });
 });
+
+type BatchFn = (run: (limit: number) => Promise<number>) => Promise<{ count: number; truncated: boolean }>;
+type BatchTestService = { batchedOrgDelete: BatchFn; logger: { warn: jest.Mock } };
+
+describe("CronOutboxRetentionService — batching and resumability (private method via prototype)", () => {
+  function makeBatchService(): BatchTestService {
+    return Object.assign(Object.create(CronOutboxRetentionService.prototype), {
+      logger: { warn: jest.fn() },
+    }) as BatchTestService;
+  }
+
+  it("runs a second batch when the first returns exactly BATCH_SIZE (1000) rows — resumable", async () => {
+    let calls = 0;
+    const svc = makeBatchService();
+
+    const result = await svc.batchedOrgDelete(async () => {
+      calls += 1;
+      return calls === 1 ? 1000 : 0;
+    });
+
+    expect(calls).toBe(2);
+    expect(result.count).toBe(1000);
+    expect(result.truncated).toBe(false);
+  });
+
+  it("stops immediately after a partial batch returns fewer than BATCH_SIZE rows", async () => {
+    let calls = 0;
+    const svc = makeBatchService();
+
+    const result = await svc.batchedOrgDelete(async () => {
+      calls += 1;
+      return calls < 3 ? 1000 : 7;
+    });
+
+    expect(calls).toBe(3);
+    expect(result.count).toBe(2007);
+    expect(result.truncated).toBe(false);
+  });
+
+  it("sets truncated=true and accumulates count when MAX_BATCHES (50) all return full", async () => {
+    const svc = makeBatchService();
+
+    const result = await svc.batchedOrgDelete(async () => 1000);
+
+    expect(result.truncated).toBe(true);
+    expect(result.count).toBe(50_000);
+  });
+
+  it("(bite proof) partial final batch → truncated=false; all-full run → truncated=true", async () => {
+    let calls1 = 0;
+    const s1 = makeBatchService();
+    const partial = await s1.batchedOrgDelete(async () => {
+      calls1 += 1;
+      return calls1 <= 1 ? 1000 : 5;
+    });
+
+    const s2 = makeBatchService();
+    const full = await s2.batchedOrgDelete(async () => 1000);
+
+    expect(partial.truncated).toBe(false);
+    expect(full.truncated).toBe(true);
+  });
+});

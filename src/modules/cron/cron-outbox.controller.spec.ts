@@ -61,4 +61,21 @@ describe("CronOutboxController", () => {
     expect(publisher.report).toHaveBeenCalledTimes(1);
     expect(lease.withLease).not.toHaveBeenCalled();
   });
+
+  it("(failure-event) re-throws as InternalServerErrorException when the retention sweep throws — the lease service writes a durable failure record before propagating", async () => {
+    const publisher = { flush: jest.fn(), metrics: jest.fn(), report: jest.fn() };
+    const lease = {
+      withLease: jest.fn().mockImplementation(
+        async (_key: string, _seconds: number, fn: () => Promise<unknown>) => {
+          return { ran: true, result: await fn() };
+        },
+      ),
+    };
+    const retentionThrows = { sweep: jest.fn().mockRejectedValue(new Error("db timeout during sweep")) };
+    const controller = new CronOutboxController(publisher as never, lease as never, retentionThrows as never);
+
+    await expect(controller.postOutboxEventsRetentionSweep(undefined)).rejects.toThrow("Internal server error");
+    expect(retentionThrows.sweep).toHaveBeenCalledTimes(1);
+    expect(lease.withLease).toHaveBeenCalledWith("outbox-events-retention-sweep", 1800, expect.any(Function));
+  });
 });

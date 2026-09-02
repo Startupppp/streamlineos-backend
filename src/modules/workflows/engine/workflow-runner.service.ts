@@ -32,6 +32,7 @@ export { MAX_STEPS_PER_EXECUTION };
 
 export const RUNNING_TIMEOUT_MS = 15 * 60 * 1000;
 const SWEEP_BATCH = 50;
+const STUCK_BATCH = 50;
 const STEP_RETENTION_DAYS = 30;
 const STEP_PRUNE_EXEC_BATCH = 50;
 
@@ -131,16 +132,48 @@ export class WorkflowRunnerService {
 
   private async expireStuck(tx: TenantTx, orgId: string): Promise<void> {
     const cutoff = new Date(Date.now() - RUNNING_TIMEOUT_MS);
-    await tx
-      .update(workflowExecutions)
-      .set({ status: "timed_out", completedAt: new Date() })
+    const stuck = await tx
+      .select({ id: workflowExecutions.id, context: workflowExecutions.context })
+      .from(workflowExecutions)
       .where(
         and(
           eq(workflowExecutions.orgId, orgId),
           eq(workflowExecutions.status, "running"),
           lt(workflowExecutions.startedAt, cutoff),
         ),
-      );
+      )
+      .limit(STUCK_BATCH);
+    for (const row of stuck) {
+      const state = readRunState(row.context);
+      if (state.infraAttempt < OUTBOX_MAX_RETRIES) {
+        const delay = backoffMs(state.infraAttempt + 1);
+        const resumeAt = new Date(Date.now() + delay);
+        await tx
+          .update(workflowExecutions)
+          .set({
+            status: "waiting",
+            context: writeRunState({
+              ...state,
+              resumeAt,
+              infraAttempt: state.infraAttempt + 1,
+            }),
+          })
+          .where(
+            and(
+              eq(workflowExecutions.id, row.id),
+              eq(workflowExecutions.orgId, orgId),
+              eq(workflowExecutions.status, "running"),
+            ),
+          );
+      } else {
+        await deadLetterExecution(
+          tx,
+          row.id,
+          `execution timed out after ${OUTBOX_MAX_RETRIES} infra attempts`,
+          state,
+        );
+      }
+    }
   }
 
   private async findRunnableIds(tx: TenantTx, orgId: string): Promise<string[]> {
