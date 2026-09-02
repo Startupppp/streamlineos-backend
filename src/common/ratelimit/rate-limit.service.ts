@@ -105,6 +105,10 @@ const TIERS: Record<string, Tier> = {
   // Checkout creates a provider order; 5/hour per user prevents order flooding
   // while leaving headroom for legitimate retries with different plans.
   "billing:checkout": { limit: 5, windowSecs: 3600 },
+  // Confirmation submits a provider signature, so it is the one billing write an
+  // attacker can replay against. Looser than checkout because a network blip during
+  // payment is normal and a blocked confirmation strands a paid customer.
+  "billing:confirm": { limit: 20, windowSecs: 3600 },
   // Vector ANN search under RLS is the highest-cost read in the system.
   // 30 calls/min per user matches the AI chat tier and leaves room for typeahead
   // without letting a single user monopolise the embedding + ANN budget.

@@ -22,7 +22,6 @@ const stubBilling = {
   getPlans: jest.fn().mockReturnValue({ plans: [] }),
   getMarketplace: jest.fn().mockReturnValue({}),
   getSummary: jest.fn().mockResolvedValue({ isConfigured: false }),
-  getEntitlements: jest.fn().mockResolvedValue({}),
   purchaseAddon: jest.fn().mockResolvedValue({ ok: true }),
   validateCoupon: jest.fn().mockResolvedValue(null),
   getBillingProfile: jest.fn().mockResolvedValue(null),

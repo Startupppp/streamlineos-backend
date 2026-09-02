@@ -77,7 +77,8 @@ export class BillingController {
   @Patch("checkout")
   @Idempotent("billing.subscription.verify")
   @HttpCode(200)
-  @UseGuards(PermissionGuard)
+  @UseGuards(RateLimitGuard, PermissionGuard)
+  @UseRateLimit("billing:confirm")
   @RequirePermission("billing:subscription:manage")
   @Validate({ body: confirmCheckoutSchema })
   confirmCheckout(
