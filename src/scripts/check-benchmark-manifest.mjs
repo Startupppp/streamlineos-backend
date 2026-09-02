@@ -38,6 +38,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -324,6 +325,44 @@ export function stalenessAgainstHead(manifest, cwd) {
   }
 }
 
+/**
+ * Staleness by COMMIT is not enough, because the SQL this manifest measures lives in another
+ * ticket's catalog and is routinely edited without a commit. Measured on this machine: the release
+ * SHA read "2 commits behind" while eight read-cost entries had already changed shape in the working
+ * tree — so the SHA said "nearly current" about numbers that described statements the file no longer
+ * held.
+ *
+ * The manifest therefore records a content digest of each catalog it measured, and this re-hashes
+ * the same files on disk. A digest mismatch means the subject moved under the measurement; it is a
+ * warning rather than a violation, because the honest response is to re-capture, and failing the
+ * build on another ticket's in-flight edit would teach people to ignore the gate.
+ */
+export function subjectDrift(manifest, cwd) {
+  const recorded = manifest.environment?.subject;
+  if (!recorded?.digests)
+    return {
+      known: false,
+      reason:
+        "this manifest predates subject-content stamping, so it cannot say whether the SQL it " +
+        "measured is still the SQL on disk — re-capture to gain the check",
+    };
+  const drifted = [];
+  for (const [file, digest] of Object.entries(recorded.digests)) {
+    let now = null;
+    try {
+      now = createHash("sha256").update(readFileSync(join(cwd, file))).digest("hex").slice(0, 16);
+    } catch {
+      now = null;
+    }
+    if (now !== digest) drifted.push({ file, recorded: digest, onDisk: now });
+  }
+  return {
+    known: true,
+    drifted,
+    uncommittedAtCapture: recorded.uncommittedAtCapture ?? null,
+  };
+}
+
 function fraction(n, d) {
   return d === 0 ? "0/0 (0%)" : `${n}/${d} (${((n / d) * 100).toFixed(1)}%)`;
 }
@@ -359,6 +398,26 @@ function report(manifest, fresh) {
     );
     for (const line of staleness.subjects.slice(0, 8)) console.log(`    since: ${line}`);
     if (staleness.subjects.length > 8) console.log(`    … and ${staleness.subjects.length - 8} more`);
+  }
+  const drift = subjectDrift(manifest, BACKEND_ROOT);
+  if (!drift.known) console.log(`  subject: UNKNOWN — ${drift.reason}`);
+  else if (drift.drifted.length === 0) {
+    console.log(`  subject: the measured SQL catalogs are byte-identical to the ones on disk`);
+    if (drift.uncommittedAtCapture?.length)
+      warnings.push(
+        `measured against an UNCOMMITTED catalog (${drift.uncommittedAtCapture.join(", ")}) — the ` +
+          `numbers describe the working tree, not release ${String(manifest.environment.releaseSha).slice(0, 8)}`,
+      );
+  } else {
+    console.log(
+      `  subject: DRIFTED — ${drift.drifted.length} measured SQL catalog(s) changed on disk since capture. ` +
+        `Every number below may describe a statement the file no longer holds.`,
+    );
+    for (const d of drift.drifted) console.log(`    changed: ${d.file} (${d.recorded} -> ${d.onDisk ?? "missing"})`);
+    warnings.push(
+      `the measured SQL catalog(s) ${drift.drifted.map((d) => d.file).join(", ")} changed on disk ` +
+        `since capture — re-capture before trusting any number here`,
+    );
   }
   console.log(
     `  ${manifest.method.samples} samples · ${manifest.method.replicates} replicates ·` +
@@ -625,6 +684,40 @@ function selfTest() {
     const atHead = base();
     atHead.environment.releaseSha = headSha;
     check("a manifest measured at HEAD reports current", stalenessAgainstHead(atHead, BACKEND_ROOT).stale === false);
+  }
+
+  // Subject drift: the SQL this manifest measures lives in another ticket's catalog, which is edited
+  // in the working tree without a commit. A release SHA cannot see that; a content digest can.
+  {
+    const noSubject = base();
+    check(
+      "a manifest with no subject digests says UNKNOWN rather than claiming its SQL is current",
+      subjectDrift(noSubject, BACKEND_ROOT).known === false,
+    );
+    const realFile = "src/scripts/read-cost-budgets.mjs";
+    const realDigest = createHash("sha256")
+      .update(readFileSync(join(BACKEND_ROOT, realFile)))
+      .digest("hex")
+      .slice(0, 16);
+    const matched = base();
+    matched.environment.subject = { digests: { [realFile]: realDigest }, uncommittedAtCapture: [] };
+    check(
+      "a manifest whose recorded digest matches the file on disk reports no drift",
+      subjectDrift(matched, BACKEND_ROOT).drifted.length === 0,
+    );
+    const moved = base();
+    moved.environment.subject = { digests: { [realFile]: "0000000000000000" }, uncommittedAtCapture: [] };
+    const d = subjectDrift(moved, BACKEND_ROOT);
+    check(
+      "a measured SQL catalog edited since capture is reported as DRIFTED, named, with both digests",
+      d.drifted.length === 1 && d.drifted[0].file === realFile && d.drifted[0].onDisk === realDigest,
+    );
+    const missing = base();
+    missing.environment.subject = { digests: { "src/scripts/no-such-catalog.mjs": "abc" }, uncommittedAtCapture: [] };
+    check(
+      "a measured catalog that has been DELETED is drift, not a silent pass",
+      subjectDrift(missing, BACKEND_ROOT).drifted[0]?.onDisk === null,
+    );
   }
 
   const over = base();

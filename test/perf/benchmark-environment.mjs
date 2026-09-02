@@ -20,12 +20,27 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import os from "node:os";
+import { join } from "node:path";
 import postgres from "postgres";
 import { summarise } from "../../src/scripts/benchmark-regression.mjs";
 import { orgColumnFor } from "./benchmark-modules.mjs";
 
 export const APP_ROLE = "streamline_app";
+
+/**
+ * Every file this manifest takes its subject from: the two SQL catalogs it executes, and the
+ * counted route budgets its database-statement ratchet is armed from. All three belong to other
+ * tickets and are edited in the working tree, which is exactly why the release SHA alone cannot
+ * vouch for them.
+ */
+export const MEASURED_CATALOGS = [
+  "src/scripts/read-cost-budgets.mjs",
+  "test/perf/heavy-query-catalog.mjs",
+  "contracts/route-budgets.json",
+];
 
 export function releaseSha(cwd) {
   try {
@@ -33,6 +48,53 @@ export function releaseSha(cwd) {
   } catch {
     return null;
   }
+}
+
+/**
+ * The manifest measures the SQL in `read-cost-budgets.mjs`, which is another ticket's file and is
+ * routinely edited in the working tree. A release SHA alone cannot detect that: the catalog can
+ * change without a commit, and then every number here describes a statement the file no longer
+ * holds while the SHA still reads "current".
+ *
+ * So the subject is stamped by CONTENT, not by commit — a sha256 of the catalog as it was actually
+ * read, plus whether it was uncommitted at the time. The gate re-hashes the file on disk and says
+ * so when the two differ. This is the same refusal as the empty-table one: an instrument has to be
+ * able to tell that its own subject moved.
+ */
+export function subjectProvenance(cwd, files) {
+  const dirty = (() => {
+    try {
+      const out = execFileSync("git", ["status", "--porcelain", "--", ...files], { cwd, encoding: "utf8" });
+      return out
+        .split("\n")
+        .filter(Boolean)
+        .map((l) => l.slice(3).trim());
+    } catch {
+      return null;
+    }
+  })();
+  const digests = {};
+  for (const f of files) {
+    try {
+      digests[f] = createHash("sha256").update(readFileSync(join(cwd, f))).digest("hex").slice(0, 16);
+    } catch {
+      digests[f] = null;
+    }
+  }
+  return {
+    what:
+      "A content digest of every file whose SQL this manifest measures, taken as it was read. " +
+      "A release SHA cannot detect an uncommitted edit to another ticket's catalog; this can.",
+    digests,
+    uncommittedAtCapture: dirty,
+    note:
+      dirty === null
+        ? "git could not report worktree state; treat the digests as the only provenance"
+        : dirty.length === 0
+          ? "every measured catalog was committed at capture time"
+          : `MEASURED AGAINST AN UNCOMMITTED CATALOG: ${dirty.join(", ")}. The numbers describe the ` +
+            "working tree, not the release SHA, and are reproducible only from that tree.",
+  };
 }
 
 /**
@@ -70,6 +132,7 @@ export async function captureEnvironment(sql, cwd) {
   return {
     releaseSha: releaseSha(cwd),
     capturedAt: new Date().toISOString(),
+    subject: subjectProvenance(cwd, MEASURED_CATALOGS),
     machine: {
       platform: `${os.platform()} ${os.release()} ${os.arch()}`,
       cpuModel: os.cpus()[0]?.model ?? null,
