@@ -6,7 +6,8 @@ import { organizationMembers, payrollInputs, payrollRuns, payrollRunEvents } fro
 import { users } from "../../../db/schema";
 import type { PatchInputInput, InputsQuery } from "./dto/runs.schemas";
 import { PAYROLL_LOCKED_STATUSES } from "../payroll.types";
-import { pullAttendanceInputs } from "./lib/input-puller";
+import { pullAttendanceInputsByUser } from "./lib/input-puller";
+import { PAYROLL_READ_CAP, requirePayrollReadWithinCap } from "../lib/query-bounds";
 import type { DataScope } from "../../access/access.types";
 import { buildCursorPage } from "../../../common/pagination/cursor";
 import {
@@ -170,24 +171,29 @@ export class InputsService {
     ];
     if (targetUserId) conditions.push(eq(payrollInputs.userId, targetUserId));
 
-    const toReset = await this.db
-      .select({ id: payrollInputs.id, userId: payrollInputs.userId })
-      .from(payrollInputs)
-      .where(and(...conditions))
-      .limit(1000);
+    const toReset = requirePayrollReadWithinCap(
+      await this.db
+        .select({ id: payrollInputs.id, userId: payrollInputs.userId })
+        .from(payrollInputs)
+        .where(and(...conditions))
+        .limit(PAYROLL_READ_CAP + 1),
+      "Payroll input reimport",
+    );
 
     if (toReset.length === 0) return { ok: true, count: 0 };
 
     const idsToDelete = toReset.map(r => r.id);
 
-    const pulledInputs: Array<{
-      userId: string;
-      pulled: NonNullable<Awaited<ReturnType<typeof pullAttendanceInputs>>>;
-    }> = [];
-    for (const row of toReset) {
-      const pulled = await pullAttendanceInputs(this.db, orgId, row.userId, month);
-      if (pulled) pulledInputs.push({ userId: row.userId, pulled });
-    }
+    const pulledByUser = await pullAttendanceInputsByUser(
+      this.db,
+      orgId,
+      toReset.map((row) => row.userId),
+      month,
+    );
+    const pulledInputs = toReset.flatMap(({ userId }) => {
+      const pulled = pulledByUser.get(userId);
+      return pulled ? [{ userId, pulled }] : [];
+    });
 
     const uniqueUserIds = [...new Set(pulledInputs.map((p) => p.userId))];
     const membershipRows = uniqueUserIds.length > 0
@@ -201,43 +207,49 @@ export class InputsService {
       membershipRows.flatMap((r) => r.userId != null ? [[r.userId, r.id]] : []),
     );
 
-    await this.db.transaction(async (tx) => {
-      await tx.delete(payrollInputs).where(inArray(payrollInputs.id, idsToDelete));
+    const insertRows = pulledInputs.map(({ userId, pulled }) => ({
+      orgId,
+      runId,
+      userId,
+      userMembershipId: memberIdByUserId.get(userId),
+      source: pulled.source,
+      scheduledDays: pulled.scheduledDays,
+      paidDays: pulled.paidDays,
+      lopDays: pulled.lopDays,
+      halfDays: pulled.halfDays,
+      overtimeHours: pulled.overtimeHours,
+      shiftAllowanceUnits: pulled.shiftAllowanceUnits,
+      holidayWorkDays: pulled.holidayWorkDays,
+      billableHours: pulled.billableHours,
+      isOverride: false,
+    }));
 
-      for (const { userId, pulled } of pulledInputs) {
+    await this.db.transaction(async (tx) => {
+      await tx
+        .delete(payrollInputs)
+        .where(and(eq(payrollInputs.orgId, orgId), inArray(payrollInputs.id, idsToDelete)));
+
+      // One statement: PAYROLL_READ_CAP rows x 15 columns stays far under the
+      // 65535 bind-parameter ceiling, so raising that cap needs chunking here.
+      if (insertRows.length > 0) {
         await tx
           .insert(payrollInputs)
-          .values({
-            orgId,
-            runId,
-            userId,
-            userMembershipId: memberIdByUserId.get(userId),
-            source: pulled.source,
-            scheduledDays: pulled.scheduledDays,
-            paidDays: pulled.paidDays,
-            lopDays: pulled.lopDays,
-            halfDays: pulled.halfDays,
-            overtimeHours: pulled.overtimeHours,
-            shiftAllowanceUnits: pulled.shiftAllowanceUnits,
-            holidayWorkDays: pulled.holidayWorkDays,
-            billableHours: pulled.billableHours,
-            isOverride: false,
-          })
+          .values(insertRows)
           .onConflictDoUpdate({
             target: [payrollInputs.runId, payrollInputs.userId],
             set: {
-              source: pulled.source,
-              scheduledDays: pulled.scheduledDays,
-              paidDays: pulled.paidDays,
-              lopDays: pulled.lopDays,
-              halfDays: pulled.halfDays,
-              overtimeHours: pulled.overtimeHours,
-              shiftAllowanceUnits: pulled.shiftAllowanceUnits,
-              holidayWorkDays: pulled.holidayWorkDays,
-              billableHours: pulled.billableHours,
-              isOverride: false,
-              overrideReason: null,
-              overriddenBy: null,
+              source: sql`excluded.source`,
+              scheduledDays: sql`excluded.scheduled_days`,
+              paidDays: sql`excluded.paid_days`,
+              lopDays: sql`excluded.lop_days`,
+              halfDays: sql`excluded.half_days`,
+              overtimeHours: sql`excluded.overtime_hours`,
+              shiftAllowanceUnits: sql`excluded.shift_allowance_units`,
+              holidayWorkDays: sql`excluded.holiday_work_days`,
+              billableHours: sql`excluded.billable_hours`,
+              isOverride: sql`excluded.is_override`,
+              overrideReason: sql`null`,
+              overriddenBy: sql`null`,
             },
           });
       }

@@ -36,6 +36,17 @@ export function resolveStatutoryTaxId(
 }
 import { generateForm16SummaryPdf } from "./form16-pdf";
 import { loadStatutorySources } from "./filings-source.service";
+export type PrepareExportBody = {
+  filingType: string;
+  periodId?: number;
+  entityId?: number;
+  fiscalYear?: string;
+  payload?: Record<string, unknown>;
+  ruleVersion?: string;
+  runId?: number;
+  month?: string;
+};
+
 
 export const FILING_CAPABILITY = {
   mode: "export_only" as const,
@@ -229,19 +240,14 @@ export class PayrollFilingsService {
     };
   }
 
+  /**
+   * Builds the CSV artifact and persists the filing row.
+   * Runs on the payroll jobs worker, never on the request thread.
+   */
   async prepareExport(
     orgId: string,
     actorId: string,
-    body: {
-      filingType: string;
-      periodId?: number;
-      entityId?: number;
-      fiscalYear?: string;
-      payload?: Record<string, unknown>;
-      ruleVersion?: string;
-      runId?: number;
-      month?: string;
-    },
+    body: PrepareExportBody,
   ) {
     const filingType = body.filingType as FilingExportType;
     if (!FILING_CAPABILITY.supportedTypes.includes(filingType)) {

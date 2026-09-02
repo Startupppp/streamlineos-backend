@@ -20,6 +20,8 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PayrollFilingsService } from "./filings.service";
+import { PayrollFilingsExportJobService } from "./filings-export-job.service";
+import { PayrollJobsWorkerService } from "../jobs/payroll-jobs-worker.service";
 import {
   prepareFilingSchema,
   type PrepareFilingInput,
@@ -32,13 +34,18 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 
 const filingIdParams = z.object({ filingId: z.coerce.number().int().positive() }).strict();
+const exportJobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
 const filingIduserIdParams = z.object({ filingId: z.coerce.number().int().positive(), userId: z.string().min(1) }).strict();
 
 @RequireModule("payroll")
 @Controller("payroll/filings")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class PayrollFilingsController {
-  constructor(private readonly service: PayrollFilingsService) {}
+  constructor(
+    private readonly service: PayrollFilingsService,
+    private readonly exportJobs: PayrollFilingsExportJobService,
+    private readonly jobsWorker: PayrollJobsWorkerService,
+  ) {}
 
   @Get()
   @RequirePermission("payroll:tax:view")
@@ -51,6 +58,16 @@ export class PayrollFilingsController {
   @RequirePermission("payroll:tax:view")
   capabilities() {
     return this.service.capabilities();
+  }
+
+  @Get("export/jobs/:jobId")
+  @RequirePermission("payroll:tax:view")
+  @Validate({ params: exportJobIdParams })
+  getExportJob(
+    @CurrentUser() u: CurrentUserContext,
+    @Param("jobId", ParseIntPipe) jobId: number,
+  ) {
+    return this.exportJobs.getExportJob(u.orgId, jobId);
   }
 
   @Get(":filingId/export")
@@ -117,15 +134,21 @@ export class PayrollFilingsController {
     return this.service.get(u.orgId, filingId);
   }
 
+  /**
+   * Enqueues the statutory export. The CSV spans every run employee and line
+   * item, so it is built by the payroll jobs worker, never inline.
+   */
   @Post("export")
-  @HttpCode(201)
+  @HttpCode(202)
   @RequirePermission("payroll:tax:manage")
   @Validate({ body: prepareFilingSchema })
-  prepare(
+  async prepare(
     @CurrentUser() u: CurrentUserContext,
     @Body() body: PrepareFilingInput,
   ) {
-    return this.service.prepareExport(u.orgId, u.userId, body);
+    const job = await this.exportJobs.requestExport(u.orgId, u.userId, body);
+    void this.jobsWorker.flush(5);
+    return job;
   }
 
   @Patch(":filingId/acknowledgement")

@@ -234,6 +234,8 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
             ? { ...ctx.payload.exportPayload }
             : {},
           ruleVersion: typeof ctx.payload.ruleVersion === "string" ? ctx.payload.ruleVersion : undefined,
+          runId: typeof ctx.payload.runId === "number" ? ctx.payload.runId : undefined,
+          month: typeof ctx.payload.month === "string" ? ctx.payload.month : undefined,
         });
         return {
           filingId: row?.id,

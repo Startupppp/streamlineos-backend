@@ -40,18 +40,58 @@ function num(value: unknown, fallback = 0): number {
 }
 
 /**
- * Prefer immutable locked payroll-input period snapshots for the month.
- * Falls back to live attendance/leave pull when no locked period exists.
+ * Largest number of payees whose inputs are pulled in one statement.
+ * Bounds both the `IN (...)` list and the row payload each chunk can return:
+ * a chunk reads at most CHUNK * 100 snapshot rows, CHUNK * daysInMonth
+ * attendance rows and CHUNK * daysInMonth * 2 leave rows.
  */
-export async function pullAttendanceInputs(
+export const PAYROLL_INPUT_PULL_CHUNK = 200;
+
+/**
+ * Batched multi-payee input pull. Prefers immutable locked payroll-input period
+ * snapshots for the month and falls back to a live attendance/leave read for the
+ * payees no snapshot covers.
+ *
+ * Round-trips are `1 + ceil(users / PAYROLL_INPUT_PULL_CHUNK) * 3` — bounded by
+ * the chunk count, never one query per payee.
+ */
+export async function pullAttendanceInputsByUser(
   db: Db,
   orgId: string,
-  userId: string,
+  userIds: string[],
   month: string,
-): Promise<PulledInputs | null> {
-  const locked = await pullFromLockedSnapshots(db, orgId, userId, month);
-  if (locked) return locked;
-  return pullLiveAttendanceInputs(db, orgId, userId, month);
+  chunkSize: number = PAYROLL_INPUT_PULL_CHUNK,
+): Promise<Map<string, PulledInputs>> {
+  if (!Number.isInteger(chunkSize) || chunkSize < 1) {
+    throw new RangeError("Payroll input pull chunk size must be a positive integer");
+  }
+
+  const pulled = new Map<string, PulledInputs>();
+  const unique = [...new Set(userIds)];
+  if (unique.length === 0) return pulled;
+
+  const periodId = await getLockedInputPeriodId(db, orgId, month);
+
+  for (let start = 0; start < unique.length; start += chunkSize) {
+    const chunk = unique.slice(start, start + chunkSize);
+    const lockedByUser =
+      periodId == null
+        ? new Map<string, SectionMap>()
+        : await loadLockedSectionsByUser(db, orgId, periodId, chunk);
+
+    const needsLive: string[] = [];
+    for (const userId of chunk) {
+      const locked = buildPulledInputsFromSections(userId, month, lockedByUser.get(userId));
+      if (locked) pulled.set(userId, locked);
+      else needsLive.push(userId);
+    }
+
+    if (needsLive.length === 0) continue;
+    const live = await loadLiveAttendanceByUser(db, orgId, needsLive, month);
+    for (const [userId, row] of live) if (row) pulled.set(userId, row);
+  }
+
+  return pulled;
 }
 
 export async function getLockedInputPeriodId(
@@ -370,14 +410,4 @@ export async function loadLiveAttendanceByUser(
     );
   }
   return result;
-}
-
-async function pullLiveAttendanceInputs(
-  db: Db,
-  orgId: string,
-  userId: string,
-  month: string,
-): Promise<PulledInputs | null> {
-  const byUser = await loadLiveAttendanceByUser(db, orgId, [userId], month);
-  return byUser.get(userId) ?? null;
 }
