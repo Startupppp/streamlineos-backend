@@ -230,11 +230,27 @@ describe("BOLA sweep — an id list with no tenant column at all", () => {
     expect(classifyBulkMethod(method as never)).toBe("fail-whole");
   });
 
-  it("KNOWN-OPEN: the enrollment table has no tenant column to bind", () => {
+  /**
+   * The durable half of the same defect, which the service guard above could only work around.
+   *
+   * `email_sequence_enrollments` now carries `org_id`, and — the part that matters — its two
+   * foreign keys are COMPOSITE and tenant-anchored: `(org_id, sequence_id)` into
+   * `email_sequences(org_id, id)` and `(org_id, candidate_id)` into `candidates(org_id, id)`.
+   * A single-column `candidate_id` reference would accept another organization's candidate and
+   * leave the whole guarantee resting on the service remembering to check. Anchored this way the
+   * database refuses the row, so the oracle cannot be reopened by an unrelated code path.
+   */
+  it("FIXED hr/recruitment: the enrollment table anchors both its references to the tenant", () => {
     const schema = source("src/db/schema/hr/hiring-pipeline.ts");
-    const table = schema.slice(
-      schema.indexOf('emailSequenceEnrollments = pgTable("email_sequence_enrollments"'),
-    );
-    expect(table.slice(0, table.indexOf("]);"))).not.toContain("orgId");
+    const start = schema.indexOf('emailSequenceEnrollments = pgTable("email_sequence_enrollments"');
+    expect(start).toBeGreaterThan(-1);
+    const table = schema.slice(start);
+    const body = table.slice(0, table.indexOf("]);"));
+    expect(body).toContain('orgId: text("org_id")');
+    expect(body).toContain(".notNull()");
+    expect(body).toContain("columns: [table.orgId, table.sequenceId]");
+    expect(body).toContain("foreignColumns: [emailSequences.orgId, emailSequences.id]");
+    expect(body).toContain("columns: [table.orgId, table.candidateId]");
+    expect(body).toContain("foreignColumns: [candidates.orgId, candidates.id]");
   });
 });
