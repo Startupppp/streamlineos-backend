@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
 import type { TenantTx } from "../../common/tenant";
-import { mailMessageMetadata } from "../../db/schema";
+import { hrAuditLogs, mailMessageMetadata } from "../../db/schema";
 
 const BATCH_SIZE = 500;
 const RETENTION_DAYS = 365;
@@ -30,6 +30,7 @@ export class CronMailRetentionService {
       async (tx, orgId) => {
         const count = await this.sweepMetadata(tx, orgId, cutoff);
         result.rowsDeleted += count;
+        if (count > 0) await this.auditLog(tx, orgId, count, cutoff);
       },
     );
 
@@ -39,6 +40,21 @@ export class CronMailRetentionService {
         `${result.rowsDeleted} mail metadata rows deleted`,
     );
     return result;
+  }
+
+  private async auditLog(tx: TenantTx, orgId: string, count: number, cutoff: Date): Promise<void> {
+    await tx.insert(hrAuditLogs).values({
+      orgId,
+      actorMembershipId: null,
+      entityType: "mail_message_metadata_batch",
+      entityId: "retention_sweep",
+      action: "retention_sweep.mail_message_metadata",
+      after: {
+        count,
+        cutoff: cutoff.toISOString(),
+        retentionDays: RETENTION_DAYS,
+      } as Record<string, unknown>,
+    });
   }
 
   private async sweepMetadata(tx: TenantTx, orgId: string, cutoff: Date): Promise<number> {

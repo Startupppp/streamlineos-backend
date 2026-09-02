@@ -17,7 +17,7 @@ ALTER TABLE ledger_accounts
   ON DELETE SET NULL (parent_account_id)
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_ledger_accounts_org_parent;
+ALTER TABLE ledger_accounts VALIDATE CONSTRAINT fk_ledger_accounts_org_parent;
 
 -- ---------------------------------------------------------------------------
 -- journal_entries: reversed_entry_id
@@ -31,7 +31,7 @@ ALTER TABLE journal_entries
   ON DELETE SET NULL (reversed_entry_id)
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_je_org_reversed;
+ALTER TABLE journal_entries VALIDATE CONSTRAINT fk_je_org_reversed;
 
 -- ---------------------------------------------------------------------------
 -- documents: parent_document_id
@@ -45,7 +45,7 @@ ALTER TABLE documents
   ON DELETE CASCADE
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_documents_org_parent;
+ALTER TABLE documents VALIDATE CONSTRAINT fk_documents_org_parent;
 
 -- ---------------------------------------------------------------------------
 -- goals (HR performance): parent_goal_id
@@ -59,7 +59,7 @@ ALTER TABLE goals
   ON DELETE SET NULL (parent_goal_id)
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_goals_org_parent;
+ALTER TABLE goals VALIDATE CONSTRAINT fk_goals_org_parent;
 
 -- ---------------------------------------------------------------------------
 -- kb_article_comments: parent_id
@@ -73,4 +73,4 @@ ALTER TABLE kb_article_comments
   ON DELETE CASCADE
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_kb_article_comments_org_parent;
+ALTER TABLE kb_article_comments VALIDATE CONSTRAINT fk_kb_article_comments_org_parent;

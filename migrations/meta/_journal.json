@@ -4108,7 +4108,7 @@
       "idx": 715,
       "version": "7",
       "when": 1803000010027,
-      "tag": "0933_storage_file_quarantine",
+      "tag": "0961_storage_file_quarantine",
       "breakpoints": true
     },
     {
@@ -4249,6 +4249,132 @@
       "version": "7",
       "when": 1803000010047,
       "tag": "0957_ar02_drop_workflow_single_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 739,
+      "version": "7",
+      "when": 1803000010048,
+      "tag": "0956_dashboard_read_path_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 740,
+      "version": "7",
+      "when": 1803000010049,
+      "tag": "0962_ar02_tenant_fk_unique_prereqs",
+      "breakpoints": true
+    },
+    {
+      "idx": 741,
+      "version": "7",
+      "when": 1803000010050,
+      "tag": "0963_ar02_canonical_tenant_fks_1",
+      "breakpoints": true
+    },
+    {
+      "idx": 742,
+      "version": "7",
+      "when": 1803000010051,
+      "tag": "0964_ar02_canonical_tenant_fks_2",
+      "breakpoints": true
+    },
+    {
+      "idx": 743,
+      "version": "7",
+      "when": 1803000010052,
+      "tag": "0965_ar02_canonical_tenant_fks_3",
+      "breakpoints": true
+    },
+    {
+      "idx": 744,
+      "version": "7",
+      "when": 1803000010053,
+      "tag": "0966_ar02_canonical_tenant_fks_4",
+      "breakpoints": true
+    },
+    {
+      "idx": 745,
+      "version": "7",
+      "when": 1803000010054,
+      "tag": "0967_ar02_canonical_tenant_fks_5",
+      "breakpoints": true
+    },
+    {
+      "idx": 746,
+      "version": "7",
+      "when": 1803000010055,
+      "tag": "0968_ar02_canonical_tenant_fks_6",
+      "breakpoints": true
+    },
+    {
+      "idx": 747,
+      "version": "7",
+      "when": 1803000010056,
+      "tag": "0969_ar02_canonical_tenant_fks_7",
+      "breakpoints": true
+    },
+    {
+      "idx": 748,
+      "version": "7",
+      "when": 1803000010057,
+      "tag": "0970_ar02_drop_superseded_tenant_fks_1",
+      "breakpoints": true
+    },
+    {
+      "idx": 749,
+      "version": "7",
+      "when": 1803000010058,
+      "tag": "0971_ar02_drop_superseded_tenant_fks_2",
+      "breakpoints": true
+    },
+    {
+      "idx": 750,
+      "version": "7",
+      "when": 1803000010059,
+      "tag": "0972_ar02_drop_superseded_tenant_fks_3",
+      "breakpoints": true
+    },
+    {
+      "idx": 751,
+      "version": "7",
+      "when": 1803000010060,
+      "tag": "0973_ar02_drop_superseded_tenant_fks_4",
+      "breakpoints": true
+    },
+    {
+      "idx": 752,
+      "version": "7",
+      "when": 1803000010061,
+      "tag": "0974_ar02_ai_actor_set_null_column_list",
+      "breakpoints": true
+    },
+    {
+      "idx": 753,
+      "version": "7",
+      "when": 1803000010062,
+      "tag": "0975_ar02_unenforced_tenant_relationships",
+      "breakpoints": true
+    },
+    {
+      "idx": 754,
+      "version": "7",
+      "when": 1803000010063,
+      "tag": "0976_ar02_declared_tenant_uniques",
+      "breakpoints": true
+    },
+    {
+      "idx": 755,
+      "version": "7",
+      "when": 1803000010064,
+      "tag": "0977_ar02_drop_duplicate_composite_fks",
+      "breakpoints": true
+    },
+    {
+      "idx": 756,
+      "version": "7",
+      "when": 1803000010065,
+      "tag": "0978_ar02_organization_id_tenant_fks",
       "breakpoints": true
     },
     {

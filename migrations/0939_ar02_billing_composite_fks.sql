@@ -17,7 +17,7 @@ ALTER TABLE billing_invoice_snapshots
   ON DELETE SET NULL (subscription_id)
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_billing_inv_snap_org_sub;
+ALTER TABLE billing_invoice_snapshots VALIDATE CONSTRAINT fk_billing_inv_snap_org_sub;
 
 -- ---------------------------------------------------------------------------
 -- billing_invoice_line_snapshots: snapshot_id / proration_line_id / usage_rollup_id
@@ -33,7 +33,7 @@ ALTER TABLE billing_invoice_line_snapshots
   ON DELETE CASCADE
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_billing_inv_lines_org_snap;
+ALTER TABLE billing_invoice_line_snapshots VALIDATE CONSTRAINT fk_billing_inv_lines_org_snap;
 --> statement-breakpoint
 
 ALTER TABLE billing_invoice_line_snapshots
@@ -43,7 +43,7 @@ ALTER TABLE billing_invoice_line_snapshots
   ON DELETE SET NULL (proration_line_id)
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_billing_inv_lines_org_proration;
+ALTER TABLE billing_invoice_line_snapshots VALIDATE CONSTRAINT fk_billing_inv_lines_org_proration;
 --> statement-breakpoint
 
 ALTER TABLE billing_invoice_line_snapshots
@@ -53,7 +53,7 @@ ALTER TABLE billing_invoice_line_snapshots
   ON DELETE SET NULL (usage_rollup_id)
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_billing_inv_lines_org_rollup;
+ALTER TABLE billing_invoice_line_snapshots VALIDATE CONSTRAINT fk_billing_inv_lines_org_rollup;
 
 -- ---------------------------------------------------------------------------
 -- billing_credit_notes: original_snapshot_id
@@ -67,7 +67,7 @@ ALTER TABLE billing_credit_notes
   ON DELETE RESTRICT
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_billing_credit_notes_org_snap;
+ALTER TABLE billing_credit_notes VALIDATE CONSTRAINT fk_billing_credit_notes_org_snap;
 
 -- ---------------------------------------------------------------------------
 -- billing_credit_note_lines: credit_note_id
@@ -81,7 +81,7 @@ ALTER TABLE billing_credit_note_lines
   ON DELETE CASCADE
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_billing_credit_note_lines_org_note;
+ALTER TABLE billing_credit_note_lines VALIDATE CONSTRAINT fk_billing_credit_note_lines_org_note;
 
 -- ---------------------------------------------------------------------------
 -- subscription_items: subscription_id -> subscriptions
@@ -95,7 +95,7 @@ ALTER TABLE subscription_items
   ON DELETE CASCADE
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_sub_items_org_sub;
+ALTER TABLE subscription_items VALIDATE CONSTRAINT fk_sub_items_org_sub;
 
 -- ---------------------------------------------------------------------------
 -- billing_proration_lines: subscription_id -> subscriptions
@@ -109,7 +109,7 @@ ALTER TABLE billing_proration_lines
   ON DELETE CASCADE
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_billing_proration_org_sub;
+ALTER TABLE billing_proration_lines VALIDATE CONSTRAINT fk_billing_proration_org_sub;
 
 -- ---------------------------------------------------------------------------
 -- subscription_payments: subscription_id -> subscriptions
@@ -123,4 +123,4 @@ ALTER TABLE subscription_payments
   ON DELETE CASCADE
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_sub_payments_org_sub;
+ALTER TABLE subscription_payments VALIDATE CONSTRAINT fk_sub_payments_org_sub;

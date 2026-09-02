@@ -76,41 +76,18 @@ function isExcluded(name) {
   return isCrmTable(name) || isInvTable(name);
 }
 
-// FKs covered by pending 0934–0937 migrations (constraint names as they exist in DB
-// before those migrations are applied).
-const MIGRATED_CONSTRAINT_NAMES = new Set([
-  // 0934 — build schema self-refs
-  "tickets_epic_id_tickets_id_fk",
-  "tickets_parent_ticket_id_tickets_id_fk",
-  "tickets_recurrence_parent_id_tickets_id_fk",
-  "okr_goals_parent_goal_id_okr_goals_id_fk",
-  "pages_parent_page_id_pages_id_fk",
-  "ticket_comments_parent_comment_id_ticket_comments_id_fk",
-  // 0935 — billing
-  "billing_invoice_snapshots_subscription_id_subscriptions_id_fk",
-  "billing_invoice_line_snapshots_snapshot_id_billing_invoice_snapshots_id_fk",
-  "billing_invoice_line_snapshots_proration_line_id_billing_proration_lines_id_fk",
-  "billing_invoice_line_snapshots_usage_rollup_id_billing_usage_rollups_id_fk",
-  "billing_credit_notes_original_snapshot_id_billing_invoice_snapshots_id_fk",
-  "billing_credit_note_lines_credit_note_id_billing_credit_notes_id_fk",
-  "subscription_items_subscription_id_subscriptions_id_fk",
-  "billing_proration_lines_subscription_id_subscriptions_id_fk",
-  "subscription_payments_subscription_id_subscriptions_id_fk",
-  // 0936 — misc
-  "ledger_accounts_parent_account_id_ledger_accounts_id_fk",
-  "journal_entries_reversed_entry_id_journal_entries_id_fk",
-  "documents_parent_document_id_documents_id_fk",
-  "goals_parent_goal_id_goals_id_fk",
-  "fk_kb_article_comments_parent",
-  // 0937 — drop redundant single-col FKs (composite already exists)
-  "fk_kb_pages_parent",
-  "fk_kb_page_comments_parent",
-  "chat_messages_reply_to_id_chat_messages_id_fk",
-  "fk_kb_categories_parent",
-  // tickets.customerId -> clients.id was not in migrations (CRM parent, excluded above)
-  "fk_tickets_customer",
-  "fk_business_parties_acquisition_campaign",
+// Platform-global tables: they carry an organization identifier but are not tenant-scoped in the
+// RBAC sense. Registered with the same names the RLS verifier uses so the two gates cannot disagree.
+// This replaced an "EXCL: In-migration" bucket that excused 17 constraints as covered by migrations
+// 0934-0937 -- 0935, 0936 and 0937 were never written, so that exclusion protected nothing.
+const PLATFORM_GLOBAL_TABLES = new Set([
+  "organization_lifecycle_sagas", "organization_placement", "organization_reservations",
+  "organization_relocations", "placement_decisions", "noisy_neighbour_reviews",
+  "organization_relocation_checksums", "organization_saga_steps",
 ]);
+function isPlatformGlobal(name) {
+  return PLATFORM_GLOBAL_TABLES.has(name);
+}
 
 // ---------------------------------------------------------------------------
 // pg_catalog mode
@@ -156,7 +133,7 @@ async function runQuery(postgres, url) {
           AND EXISTS (
             SELECT 1 FROM pg_attribute a
             WHERE a.attrelid = c.oid
-              AND a.attname = 'org_id'
+              AND a.attname IN ('org_id', 'organization_id')
               AND a.attnum > 0
               AND NOT a.attisdropped
           )
@@ -179,7 +156,7 @@ async function runQuery(postgres, url) {
 
     const result = { total: rows.length, actionable: [], excl_crm: [], excl_inv: [], excl_migrated: [] };
     for (const r of rows) {
-      if (MIGRATED_CONSTRAINT_NAMES.has(r.constraint_name)) { result.excl_migrated.push(r); continue; }
+      if (isPlatformGlobal(r.child) || isPlatformGlobal(r.parent)) { result.excl_migrated.push(r); continue; }
       if (isExcluded(r.child) || isExcluded(r.parent)) {
         if (isCrmTable(r.child) || isCrmTable(r.parent)) result.excl_crm.push(r);
         else result.excl_inv.push(r);
@@ -219,7 +196,7 @@ function parseTenantTableNames(src) {
     if (!body) continue;
     const nameMatch = body.match(/^\(\s*["']([^"']+)["']/s);
     if (!nameMatch) continue;
-    if (/["']org_id["']|["']organization_id["']/.test(body))
+    if (/\w+\s*:\s*\w+\s*\(\s*["'](?:org_id|organization_id)["']/.test(body))
       names.add(nameMatch[1]);
   }
   return names;
@@ -450,7 +427,7 @@ async function main() {
     console.log(`Total single-col FKs   ${total}`);
     console.log(`EXCL: CRM              ${excl_crm.length} (child or parent is a CRM table — AR-02 scope exclusion)`);
     console.log(`EXCL: Inventory        ${excl_inv.length} (child or parent is Inventory — AR-02 scope exclusion)`);
-    console.log(`EXCL: In-migration     ${excl_migrated.length} (covered by 0934–0937, pending apply)`);
+    console.log(`EXCL: platform-global  ${excl_migrated.length} (child or parent is a registered platform-global table)`);
     console.log(`Actionable             ${actionable.length}`);
     console.log("");
 
@@ -463,7 +440,7 @@ async function main() {
     for (const r of actionable)
       console.error(`  ${r.child_schema}.${r.child} → ${r.parent_schema}.${r.parent}  (${r.constraint_name})`);
     console.error("");
-    console.error(`Run these against scratch_boot_a — CRM/Inventory and 0934–0937-covered FKs are named above.`);
+    console.error(`Run these against scratch_boot_a — CRM, Inventory and platform-global relationships are named above.`);
     process.exit(1);
   }
 

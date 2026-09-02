@@ -29,6 +29,7 @@ import { HrGovernanceModule } from "../hr/governance/hr-governance.module";
 import { CronBillingController } from "./cron-billing.controller";
 import { CronInvitationExpiryController } from "./cron-invitation-expiry.controller";
 import { CronHrController } from "./cron-hr.controller";
+import { CronHrNotificationsController } from "./cron-hr-notifications.controller";
 import { CronPlatformController } from "./cron-platform.controller";
 import { CronNotificationsController } from "./cron-notifications.controller";
 import { CronOutboxController } from "./cron-outbox.controller";
@@ -76,6 +77,8 @@ import { CronOperatorAccessService } from "./cron-operator-access.service";
 import { CronHelpdeskRetentionService } from "./cron-helpdesk-retention.service";
 import { CronMailRetentionService } from "./cron-mail-retention.service";
 import { CronAnnouncementsRetentionService } from "./cron-announcements-retention.service";
+import { CronStorageSweepService } from "./cron-storage-sweep.service";
+import { CronStorageController } from "./cron-storage.controller";
 
 @Module({
   imports: [
@@ -117,12 +120,14 @@ import { CronAnnouncementsRetentionService } from "./cron-announcements-retentio
   controllers: [
     CronBillingController,
     CronHrController,
+    CronHrNotificationsController,
     CronPlatformController,
     CronNotificationsController,
     CronOutboxController,
     CronSupportController,
     CronBuildController,
     CronInvitationExpiryController,
+    CronStorageController,
   ],
   providers: [
     CronAttendanceService,
@@ -160,6 +165,7 @@ import { CronAnnouncementsRetentionService } from "./cron-announcements-retentio
     CronHelpdeskRetentionService,
     CronMailRetentionService,
     CronAnnouncementsRetentionService,
+    CronStorageSweepService,
   ],
 })
 export class CronModule {}

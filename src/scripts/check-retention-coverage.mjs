@@ -69,6 +69,11 @@ const RETENTION_MATRIX = {
     worker: "CronKbChatRetentionService",
     notes: "Organization-configured chat history retention, defaulting to 90 days, with bounded tenant-scoped deletion.",
   },
+  kb_page_versions: {
+    decision: "KEEP-FOREVER",
+    worker: null,
+    notes: "Wiki revision history is the content audit trail and the only path to restore a page after a bad edit; insert-only, matching kb_article_versions. Growth is bounded by the VERSION_WINDOW_MS snapshot throttle, not by deletion. Decided 2026-09-02 (S10).",
+  },
   webhook_deliveries: {
     decision: "RETAIN-BOUNDED",
     worker: "CronBuildRetentionService",
@@ -100,24 +105,24 @@ const RETENTION_MATRIX = {
     notes: "Policy-driven deletion or anonymization with legal-hold exclusion and bounded batches.",
   },
   helpdesk_tickets: {
-    decision: "PENDING-DECISION",
-    worker: null,
-    notes: "No safe automated retention worker exists; ticket and comment retention requires an approved policy and dependency review.",
+    decision: "RETAIN-BOUNDED",
+    worker: "CronHelpdeskRetentionService",
+    notes: "730-day retention after resolved_at; only resolved or closed tickets are eligible. forEachOrg, batch 200, legal-hold exclusion, comments cascade.",
   },
   performance_reviews: {
-    decision: "PENDING-DECISION",
+    decision: "KEEP-FOREVER",
     worker: null,
-    notes: "No safe automated retention worker exists; review and cycle dependencies require an approved policy before deletion.",
+    notes: "Employment-record obligation used in succession, compensation and dispute evidence. No deleted_at column; deletion needs an approved per-org statutory rule.",
   },
   mail_message_metadata: {
-    decision: "PENDING-DECISION",
-    worker: null,
-    notes: "Synced mailbox metadata has no approved retention worker; account, thread, and provider synchronization dependencies require review.",
+    decision: "RETAIN-BOUNDED",
+    worker: "CronMailRetentionService",
+    notes: "365-day retention from synced_at. A re-syncable projection of the provider mailbox, not the system of record. forEachOrg, batch 500.",
   },
   announcements: {
-    decision: "PENDING-DECISION",
-    worker: null,
-    notes: "Expiry metadata exists but no retention worker is wired; announcement targets and reads require an approved lifecycle policy.",
+    decision: "RETAIN-BOUNDED",
+    worker: "CronAnnouncementsRetentionService",
+    notes: "Expired past a 90-day grace and aged past 730 days. forEachOrg, batch 200 per phase; targets and reads cascade.",
   },
   notification_outbox: {
     decision: "PENDING-DECISION",
@@ -213,14 +218,22 @@ if (args.includes("--self-test")) {
       classify(policyTableName("chat_messages_y2026_m08", "chat_messages")).status === "COVERED",
     reportingLinesHaveDecision: RETENTION_MATRIX["hr_reporting_lines"].decision === "KEEP-FOREVER",
     documentsHaveExistingWorker: RETENTION_MATRIX["documents"].worker === "CronHrRetentionService (via hr_retention_policies, recordType=document)",
-    unsupportedTablesRemainPending: [
-      "helpdesk_tickets",
-      "performance_reviews",
-      "mail_message_metadata",
-      "announcements",
-      "notification_outbox",
-      "outbox_events",
-    ].every((table) => RETENTION_MATRIX[table].decision === "PENDING-DECISION" && classify(table).status === "UNCOVERED"),
+    unsupportedTablesRemainPending: ["notification_outbox", "outbox_events"].every(
+      (table) => RETENTION_MATRIX[table].decision === "PENDING-DECISION" && classify(table).status === "UNCOVERED",
+    ),
+    decidedTablesAreNoLongerPending: [
+      ["helpdesk_tickets", "CronHelpdeskRetentionService"],
+      ["mail_message_metadata", "CronMailRetentionService"],
+      ["announcements", "CronAnnouncementsRetentionService"],
+    ].every(
+      ([table, worker]) =>
+        RETENTION_MATRIX[table].decision === "RETAIN-BOUNDED" &&
+        RETENTION_MATRIX[table].worker === worker &&
+        classify(table).status === "COVERED",
+    ),
+    performanceReviewsIsKeepForever:
+      RETENTION_MATRIX["performance_reviews"].decision === "KEEP-FOREVER" &&
+      classify("performance_reviews").status === "KEEP-FOREVER",
     invalidThresholdsFailClosed: ["", "0", "-1", "NaN", "Infinity"].every((value) => {
       try {
         parseThreshold(value);

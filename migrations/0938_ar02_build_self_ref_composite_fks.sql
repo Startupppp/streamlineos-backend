@@ -19,7 +19,7 @@ ALTER TABLE build.tickets
   ON DELETE SET NULL (epic_id)
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_tickets_org_epic;
+ALTER TABLE build.tickets VALIDATE CONSTRAINT fk_tickets_org_epic;
 --> statement-breakpoint
 
 ALTER TABLE build.tickets
@@ -29,7 +29,7 @@ ALTER TABLE build.tickets
   ON DELETE SET NULL (parent_ticket_id)
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_tickets_org_parent;
+ALTER TABLE build.tickets VALIDATE CONSTRAINT fk_tickets_org_parent;
 --> statement-breakpoint
 
 ALTER TABLE build.tickets
@@ -39,7 +39,7 @@ ALTER TABLE build.tickets
   ON DELETE SET NULL (recurrence_parent_id)
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_tickets_org_recurrence_parent;
+ALTER TABLE build.tickets VALIDATE CONSTRAINT fk_tickets_org_recurrence_parent;
 
 -- ---------------------------------------------------------------------------
 -- build.okr_goals: parent_goal_id
@@ -53,7 +53,7 @@ ALTER TABLE build.okr_goals
   ON DELETE SET NULL (parent_goal_id)
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_okr_goals_org_parent;
+ALTER TABLE build.okr_goals VALIDATE CONSTRAINT fk_okr_goals_org_parent;
 
 -- ---------------------------------------------------------------------------
 -- build.pages: parent_page_id
@@ -67,7 +67,7 @@ ALTER TABLE build.pages
   ON DELETE CASCADE
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_pages_org_parent;
+ALTER TABLE build.pages VALIDATE CONSTRAINT fk_pages_org_parent;
 
 -- ---------------------------------------------------------------------------
 -- build_events.ticket_comments: parent_comment_id
@@ -81,4 +81,4 @@ ALTER TABLE build_events.ticket_comments
   ON DELETE CASCADE
   NOT VALID;
 --> statement-breakpoint
-VALIDATE CONSTRAINT fk_ticket_comments_org_parent;
+ALTER TABLE build_events.ticket_comments VALIDATE CONSTRAINT fk_ticket_comments_org_parent;
