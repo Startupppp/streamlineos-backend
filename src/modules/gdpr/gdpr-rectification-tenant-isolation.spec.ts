@@ -12,6 +12,16 @@ function renderedWhere(condition: unknown): string {
   return new PgDialect().sqlToQuery(condition as SQL).sql;
 }
 
+function noHoldSelect() {
+  return jest.fn().mockReturnValue({
+    from: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        limit: jest.fn().mockResolvedValue([]),
+      }),
+    }),
+  });
+}
+
 function buildTx(membershipHit: boolean) {
   const captured: unknown[] = [];
   let selectIndex = 0;
@@ -48,6 +58,7 @@ function buildTx(membershipHit: boolean) {
       .mockReturnValueOnce({ values: jest.fn().mockResolvedValue(undefined) }),
   };
   const db = {
+    select: noHoldSelect(),
     transaction: jest.fn(
       (cb: (t: typeof tx) => unknown) => cb(tx),
     ),
@@ -101,5 +112,14 @@ describe("GdprRectificationService — cross-tenant isolation", () => {
 
     const combined = captured.map((c) => renderedWhere(c)).join(" ");
     expect(combined).not.toContain(OWNER_ORG);
+  });
+
+  it("refuses cross-tenant correction of hr_profile field when membership lookup fails", async () => {
+    const { db } = buildTx(false);
+    const svc = new GdprRectificationService(db);
+
+    await expect(
+      svc.rectifyOwnProfile(ATTACKER_ORG, SUBJECT, { field: "hr_profile.preferred_name", value: "Hacked" }),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
