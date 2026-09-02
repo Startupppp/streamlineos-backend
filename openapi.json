@@ -79161,6 +79161,9 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
           "429": {
             "$ref": "#/components/responses/TooManyRequests"
           },
@@ -79171,8 +79174,9 @@
         "tags": [
           "EmploymentFacts"
         ],
-        "x-exposure": "universal",
-        "description": "Exposure: universal — any authenticated member, subject from the token"
+        "x-exposure": "permissioned",
+        "x-permission": "settings:view",
+        "description": "Exposure: permission — settings:view"
       }
     },
     "/directory/engagements/{workerEngagementId}": {
@@ -166388,6 +166392,11 @@
                   "changeSummary": {
                     "type": "string",
                     "maxLength": 500
+                  },
+                  "expectedContentRevision": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
                   }
                 }
               }
