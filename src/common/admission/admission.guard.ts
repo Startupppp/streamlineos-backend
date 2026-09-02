@@ -7,16 +7,16 @@ import {
 import { Reflector } from "@nestjs/core";
 import type { Response } from "express";
 import type { CurrentUserContext } from "../auth/backend-claims";
+import { attachAdmissionSlot, type AdmissionScopedRequest } from "./admission-slot";
 import { AdmissionService } from "./admission.service";
 import { reservedClassForPath } from "./reserved-routes";
 import type { WorkClass } from "./work-class";
 import { WORK_CLASS_KEY } from "./work-class.decorator";
 
-type AdmissionRequest = {
+type AdmissionRequest = AdmissionScopedRequest & {
   user?: CurrentUserContext;
   path?: string;
   url?: string;
-  _admissionOrgId?: string;
 };
 
 @Injectable()
@@ -31,6 +31,7 @@ export class AdmissionGuard implements CanActivate {
 
     const http = context.switchToHttp();
     const req = http.getRequest<AdmissionRequest>();
+    const res = http.getResponse<Response>();
 
     const declared = this.reflector.getAllAndOverride<WorkClass | undefined>(WORK_CLASS_KEY, [
       context.getHandler(),
@@ -43,7 +44,6 @@ export class AdmissionGuard implements CanActivate {
     const decision = this.admissionService.tryAdmit(workClass, orgId);
 
     if (!decision.admitted) {
-      const res = http.getResponse<Response>();
       res.set("Retry-After", String(decision.retryAfterSeconds));
       throw new ServiceUnavailableException({
         code: "SERVICE_UNAVAILABLE",
@@ -53,6 +53,7 @@ export class AdmissionGuard implements CanActivate {
     }
 
     req._admissionOrgId = orgId;
+    attachAdmissionSlot(req, res, () => this.admissionService.release(orgId));
     return true;
   }
 }
