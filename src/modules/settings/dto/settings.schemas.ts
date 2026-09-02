@@ -4,13 +4,13 @@ import { pageSizeField } from "../../../common/pagination/list-query.schema";
 export const createApiKeySchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().optional(),
-  scopes: z.array(z.string()).default([]),
+  scopes: z.array(z.string().min(1).max(100)).max(100).default([]),
   expiresAt: z.string().datetime().optional(),
-});
+}).strict();
 
 export const customFieldsListSchema = z.object({
   entityType: z.string().optional(),
-});
+}).strict();
 
 export const createCustomFieldSchema = z.object({
   entityType: z.enum(["lead", "deal", "contact"]),
@@ -30,7 +30,7 @@ export const createCustomFieldSchema = z.object({
     .optional(),
   isRequired: z.boolean().optional().default(false),
   sortOrder: z.number().int().optional().default(0),
-});
+}).strict();
 
 export const updateCustomFieldSchema = z.object({
   label: z.string().min(1).optional(),
@@ -53,21 +53,21 @@ export const featureFlagSchema = z.object({
     "supportAi",
   ]),
   enabled: z.boolean(),
-});
+}).strict();
 
 export const createGitConnectionSchema = z.object({
   provider: z.enum(["github", "gitlab", "bitbucket"]),
   repoUrl: z.string().url().max(500),
   repoName: z.string().max(200).optional(),
   projectId: z.number().int().positive().nullable().optional(),
-});
+}).strict();
 
 export const updateGitConnectionSchema = z.object({
   isActive: z.boolean().optional(),
   repoUrl: z.string().url().max(500).optional(),
   repoName: z.string().max(200).nullable().optional(),
   projectId: z.number().int().positive().nullable().optional(),
-});
+}).strict();
 
 const automationTriggerSchema = z.enum([
   "lead.created",
@@ -196,28 +196,28 @@ export const createAutomationSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(500).optional(),
   triggerEvent: automationTriggerSchema,
-  conditions: z.array(automationConditionSchema).default([]),
-  actions: z.array(automationActionSchema).min(1),
+  conditions: z.array(automationConditionSchema).max(50).default([]),
+  actions: z.array(automationActionSchema).min(1).max(50),
   isEnabled: z.boolean().default(true),
-});
+}).strict();
 
 export const updateAutomationSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   description: z.string().max(500).nullable().optional(),
   triggerEvent: automationTriggerSchema.optional(),
-  conditions: z.array(automationConditionSchema).optional(),
-  actions: z.array(automationActionSchema).min(1).optional(),
+  conditions: z.array(automationConditionSchema).max(50).optional(),
+  actions: z.array(automationActionSchema).min(1).max(50).optional(),
   isEnabled: z.boolean().optional(),
-});
+}).strict();
 
 export const updateUserRoleSchema = z.object({
   role: z.string().min(1),
-});
+}).strict();
 
 export const listAutomationsQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20, 100),
-});
+}).strict();
 
 export type CreateApiKeyInput = z.infer<typeof createApiKeySchema>;
 export type CustomFieldsListInput = z.infer<typeof customFieldsListSchema>;

@@ -10,6 +10,9 @@ import { ALL_PERMISSION_NAMES } from "../rbac/permissions";
 
 const CATALOG_KEYS: ReadonlySet<string> = new Set(ALL_PERMISSION_NAMES);
 
+export const MAX_DELEGATION_DAYS = 90;
+const MAX_DELEGATION_MS = MAX_DELEGATION_DAYS * 24 * 60 * 60 * 1000;
+
 export function assertDelegationTarget(
   delegatorId: string,
   delegateeId: string,
@@ -50,5 +53,11 @@ export function assertDelegationPolicy(
   }
   if (startsAt >= endsAt) {
     throw new BadRequestException("startsAt must be before endsAt");
+  }
+  const from = Math.max(startsAt.getTime(), now.getTime());
+  if (endsAt.getTime() - from > MAX_DELEGATION_MS) {
+    throw new BadRequestException(
+      `A delegation may not run longer than ${MAX_DELEGATION_DAYS} days`,
+    );
   }
 }

@@ -3,30 +3,30 @@ import { listDelegationsQuerySchema } from "./delegation.schemas";
 describe("listDelegationsQuerySchema", () => {
   it("uses production list defaults", () => {
     expect(listDelegationsQuerySchema.parse({})).toEqual({
-      page: 1,
       limit: 20,
     });
   });
 
-  it("coerces pagination and trims search", () => {
+  it("coerces the page size, keeps the cursor and trims search", () => {
     expect(
       listDelegationsQuerySchema.parse({
-        page: "3",
+        cursor: "eyJpZCI6IjEifQ==",
         limit: "50",
         search: "  quarterly cover  ",
       }),
     ).toEqual({
-      page: 3,
+      cursor: "eyJpZCI6IjEifQ==",
       limit: 50,
       search: "quarterly cover",
     });
   });
 
   it.each([
-    { page: "0" },
-    { page: "1.5" },
     { limit: "0" },
+    { limit: "1.5" },
     { search: "x".repeat(101) },
+    { cursor: 1 },
+    { page: "1" },
     { unexpected: "value" },
   ])("rejects invalid list input %#", (input) => {
     expect(listDelegationsQuerySchema.safeParse(input).success).toBe(false);

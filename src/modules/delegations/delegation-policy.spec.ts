@@ -3,6 +3,7 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import type { DataScope } from "../access/access.types";
 import {
+  MAX_DELEGATION_DAYS,
   assertDelegationPolicy,
   assertDelegationTarget,
 } from "./delegation-policy";
@@ -72,6 +73,63 @@ describe("assertDelegationPolicy", () => {
         ["hr:employees:view"],
         new Date("2026-08-05T12:00:00Z"),
         new Date("2026-08-04T12:00:00Z"),
+        now,
+      ),
+    ).toThrow(BadRequestException);
+  });
+
+  const daysFrom = (from: Date, days: number) =>
+    new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
+
+  it("accepts a delegation exactly at the maximum duration", () => {
+    expect(() =>
+      assertDelegationPolicy(
+        actor,
+        new Map([["hr:employees:view", "all"]]),
+        ["hr:employees:view"],
+        now,
+        daysFrom(now, MAX_DELEGATION_DAYS),
+        now,
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects a delegation longer than the maximum duration", () => {
+    expect(() =>
+      assertDelegationPolicy(
+        actor,
+        new Map([["hr:employees:view", "all"]]),
+        ["hr:employees:view"],
+        now,
+        daysFrom(now, MAX_DELEGATION_DAYS + 1),
+        now,
+      ),
+    ).toThrow(BadRequestException);
+  });
+
+  it("measures the window from now when the delegation is backdated, so a past start cannot buy extra time", () => {
+    const backdatedStart = daysFrom(now, -30);
+
+    expect(() =>
+      assertDelegationPolicy(
+        actor,
+        new Map([["hr:employees:view", "all"]]),
+        ["hr:employees:view"],
+        backdatedStart,
+        daysFrom(now, MAX_DELEGATION_DAYS),
+        now,
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects an effectively permanent delegation", () => {
+    expect(() =>
+      assertDelegationPolicy(
+        actor,
+        new Map([["hr:employees:view", "all"]]),
+        ["hr:employees:view"],
+        now,
+        new Date("2126-01-01T00:00:00Z"),
         now,
       ),
     ).toThrow(BadRequestException);

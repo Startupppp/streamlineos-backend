@@ -4,9 +4,10 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypt
 import { generateSecret, generateURI, verifySync } from "otplib";
 import QRCode from "qrcode";
 import bcrypt from "bcryptjs";
-import { users, mfaBackupCodes } from "../../db/schema";
+import { users, mfaBackupCodes, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { MfaPolicyService } from "../access/mfa-policy.service";
 import type { VerifyMfaInput, DisableMfaInput } from "./dto/mfa.schemas";
@@ -205,12 +206,21 @@ export class MfaService {
     return { enabled: user.totpEnabled };
   }
 
-  async reset(targetUserId: string) {
-    const user = await this.db.query.users.findFirst({
-      where: eq(users.id, targetUserId),
-      columns: { id: true },
-    });
-    if (!user) throw new NotFoundException("User not found");
+  async reset(targetUserId: string, orgId: string) {
+    const membership = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx.query.organizationMembers.findFirst({
+          where: and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.userId, targetUserId),
+          ),
+          columns: { userId: true },
+        }),
+      { orgId },
+    );
+    if (!membership)
+      throw new NotFoundException("User not found in this organization");
 
     await this.db.transaction(async (tx) => {
       await tx
