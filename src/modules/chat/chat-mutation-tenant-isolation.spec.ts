@@ -5,6 +5,7 @@ import { EntityReferenceService } from "../entity-reference/entity-reference.ser
 import { ChatPinsService } from "./chat-pins.service";
 import { ChatSavedService } from "./chat-saved.service";
 import { ChatMessagesService } from "./chat-messages.service";
+import { ChatMessageModerationService } from "./chat-message-moderation.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { AblyService } from "../realtime/ably.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
@@ -101,7 +102,7 @@ describe("Chat mutation services — cross-tenant isolation", () => {
   });
 });
 
-describe("ChatMessagesService — cross-tenant isolation on edit and remove", () => {
+describe("ChatMessageModerationService — cross-tenant isolation on edit and remove", () => {
   const ATTACKER_ORG = "org-attacker";
   const OWNER_ORG = "org-owner";
 
@@ -122,17 +123,12 @@ describe("ChatMessagesService — cross-tenant isolation on edit and remove", ()
 
     const module = await Test.createTestingModule({
       providers: [
-        ChatMessagesService,
+        ChatMessageModerationService,
         { provide: DRIZZLE, useValue: db },
-        { provide: CacheService, useValue: {} },
-        { provide: AblyService, useValue: {} },
-        { provide: ChatReplyRemindersService, useValue: {} },
-        { provide: ChatOrgSettingsService, useValue: {} },
-        { provide: EntityReferenceService, useValue: {} },
-        { provide: MESSAGE_FANOUT_PROVIDER, useValue: {} },
+        { provide: AblyService, useValue: { publishChatEvent: jest.fn() } },
       ],
     }).compile();
-    const service = module.get(ChatMessagesService);
+    const service = module.get(ChatMessageModerationService);
 
     await expect(service.edit(99, "user-x", ATTACKER_ORG, "pwned")).rejects.toThrow(NotFoundException);
 
@@ -149,17 +145,12 @@ describe("ChatMessagesService — cross-tenant isolation on edit and remove", ()
 
     const module = await Test.createTestingModule({
       providers: [
-        ChatMessagesService,
+        ChatMessageModerationService,
         { provide: DRIZZLE, useValue: db },
-        { provide: CacheService, useValue: {} },
         { provide: AblyService, useValue: { publishChatEvent: jest.fn().mockResolvedValue(undefined) } },
-        { provide: ChatReplyRemindersService, useValue: {} },
-        { provide: ChatOrgSettingsService, useValue: {} },
-        { provide: EntityReferenceService, useValue: {} },
-        { provide: MESSAGE_FANOUT_PROVIDER, useValue: {} },
       ],
     }).compile();
-    const service = module.get(ChatMessagesService);
+    const service = module.get(ChatMessageModerationService);
 
     const result = await service.edit(99, "u1", OWNER_ORG, "updated");
 
@@ -173,17 +164,12 @@ describe("ChatMessagesService — cross-tenant isolation on edit and remove", ()
 
     const module = await Test.createTestingModule({
       providers: [
-        ChatMessagesService,
+        ChatMessageModerationService,
         { provide: DRIZZLE, useValue: db },
-        { provide: CacheService, useValue: {} },
-        { provide: AblyService, useValue: {} },
-        { provide: ChatReplyRemindersService, useValue: {} },
-        { provide: ChatOrgSettingsService, useValue: {} },
-        { provide: EntityReferenceService, useValue: {} },
-        { provide: MESSAGE_FANOUT_PROVIDER, useValue: {} },
+        { provide: AblyService, useValue: { publishChatEvent: jest.fn() } },
       ],
     }).compile();
-    const service = module.get(ChatMessagesService);
+    const service = module.get(ChatMessageModerationService);
 
     await expect(service.remove(99, "user-x", false, ATTACKER_ORG)).rejects.toThrow(NotFoundException);
 

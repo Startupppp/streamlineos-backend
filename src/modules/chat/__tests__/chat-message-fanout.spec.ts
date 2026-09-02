@@ -20,7 +20,7 @@ const persisted: PersistedMessage = {
 
 function makeDb() {
   const chain: Record<string, unknown> = {};
-  for (const method of ["insert", "values", "update", "set", "where", "from", "select", "delete"])
+  for (const method of ["insert", "values", "update", "set", "where", "from", "select", "delete", "onConflictDoNothing"])
     chain[method] = jest.fn(() => chain);
   chain.returning = jest.fn().mockResolvedValue([persisted]);
   chain.limit = jest.fn().mockResolvedValue([{ id: 1 }]);

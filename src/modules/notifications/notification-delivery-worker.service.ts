@@ -17,8 +17,10 @@ import {
   backoffMinutesForAttempt,
   resolveDeliveryClassForEvent,
 } from "./notification-delivery-class";
+import { providerSendResultSchema, type ProviderSendResultParsed } from "./dto/provider-result.schemas";
 
 const BATCH_SIZE = 50;
+export const ORG_BATCH_CAP = Math.ceil(BATCH_SIZE / 5);
 
 /**
  * PIPE-010. Backoff was exact, so every delivery that failed against the same
@@ -113,6 +115,7 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
     await forEachOrg(this.db, "notification-delivery-claim", async (tx, orgId) => {
       const remaining = BATCH_SIZE - claimed.length;
       if (remaining <= 0) return;
+      const orgLimit = Math.min(remaining, ORG_BATCH_CAP);
 
       // SCH-016: one statement with FOR UPDATE SKIP LOCKED, replacing a SELECT-ids
       // then UPDATE-where-in pair. The old shape was *correct* — the status re-check
@@ -137,13 +140,13 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
                 or (status = 'LOCKED' and locked_at < ${staleBefore.toISOString()}::timestamptz)
               )
             order by run_at
-            limit ${remaining}
+            limit ${orgLimit}
             for update skip locked
           )`,
         )
         .returning({ id: notificationQueue.id, deliveryId: notificationQueue.deliveryId });
 
-      for (const row of rows) {
+      for (const row of rows.slice(0, orgLimit)) {
         claimed.push({ id: row.id, deliveryId: row.deliveryId, orgId });
       }
     });
@@ -322,7 +325,7 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
       return;
     }
 
-    const sendResult = await provider.send({
+    const rawSendResult = await provider.send({
       orgId: delivery.orgId,
       userId: delivery.userId,
       mandatory: definition?.mandatory ?? true,
@@ -335,6 +338,18 @@ export class NotificationDeliveryWorker implements OnModuleInit, OnModuleDestroy
       sandbox,
       metadata: delivery.metadata ?? undefined,
     });
+    const sendOutcome = providerSendResultSchema.safeParse(rawSendResult);
+    if (!sendOutcome.success)
+      this.logger.warn(
+        `Provider ${delivery.channel} in org ${delivery.orgId} returned an invalid response shape; treating as retryable failure`,
+      );
+    const fallback: ProviderSendResultParsed = {
+      status: "FAILED",
+      retryable: true,
+      failureCode: "INVALID_RESPONSE",
+      failureMessage: "Provider returned an invalid response shape",
+    };
+    const sendResult = sendOutcome.success ? sendOutcome.data : fallback;
 
     if (sendResult.status === "SENT") this.breaker.recordSuccess(delivery.orgId, delivery.channel);
     else if (this.breaker.recordFailure(delivery.orgId, delivery.channel, now.getTime())) {

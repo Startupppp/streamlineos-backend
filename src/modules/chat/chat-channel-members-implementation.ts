@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt, sql } from "drizzle-orm";
 import {
   chatAttachments,
   chatChannelMembers,
@@ -18,6 +18,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import type { UpdateChannelInput } from "./dto/chat.schemas";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
+import { PAGE_SIZE_CAP } from "../../common/pagination/list-query.schema";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
 import { AblyService } from "../realtime/ably.service";
@@ -104,15 +105,19 @@ export class ChatChannelMembersImplementation {
     return channel ?? null;
   }
 
-  async listMembers(channelId: number, userId: string, orgId: string) {
+  async listMembers(channelId: number, userId: string, orgId: string, cursor?: number, limit?: number) {
     await this.assertMember(channelId, userId, orgId);
 
-    return this.db.query.chatChannelMembers.findMany({
-      where: and(eq(chatChannelMembers.orgId, orgId), eq(chatChannelMembers.channelId, channelId)),
-      // Without an explicit order the 100-row window is whatever the plan returns, so
-      // the same channel can answer with a different set of members on each call.
+    const PAGE_SIZE = Math.min(limit ?? 50, PAGE_SIZE_CAP);
+
+    const rows = await this.db.query.chatChannelMembers.findMany({
+      where: and(
+        eq(chatChannelMembers.orgId, orgId),
+        eq(chatChannelMembers.channelId, channelId),
+        cursor !== undefined ? gt(chatChannelMembers.id, cursor) : undefined,
+      ),
       orderBy: [asc(chatChannelMembers.id)],
-      limit: 100,
+      limit: PAGE_SIZE + 1,
       with: {
         membership: {
           columns: { id: true, userId: true },
@@ -120,6 +125,11 @@ export class ChatChannelMembersImplementation {
         },
       },
     });
+
+    const hasMore = rows.length > PAGE_SIZE;
+    const pageSlice = hasMore ? rows.slice(0, PAGE_SIZE) : rows;
+    const nextCursor = hasMore ? pageSlice[pageSlice.length - 1]?.id : undefined;
+    return { members: pageSlice, nextCursor };
   }
 
   async addMember(channelId: number, targetUserId: string, requesterId: string, orgId: string) {

@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { CacheService } from "../../common/cache/cache.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { AblyService } from "../realtime/ably.service";
+import { PAGE_SIZE_CAP } from "../../common/pagination/list-query.schema";
 
 const ORG = "org1";
 const CH = 1;
@@ -38,12 +39,14 @@ function makeDb(opts: {
   memberRows?: (object | null)[];
   orgMemberRow?: object | null;
   selectRows?: object[];
+  memberFindMany?: jest.Mock;
 } = {}) {
   const {
     channelRow = CHANNEL_ROW,
     memberRows = [ADMIN_ROW],
     orgMemberRow = { id: 42 },
     selectRows = [{ userId: TARGET_ID }],
+    memberFindMany = jest.fn().mockResolvedValue([]),
   } = opts;
 
   const memberFindFirst = jest.fn();
@@ -70,7 +73,7 @@ function makeDb(opts: {
   return {
     query: {
       chatChannels: { findFirst: channelFindFirst },
-      chatChannelMembers: { findFirst: memberFindFirst, findMany: jest.fn().mockResolvedValue([]) },
+      chatChannelMembers: { findFirst: memberFindFirst, findMany: memberFindMany },
       organizationMembers: { findFirst: orgMemberFindFirst },
     },
     select: selectFn,
@@ -78,6 +81,45 @@ function makeDb(opts: {
     delete: deleteFn,
     insert: insertFn,
   };
+}
+
+function makeAlwaysAdminDb(memberFindMany: jest.Mock) {
+  return {
+    query: {
+      chatChannels: { findFirst: jest.fn().mockResolvedValue(CHANNEL_ROW) },
+      chatChannelMembers: { findFirst: jest.fn().mockResolvedValue(ADMIN_ROW), findMany: memberFindMany },
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 42 }) },
+    },
+    select: jest.fn().mockReturnValue({ from: jest.fn() }),
+    update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn() }) }),
+    delete: jest.fn().mockReturnValue({ where: jest.fn() }),
+    insert: jest.fn().mockReturnValue({ values: jest.fn() }),
+  };
+}
+
+function makeChannelMemberRow(id: number) {
+  return {
+    id,
+    orgId: ORG,
+    channelId: CH,
+    membership: {
+      id: id * 100,
+      userId: `user-${id}`,
+      user: { id: `user-${id}`, name: `User ${id}`, image: null, email: `user${id}@test.com` },
+    },
+  };
+}
+
+function extractSqlValues(value: unknown, seen = new Set<object>()): unknown[] {
+  if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => extractSqlValues(item, seen));
+  if (typeof value !== "object" || seen.has(value)) return [];
+  seen.add(value);
+  const record = value as { queryChunks?: unknown[]; value?: unknown };
+  return [
+    ...(record.queryChunks ? extractSqlValues(record.queryChunks, seen) : []),
+    ...(Object.prototype.hasOwnProperty.call(record, "value") ? extractSqlValues(record.value, seen) : []),
+  ];
 }
 
 async function build(db: ReturnType<typeof makeDb>) {
@@ -201,6 +243,76 @@ describe("ChatChannelMembersService", () => {
       const result = await service.setNotificationPreference(CH, ADMIN_ID, "MENTIONS", ORG);
       expect(db.update).toHaveBeenCalled();
       expect(result).toEqual({ ok: true, notificationPreference: "MENTIONS" });
+    });
+  });
+
+  describe("listMembers", () => {
+    it("walks a >1-page member list with no duplicates and no skips", async () => {
+      const rows = [1, 2, 3].map(makeChannelMemberRow);
+      const findMany = jest.fn()
+        .mockResolvedValueOnce([rows[0], rows[1], rows[2]])
+        .mockResolvedValueOnce([rows[2]]);
+
+      const db = makeAlwaysAdminDb(findMany);
+      const service = await build(db);
+
+      const p1 = await service.listMembers(CH, ADMIN_ID, ORG, undefined, 2);
+      expect(p1.members).toHaveLength(2);
+      expect(p1.nextCursor).toBe(2);
+
+      const p2 = await service.listMembers(CH, ADMIN_ID, ORG, p1.nextCursor, 2);
+      expect(p2.members).toHaveLength(1);
+      expect(p2.nextCursor).toBeUndefined();
+
+      const allIds = [...p1.members.map((m) => m.id), ...p2.members.map((m) => m.id)];
+      expect(allIds).toEqual([1, 2, 3]);
+      expect(new Set(allIds).size).toBe(allIds.length);
+    });
+
+    it("passes PAGE_SIZE + 1 to findMany so hasMore is detectable", async () => {
+      const findMany = jest.fn().mockResolvedValue([makeChannelMemberRow(1)]);
+      const db = makeAlwaysAdminDb(findMany);
+      const service = await build(db);
+
+      await service.listMembers(CH, ADMIN_ID, ORG, undefined, 2);
+
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 3 }),
+      );
+    });
+
+    it("caps page size to PAGE_SIZE_CAP regardless of caller input", async () => {
+      const findMany = jest.fn().mockResolvedValue([]);
+      const db = makeAlwaysAdminDb(findMany);
+      const service = await build(db);
+
+      await service.listMembers(CH, ADMIN_ID, ORG, undefined, PAGE_SIZE_CAP + 999);
+
+      expect(findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: PAGE_SIZE_CAP + 1 }),
+      );
+    });
+
+    it("scopes read to the caller orgId and channelId (findMany called once per request)", async () => {
+      const findMany = jest.fn().mockResolvedValue([makeChannelMemberRow(1)]);
+      const db = makeAlwaysAdminDb(findMany);
+      const service = await build(db);
+
+      const result = await service.listMembers(CH, ADMIN_ID, ORG);
+
+      expect(findMany).toHaveBeenCalledTimes(1);
+      expect(result.members).toHaveLength(1);
+    });
+
+    it("embeds cursor value in the findMany where clause (gt predicate)", async () => {
+      const findMany = jest.fn().mockResolvedValue([]);
+      const db = makeAlwaysAdminDb(findMany);
+      const service = await build(db);
+
+      await service.listMembers(CH, ADMIN_ID, ORG, 42);
+
+      const [opts] = findMany.mock.calls[0] as [{ where?: unknown }];
+      expect(extractSqlValues(opts?.where)).toContain(42);
     });
   });
 });

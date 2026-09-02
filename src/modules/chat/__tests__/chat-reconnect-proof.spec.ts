@@ -139,10 +139,10 @@ describe("Chat reconnect — poll (a): replay without duplicating", () => {
 
     service = await build(db);
     const actor = makeActor(ORG_A);
-    const result = await service.poll(CHANNEL_ID, actor, since);
+    const result = await service.poll(CHANNEL_ID, actor, since, undefined, 50);
 
-    expect(Array.isArray(result)).toBe(true);
-    const ids = result.map((m: { id: number }) => m.id);
+    expect(Array.isArray(result.messages)).toBe(true);
+    const ids = result.messages.map((m: { id: number }) => m.id);
     expect(ids).not.toContain(1);
     expect(db.query.chatMessages.findMany).toHaveBeenCalledTimes(1);
     const call = db.query.chatMessages.findMany.mock.calls[0][0];
@@ -154,7 +154,7 @@ describe("Chat reconnect — poll (a): replay without duplicating", () => {
     service = await build(db);
     const actor = makeActor(ORG_B);
     await expect(
-      service.poll(CHANNEL_ID, actor, new Date()),
+      service.poll(CHANNEL_ID, actor, new Date(), undefined, 50),
     ).rejects.toThrow(NotFoundException);
     expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
   });
@@ -164,7 +164,7 @@ describe("Chat reconnect — poll (a): replay without duplicating", () => {
     service = await build(db);
     const actor = makeActor(ORG_A);
     await expect(
-      service.poll(CHANNEL_ID, actor, new Date()),
+      service.poll(CHANNEL_ID, actor, new Date(), undefined, 50),
     ).rejects.toThrow(ForbiddenException);
     expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
   });
@@ -193,11 +193,11 @@ describe("Chat reconnect — poll (a): replay without duplicating", () => {
     service = await build(db);
     const actor = makeActor(ORG_A);
 
-    const first = await service.poll(CHANNEL_ID, actor, since);
-    const second = await service.poll(CHANNEL_ID, actor, since);
+    const first = await service.poll(CHANNEL_ID, actor, since, undefined, 50);
+    const second = await service.poll(CHANNEL_ID, actor, since, undefined, 50);
 
-    expect(first.map((m: { id: number }) => m.id)).toEqual(
-      second.map((m: { id: number }) => m.id),
+    expect(first.messages.map((m: { id: number }) => m.id)).toEqual(
+      second.messages.map((m: { id: number }) => m.id),
     );
     expect(db.query.chatMessages.findMany).toHaveBeenCalledTimes(2);
   });
@@ -207,7 +207,7 @@ describe("Chat reconnect — poll (a): replay without duplicating", () => {
     service = await build(db);
     const actor = makeActor(ORG_B);
     db.query.chatChannels.findFirst.mockResolvedValue(null);
-    await expect(service.poll(CHANNEL_ID, actor, new Date())).rejects.toThrow(NotFoundException);
+    await expect(service.poll(CHANNEL_ID, actor, new Date(), undefined, 50)).rejects.toThrow(NotFoundException);
 
     const channelCall = db.query.chatChannels.findFirst.mock.calls[0]?.[0];
     expect(channelCall).toBeDefined();

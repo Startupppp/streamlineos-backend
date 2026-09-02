@@ -258,10 +258,10 @@ describe("ChatChannelMembersService — tenant isolation", () => {
     const member = { id: 1, channelId: 7, userId: "u1", role: "MEMBER", user: { id: "u1", name: "Alice", image: null, email: "a@t.com" } };
     const { service } = makeService({ id: 7 }, member, [member]);
 
-    const result = await service.listMembers(7, "u1", OWNER_ORG);
+    const { members } = await service.listMembers(7, "u1", OWNER_ORG);
 
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ userId: "u1" });
+    expect(members).toHaveLength(1);
+    expect(members[0]).toMatchObject({ userId: "u1" });
   });
 });
 

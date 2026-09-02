@@ -20,20 +20,20 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ChatMessagesService } from "./chat-messages.service";
+import { ChatMessageModerationService } from "./chat-message-moderation.service";
 import { ChatMessageTimelineService } from "./chat-message-timeline.service";
 import { ChatReactionsService } from "./chat-reactions.service";
 import {
   editMessageSchema,
   listMessagesQuerySchema,
-  pollQuerySchema,
   reactionSchema,
   sendMessageSchema,
   type EditMessageInput,
   type ListMessagesQuery,
-  type PollQuery,
   type ReactionInput,
   type SendMessageInput,
 } from "./dto/chat.schemas";
+import { chatPollQuerySchema, type ChatPollQuery } from "./dto/chat-poll.schemas";
 import { RateLimitService } from "../../common/ratelimit/rate-limit.service";
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagger";
 import { actorOf } from "../entity-reference/entity-actor";
@@ -51,6 +51,7 @@ const channelMessageAndEmojiParams = z.object({ channelId: z.coerce.number().int
 export class ChatMessagesController {
   constructor(
     private readonly messages: ChatMessagesService,
+    private readonly moderation: ChatMessageModerationService,
     private readonly timeline: ChatMessageTimelineService,
     private readonly reactions: ChatReactionsService,
     private readonly rateLimit: RateLimitService,
@@ -90,20 +91,20 @@ export class ChatMessagesController {
     return this.messages.send(channelId, u.userId, u.orgId, body);
   }
 
-  @ApiOperation({ summary: "Poll for new messages since a timestamp (fallback for realtime)" })
+  @ApiOperation({ summary: "Poll for new messages since a timestamp or cursor (fallback for realtime)" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("poll")
   @RequirePermission("chat:messages:read")
-  @Validate({ params: channelIdParams, query: pollQuerySchema })
+  @Validate({ params: channelIdParams, query: chatPollQuerySchema })
   poll(
     @Param("channelId", ParseIntPipe) channelId: number,
-    @Query() query: PollQuery,
+    @Query() query: ChatPollQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!query.since) throw new BadRequestException("Missing required query param: since");
-    const since = new Date(query.since);
-    if (Number.isNaN(since.getTime())) throw new BadRequestException("Invalid 'since' timestamp");
-    return this.timeline.poll(channelId, actorOf(u), since);
+    const since = query.since !== undefined ? new Date(query.since) : undefined;
+    if (since !== undefined && Number.isNaN(since.getTime()))
+      throw new BadRequestException("Invalid 'since' timestamp");
+    return this.timeline.poll(channelId, actorOf(u), since, query.cursor, query.limit);
   }
 
   @ApiOperation({ summary: "Edit message content" })
@@ -116,7 +117,7 @@ export class ChatMessagesController {
     @Body() body: EditMessageInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.edit(messageId, u.userId, u.orgId, body.content);
+    return this.moderation.edit(messageId, u.userId, u.orgId, body.content);
   }
 
   @ApiOperation({ summary: "Soft-delete a message" })
@@ -128,7 +129,7 @@ export class ChatMessagesController {
     @Param("messageId", ParseIntPipe) messageId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.messages.remove(messageId, u.userId, u.isOrgOwner, u.orgId);
+    return this.moderation.remove(messageId, u.userId, u.isOrgOwner, u.orgId);
   }
 
   @ApiOperation({ summary: "Add an emoji reaction to a message (idempotent)" })

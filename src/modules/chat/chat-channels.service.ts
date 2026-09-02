@@ -118,6 +118,7 @@ export class ChatChannelsService {
               ? (currentUser?.name ?? "You")
               : `${currentUser?.name ?? "User"} & ${targetUser?.name ?? "User"}`,
             type: "DIRECT",
+            isPrivate: true,
             createdByMembershipId: creatorMembershipId,
           })
           .returning();
@@ -146,7 +147,10 @@ export class ChatChannelsService {
     const membershipByUser = new Map(memberRows.map((row) => [row.userId, row.membershipId]));
     if (allMembers.some((id) => !membershipByUser.has(id))) throw new NotFoundException("User not found in this organization");
     const channelType = body.type;
-    const isPrivate = channelType === "PRIVATE";
+    // is_private tracks discoverability, not just the PRIVATE label: an invite-only
+    // GROUP is no more browsable than a PRIVATE one, and the membership guard reads
+    // this column to answer 404 rather than 403.
+    const isPrivate = channelType !== "PUBLIC";
 
     if (!entityType) {
       await this.planLimits.assertWithinLimit(orgId, "chatChannels");
@@ -224,6 +228,7 @@ export class ChatChannelsService {
           orgId: actor.orgId,
           name: resolution.card.title,
           type: "GROUP",
+          isPrivate: true,
           createdByMembershipId: actorMembershipId,
           entityType,
           entityId,

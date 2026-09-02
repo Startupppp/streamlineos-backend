@@ -105,7 +105,7 @@ describe("ChatMessageTimelineService — cross-tenant isolation", () => {
   describe("poll", () => {
     it("DENY: channel not found in attacker org returns NotFoundException (404, not 403)", async () => {
       const actor = makeActor(ORG_B);
-      await expect(service.poll(CHANNEL_ID, actor, new Date())).rejects.toThrow(NotFoundException);
+      await expect(service.poll(CHANNEL_ID, actor, new Date(), undefined, 50)).rejects.toThrow(NotFoundException);
 
       const channelCall = db.query.chatChannels.findFirst.mock.calls[0]?.[0];
       expect(flatValues(channelCall?.where)).toContain(ORG_B);
@@ -119,8 +119,10 @@ describe("ChatMessageTimelineService — cross-tenant isolation", () => {
       db.query.chatChannelMembers.findFirst.mockResolvedValue({ id: MEMBERSHIP_A });
       db.query.chatMessages.findMany.mockResolvedValue([]);
 
-      const result = await service.poll(CHANNEL_ID, actor, new Date());
-      expect(Array.isArray(result)).toBe(true);
+      const result = await service.poll(CHANNEL_ID, actor, new Date(), undefined, 50);
+      expect(result).toHaveProperty("messages");
+      expect(Array.isArray(result.messages)).toBe(true);
+      expect(result).toHaveProperty("hasMore");
     });
   });
 

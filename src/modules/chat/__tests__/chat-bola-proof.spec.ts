@@ -544,35 +544,36 @@ describe("ChatMessageTimelineService — thread BOLA", () => {
   it("DENY: poll returns 404 for a channel that does not exist in the caller's org (cross-org BOLA)", async () => {
     const db = makeTimelineDb(false, "GROUP", false);
     const svc = await buildTimeline(db, makeStubEntityRef());
-    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_ATTACKER, MEMBERSHIP_ID), new Date())).rejects.toThrow(NotFoundException);
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_ATTACKER, MEMBERSHIP_ID), new Date(), undefined, 50)).rejects.toThrow(NotFoundException);
     expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
   });
 
   it("DENY: poll returns 403 for a public-channel non-member (thread BOLA — existence known, access denied)", async () => {
     const db = makeTimelineDb(true, "PUBLIC", false);
     const svc = await buildTimeline(db, makeStubEntityRef());
-    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date())).rejects.toThrow(ForbiddenException);
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date(), undefined, 50)).rejects.toThrow(ForbiddenException);
     expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
   });
 
   it("DENY: poll returns 404 for a private-channel non-member (thread BOLA — existence concealed)", async () => {
     const db = makeTimelineDb(true, "GROUP", false);
     const svc = await buildTimeline(db, makeStubEntityRef());
-    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date())).rejects.toThrow(NotFoundException);
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date(), undefined, 50)).rejects.toThrow(NotFoundException);
     expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
   });
 
   it("DENY: poll returns 403 when caller has no membershipId (not org member, public channel)", async () => {
     const db = makeTimelineDb(true, "PUBLIC", false);
     const svc = await buildTimeline(db, makeStubEntityRef());
-    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, undefined), new Date())).rejects.toThrow(ForbiddenException);
+    await expect(svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, undefined), new Date(), undefined, 50)).rejects.toThrow(ForbiddenException);
     expect(db.query.chatMessages.findMany).not.toHaveBeenCalled();
   });
 
-  it("ALLOW: channel member can poll thread messages and receives an array", async () => {
+  it("ALLOW: channel member can poll and receives a paginated result with messages array", async () => {
     const db = makeTimelineDb(true, "GROUP", true);
     const svc = await buildTimeline(db, makeStubEntityRef());
-    const result = await svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date("2020-01-01"));
-    expect(Array.isArray(result)).toBe(true);
+    const result = await svc.poll(CHANNEL_ID, makeActor(ORG_OWNER, MEMBERSHIP_ID), new Date("2020-01-01"), undefined, 50);
+    expect(Array.isArray(result.messages)).toBe(true);
+    expect(result).toHaveProperty("hasMore");
   });
 });

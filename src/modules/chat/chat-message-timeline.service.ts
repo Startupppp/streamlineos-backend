@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, gt, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt } from "drizzle-orm";
 import {
   chatChannelMembers,
   chatChannels,
@@ -180,7 +180,13 @@ export class ChatMessageTimelineService {
     };
   }
 
-  async poll(channelId: number, actor: EntityActor, since: Date) {
+  async poll(
+    channelId: number,
+    actor: EntityActor,
+    since: Date | undefined,
+    cursor: number | undefined,
+    limit: number,
+  ) {
     const channel = await this.db.query.chatChannels.findFirst({
       where: and(
         eq(chatChannels.id, channelId),
@@ -196,14 +202,23 @@ export class ChatMessageTimelineService {
       throw new ForbiddenException("You are not a member of this channel");
     }
 
+    const safeLimit = Math.min(Math.max(1, limit), 100);
+    const conditions = [
+      eq(chatMessages.orgId, actor.orgId),
+      eq(chatMessages.channelId, channelId),
+      eq(chatMessages.isDeleted, false),
+    ];
+
+    if (cursor !== undefined) {
+      conditions.push(gt(chatMessages.channelPosition, cursor));
+    } else if (since !== undefined) {
+      conditions.push(gt(chatMessages.createdAt, since));
+    }
+
     const rawMessages = await this.db.query.chatMessages.findMany({
-      where: and(
-        eq(chatMessages.orgId, actor.orgId),
-        eq(chatMessages.channelId, channelId),
-        gt(chatMessages.createdAt, since),
-      ),
-      orderBy: [desc(chatMessages.createdAt)],
-      limit: 100,
+      where: and(...conditions),
+      orderBy: [asc(chatMessages.channelPosition)],
+      limit: safeLimit + 1,
       with: {
         attachments: true,
         senderMembership: { columns: { userId: true } },
@@ -213,18 +228,21 @@ export class ChatMessageTimelineService {
       },
     });
 
+    const page = buildIdCursorPage(rawMessages, safeLimit, (m) => m.channelPosition);
     const senderIds = new Set<string>();
-    for (const m of rawMessages) {
+    for (const m of page.data) {
       if (m.senderMembership?.userId) senderIds.add(m.senderMembership.userId);
       if (m.replyTo?.senderMembership?.userId)
         senderIds.add(m.replyTo.senderMembership.userId);
     }
     const identities = await this.resolveIdentities(actor.orgId, senderIds);
-    const enriched = rawMessages
-      .reverse()
-      .map((m) => this.enrich(m, identities));
+    const enriched = page.data.map((m) => this.enrich(m, identities));
 
-    return this.withResolvedReferences(actor, enriched);
+    return {
+      messages: await this.withResolvedReferences(actor, enriched),
+      nextCursor: page.nextCursor,
+      hasMore: page.hasMore,
+    };
   }
 
   async listThreadReplies(

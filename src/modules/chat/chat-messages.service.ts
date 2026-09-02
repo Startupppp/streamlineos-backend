@@ -32,6 +32,7 @@ import type { EntityActor } from "../entity-reference/entity-reference.types";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { CHAT_MESSAGE_FANOUT_EVENT } from "./chat-fanout-outbox";
 import { MESSAGE_FANOUT_PROVIDER, type MessageFanoutProvider } from "./message-fanout.interface";
+import { isChannelMember, resolveMembershipId } from "./chat-membership-lookup";
 
 function strippedReferenceMetadata(
   metadata: Record<string, unknown> | null,
@@ -46,6 +47,8 @@ function strippedReferenceMetadata(
   return { ...metadata, entities };
 }
 
+class DuplicateSendError extends Error {}
+
 @Injectable()
 export class ChatMessagesService {
   constructor(
@@ -58,42 +61,30 @@ export class ChatMessagesService {
     @Inject(MESSAGE_FANOUT_PROVIDER) private readonly fanout: MessageFanoutProvider,
   ) {}
 
-  private async resolveMembershipId(orgId: string, userId: string): Promise<number | null> {
-    const row = await this.db.query.organizationMembers.findFirst({
+  private findByClientKey(orgId: string, channelId: number, clientKey: string) {
+    return this.db.query.chatMessages.findFirst({
       where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.status, "ACTIVE"),
+        eq(chatMessages.orgId, orgId),
+        eq(chatMessages.channelId, channelId),
+        eq(chatMessages.clientKey, clientKey),
       ),
-      columns: { id: true },
     });
-    return row?.id ?? null;
-  }
-
-  private async isMember(
-    channelId: number,
-    orgId: string,
-    membershipId?: number | null,
-  ): Promise<boolean> {
-    if (!membershipId) return false;
-    const m = await this.db.query.chatChannelMembers.findFirst({
-      where: and(
-        eq(chatChannelMembers.orgId, orgId),
-        eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.membershipId, membershipId),
-      ),
-      columns: { id: true },
-    });
-    return Boolean(m);
   }
 
   async send(channelId: number, userId: string, orgId: string, body: SendMessageInput) {
-    const senderMembershipId = await this.resolveMembershipId(orgId, userId);
+    const senderMembershipId = await resolveMembershipId(this.db, orgId, userId);
     if (
       senderMembershipId === null ||
-      !(await this.isMember(channelId, orgId, senderMembershipId))
+      !(await isChannelMember(this.db, channelId, orgId, senderMembershipId))
     )
       throw new ForbiddenException("You are not a member of this channel");
+
+    // A retry of a send whose response was lost must return the original message, not
+    // post a second one. Checked after membership so it cannot be used as a probe.
+    if (body.clientKey) {
+      const replayed = await this.findByClientKey(orgId, channelId, body.clientKey);
+      if (replayed) return replayed;
+    }
 
     const sanitizedContent = body.content
       ? body.content.replace(/<[^>]+>/g, "").slice(0, 10000)
@@ -121,8 +112,9 @@ export class ChatMessagesService {
     });
 
     const fanoutEventId = randomUUID();
-    const { message, insertedAttachments, senderName, senderImage, channelType } =
-      await this.db.transaction(async (tx) => {
+    let sendResult;
+    try {
+      sendResult = await this.db.transaction(async (tx) => {
         const [channel] = await tx
           .select({ id: chatChannels.id, type: chatChannels.type })
           .from(chatChannels)
@@ -158,9 +150,17 @@ export class ChatMessagesService {
             content: sanitizedContent?.trim() || null,
             replyToId: body.replyToId,
             metadata: body.metadata ?? null,
+            clientKey: body.clientKey ?? null,
             channelPosition,
           })
+          .onConflictDoNothing({
+            target: [chatMessages.orgId, chatMessages.channelId, chatMessages.clientKey],
+          })
           .returning();
+
+        // Two retries racing past the pre-check both reach here; the partial unique lets
+        // exactly one insert and the loser replays the winner's row.
+        if (!created) throw new DuplicateSendError();
 
         let attachmentRows: ChatAttachmentPayload[] = [];
         if (body.attachments && body.attachments.length > 0) {
@@ -216,6 +216,14 @@ export class ChatMessagesService {
           channelType: channel.type ?? null,
         };
       });
+    } catch (error: unknown) {
+      if (error instanceof DuplicateSendError && body.clientKey) {
+        const winner = await this.findByClientKey(orgId, channelId, body.clientKey);
+        if (winner) return winner;
+      }
+      throw error;
+    }
+    const { message, insertedAttachments, senderName, senderImage, channelType } = sendResult;
 
     const deferred = () =>
       runInNewTenantTransaction(this.db, orgId, async () => {
@@ -264,78 +272,6 @@ export class ChatMessagesService {
     if (!registerAfterCommit(deferred)) void deferred();
 
     return message;
-  }
-
-  async edit(messageId: number, userId: string, orgId: string, content: string) {
-    const message = await this.db.query.chatMessages.findFirst({
-      where: and(eq(chatMessages.id, messageId), eq(chatMessages.orgId, orgId), eq(chatMessages.isDeleted, false)),
-    });
-    if (!message) throw new NotFoundException("Message not found");
-
-    const membershipId = await this.resolveMembershipId(orgId, userId);
-    if (
-      membershipId === null ||
-      !(await this.isMember(message.channelId, orgId, membershipId))
-    )
-      throw new ForbiddenException("You are not a member of this channel");
-
-    if (message.senderMembershipId !== membershipId)
-      throw new ForbiddenException("You can only edit your own messages");
-
-    const updatedAt = new Date();
-    await this.db
-      .update(chatMessages)
-      .set({ content: content.trim(), isEdited: true, updatedAt })
-      .where(
-        and(
-          eq(chatMessages.id, messageId),
-          eq(chatMessages.senderMembershipId, membershipId),
-        ),
-      );
-
-    void this.ably.publishChatEvent(orgId, message.channelId, "message:updated", {
-      id: messageId,
-      channelId: message.channelId,
-      content: content.trim(),
-      isEdited: true,
-      updatedAt: updatedAt.toISOString(),
-    });
-
-    return { ok: true };
-  }
-
-  async remove(messageId: number, userId: string, isOrgAdmin: boolean, orgId: string) {
-    const message = await this.db.query.chatMessages.findFirst({
-      where: and(eq(chatMessages.id, messageId), eq(chatMessages.orgId, orgId), eq(chatMessages.isDeleted, false)),
-    });
-    if (!message) throw new NotFoundException("Message not found");
-
-    const membershipId = await this.resolveMembershipId(orgId, userId);
-    if (
-      membershipId === null ||
-      !(await this.isMember(message.channelId, orgId, membershipId))
-    )
-      throw new ForbiddenException("You are not a member of this channel");
-
-    if (!isOrgAdmin && message.senderMembershipId !== membershipId)
-      throw new ForbiddenException("You can only delete your own messages");
-
-    await this.db
-      .update(chatMessages)
-      .set({ isDeleted: true, content: null, updatedAt: new Date() })
-      .where(
-        and(
-          eq(chatMessages.id, messageId),
-          eq(chatMessages.channelId, message.channelId),
-        ),
-      );
-
-    void this.ably.publishChatEvent(orgId, message.channelId, "message:deleted", {
-      id: messageId,
-      channelId: message.channelId,
-    });
-
-    return { ok: true };
   }
 
   async sendThreadReply(
@@ -390,7 +326,7 @@ export class ChatMessagesService {
     content: string,
     metadata: Record<string, unknown>,
   ): Promise<void> {
-    const senderMembershipId = await this.resolveMembershipId(orgId, senderId);
+    const senderMembershipId = await resolveMembershipId(this.db, orgId, senderId);
 
     const { message, senderName } = await this.db.transaction(async (tx) => {
       const [channel] = await tx

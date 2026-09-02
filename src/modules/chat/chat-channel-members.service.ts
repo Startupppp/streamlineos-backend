@@ -25,7 +25,7 @@ export class ChatChannelMembersService {
     return this.implementation.assertChannelMembership(channelId, userId, orgId);
   }
   async getChannel(channelId: number, userId: string, orgId: string) { return this.implementation.getChannel(channelId, userId, orgId); }
-  async listMembers(channelId: number, userId: string, orgId: string) { return this.implementation.listMembers(channelId, userId, orgId); }
+  async listMembers(channelId: number, userId: string, orgId: string, cursor?: number, limit?: number) { return this.implementation.listMembers(channelId, userId, orgId, cursor, limit); }
   async addMember(channelId: number, targetUserId: string, requesterId: string, orgId: string) { return this.implementation.addMember(channelId, targetUserId, requesterId, orgId); }
   async removeMember(channelId: number, targetUserId: string, requesterId: string, orgId: string) { return this.implementation.removeMember(channelId, targetUserId, requesterId, orgId); }
   async updateChannel(channelId: number, userId: string, body: UpdateChannelInput, orgId: string) { return this.implementation.updateChannel(channelId, userId, body, orgId); }

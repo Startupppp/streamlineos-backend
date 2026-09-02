@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { BillingModule } from "../billing/core/billing.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { ChatAttachmentsController } from "./chat-attachments.controller";
+import { ChatAttachmentsService } from "./chat-attachments.service";
 import { ChatActionsController } from "./chat-actions.controller";
 import { ChatEntityActionsController } from "./chat-entity-actions.controller";
 import { ChatChannelsController } from "./chat-channels.controller";
@@ -19,6 +21,7 @@ import { ChatChannelsService } from "./chat-channels.service";
 import { ChatChannelListService } from "./chat-channel-list.service";
 import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatMessagesService } from "./chat-messages.service";
+import { ChatMessageModerationService } from "./chat-message-moderation.service";
 import { ChatMessageTimelineService } from "./chat-message-timeline.service";
 import { ChatReactionsService } from "./chat-reactions.service";
 import { ChatMessageFanoutService } from "./chat-message-fanout.service";
@@ -44,6 +47,7 @@ import { OutboxBackedMessageFanoutProvider } from "./outbox-backed-message-fanou
 @Module({
   imports: [BillingModule, NotificationsModule, RealtimeModule, EntityReferenceModule, OutboxModule],
   controllers: [
+    ChatAttachmentsController,
     ChatActionsController,
     ChatEntityActionsController,
     ChatChannelsController,
@@ -60,6 +64,7 @@ import { OutboxBackedMessageFanoutProvider } from "./outbox-backed-message-fanou
     ChatRealtimeController,
   ],
   providers: [
+    ChatAttachmentsService,
     ChatMessageFanoutService,
     OutboxBackedMessageFanoutProvider,
     { provide: MESSAGE_FANOUT_PROVIDER, useExisting: OutboxBackedMessageFanoutProvider },
@@ -68,6 +73,7 @@ import { OutboxBackedMessageFanoutProvider } from "./outbox-backed-message-fanou
     ChatChannelsService,
     ChatChannelMembersService,
     ChatMessagesService,
+    ChatMessageModerationService,
     ChatMessageTimelineService,
     ChatReactionsService,
     ChatPresenceService,

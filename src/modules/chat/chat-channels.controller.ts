@@ -142,16 +142,19 @@ export class ChatChannelsController {
     return this.members.updateChannel(channelId, u.userId, body, u.orgId);
   }
 
-  @ApiOperation({ summary: "List members of a channel" })
+  @ApiOperation({ summary: "List members of a channel with keyset pagination" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get(":channelId/members")
   @RequirePermission("chat:channels:read")
-  @Validate({ params: channelIdParams })
+  @Validate({ params: channelIdParams, query: channelListQuerySchema })
   listMembers(
     @Param("channelId", ParseIntPipe) channelId: number,
+    @Query() query: ChannelListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.listMembers(channelId, u.userId, u.orgId);
+    const raw = query.cursor !== undefined ? parseInt(query.cursor, 10) : undefined;
+    const cursor = typeof raw === "number" && !Number.isNaN(raw) ? raw : undefined;
+    return this.members.listMembers(channelId, u.userId, u.orgId, cursor, query.limit);
   }
 
   @ApiOperation({ summary: "Add a member to a channel" })
